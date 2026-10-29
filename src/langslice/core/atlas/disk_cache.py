@@ -1,10 +1,10 @@
 """Volumes derived from an atlas, kept on disk between processes.
 
-BrainGlobe keeps what it downloads (``~/.brainglobe``) and nothing derived
-from it, so every LangSlice process rebuilt the same volumes from the same
-atlas: the template's cubic spline coefficients (``core.oblique``) and the
-annotation as dense indices into its sorted ids. :func:`cached_volume`
-keeps each one as a ``.npy`` file the first time it is built and opens it
+BrainGlobe keeps what it downloads (``~/.brainglobe``) and nothing derived from
+it, so every LangSlice process rebuilt the same volumes from the same atlas:
+the template's cubic spline coefficients (``core.geometry.oblique``) and the
+annotation as dense indices into its sorted ids. :func:`cached_volume` keeps
+each one as a ``.npy`` file the first time it is built and opens it
 memory-mapped afterwards: nothing is read until a plane touches it, and
 processes reading the same file share the operating system's copy.
 

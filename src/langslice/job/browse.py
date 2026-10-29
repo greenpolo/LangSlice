@@ -1,7 +1,7 @@
 """Read-only browsing of the job folder: safe paths, listings, searches, text.
 
 A native agent without a shell of its own looks at the job's files through
-these functions (:mod:`langslice.ops.files` wraps them). Everything is kept
+these functions (:mod:`langslice.tools.files` wraps them). Everything is kept
 inside the job folder:
 
 * a path is taken relative to the folder (an absolute path is accepted only
@@ -15,7 +15,7 @@ inside the job folder:
   it would only show the agent its own transcript.
 
 The caps keep one answer a small part of a tool reply (the reply budget,
-:data:`langslice.doors.tools.reply.REPLY_BYTES`, is far larger).
+:data:`langslice.tools.reply.REPLY_BYTES`, is far larger).
 """
 
 from __future__ import annotations

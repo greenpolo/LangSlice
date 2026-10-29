@@ -25,6 +25,6 @@ os.environ["LANGSLICE_DETACH"] = "0"
 
 @pytest.fixture(scope="module")
 def atlas() -> object:
-    from langslice.core.atlas.core import load_atlas
+    from langslice.core.atlas.load import load_atlas
 
     return load_atlas("allen_mouse_25um")

@@ -119,7 +119,7 @@ against the import graph.
 
 ```python
     import torch  # local: slow to import, needed only for a deformable fit
-    from langslice.ops.views import save_view  # local: cycle with ops.views
+    from langslice.tools.status import save_view  # local: cycle with tools.status
 ```
 
 **2.4 `__init__.py` holds no logic.** [linter `init-logic`] It is empty, sets the
@@ -470,7 +470,7 @@ live in one module and go once no job needs them. Nothing is kept "in case".
 
 Keep these through every refactor:
 
-- The layer rule (`core < job < ops < doors : agent < hosts`), enforced by
+- The layer rule (`core < job < tools < doors < hosts`), enforced by
   import-linter with no exceptions.
 - One declaration per tool, shared by every way in.
 - The text snapshot of everything the model reads.
@@ -498,7 +498,9 @@ Keep these through every refactor:
 
 The baselines of `tools/stylecheck` and basedpyright only shrink, and the
 settings of every tool above only tighten; CI holds both against the
-previous commit.
+previous commit. A commit that moves code declares each moved definition
+in `tools/stylecheck/moves.json`, and its errors and the modules the
+settings name follow the move, at most what the old entry lost.
 
 A rule the tools cannot check is marked [review] and is part of code review,
 not optional.

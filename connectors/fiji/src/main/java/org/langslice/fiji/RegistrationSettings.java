@@ -6,7 +6,7 @@ import java.util.prefs.Preferences;
 
 /** Every dialog choice as plain data: persisted between runs and turned into the worker's job spec. */
 final class RegistrationSettings {
-    /** The ChatGPT account that runs the agent in ChatGPT mode (providers/registry.py). */
+    /** The ChatGPT account that runs the agent in ChatGPT mode (providers/connections.py). */
     static final String PROVIDER = "openai-oauth";
     /** The image-model provider that runs Nonlinear without an image model: deformations fit the stain alone. */
     static final String NO_IMAGE_MODEL = "none";

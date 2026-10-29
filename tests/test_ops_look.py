@@ -1,5 +1,5 @@
-"""``ops.look``: look and zoom save every picture with a number, a caption and
-a recipe; and ``ops.atlas.grep_atlas_view`` highlights named regions."""
+"""``tools.look``: look and zoom save every picture with a number, a caption and
+a recipe; and ``tools.atlas.grep_atlas_view`` highlights named regions."""
 
 from __future__ import annotations
 
@@ -11,15 +11,16 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core.layers import PictureNote
+from langslice.core.pictures.drawn import PictureNote
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState
+from langslice.core.stack.section import SliceState
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.job.views import PICTURE_FILE, PictureRecord
-from langslice.ops import atlas as ops_atlas
-from langslice.ops import look as ops_look
-from langslice.ops.refusal import Refused
+from langslice.job.pictures import PICTURE_FILE, PictureRecord
+from langslice.tools import atlas as ops_atlas
+from langslice.tools import look as ops_look
+from langslice.tools import zoom as tools_zoom
+from langslice.tools.refusal import Refused
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.look_synthetic import MARKED, POSITIONS, SECTIONS, stack
 
@@ -137,20 +138,20 @@ def test_zoom_defaults_to_the_latest_picture_that_is_not_a_zoom(tmp_path: Path):
     looked = ops_look.look(job, ws, "section", sections=[MARKED])
     (entry,) = looked.entries
     width, height = _recipe(job, entry["id"])["shown"]
-    first = ops_look.zoom(job, ws, [0, 0, width / 2, height / 2])
+    first = tools_zoom.zoom(job, ws, [0, 0, width / 2, height / 2])
     assert first.picture == entry["id"] and first.redrawn and not first.stale
     assert first.entries[0]["id"] == entry["id"] + 1
     saved = job.views.lookup(first.entries[0]["id"])
     assert saved is not None and saved.tool == "zoom" and saved.sections == (MARKED,)
     # The latest picture is now a zoom; the default still reads the look.
-    second = ops_look.zoom(job, ws, [0, 0, width / 4, height / 4])
+    second = tools_zoom.zoom(job, ws, [0, 0, width / 4, height / 4])
     assert second.picture == entry["id"]
     assert second.entries[0]["id"] == entry["id"] + 2
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(job, ws, [0, 0, 10, 10], picture=999)
+        tools_zoom.zoom(job, ws, [0, 0, 10, 10], picture=999)
     assert caught.value.code == "UNKNOWN_PICTURE"
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(job, ws, [5, 5, 5, 5], picture=entry["id"])
+        tools_zoom.zoom(job, ws, [5, 5, 5, 5], picture=entry["id"])
     assert caught.value.code == "EMPTY_BOX"
 
 
@@ -163,12 +164,12 @@ def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
         _record(job, entry["id"]).path) / PICTURE_FILE).convert("L"))[:height, :width]
     ys, xs = np.nonzero(content > 250)
     box = [xs.min() - 20, ys.min() - 20, xs.max() + 20, ys.max() + 20]
-    zoomed = ops_look.zoom(job, ws, box, picture=entry["id"])
+    zoomed = tools_zoom.zoom(job, ws, box, picture=entry["id"])
     assert zoomed.redrawn and zoomed.entries[0]["caption"]
     window = _recipe(job, zoomed.entries[0]["id"])["args"]["zoom"]
     assert window[0] == pytest.approx(box[0] / width, abs=1e-6)
     # On a zoom, a box is in the grid's numbers: the whole picture's pixels.
-    again = ops_look.zoom(job, ws, [box[0], box[1], box[0] + 10, box[1] + 10],
+    again = tools_zoom.zoom(job, ws, [box[0], box[1], box[0] + 10, box[1] + 10],
                           picture=zoomed.entries[0]["id"])
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["base"] == recipe["base"]  # redrawn from the original, not enlarged
@@ -189,7 +190,7 @@ def test_a_changed_stack_is_redrawn_as_it_was_and_flagged_stale(tmp_path: Path):
     job, ws = _job(tmp_path)
     (entry,) = ops_look.look(job, ws, "overlay", sections=[SECTIONS[1]]).entries
     _move(job, SECTIONS[1], 0.22)
-    zoomed = ops_look.zoom(job, ws, [0, 0, 50, 50])
+    zoomed = tools_zoom.zoom(job, ws, [0, 0, 50, 50])
     assert zoomed.stale and zoomed.redrawn and zoomed.picture == entry["id"]
     assert f"at {POSITIONS[1]:.2f} mm" in zoomed.entries[0]["caption"]
     assert "changed since" in zoomed.entries[0]["caption"]
@@ -202,14 +203,14 @@ def test_a_picture_without_a_recipe_is_cropped_and_a_crop_of_a_crop_maps_back(tm
     source.paste((255, 255, 255), (300, 100, 400, 200))
     (name,) = job.views.save(tool="strip", pictures=[(source, PictureNote(mode="strip"))])
     number = int(name.split("_")[0])
-    crop = ops_look.zoom(job, ws, [200, 0, 400, 200], picture=number)
+    crop = tools_zoom.zoom(job, ws, [200, 0, 400, 200], picture=number)
     assert not crop.redrawn and crop.picture == number
     crop_id = crop.entries[0]["id"]
     held = job.views.lookup(crop_id)
     assert held is not None and held.recipe is not None
     assert held.recipe["renderer"] == "crop" and held.recipe["source"] == number
     # A box on the crop is in the source picture's pixels (the grid's numbers).
-    again = ops_look.zoom(job, ws, [300, 100, 400, 200], picture=crop_id)
+    again = tools_zoom.zoom(job, ws, [300, 100, 400, 200], picture=crop_id)
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["args"]["box"] == [300.0, 100.0, 400.0, 200.0] and inner["source"] == number
     assert np.median(np.asarray(again.pictures[0].convert("L"))[150:250, 150:250]) > 240
@@ -222,20 +223,20 @@ def test_a_picture_that_is_not_saved_is_refused_and_a_dry_run_zooms_from_memory(
     job.views.flush()
     (job.layout.resolve(_record(job, number).path) / PICTURE_FILE).unlink()
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(job, ws, [0, 0, 20, 20], picture=number)
+        tools_zoom.zoom(job, ws, [0, 0, 20, 20], picture=number)
     assert caught.value.code == "PICTURE_NOT_SAVED"
     # A dry run keeps no pictures between processes: an unknown number is "not saved".
     (tmp_path / "dry").mkdir()
     dry, dry_ws = _job(tmp_path / "dry", persist=False)
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(dry, dry_ws, [0, 0, 20, 20], picture=7)
+        tools_zoom.zoom(dry, dry_ws, [0, 0, 20, 20], picture=7)
     assert caught.value.code == "PICTURE_NOT_SAVED"
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(dry, dry_ws, [0, 0, 20, 20])
+        tools_zoom.zoom(dry, dry_ws, [0, 0, 20, 20])
     assert caught.value.code == "NO_PICTURE"
     # ... but within the process a dry run zooms from memory.
     (entry,) = ops_look.look(dry, dry_ws, "section", sections=[SECTIONS[0]]).entries
-    zoomed = ops_look.zoom(dry, dry_ws, [0, 0, 60, 40])
+    zoomed = tools_zoom.zoom(dry, dry_ws, [0, 0, 60, 40])
     assert zoomed.picture == entry["id"] and zoomed.redrawn
     assert zoomed.entries[0]["id"] == entry["id"] + 1
 
@@ -287,7 +288,7 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     job.picture_cap = 4
     many = ops_atlas.grep_atlas_view(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
     assert len(many.entries) == 4 and many.not_shown[0]["positions_mm"] == [0.14]
-    shown = ops_look.zoom(job, ws, [0, 0, 120, 90], picture=many.entries[0]["id"])
+    shown = tools_zoom.zoom(job, ws, [0, 0, 120, 90], picture=many.entries[0]["id"])
     assert shown.redrawn and not shown.stale
     zoom_recipe = _recipe(job, shown.entries[0]["id"])
     assert zoom_recipe["renderer"] == "grep_atlas_view" and zoom_recipe["args"]["zoom"]

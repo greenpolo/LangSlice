@@ -106,7 +106,7 @@ def test_linear_run_gui_starts_the_command_on_the_job_folder(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from types import SimpleNamespace
 
-    from langslice.doors.cli.linear import open_gui
+    from langslice.doors.commands.linear import open_gui
 
     started: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen",

@@ -314,7 +314,7 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
     with make(images) as job:
         c = job.context
         from langslice.core.plugins import ToolError
-        from langslice.ops import masks as ops_masks
+        from langslice.tools import masks as ops_masks
 
         frame = c.fit_frame(ID0)
         with pytest.raises(ToolError) as array_refused:  # a mask is a name, not an array

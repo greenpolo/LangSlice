@@ -31,7 +31,9 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 SCRIPT = r'''
 import json, sys
 import scyjava, scyjava.config as cfg
-from langslice.hosts.integrations import abba_compare, abba_launch, abba_overview
+from langslice.hosts.abba import launch as abba_launch
+from langslice.hosts.abba import viewer_compare as abba_compare
+from langslice.hosts.abba import viewer_overview as abba_overview
 
 cfg.endpoints.extend(abba_launch.ABBA_JAVA_DEPENDENCIES)
 try:

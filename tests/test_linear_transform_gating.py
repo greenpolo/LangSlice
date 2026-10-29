@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from langslice.core.spec import TransformSpec
-from langslice.job.job import submit_errors
+from langslice.job.gates import submit_errors
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import single_transform
 from tests.linear_tool_helpers import stack as _stack

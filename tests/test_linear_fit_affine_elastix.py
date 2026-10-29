@@ -12,11 +12,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core.affine import decompose_affine, normalized_affine
-from langslice.core.canvas import canvas_geometry
-from langslice.core.deformable import engines
+from langslice.core.fits.deformable import engines
+from langslice.core.geometry.affine import decompose_affine, normalized_affine
+from langslice.core.pictures.canvas import canvas_geometry
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
@@ -194,7 +194,7 @@ def test_an_elastix_failure_is_refused_cleanly(tmp_path: Path, atlas, monkeypatc
 
 def _px(params: list[float]) -> np.ndarray:
     """Six normalized numbers as a 3x3 in section pixels."""
-    from langslice.core.affine import denormalized_affine
+    from langslice.core.geometry.affine import denormalized_affine
 
     return np.vstack([denormalized_affine(params, SECTION_SIZE), [0, 0, 1]])
 

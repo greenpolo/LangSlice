@@ -1,10 +1,10 @@
-"""An applied deformation as ABBA warp-step landmark pairs (``core/abba_warp.py``).
+"""An applied deformation as ABBA warp-step landmark pairs (``core/maps/abba.py``).
 
 Synthetic sections whose frame and deformation record are built by hand, as
-``core.maps.section_frame`` and the deformable fit build them: the pairs'
-thin-plate spline reproduces the record's own map (``core.maps.native_points``)
+``core.maps.section_maps.section_frame`` and the deformable fit build them: the pairs'
+thin-plate spline reproduces the record's own map (``core.maps.section_maps.native_points``)
 within 5 um off the grid, for every quarter turn and flip; the pairs sit on top
-of the affine row (``core.abba_affine.normalized_to_abba_affine``); a
+of the affine row (``core.maps.abba.normalized_to_abba_affine``); a
 deformation too fine for 33x33 points is sent anyway with its error measured,
 the largest grid whose spline does not fold is sent when a finer one folds,
 and only a deformation whose spline folds at every grid is refused.
@@ -17,13 +17,19 @@ import math
 import numpy as np
 import pytest
 
-from langslice.core.abba_affine import normalized_to_abba_affine
-from langslice.core.abba_warp import warp_world_landmarks, world_frame
-from langslice.core.affine import denormalized_affine, pixel_center_map
-from langslice.core.deformable.geometry import Placement
-from langslice.core.deformable.record import DeformableRecord
-from langslice.core.deformable.settings import FitSettings
-from langslice.core.maps import (
+from langslice.core.fits.deformable.geometry import Placement
+from langslice.core.fits.deformable.record import DeformableRecord
+from langslice.core.fits.deformable.settings import FitSettings
+from langslice.core.geometry.affine import (
+    denormalized_affine,
+    pixel_center_map,
+)
+from langslice.core.maps.abba import (
+    normalized_to_abba_affine,
+    warp_world_landmarks,
+    world_frame,
+)
+from langslice.core.maps.section_maps import (
     SectionFrame,
     native_points,
     orientation_matrix,
@@ -100,7 +106,7 @@ def _exact(frame, warp, points, params=PARAMS):
 @pytest.mark.parametrize("rotation,flip", [(0, False), (0, True), (90, False), (90, True),
                                            (180, False), (270, True)])
 def test_pairs_tps_reproduces_the_record_off_the_grid(rotation, flip):
-    from langslice.core.thin_plate import ThinPlateKernel
+    from langslice.core.geometry.thin_plate import ThinPlateKernel
 
     frame = _frame(rotation, flip)
     warp = _record(frame, _smooth_field(rotation))
@@ -174,7 +180,7 @@ def test_a_deformation_whose_spline_folds_at_every_grid_is_refused():
 def test_a_deformation_too_fine_for_33_points_is_sent_with_its_error():
     """Accuracy never refuses: the 33x33 grid goes out, its error measured
     (the maximum at the probes matches an independent check)."""
-    from langslice.core.thin_plate import ThinPlateKernel
+    from langslice.core.geometry.thin_plate import ThinPlateKernel
 
     frame = _frame(0, False)
     warp = _record(frame, _smooth_field(0, amplitude_mm=0.02, waves=12.0))
@@ -195,7 +201,7 @@ def test_a_deformation_too_fine_for_33_points_is_sent_with_its_error():
 
 def test_the_largest_grid_whose_spline_does_not_fold_is_sent(monkeypatch):
     """When the finest grids' splines fold, the largest one that does not is sent."""
-    import langslice.core.thin_plate as thin_plate
+    import langslice.core.geometry.thin_plate as thin_plate
 
     class FoldingAbove289(thin_plate.ThinPlateKernel):
         def jacobian(self, points_mm):

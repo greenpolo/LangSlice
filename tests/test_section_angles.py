@@ -25,7 +25,8 @@ from langslice.core.spec import (
     TransformSpec,
     supplied_angles,
 )
-from langslice.core.state import MixedAngles, SliceState, StackState
+from langslice.core.stack.section import MixedAngles, SliceState
+from langslice.core.stack.stack import StackState
 from tests import test_combinations as combinations
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM
 from tests.test_combinations import (
@@ -98,7 +99,7 @@ def test_undo_restores_each_sections_angles():
 
 
 def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_path):
-    from langslice.job.checkpoint import (
+    from langslice.job.state_file import (
         FORMAT_KEY,
         STATE_FORMAT_VERSION,
         write_checkpoint,
@@ -178,7 +179,7 @@ def _uniform_copy(state: StackState, angles: tuple[float, float]) -> StackState:
 def _single_angle_frame(job: Any, record_id: str) -> Any:
     """The section's frame in a copy of the stack where EVERY section has its
     angle (a single-angle job), computed afresh."""
-    from langslice.core.maps import section_frame
+    from langslice.core.maps.section_maps import section_frame
 
     state = job.state
     record = state.by_id(record_id)
@@ -190,7 +191,7 @@ def _single_angle_frame(job: Any, record_id: str) -> Any:
 def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
     """``registration.json`` and ``quicknii.json``: each section on its own
     plane, as a single-angle job at that angle would place it."""
-    from langslice.core.layers import atlas_facts
+    from langslice.core.pictures.layers import atlas_facts
     from langslice.job.quint import anchoring_from_pixel_map, to_target_grid
 
     document = json.loads((job_folder / "registration.json").read_text())
@@ -221,7 +222,7 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
 
 def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images):
     import langslice
-    from langslice.core.handoff import prepare_linear_registration
+    from langslice.core.fits.frame import prepare_linear_registration
 
     create(spec_for(images, ["nonlinear"], provider="openai-oauth", **_external()))
     with langslice.open_job(images) as job:
@@ -267,7 +268,7 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
     import tifffile
 
     import langslice
-    from langslice.core.maps import section_maps
+    from langslice.core.maps.section_maps import section_maps
 
     create(spec_for(images, ["nonlinear"], **_external()))
     with langslice.open_job(images) as job:
@@ -288,7 +289,7 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
             np.testing.assert_array_equal(np.moveaxis(held.coords, -1, 0), np.squeeze(coords))
             assert held.residual is None
             # The plane matters: the flat plane gives other coordinates.
-            from langslice.core.maps import section_frame
+            from langslice.core.maps.section_maps import section_frame
 
             flat = _uniform_copy(job.state, (0.0, 0.0))
             job.workspace.frame_cache.clear()
@@ -356,8 +357,8 @@ def test_a_sections_pictures_match_a_single_angle_stack_at_its_angle(images):
     """Each section of a mixed stack is pictured exactly as a single-angle
     stack at that section's angle pictures it, pixel for pixel."""
     import langslice
-    from langslice.core.display import default_options
-    from langslice.core.placement import placement_pictures
+    from langslice.core.pictures.options import default_options
+    from langslice.core.pictures.placement import placement_pictures
 
     mode = "overlay"
     create(spec_for(images, ["nonlinear"], **_external()))

@@ -1,7 +1,7 @@
 """Raw channels: drawn alone as the file holds them, several together in their
-colours with automatic contrast (``core.channels``), read from the file's own
+colours with automatic contrast (``core.sections.channels``), read from the file's own
 intensities; and what every fit and the image model read: the section image
-named, ``preprocessed`` by default (``core.section_images``)."""
+named, ``preprocessed`` by default (``core.sections.images``)."""
 
 from __future__ import annotations
 
@@ -14,13 +14,16 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import channels
-from langslice.core import section_images as images
-from langslice.core.image_prep import IntensityRange, working_intensity_ranges
-from langslice.core.sections import render_slice
+from langslice.core.sections import channels, images
+from langslice.core.sections.reading import (
+    IntensityRange,
+    working_intensity_ranges,
+)
+from langslice.core.sections.renders import render_slice
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.test_section_images import _rgb_section
@@ -127,8 +130,8 @@ class _Stop(Exception):
 
 
 def test_the_elastix_affine_reads_the_section_image_named(tmp_path: Path, atlas, monkeypatch):
-    from langslice.core import deformable, deformation
-    from langslice.core import transform as tr
+    from langslice.core.fits import affine as tr
+    from langslice.core.fits import deformable, deformation
 
     job, ctx = _open(tmp_path, atlas)
     state = job.state
@@ -160,8 +163,8 @@ def test_the_elastix_affine_reads_the_section_image_named(tmp_path: Path, atlas,
 def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, monkeypatch):
     """What FireANTs SyN is handed is the section image on the fit grid, and its
     cache key changes when the image is made again."""
-    from langslice.core import deformation
-    from langslice.ops import deformable as ops_deformable
+    from langslice.core.fits import deformation
+    from langslice.tools import deformable as ops_deformable
 
     job, ctx = _open(tmp_path, atlas)
     state = job.state
@@ -184,10 +187,10 @@ def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, mon
 
 
 def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatch):
-    from langslice.core.handoff import LinearRegistrationInput
-    from langslice.core.nonlinear import registration_tool as tool
-    from langslice.core.nonlinear.upright import Upright
-    from langslice.providers.registry import ImageModel, resolve_image_model
+    from langslice.core.fits.frame import LinearRegistrationInput
+    from langslice.core.fits.trace import trace as tool
+    from langslice.core.fits.trace.canvas import Upright
+    from langslice.providers.connections import ImageModel, resolve_image_model
 
     original = Image.new("RGB", (60, 40), (40, 70, 90))
     original.save(tmp_path / "section.png")

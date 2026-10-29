@@ -15,9 +15,14 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
-from tests.deformable_synthetic import SyntheticAtlas, bump_field, render_section
+from tests.deformable_synthetic import (
+    SyntheticAtlas,
+    bump_field,
+    render_section,
+)
 
 #: Section ids in stack order (file order), and their positions (mm).
 SECTIONS = ("s0.png", "s1.png", "s2.png")

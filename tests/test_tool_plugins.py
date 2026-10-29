@@ -24,9 +24,9 @@ from langslice.core import plugins as core_plugins
 from langslice.core.plugins import Layer, PluginError
 from langslice.core.spec import JobSpec, TransformSpec
 from langslice.core.toolset import tools_for, valid_names
-from langslice.doors.declarations import FULL, Variant, declaration
 from langslice.doors.tools.toolbox import build_tools
-from langslice.ops.registry import enabled, verbs_for
+from langslice.tools.catalog import enabled, verbs_for
+from langslice.tools.descriptions.render import FULL, Variant, declaration
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 
 EXAMPLE = "tests.fixtures.example_plugin:tools"
@@ -276,7 +276,7 @@ def test_a_long_tool_computes_outside_the_lock_and_a_moved_section_is_refused(ma
     ref = make("slow_plugin", LONG)
     state, ctx, box = box_of(images, ref)
     module = sys.modules["slow_plugin"]
-    from langslice.ops import positions
+    from langslice.tools import positions
 
     module.HOOK = lambda: positions.position_sections(
         box.job, ctx, [{"id": "s1.png", "position_mm": 6.0}])
@@ -371,7 +371,7 @@ def test_a_long_calls_writes_are_one_undo_step_unless_another_write_came_between
     assert {record.id: record.position_mm for record in state.slices} == start
     assert not state.by_id("s0.png").damage_note
 
-    from langslice.ops import positions
+    from langslice.tools import positions
 
     module.HOOK = lambda: positions.position_sections(
         box.job, ctx, [{"id": "s2.png", "position_mm": 9.0}])
@@ -576,7 +576,7 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
 
 
 def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
-    from langslice.core.plugin_layers import load_layer, save_layer
+    from langslice.core.pictures.plugin_layers import load_layer, save_layer
 
     cases = [
         Layer.points([[1.5, 2.5], [3, 4]], labels=["a", ""], values=[0.5, 2], name="p"),
@@ -636,7 +636,7 @@ def test_export_maps_copies_the_layers_with_their_manifest(make, images: Path):
                                 tasks=["position", "transform"])
     box = build_tools(state, ctx, jobspec, scripting=True)
     call(box, "mark", sections=["s0.png"])
-    from langslice.ops import exports
+    from langslice.tools import exports
 
     exported = exports.export_maps(box.job, ctx, ids=["s0.png"])
     target = box.job.layout.exports_dir / "plugins" / "mark"
@@ -666,8 +666,8 @@ def warp_box(images: Path, *plugins: str, transforms: tuple[str, ...] = ("s0.png
 
 
 def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(images: Path):
-    from langslice.core.maps import native_points, section_frame
-    from langslice.ops.exports import export_maps
+    from langslice.core.maps.section_maps import native_points, section_frame
+    from langslice.tools.exports import export_maps
     from tests.fixtures.example_plugin import ripple_map
 
     state, ctx, box = warp_box(images)
@@ -687,7 +687,7 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
     # placement (a shift), ctx.fit_frame's placed_atlas_to_section.
     from types import SimpleNamespace
 
-    from langslice.core import deformation
+    from langslice.core.fits import deformation
 
     grid = deformation.fit_grid(state, ctx, record)
     expected = ripple_map(SimpleNamespace(
@@ -825,7 +825,7 @@ def test_a_tool_that_does_not_declare_deformation_cannot_write_one(make, images:
 def test_a_long_tool_writes_its_proposals_and_a_moved_section_is_stale(make, images: Path):
     ref = make("fields_plugin", FIELDS)
     state, ctx, box = warp_box(images, ref)
-    from langslice.ops import positions
+    from langslice.tools import positions
 
     sys.modules["fields_plugin"].HOOK = lambda: positions.position_sections(
         box.job, ctx, [{"id": "s1.png", "position_mm": 2.6}])
@@ -1027,12 +1027,12 @@ def test_the_library_takes_a_factory_function_and_tool_objects(make, images: Pat
 
 
 def test_the_agent_cli_calls_a_plugin_tool_by_name(images: Path, capsys, monkeypatch):
-    from langslice.doors.cli.jobcli import main
+    from langslice.doors.agent_cli.main import main
 
     job = _library_job(images)
     folder = str(job.folder)
     job.close()
-    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda _n: _slab())
+    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda _n: _slab())
     from tests.cli_child import install
 
     install(lambda _n: _slab(), monkeypatch.setattr)
@@ -1050,7 +1050,7 @@ def test_the_agent_cli_calls_a_plugin_tool_by_name(images: Path, capsys, monkeyp
 
 def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
         images: Path, capsys, monkeypatch):
-    from langslice.doors.cli.jobcli import main
+    from langslice.doors.agent_cli.main import main
 
     job = _library_job(images)
     folder = job.folder
@@ -1086,8 +1086,11 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
 
 
 def test_the_cli_flag_names_plugins_and_their_options(make, images: Path):
-    from langslice.doors.cli import build_parser
-    from langslice.doors.cli.linear import build_linear_spec, with_tool_plugins
+    from langslice.doors.commands.linear import (
+        build_linear_spec,
+        with_tool_plugins,
+    )
+    from langslice.doors.commands.parser import build_parser
 
     parser = build_parser()
     configurable = make("configurable_flag", HELLO.replace("def tools():", "def tools(config):"))
@@ -1108,7 +1111,7 @@ def test_the_cli_flag_names_plugins_and_their_options(make, images: Path):
 
 def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(
         make, images: Path, tmp_path: Path):
-    from langslice.doors.api.abba_worker import prepare_linear
+    from langslice.doors.abba.worker import prepare_linear
     from langslice.doors.mcp.server import open_folder
 
     ref = make("greeter", """
@@ -1138,7 +1141,7 @@ def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(
 
 
 def test_a_cost_estimate_of_a_spec_with_plugins_loads_nothing(make, tmp_path: Path):
-    from langslice.agent.cost import estimate
+    from langslice.doors.agent.cost import estimate
 
     marker = tmp_path / "ran.txt"
     ref = make("costly", f'''
@@ -1206,7 +1209,7 @@ def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
 def test_many_points_through_a_warp_are_sampled_in_rows_not_one_column():
     from types import SimpleNamespace
 
-    from langslice.core.plugin_layers import picture_to_fractions
+    from langslice.core.pictures.plugin_layers import picture_to_fractions
 
     height, width = 48, 64
     field = np.zeros((height, width, 2))
@@ -1304,7 +1307,7 @@ def test_a_mark_made_from_section_image_pixels_is_drawn_on_the_feature(
         return np.array([xs.mean(), ys.mean()])
 
     feature = centre(plain, (230, 20, 20), 25)
-    from langslice.core.plugin_layers import PALETTE
+    from langslice.core.pictures.plugin_layers import PALETTE
 
     def rgb(index: int) -> tuple[int, int, int]:
         value = PALETTE[index].lstrip("#")
@@ -1501,14 +1504,14 @@ def test_the_agent_cli_waits_for_work_a_plugin_verb_started_and_brings_its_notic
         make, images: Path, capsys, monkeypatch):
     import json
 
-    from langslice.doors.cli.jobcli import main
+    from langslice.doors.agent_cli.main import main
     from tests.cli_child import install
 
     ref = make("mark_later_plugin", MARK_LATER)
     job = _library_job(images, plugins=[ref])
     folder = str(job.folder)
     job.close()
-    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda _n: _slab())
+    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda _n: _slab())
     install(lambda _n: _slab(), monkeypatch.setattr)
     code = main([folder, "mark_later", "--args", json.dumps({"section": "s0.png"})])
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
@@ -1540,14 +1543,14 @@ def test_the_agent_cli_dry_run_of_a_plugin_tool_checks_and_runs_nothing(
         make, images: Path, capsys, monkeypatch):
     import json
 
-    from langslice.doors.cli.jobcli import main
+    from langslice.doors.agent_cli.main import main
     from tests.cli_child import install
 
     ref = make("mark_later_plugin", MARK_LATER)
     job = _library_job(images, plugins=[ref])
     folder = str(job.folder)
     job.close()
-    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda _n: _slab())
+    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda _n: _slab())
     install(lambda _n: _slab(), monkeypatch.setattr)
     main([folder, "mark_later", "--dry-run", "--args", json.dumps({"section": "s0.png"})])
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
@@ -1828,7 +1831,7 @@ def tools():
 
 def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_step(
         make, images: Path, tmp_path: Path):
-    from langslice.core.layers import atlas_facts
+    from langslice.core.pictures.layers import atlas_facts
     from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
@@ -1886,8 +1889,12 @@ def tools():
 
 def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientation(
         make, images: Path, tmp_path: Path):
-    from langslice.core.layers import atlas_facts
-    from langslice.core.maps import SWAP, orientation_matrix, render_sizes
+    from langslice.core.maps.section_maps import (
+        SWAP,
+        orientation_matrix,
+        render_sizes,
+    )
+    from langslice.core.pictures.layers import atlas_facts
     from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
@@ -1936,7 +1943,7 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
 
 def test_a_registration_read_at_the_stack_plane_projects_onto_it(
         make, images: Path, tmp_path: Path):
-    from langslice.core.layers import atlas_facts
+    from langslice.core.pictures.layers import atlas_facts
     from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
@@ -1967,7 +1974,7 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
 
 def test_a_registration_read_without_a_pixel_size_gives_no_numbers(
         make, images: Path, tmp_path: Path):
-    from langslice.core.layers import atlas_facts
+    from langslice.core.pictures.layers import atlas_facts
     from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,

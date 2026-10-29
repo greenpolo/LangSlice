@@ -14,9 +14,9 @@ from pathlib import Path
 
 import numpy as np
 
-from langslice.core.deformable import engines
-from langslice.core.engine_output import engine_output
-from langslice.ops.deformable import gpu_rows
+from langslice.core.fits.deformable import engines
+from langslice.core.fits.engine_log import engine_output
+from langslice.tools.deformable import gpu_rows
 
 
 def test_engine_output_sends_descriptor_2_to_the_log_and_back(tmp_path: Path):
@@ -63,10 +63,10 @@ def test_gpu_turn_reports_how_long_it_waited(tmp_path: Path, monkeypatch):
 
 
 def test_a_fits_row_says_its_wait_and_retries_in_words(tmp_path: Path):
-    from langslice.core import deformation
-    from langslice.core.deformable import finish_fit, prepare_warp
-    from langslice.core.deformable.engines import EngineResult
-    from langslice.core.deformable.fit import WorkingGrid
+    from langslice.core.fits import deformation
+    from langslice.core.fits.deformable import finish_fit, prepare_warp
+    from langslice.core.fits.deformable.engines import EngineResult
+    from langslice.core.fits.deformable.fit import WorkingGrid
     from tests.test_landmarks import setup
 
     assert gpu_rows({"runtime_s": 3.0}) == {}

@@ -4,9 +4,9 @@ DeepSlice, an earlier LangSlice job) as LangSlice placements.
 Round trips: sections are given varied placements (positions, quarter turns,
 flips, rotations, anisotropic scale, shear, cutting angles, per section when
 the file can carry them), drawn through the job's own geometry
-(``core.maps.section_frame``), exported by the job's own writers
-(``job.quint.job_export``, ``job.formats.registration_document``), read back
-by ``job.imports`` and inverted by ``core.import_geometry``; the recovered
+(``core.maps.section_maps.section_frame``), exported by the job's own writers
+(``job.quint.job_export``, ``job.public_files.registration_document``), read back
+by ``job.imports.readers`` and inverted by ``core.maps.imported``; the recovered
 placement must be the one given. The DeepSlice files under
 ``tests/fixtures/deepslice/`` were written by DeepSlice 1.2.8's own writers
 (``write_QUINT_JSON``, ``write_QuickNII_XML``, and ``save_predictions``'s
@@ -27,22 +27,28 @@ import cv2
 import numpy as np
 import pytest
 
-from langslice.core.affine import normalized_physical_affine, pixel_center_map
-from langslice.core.import_geometry import (
+from langslice.core.geometry.affine import (
+    normalized_physical_affine,
+    pixel_center_map,
+)
+from langslice.core.geometry.oblique import build_rotation_matrix, plane_axes
+from langslice.core.maps.imported import (
     ANGLE_EPSILON_DEG,
     implied_pixel_size_um,
     placement_from_pixel_map,
     plane_angles,
 )
-from langslice.core.layers import atlas_facts
-from langslice.core.maps import SWAP, render_sizes, section_frame
-from langslice.core.oblique import build_rotation_matrix, plane_axes
+from langslice.core.maps.section_maps import SWAP, render_sizes, section_frame
+from langslice.core.pictures.layers import atlas_facts
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
-from langslice.job import imports
-from langslice.job.formats import registration_document
+from langslice.job.imports import matching as imports_matching
+from langslice.job.imports import placements as imports_placements
+from langslice.job.imports import readers as imports
 from langslice.job.layout import JobLayout
+from langslice.job.public_files import registration_document
 from langslice.job.quint import job_export
 from tests.deformable_synthetic import CTX, STR, SyntheticAtlas
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
@@ -246,7 +252,7 @@ def test_another_pixel_size_moves_the_scale_into_the_six_numbers(stack: Path):
 
 
 def params_scale(workspace: Workspace, given: Given) -> float:
-    from langslice.core.affine import decompose_affine
+    from langslice.core.geometry.affine import decompose_affine
 
     sizes = render_sizes(workspace, given.section_id)
     render = sizes.unturned_render
@@ -300,8 +306,8 @@ def test_quicknii_json_round_trip_with_per_section_angles(stack: Path, tmp_path:
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas)
     document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
-    result = imports.import_placements(write_export(tmp_path / "quicknii.json", document),
-                                       workspace)
+    result = imports_placements.import_placements(
+        write_export(tmp_path / "quicknii.json", document), workspace)
     assert result.source.format == "quicknii-json"
     assert (result.unmatched, result.missing, result.refused) == ([], [], {})
     assert result.pixel_size_source == "host" and result.pixel_size_um == PIXEL_SIZE_UM
@@ -331,7 +337,7 @@ def test_quicknii_on_a_downsampled_copy_carries_over(stack: Path, tmp_path: Path
         row["width"], row["height"] = small
         row["filename"] = "copies/" + row["filename"].replace(".png", ".PNG")
     path = write_export(tmp_path / "small.json", job_export(rows, atlas_facts(atlas)))
-    result = imports.import_placements(path, workspace)
+    result = imports_placements.import_placements(path, workspace)
     for given in PER_SECTION:
         placement = _by_section(result)[given.section_id]
         assert placement.match == "stem"
@@ -349,14 +355,14 @@ def test_allen_target_grid_round_trip(stack: Path, tmp_path: Path):
     workspace = make_workspace(stack, atlas)
     document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
     assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
-    result = imports.import_placements(write_export(tmp_path / "allen.json", document),
+    result = imports_placements.import_placements(write_export(tmp_path / "allen.json", document),
                                        workspace)
     for given in PER_SECTION:
         assert_recovered(_by_section(result)[given.section_id], given,
                          params_for(workspace, given), ROUNDED)
     # Another target for this atlas is refused, section by section.
     document["target"] = "WHS_Rat_v4_39um.cutlas"
-    refused = imports.import_placements(write_export(tmp_path / "rat.json", document),
+    refused = imports_placements.import_placements(write_export(tmp_path / "rat.json", document),
                                         workspace)
     assert refused.placements == [] and set(refused.refused) == {ID0, ID1, ID2}
     assert "WHS_Rat_v4_39um.cutlas" in refused.refused[ID0]
@@ -367,8 +373,8 @@ def test_visualign_markers_come_back_on_the_file(stack: Path, tmp_path: Path):
     workspace = make_workspace(stack, atlas)
     markers = {ID0: [[10.5, 20.5, 12.0, 19.0], [100.0, 80.0, 98.5, 83.25]]}
     document = job_export(export_rows(workspace, PER_SECTION, markers), atlas_facts(atlas))
-    result = imports.import_placements(write_export(tmp_path / "visualign.json", document),
-                                       workspace)
+    result = imports_placements.import_placements(
+        write_export(tmp_path / "visualign.json", document), workspace)
     assert result.source.format == "visualign-json"
     found = _by_section(result)
     assert found[ID0].markers == markers[ID0] and found[ID0].markers_raw == markers[ID0]
@@ -392,7 +398,7 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
                                          JobLayout(tmp_path / f"job{index}", stack))
         assert all(entry["problem"] is None for entry in document["sections"])
         path = write_export(tmp_path / f"registration{index}.json", document)
-        result = imports.import_placements(path, workspace)
+        result = imports_placements.import_placements(path, workspace)
         assert result.source.format == "langslice-registration"
         for given in sections:
             placement = _by_section(result)[given.section_id]
@@ -405,7 +411,7 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
     elsewhere = make_workspace(stack, other)
     document_allen = registration_document(state_of(elsewhere, shared), elsewhere,
                                            JobLayout(tmp_path / "job2", stack))
-    refused = imports.import_placements(
+    refused = imports_placements.import_placements(
         write_export(tmp_path / "allen_registration.json", document_allen), workspace)
     assert set(refused.refused) == {ID0, ID1, ID2}
     assert "no common QuickNII target" in refused.refused[ID0]
@@ -445,7 +451,7 @@ def deepslice_case(stack: Path, folder: Path) -> tuple[Workspace, dict[str, Any]
 @pytest.mark.parametrize("name", ["deepslice.json", "deepslice.xml", "deepslice.csv"])
 def test_deepslice_files_round_trip(stack: Path, tmp_path: Path, name: str):
     workspace, _document = deepslice_case(stack, tmp_path / "M1")
-    result = imports.import_placements(FIXTURES / name, workspace)
+    result = imports_placements.import_placements(FIXTURES / name, workspace)
     assert result.source.format == {"deepslice.json": "quicknii-json",
                                     "deepslice.xml": "quicknii-xml",
                                     "deepslice.csv": "deepslice-csv"}[name]
@@ -477,7 +483,7 @@ def test_an_old_deepslice_xml_parses(tmp_path: Path):
     (entry,) = read.entries
     assert entry.nr == 4 and entry.size is None and entry.problem is None
     assert entry.anchoring == (482.9, 446.7, 327.6, -483.4, -5.0, -13.7, 1.7, -7.3, -356.9)
-    assert imports.match_sections([entry.filename], ["x_s004.tif", "x_s014.tif"]) == {
+    assert imports_matching.match_sections([entry.filename], ["x_s004.tif", "x_s014.tif"]) == {
         0: ("x_s004.tif", "section number")}
 
 
@@ -486,21 +492,21 @@ def test_an_old_deepslice_xml_parses(tmp_path: Path):
 
 def test_matching_rules_in_order():
     ids = ["a.tif", "B_s002.tif", "c_s010.png", "c_s010_copy.png", "d_s003.png"]
-    found = imports.match_sections(
+    found = imports_matching.match_sections(
         ["a.tif", "dir\\b_S002.PNG", "scan_s003_10x.png", "x/c_s010_copy.jpg", "nothing.png"],
         ids)
     assert found == {0: ("a.tif", "exact"), 1: ("B_s002.tif", "stem"),
                      2: ("d_s003.png", "section number"), 3: ("c_s010_copy.png", "stem")}
     # The exact name wins over a stem two files share.
-    assert imports.match_sections(["a.png"], ["a.tif", "a.png"]) == {0: ("a.png", "exact")}
+    assert imports_matching.match_sections(["a.png"], ["a.tif", "a.png"]) == {0: ("a.png", "exact")}
     # "other_s010" names two sections by number: refused.
-    with pytest.raises(imports.AmbiguousMatch, match="several sections"):
-        imports.match_sections(["other_s010.png"], ids)
-    with pytest.raises(imports.AmbiguousMatch, match="several entries"):
-        imports.match_sections(["a.png", "a.jpg"], ids)
+    with pytest.raises(imports_matching.AmbiguousMatch, match="several sections"):
+        imports_matching.match_sections(["other_s010.png"], ids)
+    with pytest.raises(imports_matching.AmbiguousMatch, match="several entries"):
+        imports_matching.match_sections(["a.png", "a.jpg"], ids)
     # Two section numbers in one name: no number at all.
-    assert imports.match_sections(["x_s1_s2.png"], ["y_s1.png"]) == {}
-    assert imports.section_number("folder/name_s0042_10x.png") == 42
+    assert imports_matching.match_sections(["x_s1_s2.png"], ["y_s1.png"]) == {}
+    assert imports_matching.section_number("folder/name_s0042_10x.png") == 42
 
 
 # --- as a job's supplied inputs ----------------------------------------------------------
@@ -511,7 +517,7 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     workspace = make_workspace(stack, atlas)
     document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
     path = write_export(tmp_path / "q.json", document)
-    found = imports.registration_inputs(path, workspace)
+    found = imports_placements.registration_inputs(path, workspace)
     inputs = found.inputs
     assert set(inputs) == {"positions", "angles", "orientation", "transforms"}
     assert set(inputs["angles"]) == {ID0, ID1, ID2}  # they differ: per section
@@ -519,7 +525,7 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     assert found.report["warnings"] == [] and found.report["markers_imported"] is False
     # No pixel size anywhere: the imported one is used, and the maps hold at it.
     bare = make_workspace(stack, atlas, pixel_size=None)
-    result = imports.import_placements(path, bare)
+    result = imports_placements.import_placements(path, bare)
     assert result.pixel_size_source == "imported" and result.pixel_size_um is not None
     implied = [implied_pixel_size_um(p.pixel_to_atlas_um) for p in result.placements]
     assert result.pixel_size_um == pytest.approx(float(np.median(implied)))
@@ -534,7 +540,7 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(module, "read_pixel_size_um",
                         lambda path: 2.0 * PIXEL_SIZE_UM if str(path).endswith(ID0) else None)
     bare = make_workspace(stack, atlas, pixel_size=None)
-    found = imports.registration_inputs(path, bare)
+    found = imports_placements.registration_inputs(path, bare)
     size = found.inputs["pixel_size_um"]
     assert found.report["pixel_size_source"] == "imported"
     assert all(p.pixel_size_um == size and p.pixel_size_source == "host"
@@ -587,8 +593,8 @@ def test_augmented_atlas_shares_the_allen_target_with_a_fixed_offset(stack: Path
     document = job_export(export_rows(on_allen, PER_SECTION), atlas_facts(allen))
     assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
     path = write_export(tmp_path / "allen25.json", document)
-    first = _by_section(imports.import_placements(path, on_allen))
-    second = _by_section(imports.import_placements(path, on_augmented))
+    first = _by_section(imports_placements.import_placements(path, on_allen))
+    second = _by_section(imports_placements.import_placements(path, on_augmented))
     assert set(first) == set(second) == {g.section_id for g in PER_SECTION}
     for given in PER_SECTION:
         a, b = first[given.section_id], second[given.section_id]
@@ -608,7 +614,8 @@ def test_augmented_export_import_round_trip_is_the_identity(stack: Path, tmp_pat
     workspace = make_workspace(stack, augmented)
     document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(augmented))
     assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
-    result = imports.import_placements(write_export(tmp_path / "aug.json", document), workspace)
+    result = imports_placements.import_placements(write_export(tmp_path / "aug.json", document),
+                                                  workspace)
     for given in PER_SECTION:
         assert_recovered(_by_section(result)[given.section_id], given,
                          params_for(workspace, given), ROUNDED)

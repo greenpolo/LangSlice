@@ -1,5 +1,5 @@
 """The deformation on top of a section's linear placement: the ``fireants_syn`` tool,
-``submit``'s deformation gate, and the fit underneath (``ops.deformable``:
+``submit``'s deformation gate, and the fit underneath (``tools.deformable``:
 ``fit_deformable``, which ``fireants_syn`` and the packaged ``trace_borders``
 fit with)."""
 
@@ -15,17 +15,17 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import deformation
-from langslice.core.atlas.render import region_boundaries
-from langslice.core.deformable import DeformableRecord
-from langslice.core.display import default_options
+from langslice.core.atlas.borders import region_boundaries
+from langslice.core.fits import deformation
+from langslice.core.fits.deformable import DeformableRecord
+from langslice.core.pictures.options import default_options
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.state import StackState
+from langslice.core.stack.stack import StackState
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
-from langslice.ops import deformable as ops_deformable
+from langslice.tools import deformable as ops_deformable
 from tests.deformable_synthetic import (
     HY,
     SMOOTH_FIELD,
@@ -44,7 +44,7 @@ needs_engine = pytest.mark.skipif(not ops_deformable.engine_ready(),
 
 def _choice(fit_section: str = "preprocessed", fit_atlas: str = "nissl",
             smoothness_um: float = 80.0) -> deformation.Choice:
-    """One fit setting for ``ops.deformable.fit_deformable`` (SyN)."""
+    """One fit setting for ``tools.deformable.fit_deformable`` (SyN)."""
     return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas,
                               smoothness_um=smoothness_um)
 
@@ -88,7 +88,7 @@ def _syn(box: Any, **kwargs: Any) -> dict[str, Any]:
 
 def _fit(box: Any, ctx: Any, choice: deformation.Choice | None = None,
          **kwargs: Any) -> ops_deformable.DeformableFit:
-    """``ops.deformable.fit_deformable`` on the one section."""
+    """``tools.deformable.fit_deformable`` on the one section."""
     return ops_deformable.fit_deformable(box.job, ctx, [box.job.state.slices[0]],
                                          choice or _choice(), **kwargs)
 
@@ -175,7 +175,7 @@ def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
     assert state.slices[0].deformation is None
 
 
-# --- the fits underneath (ops.deformable.fit_deformable) -----------------------
+# --- the fits underneath (tools.deformable.fit_deformable) -----------------------
 
 
 @needs_engine
@@ -183,7 +183,7 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
         tmp_path: Path, atlas, monkeypatch):
     """NONLINEAR-5: a fit does not silently restart from linear over an applied
     deformation it cannot read, and an interrupted save leaves no record.json."""
-    from langslice.core.deformable import record as record_module
+    from langslice.core.fits.deformable import record as record_module
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     _fit(box, ctx)
@@ -293,7 +293,7 @@ def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
 @needs_engine
 def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, atlas,
                                                                 monkeypatch):
-    from langslice.core import handoff
+    from langslice.core.fits import frame as handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     assert _fit(box, ctx, TRACED).rows[0]["error"] == "NO_TRACE"
@@ -311,7 +311,7 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
 
 @needs_engine
 def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas, monkeypatch):
-    from langslice.core import handoff
+    from langslice.core.fits import frame as handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
@@ -328,8 +328,8 @@ def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas
 
 
 def test_the_model_is_shown_only_the_kept_regions(tmp_path: Path, atlas):
-    from langslice.core.handoff import prepare_linear_registration
-    from langslice.core.nonlinear.registration_tool import shown_labels
+    from langslice.core.fits.frame import prepare_linear_registration
+    from langslice.core.fits.trace.trace import shown_labels
 
     state, ctx, _, _ = _setup(tmp_path, atlas)
     prepared = prepare_linear_registration(state, ctx, ID)
@@ -348,7 +348,7 @@ def test_the_model_is_shown_only_the_kept_regions(tmp_path: Path, atlas):
 @needs_engine
 def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path, atlas,
                                                                  monkeypatch):
-    from langslice.core import handoff
+    from langslice.core.fits import frame as handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
@@ -375,7 +375,7 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
 def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas, monkeypatch):
     import threading
 
-    from langslice.core import handoff
+    from langslice.core.fits import frame as handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
@@ -409,7 +409,7 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
 
 @needs_engine
 def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monkeypatch):
-    from langslice.core import handoff
+    from langslice.core.fits import frame as handoff
 
     _, _, spec, box = _setup(tmp_path, atlas, provider="none", require_deformation=True)
     assert spec.nonlinear.uses_image_model is False
@@ -433,7 +433,7 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
 
 def test_submit_needs_no_deformation_unless_the_user_requires_one(tmp_path: Path, atlas,
                                                                    monkeypatch):
-    from langslice.core import handoff
+    from langslice.core.fits import frame as handoff
 
     state, _, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")

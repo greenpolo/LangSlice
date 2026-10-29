@@ -1,4 +1,4 @@
-"""The positioning picture's layout (core/positioning.py).
+"""The positioning picture's layout (core/pictures/positioning.py).
 
 The geometry is pure (:func:`plan`): sections in position order (ties in
 stack order, no position last), so no two lines cross; a long stack split
@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core import positioning
-from langslice.core.look import LookError, LookRequest, look
-from langslice.core.positioning import (
+from langslice.core.pictures import positioning
+from langslice.core.pictures.look import LookError, LookRequest, look
+from langslice.core.pictures.positioning import (
     GAP,
     MARGIN,
     PER_PICTURE,
@@ -28,7 +28,7 @@ from langslice.core.positioning import (
     position_order,
     split,
 )
-from langslice.core.zoom import redraw
+from langslice.core.pictures.zoom import redraw
 from tests.look_synthetic import SECTIONS, stack
 
 #: A coronal-ish section and atlas plane, micrometres.

@@ -1,4 +1,4 @@
-"""``ops.deformable.fireants_syn``: one choice, applied, always building on the
+"""``tools.deformable.fireants_syn``: one choice, applied, always building on the
 section's current deformation; and its refusals."""
 
 from __future__ import annotations
@@ -8,12 +8,12 @@ from typing import Any
 
 import pytest
 
-from langslice.agent.engine import build_context
-from langslice.core import deformation
+from langslice.core.fits import deformation
 from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.ops import deformable as ops_deformable
-from langslice.ops.refusal import Refused
+from langslice.tools import deformable as ops_deformable
+from langslice.tools.refusal import Refused
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,

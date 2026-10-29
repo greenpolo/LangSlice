@@ -110,15 +110,15 @@ def _reference_brain(atlas: Any) -> float:
     """Every test atlas is the size of the adult mouse brain (brain scale 1):
     the fakes are a few planes, not brains; ``tests/test_brain_scale.py``
     measures real atlases and sets other sizes itself."""
-    from langslice.core.atlas.size import REFERENCE_VOLUME_MM3
+    from langslice.core.atlas.brain_size import REFERENCE_VOLUME_MM3
 
     return REFERENCE_VOLUME_MM3
 
 
 PATCHES: tuple[tuple[str, str, Any], ...] = (
-    ("langslice.core.deformation", "USE_PROCESS_POOL", False),
-    ("langslice.core.deformation", "DETAIL_LEVEL", "coarse"),
-    ("langslice.core.atlas.size", "brain_volume_mm3", _reference_brain),
+    ("langslice.core.fits.deformation", "USE_PROCESS_POOL", False),
+    ("langslice.core.fits.deformation", "DETAIL_LEVEL", "coarse"),
+    ("langslice.core.atlas.brain_size", "brain_volume_mm3", _reference_brain),
 )
 
 
@@ -137,7 +137,7 @@ def stub_image_model(spec: Any) -> Any:
     """The image model the full toolbox is given: the run's, its network call replaced.
 
     ``build_tools`` takes the image model as an argument (phase 4); this is
-    the spec's provider and model as :func:`langslice.providers.registry.resolve_image_model`
+    the spec's provider and model as :func:`langslice.providers.connections.resolve_image_model`
     resolves them, with a ``call`` that answers the edit with the rough border
     overlay ``registration_tool.start_correction`` prepared (the borders as
     drawn), so line extraction, the artifacts and the traced fit sections
@@ -145,8 +145,8 @@ def stub_image_model(spec: Any) -> Any:
     """
     import dataclasses
 
-    from langslice.core.nonlinear.types import GeneratedSegmentation
-    from langslice.providers.registry import resolve_image_model
+    from langslice.core.fits.trace.request import GeneratedSegmentation
+    from langslice.providers.connections import resolve_image_model
 
     def generate(request: Any) -> GeneratedSegmentation:
         images = [request.slice_image, *request.reference_images]
@@ -201,7 +201,12 @@ def canonical(value: Any) -> str:
 
 
 def full_spec(folder: Path) -> Any:
-    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
+    from langslice.core.spec import (
+        JobSpec,
+        NonlinearSpec,
+        PositionSpec,
+        TransformSpec,
+    )
 
     return JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none",

@@ -2,18 +2,19 @@
 what it may read and write.
 
 One :class:`ToolContext` per plugin call (a plugin must not keep it); a
-script's (:class:`langslice.doors.library.ScriptContext`) lives as long as
-its job handle. Who is calling is a :class:`Caller`: a plugin tool
-(:meth:`Caller.of_tool`) or a script (:meth:`Caller.script`). Reads give
-plain data in LangSlice's documented units and frames; writes go through the
-same operations the native tools use (``ops.positions``, ``ops.transforms``,
-``ops.deformable``, ``ops.damage``), so every write is one undo step that checkpoints the state
-and rewrites ``registration.json``, frozen properties are refused (``FROZEN``),
-and a section that changed since a digest was taken is refused (``STALE_INPUT``).
-A tool declared ``read`` cannot write; a ``write`` tool writes the section
-properties named in its :attr:`~langslice.core.plugins.ToolSpec.writes` only;
-a script writes any property the job does not freeze. A plugin's files go
-under :meth:`ToolContext.work_dir` and nowhere else.
+script's (:class:`langslice.doors.library.script_context.ScriptContext`) lives
+as long as its job handle. Who is calling is a :class:`Caller`: a plugin tool
+(:meth:`Caller.of_tool`) or a script (:meth:`Caller.script`). Reads give plain
+data in LangSlice's documented units and frames; writes go through the same
+operations the native tools use (``tools.positions``, ``tools.transforms``,
+``tools.deformable``, ``tools.damage``), so every write is one undo step that
+checkpoints the state and rewrites ``registration.json``, frozen properties are
+refused (``FROZEN``), and a section that changed since a digest was taken is
+refused (``STALE_INPUT``). A tool declared ``read`` cannot write; a ``write``
+tool writes the section properties named in its
+:attr:`~langslice.core.plugins.ToolSpec.writes` only; a script writes any
+property the job does not freeze. A plugin's files go under
+:meth:`ToolContext.work_dir` and nowhere else.
 """
 
 from __future__ import annotations
@@ -30,14 +31,21 @@ import numpy as np
 from PIL import Image
 
 from langslice.core import frozen as freeze
-from langslice.core.plugins import SCRIPT_CALLER, Layer, ToolError, ToolResult, ToolSpec
-from langslice.core.sizes import PICTURE_EDGES
-from langslice.core.state import SliceState, StackState
-from langslice.ops.inputs import STALE_INPUT, section_inputs, stale_row
-from langslice.ops.refusal import Refused, frozen_row, unknown_sections
+from langslice.core.pictures.sizes import PICTURE_EDGES
+from langslice.core.plugins import (
+    SCRIPT_CALLER,
+    Layer,
+    ToolError,
+    ToolResult,
+    ToolSpec,
+)
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
+from langslice.tools.refusal import Refused, frozen_row, unknown_sections
+from langslice.tools.stale import STALE_INPUT, section_inputs, stale_row
 
 if TYPE_CHECKING:
-    from langslice.doors.tools.door import Door
+    from langslice.tools.run import Door
 
 
 # --- what a handler reads ---------------------------------------------------------------
@@ -102,29 +110,29 @@ class FitFrame:
     fits work on.
 
     ``image`` is the section as its orientation sets it, at its current plane,
-    with no in-plane transform (RGB, ``uint8``).
-    ``atlas`` holds the plane at the section's position and cutting angles on
-    the native atlas grid: ``annotation`` (region ids) and the atlas's images
-    asked for (``template`` and any additional reference the BrainGlobe atlas
-    ships, by its name). ``atlas_to_section`` (3x3 on ``[x, y, 1]``)
-    maps native atlas pixel centres to ``image`` pixel centres. ``plane`` says
-    where the native plane lies in atlas micrometres: ``center_um``, ``dx``,
-    ``dy`` (the column and row directions), ``px_um``, ``shape`` and
-    ``resolution_um``. ``placed_atlas_to_section`` is the same map under the
-    section's stored in-plane transform (its current linear placement, where an
-    engine that refines it starts), None while it has no transform.
-    ``excluded`` is the native plane's pixels of the section's marked damage
-    regions (sides included), the regions every native fit leaves out; None
-    while the section has none marked. ``damage_zone`` is ``excluded`` widened
-    by the margin the native fits also leave out of their comparison
-    (:data:`langslice.core.deformable.masks.EXCLUSION_MARGIN_MM`, scaled to the
-    atlas's brain size); None with ``excluded``. ``section_image`` is the
-    section image ``fit_frame(image=)`` asked for, on the same grid as ``image``
-    (RGB ``uint8``, three equal planes) and ``section_image_ref`` what names it
-    (``{name, kind, file, digest}``, a fit reply's ``inputs.section_image``);
-    ``stain`` is the section's ``preprocessed`` image the same way
-    (``stain=True`` is ``image="preprocessed"``), the picture the native fits
-    read by default; each None unless asked for.
+    with no in-plane transform (RGB, ``uint8``). ``atlas`` holds the plane at
+    the section's position and cutting angles on the native atlas grid:
+    ``annotation`` (region ids) and the atlas's images asked for (``template``
+    and any additional reference the BrainGlobe atlas ships, by its name).
+    ``atlas_to_section`` (3x3 on ``[x, y, 1]``) maps native atlas pixel centres
+    to ``image`` pixel centres. ``plane`` says where the native plane lies in
+    atlas micrometres: ``center_um``, ``dx``, ``dy`` (the column and row
+    directions), ``px_um``, ``shape`` and ``resolution_um``.
+    ``placed_atlas_to_section`` is the same map under the section's stored
+    in-plane transform (its current linear placement, where an engine that
+    refines it starts), None while it has no transform. ``excluded`` is the
+    native plane's pixels of the section's marked damage regions (sides
+    included), the regions every native fit leaves out; None while the section
+    has none marked. ``damage_zone`` is ``excluded`` widened by the margin the
+    native fits also leave out of their comparison
+    (:data:`langslice.core.fits.deformable.masks.EXCLUSION_MARGIN_MM`, scaled
+    to the atlas's brain size); None with ``excluded``. ``section_image`` is
+    the section image ``fit_frame(image=)`` asked for, on the same grid as
+    ``image`` (RGB ``uint8``, three equal planes) and ``section_image_ref``
+    what names it (``{name, kind, file, digest}``, a fit reply's
+    ``inputs.section_image``); ``stain`` is the section's ``preprocessed``
+    image the same way (``stain=True`` is ``image="preprocessed"``), the
+    picture the native fits read by default; each None unless asked for.
     """
 
     id: str
@@ -190,8 +198,8 @@ class TransformProposal:
 def _no_registration(image: Image.Image) -> None:
     """Mark the picture drawn of a proposal not written: its saved index line
     records no registration the section holds (``extra["registrations"]``
-    empty, :meth:`langslice.job.views.ViewStore._registrations`)."""
-    from langslice.core.layers import note_of
+    empty, :meth:`langslice.job.pictures.ViewStore._registrations`)."""
+    from langslice.core.pictures.drawn import note_of
 
     held = note_of(image)
     if held is not None:
@@ -242,8 +250,8 @@ class SectionRaster:
 
     def _matrix(self) -> np.ndarray:
         """3x3: oriented edge fractions to file edge fractions."""
-        from langslice.core.landmarks import affine_from_points
-        from langslice.core.native import unoriented_fractions
+        from langslice.core.fits.landmarks import affine_from_points
+        from langslice.core.sections.native import unoriented_fractions
 
         corners = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
         x, y = unoriented_fractions(corners[:, 0], corners[:, 1], self.rotation_deg, self.flip)
@@ -251,7 +259,7 @@ class SectionRaster:
 
     def to_section_px(self, xy: Any) -> np.ndarray:
         """``[x, y]`` pixels of ``array`` as ``section_px`` (file pixels)."""
-        from langslice.core.landmarks import transform
+        from langslice.core.fits.landmarks import transform
 
         height, width = self.array.shape[:2]
         fractions = (np.asarray(xy, dtype=np.float64) + 0.5) / np.array([width, height])
@@ -260,7 +268,7 @@ class SectionRaster:
 
     def from_section_px(self, xy: Any) -> np.ndarray:
         """``section_px`` (file pixels) as ``[x, y]`` pixels of ``array``."""
-        from langslice.core.landmarks import transform
+        from langslice.core.fits.landmarks import transform
 
         height, width = self.array.shape[:2]
         fractions = (np.asarray(xy, dtype=np.float64) + 0.5) / np.array(self.file_size)
@@ -274,7 +282,7 @@ class SectionRaster:
 
 def unorient_raster(raster: np.ndarray, rotation_deg: int, flip: bool) -> np.ndarray:
     """*raster*, drawn as a section's orientation sets it, in the file's orientation."""
-    from langslice.core.native import unorient
+    from langslice.core.sections.native import unorient
 
     kind = "F" if np.issubdtype(raster.dtype, np.floating) else "I"
     image = Image.fromarray(raster.astype(np.float32 if kind == "F" else np.int32), mode=kind)
@@ -469,7 +477,7 @@ class ToolContext:
         return record
 
     def _view(self, record: SliceState) -> SectionView:
-        from langslice.core.maps import render_sizes
+        from langslice.core.maps.section_maps import render_sizes
 
         workspace = self._door.ctx
         transform = record.transform or {}
@@ -528,7 +536,7 @@ class ToolContext:
         """Every section image a fit or a picture can read on the section, by
         name: its raw channels (:meth:`channels`), then ``preprocessed`` and
         the images made since (``make_image``, :meth:`add_image`)."""
-        from langslice.core.section_images import image_names
+        from langslice.core.sections.images import image_names
 
         return tuple(image_names(self._door.ctx, self._record(section)))
 
@@ -545,7 +553,7 @@ class ToolContext:
         ``look`` can then read it by name. Returns its entry (``source``,
         ``file``, ``digest``). ``ToolError`` ``BAD_ARGS`` for a raw channel's
         name, another shape or values."""
-        from langslice.ops import images as ops_images
+        from langslice.tools import images as ops_images
 
         self._require()
         record = self._record(section)
@@ -561,7 +569,7 @@ class ToolContext:
         """Raw channel *name* of the section, ``uint8`` ``(H, W)`` on its working
         grid in the image file's orientation: the frame :meth:`add_image` takes.
         ``ToolError`` ``UNKNOWN_IMAGE`` for a name that is no raw channel."""
-        from langslice.core.section_images import raw_plane
+        from langslice.core.sections.images import raw_plane
 
         record = self._record(section)
         try:
@@ -573,7 +581,7 @@ class ToolContext:
         """The section's working copy as read, ``uint8`` ``(H, W, 3)`` in the image
         file's orientation (a colour file's red, green and blue: what a colour
         deconvolution reads): the frame :meth:`add_image` takes."""
-        from langslice.core.image_prep import read_working_image
+        from langslice.core.sections.reading import read_working_image
 
         record = self._record(section)
         image, _factor = read_working_image(self._door.ctx.image_path(record.id))
@@ -590,12 +598,12 @@ class ToolContext:
 
     def mask(self, section: object, name: str) -> Any:
         """The section's mask *name* (``make_mask`` made it) as a
-        :class:`langslice.core.section_masks.MaskView`: ``weights`` (float
+        :class:`langslice.core.sections.masks.MaskView`: ``weights`` (float
         ``(H, W)`` on the fit grid, 0 to 1), ``kind`` (``em`` / ``fit``),
         ``params`` and ``left_out``. ``ToolError`` ``UNKNOWN_MASK`` for a name the
         section does not hold, ``STALE_MASK`` when the section changed since
         the mask was made."""
-        from langslice.ops import masks as ops_masks
+        from langslice.tools import masks as ops_masks
 
         record = self._record(section)
         try:
@@ -641,10 +649,10 @@ class ToolContext:
         The pixels come from the working copy (a file longer than 3072
         pixels is already reduced), so *level* at or above the file's long
         edge gives the file itself for a file of that size or less."""
-        from langslice.core.maps import render_sizes
-        from langslice.core.section_images import kind_of
-        from langslice.core.sections import render_slice
-        from langslice.core.sizes import picture_edge
+        from langslice.core.maps.section_maps import render_sizes
+        from langslice.core.pictures.sizes import picture_edge
+        from langslice.core.sections.images import kind_of
+        from langslice.core.sections.renders import render_slice
 
         record = self._record(section)
         if isinstance(level, int):
@@ -685,8 +693,8 @@ class ToolContext:
             rotation_deg=int(record.rotation_deg), flip=bool(record.flip))
 
     def _grid(self, record: SliceState) -> Any:
-        from langslice.core import deformation
-        from langslice.core.affine import IDENTITY_PARAMS
+        from langslice.core.fits import deformation
+        from langslice.core.geometry.affine import IDENTITY_PARAMS
 
         if record.position_mm is None:
             raise ToolError("NO_POSITION", f"{record.id} has no position yet")
@@ -716,17 +724,20 @@ class ToolContext:
         ``"preprocessed"`` or another made image (:meth:`image_names`);
         ``ToolError`` ``UNKNOWN_IMAGE`` for another. *stain* True is
         ``image="preprocessed"`` and also fills ``stain``."""
-        from langslice.core import deformation
+        from langslice.core.atlas.brain_size import brain_scale
         from langslice.core.atlas.images import atlas_images, nissl_note, resolve_image
-        from langslice.core.atlas.size import brain_scale
-        from langslice.core.damage import exclusions
-        from langslice.core.deformable.masks import EXCLUSION_MARGIN_MM, dilate
-        from langslice.core.deformable.plane_images import (
+        from langslice.core.fits import deformation
+        from langslice.core.fits.deformable.masks import (
+            EXCLUSION_MARGIN_MM,
+            dilate,
+        )
+        from langslice.core.fits.deformable.plane_images import (
             native_intensity,
             native_labels,
             placement_left,
             regions_mask,
         )
+        from langslice.core.sections.damage import exclusions
 
         record = self._record(section)
         grid = self._grid(record)
@@ -762,7 +773,9 @@ class ToolContext:
                 placed = None
         applied = None
         if record.deformation:
-            from langslice.core.deformable.render import composed_native_grid
+            from langslice.core.fits.deformable.render import (
+                composed_native_grid,
+            )
 
             held = self._door.job.deformations.current(self._door.state, record)
             if held is not None and tuple(held.section_size) == oriented.size:
@@ -782,7 +795,7 @@ class ToolContext:
         picture: np.ndarray | None = None
         reference: dict[str, Any] | None = None
         if wanted is not None:
-            from langslice.core.section_images import read_image
+            from langslice.core.sections.images import read_image
 
             known = self.image_names(record.id)
             if wanted not in known:
@@ -819,7 +832,10 @@ class ToolContext:
         ``pitch_deg`` and ``yaw_deg`` (the stack's cutting-angle convention).
         Nothing is written. ``ToolError`` ``BAD_PLANE`` for a plane tilted
         past what a cutting angle can say."""
-        from langslice.core.import_geometry import plane_angles, plane_position_mm
+        from langslice.core.maps.imported import (
+            plane_angles,
+            plane_position_mm,
+        )
         from langslice.core.space import Plane
 
         atlas = self._door.ctx.atlas
@@ -858,7 +874,11 @@ class ToolContext:
         placement exactly as an Elastix fit is, in the six normalized numbers
         and the knobs about the section's stored pivot (else the canvas
         centre). ``ToolError`` ``BAD_MATRIX`` for a degenerate map."""
-        from langslice.core.affine import IDENTITY_PARAMS, denormalized_affine, normalized_affine
+        from langslice.core.geometry.affine import (
+            IDENTITY_PARAMS,
+            denormalized_affine,
+            normalized_affine,
+        )
 
         record = self._record(section)
         grid = self._grid(record)
@@ -878,10 +898,16 @@ class ToolContext:
         (``[a, b, tx, c, d, ty]``, on the section as its orientation sets it):
         the knobs about the section's stored pivot (else the canvas centre),
         its calibration and whether it mirrors the section."""
-        from langslice.core.affine import decompose_affine, denormalized_affine
-        from langslice.core.canvas import canvas_geometry
-        from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
-        from langslice.core.transform import calibrate, physical_params
+        from langslice.core.fits.affine import calibrate, physical_params
+        from langslice.core.geometry.affine import (
+            decompose_affine,
+            denormalized_affine,
+        )
+        from langslice.core.pictures.canvas import canvas_geometry
+        from langslice.core.sections.renders import (
+            PREVIEW_LONG_EDGE,
+            render_slice,
+        )
 
         record = self._record(section)
         values = [float(v) for v in params]
@@ -952,13 +978,13 @@ class ToolContext:
         what ``make_mask(source="fit")`` copies); None when it estimated none.
         *provenance*: JSON values added to the record's provenance (the
         ``inputs`` and ``estimated`` blocks of a fit,
-        :mod:`langslice.core.engine_inputs`). ``ToolError`` ``BAD_FIELD`` for an
+        :mod:`langslice.core.fits.inputs`). ``ToolError`` ``BAD_FIELD`` for an
         array of another shape, not float or not finite;
         ``INVALID_LINEAR_PLACEMENT`` for a section without a position or a
         transform."""
         import json
 
-        from langslice.ops import deformable
+        from langslice.tools import deformable
 
         record = self._record(section)
         plain_meta = _plain(dict(meta or {}))
@@ -1000,30 +1026,30 @@ class ToolContext:
         "pixel_size_um", "pixel_size_source", "out_of_plane_um",
         "in_plane"}``.
 
-        Each section is read in its CURRENT orientation (quarter turn and
-        flip as the agent set them), so ``rotation_deg`` and ``flip`` are the
-        section's own and ``params`` (six normalized numbers ``[a, b, tx, c,
-        d, ty]``) are for the oriented render: pass them to
-        :meth:`set_transforms` as ``{"id", "params"}`` (or
-        :meth:`transform_from_params`) once the section holds the placement
-        they were read at. ``in_plane`` reads them as rotation, scales and
-        shear on that render (:func:`~langslice.core.affine.decompose_affine`).
-        *at* ``{section: {"position_mm", "angles": (pitch, yaw)}}`` reads the
-        file's map on a plane of your choosing (the section's final position
-        and angles, e.g. a stack's propagated angle): ``params`` are then the
-        file's map projected onto that plane and ``out_of_plane_um`` is how
-        far the map lies off it; without *at* the file's own plane is used
-        and ``out_of_plane_um`` is about 0. ``params`` is None, with the
-        reason in ``params_note``, when the job has no pixel size for the
-        section (the six numbers are relative to a pixel size, so they mean
-        nothing to a job that would calibrate otherwise).
+        Each section is read in its CURRENT orientation (quarter turn and flip
+        as the agent set them), so ``rotation_deg`` and ``flip`` are the
+        section's own and ``params`` (six normalized numbers ``[a, b, tx, c, d,
+        ty]``) are for the oriented render: pass them to :meth:`set_transforms`
+        as ``{"id", "params"}`` (or :meth:`transform_from_params`) once the
+        section holds the placement they were read at. ``in_plane`` reads them
+        as rotation, scales and shear on that render
+        (:func:`~langslice.core.geometry.affine.decompose_affine`). *at*
+        ``{section: {"position_mm", "angles": (pitch, yaw)}}`` reads the file's
+        map on a plane of your choosing (the section's final position and
+        angles, e.g. a stack's propagated angle): ``params`` are then the
+        file's map projected onto that plane and ``out_of_plane_um`` is how far
+        the map lies off it; without *at* the file's own plane is used and
+        ``out_of_plane_um`` is about 0. ``params`` is None, with the reason in
+        ``params_note``, when the job has no pixel size for the section (the
+        six numbers are relative to a pixel size, so they mean nothing to a job
+        that would calibrate otherwise).
 
         *registered_on* is the image the file's entries were made on:
         ``"file"`` (default) the image file as stored, ``"oriented"`` the
         section as its orientation turns and flips it, which is what a method
         sees when the plugin hands it :meth:`section_raster`; the six numbers
         are for the oriented render either way."""
-        from langslice.job.imports import import_placements
+        from langslice.job.imports.placements import import_placements
 
         self._fresh()
         state = self._door.state
@@ -1074,8 +1100,11 @@ class ToolContext:
         *kinds* (a name the atlas does not have is skipped). Nothing is
         written."""
         from langslice.core.atlas.images import atlas_images
-        from langslice.core.deformable.geometry import Placement
-        from langslice.core.deformable.plane_images import native_intensity, native_labels
+        from langslice.core.fits.deformable.geometry import Placement
+        from langslice.core.fits.deformable.plane_images import (
+            native_intensity,
+            native_labels,
+        )
 
         workspace = self._door.ctx
         values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
@@ -1118,7 +1147,7 @@ class ToolContext:
         fit grid, :attr:`FitFrame.image`, with ``fit``) in atlas micrometres,
         ``(N, 3)`` in the atlas's axis order, through the section's current
         registration, its deformation included; NaN outside the atlas volume."""
-        from langslice.ops.points import atlas_points
+        from langslice.tools.points import atlas_points
 
         record = self._record(section)
         return self._points(atlas_points, record.id, xy, frame).um
@@ -1131,7 +1160,7 @@ class ToolContext:
         and carried back through its current registration, its deformation's
         inverse included. :meth:`plane_distance_um` says how far off the
         plane each point lies."""
-        from langslice.ops.points import section_points
+        from langslice.tools.points import section_points
 
         record = self._record(section)
         return self._points(section_points, record.id, xyz_um, frame).xy
@@ -1139,7 +1168,7 @@ class ToolContext:
     def plane_distance_um(self, section: object, xyz_um: Any) -> np.ndarray:
         """How far each atlas point *xyz_um* lies off the section's atlas
         plane, in micrometres, ``(N,)``."""
-        from langslice.ops.points import section_points
+        from langslice.tools.points import section_points
 
         record = self._record(section)
         return self._points(section_points, record.id, xyz_um, "file").off_plane_um
@@ -1149,7 +1178,7 @@ class ToolContext:
         """The atlas region under each section point *xy* (*frame* as
         :meth:`to_atlas_um`) through the section's current registration:
         ``{"id", "acronym", "name"}`` per point, None outside the atlas."""
-        from langslice.ops.points import atlas_points
+        from langslice.tools.points import atlas_points
 
         record = self._record(section)
         found = self._points(atlas_points, record.id, xy, frame)
@@ -1195,7 +1224,7 @@ class ToolContext:
 
         import cv2
 
-        from langslice.core.itk_io import IMAGE_FORMATS, write_image
+        from langslice.core.maps.itk import IMAGE_FORMATS, write_image
 
         if format not in IMAGE_FORMATS:
             raise ToolError("BAD_ARGS", f"format is one of {', '.join(IMAGE_FORMATS)}; "
@@ -1263,7 +1292,7 @@ class ToolContext:
         ``placed`` (``placed_template``, on the fit grid) or ``native``
         (``template``; with *fixed* ``section`` only). *spacing* is the
         images' spacing per pixel when they were not :meth:`write_frame`'s."""
-        from langslice.core.itk_io import inverted, mapped_points
+        from langslice.core.maps.itk import inverted, mapped_points
 
         if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
             raise ToolError("BAD_ARGS", "fixed is 'section' or 'atlas'; atlas is 'placed' or "
@@ -1295,7 +1324,7 @@ class ToolContext:
         *atlas* and *spacing* as :meth:`map_from_itk`, either way round) as
         a :class:`TransformProposal`, like :meth:`transform_from_matrix`.
         ``BAD_MATRIX`` for a transform that is not affine."""
-        from langslice.core.itk_io import linear_matrix
+        from langslice.core.maps.itk import linear_matrix
 
         if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
             raise ToolError("BAD_ARGS", "fixed is 'section' or 'atlas'; atlas is 'placed' or "
@@ -1317,7 +1346,7 @@ class ToolContext:
     def _placed(self, record: SliceState) -> np.ndarray:
         """3x3: native atlas pixels -> fit-grid pixels under the section's
         current placement (its stored transform, else none)."""
-        from langslice.core import deformation
+        from langslice.core.fits import deformation
 
         if record.transform:
             try:
@@ -1357,8 +1386,8 @@ class ToolContext:
         top of the applied deformation; *marked* False leaves the section's
         marked damage regions in the fit."""
         from langslice.core.atlas.images import resolve_image
-        from langslice.core.deformable.render import composed_native_grid
-        from langslice.ops.deformable import (
+        from langslice.core.fits.deformable.render import composed_native_grid
+        from langslice.tools.deformable import (
             DETAILS,
             METRICS,
             default_settings,
@@ -1422,7 +1451,7 @@ class ToolContext:
         :meth:`fit_fireants`; an array is refused ``BAD_ARGS``), *edges*;
         *exclude* adds regions to leave out; *marked* False keeps the section's
         marked damage regions in the fit."""
-        from langslice.ops.transforms import elastix_fit
+        from langslice.tools.transforms import elastix_fit
 
         record = self._record(section)
         label = _mask_name(mask)
@@ -1456,7 +1485,7 @@ class ToolContext:
         :meth:`deformation_from_map` takes), drawn on the section's current
         placement. Nothing is saved or written here; the picture is the
         handler's to return."""
-        from langslice.core import look as looks
+        from langslice.core.pictures import look as looks
 
         record = self._record(section)
         state = self._door.state
@@ -1523,7 +1552,7 @@ class ToolContext:
         of each section's tile (None: the job's level). Nothing is saved or
         written here; the pictures are the handler's to return. Refused
         (``POSITIONING_OFF``) where the job disables ``look:positioning``."""
-        from langslice.core import look as looks
+        from langslice.core.pictures import look as looks
         from langslice.doors.tools.changing import _positions
 
         if self._door.spec.off("look:positioning"):
@@ -1568,7 +1597,7 @@ class ToolContext:
     def _proposal_store(self, proposal: DeformationProposal) -> Any:
         """A record store that holds *proposal*'s record (in memory only) and
         reads every other from the job's."""
-        from langslice.core.deformation import RecordStore
+        from langslice.core.fits.deformation import RecordStore
 
         held = self._door.job.deformations
         store = RecordStore(root=held.root, folder_of=held.folder_of)
@@ -1586,8 +1615,8 @@ class ToolContext:
         picture of the handler's own: its saved index line names them and the
         registration each is drawn under, which ``restore_registration``'s
         list reads."""
-        from langslice.core.captions import caption
-        from langslice.core.layers import annotate, note_of
+        from langslice.core.pictures.captions import caption
+        from langslice.core.pictures.drawn import annotate, note_of
 
         drawn = note_of(image)
         shown = tuple(str(name) for name in sections) or (
@@ -1712,7 +1741,7 @@ class ToolContext:
         *cutting_angles* (``{"pitch_deg", "yaw_deg"}``), the stack's angles.
         The stack then runs in the order of the positions. Needs ``position``
         (and ``angles``) in the tool's ``writes``."""
-        from langslice.ops import positions
+        from langslice.tools import positions
 
         self._require("position", *(["angles"] if cutting_angles is not None else []))
         job, workspace = self._door.job, self._door.ctx
@@ -1770,7 +1799,7 @@ class ToolContext:
         a transform that would turn over a section whose orientation is
         frozen, comes back as that section's row (``FROZEN``); the others are
         written as one undo step. Needs ``affine`` in the tool's ``writes``."""
-        from langslice.ops import transforms
+        from langslice.tools import transforms
 
         self._require("affine")
         job = self._door.job
@@ -1829,7 +1858,7 @@ class ToolContext:
         job's write lock is taken, so a long tool holds it only to write.
         The ok rows carry the numbers ``DeformationProposal.summary`` has.
         Needs ``deformation`` in the tool's ``writes``."""
-        from langslice.ops import deformable
+        from langslice.tools import deformable
 
         self._require("deformation")
         job = self._door.job
@@ -1878,7 +1907,7 @@ class ToolContext:
                     expect: Mapping[str, str] | None = None) -> WriteResult:
         """Mark atlas regions a section has lost (``rows``: ``{"id", "regions",
         "note"?}``; empty regions clear the marks), as ``mark_damage`` does."""
-        from langslice.ops import damage
+        from langslice.tools import damage
 
         self._require()
         job, workspace = self._door.job, self._door.ctx
@@ -1962,8 +1991,11 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
     ``shape``, ``resolution_um``; ``native_to_um``: 3x3 from a native pixel
     centre ``[x, y, 1]`` to its point in atlas micrometres, exactly the plane
     sampled, voxel centres at index times resolution), the plane
-    :func:`langslice.core.oblique.sample_oblique_plane` samples."""
-    from langslice.core.oblique import build_rotation_matrix, plane_axes
+    :func:`langslice.core.geometry.oblique.sample_oblique_plane` samples."""
+    from langslice.core.geometry.oblique import (
+        build_rotation_matrix,
+        plane_axes,
+    )
 
     normal_axis, row_axis, col_axis = plane_axes(atlas, placement.plane)
     rotation = build_rotation_matrix(placement.pitch_deg, placement.yaw_deg,
@@ -1984,7 +2016,7 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
         dx, dy = d_row, d_col
         px = [float(res[row_axis]), float(res[col_axis])]
         size = [shape[col_axis], shape[row_axis]]
-    from langslice.core.oblique import plane_index_affine
+    from langslice.core.geometry.oblique import plane_index_affine
 
     to_index = plane_index_affine(atlas, float(placement.position_mm), placement.plane,
                                   float(placement.pitch_deg), float(placement.yaw_deg))

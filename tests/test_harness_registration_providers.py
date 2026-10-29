@@ -8,11 +8,11 @@ from typing import Any, cast
 import pytest
 from PIL import Image
 
-from langslice.core.nonlinear.types import GeneratedSegmentation
+from langslice.core.fits.trace.request import GeneratedSegmentation
 
 
 def _providers():
-    from langslice.providers import images as providers
+    from langslice.providers import image_calls as providers
 
     return providers
 
@@ -173,7 +173,7 @@ def test_unknown_provider_raises_value_error():
 
 def test_the_openai_api_image_client_defaults_to_the_openai_api(monkeypatch):
     """An OPENAI_API_KEY alone reaches the OpenAI API itself; no key is refused."""
-    from langslice.providers import openai_config
+    from langslice.providers import openai_api as openai_config
 
     made: list[dict[str, Any]] = []
 

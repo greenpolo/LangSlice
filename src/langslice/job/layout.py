@@ -9,9 +9,10 @@ without an id. Inside::
     job.json             settings (the JobSpec) + format_version; a saved
                          host job's own fields under "host"
     state.json           the state checkpoint (StackState, versioned)
-    registration.json    its public rendering (:mod:`langslice.job.formats`)
-    history/             undo/redo: index.json + one file per step
-    sections/<name>/     per section (<name>: the image filename's stem)
+    registration.json    its public rendering
+    (:mod:`langslice.job.public_files`) history/             undo/redo:
+    index.json + one file per step sections/<name>/     per section (<name>:
+    the image filename's stem)
         deformable/<key>/          applied deformation records
         image_correction/<key>/    trace_borders calls and their attempts
         views/<seq>_<tool>_<mode>/ pictures of this section the model saw
@@ -30,11 +31,12 @@ without an id. Inside::
                          launch prompts of `langslice-job FOLDER launch`)
     prompt.txt           a saved ABBA job's copy prompt
     trace/               agent transcripts: LangSlice's own agent's trace (also
-                         when --trace-dir sends it elsewhere), and
-                         a coding agent's session copied in by its harness
-                         plugin (langslice.doors.cli.transcripts)
+                         when --trace-dir sends it elsewhere), and a coding
+                         agent's session copied in by its harness plugin
+                         (langslice.doors.commands.transcripts)
     env/                 the job's own Python environment, made by
-                         `langslice-job FOLDER env` (langslice.doors.cli.jobenv)
+                         `langslice-job FOLDER env`
+                         (langslice.doors.agent_cli.environment)
     AGENTS.md, CLAUDE.md the reference card for coding agents
     TOOLS.md             every verb's description and arguments (by `launch`)
 
@@ -95,7 +97,7 @@ MASKS_DIR = "masks"
 IMAGES_DIR = "images"
 IMAGE_CORRECTION_DIR = "image_correction"
 SECTION_VIEWS_DIR = "views"
-#: The public rendering of the state (:mod:`langslice.job.formats`, which
+#: The public rendering of the state (:mod:`langslice.job.public_files`, which
 #: also names each section's map files).
 REGISTRATION_FILE = "registration.json"
 
@@ -321,7 +323,7 @@ class JobLayout:
     def _siblings(self) -> list[str]:
         if self.image_folder is None or not self.image_folder.is_dir():
             return []
-        from langslice.core.discovery import discover_slices
+        from langslice.core.sections.discovery import discover_slices
 
         return [os.path.basename(path) for path in discover_slices(str(self.image_folder))]
 
@@ -360,7 +362,7 @@ class JobLayout:
     def relative(self, path: str | os.PathLike[str]) -> str:
         """*path* as job files store it: relative to the job folder (POSIX
         separators) when inside it; an outside path stays absolute."""
-        from langslice.job.checkpoint import relative_to
+        from langslice.job.state_file import relative_to
 
         return relative_to(self.folder)(os.path.abspath(os.fspath(path)))
 
@@ -415,7 +417,7 @@ def read_job_file(layout: JobLayout) -> dict[str, Any] | None:
 def write_job_file(layout: JobLayout, **fields: Any) -> dict[str, Any]:
     """Write ``job.json``: *fields* over what it holds (``created_at`` and any
     field not given are kept), at the current format version."""
-    from langslice.job.checkpoint import write_json_atomic
+    from langslice.job.state_file import write_json_atomic
 
     held = read_job_file(layout) or {}
     record = {**held, **fields, FORMAT_KEY: JOB_FORMAT_VERSION}

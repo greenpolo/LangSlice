@@ -5,14 +5,14 @@ Read by ``GET settings``; changed by three ``POST`` endpoints the server
 checks first (token, ``Host``, same-site ``Origin``, a JSON body):
 
 - ``settings``: ``{connection?, runs_in?, model?, reasoning?}``, saved to the
-  user's settings file (:mod:`langslice.doors.api.settings`); ``model`` and
-  ``reasoning`` belong to the chosen connection (or ``connection`` in the
-  same body);
+  user's settings file (:mod:`langslice.doors.user_settings`); ``model`` and
+  ``reasoning`` belong to the chosen connection (or ``connection`` in the same
+  body);
 - ``settings/key``: ``{provider, key}``, saved where LangSlice keeps keys
-  (:func:`langslice.doors.api.setup.save_api_key`,
+  (:func:`langslice.doors.credentials.save_api_key`,
   ``~/.langslice/provider_credentials.json``); the key is never sent back;
 - ``settings/signin``: starts the ChatGPT browser sign-in
-  (:func:`langslice.doors.api.setup.login_oauth`) in a thread of this
+  (:func:`langslice.doors.credentials.login_oauth`) in a thread of this
   process; ``GET settings`` reports its progress.
 
 Every answer is :meth:`Settings.state`: presence words, never a key or a
@@ -25,8 +25,8 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from langslice.doors.api import settings as store
-from langslice.doors.api import setup
+from langslice.doors import credentials as setup
+from langslice.doors import user_settings as store
 
 #: The connections as the window names them, with how each is set up.
 LABELS = {

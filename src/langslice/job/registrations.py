@@ -3,11 +3,11 @@
 A section's registration is what the in-plane tools write: its orientation
 (flip and quarter turn), its transform and its deformation (the reference to
 its record under ``sections/<stem>/deformable/``; a deformation whose linear
-placement has changed is no part of it). Undo is one history for the whole
-job, so a section's earlier fit is lost to it once other sections' writes
-come between; this store keeps each registration a section has held, whatever
-comes after, and ``restore_registration`` (:mod:`langslice.ops.registrations`)
-puts one back.
+placement has changed is no part of it). Undo is one history for the whole job,
+so a section's earlier fit is lost to it once other sections' writes come
+between; this store keeps each registration a section has held, whatever comes
+after, and ``restore_registration`` (:mod:`langslice.tools.registrations`) puts
+one back.
 
 ``sections/<stem>/registrations.jsonl``: one line per registration, appended
 once under the job folder's lock and never rewritten, numbered from 1 per
@@ -32,9 +32,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-from langslice.core.deformation import linear_key
-from langslice.core.handoff import digest as content_digest
-from langslice.core.state import SliceState, StackState
+from langslice.core.fits.deformation import linear_key
+from langslice.core.fits.frame import digest as content_digest
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.job.layout import JobLayout
 
 FILE = "registrations.jsonl"

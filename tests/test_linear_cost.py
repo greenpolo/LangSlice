@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from langslice.agent.cost import estimate
-from langslice.hosts.api.service import run_stdio
+from langslice.doors.agent.cost import estimate
+from langslice.hosts.service import run_stdio
 
 FULL = {"tasks": ["position", "transform"], "model": "openai-oauth/gpt-5.6-sol",
         "reasoning": "medium"}

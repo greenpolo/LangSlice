@@ -125,7 +125,7 @@ def test_lower_layer_docstring_naming_a_higher_layer_is_flagged() -> None:
     def fit(job):
         """Fit with ``ToolBox`` and :func:`build_tools`.
 
-        Also ``doors.cli``, ``ops/registry.py`` and ``job.folder``.
+        Also ``doors.cli``, ``tools/catalog.py`` and ``job.folder``.
         """
     '''
     hits = check_source(source, "docstring-layer", others=HIGHER)
@@ -135,12 +135,12 @@ def test_lower_layer_docstring_naming_a_higher_layer_is_flagged() -> None:
         "build_tools",
         "ToolBox",
         "doors.cli",
-        "ops/registry.py",
+        "tools/catalog.py",
     ]
 
 
 def test_tool_names_are_vocabulary_not_upward_references() -> None:
-    """A tool's name is not a reference to the ops verb of that name."""
+    """A tool's name is not a reference to the tools function of that name."""
     others = {
         **HIGHER,
         "src/langslice/core/toolset.py": """
@@ -149,7 +149,7 @@ def test_tool_names_are_vocabulary_not_upward_references() -> None:
             ToolDef("position_sections", "write", "Positioning"),
         )}
         """,
-        "src/langslice/ops/verbs.py": """
+        "src/langslice/tools/verbs.py": """
         def trace_borders():
             pass
 
@@ -164,12 +164,12 @@ def test_tool_names_are_vocabulary_not_upward_references() -> None:
     def fit():
         """Run before ``trace_borders`` and :func:`position_sections`.
 
-        Not ``fit_deformable``, nor ``ops.verbs.trace_borders``.
+        Not ``fit_deformable``, nor ``tools.verbs.trace_borders``.
         """
     '''
     hits = check_source(source, "docstring-layer", others=others)
     tokens = [violation.message.split("'")[1] for violation in hits]
-    assert tokens == ["fit_deformable", "ops.verbs.trace_borders"]
+    assert tokens == ["fit_deformable", "tools.verbs.trace_borders"]
 
 
 def test_plain_words_and_lower_layers_are_not_flagged() -> None:

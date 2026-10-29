@@ -395,7 +395,7 @@ including its deformation.
 
 `job.section_maps(section, full_resolution=False)` returns one section's
 maps in memory, writing nothing: the arrays `export_maps` writes, as a
-`langslice.core.maps.SectionMaps`. `coords` is `(rows, cols, 3)` float32
+`langslice.core.maps.section_maps.SectionMaps`. `coords` is `(rows, cols, 3)` float32
 atlas micrometres (NaN outside the atlas volume), `labels` `(rows, cols)`
 uint32 atlas ids, `residual` `(rows, cols, 2)` float32 `(d_row, d_col)` in
 grid pixels over the whole grid (None without a deformation),

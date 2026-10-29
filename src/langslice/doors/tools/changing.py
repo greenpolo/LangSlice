@@ -1,13 +1,13 @@
 """The tools that change a registration by hand, and the bookkeeping: their bodies.
 
 ``position_sections`` and ``interactive_transform`` write, then show their
-opinionated picture (:func:`langslice.ops.look.show_result`: the
-positioning picture, or the section under its new transform with the atlas
-borders on it; where the job disables ``look:positioning``, the overlay of
-each section ``position_sections`` wrote) unless the call's ``view`` is false
-and the host does not force it (``JobSpec.force_view``). ``mark_damage`` always shows the marked
-regions. ``restore_registration`` lists a section's registrations, or puts
-one registration of each section named back and shows their overlays.
+opinionated picture (:func:`langslice.tools.look.show_result`: the positioning
+picture, or the section under its new transform with the atlas borders on it;
+where the job disables ``look:positioning``, the overlay of each section
+``position_sections`` wrote) unless the call's ``view`` is false and the host
+does not force it (``JobSpec.force_view``). ``mark_damage`` always shows the
+marked regions. ``restore_registration`` lists a section's registrations, or
+puts one registration of each section named back and shows their overlays.
 ``note``, ``undo``, ``redo`` and ``submit`` answer with rows.
 """
 
@@ -16,24 +16,24 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from langslice.core import layers
 from langslice.core.atlas.images import nissl_note
-from langslice.core.display import default_options
-from langslice.core.sizes import picture_edge
-from langslice.core.state import unknown_sections
+from langslice.core.pictures import drawn as pictures_drawn
+from langslice.core.pictures.options import default_options
+from langslice.core.pictures.sizes import picture_edge
+from langslice.core.stack.stack import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.door import Door, as_list, drawn_image, pictured, spread
-from langslice.ops import damage as ops_damage
-from langslice.ops import history as ops_history
-from langslice.ops import look as ops_look
-from langslice.ops import masks as ops_masks
-from langslice.ops import notes as ops_notes
-from langslice.ops import positions as ops_positions
-from langslice.ops import registrations as ops_registrations
-from langslice.ops import submit as ops_submit
-from langslice.ops import transforms as ops_transforms
-from langslice.ops.refusal import Refused
-from langslice.ops.registry import check_section_count
+from langslice.tools import damage as ops_damage
+from langslice.tools import history as ops_history
+from langslice.tools import look as ops_look
+from langslice.tools import masks as ops_masks
+from langslice.tools import notes as ops_notes
+from langslice.tools import positions as ops_positions
+from langslice.tools import registrations as ops_registrations
+from langslice.tools import submit as ops_submit
+from langslice.tools import transforms as ops_transforms
+from langslice.tools.catalog import check_section_count
+from langslice.tools.refusal import Refused
+from langslice.tools.run import Door, as_list, drawn_image, pictured, spread
 
 #: Positions closer than this (mm) are one atlas picture in a positioning picture.
 SAME_POSITION_MM = 0.02
@@ -171,7 +171,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         }
         if done.pictures:
             for picture in done.pictures:
-                layers.annotate(picture, caption=f"{done.id}: marked damage regions "
+                pictures_drawn.annotate(picture, caption=f"{done.id}: marked damage regions "
                                 + ", ".join(done.regions) + " shaded on the section under "
                                 "its current registration (left) and on the atlas (right)")
             result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)

@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from langslice.job.checkpoint import (
+from langslice.job.state_file import (
     FORMAT_KEY,
     STATE_FORMAT_VERSION,
     Upgrade,

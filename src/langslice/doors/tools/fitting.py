@@ -2,15 +2,13 @@
 
 ``elastix_affine`` and ``fireants_syn`` fit, apply, then show each fitted
 section under its new registration with the atlas borders on it
-(:func:`langslice.ops.look.show_result`), drawn on the section image the fit
-read, unless the call's ``view`` is
-false and the host does not force it. With ``restrict_to`` those regions'
-borders are drawn thick and the others faint, and the picture is zoomed to
-the regions' box when that magnifies it at least
-:data:`~langslice.ops.transforms.MIN_ZOOM_GAIN` times.
-``trace_borders`` starts background work and answers at once; its landing
-draws the trace and the fit, and the tool door hands its notice out at the
-head of a later reply.
+(:func:`langslice.tools.look.show_result`), drawn on the section image the fit
+read, unless the call's ``view`` is false and the host does not force it. With
+``restrict_to`` those regions' borders are drawn thick and the others faint,
+and the picture is zoomed to the regions' box when that magnifies it at least
+:data:`~langslice.tools.transforms.MIN_ZOOM_GAIN` times. ``trace_borders``
+starts background work and answers at once; its landing draws the trace and the
+fit, and the tool door hands its notice out at the head of a later reply.
 """
 
 from __future__ import annotations
@@ -19,18 +17,18 @@ from collections.abc import Callable
 from typing import Any
 
 from langslice.core.atlas.images import resolve_image
-from langslice.core.display import default_options
-from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
-from langslice.doors.tools.door import Door, as_list, drawn_image, pictured
+from langslice.core.pictures.options import default_options
+from langslice.core.pictures.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.doors.tools.view_options import clamp_resolution
-from langslice.ops import deformable as ops_deformable
-from langslice.ops import exports as ops_exports
-from langslice.ops import landmarks as ops_landmarks
-from langslice.ops import look as ops_look
-from langslice.ops import traces as ops_traces
-from langslice.ops import transforms as ops_transforms
-from langslice.ops.refusal import Refused
-from langslice.ops.registry import check_section_count
+from langslice.tools import deformable as ops_deformable
+from langslice.tools import exports as ops_exports
+from langslice.tools import landmarks as ops_landmarks
+from langslice.tools import look as ops_look
+from langslice.tools import traces as ops_traces
+from langslice.tools import transforms as ops_transforms
+from langslice.tools.catalog import check_section_count
+from langslice.tools.refusal import Refused
+from langslice.tools.run import Door, as_list, drawn_image, pictured
 
 
 def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -49,7 +47,7 @@ def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def affine_flag_words(flag: dict[str, Any]) -> str:
     """One ``elastix_affine`` plausibility flag
-    (:func:`langslice.ops.transforms.plausibility_flags`) as a sentence."""
+    (:func:`langslice.tools.transforms.plausibility_flags`) as a sentence."""
     if flag.get("code") == "SCALE_CHANGED":
         scale, held = flag.get("scale") or [], flag.get("previous") or []
         return (f"SCALE_CHANGED: this fit scales the section to {scale} from {held}, more "
@@ -234,8 +232,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             return refusal.payload()
         if not shows(view) or not result["changed"]:
             return result
-        from langslice.core.landmark_views import pair_picture
-        from langslice.core.layers import collecting
+        from langslice.core.pictures.drawn import collecting
+        from langslice.core.pictures.landmarks import pair_picture
 
         record = job.state.by_id(result["section"])
         assert record is not None

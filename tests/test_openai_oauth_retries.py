@@ -6,7 +6,8 @@ from email.utils import formatdate
 import pytest
 import requests
 
-from langslice.providers import openai_oauth as oauth
+from langslice.providers.oauth import login
+from langslice.providers.oauth import transport as oauth
 
 
 class Response:
@@ -38,7 +39,7 @@ class Response:
 def transport(monkeypatch):
     calls, waits = [], []
     outcomes = []
-    monkeypatch.setattr(oauth, "load_credentials", lambda: oauth.Creds("secret", "refresh-secret"))
+    monkeypatch.setattr(oauth, "load_credentials", lambda: login.Creds("secret", "refresh-secret"))
     monkeypatch.setattr(oauth.random, "uniform", lambda a, b: 0)
     monkeypatch.setattr(oauth.time, "sleep", waits.append)
 
@@ -82,7 +83,7 @@ def test_stops_after_three_retries(transport):
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 413, 422])
 def test_permanent_http_errors_are_not_retried(transport, monkeypatch, status):
     outcomes, calls, waits = transport
-    monkeypatch.setattr(oauth, "load_credentials", lambda: oauth.Creds("secret"))
+    monkeypatch.setattr(oauth, "load_credentials", lambda: login.Creds("secret"))
     outcomes.append(Response(status))
     with pytest.raises(RuntimeError, match=str(status)):
         oauth.stream_events({})
@@ -152,7 +153,7 @@ def test_refresh_once_without_resetting_retry_budget(transport, monkeypatch):
 
     def refresh(creds):
         refreshed.append(creds)
-        return oauth.Creds("new-secret", "new-refresh-secret")
+        return login.Creds("new-secret", "new-refresh-secret")
 
     monkeypatch.setattr(oauth, "refresh", refresh)
     failures = [Response(code) for code in [507, 401, 507, 507, 507]]

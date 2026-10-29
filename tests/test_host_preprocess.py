@@ -14,14 +14,14 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.core.image_prep import (
+from langslice.core.sections.reading import (
     adaptive_preprocess,
     host_preprocess,
     normalize_image,
     read_pages,
 )
-from langslice.doors.api.abba_worker import run_linear
-from langslice.hosts.api.service import run_stdio
+from langslice.doors.abba.worker import run_linear
+from langslice.hosts.service import run_stdio
 
 #: ABBA's stack-wide angles as the connector always sends them (flat).
 FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
@@ -154,7 +154,7 @@ def snapshots(tmp_path: Path):
 
 def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
     """Replace the engine: record the spec, then write each step as a checkpoint."""
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
 
     async def run(spec, *, on_write, on_event, emit, **_):
         seen["spec"] = spec
@@ -175,7 +175,7 @@ def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
 
 def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkeypatch):
     """The host blend is the DEFAULT appearance; the pages stay raw channels."""
-    from langslice.agent.engine import build_context
+    from langslice.doors.agent.engine import build_context
     from tests.fakes import SlabAtlas
 
     seen: dict[str, Any] = {}
@@ -206,7 +206,7 @@ def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkey
 
 
 def test_host_channel_names_name_the_raw_channels(snapshots, monkeypatch):
-    from langslice.agent.engine import build_context
+    from langslice.doors.agent.engine import build_context
     from tests.fakes import SlabAtlas
 
     seen: dict[str, Any] = {}

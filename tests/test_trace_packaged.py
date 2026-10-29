@@ -1,4 +1,4 @@
-"""The packaged ``trace_borders`` (``ops.traces``): the image call in the
+"""The packaged ``trace_borders`` (``tools.traces``): the image call in the
 background, then a FireANTs fit of what it drew, applied as its own undo step.
 
 The image model is the shared stand-in (``tests/synthetic_stack.py``
@@ -19,16 +19,16 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import deformation
-from langslice.core.nonlinear.types import GeneratedSegmentation
+from langslice.core.fits import deformation
+from langslice.core.fits.trace.request import GeneratedSegmentation
 from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.ops import deformable as ops_deformable
-from langslice.ops import traces
-from langslice.ops.inputs import STALE_INPUT
-from langslice.ops.refusal import Refused
-from langslice.providers.registry import resolve_image_model
+from langslice.providers.connections import resolve_image_model
+from langslice.tools import deformable as ops_deformable
+from langslice.tools import traces
+from langslice.tools.refusal import Refused
+from langslice.tools.stale import STALE_INPUT
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -166,7 +166,7 @@ def test_a_landed_trace_asked_again_fits_nothing_and_takes_no_undo_step(tmp_path
 
 
 def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_path, atlas):
-    from langslice.core.display import default_options
+    from langslice.core.pictures.options import default_options
 
     job, ctx, stub = _job(tmp_path, atlas)
     fitted = ops_deformable.fireants_syn(job, ctx, [ID])

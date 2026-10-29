@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core import handoff
+from langslice.core.fits import frame as handoff
 from langslice.core.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
-from langslice.core.state import StackState
+from langslice.core.stack.stack import StackState
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
 from langslice.job.job import apply_host_inputs
@@ -45,7 +45,7 @@ def test_image_tool_is_opt_in(tmp_path: Path):
 def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, monkeypatch):
     import threading
 
-    from langslice.core.nonlinear import registration_tool
+    from langslice.core.fits.trace import trace as registration_tool
 
     state, ctx, spec = _placed(tmp_path)
     transform = copy.deepcopy(state.slices[0].transform)
@@ -104,7 +104,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):
-    from langslice.core.nonlinear import registration_tool
+    from langslice.core.fits.trace import trace as registration_tool
 
     state, ctx, spec = _placed(tmp_path)
     running = {"status": "running", "geometry_fingerprint": "geometry"}
@@ -157,7 +157,7 @@ def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
 
 
 def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_path, monkeypatch):
-    from langslice.core.nonlinear import registration_tool
+    from langslice.core.fits.trace import trace as registration_tool
 
     state, ctx, spec = _stack(tmp_path, n=1, tasks=["nonlinear"])
 

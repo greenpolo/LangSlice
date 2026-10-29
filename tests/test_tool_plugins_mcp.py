@@ -19,11 +19,11 @@ import pytest
 
 from langslice.core import plugins as core_plugins
 from langslice.core.plugins import PluginError
-from langslice.doors.plugins import mcp as adapter
+from langslice.doors.plugins import mcp_adapter as adapter
 from langslice.doors.tools.toolbox import build_tools
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 
-REF = "langslice.doors.plugins.mcp:tools"
+REF = "langslice.doors.plugins.mcp_adapter:tools"
 SERVER = Path(__file__).parent / "fixtures" / "mcp_server.py"
 
 

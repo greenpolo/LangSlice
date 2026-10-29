@@ -3,7 +3,7 @@
 ``python -m tests.cli_child job FOLDER VERB ...`` is ``langslice-job FOLDER
 VERB ...`` with the shared synthetic atlas and fit settings
 (``tests/synthetic_stack.py``): what a background run starts in the tests
-(``langslice.doors.cli.background.CHILD_COMMAND``), where BrainGlobe's
+(``langslice.doors.agent_cli.background.CHILD_COMMAND``), where BrainGlobe's
 atlases are not available.
 """
 
@@ -19,7 +19,7 @@ def install(loader: Any, put: Any = setattr) -> None:
     atlas would be downloaded). *put* sets each attribute (a test passes
     ``monkeypatch.setattr``, so both are undone after it)."""
     import langslice.doors.jobs as jobs
-    from langslice.doors.cli import background
+    from langslice.doors.agent_cli import background
 
     original = jobs.context
 
@@ -55,7 +55,7 @@ def main() -> int:
             commit(self, before)
 
         Job.commit = slow  # type: ignore[method-assign]
-    from langslice.doors.cli.jobcli import main as cli_main
+    from langslice.doors.agent_cli.main import main as cli_main
 
     return int(cli_main(sys.argv[1:]) or 0)
 

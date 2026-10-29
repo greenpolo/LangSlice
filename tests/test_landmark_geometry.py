@@ -9,17 +9,17 @@ import pytest
 from PIL import Image
 from scipy.ndimage import map_coordinates
 
-from langslice.core.landmarks import (
+from langslice.core.fits.landmarks import (
     section_panel,
     section_picture_point,
     section_point,
 )
-from langslice.core.state import SliceState
-from langslice.core.triangulation import (
+from langslice.core.geometry.triangulation import (
     DegenerateMesh,
     PiecewiseAffine,
     visualign_mesh,
 )
+from langslice.core.stack.section import SliceState
 
 
 def test_the_mesh_accepts_folds_and_keeps_its_forward_map():
@@ -152,7 +152,7 @@ def test_endpoint_pixels_follow_actual_image_rotation_flip_and_crop(rotation, fl
 
 
 def test_applied_record_interpolates_correspondences_after_sequential_corrections(tmp_path):
-    from langslice.ops import landmarks
+    from langslice.tools import landmarks
     from tests.test_landmarks import saved_pairs, setup
 
     job, workspace, section = setup(tmp_path)
@@ -183,9 +183,9 @@ def test_applied_record_interpolates_correspondences_after_sequential_correction
 
 
 def test_deleted_landmark_loses_its_influence_when_the_complete_set_is_reapplied(tmp_path):
-    from langslice.core import deformation
-    from langslice.core import landmarks as geometry
-    from langslice.ops import landmarks
+    from langslice.core.fits import deformation
+    from langslice.core.fits import landmarks as geometry
+    from langslice.tools import landmarks
     from tests.test_landmarks import saved_pairs, setup
 
     job, workspace, section = setup(tmp_path)

@@ -10,22 +10,23 @@ has an `AGENTS.md` twin: edit one, then `cp CLAUDE.md AGENTS.md` in that folder.
 
 ## Layers
 
-`core` < `job` < `ops` < `doors` : `agent` < `hosts`; each layer imports only
-the layers below it. `providers/` (model access) sits beside them: core, job and
-ops never import it, nor `google.*`, `litellm`, `openai` or `mcp`; an image
-model is passed in as an argument. import-linter enforces this
-(`[tool.importlinter]` in `pyproject.toml`, run by `tests/test_import_layers.py`
-and CI) with no exceptions: a violation is fixed by moving code.
+`core` < `job` < `tools` < `doors` < `hosts`; each layer imports only the
+layers below it. `providers/` (model access) sits beside them and imports
+`core` only; core, job and tools never import it, nor `google.*`,
+`litellm`, `openai` or `mcp`; an image model is passed in as an argument.
+`engines/` (the in-tree plugins) sits beside `hosts` and imports the plugin
+API only. import-linter enforces this (`[tool.importlinter]` in
+`pyproject.toml`, run by `tests/test_import_layers.py` and CI) with no
+exceptions: a violation is fixed by moving code.
 
 | Package | Role | Guide |
 |---|---|---|
-| `core/` | state, job spec, renders and pictures, in-plane fits, atlas access, deformable engine, image-model border route | `core/CLAUDE.md`, `core/atlas/`, `core/deformable/`, `core/nonlinear/` |
-| `job/` | the `Job`: state, undo, checkpoint, submit gates; the job folder `<images>/langslice/` and its public files | `job/CLAUDE.md` |
-| `ops/` | the verbs, as functions on a job; `registry.py` lists them for every door | `ops/CLAUDE.md` |
-| `doors/` | one declaration per verb feeds the native agent tools (`tools/`), MCP (`mcp/`), the agent CLI and the other commands (`cli/`), the engine contract and worker (`api/`), and the library (`library.py`) | `doors/CLAUDE.md` |
-| `agent/` | the ADK driver of `langslice linear run` | `agent/CLAUDE.md` |
-| `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth`, `none`; no task logic | |
-| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `gui` / `serve` commands, the LangSlice window (`gui/`), the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
+| `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; the job spec, tool table and needs marks still live here | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
+| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the tool labels) | `job/CLAUDE.md` |
+| `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement, the agent CLI's fixes) | `tools/CLAUDE.md` |
+| `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the ABBA worker (`abba/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
+| `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth` (`oauth/`), `none`; no task logic | |
+| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `gui` / `serve` commands, the LangSlice window (`gui/`), the ABBA launcher, agent viewer and log (`abba/`) | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md`, `hosts/abba/CLAUDE.md` |
 
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.24, which starts `langslice serve
@@ -48,7 +49,7 @@ and `environment.yml` hold the worker's source installation.
   agent may not change; every write op refuses a change, `FROZEN`) and
   `disabled` (which tools exist). A task that is off freezes its properties
   everywhere.
-- The toolbox (`ops/registry.py`, `docs/reference/tools.md`): looking and channel
+- The toolbox (`tools/catalog.py`, `docs/reference/tools.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
   `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
@@ -74,9 +75,9 @@ and `environment.yml` hold the worker's source installation.
   `tests/snapshots/agent_text/`); an intended change regenerates it with
   `LANGSLICE_UPDATE_SNAPSHOT=1` and the diff is reviewed. Pictures are
   pinned by no test: a change to them is judged by looking (below).
-- Image-model prompts live in `core/nonlinear/prompts.py`; every sentence of an
+- Image-model prompts live in `core/fits/trace/prompts.py`; every sentence of an
   edit is audited for a second reading, and no border line is made conditional
-  on visibility (`src/langslice/core/nonlinear/CLAUDE.md`).
+  on visibility (`src/langslice/core/fits/trace/CLAUDE.md`).
 - Judge image output by looking at it: open the raw output, describe what is
   anatomically right and wrong, and report a disagreement between the picture
   and a metric as a finding. Metrics are secondary diagnostics.

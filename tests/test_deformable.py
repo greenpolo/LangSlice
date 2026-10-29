@@ -10,26 +10,26 @@ import numpy as np
 import pytest
 from scipy import ndimage as ndi
 
+from langslice.core.atlas.borders import region_boundaries
 from langslice.core.atlas.images import atlas_images, atlas_volume
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
-from langslice.core.atlas.render import region_boundaries
-from langslice.core.deformable import (
+from langslice.core.fits.deformable import (
     CandidateFailure,
     DeformableRecord,
     FitSettings,
     diagnose,
     prepare_fit,
 )
-from langslice.core.deformable.fit import fit_prepared
-from langslice.core.deformable.geometry import Placement
-from langslice.core.deformable.plane_images import (
+from langslice.core.fits.deformable.fit import fit_prepared
+from langslice.core.fits.deformable.geometry import Placement
+from langslice.core.fits.deformable.plane_images import (
     native_intensity,
     whole_region_ids,
 )
-from langslice.core.deformable.record import jacobian_determinant
-from langslice.core.deformable.regions import model_extent, named_regions
-from langslice.core.deformable.settings import DETAIL
-from langslice.core.oblique import (
+from langslice.core.fits.deformable.record import jacobian_determinant
+from langslice.core.fits.deformable.regions import model_extent, named_regions
+from langslice.core.fits.deformable.settings import DETAIL
+from langslice.core.geometry.oblique import (
     plane_index_coordinates,
     sample_oblique_plane,
 )
@@ -95,7 +95,7 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped)
     # The inverse maps placed-atlas points back: v(p + u(p)) = -u(p).
     assert record.inverse_field_mm is not None
     assert record.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
-    from langslice.core.deformable.geometry import sample_native
+    from langslice.core.fits.deformable.geometry import sample_native
 
     inverse = np.linalg.inv(record.placement.atlas_to_section)
     yy, xx = np.indices(truth.shape, dtype=np.float64)
@@ -307,7 +307,7 @@ def test_fit_settings_validation():
 
 @needs_engine
 def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
-    from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
+    from langslice.core.fits.deformable.fit import RESTRICTED_TAPER_MM
 
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
@@ -356,7 +356,7 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
 
 
 def test_taper_weight_holds_the_neighbourhood_and_fades_beyond():
-    from langslice.core.deformable.fit import (
+    from langslice.core.fits.deformable.fit import (
         RESTRICTED_TAPER_MM,
         _taper_weight,
     )
@@ -375,7 +375,7 @@ def test_taper_weight_holds_the_neighbourhood_and_fades_beyond():
 
 
 def test_inverted_step_undoes_the_tapered_step():
-    from langslice.core.deformable.fit import _invert_step
+    from langslice.core.fits.deformable.fit import _invert_step
 
     yy, xx = np.indices((120, 160), dtype=np.float32)
     bump = np.exp(-((xx - 80) ** 2 + (yy - 60) ** 2) / (2 * 20.0 ** 2))
@@ -459,7 +459,7 @@ def test_a_ccfv3_atlas_borrows_the_augmented_nissl_at_the_offset(atlas, monkeypa
 
     ap = np.arange(566, dtype=np.uint16)[:, None, None]
     augmented = type("Augmented", (), {"template": np.broadcast_to(ap, (566, 320, 456))})
-    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda name: augmented)
+    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda name: augmented)
     images._borrowed.clear()
     try:
         ccf = _Ccfv3At50um()

@@ -77,7 +77,7 @@ has spent. Spend is reported to whoever runs LangSlice, never to the model:
   dollar estimate from per-token list prices (input, cached input, output;
   thinking tokens as output; Claude input that is not a cache read as a cache
   write) is warned at $5, $10, $20, $40 and so on, doubling. A model without a
-  price in `agent/spend.py` is said so once, with no estimate.
+  price in `doors/agent/spend.py` is said so once, with no estimate.
 - Each warning also reaches the live event stream as a `spend` event (the ABBA
   agent viewer shows it) and the trace as a `spend` record. The account so
   far is written to `exports/spend.json` in the job folder after every model

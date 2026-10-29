@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from langslice.hosts.integrations import abba_launch
-from langslice.hosts.integrations.abba_launch import RunListener, connector_jar
+from langslice.hosts.abba import launch as abba_launch
+from langslice.hosts.abba.launch import RunListener, connector_jar
 
 
 class _Follower:

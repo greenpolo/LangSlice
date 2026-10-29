@@ -21,14 +21,15 @@ from langslice.core.spec import (
 )
 from langslice.core.toolset import TOOLS, is_off, valid_names
 from langslice.doors import jobs
-from langslice.doors.cli.envelope import DISABLED, FIXES
-from langslice.doors.declarations import (
+from langslice.doors.agent_cli.envelope import DISABLED
+from langslice.tools.catalog import VERBS, enabled
+from langslice.tools.descriptions.fixes import FIXES
+from langslice.tools.descriptions.render import (
     DOORS,
     Variant,
     arguments_schema,
     declaration,
 )
-from langslice.ops.registry import VERBS, enabled
 from tests.linear_tool_helpers import SLAB, tool_named
 
 # --- the names ------------------------------------------------------------------------
@@ -201,13 +202,16 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
     without a model: the declarations and schemas of each tool on every door,
     the job statement on every door, the reference card, the status reply's
     list of what can change, the fixes and retired-tool answers."""
-    from langslice.agent.prompt import build_job_statement, display_facts
-    from langslice.doors.card import card_text
+    from langslice.doors.reference_card import card_text
     from langslice.doors.statement import (
         image_model_off_text,
         job_statement,
         opening_for_cli,
         opening_for_mcp,
+    )
+    from langslice.tools.descriptions.statement import (
+        build_job_statement,
+        display_facts,
     )
 
     opened = jobs.create(spec, atlas_loader=lambda _name: SLAB)
@@ -238,7 +242,7 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         texts["card"] = card_text(opened.job.layout)
         status = tool_named(opened.tools(), "status")()
         texts["status"] = json.dumps(status.get("can_change", status))
-        from langslice.doors.cli.envelope import Envelope
+        from langslice.doors.agent_cli.envelope import Envelope
 
         token = DISABLED.set(tuple(spec.switched_off))
         try:

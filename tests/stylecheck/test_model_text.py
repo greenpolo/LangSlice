@@ -136,7 +136,7 @@ def test_the_real_declarations_stubs_are_the_tools() -> None:
     declared = {
         stub.symbol
         for stub in stubs
-        if stub.path == "src/langslice/doors/declarations.py"
+        if stub.path == "src/langslice/tools/descriptions/render.py"
     }
     assert {"look", "trace_borders", "submit"} <= declared
     assert not declared & {"base_prompt", "model_doc", "declare", "summary"}

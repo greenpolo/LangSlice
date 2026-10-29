@@ -449,10 +449,10 @@ class JobWatcher:
         if not isinstance(data, dict):
             return
         try:
-            from langslice.core.state import StackState
-            from langslice.core.status import status_rows
-            from langslice.job.checkpoint import current_state
+            from langslice.core.stack.stack import StackState
+            from langslice.core.stack.status import status_rows
             from langslice.job.registrations import Registrations
+            from langslice.job.state_file import current_state
 
             state = StackState.from_dict(current_state(data))
             if self._registrations is None:

@@ -1,8 +1,8 @@
 """The registry of tools and their operations matches the tools ``build_tools`` makes.
 
-``langslice.ops.registry.VERBS`` is the one list the doors are generated from;
+``langslice.tools.catalog.VERBS`` is the one list the doors are generated from;
 every tool a toolbox can hold must be in it, and every entry must be a tool
-some toolbox holds, with an operation from ``langslice.ops``. Each task that
+some toolbox holds, with an operation from ``langslice.tools``. Each task that
 is off removes its tools (the gating table), and every retired tool name
 answers with its replacement.
 """
@@ -15,12 +15,12 @@ from typing import Any
 
 import pytest
 
-from langslice.ops.registry import GROUPS, VERBS, enabled
+from langslice.tools.catalog import GROUPS, VERBS, enabled
 from tests.synthetic_stack import atlas_loader, full_spec, write_sections
 
 
 def _names(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
-    from langslice.agent.engine import build_context
+    from langslice.doors.agent.engine import build_context
     from langslice.doors.tools.toolbox import build_tools
     from langslice.job.job import ingest
 
@@ -115,7 +115,7 @@ def test_the_gating_table(folder: Path):
 def test_every_operation_is_an_op_and_classified():
     for name, verb in VERBS.items():
         assert verb.name == name
-        assert verb.function.__module__.startswith("langslice.ops."), name
+        assert verb.function.__module__.startswith("langslice.tools."), name
         assert verb.kind in ("read", "write")
         assert verb.group in GROUPS
     reads = {"look", "zoom", "grep_atlas", "grep_atlas_view", "status", "list_files",

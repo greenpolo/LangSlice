@@ -1,12 +1,11 @@
 """The tools that look, and the image tool: the bodies behind their declarations.
 
 ``look``, ``zoom``, ``grep_atlas_view`` and ``make_image`` save their own
-pictures (:mod:`langslice.ops.look`): their replies carry ``pictures`` with
+pictures (:mod:`langslice.tools.look`): their replies carry ``pictures`` with
 the numbers, and the tool door sends the pictures without saving them again.
 ``status`` adds to the status rows what the run holds besides them (the raw
-channels, the made section images, the background work still running, what
-this run lets the agent change). The job-folder tools answer with their
-``text``.
+channels, the made section images, the background work still running, what this
+run lets the agent change). The job-folder tools answer with their ``text``.
 """
 
 from __future__ import annotations
@@ -14,19 +13,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from langslice.core import section_images
 from langslice.core.atlas.levels import OVERLAY_DEPTH
-from langslice.core.sizes import AUTO_RESOLUTION
-from langslice.core.state import unknown_sections
+from langslice.core.pictures.sizes import AUTO_RESOLUTION
+from langslice.core.sections import images as section_images
+from langslice.core.stack.stack import unknown_sections
 from langslice.core.toolset import TOOLS, tools_for
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.door import Door, as_list, pictured, spread
 from langslice.doors.tools.view_options import clamp_resolution
-from langslice.ops import atlas as ops_atlas
-from langslice.ops import files as ops_files
-from langslice.ops import images as ops_images
-from langslice.ops import look as ops_look
-from langslice.ops.refusal import Refused
+from langslice.tools import atlas as ops_atlas
+from langslice.tools import files as ops_files
+from langslice.tools import images as ops_images
+from langslice.tools import look as ops_look
+from langslice.tools import zoom as tools_zoom
+from langslice.tools.refusal import Refused
+from langslice.tools.run import Door, as_list, pictured, spread
 
 
 def can_change(door: Door) -> list[str]:
@@ -128,7 +128,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     def zoom(box: list[float], picture: int, region: str = "") -> dict[str, Any]:
         try:
-            done = ops_look.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
+            done = tools_zoom.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
                                  region=region)
         except Refused as refusal:
             return refusal.payload()

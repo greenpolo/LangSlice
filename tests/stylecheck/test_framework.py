@@ -31,6 +31,7 @@ from tools.stylecheck.baseline import (
 )
 from tools.stylecheck.core import Module, Project, Severity, Violation
 from tools.stylecheck.history import HistoryError, ReferenceKind, reference
+from tools.stylecheck.moves import Moves
 from tools.stylecheck.pyright_baseline import (
     PyrightEntry,
     parse_pyright_baseline,
@@ -379,6 +380,10 @@ def _never(_: object) -> bool:
     return False
 
 
+def _no_sources(_: str) -> tuple[str, ...]:
+    return ()
+
+
 def test_pyright_baseline_is_read_per_entry() -> None:
     entries = _pyright_entries(
         {"./a.py": [("reportAny", 4), ("reportAny", 8)]}
@@ -399,12 +404,24 @@ def test_pyright_growth_flags_a_new_file_and_a_grown_rule() -> None:
             "./b.py": [("reportAny", 1)],
         }
     )
-    changes = pyright_growth(before, after, is_adopted=_never, is_gone=_never)
+    changes = pyright_growth(
+        before,
+        after,
+        is_adopted=_never,
+        is_gone=_never,
+        move_sources=_no_sources,
+    )
     assert [(c.path, c.code, c.allowed, c.current) for c in changes] == [
         ("./a.py", "reportAny", 1, 2),
         ("./b.py", "reportAny", 0, 1),
     ]
-    shrunk = pyright_growth(after, before, is_adopted=_never, is_gone=_never)
+    shrunk = pyright_growth(
+        after,
+        before,
+        is_adopted=_never,
+        is_gone=_never,
+        move_sources=_no_sources,
+    )
     assert shrunk == []
 
 
@@ -419,13 +436,86 @@ def test_pyright_growth_follows_a_moved_file_once() -> None:
     def gone(path: str) -> bool:
         return path == "./old.py"
 
-    assert pyright_growth(before, moved, is_adopted=_never, is_gone=gone) == []
     assert (
-        len(pyright_growth(before, copied, is_adopted=_never, is_gone=gone))
+        pyright_growth(
+            before,
+            moved,
+            is_adopted=_never,
+            is_gone=gone,
+            move_sources=_no_sources,
+        )
+        == []
+    )
+    assert (
+        len(
+            pyright_growth(
+                before,
+                copied,
+                is_adopted=_never,
+                is_gone=gone,
+                move_sources=_no_sources,
+            )
+        )
         == 1
     )
-    assert pyright_growth(before, other, is_adopted=_never, is_gone=gone)
-    assert pyright_growth(before, moved, is_adopted=_never, is_gone=_never)
+    assert pyright_growth(
+        before,
+        other,
+        is_adopted=_never,
+        is_gone=gone,
+        move_sources=_no_sources,
+    )
+    assert pyright_growth(
+        before,
+        moved,
+        is_adopted=_never,
+        is_gone=_never,
+        move_sources=_no_sources,
+    )
+
+
+def test_pyright_growth_follows_a_declared_move_by_rule_once() -> None:
+    # old.py stays; one entry left it for new.py at another span
+    before = _pyright_entries(
+        {"./old.py": [("reportAny", 4), ("reportAny", 20)]}
+    )
+    after = _pyright_entries(
+        {"./old.py": [("reportAny", 4)], "./new.py": [("reportAny", 9)]}
+    )
+    twice = _pyright_entries(
+        {
+            "./old.py": [("reportAny", 4)],
+            "./new.py": [("reportAny", 9), ("reportAny", 12)],
+        }
+    )
+    other_rule = _pyright_entries(
+        {"./old.py": [("reportAny", 4)], "./new.py": [("reportUnknown", 9)]}
+    )
+
+    def from_old(path: str) -> tuple[str, ...]:
+        return ("./old.py",) if path == "./new.py" else ()
+
+    def check(entries: list[PyrightEntry]) -> int:
+        changes = pyright_growth(
+            before,
+            entries,
+            is_adopted=_never,
+            is_gone=_never,
+            move_sources=from_old,
+        )
+        return len(changes)
+
+    assert check(after) == 0
+    assert check(twice) == 1
+    assert check(other_rule) == 1
+    unmapped = pyright_growth(
+        before,
+        after,
+        is_adopted=_never,
+        is_gone=_never,
+        move_sources=_no_sources,
+    )
+    assert len(unmapped) == 1
 
 
 # --- a file at a git commit ---------------------------------------------------
@@ -929,6 +1019,116 @@ def test_cli_against_follows_a_moved_file_in_the_pyright_baseline(
     _write_pyright(project_root, {"./pkg/moved.py": [("reportAny", 4)]})
     assert _main(project_root, "--against", created) == 0
     assert "basedpyright's baseline only shrank" in capsys.readouterr().out
+
+
+def _write_moves(root: Path, *moves: tuple[str, str, str, str]) -> None:
+    folder = root / "tools" / "stylecheck"
+    folder.mkdir(parents=True, exist_ok=True)
+    fields = ("path", "symbol", "new_path", "new_symbol")
+    document = {
+        "moves": [dict(zip(fields, move, strict=True)) for move in moves]
+    }
+    (folder / "moves.json").write_text(json.dumps(document))
+
+
+def test_cli_against_follows_a_declared_move_once(
+    project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # g leaves pkg/a.py, which stays, for pkg/c.py under a new name
+    package = project_root / "pkg"
+    (package / "a.py").write_text("def f():\n    pass  # TODO\n")
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n")
+    _rewrite(project_root)
+    assert _main(project_root, "--against", committed) == 1
+    assert "pkg/c.py  fixture-todo  h" in capsys.readouterr().out
+
+    _write_moves(project_root, ("pkg/a.py", "g", "pkg/c.py", "h"))
+    assert _main(project_root, "--against", committed) == 0
+    assert "1 errors moved with their files" in capsys.readouterr().out
+
+    # at most the old count, and only once the old entry is gone
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n    # TODO\n")
+    _rewrite(project_root)
+    assert _main(project_root, "--against", committed) == 1
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n")
+    (package / "a.py").write_text(
+        "def f():\n    pass  # TODO\n\n\ndef g():\n    pass  # TODO\n"
+    )
+    _rewrite(project_root)
+    assert _main(project_root, "--against", committed) == 1
+
+
+def test_a_declared_move_renames_the_modules_the_settings_name() -> None:
+    moves = Moves(
+        {
+            ("src/pkg/a.py", "<module>"): (
+                ("src/pkg/c.py", "<module>"),
+                ("src/pkg/d.py", "<module>"),
+            ),
+            ("src/pkg/a.py", "f"): (("src/pkg/d.py", "f"),),
+            ("src/pkg/agent/__init__.py", "<module>"): (
+                ("src/pkg/top/agent/__init__.py", "<module>"),
+            ),
+        }
+    )
+    before: dict[str, object] = {
+        "stylecheck.cli_modules": ["pkg.a", "pkg.b"],
+        "stylecheck.docs_renderer_module": "pkg.a",
+        "stylecheck.layers": [["pkg.top", "pkg.agent"], ["pkg.low"]],
+    }
+    after: dict[str, object] = {
+        "stylecheck.cli_modules": ["pkg.b", "pkg.d"],
+        "stylecheck.docs_renderer_module": "pkg.d",
+        "stylecheck.layers": [["pkg.top"], ["pkg.low"]],
+    }
+    checks = ("rule-a",)
+    reference, now = Record(checks, before), Record(checks, after)
+    renamed = moves.translate(reference, now).settings
+    assert renamed["stylecheck.cli_modules"] == ["pkg.b", "pkg.c", "pkg.d"]
+    assert renamed["stylecheck.docs_renderer_module"] == "pkg.d"
+    assert renamed["stylecheck.layers"] == [["pkg.top"], ["pkg.low"]]
+    assert loosenings(moves.translate(reference, now), now) == []
+    assert loosenings(reference, now)
+
+
+def test_a_module_split_into_parts_lends_its_module_level_to_each(
+    project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = project_root / "pkg"
+    module_level = "x = 1  # TODO\n\n\n"
+    (package / "a.py").write_text(
+        module_level + "def f():\n    pass  # TODO\n\n\n"
+        "def g():\n    pass  # TODO\n"
+    )
+    _rewrite(project_root)
+    reference_commit = _commit(project_root, "a module-level error")
+
+    # a.py splits into c.py and d.py; each copies the module-level line
+    (package / "a.py").unlink()
+    (package / "c.py").write_text(
+        module_level + "def f():\n    pass  # TODO\n"
+    )
+    (package / "d.py").write_text(
+        module_level + "def g():\n    pass  # TODO\n"
+    )
+    _rewrite(project_root)
+    _write_moves(
+        project_root,
+        ("pkg/a.py", "<module>", "pkg/c.py", "<module>"),
+        ("pkg/a.py", "<module>", "pkg/d.py", "<module>"),
+        ("pkg/a.py", "f", "pkg/c.py", "f"),
+        ("pkg/a.py", "g", "pkg/d.py", "g"),
+    )
+    assert _main(project_root, "--against", reference_commit) == 0
+    capsys.readouterr()
+
+    # each part may have the old count, not more
+    (package / "c.py").write_text(
+        module_level + "y = 2  # TODO\n\n\ndef f():\n    pass  # TODO\n"
+    )
+    _rewrite(project_root)
+    assert _main(project_root, "--against", reference_commit) == 1
+    assert "pkg/c.py  fixture-todo  <module>: 2" in capsys.readouterr().out
 
 
 # --- every check carries its documentation ---------------------------------

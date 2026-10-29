@@ -16,8 +16,9 @@ from typing import Any
 
 import pytest
 
-from langslice.core import tool_labels, toolset
+from langslice.core import toolset
 from langslice.hosts.gui import generator
+from langslice.job.settings import labels as tool_labels
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "src" / "langslice" / "hosts" / "gui" / "static" / "generator.js"
@@ -140,8 +141,8 @@ def _command(text: str) -> list[str]:
 
 
 def _spec(argv: list[str]) -> Any:
-    from langslice.doors.cli.job import init_parser
-    from langslice.doors.cli.linear import spec_from_args
+    from langslice.doors.agent_cli.calls import init_parser
+    from langslice.doors.commands.linear import spec_from_args
 
     assert argv[0] == "langslice-job" and argv[2] == "init"
     return spec_from_args(init_parser().parse_args(argv[3:]), argv[1])

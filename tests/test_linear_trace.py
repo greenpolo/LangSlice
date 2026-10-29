@@ -8,7 +8,7 @@ from typing import Any
 
 from google.genai import types
 
-from langslice.agent.trace import SessionTrace, open_trace
+from langslice.doors.agent.trace import SessionTrace, open_trace
 
 
 class _Agent:

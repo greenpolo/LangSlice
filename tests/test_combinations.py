@@ -5,7 +5,7 @@ The product requirement: LangSlice works in ANY combination of its steps
 registration made elsewhere with only Nonlinear on top) through every door:
 the agent CLI (``langslice-job FOLDER VERB``), the library
 (``langslice.open_job``), the agent tools (``build_tools`` /
-``ops.registry.enabled``) driven by LangSlice's agent, and MCP.
+``tools.catalog.enabled``) driven by LangSlice's agent, and MCP.
 
 Each combination runs end to end on the shared synthetic stack
 (``tests/synthetic_stack.py``: three sections of the synthetic atlas, fits in
@@ -40,7 +40,7 @@ import numpy as np
 import pytest
 
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.doors.cli.jobcli import main
+from langslice.doors.agent_cli.main import main
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -92,8 +92,8 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     job; the stub image model wherever a door resolves one, which counts as
     connected (a test of the opposite says so: :func:`connected`); no network."""
     import langslice.doors.tools.toolbox as toolbox
-    import langslice.providers.images as transport
-    from langslice.doors.api import setup
+    import langslice.providers.image_calls as transport
+    from langslice.doors import credentials as setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
 
@@ -227,14 +227,13 @@ def assert_external_kept(state: Any) -> None:
         assert record.transform == EXTERNAL_TRANSFORMS[name]
 
 
-
 def tool_names(images: Path, tasks: list[str], provider: str = "none",
                **spec_fields: Any) -> list[str]:
     """The agent tools (ADK and MCP) a run of this combination has."""
-    from langslice.agent.engine import build_context
+    from langslice.doors.agent.engine import build_context
     from langslice.doors.tools.toolbox import build_tools
     from langslice.job.job import ingest
-    from langslice.ops.registry import enabled
+    from langslice.tools.catalog import enabled
 
     spec = replace(spec_for(images, tasks, provider=provider), **spec_fields)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
@@ -461,8 +460,8 @@ def test_5_nonlinear_without_an_image_model_through_the_library(images):
 
 def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(images):
     """Positions without any in-plane transform: the maps treat the missing
-    transform as the identity (``core.maps.placement_problem``), but the
-    nonlinear step needs a WRITTEN one (``core.handoff.prepare_linear_registration``)
+    transform as the identity (``core.maps.section_maps.placement_problem``), but the
+    nonlinear step needs a WRITTEN one (``core.fits.frame.prepare_linear_registration``)
     and leaving a section linear refuses too, so with Linear off the host must
     supply transforms (or freeze the affine, which writes the ``host`` identity)."""
     import langslice
@@ -643,7 +642,7 @@ def connected(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:
     """Whether the job's image model counts as connected to LangSlice (its key
     or login present), as the MCP door and ABBA's Claude mode ask it; no credential
     is read."""
-    from langslice.doors.api import setup
+    from langslice.doors import credentials as setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda _provider: value)
 
@@ -761,7 +760,7 @@ def install_script(monkeypatch: pytest.MonkeyPatch, script: list[tuple[str, dict
 
 
 def run_agent(spec: JobSpec) -> Any:
-    from langslice.agent.engine import run
+    from langslice.doors.agent.engine import run
 
     return asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=atlas_loader()))
 

@@ -1,4 +1,4 @@
-"""look's four modes (core/look.py) on the synthetic atlas.
+"""look's four modes (core/pictures/look.py) on the synthetic atlas.
 
 One picture per section (section, overlay) or per position (atlas); every
 picture carries a JSON recipe and an index caption, noted for the picture
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core.layers import collecting, note_for
-from langslice.core.look import (
+from langslice.core.pictures.drawn import collecting, note_for
+from langslice.core.pictures.look import (
     LookError,
     LookRequest,
     changed_since,

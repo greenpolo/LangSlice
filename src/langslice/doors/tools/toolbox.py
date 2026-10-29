@@ -10,14 +10,14 @@ Tools report data: no advice, no interpretation, no strategy in any payload.
 A constraint that states a number is not coaching: refusals name the
 numbers that caused them and stop there.
 
-The tools are a door over the core and the job: they check arguments, call
-the operations (:mod:`langslice.ops`) and
-word the reply. The bodies are in :mod:`.looking`, :mod:`.changing` and
-:mod:`.fitting`, closures over one :class:`~langslice.doors.tools.door.Door`;
-this module wraps each one (:func:`build_tools`). Their pictures are plain
-PIL images under ``TOOL_MEDIA_PARTS_KEY``; the ADK driver packages them as
-message parts (:func:`langslice.doors.tools.media.packaged`), the MCP
-server as content blocks, so this module never imports ``google.genai``.
+The tools are a door over the core and the job: they check arguments, call the
+operations (:mod:`langslice.tools`) and word the reply. The bodies are in
+:mod:`.looking`, :mod:`.changing` and :mod:`.fitting`, closures over one
+:class:`~langslice.tools.run.Door`; this module wraps each one
+(:func:`build_tools`). Their pictures are plain PIL images under
+``TOOL_MEDIA_PARTS_KEY``; the ADK driver packages them as message parts
+(:func:`langslice.doors.agent.media.packaged`), the MCP server as content
+blocks, so this module never imports ``google.genai``.
 """
 
 from __future__ import annotations
@@ -35,24 +35,33 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from langslice.agent.live import LiveCallback, plain
-from langslice.core.opening import DEFAULT_IMAGE_LIMIT
-from langslice.core.sizes import AUTO_RESOLUTION, MAX_IMAGES_PER_CALL, resolution_level
+from langslice.core.pictures.opening import DEFAULT_IMAGE_LIMIT
+from langslice.core.pictures.sizes import (
+    AUTO_RESOLUTION,
+    MAX_IMAGES_PER_CALL,
+    resolution_level,
+)
 from langslice.core.spec import JobSpec
-from langslice.core.state import StackState
-from langslice.doors.declarations import Variant, declare
-from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY, changing, fitting, looking
-from langslice.doors.tools.arguments import argument_refusal
-from langslice.doors.tools.door import Door
+from langslice.core.stack.stack import StackState
+from langslice.doors.agent.live import LiveCallback, plain
+from langslice.doors.tools import (
+    TOOL_MEDIA_PARTS_KEY,
+    changing,
+    fitting,
+    looking,
+)
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
-from langslice.job.views import PICTURE_FILE as VIEW_PICTURE_FILE
-from langslice.job.views import captured as captured_views
-from langslice.ops.registry import enabled, verbs_for
-from langslice.providers.registry import ImageModel, resolve_image_model
+from langslice.job.pictures import PICTURE_FILE as VIEW_PICTURE_FILE
+from langslice.job.pictures import captured as captured_views
+from langslice.providers.connections import ImageModel, resolve_image_model
+from langslice.tools.arguments import argument_refusal
+from langslice.tools.catalog import enabled, verbs_for
+from langslice.tools.descriptions.render import Variant, declare
+from langslice.tools.run import Door
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
-    from langslice.agent.engine import EngineContext
+    from langslice.doors.agent.engine import EngineContext
 
 logger = logging.getLogger(__name__)
 #: The reply statuses that mean a tool failed (every other status, ``ok``,
@@ -150,12 +159,12 @@ def _serialized(
     Model tool-call announcements may arrive together. These optional events
     identify the tool actually executing, including stable filenames resolved
     before a reorder. They never enter model context or change its schema.
-    ``tool_end`` carries ``views``: the paths of the pictures the call saved
-    in the job folder (``job.views``), never their bytes. Each event goes to
+    ``tool_end`` carries ``views``: the paths of the pictures the call saved in
+    the job folder (``job.pictures``), never their bytes. Each event goes to
     *on_event* (a host's live observer) and to *log* (the job folder's
-    ``logs/events.jsonl``, :func:`_job_events`).
-    *guard* is entered inside the lock around the tool (the job's write
-    lock and its reload of a state file changed on disk).
+    ``logs/events.jsonl``, :func:`_job_events`). *guard* is entered inside the
+    lock around the tool (the job's write lock and its reload of a state file
+    changed on disk).
     """
     signature = inspect.signature(tool)
 
@@ -265,11 +274,11 @@ def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
     and list their numbers under ``pictures``.
 
     A reply that already lists ``pictures`` was saved by its operation
-    (``look``, ``zoom``, the change tools' pictures: :mod:`langslice.ops.look`)
-    and is left as it is. Otherwise the hook is the job's
-    (:meth:`langslice.job.views.ViewStore.shown`), the same for every door:
-    this wrapper says which pictures the tool returned and with which
-    arguments, and the store numbers them at once and writes them in the
+    (``look``, ``zoom``, the change tools' pictures:
+    :mod:`langslice.tools.look`) and is left as it is. Otherwise the hook is
+    the job's (:meth:`langslice.job.pictures.ViewStore.shown`), the same for
+    every door: this wrapper says which pictures the tool returned and with
+    which arguments, and the store numbers them at once and writes them in the
     background, in the doors' encoding, so the doors' bytes are untouched.
     """
     signature = inspect.signature(tool)
@@ -343,7 +352,7 @@ def work_pictures(job: Any, reply: Any, *, start: int) -> list[dict[str, Any]]:
     ``pictures`` entries with a ``work``), as artifacts after the call's own."""
     from pathlib import Path
 
-    from langslice.job.views import PICTURE_FILE
+    from langslice.job.pictures import PICTURE_FILE
 
     out: list[dict[str, Any]] = []
     entries = reply.get("pictures") if isinstance(reply, dict) else None
@@ -377,10 +386,10 @@ def _opening_gate(tool: Any, box: ToolBox) -> Any:
 def _strict(tool: Any) -> Any:
     """Refuse unknown or misplaced arguments before *tool* runs.
 
-    :func:`langslice.doors.tools.arguments.argument_refusal` against the tool's
+    :func:`langslice.tools.arguments.argument_refusal` against the tool's
     signature as the model sees it: stray top-level names (direct calls; ADK
-    and MCP check those at their own doors, since both drop them before a
-    tool runs) and stray keys inside every typed-dict argument (``sections``
+    and MCP check those at their own doors, since both drop them before a tool
+    runs) and stray keys inside every typed-dict argument (``sections``
     entries, ``cutting_angles``; every caller).
     """
     names = list(inspect.signature(tool, eval_str=True).parameters)
@@ -425,7 +434,7 @@ class ToolBox:
     #: picture level, the image model): a script's ``job.context`` sits on it.
     door: Door | None = None
     #: The declarations' variant the tools were declared in
-    #: (:class:`langslice.doors.declarations.Variant`; None before
+    #: (:class:`langslice.tools.descriptions.render.Variant`; None before
     #: :func:`build_tools` sets it): what ``TOOLS.md`` is written from.
     variant: Any = None
 
@@ -490,28 +499,29 @@ def build_tools(
     """Build the tools this run's spec switches on, closed over *state*.
 
     Which tools, in which order, is the registry's
-    (:func:`langslice.ops.registry.enabled`); each tool's name, arguments and
-    description are its declaration (:func:`langslice.doors.declarations.declare`);
-    each tool's body is in :mod:`.looking`, :mod:`.changing` or :mod:`.fitting`.
-    The tools sit on *job*; without one, a job is made around *state* in the
-    context's job folder (an empty undo history, nothing written until the
-    first write). *max_view_edge* is the largest picture the driver model
-    takes (None: the run model's lane,
+    (:func:`langslice.tools.catalog.enabled`); each tool's name, arguments and
+    description are its declaration
+    (:func:`langslice.tools.descriptions.render.declare`); each tool's body is
+    in :mod:`.looking`, :mod:`.changing` or :mod:`.fitting`. The tools sit on
+    *job*; without one, a job is made around *state* in the context's job
+    folder (an empty undo history, nothing written until the first write).
+    *max_view_edge* is the largest picture the driver model takes (None: the
+    run model's lane,
     :func:`langslice.doors.tools.view_options.view_edge_limit`). *image_model*
-    is the image model ``trace_borders`` calls when the run has one (None:
-    this door resolves the spec's ``nonlinear.provider`` and ``image_model``
-    through :func:`langslice.providers.registry.resolve_image_model`). *level*
-    is the picture-size level the tools work at (None: the run's
+    is the image model ``trace_borders`` calls when the run has one (None: this
+    door resolves the spec's ``nonlinear.provider`` and ``image_model`` through
+    :func:`langslice.providers.connections.resolve_image_model`). *level* is
+    the picture-size level the tools work at (None: the run's
     ``image_resolution``; the CLI passes "auto": its caller sizes every
-    picture). *scripting* adds the verbs only scripts get
-    (``Verb.scripting``: ``export_maps``), for the CLI and the library.
-    *image_model_connected* False: the door cannot reach the spec's image
-    model (MCP with none connected), so the tools are those of a run without
-    one: no ``trace_borders``, ``submit`` not waiting for traces. The spec
-    itself is left as it is. *door* is who reads the declarations
-    (``agent``, ``mcp``, ``cli``: :data:`langslice.doors.declarations.DOORS`).
-    *event_door* is the door the job folder's ``logs/events.jsonl`` names
-    for every call (None: *door*; the library's is ``library``).
+    picture). *scripting* adds the verbs only scripts get (``Verb.scripting``:
+    ``export_maps``), for the CLI and the library. *image_model_connected*
+    False: the door cannot reach the spec's image model (MCP with none
+    connected), so the tools are those of a run without one: no
+    ``trace_borders``, ``submit`` not waiting for traces. The spec itself is
+    left as it is. *door* is who reads the declarations (``agent``, ``mcp``,
+    ``cli``: :data:`langslice.tools.descriptions.render.DOORS`). *event_door*
+    is the door the job folder's ``logs/events.jsonl`` names for every call
+    (None: *door*; the library's is ``library``).
 
     Every tool is wrapped, innermost first: the opening-read gate (writes),
     the strict argument check, the stale-deformation sweep, the picture
@@ -577,7 +587,7 @@ def build_tools(
     if traces_on and image_model is not None:
         from typing import cast
 
-        from langslice.core.nonlinear.registration_tool import profile_prompt
+        from langslice.core.fits.trace.trace import profile_prompt
         from langslice.core.space import Plane
 
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]

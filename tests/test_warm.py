@@ -1,4 +1,4 @@
-"""The agent CLI's warm process (``langslice.doors.cli.warm``): a call it
+"""The agent CLI's warm process (``langslice.doors.agent_cli.warm``): a call it
 answers is the cold call, byte for byte.
 
 Every call here is a process of its own (``python -m tests.warm_helper``,
@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-from langslice.doors.cli.jobcli import main
+from langslice.doors.agent_cli.main import main
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -381,7 +381,7 @@ def test_a_submitted_jobs_server_exits_after_a_short_idle(tmp_path):
     after ``SUBMITTED_IDLE_S`` without a call, not ``IDLE_S``."""
     from types import SimpleNamespace
 
-    from langslice.doors.cli import warm
+    from langslice.doors.agent_cli import warm
 
     assert warm.SUBMITTED_IDLE_S < warm.IDLE_S <= 15 * 60
     state = tmp_path / "state.json"

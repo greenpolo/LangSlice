@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.atlas.render import region_boundaries
-from langslice.core.deformable import (
+from langslice.core.atlas.borders import region_boundaries
+from langslice.core.fits.deformable import (
     FitSettings,
     draw_warped_borders,
     warped_border_layers,
 )
-from langslice.core.nonlinear.border_refinement import smooth_border_overlay
+from langslice.core.fits.trace.lines import smooth_border_overlay
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -81,7 +81,7 @@ def test_smooth_borders_follow_the_nearest_label_edges(case):
 
 
 def test_resampled_record_draws_the_same_borders_smaller(case):
-    from langslice.core.deformable import resampled_record
+    from langslice.core.fits.deformable import resampled_record
 
     atlas, _, record = case
     width, height = record.section_size
@@ -100,7 +100,7 @@ def test_resampled_record_draws_the_same_borders_smaller(case):
 def test_warping_the_section_by_a_zero_field_changes_nothing(case):
     from dataclasses import replace
 
-    from langslice.core.deformable import warp_section_image
+    from langslice.core.fits.deformable import warp_section_image
 
     _, image, record = case
     still = replace(record, field_mm=np.zeros_like(record.field_mm),

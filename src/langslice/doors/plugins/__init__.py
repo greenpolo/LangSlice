@@ -10,7 +10,7 @@ the plugins a ``JobSpec`` names.
 
 from __future__ import annotations
 
-from langslice.core.deformation import flag_words
+from langslice.core.fits.deformation import flag_words
 from langslice.core.plugins import (
     PLUGIN_API_VERSION,
     Layer,

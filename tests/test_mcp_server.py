@@ -15,7 +15,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
-from langslice.core.opening import (
+from langslice.core.pictures.opening import (
     CLAUDE_MAX_IMAGE_EDGE,
     CLAUDE_MAX_IMAGE_PATCHES,
     patches,
@@ -274,7 +274,8 @@ def test_the_server_advertises_that_its_tool_list_changes():
 
 
 def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
-    from langslice.doors.mcp.server import PAGE_BYTES, briefing, open_job
+    from langslice.doors.mcp.pages import PAGE_BYTES
+    from langslice.doors.mcp.server import briefing, open_job
 
     folder = _folder(tmp_path, n=36)
     rng = np.random.default_rng(17)
@@ -306,7 +307,7 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
 
 
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import saved_jobs
+    from langslice.doors.abba import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
@@ -344,7 +345,7 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
 
 def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any):
     """DOORS-1: a second open of the same saved job keeps its writes and undo history."""
-    from langslice.doors.api import saved_jobs
+    from langslice.doors.abba import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
@@ -371,7 +372,7 @@ def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any
 def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypatch: Any):
     import socket
 
-    from langslice.doors.api import saved_jobs
+    from langslice.doors.abba import saved_jobs
 
     monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
 
@@ -399,7 +400,7 @@ def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypa
     assert channel.socket is None
 
     # A job id is a plain name and a channel is loopback only.
-    from langslice.doors.api import saved_jobs
+    from langslice.doors.abba import saved_jobs
 
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
         saved_jobs.load_job("../../outside")
@@ -408,9 +409,10 @@ def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypa
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import saved_jobs, setup
-    from langslice.doors.api.models import EngineRequest
-    from langslice.hosts.api.service import handle_request
+    from langslice.doors import credentials as setup
+    from langslice.doors.abba import saved_jobs
+    from langslice.doors.abba.contract import EngineRequest
+    from langslice.hosts.service import handle_request
 
     monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     monkeypatch.setattr(setup, "apply_saved_credentials", lambda: (_ for _ in ()).throw(
@@ -442,7 +444,7 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
 
 def _init(folder: Path, *flags: str) -> Any:
     """``langslice-job FOLDER init`` with *flags*, on the test atlas."""
-    from langslice.doors.cli.job import init
+    from langslice.doors.agent_cli.calls import init
 
     envelope = init(str(folder), list(flags), atlas_loader=lambda _n: _ATLAS)
     assert envelope.ok, envelope
@@ -500,7 +502,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
 def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, monkeypatch: Any):
     """ABBA's Claude mode: the tools' start/end events and the opening pages reach the
     ABBA channel as agent events, with the saved pictures' paths, never bytes."""
-    from langslice.doors.api import saved_jobs
+    from langslice.doors.abba import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
@@ -549,9 +551,9 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
 
 
 def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
-    from langslice.doors.mcp.server import result_blocks
+    from langslice.doors.mcp.pages import result_blocks
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.reply import REPLY_BYTES
+    from langslice.tools.reply import REPLY_BYTES
 
     rng = np.random.default_rng(3)
     noise = [Image.fromarray(rng.integers(0, 256, (1500, 2000, 3), dtype=np.uint8))

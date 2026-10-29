@@ -2,11 +2,12 @@
 
 A deliberately small public surface: what LangSlice itself reads (the atlas,
 its plane positions and the reference plate); region maps and borders are in
-:mod:`langslice.core.atlas.render`, region levels in
+:mod:`langslice.core.atlas.borders`, region levels in
 :mod:`langslice.core.atlas.levels`.
 """
 
-from langslice.core.atlas.core import (
+from langslice.core.atlas.images import TEMPLATE, atlas_images, atlas_volume
+from langslice.core.atlas.load import (
     DEFAULT_ATLAS_NAME,
     canonicalize_atlas_name,
     get_position_range_mm,
@@ -15,7 +16,6 @@ from langslice.core.atlas.core import (
     load_atlas,
     position_mm_to_index,
 )
-from langslice.core.atlas.images import TEMPLATE, atlas_images, atlas_volume
 
 __all__ = [
     "load_atlas",

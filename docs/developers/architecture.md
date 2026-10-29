@@ -6,20 +6,21 @@ job and the same operations. Package `CLAUDE.md` files (with identical
 
 ## Layers
 
-Dependencies flow downward: `hosts` → `doors` / `agent` → `ops` → `job` →
-`core`. Import-linter enforces the boundaries without exceptions.
+Dependencies flow downward: `hosts` → `doors` → `tools` → `job` → `core`.
+`providers` sits beside the layers and imports `core` only; `engines` (the
+in-tree plugins) sits beside `hosts` and imports the plugin API only.
+Import-linter enforces the boundaries without exceptions.
 
 | Package | Responsibility |
 |---|---|
-| `core` | State and job spec, calibrated geometry, atlas access, pictures, registration engines, image-model border processing |
-| `job` | Job folder, checkpoint, undo history, submit checks and exports |
-| `ops` | Operations on a job; `registry.py` lists tools, task conditions and call limits |
-| `doors` | Shared declarations, native agent tools, MCP, CLI, Python library and worker contract |
-| `agent` | Built-in ADK agent session |
+| `core` | The science and the stack's shapes: the stack and section state (`stack/`), geometry, atlas access, the section files and images (`sections/`), pictures, the registration methods and engines (`fits/`), maps; the job spec and the tool table |
+| `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports |
+| `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
+| `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command, the Python library and the worker contract |
 | `hosts` | JSON-lines service, ABBA launcher, viewer and log, the LangSlice window (`langslice gui`) |
 | `providers` | Model access, beside the layers; receives no task logic |
 
-`core`, `job` and `ops` import no provider or model SDK. Image models are
+`core`, `job` and `tools` import no provider or model SDK. Image models are
 passed in as arguments. `connectors/` contains code installed in another
 program: Fiji's Java plugin and the Claude Desktop, Claude Code, Antigravity
 and Codex setups.
@@ -28,8 +29,8 @@ and Codex setups.
 
 An interface creates a `JobSpec` or opens saved settings, then calls
 operations on a `Job`. `core/toolset.py` lists the tools, their options and
-what each needs, and `ops/registry.py` binds them to the operations and
-decides tool availability; `doors/declarations.py` supplies the common
+what each needs, and `tools/catalog.py` binds them to the operations and
+decides tool availability; `tools/descriptions/render.py` supplies the common
 argument declarations. Tasks remove whole registration tools, a job's
 `disabled` list removes single tools and options, and viewing and image
 tools remain available otherwise. Model-facing text that names a tool or an
@@ -39,7 +40,7 @@ job. See [tools and options](../reference/tools.md).
 A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
 whose tools join the toolbox. `core/plugins.py` holds the plugin types and the
 registry of loaded plugins, which `core/toolset.py` (`tools_for(spec)`) and
-`ops/registry.py` (`verbs_for(spec)`) merge with the native tables for that
+`tools/catalog.py` (`verbs_for(spec)`) merge with the native tables for that
 spec; `doors/plugins/` loads them, gives each handler a context that writes
 through the same operations, and builds their declarations, provenance and the
 MCP adapter. The native tables are unchanged, and a job without plugins has
@@ -53,7 +54,7 @@ back. Source images remain immutable. Processes
 share a file lock and reload changed state before calls; a read never waits
 for the lock and reads the state as last saved. The agent CLI's calls
 on one job folder are answered by that folder's warm process
-(`doors/cli/warm.py`, [details](../agents/cli.md#the-warm-process)): it loads the
+(`doors/agent_cli/warm.py`, [details](../agents/cli.md#the-warm-process)): it loads the
 libraries and the atlas once and forks a child per call, which runs the cold
 call's code as a process of its own. Long operations
 compute outside the lock, then validate their inputs before applying;
@@ -74,8 +75,8 @@ user workflow are in [ABBA](../abba.md).
 Protocol version 1 uses one JSON object per line. Requests have `id`,
 `method`, `params`; responses carry the same `id` and `type` of `event`,
 `result` or `error`. Stdout is protocol-only; diagnostics go to stderr.
-The contract is `doors/api/models.py`, preparation and translation are in
-`doors/api/abba_worker.py`, and transport is in `hosts/api/service.py`.
+The contract is `doors/abba/contract.py`, preparation and translation are in
+`doors/abba/worker.py`, and transport is in `hosts/service.py`.
 
 | Method | Purpose |
 |---|---|

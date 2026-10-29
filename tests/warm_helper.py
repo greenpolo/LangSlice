@@ -2,7 +2,7 @@
 
 ``python -m tests.warm_helper FOLDER VERB ...`` is ``langslice-job FOLDER
 VERB ...`` as installed (the warm process first,
-:func:`langslice.doors.cli.warm.run`; a cold call here otherwise), with the
+:func:`langslice.doors.agent_cli.warm.run`; a cold call here otherwise), with the
 shared synthetic atlas and fit settings (``tests/synthetic_stack.py``); the
 warm process it starts is :func:`serve`, the same server with that atlas.
 ``tests/test_warm.py`` runs both. A module ``warmprobe`` on the import path
@@ -29,7 +29,7 @@ def _synthetic() -> None:
 
 
 def serve(args: list[str]) -> int:
-    """The warm process (:func:`langslice.doors.cli.warm.serve_main`) on the
+    """The warm process (:func:`langslice.doors.agent_cli.warm.serve_main`) on the
     synthetic atlas. The environment is put back as it came: the imports
     may set variables (OpenCV's ``LD_LIBRARY_PATH``) that the server compares
     with its callers'."""
@@ -41,14 +41,15 @@ def serve(args: list[str]) -> int:
         import warmprobe  # noqa: F401  # pyright: ignore[reportMissingImports]
     except ImportError:
         pass
-    from langslice.doors.cli import warm
+    from langslice.doors.agent_cli import warm
 
     warm.BOOT = BOOT
     return warm.serve_main(args)
 
 
 def main() -> int:
-    from langslice.doors.cli import jobcli, warm
+    from langslice.doors.agent_cli import main as jobcli
+    from langslice.doors.agent_cli import warm
 
     warm.BOOT = BOOT
     code = warm.run(sys.argv[1:])

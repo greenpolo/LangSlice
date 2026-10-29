@@ -11,13 +11,13 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice.agent.plugins import (
+from langslice.doors.agent.adk_plugins import (
     DEFAULT_KEEP_IMAGES,
     DEFAULT_MAX_IMAGES,
     RequestCapturePlugin,
     WorkingSetImages,
 )
-from langslice.agent.session import build_plugins, run_agent_session
+from langslice.doors.agent.session import build_plugins, run_agent_session
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
 

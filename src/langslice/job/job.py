@@ -1,19 +1,19 @@
 """The job: one stack's state and everything that keeps it consistent.
 
-A :class:`Job` owns the :class:`~langslice.core.state.StackState` and the
+A :class:`Job` owns the :class:`~langslice.core.stack.stack.StackState` and the
 :class:`~langslice.core.spec.JobSpec`, its job folder
 (:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
-sections' frozen properties and the host's damage notes, undo/redo
-(persisted in the job folder), the checkpoint and its observers
-(:meth:`Job.observe`), the submit gates, the stale-deformation rule, the
-deformation record store, the store of the pictures the model was shown
-(:class:`langslice.job.views.ViewStore`), the transform-count cap, the
-background image-correction jobs and the background
-work built on them (:class:`langslice.job.background.BackgroundWork`). ``ingest``,
+sections' frozen properties and the host's damage notes, undo/redo (persisted
+in the job folder), the checkpoint and its observers (:meth:`Job.observe`), the
+submit gates, the stale-deformation rule, the deformation record store, the
+store of the pictures the model was shown
+(:class:`langslice.job.pictures.ViewStore`), the transform-count cap, the
+background image-correction jobs and the background work built on them
+(:class:`langslice.job.background.BackgroundWork`). ``ingest``,
 ``apply_host_inputs`` and ``emit_results`` open and close it. It imports the
-core and the job folder package (``langslice.job``) only: no agent
-framework, no message types, no provider. The doors (the ADK toolbox, the
-MCP server) sit on it; a script can drive it directly.
+core and the job folder package (``langslice.job``) only: no agent framework,
+no message types, no provider. The doors (the ADK toolbox, the MCP server) sit
+on it; a script can drive it directly.
 
 What a Job never holds: the model-delivery bookkeeping (which pictures a
 model has received). That is the tool doors'
@@ -52,23 +52,22 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core import deformation, section_images
 from langslice.core import frozen as freeze
-from langslice.core.discovery import discover_slices
+from langslice.core.fits import deformation
 from langslice.core.frozen import FROZEN
-from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
-from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
-from langslice.job import formats, recent
+from langslice.core.sections import images as section_images
+from langslice.core.sections.discovery import discover_slices
+from langslice.core.spec import (
+    MAX_PARALLEL_TRANSFORMS,
+    JobSpec,
+    supplied_angles,
+)
+from langslice.core.stack.section import IDENTITY_KNOBS, ROTATIONS, SliceState
+from langslice.core.stack.stack import StackState
+from langslice.job import public_files as formats
+from langslice.job import recent
 from langslice.job import registrations as regs
 from langslice.job.background import SECTION_BUSY, BackgroundWork, in_worker
-from langslice.job.checkpoint import (
-    Upgrade,
-    read_checkpoint,
-    relative_to,
-    state_paths,
-    write_checkpoint,
-    write_json_atomic,
-)
 from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
 from langslice.job.history import History
 from langslice.job.layout import (
@@ -78,18 +77,23 @@ from langslice.job.layout import (
     write_job_file,
 )
 from langslice.job.lock import FolderLock
+from langslice.job.pictures import DiscardedViews, ViewStore
 from langslice.job.registrations import Registrations
-from langslice.job.views import DiscardedViews, ViewStore
+from langslice.job.state_file import (
+    Upgrade,
+    read_checkpoint,
+    relative_to,
+    state_paths,
+    write_checkpoint,
+    write_json_atomic,
+)
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
 
-logger = logging.getLogger(__name__)
+from langslice.job.gates import submit_errors
 
-#: A reported interval break must exceed this multiple of the median spacing.
-INTERVAL_BREAK_MIN_RATIO = 1.5
-#: With ``strict_interval``, every spacing within this fraction of the interval.
-STRICT_INTERVAL_TOLERANCE = 0.10
+logger = logging.getLogger(__name__)
 
 #: The transform a section with a frozen affine and none supplied carries: the
 #: host's snapshot is already registered in-plane, so the identity IS its
@@ -355,209 +359,6 @@ def emit_results(
     return state
 
 
-# --- the submit gates ------------------------------------------------------------
-
-
-def missing_positions(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section has a position, else the rejection
-    naming the sections without one."""
-    missing = [record.id for record in state.in_order() if record.position_mm is None]
-    if not missing:
-        return None
-    return {
-        "status": "error",
-        "error": "MISSING_POSITIONS",
-        "missing_ids": missing,
-        "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) have no position; "
-            "every section needs one, damaged ones included."
-        ),
-    }
-
-
-def strict_interval_error(state: StackState, breaks: list[int]) -> dict[str, Any] | None:
-    """Every consecutive spacing within 10% of the interval, no breaks."""
-    if breaks:
-        return {
-            "status": "error",
-            "error": "STRICT_INTERVAL",
-            "reported_breaks": [record.id for record in state.in_order()
-                                if record.index_corrected in set(breaks)],
-            "message": (
-                "strict_interval is on: interval_breaks must be empty, "
-                f"{len(breaks)} were reported."
-            ),
-        }
-    interval = float(state.interval_mm or 0.0)
-    if interval <= 0:
-        return None
-    placed = [s for s in state.in_order() if s.position_mm is not None]
-    tolerance = interval * STRICT_INTERVAL_TOLERANCE
-    failures: list[dict[str, Any]] = []
-    for before, after in zip(placed, placed[1:], strict=False):
-        spacing = abs(float(after.position_mm) - float(before.position_mm))  # type: ignore[arg-type]
-        if abs(spacing - interval) > tolerance:
-            failures.append(
-                {
-                    "between": [before.id, after.id],
-                    "spacing_mm": round(spacing, 3),
-                }
-            )
-    if not failures:
-        return None
-    return {
-        "status": "error",
-        "error": "STRICT_INTERVAL",
-        "interval_mm": round(interval, 3),
-        "tolerance_mm": round(tolerance, 3),
-        "failures": failures,
-        "message": (
-            f"strict_interval is on: every consecutive spacing must be within "
-            f"{STRICT_INTERVAL_TOLERANCE:.0%} of {interval:.3f} mm; "
-            f"{len(failures)} pair(s) are not."
-        ),
-    }
-
-
-def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] | None:
-    """Check reported interval breaks against the spacing that was WRITTEN.
-
-    A break at the section of corrected index *i* (``submit`` names it by
-    filename) claims the gap between *i-1* and *i* is larger than the rest
-    of the stack's; the positions on the state make that
-    claim checkable without an image.
-    """
-    if not breaks:
-        return None
-    ordered = state.in_order()
-    deltas = [
-        abs(float(b.position_mm) - float(a.position_mm))  # type: ignore[arg-type]
-        for a, b in zip(ordered, ordered[1:], strict=False)
-        if a.position_mm is not None and b.position_mm is not None
-    ]
-    if not deltas:
-        return None
-    median = float(sorted(deltas)[len(deltas) // 2])
-    threshold = median * INTERVAL_BREAK_MIN_RATIO
-
-    failures: list[dict[str, Any]] = []
-    for index in sorted(set(breaks)):
-        position = next(
-            (i for i, r in enumerate(ordered) if r.index_corrected == index), None
-        )
-        if position is None or position == 0:
-            failures.append(
-                {
-                    **({"id": ordered[position].id} if position is not None else {}),
-                    "error": "NOT_A_GAP",
-                    "reason": (
-                        "no section comes before it in the stack's order; a break "
-                        "names the section AFTER the gap."
-                    ),
-                }
-            )
-            continue
-        before, after = ordered[position - 1], ordered[position]
-        if before.position_mm is None or after.position_mm is None:
-            continue
-        written = abs(float(after.position_mm) - float(before.position_mm))
-        if written > threshold:
-            continue
-        failures.append(
-            {
-                "id": after.id,
-                "error": "NOT_A_GAP",
-                "written_interval_mm": round(written, 3),
-                "median_interval_mm": round(median, 3),
-                "between": [before.id, after.id],
-            }
-        )
-    if not failures:
-        return None
-    return {
-        "status": "error",
-        "error": "INTERVAL_BREAKS_UNSUPPORTED",
-        "failures": failures,
-        "message": (
-            f"{len(failures)} reported interval break(s) are not in the "
-            "positions you wrote. A break is accepted only where the "
-            f"written interval exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the "
-            "stack's median written spacing."
-        ),
-    }
-
-
-def missing_transforms(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section carries a transform, else the rejection."""
-    missing = [record.id for record in state.in_order() if record.transform is None]
-    if not missing:
-        return None
-    return {
-        "status": "error",
-        "error": "MISSING_TRANSFORMS",
-        "missing_ids": missing,
-        "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) carry no "
-            "transform; every section needs one, damaged ones included."
-        ),
-    }
-
-
-def missing_deformations(
-    state: StackState, exempt: frozenset[str] | set[str] = frozenset(),
-) -> dict[str, Any] | None:
-    """``None`` when every section carries a deformation at its current linear
-    placement, or else the rejection. The sections in *exempt* (their
-    deformation frozen) need none."""
-    missing: list[dict[str, str]] = []
-    for record in state.in_order():
-        if record.id in exempt:
-            continue
-        held = record.deformation or {}
-        if not held:
-            missing.append({"id": record.id, "reason": "no deformation"})
-        elif held.get("linear_key") != deformation.linear_key(state, record):
-            missing.append({"id": record.id, "reason": "made at a different linear placement"})
-    if not missing:
-        return None
-    return {
-        "status": "error",
-        "error": "MISSING_DEFORMATIONS",
-        "sections": missing,
-        "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
-            "current placement. The user requires a deformation on every section: fit one on each."
-        ),
-    }
-
-
-def submit_errors(
-    state: StackState, spec: JobSpec, breaks: list[int],
-) -> dict[str, Any] | None:
-    """Every gate that applies to this run, in order. The deformation gate
-    applies only when the host requires one (``NonlinearSpec.require_deformation``)."""
-    if spec.has("position"):
-        refusal = (
-            missing_positions(state)
-            or (
-                strict_interval_error(state, breaks)
-                if spec.position.strict_interval
-                else unsupported_breaks(state, breaks)
-            )
-        )
-        if refusal is not None:
-            return refusal
-    if spec.has("transform"):
-        refusal = missing_transforms(state)
-        if refusal is not None:
-            return refusal
-    if spec.has("nonlinear") and spec.nonlinear.require_deformation:
-        frozen = {record.id for record in state.slices
-                  if "deformation" in spec.frozen_for(record.id)}
-        return missing_deformations(state, frozen)
-    return None
-
-
 # --- background image corrections ---------------------------------------------------
 
 
@@ -693,7 +494,7 @@ class Job:
         """The workspace the job's sections and atlas are read through (set by
         :meth:`open`, :meth:`load` and the tool door): every checkpoint rewrites
         ``registration.json`` through it
-        (:func:`langslice.job.formats.write_registration`), and its made
+        (:func:`langslice.job.public_files.write_registration`), and its made
         section images are read from this job's folder."""
         return self._workspace
 
@@ -878,7 +679,7 @@ class Job:
     @property
     def engine_log(self) -> str | None:
         """Where the registration engines' own output goes while they fit
-        (``logs/engine.log``, :mod:`langslice.core.engine_output`); None for
+        (``logs/engine.log``, :mod:`langslice.core.fits.engine_log`); None for
         a job that persists nothing."""
         return str(self.layout.logs_dir / "engine.log") if self.persist else None
 
@@ -894,13 +695,13 @@ class Job:
         """Write the state (atomically, versioned), then tell every observer.
 
         Its public rendering, ``registration.json``
-        (:func:`langslice.job.formats.write_registration`; a failure there is
-        logged, never raised), and the landmark files follow once, as the
-        outermost hold of the job folder's lock ends: a write that
-        checkpoints several times in one hold (the write, then the
-        deformations it made stale) maps the stack once, from the state it
-        leaves, still under the lock."""
-        from langslice.core.landmarks import stale
+        (:func:`langslice.job.public_files.write_registration`; a failure there
+        is logged, never raised), and the landmark files follow once, as the
+        outermost hold of the job folder's lock ends: a write that checkpoints
+        several times in one hold (the write, then the deformations it made
+        stale) maps the stack once, from the state it leaves, still under the
+        lock."""
+        from langslice.core.fits.landmarks import stale
 
         for record in self.state.slices:
             for pair in record.landmarks.get("pairs", []):
@@ -932,12 +733,12 @@ class Job:
         what :meth:`sync` returned (the state as held before a reload, or
         None). Reentrant in this thread. A long operation computes outside
         it, from the state it read, and enters it only to apply: after the
-        sync it checks that each section's inputs are unchanged
-        (``ops.inputs``) and refuses a section whose inputs moved
-        (``STALE_INPUT``). The section records are new objects after a
-        reload: resolve them by id inside the block. A thread running the
-        job's background work gives way to a lock holder that waits for that
-        work (:mod:`langslice.job.background`: ``LockYielded``).
+        sync it checks that each section's inputs are unchanged and refuses
+        a section whose inputs moved (``STALE_INPUT``). The section records
+        are new objects after a reload: resolve them by id inside the block.
+        A thread running the job's background work gives way to a lock holder
+        that waits for that work (:mod:`langslice.job.background`:
+        ``LockYielded``).
         """
         with self.lock.held(self.background.gives_way if in_worker() else None):
             yield self.sync()

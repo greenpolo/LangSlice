@@ -14,9 +14,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from langslice.agent.engine import build_context, build_seed_message
-from langslice.core import oblique
+from langslice.core.geometry import oblique
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context, build_seed_message
 from langslice.job.job import ingest
 from tests.fakes import ellipse_section
 

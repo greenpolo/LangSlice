@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.doors.api.abba_worker import run_linear
+from langslice.doors.abba.worker import run_linear
 
 #: ABBA's stack-wide angles as the connector always sends them (flat).
 FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
@@ -28,7 +28,7 @@ def params(tmp_path):
 def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
     params, monkeypatch, initial_position,
 ):
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
 
     params["positions_mm"]["section_0001.tif"] = initial_position
 
@@ -79,7 +79,7 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
      "nonlinear.provider"),
 ])
 def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypatch):
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
 
     async def never(*args, **kwargs):
         raise AssertionError("the engine must not start")
@@ -93,7 +93,7 @@ def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypa
 @pytest.mark.parametrize(("frozen", "sent"), [
     (frozenset(), True), (frozenset({"orientation"}), False), (frozenset({"affine"}), True)])
 def test_orientation_reaches_the_host_unless_it_is_frozen(frozen, sent):
-    from langslice.doors.api.abba_worker import _host_updates
+    from langslice.doors.abba.checkpoints import _host_updates
 
     before = {"slices": [{"id": "a.tif", "position_mm": 4.0, "index_corrected": 0,
                           "flip": False, "rotation_deg": 0, "transform": None}]}
@@ -112,7 +112,7 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
     finding 12)."""
     import os
 
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
     from langslice.job import index, layout
 
     if where == "read_only" and hasattr(os, "geteuid") and os.geteuid() == 0:
@@ -152,7 +152,8 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
 
 
 def _angled_state(*angles):
-    from langslice.core.state import SliceState, StackState
+    from langslice.core.stack.section import SliceState
+    from langslice.core.stack.stack import StackState
 
     slices = [SliceState(id=f"s{i}.tif", index_original=i, index_corrected=i)
               for i in range(len(angles))]
@@ -162,11 +163,11 @@ def _angled_state(*angles):
 
 
 def test_an_angle_per_section_is_refused_before_abba_sees_it(params, monkeypatch):
-    from langslice.doors.api.abba_worker import (
+    from langslice.doors.abba.checkpoints import (
         ABBA_MIXED_ANGLES,
         checkpoint_callback,
-        prepare_linear,
     )
+    from langslice.doors.abba.worker import prepare_linear
 
     events = []
     checkpoint = checkpoint_callback(prepare_linear(params), events.append)
@@ -177,7 +178,7 @@ def test_an_angle_per_section_is_refused_before_abba_sees_it(params, monkeypatch
     assert str(refused.value) == ABBA_MIXED_ANGLES
     assert len(events) == 1  # nothing emitted to the host
 
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
 
     async def run(spec, *, on_write, on_event, emit, **_):
         return _angled_state((1.0, 0.0), (0.0, 0.0))
@@ -191,7 +192,7 @@ def test_an_angle_per_section_is_refused_before_abba_sees_it(params, monkeypatch
 
 
 def test_abba_angles_become_the_stack_wide_input_and_angle_tasks_are_allowed(params):
-    from langslice.doors.api.abba_worker import prepare_linear
+    from langslice.doors.abba.worker import prepare_linear
 
     params.update(angles_deg={"pitch_deg": 2.5, "yaw_deg": -1.0}, z_offset_mm=5.7)
     params["spec"] = {"tasks": ["position", "transform"], "transform": {"angles": True}}
@@ -205,7 +206,7 @@ def test_abba_angles_become_the_stack_wide_input_and_angle_tasks_are_allowed(par
 def test_existing_warp_is_kept_with_the_job_and_frozen_through_the_spec(params):
     """Which sections keep their own warp is the host's say, as
     `spec.frozen`; `existing_warp` is only recorded with the job."""
-    from langslice.doors.api.abba_worker import prepare_linear
+    from langslice.doors.abba.worker import prepare_linear
 
     params.update(existing_warp=["section_0001.tif"])
     params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"},
@@ -217,10 +218,8 @@ def test_existing_warp_is_kept_with_the_job_and_frozen_through_the_spec(params):
 
 
 def test_host_angles_are_sent_when_the_stack_wide_angles_change(tmp_path):
-    from langslice.doors.api.abba_worker import (
-        checkpoint_callback,
-        prepare_linear,
-    )
+    from langslice.doors.abba.checkpoints import checkpoint_callback
+    from langslice.doors.abba.worker import prepare_linear
 
     for name in ("s0.tif", "s1.tif"):
         Image.new("L", (80, 40)).save(tmp_path / name)
@@ -239,7 +238,7 @@ def test_host_angles_are_sent_when_the_stack_wide_angles_change(tmp_path):
 
 
 def test_the_abba_session_facts_are_kept_with_the_job(params, monkeypatch, tmp_path):
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
     from langslice.job.layout import JobLayout, read_job_file
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -272,10 +271,8 @@ def warped(tmp_path_factory):
 
     import langslice
     from langslice.core.spec import NonlinearSpec
-    from langslice.doors.api.abba_worker import (
-        PreparedLinear,
-        checkpoint_callback,
-    )
+    from langslice.doors.abba.checkpoints import checkpoint_callback
+    from langslice.doors.abba.worker import PreparedLinear
     from langslice.doors.jobs import create
     from tests.synthetic_stack import (
         ID0,
@@ -327,9 +324,13 @@ def _row(event, name):
 
 @pytest.mark.slow
 def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
-    from langslice.core.abba_warp import world_frame
-    from langslice.core.maps import native_points, section_frame, stored_params
-    from langslice.core.thin_plate import ThinPlateKernel
+    from langslice.core.geometry.thin_plate import ThinPlateKernel
+    from langslice.core.maps.abba import world_frame
+    from langslice.core.maps.section_maps import (
+        native_points,
+        section_frame,
+        stored_params,
+    )
     from tests.synthetic_stack import ID0, ID1
 
     pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
@@ -457,7 +458,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
 
     import langslice
     from langslice.core.spec import NonlinearSpec
-    from langslice.doors.api.abba_worker import prepare_linear
+    from langslice.doors.abba.worker import prepare_linear
     from langslice.doors.jobs import create
     from tests.synthetic_stack import (
         ID0,
@@ -502,7 +503,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
 def test_the_run_ends_with_a_checkpoint_of_the_final_state(params, monkeypatch):
     """The connector applies the end-of-run checkpoint's rows, so the
     worker always sends one after the engine."""
-    from langslice.agent import engine
+    from langslice.doors.agent import engine
 
     async def run(spec, *, on_write, on_event, emit, **_):
         row = {"id": "section_0001.tif", "position_mm": 4.0, "rotation_deg": 0,

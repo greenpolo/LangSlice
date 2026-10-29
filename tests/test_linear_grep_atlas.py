@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas

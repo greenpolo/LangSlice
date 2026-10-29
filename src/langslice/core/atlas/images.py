@@ -68,7 +68,7 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
     """The augmented atlas's template on *atlas*'s grid, zero outside its brain."""
     from scipy.ndimage import affine_transform
 
-    from langslice.core.atlas.core import load_atlas
+    from langslice.core.atlas.load import load_atlas
 
     annotation = np.asarray(atlas.annotation)
     key = (str(getattr(atlas, "atlas_name", "?")), annotation.shape)

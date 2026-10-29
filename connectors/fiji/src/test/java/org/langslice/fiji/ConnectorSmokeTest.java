@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** Offline executable integration checks, using a real fake-worker subprocess. */
 public final class ConnectorSmokeTest {
-    /** setup.status "spec_defaults" as the worker sends it (doors/api/setup.spec_defaults: JobSpec's defaults). */
+    /** setup.status "spec_defaults" as the worker sends it (doors/credentials.spec_defaults: JobSpec's defaults). */
     static final JsonObject SPEC_DEFAULTS = JsonParser.parseString("{\"atlas\":\"allen_mouse_25um\",\"plane\":\"coronal\",\"model\":null,\"reasoning\":null,\"preprocess\":\"auto\",\"host_preprocessing\":null,\"image_resolution\":\"low\",\"tasks\":[\"position\",\"transform\"],\"position\":{\"thickness_um\":null,\"interval_um\":null,\"strict_interval\":false,\"playbook\":false,\"notes\":\"\"},\"transform\":{\"hemisphere_cue\":\"\",\"angles\":false,\"max_parallel\":4,\"notes\":\"\"},\"nonlinear\":{\"provider\":\"openai-oauth\",\"image_model\":null,\"notes\":\"\"},\"debrief\":true}").getAsJsonObject();
     static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
 

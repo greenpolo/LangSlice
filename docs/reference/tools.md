@@ -197,7 +197,7 @@ A call over a limit is refused with `TOO_MANY_SECTIONS` and nothing is done.
   plausibility flags; and the positioning picture's smallest ruler margin
   and span. The EM's grid stays at the sampling at which holes, tears and
   debris are seen. A fit's reply reports its engine numbers at the job's
-  scale (`core/atlas/size.py`).
+  scale (`core/atlas/brain_size.py`).
 - **`view`.** Every tool that changes the registration returns a picture of
   the result unless called with `view` false. A job with
   [`force_view`](settings.md#pictures) does not offer `view`, so the
@@ -950,7 +950,7 @@ the job's `image_resolution` is `auto`.
 
 **Details.** The triangulation is of the pairs' section points in their pixel
 aspect ratio, with the four corners 10% outside the frame, and a piecewise
-affine pull-back to the matching atlas points (`core/triangulation.py`). A
+affine pull-back to the matching atlas points (`core/geometry/triangulation.py`). A
 pair whose two endpoints are one point of an overlay corresponds to that spot
 against the baseline the warp is applied on, so it keeps it where it is. A
 pair on the outline with no pair beside it drags distant anatomy through the

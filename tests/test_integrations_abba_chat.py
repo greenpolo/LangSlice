@@ -6,7 +6,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from langslice.hosts.integrations import abba_chat as chat
+from langslice.hosts.abba import log as chat
 
 
 def test_history_preserves_summary_deltas_and_ignores_private_fields():

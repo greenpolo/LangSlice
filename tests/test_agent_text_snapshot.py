@@ -80,7 +80,7 @@ def _specs(folder: Path) -> dict[str, Any]:
 
 
 def _context(spec: Any) -> Any:
-    from langslice.agent.engine import build_context
+    from langslice.doors.agent.engine import build_context
 
     return build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
 
@@ -113,7 +113,7 @@ def _schema_lines(schema: dict[str, Any], indent: str = "") -> list[str]:
 def _declarations_md(title: str, spec: Any, image_model: Any = None) -> str:
     from google.adk.tools import FunctionTool
 
-    from langslice.doors.tools.media import packaged_tools
+    from langslice.doors.agent.media import packaged_tools
 
     box = _toolbox(spec, image_model)
     out = [f"# Tool declarations: {title}", ""]
@@ -161,8 +161,11 @@ def _system_prompt_md() -> str:
 
 
 def _statement_md(label: str, spec: Any, with_notes: bool = False) -> str:
-    from langslice.agent.prompt import build_job_statement, display_facts
     from langslice.doors.statement import user_notes_lines
+    from langslice.tools.descriptions.statement import (
+        build_job_statement,
+        display_facts,
+    )
 
     ctx = _context(spec)
     from langslice.job.job import ingest
@@ -194,8 +197,8 @@ def _launch_images(folder: Path) -> Path:
 
 def _cli_card_md(folder: Path) -> str:
     """The job folder's reference card (``AGENTS.md``) the agent CLI gives a coding agent."""
-    from langslice.doors.card import card_text
     from langslice.doors.jobs import open_folder
+    from langslice.doors.reference_card import card_text
 
     images = _launch_images(folder)
     opened = open_folder(images, atlas_loader=atlas_loader(), persist=False, door="cli")
@@ -209,7 +212,7 @@ def _cli_card_md(folder: Path) -> str:
 def _launch_md(folder: Path, role: str) -> str:
     """The launch prompt of *role* for the synthetic job: what a main session
     passes on as the registration subagent's whole prompt."""
-    from langslice.doors.cli.job import execute
+    from langslice.doors.agent_cli.calls import execute
 
     images = _launch_images(folder)
     envelope = execute(str(images), "launch", ["--role", role], atlas_loader=atlas_loader())
@@ -250,8 +253,8 @@ def _refusal_script() -> list[tuple[str, str, list[tuple[str, tuple[Any, ...], d
 
 
 def _refusals_md(folder: Path) -> str:
+    from langslice.doors.agent.media import package_result
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.media import package_result
 
     norm = Normaliser(folder)
     specs = _specs(folder)

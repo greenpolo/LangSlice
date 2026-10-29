@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context, run
 from langslice.core.spec import JobSpec, PositionSpec
+from langslice.doors.agent.engine import build_context, run
 from langslice.job.job import apply_host_inputs, ingest
 from tests import fakes
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack
@@ -80,7 +80,7 @@ def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
 def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
     # A host's own alignment (ABBA) carries a flip inside its affine: a
     # negative determinant. The harness keeps it as supplied.
-    from langslice.job.job import submit_errors
+    from langslice.job.gates import submit_errors
 
     names = _make_stack(tmp_path, n=2)
     mirrored = {"kind": "host", "params": [-1.0, 0.0, 1.0, 0.0, 1.0, 0.0], "mirrored": True}
@@ -251,7 +251,7 @@ def test_no_budget_setting_exists(tmp_path):
 def test_token_tally_tracks_last_and_peak_including_cached_input():
     from types import SimpleNamespace
 
-    from langslice.agent.session import TokenTally
+    from langslice.doors.agent.session import TokenTally
 
     tally = TokenTally()
     for prompt, cached in [(2000, 1900), (1000, 900)]:
@@ -390,7 +390,7 @@ def _job(tmp_path: Path):
 def test_background_message_waits_for_running_work_and_hands_it_out_once(tmp_path: Path):
     import threading
 
-    from langslice.agent.engine import background_message
+    from langslice.doors.agent.engine import background_message
     from langslice.job.background import DONE, Landed
 
     job = _job(tmp_path)

@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import section_images as images
-from langslice.core.sections import render_slice
+from langslice.core.sections import images
+from langslice.core.sections.renders import render_slice
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import Job
@@ -160,7 +160,7 @@ def test_a_fit_names_the_section_image_it_read(tmp_path: Path, atlas):
 
 
 def test_remaking_an_image_makes_the_section_stale_for_a_long_verb(tmp_path: Path, atlas):
-    from langslice.ops.inputs import section_inputs
+    from langslice.tools.stale import section_inputs
 
     job, _ctx, box = _box(tmp_path, atlas)
     record = job.state.by_id("s0.png")

@@ -6,7 +6,7 @@ which converts ADK requests to the Messages API. Four things it adds:
 - **The key**: ``ANTHROPIC_API_KEY`` when set, else the file
   ``~/.langslice/anthropic_api_key`` (beside the openai-oauth login files).
 - **Reasoning effort**: LangSlice sets ``reasoning_effort`` on a resolved model
-  (``agent.session._with_reasoning``); here it becomes Claude's
+  (``doors.agent.session._with_reasoning``); here it becomes Claude's
   ``output_config.effort`` with adaptive thinking, the API's way to set effort.
 - **Readable reasoning**: adaptive thinking asks for ``display: "summarized"``.
   On Opus 4.7 and later the API default is ``"omitted"`` (empty thinking text,
@@ -72,7 +72,8 @@ class AnthropicApiLlm(AnthropicLlm):
     """ADK ``AnthropicLlm`` with LangSlice's key lookup, effort and prompt caching."""
 
     max_tokens: int = MAX_TOKENS
-    #: Set by ``agent.session._with_reasoning`` from ``--reasoning``; None keeps the API default.
+    #: Set by ``doors.agent.session._with_reasoning`` from ``--reasoning``;
+    #: None keeps the API default.
     reasoning_effort: str | None = None
 
     def _build_anthropic_kwargs(  # type: ignore[override]

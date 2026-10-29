@@ -10,7 +10,7 @@ its count at the reference, with two exceptions: a rule whose report level
 or the checking mode changed since the reference (a rule being adopted, which
 the settings record shows), and the entries of a file that was moved (an
 entry of the same rule and columns at the reference, in a file that no
-longer exists).
+longer exists, or that left a file the move map moves definitions out of).
 """
 
 from __future__ import annotations
@@ -129,6 +129,7 @@ def pyright_growth(
     *,
     is_adopted: Callable[[PyrightEntry], bool],
     is_gone: Callable[[str], bool],
+    move_sources: Callable[[str], tuple[str, ...]],
 ) -> list[PyrightChange]:
     """Find the files and rules with more entries than at a reference.
 
@@ -143,7 +144,12 @@ def pyright_growth(
         reference; such entries may be new.
     is_gone
         Tells whether a file of the reference no longer exists; its
-        entries may reappear in another file, each one once.
+        entries may reappear in another file with the same span, each one
+        once.
+    move_sources
+        Gives the files the move map moves definitions out of into a file;
+        an entry that left one of them may reappear in that file, each one
+        once, matched by its span first and else by its rule alone.
 
     Returns
     -------
@@ -151,30 +157,91 @@ def pyright_growth(
         Each file and rule whose new entries are neither adopted nor
         moved, with the counts.
     """
+    before = list(before)
+    after = list(after)
     old = Counter((entry.path, entry.code) for entry in before)
-    moved = Counter(
-        (entry.code, entry.columns) for entry in before if is_gone(entry.path)
-    )
     groups: dict[tuple[str, str], list[PyrightEntry]] = {}
     for entry in after:
         if not is_adopted(entry):
             groups.setdefault((entry.path, entry.code), []).append(entry)
+    pool = _Departed.from_baselines(before, after, is_gone, move_sources)
 
     previous = Counter(before)
     changes: list[PyrightChange] = []
     for (path, code), entries in sorted(groups.items()):
         allowed = old[(path, code)]
-        excess = len(entries) - allowed
-        new_entries = Counter(entries) - previous
-        for entry in sorted(new_entries.elements()):
-            signature = (entry.code, entry.columns)
-            if excess > 0 and moved[signature] > 0:
-                moved[signature] -= 1
-                allowed += 1
-                excess -= 1
-        if excess > 0:
+        new_entries = sorted((Counter(entries) - previous).elements())
+        allowed += pool.take(new_entries, len(entries) - allowed)
+        if len(entries) > allowed:
             changes.append(PyrightChange(path, code, allowed, len(entries)))
     return changes
+
+
+@dataclass
+class _Departed:
+    """Hold the reference's entries that left their file, once each.
+
+    ``gone`` counts, by rule and span, the entries of files that no longer
+    exist and that the move map does not name; ``left`` holds, per file the
+    move map moves definitions out of, its entries that are no longer there.
+    """
+
+    gone: Counter[tuple[str, tuple[int, int, int]]]
+    left: dict[str, Counter[PyrightEntry]]
+    move_sources: Callable[[str], tuple[str, ...]]
+
+    @classmethod
+    def from_baselines(
+        cls,
+        before: list[PyrightEntry],
+        after: list[PyrightEntry],
+        is_gone: Callable[[str], bool],
+        move_sources: Callable[[str], tuple[str, ...]],
+    ) -> _Departed:
+        """Return the entries that left their files between two baselines."""
+        sources: set[str] = set()
+        for path in {entry.path for entry in after}:
+            sources.update(move_sources(path))
+        gone = Counter(
+            (entry.code, entry.columns)
+            for entry in before
+            if is_gone(entry.path) and entry.path not in sources
+        )
+        left: dict[str, Counter[PyrightEntry]] = {}
+        for source in sources:
+            then = Counter(entry for entry in before if entry.path == source)
+            now = Counter(entry for entry in after if entry.path == source)
+            left[source] = then - now
+        return cls(gone, left, move_sources)
+
+    def take(self, entries: list[PyrightEntry], excess: int) -> int:
+        """Count new entries as moved, up to the excess; return how many."""
+        taken = 0
+        for entry in entries:
+            if taken >= excess:
+                break
+            if self._take_one(entry):
+                taken += 1
+        return taken
+
+    def _take_one(self, entry: PyrightEntry) -> bool:
+        """Use up one departed entry for a new one, by span, else by rule."""
+        signature = (entry.code, entry.columns)
+        if self.gone[signature] > 0:
+            self.gone[signature] -= 1
+            return True
+        sources = self.move_sources(entry.path)
+        for source in sources:
+            same = PyrightEntry(source, entry.code, entry.columns)
+            if self.left[source][same] > 0:
+                self.left[source][same] -= 1
+                return True
+        for source in sources:
+            for left in self.left[source]:
+                if left.code == entry.code and self.left[source][left] > 0:
+                    self.left[source][left] -= 1
+                    return True
+        return False
 
 
 def _entry(path: str, item: object) -> PyrightEntry | None:

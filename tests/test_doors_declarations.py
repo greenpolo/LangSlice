@@ -1,6 +1,6 @@
 """Every verb has one declaration, and every door is built from it.
 
-``langslice.doors.declarations`` holds each verb's arguments and
+``langslice.tools.descriptions.render`` holds each verb's arguments and
 description; the agent tools (and through them the MCP tools) carry exactly
 those, and the CLI's schema is built from the same signature. This checks the
 wiring: the declared signatures, variants, defaults and the CLI schema.
@@ -13,18 +13,18 @@ from typing import Any
 
 import pytest
 
-from langslice.core.nonlinear.prompts import border_correction_tool_prompt
+from langslice.core.fits.trace.prompts import border_correction_tool_prompt
 from langslice.core.spec import JobSpec, TransformSpec
-from langslice.doors import declarations
-from langslice.doors.declarations import (
+from langslice.tools.arguments import SectionPosition, SectionTransform
+from langslice.tools.catalog import VERBS
+from langslice.tools.descriptions import render as declarations
+from langslice.tools.descriptions.render import (
     FULL,
     VIEW_TOOLS,
     Variant,
     declaration,
     declare,
 )
-from langslice.doors.tools.arguments import SectionPosition, SectionTransform
-from langslice.ops.registry import VERBS
 
 
 def test_every_verb_is_declared_once_in_registry_order():

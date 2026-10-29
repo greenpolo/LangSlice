@@ -14,18 +14,20 @@ loaded)::
     job = langslice.create_job("/data/brain1", positions=..., image_model=model)
     job.trace_borders(section="s01.tif")              # any verb, by name
 
-- :func:`open_job`, :func:`create_job` (:mod:`langslice.doors.library`): the
-  job's verbs as methods, the same names and arguments as the agent tools
-  and ``langslice-job FOLDER VERB`` (``langslice-job ops``, ``langslice-job schema
-  VERB``); ``create_job`` makes the job of a folder of sections.
+- :func:`open_job` (:mod:`langslice.doors.library.handle`), :func:`create_job`
+  (:mod:`langslice.doors.library.handle`): the job's verbs as methods, the same
+  names and arguments as the agent tools and ``langslice-job FOLDER VERB``
+  (``langslice-job ops``, ``langslice-job schema VERB``); ``create_job`` makes
+  the job of a folder of sections.
 - :func:`image_model`, :func:`default_prompt`
   (:mod:`langslice.providers.profiles`): the image model profile the border
   trace calls (a provider's model and LangSlice's prompt, or a model and
   prompt of your own), and LangSlice's prompt text to start from.
-- :func:`coordinate_map` (:mod:`langslice.core.layers`): a saved picture's
-  pixels in atlas micrometres, ``(rows, cols, 3)`` float32, the atlas's own
-  axis order, voxel ``i``'s centre at ``i * resolution``.
-- :func:`load_atlas` (:mod:`langslice.core.atlas.core`): a cached BrainGlobe atlas.
+- :func:`coordinate_map` (:mod:`langslice.core.pictures.layers`): a saved
+  picture's pixels in atlas micrometres, ``(rows, cols, 3)`` float32, the
+  atlas's own axis order, voxel ``i``'s centre at ``i * resolution``.
+- :func:`load_atlas` (:mod:`langslice.core.atlas.load`): a cached BrainGlobe
+  atlas.
 
 Each is loaded on first use, so ``import langslice`` stays light.
 ``docs/developers/library.md`` is the scripting guide.
@@ -42,21 +44,21 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from langslice.core.atlas.core import load_atlas as load_atlas
-    from langslice.core.layers import coordinate_map as coordinate_map
-    from langslice.doors.library import create_job as create_job
-    from langslice.doors.library import open_job as open_job
+    from langslice.core.atlas.load import load_atlas as load_atlas
+    from langslice.core.pictures.layers import coordinate_map as coordinate_map
+    from langslice.doors.library.handle import create_job as create_job
+    from langslice.doors.library.handle import open_job as open_job
     from langslice.providers.profiles import default_prompt as default_prompt
     from langslice.providers.profiles import image_model as image_model
 
 #: The public names, each loaded from its module on first use.
 _PUBLIC = {
-    "open_job": ("langslice.doors.library", "open_job"),
-    "create_job": ("langslice.doors.library", "create_job"),
+    "open_job": ("langslice.doors.library.handle", "open_job"),
+    "create_job": ("langslice.doors.library.handle", "create_job"),
     "image_model": ("langslice.providers.profiles", "image_model"),
     "default_prompt": ("langslice.providers.profiles", "default_prompt"),
-    "coordinate_map": ("langslice.core.layers", "coordinate_map"),
-    "load_atlas": ("langslice.core.atlas.core", "load_atlas"),
+    "coordinate_map": ("langslice.core.pictures.layers", "coordinate_map"),
+    "load_atlas": ("langslice.core.atlas.load", "load_atlas"),
 }
 
 

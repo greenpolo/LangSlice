@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed

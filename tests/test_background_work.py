@@ -11,13 +11,13 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.job.job import Job
-from langslice.ops import submit as ops_submit
-from langslice.ops.inputs import STALE_INPUT, section_inputs
-from langslice.ops.traces import land_trace
+from langslice.tools import submit as ops_submit
+from langslice.tools.stale import STALE_INPUT, section_inputs
+from langslice.tools.traces import land_trace
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

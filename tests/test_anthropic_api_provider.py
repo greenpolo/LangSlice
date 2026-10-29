@@ -7,8 +7,8 @@ pytest.importorskip("anthropic")
 from google.adk.models.llm_request import LlmRequest  # noqa: E402
 from google.genai import types  # noqa: E402
 
-from langslice.agent.model_resolver import resolve_adk_model  # noqa: E402
-from langslice.agent.session import _with_reasoning  # noqa: E402
+from langslice.doors.agent.models import resolve_adk_model  # noqa: E402
+from langslice.doors.agent.session import _with_reasoning  # noqa: E402
 from langslice.providers.anthropic_api import (  # noqa: E402
     AnthropicApiLlm,
     _mark_last_block,

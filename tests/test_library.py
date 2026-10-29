@@ -52,7 +52,7 @@ def _no_network(*_args: Any, **_kwargs: Any) -> Any:
 
 @pytest.fixture
 def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    import langslice.providers.images as transport
+    import langslice.providers.image_calls as transport
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     install(atlas_loader(), monkeypatch.setattr)
@@ -83,7 +83,7 @@ class Stub:
 
     def segmentation(self, request: Any) -> Any:
         """:meth:`call` as an ``ImageCall`` answers (a ``GeneratedSegmentation``)."""
-        from langslice.core.nonlinear.types import GeneratedSegmentation
+        from langslice.core.fits.trace.request import GeneratedSegmentation
 
         return GeneratedSegmentation(image=self.call(request), provider=request.provider,
                                      model=str(request.model), route="stub")

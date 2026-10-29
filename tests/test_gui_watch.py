@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.hosts.gui import watch
 from langslice.hosts.gui.watch import JobList, JobWatcher
-from langslice.job.checkpoint import write_checkpoint, write_json_atomic
+from langslice.job.state_file import write_checkpoint, write_json_atomic
 
 
 def _append(path: Path, *records: dict | str, end: str = "\n") -> None:

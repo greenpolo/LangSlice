@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from langslice.core.canvas import (
+from langslice.core.pictures.canvas import (
     CASING_PX,
     _draw_polys,
     border_words,

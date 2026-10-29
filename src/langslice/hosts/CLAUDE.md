@@ -12,11 +12,11 @@ Desktop configuration).
 ## The layer rule
 
 A host module may import every layer below it: the core, the job layer,
-the operations, the doors, the agent driver and the providers. Nothing
+the tools, the doors (the built-in agent among them) and the providers. Nothing
 below imports a host (import-linter's layers contract, `pyproject.toml`,
 run by `tests/test_import_layers.py`, no exceptions listed). The `langslice`
 command reaches the host commands by module path only (`hosts/cli.py`,
-`doors.cli.HOST_COMMANDS`).
+`doors.commands.parser.HOST_COMMANDS`).
 
 ## Files and sub-packages
 
@@ -37,15 +37,15 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   and the generator are read-only. Only `cli.py` imports it.
   `gui/CLAUDE.md`, `docs/developers/gui.md`.
 
-- `integrations/` — `abba_launch.py` (what `langslice abba` starts, and
+- `abba/` — `launch.py` (what `langslice abba` starts, and
   the listener of the connector's run messages), the ABBA agent viewer
-  (`abba_follow.py`, `abba_compare.py`, `abba_overview.py`) and activity log
-  (`abba_chat.py` + `static/`): `integrations/CLAUDE.md`.
+  (`viewer_follow.py`, `viewer_compare.py`, `viewer_overview.py`) and activity log
+  (`log.py` + `static/`): `abba/CLAUDE.md`.
   The Fiji connector is the one ABBA integration; this package only follows
   its runs.
-- `api/` — `service.py` (`langslice serve --stdio`: the JSON-lines engine
-  service the Fiji connector starts). The protocol models, the runtime
+- `service.py` — `langslice serve --stdio`: the JSON-lines engine
+  service the Fiji connector starts. The protocol models, the runtime
   handlers, setup, saved ABBA jobs and the JVM-free snapshot worker
-  (`abba_worker.py`, whose checkpoints carry the affine and warp rows) are
-  door-level, in `doors/api/`. `docs/developers/architecture.md`,
+  (`doors/abba/worker.py`; its checkpoints, which carry the affine and warp
+  rows, are `doors/abba/checkpoints.py`) are door-level, in `doors/abba/`. `docs/developers/architecture.md`,
   `docs/abba.md`.

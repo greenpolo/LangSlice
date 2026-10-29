@@ -15,8 +15,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langslice.doors.declarations import Variant, arguments_schema, declaration
 from langslice.job.job import Job
+from langslice.tools.descriptions.render import (
+    Variant,
+    arguments_schema,
+    declaration,
+)
 
 logger = logging.getLogger(__name__)
 

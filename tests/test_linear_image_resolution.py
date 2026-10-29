@@ -1,8 +1,8 @@
 """image_resolution sizes what the agent is shown, never what is computed.
 
-Each level is two long edges (``core.sizes.PICTURE_EDGES``): the opening
+Each level is two long edges (``core.pictures.sizes.PICTURE_EDGES``): the opening
 strips' tiles and every later picture (``look``'s, and the picture each change
-tool shows of what it wrote, ``ops.look.show_result``); "auto" adds a
+tool shows of what it wrote, ``tools.look.show_result``); "auto" adds a
 ``resolution`` argument to ``look``, clamped to the driver model's largest
 image. Nothing is upsampled past its source.
 """
@@ -19,24 +19,28 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context, build_seed_message
-from langslice.core.captions import (
+from langslice.core.pictures.captions import (
     CAPTION_PX,
     _caption_font,
     caption,
     wrap_caption,
 )
-from langslice.core.opening import (
+from langslice.core.pictures.opening import (
     CLAUDE_MAX_VIEW_EDGE,
     COLUMN_GAP,
     section_tile,
     strip_layout,
 )
-from langslice.core.sections import render_slice
-from langslice.core.sizes import MIN_RESOLUTION, PICTURE_EDGES, opening_edge
+from langslice.core.pictures.sizes import (
+    MIN_RESOLUTION,
+    PICTURE_EDGES,
+    opening_edge,
+)
+from langslice.core.sections.renders import render_slice
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context, build_seed_message
+from langslice.doors.agent.media import package_result
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.media import package_result
 from langslice.doors.tools.toolbox import build_tools
 from langslice.doors.tools.view_options import image_limit
 from langslice.job.job import ingest
@@ -206,7 +210,7 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
 
 @pytest.mark.parametrize("level", ["low", "auto"])
 def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
-    from langslice.ops import transforms
+    from langslice.tools import transforms
 
     state, ctx, job = _fixed_stack(tmp_path / level, level)
     transforms.interactive_transform(job, ctx, [{
@@ -221,8 +225,8 @@ def _digest(image: Image.Image) -> str:
 
 
 def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tmp_path: Path):
-    from langslice.core import deformation
-    from langslice.core.handoff import prepare_linear_registration
+    from langslice.core.fits import deformation
+    from langslice.core.fits.frame import prepare_linear_registration
 
     seen: dict[str, tuple[str, str, Any]] = {}
     for level in ("low", "auto"):
@@ -236,7 +240,7 @@ def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tm
 
 def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     """Drawn larger, the transformed section lands where the small picture puts it."""
-    from langslice.core import canvas, placement
+    from langslice.core.pictures import canvas, placement
 
     drawn: list[np.ndarray] = []
 
@@ -290,7 +294,7 @@ def test_a_claude_lane_gets_claudes_limits_as_the_mcp_host_does():
     picture as the MCP door does for a Claude host, not at OpenAI's numbers."""
     from types import SimpleNamespace
 
-    from langslice.core.opening import (
+    from langslice.core.pictures.opening import (
         CLAUDE_IMAGE_LIMIT,
         OPENAI_MAX_IMAGE_EDGE,
     )

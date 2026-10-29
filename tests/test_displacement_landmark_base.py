@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from langslice.core import deformation
-from langslice.core.deformable import finish_fit, prepare_warp
-from langslice.core.deformable.engines import EngineResult
-from langslice.core.deformable.fit import WorkingGrid
-from langslice.ops import landmarks
+from langslice.core.fits import deformation
+from langslice.core.fits.deformable import finish_fit, prepare_warp
+from langslice.core.fits.deformable.engines import EngineResult
+from langslice.core.fits.deformable.fit import WorkingGrid
+from langslice.tools import landmarks
 from tests.test_landmarks import saved_pairs, setup
 
 

@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.canvas import canvas_geometry, physical_views
-from langslice.core.captions import scale_bar_px
+from langslice.core.pictures.canvas import canvas_geometry, physical_views
+from langslice.core.pictures.captions import scale_bar_px
 from tests.test_linear_physical import TwoRegionAtlas, _ctx
 
 _IDENTITY = {
@@ -233,7 +233,7 @@ def test_border_core_changes_atlas_lines_without_changing_tissue(core):
 
 
 def test_border_thickness_is_measured_after_zoom_and_resize():
-    from langslice.core.canvas import _draw_polys
+    from langslice.core.pictures.canvas import _draw_polys
 
     square = np.asarray([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=float)
     widths = {}

@@ -86,8 +86,13 @@ fails when an entry is new or larger than at that commit, with two
 exceptions: the errors of a function whose file was moved or renamed (the
 same rule and function, in a file that no longer exists, at most its old
 count), and the errors of a rule being adopted (below). A function moved
-between files that both still exist counts as new, so fix the errors of
-code you move out of a file that stays.
+between files that both still exist counts as new unless the commit
+declares the move in `tools/stylecheck/moves.json` (each entry an old
+`path` and `symbol` and a `new_path` and `new_symbol`; generate it, never
+type it): its errors are then accepted under the new name up to what the
+old entry lost (its whole count once it is gone; a split module lists its
+module level once per part), and the settings that name modules are read
+through the same map, so a moved module is not a loosened setting.
 
 The file also records the checks that ran and every setting that decides
 what they report: `[tool.stylecheck]`, the checker's ruff rules in
@@ -129,8 +134,9 @@ file by itself, so commit the smaller file with the fixes; in CI
 basedpyright leaves the file as it is. Never run
 `basedpyright --writebaseline`, which lists every current error: the
 checker's `--against` holds this file to "only shrinks" as well (the
-entries per file and rule may not grow, except for a moved file and a
-rule whose report level changed).
+entries per file and rule may not grow, except for a moved file, an
+entry that left a file `moves.json` moves definitions out of, and a rule
+whose report level changed).
 
 ## Pull requests
 

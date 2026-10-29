@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 import langslice
-from langslice.doors.cli.jobcli import main
+from langslice.doors.agent_cli.main import main
 from langslice.job import registrations as regs
 from langslice.job.background import DONE, Work, notice_text
 from tests.cli_child import install
@@ -75,7 +75,7 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 
 
 def _needs_engine() -> None:
-    from langslice.ops.deformable import engine_ready
+    from langslice.tools.deformable import engine_ready
 
     if not engine_ready():
         pytest.skip("fireants_syn needs FireANTs")
@@ -184,7 +184,7 @@ def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, image
                                                                  monkeypatch):
     """Not a refusal but an error on the second section: the first section put
     back is put back again as it was, in memory too, and nothing is written."""
-    from langslice.ops import registrations as ops_registrations
+    from langslice.tools import registrations as ops_registrations
 
     job = langslice.open_job(images)
     job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1},

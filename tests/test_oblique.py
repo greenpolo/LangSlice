@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from langslice.core.oblique import (
+from langslice.core.geometry.oblique import (
     build_rotation_matrix,
     plane_axes,
     sample_oblique_plane,
@@ -131,7 +131,7 @@ def test_pitch_is_lr_symmetric_but_yaw_is_not() -> None:
 # 25 um atlas (~19k pixels) the two agree.
 def test_annotation_sampling_keeps_large_ids_exact() -> None:
     """Allen ids exceed float32's exact integer range; the sampler must not round."""
-    from langslice.core.oblique import sample_oblique_annotation
+    from langslice.core.geometry.oblique import sample_oblique_annotation
 
     atlas = _Phantom()
     # 484682516 (ccb) is the id that exposed this: float32 lands it on ...528.

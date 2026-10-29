@@ -13,12 +13,11 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core.jpeg import encode_jpeg
-from langslice.core.layers import coordinate_map
+from langslice.core.pictures.jpeg import encode_jpeg
+from langslice.core.pictures.layers import coordinate_map
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.checkpoint import STATE_FORMAT_VERSION, read_checkpoint
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.job import Job
 from langslice.job.layout import (
@@ -27,7 +26,8 @@ from langslice.job.layout import (
     job_folder_for,
     section_dirname,
 )
-from langslice.job.views import flush_all
+from langslice.job.pictures import flush_all
+from langslice.job.state_file import STATE_FORMAT_VERSION, read_checkpoint
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import tool_named as _tool
 
@@ -121,7 +121,6 @@ def test_undo_is_one_file_per_step_and_bounded(tmp_path: Path):
     again, _ = _open(folder)
     assert len(again.undo_stack) == UNDO_DEPTH - 1 and len(again.redo_stack) == 1
     assert again.redo() and again.state.notes[-1] == f"note {UNDO_DEPTH + 4}"
-
 
 
 @pytest.mark.parametrize("damage", ["step", "newer_index"])

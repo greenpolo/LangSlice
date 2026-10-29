@@ -57,7 +57,13 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from langslice.engines import _blocks
-from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec, flag_words
+from langslice.plugin_api import (
+    ToolContext,
+    ToolError,
+    ToolResult,
+    ToolSpec,
+    flag_words,
+)
 
 HERE = Path(__file__).resolve().parent
 NAME = "emlddmm"
@@ -76,6 +82,7 @@ DEFAULTS = {
     "threads": 4,
     "timeout_s": 3600,
 }
+
 #: GB of GPU memory per million voxels (slots x rows x columns) in float64, measured on the
 #: 2026-10-18 Fig 3 runs (33 M voxels: 12.5 GB; 97 M: more than 27 GB).
 GB_PER_MVOX = 0.4
@@ -294,38 +301,69 @@ def _unit(v: Any) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
-def _down(image: np.ndarray, factor: float) -> tuple[np.ndarray, tuple[float, float]]:
+def _down(
+    image: np.ndarray, factor: float
+) -> tuple[np.ndarray, tuple[float, float]]:
     """Area-average by *factor* (never up): the image and (sx, sy), down pixel k sitting at
     original pixel (k + 0.5) * s - 0.5."""
     h, w = image.shape[:2]
     if factor <= 1.0:
         return image, (1.0, 1.0)
     wd, hd = max(1, round(w / factor)), max(1, round(h / factor))
-    return cv2.resize(image, (wd, hd), interpolation=cv2.INTER_AREA), (w / wd, h / hd)
+    return cv2.resize(image, (wd, hd), interpolation=cv2.INTER_AREA), (
+        w / wd,
+        h / hd,
+    )
 
 
 def _placed(frame: Any) -> np.ndarray:
     placed = frame.placed_atlas_to_section
-    return np.asarray(frame.atlas_to_section if placed is None else placed, np.float64)
+    return np.asarray(
+        frame.atlas_to_section if placed is None else placed, np.float64
+    )
 
 
-def _sample(array: np.ndarray, pts: np.ndarray, mode: int = cv2.INTER_LINEAR) -> np.ndarray:
+def _sample(
+    array: np.ndarray, pts: np.ndarray, mode: int = cv2.INTER_LINEAR
+) -> np.ndarray:
     """*array* (H, W[, C]) read at grid pixels *pts* (..., 2) as (x, y); edges replicated."""
     shape = pts.shape[:-1]
     flat = np.asarray(pts, np.float32).reshape(-1, 2)
     n = len(flat)
-    pad = np.zeros((-n % 1024, 2), np.float32)  # remap wants maps under 32767 per side
+    pad = np.zeros(
+        (-n % 1024, 2), np.float32
+    )  # remap wants maps under 32767 per side
     flat = np.concatenate([flat, pad]).reshape(-1, 1024, 2)
-    channels = [array] if array.ndim == 2 else [array[..., c] for c in range(array.shape[2])]
-    got = [cv2.remap(np.ascontiguousarray(c, dtype=np.float32), flat[..., 0], flat[..., 1], mode,
-                     borderMode=cv2.BORDER_REPLICATE).reshape(-1)[:n] for c in channels]
-    return np.stack(got, -1).reshape(*shape, len(got)) if array.ndim == 3 else got[0].reshape(shape)
+    channels = (
+        [array]
+        if array.ndim == 2
+        else [array[..., c] for c in range(array.shape[2])]
+    )
+    got = [
+        cv2.remap(
+            np.ascontiguousarray(c, dtype=np.float32),
+            flat[..., 0],
+            flat[..., 1],
+            mode,
+            borderMode=cv2.BORDER_REPLICATE,
+        ).reshape(-1)[:n]
+        for c in channels
+    ]
+    return (
+        np.stack(got, -1).reshape(*shape, len(got))
+        if array.ndim == 3
+        else got[0].reshape(shape)
+    )
 
 
-
-
-def _section(ctx: ToolContext, sid: str, section_image: str, atlas_image: str, mask: str,
-             config: dict[str, Any]) -> dict[str, Any]:
+def _section(
+    ctx: ToolContext,
+    sid: str,
+    section_image: str,
+    atlas_image: str,
+    mask: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
     """Everything one section contributes, taken from its fit frame (which is then dropped):
     the registration (placement and applied map), its plane, the section's image in [0, 1]
     area-averaged to the section pixel, the tissue outline and the damage."""
@@ -338,34 +376,72 @@ def _section(ctx: ToolContext, sid: str, section_image: str, atlas_image: str, m
     gh, gw = grey.shape
     border = np.concatenate([grey[0], grey[-1], grey[:, 0], grey[:, -1]])
     slide = float(np.median(border))
-    outline = cv2.warpAffine((frame.atlas["annotation"] > 0).astype(np.uint8), placed[:2],
-                             (gw, gh), flags=cv2.INTER_NEAREST) > 0
+    outline = (
+        cv2.warpAffine(
+            (frame.atlas["annotation"] > 0).astype(np.uint8),
+            placed[:2],
+            (gw, gh),
+            flags=cv2.INTER_NEAREST,
+        )
+        > 0
+    )
     unit = 255.0 if grey.max() > 1.5 else 1.0
-    scaled, back = grey / unit, float(slide / unit > 0.5)  # white slide: brightfield
+    scaled, back = (
+        grey / unit,
+        float(slide / unit > 0.5),
+    )  # white slide: brightfield
     plane = frame.plane
     # micrometres per fit-grid pixel at the section's linear scale (atlas micrometres)
-    px_um = float(np.mean(plane["px_um"])) / float(np.sqrt(abs(np.linalg.det(placed[:2, :2]))))
+    px_um = float(np.mean(plane["px_um"])) / float(
+        np.sqrt(abs(np.linalg.det(placed[:2, :2])))
+    )
     down, (sx, sy) = _down(scaled.astype(np.float32), section_um / px_um)
-    soft = None if held is None else _down(np.asarray(held.weights, np.float32),
-                                           section_um / px_um)[0]
+    soft = (
+        None
+        if held is None
+        else _down(np.asarray(held.weights, np.float32), section_um / px_um)[0]
+    )
     m = np.asarray(plane["native_to_um"], np.float64)
-    c, dx, dy = (np.asarray(plane[k], np.float64) for k in ("center_um", "dx", "dy"))
+    c, dx, dy = (
+        np.asarray(plane[k], np.float64) for k in ("center_um", "dx", "dy")
+    )
     Q = np.array([[dx @ m[:, 0], dx @ m[:, 1]], [dy @ m[:, 0], dy @ m[:, 1]]])
     return {
-        "id": sid, "placed": placed, "has_transform": frame.placed_atlas_to_section is not None,
-        "applied": None if frame.applied_map is None else np.asarray(frame.applied_map,
-                                                                      np.float32),
-        "grid": (gw, gh), "back": back, "soft": soft, "resolved": resolved,
-        "inputs": _blocks.inputs_block(ctx, frame, section_image=section_image,
-                                       atlas_image=atlas_image, resolved=resolved, mask=held,
-                                       brightness="as it is, 0-1"),
-        "px_um": px_um, "down": down, "down_s": (sx, sy),
-        "centre": c, "dx": dx, "dy": dy, "Q": Q, "Qi": np.linalg.inv(Q),
+        "id": sid,
+        "placed": placed,
+        "has_transform": frame.placed_atlas_to_section is not None,
+        "applied": None
+        if frame.applied_map is None
+        else np.asarray(frame.applied_map, np.float32),
+        "grid": (gw, gh),
+        "back": back,
+        "soft": soft,
+        "resolved": resolved,
+        "inputs": _blocks.inputs_block(
+            ctx,
+            frame,
+            section_image=section_image,
+            atlas_image=atlas_image,
+            resolved=resolved,
+            mask=held,
+            brightness="as it is, 0-1",
+        ),
+        "px_um": px_um,
+        "down": down,
+        "down_s": (sx, sy),
+        "centre": c,
+        "dx": dx,
+        "dy": dy,
+        "Q": Q,
+        "Qi": np.linalg.inv(Q),
         "q": np.array([dx @ (m[:, 2] - c), dy @ (m[:, 2] - c)]),
         "native_mm": float(np.mean(plane["px_um"])) / 1000.0,
         "tissue_native": frame.atlas["annotation"] > 0,
         "outline_grid": outline,
-        "damage": None if frame.damage_zone is None else np.asarray(frame.damage_zone, bool)}
+        "damage": None
+        if frame.damage_zone is None
+        else np.asarray(frame.damage_zone, bool),
+    }
 
 
 def _reg(sec: dict[str, Any], pts: np.ndarray) -> np.ndarray:
@@ -390,57 +466,103 @@ def _unreg(sec: dict[str, Any], p: np.ndarray) -> np.ndarray:
 
 def _plane_um(sec: dict[str, Any], p: np.ndarray) -> np.ndarray:
     """Native atlas pixels -> in-plane micrometres (column, row) about the plane's centre."""
-    return (sec["Q"] @ np.asarray(p, np.float64).reshape(-1, 2).T).T.reshape(p.shape) + sec["q"]
+    return (sec["Q"] @ np.asarray(p, np.float64).reshape(-1, 2).T).T.reshape(
+        p.shape
+    ) + sec["q"]
 
 
 # --- the stack --------------------------------------------------------------------------------
 
 
-def _slots(z: np.ndarray, slot_um: float, cos: float) -> tuple[np.ndarray, float]:
+def _slots(
+    z: np.ndarray, slot_um: float, cos: float
+) -> tuple[np.ndarray, float]:
     dz = slot_um * cos
     return np.rint(z / dz).astype(int), dz
 
 
 def _memory_gb(n_slots: int, ny: int, nx: int, dtype: str) -> float:
-    return n_slots * ny * nx * GB_PER_MVOX / 1e6 / (2.0 if dtype == "float32" else 1.0)
+    return (
+        n_slots
+        * ny
+        * nx
+        * GB_PER_MVOX
+        / 1e6
+        / (2.0 if dtype == "float32" else 1.0)
+    )
 
 
-def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
-           section_image: str, atlas_image: str, mask: str,
-           need_transform: bool) -> dict[str, Any]:
+def _stack(
+    ctx: ToolContext,
+    config: dict[str, Any],
+    names: list[str],
+    slot_um: float,
+    section_image: str,
+    atlas_image: str,
+    mask: str,
+    need_transform: bool,
+) -> dict[str, Any]:
     """The stack of the placed sections: geometry, slots, memory check, images on the stack grid.
     A section that cannot enter (no placement) is left out with its reason."""
     if not slot_um > 0:
-        raise ToolError("BAD_ARGS", "slot_um is a positive number of micrometres")
+        raise ToolError(
+            "BAD_ARGS", "slot_um is a positive number of micrometres"
+        )
     left_out: list[dict[str, Any]] = []
     secs = []
-    for view in ([ctx.section(name) for name in names] if names else ctx.sections()):
+    for view in (
+        [ctx.section(name) for name in names] if names else ctx.sections()
+    ):
         what = "a position and a transform" if need_transform else "a position"
         try:
-            if view.position_mm is None or (need_transform and view.affine is None):
-                raise ToolError("INVALID_LINEAR_PLACEMENT", f"needs {what} first")
-            sec = _section(ctx, view.id, section_image, atlas_image, mask, config)
+            if view.position_mm is None or (
+                need_transform and view.affine is None
+            ):
+                raise ToolError(
+                    "INVALID_LINEAR_PLACEMENT", f"needs {what} first"
+                )
+            sec = _section(
+                ctx, view.id, section_image, atlas_image, mask, config
+            )
             if need_transform and not sec["has_transform"]:
-                raise ToolError("INVALID_LINEAR_PLACEMENT", f"needs {what} first")
+                raise ToolError(
+                    "INVALID_LINEAR_PLACEMENT", f"needs {what} first"
+                )
         except ToolError as exc:
             if exc.code == "BAD_ARGS":
                 raise
-            left_out.append({"id": view.id, "why": exc.code, "message": exc.message})
+            left_out.append(
+                {"id": view.id, "why": exc.code, "message": exc.message}
+            )
             continue
         sec["view"] = view
         secs.append(sec)
     if len(secs) < 2:
-        raise ToolError("NEEDS_STACK", "emlddmm fits a stack: at least two sections with "
-                        "positions" + (" and transforms" if need_transform else ""),
-                        left_out=left_out)
+        raise ToolError(
+            "NEEDS_STACK",
+            "emlddmm fits a stack: at least two sections with "
+            "positions" + (" and transforms" if need_transform else ""),
+            left_out=left_out,
+        )
     dxs, dys = (np.array([_unit(s[k]) for s in secs]) for k in ("dx", "dy"))
     dx, dy = _unit(dxs.mean(0)), _unit(dys.mean(0))
     dy = _unit(dy - (dy @ dx) * dx)
-    tilt = max(math.degrees(math.acos(float(np.clip(min((dxs @ dx).min(), (dys @ dy).min()), -1,
-                                                    1)))), 0.0)
-    if tilt > ANGLE_TOLERANCE_DEG:  # sections of one job share its cutting angles
-        raise ToolError("NOT_A_STACK", f"the sections' planes differ by {tilt:.1f} degrees: "
-                        "emlddmm needs one cutting angle for the stack")
+    tilt = max(
+        math.degrees(
+            math.acos(
+                float(np.clip(min((dxs @ dx).min(), (dys @ dy).min()), -1, 1))
+            )
+        ),
+        0.0,
+    )
+    if (
+        tilt > ANGLE_TOLERANCE_DEG
+    ):  # sections of one job share its cutting angles
+        raise ToolError(
+            "NOT_A_STACK",
+            f"the sections' planes differ by {tilt:.1f} degrees: "
+            "emlddmm needs one cutting angle for the stack",
+        )
     n = _unit(np.cross(dy, dx))  # rows (n, dy, dx): a proper rotation
     centres = np.array([s["centre"] for s in secs])
     order = np.argsort(centres @ n)
@@ -459,10 +581,14 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
     off_xy = np.stack([rel @ dx, rel @ dy], 1)
     for sec, off in zip(secs, off_xy, strict=True):
         w, h = sec["grid"]
-        edge = np.concatenate([np.stack([np.linspace(0, w - 1, 24), np.zeros(24)], 1),
-                               np.stack([np.linspace(0, w - 1, 24), np.full(24, h - 1.0)], 1),
-                               np.stack([np.zeros(24), np.linspace(0, h - 1, 24)], 1),
-                               np.stack([np.full(24, w - 1.0), np.linspace(0, h - 1, 24)], 1)])
+        edge = np.concatenate(
+            [
+                np.stack([np.linspace(0, w - 1, 24), np.zeros(24)], 1),
+                np.stack([np.linspace(0, w - 1, 24), np.full(24, h - 1.0)], 1),
+                np.stack([np.zeros(24), np.linspace(0, h - 1, 24)], 1),
+                np.stack([np.full(24, w - 1.0), np.linspace(0, h - 1, 24)], 1),
+            ]
+        )
         corners.append(_plane_um(sec, _reg(sec, edge)) + off)
     corners = np.concatenate(corners)
     lo = np.floor(corners.min(0) / section_um) * section_um - 2 * section_um
@@ -474,23 +600,42 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
     taken: dict[int, str] = {}
     for k, sec in zip(slot.tolist(), secs, strict=True):
         if k in taken:
-            raise ToolError("BAD_ARGS", f"{taken[k]} and {sec['id']} share a {slot_um:g} um "
-                            "slot; use a finer slot_um (or leave one of them out)")
+            raise ToolError(
+                "BAD_ARGS",
+                f"{taken[k]} and {sec['id']} share a {slot_um:g} um "
+                "slot; use a finer slot_um (or leave one of them out)",
+            )
         taken[k] = sec["id"]
     limit = float(config["memory_limit_gb"])
     if memory > limit:
-        fits = next((float(s) for s in np.arange(slot_um, 5000.0, 5.0)
-                     if _memory_gb(int(_slots(z, float(s), cos)[0].max()) + 1, len(gy), len(gx),
-                                   config["dtype"]) <= limit), None)
+        fits = next(
+            (
+                float(s)
+                for s in np.arange(slot_um, 5000.0, 5.0)
+                if _memory_gb(
+                    int(_slots(z, float(s), cos)[0].max()) + 1,
+                    len(gy),
+                    len(gx),
+                    config["dtype"],
+                )
+                <= limit
+            ),
+            None,
+        )
         advice = "fewer sections or a smaller field"
         if fits is not None:
             shared = len(set(_slots(z, fits, cos)[0].tolist())) != len(secs)
-            advice = (f"a slot_um of {fits:g} or more would fit"
-                      + (", but then two sections share a slot: leave some sections out"
-                         if shared else ""))
-        raise ToolError("STACK_TOO_LARGE", f"{n_slots} slots of {len(gy)} x {len(gx)} pixels "
-                        f"need about {memory:.0f} GB, over the {limit:g} GB limit; {advice}",
-                        estimate_gb=round(memory, 1))
+            advice = f"a slot_um of {fits:g} or more would fit" + (
+                ", but then two sections share a slot: leave some sections out"
+                if shared
+                else ""
+            )
+        raise ToolError(
+            "STACK_TOO_LARGE",
+            f"{n_slots} slots of {len(gy)} x {len(gx)} pixels "
+            f"need about {memory:.0f} GB, over the {limit:g} GB limit; {advice}",
+            estimate_gb=round(memory, 1),
+        )
     gap = float(slot.max() - slot.min()) * dz / max(len(secs) - 1, 1)
     weight = config["section_weight"]
     thick = gap if weight == "gap" else float(weight)
@@ -499,30 +644,66 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
     mesh_x, mesh_y = np.meshgrid(gx, gy)
     for i, (sec, off, k) in enumerate(zip(secs, off_xy, slot, strict=True)):
         uv = np.stack([mesh_x - off[0], mesh_y - off[1]], -1) - sec["q"]
-        p = uv @ sec["Qi"].T  # native pixels of the plane under every stack pixel
+        p = (
+            uv @ sec["Qi"].T
+        )  # native pixels of the plane under every stack pixel
         g = _unreg(sec, p)
         sx, sy = sec["down_s"]
         at = (g + 0.5) / np.array([sx, sy]) - 0.5
         w, h = sec["grid"]
-        inside = ((g[..., 0] >= -0.5) & (g[..., 0] <= w - 0.5)
-                  & (g[..., 1] >= -0.5) & (g[..., 1] <= h - 0.5))
+        inside = (
+            (g[..., 0] >= -0.5)
+            & (g[..., 0] <= w - 0.5)
+            & (g[..., 1] >= -0.5)
+            & (g[..., 1] <= h - 0.5)
+        )
         J[k] = np.where(inside, _sample(sec["down"], at), sec["back"])
         keep = inside.copy()
         if sec["damage"] is not None:
-            keep &= ~(_sample(sec["damage"].astype(np.uint8), p, cv2.INTER_NEAREST) > 0)
+            keep &= ~(
+                _sample(sec["damage"].astype(np.uint8), p, cv2.INTER_NEAREST)
+                > 0
+            )
         W0[k] = keep
-        if sec["soft"] is not None:  # the section mask: emlddmm takes soft weights, W0 *= weights
+        if (
+            sec["soft"] is not None
+        ):  # the section mask: emlddmm takes soft weights, W0 *= weights
             W0[k] *= np.clip(_sample(sec["soft"], at), 0.0, 1.0)
-        tissue = _sample(sec["tissue_native"].astype(np.uint8), p, cv2.INTER_NEAREST) > 0
+        tissue = (
+            _sample(
+                sec["tissue_native"].astype(np.uint8), p, cv2.INTER_NEAREST
+            )
+            > 0
+        )
         sec["tissue_stack"] = tissue & keep
         sec["slot"] = int(k)
         sec["snap_um"] = float((k * dz - z[i]) / cos)
-    return {"secs": secs, "left_out": left_out, "n": n, "dx": dx, "dy": dy, "c0": c0, "dz": dz,
-            "z": z, "slot": slot, "slot_um": float(slot_um), "n_slots": n_slots, "tilt_deg": tilt,
-            "gx": gx, "gy": gy, "off_xy": off_xy, "J": J, "W0": W0, "memory_gb": memory,
-            "weight_um": thick, "back": secs[0]["back"], "R": np.stack([n, dy, dx]),
-            "zs": np.arange(n_slots) * dz,
-            "section_um": section_um, "resolved": secs[0]["resolved"]}
+    return {
+        "secs": secs,
+        "left_out": left_out,
+        "n": n,
+        "dx": dx,
+        "dy": dy,
+        "c0": c0,
+        "dz": dz,
+        "z": z,
+        "slot": slot,
+        "slot_um": float(slot_um),
+        "n_slots": n_slots,
+        "tilt_deg": tilt,
+        "gx": gx,
+        "gy": gy,
+        "off_xy": off_xy,
+        "J": J,
+        "W0": W0,
+        "memory_gb": memory,
+        "weight_um": thick,
+        "back": secs[0]["back"],
+        "R": np.stack([n, dy, dx]),
+        "zs": np.arange(n_slots) * dz,
+        "section_um": section_um,
+        "resolved": secs[0]["resolved"],
+    }
 
 
 def _cfg(st: dict[str, Any], iterations: list[int], kernel_um: float, warp_freedom: float,

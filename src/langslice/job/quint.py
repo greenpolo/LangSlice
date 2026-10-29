@@ -10,9 +10,9 @@ where ``(px, py)`` are pixel coordinates in the section image of size ``W x H``,
 direction vectors pointing toward the top-right and bottom-left corners.
 
 :func:`job_export` writes it from each section's exact pixel -> atlas map
-(``registration.json``'s ``pixel_to_atlas_um``), so any plane and cutting
-angle is represented; :mod:`langslice.job.imports` reads it back through
-the inverses here.
+(``registration.json``'s ``pixel_to_atlas_um``), so any plane and cutting angle
+is represented; :mod:`langslice.job.imports.readers` reads it back through the
+inverses here.
 """
 
 from __future__ import annotations
@@ -279,9 +279,9 @@ def job_export(
     """QuickNII / VisuAlign JSON of a job's placed sections.
 
     Each of *sections* gives ``filename``, ``width``, ``height``, ``nr``,
-    ``pixel_to_atlas_um`` and optionally ``markers`` (VisuAlign's
-    ``[x_overlay, y_overlay, x_image, y_image]`` in the image's pixels, from
-    :func:`langslice.core.maps.residual_markers`).
+    ``pixel_to_atlas_um`` and optionally ``markers`` (VisuAlign's ``[x_overlay,
+    y_overlay, x_image, y_image]`` in the image's pixels, from
+    :func:`langslice.core.maps.section_maps.residual_markers`).
     """
     slices = [
         SliceExport(

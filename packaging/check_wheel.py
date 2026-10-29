@@ -17,9 +17,9 @@ def check(path: str) -> None:
                    for part in parts):
                 raise ValueError(f"Private or generated file in wheel: {name}")
         required = {
-            "langslice/hosts/api/service.py", "langslice/doors/api/setup.py",
-            "langslice/doors/api/abba_worker.py", "langslice/hosts/integrations/static/chat.html",
-            "langslice/hosts/integrations/static/chat.css", "langslice/hosts/integrations/static/chat.js",
+            "langslice/hosts/service.py", "langslice/doors/credentials.py",
+            "langslice/doors/abba/worker.py", "langslice/hosts/abba/static/chat.html",
+            "langslice/hosts/abba/static/chat.css", "langslice/hosts/abba/static/chat.js",
         }
         if not required.issubset(names):
             raise ValueError(f"Missing runtime files: {sorted(required - names)}")
