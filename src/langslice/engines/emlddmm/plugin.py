@@ -58,6 +58,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from langslice.engines import _blocks
 from langslice.plugin_api import (
+    RefusalCode,
     ToolContext,
     ToolError,
     ToolResult,
@@ -506,7 +507,7 @@ def _stack(
     A section that cannot enter (no placement) is left out with its reason."""
     if not slot_um > 0:
         raise ToolError(
-            "BAD_ARGS", "slot_um is a positive number of micrometres"
+            RefusalCode.BAD_ARGS, "slot_um is a positive number of micrometres"
         )
     left_out: list[dict[str, Any]] = []
     secs = []
@@ -519,17 +520,17 @@ def _stack(
                 need_transform and view.affine is None
             ):
                 raise ToolError(
-                    "INVALID_LINEAR_PLACEMENT", f"needs {what} first"
+                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"needs {what} first"
                 )
             sec = _section(
                 ctx, view.id, section_image, atlas_image, mask, config
             )
             if need_transform and not sec["has_transform"]:
                 raise ToolError(
-                    "INVALID_LINEAR_PLACEMENT", f"needs {what} first"
+                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"needs {what} first"
                 )
         except ToolError as exc:
-            if exc.code == "BAD_ARGS":
+            if exc.code == RefusalCode.BAD_ARGS:
                 raise
             left_out.append(
                 {"id": view.id, "why": exc.code, "message": exc.message}
@@ -539,7 +540,7 @@ def _stack(
         secs.append(sec)
     if len(secs) < 2:
         raise ToolError(
-            "NEEDS_STACK",
+            RefusalCode.NEEDS_STACK,
             "emlddmm fits a stack: at least two sections with "
             "positions" + (" and transforms" if need_transform else ""),
             left_out=left_out,
@@ -559,7 +560,7 @@ def _stack(
         tilt > ANGLE_TOLERANCE_DEG
     ):  # sections of one job share its cutting angles
         raise ToolError(
-            "NOT_A_STACK",
+            RefusalCode.NOT_A_STACK,
             f"the sections' planes differ by {tilt:.1f} degrees: "
             "emlddmm needs one cutting angle for the stack",
         )
@@ -601,7 +602,7 @@ def _stack(
     for k, sec in zip(slot.tolist(), secs, strict=True):
         if k in taken:
             raise ToolError(
-                "BAD_ARGS",
+                RefusalCode.BAD_ARGS,
                 f"{taken[k]} and {sec['id']} share a {slot_um:g} um "
                 "slot; use a finer slot_um (or leave one of them out)",
             )
@@ -631,7 +632,7 @@ def _stack(
                 else ""
             )
         raise ToolError(
-            "STACK_TOO_LARGE",
+            RefusalCode.STACK_TOO_LARGE,
             f"{n_slots} slots of {len(gy)} x {len(gx)} pixels "
             f"need about {memory:.0f} GB, over the {limit:g} GB limit; {advice}",
             estimate_gb=round(memory, 1),
@@ -729,7 +730,8 @@ def _mu(st: dict[str, Any]) -> dict[str, Any]:
 def _check_iterations(iterations: Any) -> list[int]:
     """The three scales' steps of *iterations*, the first scale's (:func:`scale_iterations`)."""
     if isinstance(iterations, bool) or not isinstance(iterations, int) or iterations < 4:
-        raise ToolError("BAD_ARGS", "iterations is a whole number of steps at the coarsest "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        "iterations is a whole number of steps at the coarsest "
                         "scale, 4 or more (the finer scales take half and a quarter)")
     return scale_iterations(iterations)
 
@@ -737,12 +739,14 @@ def _check_iterations(iterations: Any) -> list[int]:
 def _check_sorting(sorting: dict[str, Any]) -> dict[str, float]:
     held = [key for key in sorting if key in ("method", "artifact")]
     if held:
-        raise ToolError("BAD_ARGS", f"emlddmm's sorting is its own EM with an artifact class: "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"emlddmm's sorting is its own EM with an artifact class: "
                         f"it takes no {' or '.join(held)}; its keys are "
                         f"{', '.join(SORTING_KEYS)}")
     unknown = [key for key in sorting if key not in SORTING_KEYS]
     if unknown:
-        raise ToolError("BAD_ARGS", f"unknown sorting keys {unknown}; the keys are "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"unknown sorting keys {unknown}; the keys are "
                         f"{', '.join(SORTING_KEYS)}")
     return {key: float(value) for key, value in sorting.items()}
 
@@ -752,7 +756,7 @@ def _require(config: dict[str, Any], *keys: str) -> None:
     for key in keys:
         path = Path(str(config[key])).expanduser()
         if not path.exists():
-            raise ToolError("ENGINE_UNAVAILABLE",
+            raise ToolError(RefusalCode.ENGINE_UNAVAILABLE,
                             f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
                             f"it in the plugin_config of {REF})")
 
@@ -776,10 +780,12 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     (folder / "log.txt").write_text(done.stdout + done.stderr)
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError("ENGINE_FAILED", f"emlddmm did not run: {tail[0]}")
+        raise ToolError(RefusalCode.ENGINE_FAILED,
+                        f"emlddmm did not run: {tail[0]}")
     out = dict(np.load(dst, allow_pickle=False))
     if "error" in out:
-        raise ToolError("ENGINE_FAILED", f"emlddmm failed: {out['error']}")
+        raise ToolError(RefusalCode.ENGINE_FAILED,
+                        f"emlddmm failed: {out['error']}")
     return out
 
 
@@ -987,7 +993,8 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                 fit: str, warp_freedom: float, iterations: int,
                 sorting: dict[str, Any], view: bool) -> ToolResult:
     if fit not in FITS:
-        raise ToolError("BAD_ARGS", f"fit is one of {', '.join(FITS)}; got {fit!r}")
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"fit is one of {', '.join(FITS)}; got {fit!r}")
     rigid, warp = fit in ("transform", "both"), fit in ("warp", "both")
     steps = _check_iterations(iterations)
     sort = _check_sorting(sorting)
@@ -1094,7 +1101,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
             elif sid in written:  # the transform stands, the warp did not land
                 problem, wrote = f"transform only, deformation {code}", "transform only"
             else:
-                problem, wrote = code or "FROZEN", "not written"
+                problem, wrote = code or RefusalCode.FROZEN, "not written"
             rows.append({"id": sid, "slot": rec["sec"]["slot"], "snap_um": rec["sec"]["snap_um"],
                          "moved": rec["moved_mm"], "off_plane_um": rec["off_plane_um"],
                          "summary": summaries.get(sid, {}), "set_aside": rec["set_aside"],
@@ -1150,7 +1157,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
         work = ctx.start_work([sec["id"] for sec in secs], land)
     except Exception as exc:  # SECTION_BUSY and the like
         as_payload = getattr(exc, "payload", None)
-        payload = as_payload() if as_payload else {"error": "NOT_STARTED",
+        payload = as_payload() if as_payload else {"error": RefusalCode.NOT_STARTED,
                                                    "message": str(exc)}
         details = {k: v for k, v in payload.items() if k not in ("status", "error", "message")}
         raise ToolError(str(payload.get("error")), str(payload.get("message") or exc),

@@ -137,7 +137,7 @@ from pathlib import Path
 import langslice
 from tests.synthetic_stack import PIXEL_SIZE_UM, apply_patches, atlas_loader, write_sections
 from langslice.doors.jobs import create
-from langslice.core.spec import JobSpec
+from langslice.job.settings.spec import JobSpec
 
 images = Path(sys.argv[1])
 write_sections(images)

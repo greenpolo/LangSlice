@@ -4,9 +4,9 @@ One entry point, :func:`atlas_section`, so the sections the agent looks at, the
 sections a fit is measured against and the sections a preview overlays are the
 same pixels. When the angles are 0/0 this is the flat voxel-grid slice;
 otherwise the plane is resampled obliquely. *angles* is the ``(pitch, yaw)`` to
-draw at: a section's own (``SliceState.angles``) for a picture of that section,
-``StackState.view_angles`` for one without a section; None reads
-``StackState.stack_angles``, which refuses a stack whose sections differ
+draw at: a section's own (``Section.angles``) for a picture of that section,
+``Stack.view_angles`` for one without a section; None reads
+``Stack.stack_angles``, which refuses a stack whose sections differ
 (:class:`langslice.core.stack.section.MixedAngles`).
 """
 
@@ -27,7 +27,7 @@ from langslice.core.pictures.sizes import opening_edge
 from langslice.core.sections.reading import mask_box
 from langslice.core.space import Plane
 from langslice.core.stack.section import Angles
-from langslice.core.stack.stack import StackState, plane_angles
+from langslice.core.stack.stack import Stack, plane_angles
 from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ _plane_lock = threading.Lock()
 
 
 def atlas_mask(
-    ctx: Workspace, state: StackState, position_mm: float, size: tuple[int, int],
+    ctx: Workspace, state: Stack, position_mm: float, size: tuple[int, int],
     *, angles: Angles | None = None,
 ) -> np.ndarray:
     """Binary tissue silhouette of the atlas section, at the plane's angles."""
@@ -55,7 +55,7 @@ def atlas_mask(
 
 def atlas_section(
     ctx: Workspace,
-    state: StackState,
+    state: Stack,
     position_mm: float,
     *,
     frame: bool = False,
@@ -116,14 +116,14 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
 
 
 def reference_atlas(
-    ctx: Workspace, state: StackState, *, long_edge: int | None = None,
+    ctx: Workspace, state: Stack, *, long_edge: int | None = None,
     max_images: int = SEED_ATLAS_MAX_IMAGES,
 ) -> tuple[float, list[tuple[float, Image.Image]]]:
     """The atlas at evenly spaced positions for the opening: ``(step, pictures)``.
 
     The reference spans the atlas's valid range at the nominal interval, or
     coarser when that would exceed *max_images*. Each picture is framed to the
-    atlas anatomy at the stack's cutting angles (``StackState.view_angles``:
+    atlas anatomy at the stack's cutting angles (``Stack.view_angles``:
     the median of the sections' when they differ) and at most *long_edge*
     (None: the run's opening size), never upsampled; a plane with nothing in it
     (an oblique plane through the volume's corner) is skipped.

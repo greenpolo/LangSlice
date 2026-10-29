@@ -21,11 +21,16 @@ from PIL import Image
 from langslice.core.fits import deformation
 from langslice.core.fits.trace.request import GeneratedSegmentation
 from langslice.core.pictures.sizes import picture_edge
-from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.core.stack.codec import (
+    affine_from_json,
+    affine_to_json,
+    deformation_to_json,
+)
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.providers.connections import resolve_image_model
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
@@ -88,7 +93,7 @@ def _run(tmp_path: Path, atlas: SyntheticAtlas, *, n: int = 1, transformed: bool
     for record in state.slices:
         record.position_mm = 0.1
         if transformed:
-            record.transform = dict(IDENTITY)
+            record.transform = affine_from_json(dict(IDENTITY))
     stub = StubModel(spec) if provider != "none" else None
     box = build_tools(state, ctx, spec, image_model=stub.model if stub else None)
     return state, ctx, box, stub
@@ -131,7 +136,7 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     (record,) = box.job.views.records()
     assert record.tool == "elastix_affine"
     assert record.recipe["args"]["zoom"] == box_fractions
-    assert state.slices[0].transform["kind"] == "elastix"
+    assert affine_to_json(state.slices[0].transform)["kind"] == "elastix"
     assert len(box.job.undo_stack) == 1
     (picture,) = result[TOOL_MEDIA_PARTS_KEY]
     edge = picture_edge(ctx)
@@ -157,7 +162,8 @@ def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
          "limits": [0.8, 1.25]},
         {"code": "SHEAR", "shear": 0.24, "previous": 0.0, "limit": 0.15}]
     # Measured from the transform the section held: a manual 0.7 kept is no change.
-    assert plausibility_flags(fit(scale_x=0.7), fit(scale_x=0.68)) == []
+    held = affine_from_json({"params": [1, 0, 0, 0, 1, 0], **fit(scale_x=0.7)})
+    assert plausibility_flags(held, fit(scale_x=0.68)) == []
     words = [affine_flag_words(flag) for flag in flags]
     assert words[0].startswith("SCALE_CHANGED: this fit scales the section to [0.67, 1.0] "
                                "from [1.0, 1.0]")
@@ -192,15 +198,16 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
     again = fit(["s1.png"], ["TH"], view=False)
     assert again["results"][0]["steps"] == 2
     assert "pictures" not in again and TOOL_MEDIA_PARTS_KEY not in again
-    assert len(state.by_id("s1.png").deformation["steps"]) == 2
+    assert len(deformation_to_json(state.by_id("s1.png").deformation)["steps"]) == 2
     # Each step names its method, as a plugin's steps do.
-    assert [step["method"] for step in state.by_id("s1.png").deformation["steps"]] == [
+    assert [step["method"] for step in deformation_to_json(
+        state.by_id("s1.png").deformation)["steps"]] == [
         "fireants_syn", "fireants_syn"]
     # What the engine printed went to the job's log, not the caller's stderr.
     assert "deformable fits of 1 section(s)" in (
         box.job.layout.logs_dir / "engine.log").read_text()
     _tool(box, "undo")()
-    assert len(state.by_id("s1.png").deformation["steps"]) == 1
+    assert len(deformation_to_json(state.by_id("s1.png").deformation)["steps"]) == 1
     # A changed placement clears the deformation in the same step; undo restores both.
     turned = _tool(box, "interactive_transform")([{"id": "s1.png", "rotation_deg": 4.0}],
                                                  view=False)
@@ -208,7 +215,7 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
     assert state.by_id("s1.png").deformation is None
     _tool(box, "undo")()
     assert state.by_id("s1.png").deformation is not None
-    assert state.by_id("s1.png").transform["kind"] == "interactive"
+    assert affine_to_json(state.by_id("s1.png").transform)["kind"] == "interactive"
 
 
 def test_submit_needs_no_deformation_in_a_nonlinear_run(tmp_path: Path, atlas):
@@ -256,7 +263,7 @@ def test_trace_borders_starts_background_work_and_its_notice_opens_a_later_reply
     assert notice.startswith("w1 trace_borders of s0.png finished")
     work_pictures = [entry for entry in reply["pictures"] if entry.get("work") == "w1"]
     assert len(work_pictures) == 2 and len(reply[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert len(state.by_id("s0.png").deformation["steps"]) == 1
+    assert len(deformation_to_json(state.by_id("s0.png").deformation)["steps"]) == 1
     # Handed out once.
     assert "background" not in _tool(box, "status")()
 

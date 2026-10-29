@@ -143,7 +143,7 @@ def test_tool_names_are_vocabulary_not_upward_references() -> None:
     """A tool's name is not a reference to the tools function of that name."""
     others = {
         **HIGHER,
-        "src/langslice/core/toolset.py": """
+        "src/langslice/job/settings/tool_table.py": """
         TOOLS = {tool.name: tool for tool in (
             ToolDef("trace_borders", "write", "Nonlinear"),
             ToolDef("position_sections", "write", "Positioning"),

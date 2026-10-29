@@ -6,9 +6,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langslice.core.spec import PositionSpec
+from langslice.core.stack.codec import affine_from_json, affine_to_json
+from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.settings.spec import PositionSpec
+from langslice.job.state_file import stack_to_json
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.linear_tool_helpers import (
     ToolContext,
@@ -84,12 +87,12 @@ def test_undo_and_redo_take_several_steps_in_one_call(tmp_path: Path):
 
 def test_unknown_ids_are_named_and_nothing_is_written(tmp_path: Path):
     state, ctx, box = _box(tmp_path, placed=True)
-    before = state.to_dict()
+    before = stack_to_json(state)
     result = _tool(box, "position_sections")([{"id": "nope.png", "position_mm": 1.0}],
                                              view=False)
     assert result["unknown_ids"] == ["nope.png"]
     assert result["error"] == "NOTHING_WRITTEN"
-    assert state.to_dict() == before
+    assert stack_to_json(state) == before
     assert box.job.undo_stack == []
     assert load_checkpoint(ctx.checkpoint_path) is None
 
@@ -132,12 +135,12 @@ def test_cutting_angles_are_one_write_for_the_stack(tmp_path: Path):
     result = write(cutting_angles={"pitch_deg": 2.0, "yaw_deg": -1.0}, view=False)
     assert result["status"] == "ok" and result["written"] == []
     assert result["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
-    assert state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
+    assert stack_angles_entry(state) == {"pitch": 2.0, "yaw": -1.0}
     assert len(box.job.undo_stack) == 1
     assert write(cutting_angles={"pitch_deg": "steep", "yaw_deg": 0})["error"] == "BAD_ARGS"
     assert write()["error"] == "BAD_ARGS"  # neither sections nor angles
     _tool(box, "undo")()
-    assert state.cutting_angles_deg == {"pitch": 0.0, "yaw": 0.0}
+    assert stack_angles_entry(state) == {"pitch": 0.0, "yaw": 0.0}
 
 
 # --- interactive_transform --------------------------------------------------------------
@@ -162,7 +165,7 @@ def test_one_section_is_written_shown_and_undone(tmp_path: Path):
     assert row["changed"][0]["transform"]["kind"] == "interactive"
     # The status row carries the transform's numbers, as the write's reply gives them.
     assert row["changed"][0]["transform"]["rotation_deg"] == 5.0
-    stored = state.by_id("s0.png").transform
+    stored = affine_to_json(state.by_id("s0.png").transform)
     assert stored["kind"] == "interactive" and len(stored["params"]) == 6
     assert stored["physical"]["rotation_deg"] == 5.0
     # Nothing states a pixel size here, and the record says so.
@@ -186,7 +189,7 @@ def test_values_left_out_keep_the_sections_current_ones(tmp_path: Path):
     assert row["transform"]["rotation_deg"] == 5.0
     assert row["transform"]["translate_x_mm"] == 0.2
     assert row["transform"]["scale_x"] == 1.2
-    assert state.by_id("s0.png").transform["physical"]["rotation_deg"] == 5.0
+    assert affine_to_json(state.by_id("s0.png").transform)["physical"]["rotation_deg"] == 5.0
     # A new orientation keeps the transform values.
     flipped = transform("s0.png", flip=True)
     assert flipped["orientation"]["changed"] is True
@@ -405,5 +408,5 @@ def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
     assert len(refusal["missing_ids"]) == 5
     assert state.submitted is False
     for record in state.slices:
-        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+        record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     assert _submit(box)["status"] == "ok"

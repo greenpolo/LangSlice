@@ -44,7 +44,14 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from langslice.engines import _blocks
-from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec, flag_words
+from langslice.plugin_api import (
+    RefusalCode,
+    ToolContext,
+    ToolError,
+    ToolResult,
+    ToolSpec,
+    flag_words,
+)
 
 HERE = Path(__file__).resolve().parent
 NAME = "STalign"
@@ -270,7 +277,8 @@ def _target(frame: Any) -> tuple[np.ndarray, dict[str, Any]]:
                              _placed(frame)[:2], (gw, gh), flags=cv2.INTER_NEAREST) > 0
     tissue = float(np.median(grey[outline])) if outline.any() else float(grey.mean())
     if abs(tissue - slide) < 1e-6:
-        raise ToolError("NO_TISSUE", "the section's tissue and slide look the same")
+        raise ToolError(RefusalCode.NO_TISSUE,
+                        "the section's tissue and slide look the same")
     unit = (grey - slide) / (tissue - slide)
     s_um = _scale_um(frame)
     down, (sx, sy) = _down(unit.astype(np.float32), TARGET_UM / s_um)
@@ -332,14 +340,16 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
     sorting = dict(sorting or {})
     method = str(sorting.pop("method", "classic"))
     if method not in SORTING_METHODS:
-        raise ToolError("BAD_ARGS", f"sorting method is one of {', '.join(SORTING_METHODS)}; "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"sorting method is one of {', '.join(SORTING_METHODS)}; "
                         f"got {method!r}")
     known = {"match_sd": "sigmaM", "background_sd": "sigmaB", "artifact_sd": "sigmaA",
              "background_mean": "muB", "artifact_mean": "muA"}
     artifact = bool(sorting.pop("artifact", False))
     unknown = [key for key in sorting if key not in known]
     if unknown:
-        raise ToolError("BAD_ARGS", f"unknown sorting keys {unknown}; the keys are method, "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"unknown sorting keys {unknown}; the keys are method, "
                         f"{', '.join(known)}, artifact")
     params: dict[str, Any] = {known[key]: float(value) for key, value in sorting.items()}
     if method == "em":
@@ -354,7 +364,7 @@ def _require(config: dict[str, Any], *keys: str) -> None:
     for key in keys:
         path = Path(str(config[key])).expanduser()
         if not path.exists():
-            raise ToolError("ENGINE_UNAVAILABLE",
+            raise ToolError(RefusalCode.ENGINE_UNAVAILABLE,
                             f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
                             f"it in the plugin_config of {REF})")
 
@@ -376,10 +386,12 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     (folder / "log.txt").write_text(done.stdout + done.stderr)
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError("ENGINE_FAILED", f"STalign did not run: {tail[0]}")
+        raise ToolError(RefusalCode.ENGINE_FAILED,
+                        f"STalign did not run: {tail[0]}")
     out = dict(np.load(dst, allow_pickle=False))
     if "error" in out:
-        raise ToolError("ENGINE_FAILED", f"STalign failed: {out['error']}")
+        raise ToolError(RefusalCode.ENGINE_FAILED,
+                        f"STalign failed: {out['error']}")
     return out
 
 
@@ -440,9 +452,10 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
            displacement_um: float, sorting: dict[str, Any], iterations: int,
            view: bool) -> ToolResult:
     if not sections:
-        raise ToolError("BAD_ARGS", "name one to twenty sections")
+        raise ToolError(RefusalCode.BAD_ARGS, "name one to twenty sections")
     if fit not in FITS:
-        raise ToolError("BAD_ARGS", f"fit is one of {', '.join(FITS)}; got {fit!r}")
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"fit is one of {', '.join(FITS)}; got {fit!r}")
     affine = fit == "both"
     sorted_params = _sorting_params(sorting)
     params = {**sorted_params, "a": float(kernel_um),
@@ -461,14 +474,16 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
         view_of = ctx.section(name)
         sid = view_of.id
         if affine and view_of.deformation:
-            rows.append({"id": sid, "status": "error", "error": "HAS_DEFORMATION",
-                         "message": "fit \"both\" would refit the transform, which clears the "
-                         "section's deformation; fit \"warp\" to bend on top of it"})
+            refusal = ToolError(
+                RefusalCode.HAS_DEFORMATION, "fit \"both\" would refit the transform, which "
+                "clears the section's deformation; fit \"warp\" to bend on top of it")
+            rows.append({"id": sid, **refusal.payload()})
             continue
         frame, plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
         if frame.placed_atlas_to_section is None:
-            rows.append({"id": sid, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
-                         "message": "the section needs a transform first"})
+            refusal = ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                "the section needs a transform first")
+            rows.append({"id": sid, **refusal.payload()})
             continue
         digest = ctx.section_inputs(sid, deformation=True)
         inputs = _blocks.inputs_block(ctx, frame, section_image=section_image,
@@ -532,16 +547,20 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                                                           note=note)
                     done = lctx.set_transforms([proposal.row()], expect={sid: digest})
                     if sid not in done.written:
-                        raise ToolError(done.rows[0].get("error", "NOT_WRITTEN"),
-                                        done.rows[0].get("message", ""))
+                        row = done.rows[0]  # the context's row, its values untyped
+                        raise ToolError(
+                            row.get("error", RefusalCode.NOT_WRITTEN),  # pyright: ignore[reportAny]
+                            row.get("message", ""))  # pyright: ignore[reportAny]
                 if warp is None:
                     warp = lctx.deformation_from_map(sid, native, note=note, meta=meta,
                                                      weights=weights, **written_as)
                 done = lctx.set_deformations([warp.row()],
                                              expect=None if affine else {sid: digest})
                 if sid not in done.written:
-                    raise ToolError(done.rows[0].get("error", "NOT_WRITTEN"),
-                                    done.rows[0].get("message", ""))
+                    row = done.rows[0]  # the context's row, its values untyped
+                    raise ToolError(
+                        row.get("error", RefusalCode.NOT_WRITTEN),  # pyright: ignore[reportAny]
+                        row.get("message", ""))  # pyright: ignore[reportAny]
             summary = warp.summary
             relative = here.relative_to(lctx.job_dir) if here.is_relative_to(lctx.job_dir) else here
             flags = flag_words(summary)
@@ -575,7 +594,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
             work = ctx.start_work([sid], land)
         except Exception as exc:  # SECTION_BUSY and the like: that section's row
             as_payload = getattr(exc, "payload", None)
-            payload = as_payload() if as_payload else {"error": "NOT_STARTED",
+            payload = as_payload() if as_payload else {"error": RefusalCode.NOT_STARTED,
                                                        "message": str(exc)}
             rows.append({"id": sid, "status": "error", **{k: v for k, v in payload.items()
                                                           if k != "status"}})
@@ -606,7 +625,7 @@ def _target_to_atlas(frame: Any, s_um: float) -> np.ndarray:
 def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
                   section_image: str, atlas_image: str, view: bool) -> ToolResult:
     if not sections:
-        raise ToolError("BAD_ARGS", "name one to eight sections")
+        raise ToolError(RefusalCode.BAD_ARGS, "name one to eight sections")
     atlas = ctx.atlas()
     folder = _blocks.call_folder(ctx, "plane")
     params = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0, "muA": 3.0, "muB": 0.0}

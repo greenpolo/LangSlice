@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any
 
 import langslice
-from langslice.core.needs import render
-from langslice.core.toolset import TOOLS
 from langslice.job.layout import JobLayout, read_job_file
+from langslice.job.settings.needs import render
+from langslice.job.settings.tool_table import TOOLS
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.render import summary
 
@@ -52,7 +52,7 @@ def limits_note(limits: Mapping[str, int]) -> str:
 def job_spec(layout: JobLayout) -> Any:
     """The job's settings as ``job.json`` holds them (the tool plugins it
     names loaded)."""
-    from langslice.core.spec import JobSpec
+    from langslice.job.settings.spec import JobSpec
 
     return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {})
 
@@ -73,7 +73,7 @@ def disabled_names(layout: JobLayout) -> list[str]:
 def transform_cap_line(layout: JobLayout) -> str:
     """The job's own lower cap on the transform verbs
     (``transform.max_parallel``), when its settings set one."""
-    from langslice.core.spec import MAX_PARALLEL_TRANSFORMS
+    from langslice.job.settings.spec import MAX_PARALLEL_TRANSFORMS
 
     held = (read_job_file(layout) or {}).get("spec") or {}
     cap = int((held.get("transform") or {}).get("max_parallel") or MAX_PARALLEL_TRANSFORMS)

@@ -6,7 +6,7 @@ meanwhile. Before it applies, under the lock and after the job has reloaded
 what others wrote (:meth:`langslice.job.job.Job.writing`), it compares
 each section's :func:`section_inputs` with the value it computed from: an
 unchanged section is applied, a changed one is refused as that section's
-row (:data:`STALE_INPUT`) and the others still apply.
+row (``STALE_INPUT``) and the others still apply.
 """
 
 from __future__ import annotations
@@ -15,19 +15,17 @@ import hashlib
 import json
 from typing import Any
 
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.masks import (
     registration_digest,
     registration_parts,
 )
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
-
-#: A section whose inputs changed while its result was computed.
-STALE_INPUT = "STALE_INPUT"
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 
 
 def section_inputs(
-    state: StackState, record: SliceState, *, deformation: bool = False, trace: bool = False,
+    state: Stack, record: Section, *, deformation: bool = False, trace: bool = False,
 ) -> str:
     """A digest of what a fit of *record* reads: its linear placement
     (position, plane, cutting angles, flip, rotation, transform), its made
@@ -39,17 +37,28 @@ def section_inputs(
         return registration_digest(state, record)
     held: dict[str, Any] = registration_parts(state, record)
     if deformation:
-        held["deformation"] = (record.deformation or {}).get("key")
+        held["deformation"] = record.deformation_key
     if trace:
-        correction = record.image_correction or {}
-        held["trace"] = {key: correction.get(key) for key in (
-            "status", "geometry_fingerprint", "artifact_dir", "attempt")}
+        correction = record.image_correction
+        held["trace"] = dict.fromkeys(
+            ("status", "geometry_fingerprint", "artifact_dir", "attempt"))
+        if correction is not None:
+            held["trace"] = {
+                "status": correction.status,
+                "geometry_fingerprint": correction.geometry_fingerprint,
+                "artifact_dir": correction.artifact_dir,
+                "attempt": correction.attempt}
     text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 
 
 def stale_row(section_id: str) -> dict[str, Any]:
-    """The row of a section refused because its inputs changed."""
-    return {"id": section_id, "status": "error", "error": STALE_INPUT,
-            "message": "This section's placement, images or deformation changed while "
-            "the fit ran; nothing was written for it. Run the fit again."}
+    """The row of a section refused because its inputs changed.
+
+    The refusal is ``STALE_INPUT``.
+    """
+    refusal = Refused(
+        RefusalCode.STALE_INPUT,
+        "This section's placement, images or deformation changed while the "
+        "fit ran; nothing was written for it. Run the fit again.")
+    return {"id": section_id, **refusal.payload()}

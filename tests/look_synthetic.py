@@ -1,6 +1,6 @@
 """A small stack on the synthetic atlas for the look, positioning and zoom tests.
 
-Built from core classes only (a :class:`Workspace` and a :class:`StackState`):
+Built from core classes only (a :class:`Workspace` and a :class:`Stack`):
 three sections rendered from :class:`tests.deformable_synthetic.SyntheticAtlas`
 at 25 um/px, plus a "marked" section: a gray slab with one white square at a
 known place, so a zoom can be checked to land where it was asked.
@@ -14,10 +14,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,
@@ -59,7 +59,7 @@ def _atlas_and_png_bytes() -> tuple[SyntheticAtlas, tuple[bytes, ...], bytes]:
     return atlas, tuple(pngs), buffer.getvalue()
 
 
-def stack(tmp_path: Path, *, marked: bool = False) -> tuple[Workspace, StackState]:
+def stack(tmp_path: Path, *, marked: bool = False) -> tuple[Workspace, Stack]:
     """``(workspace, state)``: the three synthetic sections (and with
     *marked*, the marked one last), each at its position."""
     folder = tmp_path / "images"
@@ -75,17 +75,17 @@ def stack(tmp_path: Path, *, marked: bool = False) -> tuple[Workspace, StackStat
         positions.append(0.2)
     spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
                    inputs={"pixel_size_um": 25.0})
-    ws = Workspace(spec=spec, image_folder=str(folder), emit=lambda _m: None,
+    ws = Workspace(settings=spec.image_settings(), image_folder=str(folder), emit=lambda _m: None,
                    atlas_loader=lambda _name: atlas)
-    state = StackState(image_folder=str(folder), atlas=atlas.atlas_name, plane="coronal",
-                       slices=[SliceState(id=name, index_original=k, index_corrected=k,
+    state = Stack(image_folder=str(folder), atlas=atlas.atlas_name, plane="coronal",
+                       slices=[Section(id=name, index_original=k, index_corrected=k,
                                           position_mm=position)
                                for k, (name, position) in enumerate(zip(names, positions,
                                                                         strict=True))])
     return ws, state
 
 
-def record(state: StackState, section_id: str) -> SliceState:
+def record(state: Stack, section_id: str) -> Section:
     """The section *section_id* of *state* (it must be there)."""
     found = state.by_id(section_id)
     assert found is not None, section_id

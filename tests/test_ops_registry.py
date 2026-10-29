@@ -72,7 +72,7 @@ def _spec(folder: Path, **changes: Any) -> Any:
 
 
 def test_the_gating_table(folder: Path):
-    from langslice.core.spec import NonlinearSpec, TransformSpec
+    from langslice.job.settings.spec import NonlinearSpec, TransformSpec
 
     def has(**changes: Any) -> set[str]:
         return set(enabled(_spec(folder, **changes))) - set(EVERY_RUN)

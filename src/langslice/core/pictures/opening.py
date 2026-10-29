@@ -31,8 +31,8 @@ from langslice.core.pictures.captions import angles_label, caption
 from langslice.core.pictures.scale import atlas_at, pair_scale, section_at
 from langslice.core.pictures.sizes import opening_edge
 from langslice.core.sections.renders import render_slice
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
 #: Longest image edge, in pixels, the OpenAI lanes take in without shrinking
@@ -114,7 +114,7 @@ def strip_layout(edge: int, tile_edge: int) -> tuple[int, int]:
     return count, max(16, tile)
 
 
-def tile_label(record: SliceState) -> str:
+def tile_label(record: Section) -> str:
     """The section's filename plus short correction flags (no damage note:
     the note is in the status table, and a long one would wrap the tile)."""
     flags = []
@@ -127,13 +127,13 @@ def tile_label(record: SliceState) -> str:
     return record.id + (f" [{', '.join(flags)}]" if flags else "")
 
 
-def section_tile(ctx: Workspace, state: StackState, record: SliceState, tile: int
+def section_tile(ctx: Workspace, state: Stack, record: Section, tile: int
                  ) -> Image.Image:
     """The section as the agent is shown it, the whole image, at most *tile*."""
     return render_slice(ctx, record, long_edge=tile)
 
 
-def pair_tiles(ctx: Workspace, state: StackState, record: SliceState, position_mm: float,
+def pair_tiles(ctx: Workspace, state: Stack, record: Section, position_mm: float,
                tile: int) -> tuple[Image.Image, Image.Image]:
     """``(section, atlas)``: *record* and the atlas at *position_mm* at its
     own angles (the whole section image, the atlas framed to its anatomy), at
@@ -224,12 +224,12 @@ ANGLES_WORDS = " (pitch {:.1f}, yaw {:.1f} degrees)"
 OPENING_THREADS = 8
 
 
-def _angles(state: StackState) -> str:
+def _angles(state: Stack) -> str:
     return angles_label(state.stack_angles, ANGLES_WORDS)
 
 
 def opening_items(
-    state: StackState, ctx: Workspace, *, limit: tuple[int, int] = DEFAULT_IMAGE_LIMIT,
+    state: Stack, ctx: Workspace, *, limit: tuple[int, int] = DEFAULT_IMAGE_LIMIT,
     max_bytes: int | None = None,
 ) -> list[str | Image.Image]:
     """The stack's opening as strips, each preceded by a short text: texts and
@@ -248,7 +248,7 @@ def opening_items(
     placed = any(record.position_mm is not None for record in ordered)
     unplaced = [record for record in ordered if record.position_mm is None]
 
-    def column(record: SliceState) -> list[Image.Image]:
+    def column(record: Section) -> list[Image.Image]:
         position = record.position_mm
         if placed and position is not None:
             section, atlas = pair_tiles(ctx, state, record, position, tile)
@@ -298,7 +298,7 @@ def opening_items(
 
 
 def reference_items(
-    state: StackState, ctx: Workspace, *, tile: int, count: int, budget: int,
+    state: Stack, ctx: Workspace, *, tile: int, count: int, budget: int,
     max_bytes: int | None = None,
 ) -> list[str | Image.Image]:
     """The atlas reference (evenly spaced positions) as strips of atlas tiles."""

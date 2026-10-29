@@ -15,17 +15,17 @@ from typing import Any
 
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.pictures.sizes import AUTO_RESOLUTION
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
-from langslice.core.stack.stack import unknown_sections
-from langslice.core.toolset import TOOLS, tools_for
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.view_options import clamp_resolution
+from langslice.job.settings.tool_table import TOOLS, tools_for
 from langslice.tools import atlas as ops_atlas
 from langslice.tools import files as ops_files
 from langslice.tools import images as ops_images
 from langslice.tools import look as ops_look
 from langslice.tools import zoom as tools_zoom
-from langslice.tools.refusal import Refused
+from langslice.tools.refusal import unknown_sections
 from langslice.tools.run import Door, as_list, pictured, spread
 
 
@@ -98,20 +98,17 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             try:
                 edge, note = clamp_resolution(resolution, door.box.max_view_edge)
             except (TypeError, ValueError):
-                return {"status": "error", "error": "BAD_ARGS",
-                        "message": "resolution is a whole number of pixels."}
+                raise Refused(RefusalCode.BAD_ARGS,
+                              "resolution is a whole number of pixels.") from None
         layers_asked = as_list(atlas_layers)
-        try:
-            done = ops_look.look(
-                job, ctx, str(mode or "").strip().lower(), sections=as_list(sections),
-                positions_mm=as_list(positions_mm), images=as_list(images),
-                atlas_layers=layers_asked or None, atlas_opacity=atlas_opacity,
-                warp=str(warp or "applied").strip().lower(), resolution=edge,
-                plugin_layers=as_list(layers), depth=depth, masks=as_list(masks),
-                registrations=dict(registrations or {}),
-                sheet_edge=int(door.box.max_view_edge) if sheet else None)
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_look.look(
+            job, ctx, str(mode or "").strip().lower(), sections=as_list(sections),
+            positions_mm=as_list(positions_mm), images=as_list(images),
+            atlas_layers=layers_asked or None, atlas_opacity=atlas_opacity,
+            warp=str(warp or "applied").strip().lower(), resolution=edge,
+            plugin_layers=as_list(layers), depth=depth, masks=as_list(masks),
+            registrations=dict(registrations or {}),
+            sheet_edge=int(door.box.max_view_edge) if sheet else None)
         result: dict[str, Any] = {"status": "ok"}
         if note:
             result["resolution_note"] = note
@@ -130,11 +127,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         try:
             done = tools_zoom.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
                                  region=region)
-        except Refused as refusal:
-            return refusal.payload()
+        except Refused:
+            raise
         except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "picture is a picture number."}
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "picture is a picture number.") from None
         result: dict[str, Any] = {"status": "ok", "picture": done.picture,
                                   "redrawn": done.redrawn,
                                   **({"sheet": done.sheet, "box": done.box}
@@ -155,8 +152,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if named:
             scope, unknown = door.resolve_many(named)
             if unknown or not scope:
-                return {"status": "error", "error": "UNKNOWN_SLICE_IDS",
-                        **unknown_sections(job.state, unknown)}
+                raise unknown_sections(job.state, unknown)
             ids = [record.id for record in scope]
         try:
             done = ops_images.make_image(
@@ -165,10 +161,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 denoise=bool(denoise), contrast=as_list(contrast) or None,
                 gamma=float(gamma) if gamma else None, invert=bool(invert),
                 delete=bool(delete))
-        except Refused as refusal:
-            return refusal.payload()
+        except Refused:
+            raise
         except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS", "message": "gamma is a number."}
+            raise Refused(RefusalCode.BAD_ARGS, "gamma is a number.") from None
         result: dict[str, Any] = {
             "status": "ok", "image": done.name, "sections": ids or "every section",
             **({"deleted": True} if done.deleted else {"recipe": done.in_force}),
@@ -185,17 +181,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return pictured(result, pictures)
 
     def grep_atlas(query: str, section: str, points: list[dict[str, Any]]) -> dict[str, Any]:
-        try:
-            return {"status": "ok", **ops_atlas.grep_atlas(job, ctx, query, section,
-                                                          as_list(points))}
-        except Refused as refusal:
-            return refusal.payload()
+        return {"status": "ok", **ops_atlas.grep_atlas(job, ctx, query, section,
+                                                      as_list(points))}
 
     def grep_atlas_view(regions: list[str], positions_mm: list[float]) -> dict[str, Any]:
-        try:
-            done = ops_atlas.grep_atlas_view(job, ctx, as_list(regions), as_list(positions_mm))
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_atlas.grep_atlas_view(job, ctx, as_list(regions), as_list(positions_mm))
         result: dict[str, Any] = {"status": "ok", "regions": done.regions}
         if done.regions_not_in_plane:
             result["regions_not_in_plane"] = done.regions_not_in_plane
@@ -212,7 +202,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         state = job.state
         result: dict[str, Any] = {"status": "ok", **door.rows()}
         result["raw_channels"] = raw_channels(door)
-        result["section_images"] = section_images.summary(state, door.spec)
+        settings = door.ctx.settings
+        result["section_images"] = section_images.summary(state, settings)
         running = [work.summary() for work in job.background.running()]
         if running:
             result["background_running"] = running
@@ -221,19 +212,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     def list_files(path: str, glob: str) -> dict[str, Any]:
         job.views.flush()  # every picture shown so far is on disk and indexed
-        try:
-            done = ops_files.list_files(job, str(path or "."), str(glob or ""))
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_files.list_files(job, str(path or "."), str(glob or ""))
         return {"status": "ok", "text": done.text}
 
     def search_files(query: str, path: str, glob: str) -> dict[str, Any]:
         job.views.flush()
-        try:
-            done = ops_files.search_files(job, str(query or ""), str(path or "."),
-                                          str(glob or ""))
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_files.search_files(job, str(query or ""), str(path or "."),
+                                      str(glob or ""))
         return {"status": "ok", "text": done.text}
 
     def read_file(path: str, offset: int, limit: int) -> dict[str, Any]:
@@ -241,11 +226,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         try:
             done = ops_files.read_file(job, str(path or ""), int(offset or 0),
                                        int(limit or 400))
-        except Refused as refusal:
-            return refusal.payload()
+        except Refused:
+            raise
         except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "offset and limit are whole numbers."}
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "offset and limit are whole numbers.") from None
         result: dict[str, Any] = {"status": "ok", "text": done.text}
         if done.picture is not None:
             result["picture"] = done.picture

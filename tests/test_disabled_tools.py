@@ -12,16 +12,16 @@ from typing import Any
 
 import pytest
 
-from langslice.core.needs import render
-from langslice.core.spec import (
+from langslice.doors import jobs
+from langslice.doors.agent_cli.envelope import DISABLED
+from langslice.job.settings.needs import render
+from langslice.job.settings.spec import (
     JobSpec,
     NonlinearSpec,
     PositionSpec,
     TransformSpec,
 )
-from langslice.core.toolset import TOOLS, is_off, valid_names
-from langslice.doors import jobs
-from langslice.doors.agent_cli.envelope import DISABLED
+from langslice.job.settings.tool_table import TOOLS, is_off, valid_names
 from langslice.tools.catalog import VERBS, enabled
 from langslice.tools.descriptions.fixes import FIXES
 from langslice.tools.descriptions.render import (

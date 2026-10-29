@@ -7,10 +7,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.tools.refusal import Refused, check_frozen
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.tools.refusal import check_frozen
 
 if TYPE_CHECKING:
-    from langslice.core.stack.section import SliceState
+    from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -40,7 +41,7 @@ def _write_positions(
 def _write_angles(job: Job, workspace: Workspace, pitch_deg: float, yaw_deg: float) -> None:
     """Give the stack one plane and drop every render cached at the old angles.
     No undo step."""
-    job.state.cutting_angles_deg = {"pitch": float(pitch_deg), "yaw": float(yaw_deg)}
+    job.state.set_angles((float(pitch_deg), float(yaw_deg)))
     workspace.render_cache.clear()
 
 
@@ -70,7 +71,7 @@ class SectionsPositioned:
         return [section_id for section_id, _value in self.written]
 
 
-def renumber(order: Sequence[SliceState]) -> list[str]:
+def renumber(order: Sequence[Section]) -> list[str]:
     """Give *order* corrected indices 0..n-1; the ids whose index changed.
 
     Only ``index_corrected`` moves; positions and transforms stay where they
@@ -105,7 +106,7 @@ def position_sections(
     """Set where sections sit and the stack's cutting angles; ONE undo step.
 
     *sections* is a list of ``{"id", "position_mm"}`` (an id is a filename,
-    ``StackState.resolve``; values are clamped into the atlas range
+    ``Stack.resolve``; values are clamped into the atlas range
     (``workspace.position_range``) and reported) and *cutting_angles* ``{"pitch_deg",
     "yaw_deg"}`` for the whole stack, or None. Afterwards the stack runs in
     the order of the positions (:func:`order_by_position`); the answer lists
@@ -128,24 +129,30 @@ def position_sections(
     entries = list(sections) if sections is not None else []
     for entry in entries:
         if not isinstance(entry, Mapping) or "id" not in entry:
-            raise Refused("BAD_ARGS", message="each section is {id, position_mm}")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="each section is {id, position_mm}")
         try:
             value = float(entry.get("position_mm"))  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            raise Refused("BAD_ARGS", message="position_mm must be a number") from None
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="position_mm must be a number") from None
         if not math.isfinite(value):
-            raise Refused("BAD_ARGS", message="position_mm must be finite")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="position_mm must be finite")
         pairs.append((entry["id"], value))
     angles: tuple[float, float] | None = None
     if cutting_angles is not None:
         try:
             angles = (float(cutting_angles["pitch_deg"]), float(cutting_angles["yaw_deg"]))
         except (TypeError, ValueError, KeyError):
-            raise Refused("BAD_ARGS", message="cutting_angles is {pitch_deg, yaw_deg}") from None
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="cutting_angles is {pitch_deg, yaw_deg}") from None
         if not all(math.isfinite(value) for value in angles):
-            raise Refused("BAD_ARGS", message="cutting angles must be finite")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="cutting angles must be finite")
     if not pairs and angles is None:
-        raise Refused("BAD_ARGS", message="give sections or cutting_angles")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="give sections or cutting_angles")
     if pairs:
         named = [record.id for ref, _value in pairs
                  if (record := job.state.resolve(ref)) is not None]
@@ -161,7 +168,11 @@ def position_sections(
     reordered = order_by_position(job) if written else []
     if written or angles is not None:
         job.commit(before)
+    cutting = None
+    if angles is not None:
+        pitch, yaw = job.state.stack_angles
+        cutting = {"pitch": pitch, "yaw": yaw}
     return SectionsPositioned(
         written=written, clamped=clamped, unknown=unknown, position_range=(low, high),
-        cutting_angles=dict(job.state.cutting_angles_deg) if angles is not None else None,
+        cutting_angles=cutting,
         order=[record.id for record in job.state.in_order()], reordered=reordered)

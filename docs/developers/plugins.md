@@ -101,6 +101,10 @@ section holds, so `restore_registration`'s list names it among the pictures the
 call's write saved; a picture of a proposal not written records none. Raising `ToolError(code, message, **details)` refuses the call with
 `{"status": "error", "error": code, "message": message, **details}`; any other
 exception is a reply `PLUGIN_FAILED` naming it, and the job carries on.
+`ToolError` is the plugin's name for LangSlice's own refusal (a `ValueError`,
+as every refusal the context raises is); `code` is a member of
+`langslice.plugin_api.RefusalCode`, which lists every code LangSlice answers
+with and what it means, or a code of the plugin's own.
 
 ## `ToolContext`
 
@@ -542,7 +546,7 @@ between calls.
 | `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (a read or conversion that needs one), or without a usable linear placement (a deformation needs a position and a transform) |
 | `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
 | `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
-| `PLUGIN_FAILED` | The handler raised something other than `ToolError` |
+| `PLUGIN_FAILED` | The handler raised something other than `ToolError` (or a refusal of the context's) |
 | `NOT_FOR_SCRIPTS` | `work_dir` or `start_work` from a script's `job.context` |
 | `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`: the engine does not import, failed, or the regions given cannot be fitted |
 | `DEFORMATION_UNREADABLE` | A point conversion through a deformation whose record or inverse cannot be read |

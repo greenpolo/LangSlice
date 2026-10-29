@@ -15,13 +15,14 @@ import pytest
 
 from langslice.core.pictures.drawn import collecting, note_for
 from langslice.core.pictures.look import (
-    LookError,
     LookRequest,
     changed_since,
     look,
     restored,
     snapshot,
 )
+from langslice.core.refusal import Refused
+from langslice.core.stack.codec import affine_from_json
 from tests.look_synthetic import SECTIONS, record, stack
 
 
@@ -59,24 +60,24 @@ def test_section_refusals(tmp_path: Path):
     look(ws, state, LookRequest("section", sections=one, images=("gray",)))
     for images, code in ((("DAPI",), "UNKNOWN_IMAGE"),
                          (("gray", "preprocessed"), "MIXED_IMAGES")):
-        with pytest.raises(LookError) as caught:
+        with pytest.raises(Refused) as caught:
             look(ws, state, LookRequest("section", sections=one, images=images))
         assert caught.value.code == code
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("section", sections=("nope.png",)))
     assert caught.value.code == "UNKNOWN_SECTION"
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("sideways"))
     assert caught.value.code == "UNKNOWN_MODE"
 
 
 def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
     ws, state = stack(tmp_path)
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("atlas"))
     assert caught.value.code == "NO_POSITIONS"
     for layers in (("opal",), ("fur",)):  # the synthetic atlas has only its template
-        with pytest.raises(LookError) as caught:
+        with pytest.raises(Refused) as caught:
             look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=layers))
         assert caught.value.code == "UNKNOWN_LAYER"
     pictures = look(ws, state, LookRequest("atlas", positions_mm=(0.05, 0.1),
@@ -102,10 +103,10 @@ def test_overlay_keeps_the_placement_frame_for_the_layers(tmp_path: Path):
     assert held.recipe == picture.recipe and held.caption == picture.caption
     assert "identity transform" in picture.caption and "atlas borders" in picture.caption
     record(state, "s2.png").position_mm = None
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("overlay", sections=("s2.png",)))
     assert caught.value.code == "NO_POSITION"
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("overlay", sections=("s1.png",), warp="bent"))
     assert caught.value.code == "BAD_WARP"
 
@@ -116,7 +117,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     assert not changed_since(state, held)
     moved = record(state, "s1.png")
     moved.position_mm = 0.2
-    moved.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+    moved.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     assert changed_since(state, held)
     back = restored(state, held)
     assert record(back, "s1.png").position_mm == pytest.approx(0.15)
@@ -129,7 +130,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     # A section gone.
     state.slices = [s for s in state.slices if s.id != "s1.png"]
     assert changed_since(state, held)
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         restored(state, held)
     assert caught.value.code == "UNKNOWN_SECTION"
 

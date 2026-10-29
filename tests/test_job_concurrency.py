@@ -23,6 +23,7 @@ import pytest
 
 import langslice
 from langslice.core.fits import deformation
+from langslice.core.stack.codec import deformation_to_json
 from langslice.doors.agent_cli.main import main
 from tests.cli_child import install
 from tests.synthetic_stack import (
@@ -118,7 +119,8 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
     assert held[ID0]["deformation"]["key"]          # the fit's
     # The agent's next call sees the fit.
     agent.status()
-    assert agent.state.resolve(ID0).deformation["key"] == held[ID0]["deformation"]["key"]
+    assert deformation_to_json(
+        agent.state.resolve(ID0).deformation)["key"] == held[ID0]["deformation"]["key"]
     agent.close()
 
 

@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import SCRIPT_CALLER, ToolError
+from langslice.core.refusal import RefusalCode
 from langslice.doors.plugins.context import (
     Caller,
     DeformationProposal,
@@ -22,7 +24,6 @@ if TYPE_CHECKING:
 
     from langslice.tools.run import Door
 
-from langslice.doors.library.replies import plain
 
 # --- a script's own method ----------------------------------------------------------------
 
@@ -233,7 +234,8 @@ class ScriptContext(ToolContext):
         from langslice.core.pictures.drawn import collecting, note, note_for
 
         if not proposal:
-            raise ToolError("BAD_ARGS", "a preview draws a proposal; job.look(mode='overlay', "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "a preview draws a proposal; job.look(mode='overlay', "
                             "sections=[...]) draws the section as it stands")
         record = self._record(section)
         what = ("deformation" if proposal.get("deformation") is not None
@@ -271,7 +273,8 @@ class ScriptContext(ToolContext):
         from langslice.core.pictures.drawn import note
 
         if not proposal:
-            raise ToolError("BAD_ARGS", "a preview draws a proposal; job.look(mode="
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "a preview draws a proposal; job.look(mode="
                             "'positioning') draws the stack as it stands")
         names = [self._record(ref).id for ref in sections] if sections else [
             view.id for view in self.sections()]
@@ -298,7 +301,7 @@ class ScriptContext(ToolContext):
             with job.views.shown(SCRIPT_CALLER, atlas_of=lambda: self._door.ctx.atlas) as shown:
                 for picture in pictures:
                     noted(picture)
-                shown.show(list(pictures), arguments=plain(arguments), call_id=self.call)
+                shown.show(list(pictures), arguments=to_jsonable(arguments), call_id=self.call)
         job.views.flush()
         captions = list(shown.captions) + [None] * len(pictures)
         return [SavedPicture(path=item.folder / PICTURE_FILE, index=item.seq,

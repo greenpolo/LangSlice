@@ -10,11 +10,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.spec import JobSpec, TransformSpec
+from langslice.core.refusal import Refused
+from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec, TransformSpec
 from langslice.tools import positions
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -45,7 +46,7 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     job, ctx = _open(tmp_path)
     low, high = ctx.position_range
     middle = (low + high) / 2
-    before_angles = dict(job.state.cutting_angles_deg)
+    before_angles = stack_angles_entry(job.state)
     start = _position(job, "s0.png")
     done = positions.position_sections(
         job, ctx,
@@ -54,11 +55,11 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     assert done.written == [("s0.png", middle), ("s1.png", high)]
     assert done.clamped == [("s1.png", high + 3, high)]
     assert done.cutting_angles == {"pitch": 2.0, "yaw": -1.0}
-    assert job.state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
+    assert stack_angles_entry(job.state) == {"pitch": 2.0, "yaw": -1.0}
     assert len(job.undo_stack) == 1
     assert job.undo()
     assert _position(job, "s0.png") == start != middle
-    assert job.state.cutting_angles_deg == before_angles
+    assert stack_angles_entry(job.state) == before_angles
 
 
 def test_angles_alone_and_nothing_to_write(tmp_path: Path):
@@ -109,10 +110,10 @@ def test_supplied_positions_are_refused_and_so_are_supplied_angles(tmp_path: Pat
     job, ctx = _open(tmp_path, tasks=["transform"], inputs={"positions": supplied})
     with pytest.raises(Refused) as refused:
         positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0}])
-    assert refused.value.code == "FROZEN" and refused.value.details["properties"] == ["position"]
+    assert refused.value.code == "FROZEN" and refused.value.facts["properties"] == ["position"]
     with pytest.raises(Refused) as angles:
         positions.position_sections(job, ctx, [], {"pitch_deg": 1.0, "yaw_deg": 1.0})
-    assert angles.value.code == "FROZEN" and angles.value.details["properties"] == ["angles"]
+    assert angles.value.code == "FROZEN" and angles.value.facts["properties"] == ["angles"]
     assert job.undo_stack == [] and _position(job, "s0.png") == 1.0
 
 

@@ -41,6 +41,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 import langslice
+from langslice.core.jsonable import to_jsonable
+from langslice.core.stack.codec import physical_to_json
+from langslice.core.stack.landmarks_json import landmarks_to_json, pair_to_json
 from langslice.job.layout import (
     IMAGES_ARE_PARENT,
     REGISTRATION_FILE,
@@ -51,8 +54,9 @@ from langslice.job.state_file import write_json_atomic
 
 if TYPE_CHECKING:
     from langslice.core.maps.section_maps import SectionFrame, SectionMaps
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.deformation import DeformationRef
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -129,41 +133,44 @@ def digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def applied_deformation(state: StackState, record: SliceState) -> dict[str, Any] | None:
+def applied_deformation(state: Stack, section: Section) -> DeformationRef | None:
     """The section's deformation as it stands on its current placement, or None."""
     from langslice.core.fits.deformation import linear_key
 
-    held = record.deformation
-    if not held or held.get("linear_key") != linear_key(state, record):
+    held = section.deformation
+    if held is None or held.linear_key != linear_key(state, section):
         return None
     return held
 
 
-def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | None,
+def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
                ) -> dict[str, Any]:
     """The section's registration parameters in public units (the truth, as
     ``state.json`` holds it)."""
-    transform = record.transform or {}
+    transform = record.transform
     held = applied_deformation(state, record)
     deformation: dict[str, Any] | None
     if held is None:
         deformation = None
     else:
-        deformation = {"kind": "residual", "record": held.get("record"),
-                       "key": held.get("key"), "steps": held.get("steps") or [],
-                       "inverse_source": held.get("inverse_source")}
+        deformation = {"kind": "residual", "record": held.record,
+                       "key": held.key, "steps": to_jsonable(held.steps or ()),
+                       "inverse_source": held.inverse_source}
     position = record.position_mm
     affine: dict[str, Any] | None = None
-    if transform:
+    if transform is not None:
+        physical = None
+        if transform.physical is not None:
+            physical = physical_to_json(transform.physical)
         affine = {
-            "kind": transform.get("kind"),
-            "params": transform.get("params"),
+            "kind": transform.kind,
+            "params": list(transform.params),
             # Kept as written: the text is in parameters_digest.
             "params_convention": (
                 "normalized 2x3 [a, b, tx, c, d, ty] on the oriented section render: "
                 "x as a fraction of its width, y of its height (langslice.core.affine)"),
-            "physical": transform.get("physical"),
-            "mirrored": bool(transform.get("mirrored", False)),
+            "physical": physical,
+            "mirrored": bool(transform.mirrored),
         }
     return {
         "atlas": None if atlas is None else {"name": atlas.get("name"),
@@ -186,7 +193,7 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
 
 
 def section_entry(
-    state: StackState, workspace: Workspace | None, layout: JobLayout, record: SliceState,
+    state: Stack, workspace: Workspace | None, layout: JobLayout, record: Section,
     atlas: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """One section of ``registration.json``."""
@@ -255,7 +262,7 @@ def maps_status(layout: JobLayout, section_id: str, current: str) -> dict[str, A
 
 
 def registration_document(
-    state: StackState, workspace: Workspace | None, layout: JobLayout,
+    state: Stack, workspace: Workspace | None, layout: JobLayout,
 ) -> dict[str, Any]:
     """``registration.json`` for *state* (see the module text)."""
     atlas: dict[str, Any] | None = None
@@ -301,7 +308,7 @@ def _image_folder(layout: JobLayout, images: str) -> str:
 
 
 def write_registration(
-    layout: JobLayout, state: StackState, workspace: Workspace | None,
+    layout: JobLayout, state: Stack, workspace: Workspace | None,
 ) -> Path | None:
     """Write ``registration.json`` atomically; never raises (None on failure)."""
     path = layout.folder / REGISTRATION_FILE
@@ -457,7 +464,7 @@ def write_trace_reply(
     return path
 
 
-def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]]:
+def derived_files(layout: JobLayout, state: Stack) -> list[tuple[Path, str]]:
     """``(path, kind)`` of every derived file the job folder holds now:
     ``registration.json``, the exports, each section's maps and its
     exported trace reply."""
@@ -478,15 +485,16 @@ def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]
     return found
 
 
-def write_landmarks(layout: JobLayout, state: StackState) -> None:
+def write_landmarks(layout: JobLayout, state: Stack) -> None:
     """Derived readable pairs; always regenerated from state, never read back."""
-    from langslice.core.fits.landmarks import stale
+    from langslice.core.fits.landmarks import section_pairs, stale
 
-    for record in state.slices:
-        path = layout.section_dir(record.id) / "landmarks.json"
-        if not record.landmarks and not path.exists():
+    for section in state.slices:
+        path = layout.section_dir(section.id) / "landmarks.json"
+        if section.landmarks is None and not path.exists():
             continue
-        write_json_atomic(str(path), {"format_version": 1, "section": record.id, "next_id": 1,
-                                **record.landmarks,
-                                "pairs": [{**pair, "stale": stale(state, record, pair)}
-                                          for pair in record.landmarks.get("pairs", [])]})
+        pairs = [{**pair_to_json(pair), "stale": stale(state, section, pair)}
+                 for pair in section_pairs(section)]
+        write_json_atomic(str(path), {"format_version": 1, "section": section.id, "next_id": 1,
+                                      **landmarks_to_json(section.landmarks),
+                                      "pairs": pairs})

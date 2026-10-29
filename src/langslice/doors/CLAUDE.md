@@ -52,6 +52,36 @@ quota accounting there); pictures are files and artifacts in the CLI, inline els
 each CLI call is a process of its own (cold, or the child the job's warm
 process forks for it, `agent_cli/warm.py`).
 
+A refusal is the core's `Refused` (`core/refusal.py`: a `RefusalCode`, a
+message, the facts), raised by the core, the job, the tools and the tool
+bodies, and turned into an answer once per door:
+
+- the tool door (every door's tools): `tools/toolbox._strict` answers a
+  `Refused` the body raises (its argument check and the opening-read
+  gate's included) with `Refused.payload()`, inside the steps that clear
+  stale deformations, name registrations, save pictures and open the reply
+  with background notices, so a refusal's reply passes through them as any
+  reply does; a plugin tool's `ToolError` is a `Refused` and is answered
+  the same way (`plugins/runtime.py` re-raises it; any other exception of a
+  handler is `PLUGIN_FAILED`);
+- the agent CLI: a verb's reply whose `status` is in
+  `core.refusal.FAILED_STATUSES` becomes `Envelope.failure(code, message,
+  ...)` (`agent_cli/calls.call`), its exit code from the code
+  (`envelope.exit_code`) and its fix from `tools/descriptions/fixes.FIXES`;
+  the CLI's own refusals (arguments, flags, an unknown verb, a missing job)
+  are made as envelopes where they arise and carried out by
+  `calls._Refusal`, so the fix is read while the job's disabled list applies;
+- MCP: the reply as the first text block (`mcp/pages.result_blocks`);
+  `start_job` without a job answers `NO_FOLDER`; an exception a tool raises
+  is answered with its type's name as the code;
+- the built-in agent: the reply is the function response;
+  `agent/adk_plugins.StrictArgumentsPlugin` answers an argument refusal with
+  its payload before the tool runs;
+- the library: a verb method returns the reply (`library/replies.Reply`);
+  the methods outside the toolbox (`JobHandle.section_maps`, a script's
+  `job.context`) raise the `Refused` (a `ValueError`) or the plugin's
+  `ToolError`.
+
 ## Files
 
 - `langslice/tools/descriptions/render.py` — each verb's declaration: a stub function per verb
@@ -70,7 +100,7 @@ process forks for it, `agent_cli/warm.py`).
   `interactive_transform`'s sections lose `flip` and `rotate_quarter`
   (`SectionTransformNoFlip`, `NoRotate`, `NoOrientation`),
   and every passage of a description written with `[[?needs ...]]` marks
-  (`core/needs.py`) is dropped or swapped; `look`'s `resolution`
+  (`job/settings/needs.py`) is dropped or swapped; `look`'s `resolution`
   only where the caller sizes pictures; the change tools' `view`
   (`VIEW_TOOLS`) not offered where the host forces their pictures on
   (`JobSpec.force_view`); `position_sections`' `sections` only with the
@@ -97,7 +127,7 @@ process forks for it, `agent_cli/warm.py`).
   without a job (LangSlice's coronal base prompt for the OpenAI models).
 - `plugins/` — tool plugins (`docs/developers/plugins.md`); `langslice/plugin_api.py`
   re-exports its names. `loader.py`: `load(ref, config)` imports
-  `module:factory`, calls it, checks every tool (`core.plugins.check_tool`),
+  `module:factory`, calls it, checks every tool (`job.plugins.check_tool`),
   builds the provenance (module, factory, versions, source
   SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
   at import); `as_refs` (the library's objects: factory functions by
@@ -147,8 +177,9 @@ process forks for it, `agent_cli/warm.py`).
   `sections=` for a picture of the handler's own, so the saved picture
   records each section's registration) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
-  write tool's call as one undo step, `ToolError` / `Refused` / any exception
-  as a reply, the reply and pictures from the `ToolResult`). `provenance.py`:
+  write tool's call as one undo step, a `ToolError` / `Refused` left to the
+  tool door, any other exception `PLUGIN_FAILED`, the reply and pictures from
+  the `ToolResult`). `provenance.py`:
   `job.json`'s `plugins` and the declarations as the model sees them (also
   `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
   adapter plugin (LangSlice as a client of a configured server, allow-list,
@@ -171,9 +202,10 @@ process forks for it, `agent_cli/warm.py`).
   `read_notes(layout)`: the user's notes, `job.json` `notes` (written by
   ABBA's Claude mode and `job FOLDER init --notes`), read by every door. `image_model_state(spec, connected=)`: the
   image model as the CLI's `status` and `init` report it.
-- `jobs.py` — opening a job without the agent: `JobContext` (the workspace
-  plus the job folder and results path; the driver's `EngineContext` adds
-  the model), `find(path)` (a job folder, or the image folder beside one;
+- `jobs.py` — opening a job without the agent: `JobContext` (the workspace,
+  its `ImageSettings` made by `JobSpec.image_settings()`, plus the `JobSpec`,
+  the job folder and results path; the driver's `EngineContext` adds the
+  model), `find(path)` (a job folder, or the image folder beside one;
   `NoJob`), `read_spec` (`job.json`'s spec, as a resume), `open_folder(path,
   persist=, door=)` (`Job.load`: nothing rewritten; the card brought up to
   date; the model keys loaded by `credentials.load_credentials`),
@@ -385,15 +417,20 @@ process forks for it, `agent_cli/warm.py`).
   commands, one module per group; `langslice/cli.py` keeps the entry point
   `langslice.cli:main`, `agent_cli/main.py` is `langslice-job`'s.
   `commands/parser.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
-  commands, `session-end`, `login`, `version`), `linear.py` (`linear run` and the job flags every
-  stack-opening command shares: `add_linear_arguments` (`--disable
-  NAME[,NAME...]`: the job's `disabled` list), `build_linear_spec`,
-  `spec_from_args` (`--frozen JSON`: the job's `frozen`); `--tasks` defaults to `DEFAULT_TASKS`, or with
-  `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
-  of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
-  with a message; `linear run` alone also takes `--tool-plugin
-  MODULE:FACTORY` and `--tool-plugin-config REF=JSON`, `with_tool_plugins`,
-  and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
+  commands, `session-end`, `login`, `version`), `flags.py` (the job flags
+  every stack-opening command shares, added from the settings table
+  `job/settings/schema.py` in its order by `add_flags(parser, group)`: the
+  table gives each setting's spellings, default and choices, `FLAGS` each
+  flag's help text, argparse handling and group: `job` for every command,
+  `plugins` and `session` for `linear run`, `fresh` for `linear run` and
+  `init`, `init` for `init`), `linear.py` (`linear run`: `build_linear_spec`,
+  `spec_from_args` (`--disable NAME[,NAME...]`: the job's `disabled` list;
+  `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
+  `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
+  `--registration` with any of `REGISTRATION_CLASHES` is refused; a bad flag
+  value ends the command with a message; `linear run` alone also takes
+  `--tool-plugin MODULE:FACTORY` and `--tool-plugin-config REF=JSON`,
+  `with_tool_plugins`, and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
   process of its own, by command, never importing the host),
   `mcp.py` (`mcp`), and the agent CLI
   (`docs/agents/cli.md`), a command of its own so that allowing it allows
@@ -451,8 +488,8 @@ process forks for it, `agent_cli/warm.py`).
     `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
     `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other refusal
-    3); `FIXES` per code; `stdout_to_stderr()` (stdout holds the envelope
-    only).
+    3; `ARGUMENT_CODES` are `RefusalCode` members); `FIXES` per code;
+    `stdout_to_stderr()` (stdout holds the envelope only).
   - `launch.py` — `launch --role register|register-scripting`: the exact
     prompt that launches a registration subagent, `result.prompt`, saved by
     `save` in `logs/launches/<six-digit number>_<role>.md` (artifact
@@ -514,8 +551,9 @@ process forks for it, `agent_cli/warm.py`).
     `core.stack.status.with_uniform_rows`;
     concise: a reply with pictures keeps its description as `picture_note`,
     a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
-    parser `init_parser`: the job flags of `linear run`, `--notes`,
-    `--viewer`; `--registration`'s report under `result.registration`,
+    parser `init_parser`: the job flags of `linear run`, `--fresh`,
+    `--notes`, `--viewer` (`add_flags`, the viewers from
+    `core.pictures.opening.VIEWER_LIMITS`); `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or

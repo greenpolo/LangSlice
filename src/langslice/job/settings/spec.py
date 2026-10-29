@@ -12,28 +12,25 @@ See ``docs/reference/settings.md`` for the design this mirrors.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, cast
 
-from langslice.core import frozen as freeze
-from langslice.core import toolset
-
-#: Every task, in the order they are listed everywhere else.
-DEFAULT_TASKS: tuple[str, ...] = ("position", "transform")
-ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
-
-PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
-
-#: How large the pictures the agent is shown are drawn: a long edge for the
-#: opening images and one for every later picture per level
-#: (:data:`langslice.core.pictures.sizes.PICTURE_EDGES`); "auto" lets the agent
-#: pass ``resolution`` per call. Nothing a fit computes or a transform stores
-#: depends on it, and the image model's inputs do not change.
-IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")
-
-#: Most sections one transform-tool call may take (``TransformSpec.max_parallel``).
-MAX_PARALLEL_TRANSFORMS = 4
+from langslice.core.space import Plane
+from langslice.core.workspace import ImageSettings
+from langslice.job.settings import frozen as freeze
+from langslice.job.settings import tool_table
+from langslice.job.settings.needs import render
+from langslice.job.settings.schema import (
+    ALL_TASKS,
+    DEFAULT_ATLAS,
+    DEFAULT_TASKS,
+    IMAGE_RESOLUTIONS,
+    MAX_PARALLEL_TRANSFORMS,
+    PLANES,
+    spec_keys,
+)
 
 #: The keys :attr:`JobSpec.inputs` takes; any other is refused (a misspelled
 #: key would otherwise drop the supplied answer without a word).
@@ -44,6 +41,19 @@ INPUT_KEYS: tuple[str, ...] = (
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
+
+#: What a fit says of a section with no written in-plane transform.
+NO_TRANSFORM = "A written affine transform is required"
+#: ... in a job whose Linear task is off, so nothing in it writes one: what
+#: the caller does instead (written with what it needs). A missing transform
+#: is the identity to the maps, never to the nonlinear step.
+NO_TRANSFORM_LINEAR_OFF = (
+    "A written affine transform is required, and Linear is off for this job, "
+    "so nothing here writes one. Supply the in-plane transforms with the job "
+    "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or "
+    "switch Linear on (task transform)[[?elastix_affine  and run "
+    "elastix_affine on the section first]]."
+)
 
 
 def _degrees(value: Any, where: str) -> float:
@@ -246,7 +256,7 @@ class JobSpec:
     """One whole ``langslice linear`` run, host-agnostic."""
 
     image_folder: str
-    atlas: str = "allen_mouse_25um"
+    atlas: str = DEFAULT_ATLAS
     plane: str = "coronal"
     model: str | None = None
     #: Reasoning effort for models that expose one (low|medium|high|xhigh|
@@ -278,20 +288,22 @@ class JobSpec:
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
     #: Tools and tool options switched off on top of what the tasks give:
     #: ``"zoom"`` (a tool, whole) or ``"look:positioning"`` (``tool:option``).
-    #: The valid names are :func:`langslice.core.toolset.valid_names`; a name
-    #: that is none, a tool the run cannot do without (``submit``) or a list
-    #: that cannot work is refused when the spec is made
-    #: (:func:`langslice.core.toolset.refusal`). A host's ``inputs["damaged"]``
-    #: notes are shown whatever is disabled.
+    #: The valid names are
+    #: :func:`~langslice.job.settings.tool_table.valid_names`; a name that is
+    #: none, a tool the run cannot do without (``submit``) or a
+    #: list that cannot work is refused when the spec is made
+    #: (:func:`~langslice.job.settings.tool_table.refusal`). A host's
+    #: ``inputs["damaged"]`` notes are shown whatever is disabled.
     disabled: list[str] = field(default_factory=list)
     #: What the agent may not change, per section: ``{"<filename>":
     #: ["orientation", "affine"], "*": ["angles"]}`` (``"*"``: every section;
-    #: the properties are :data:`langslice.core.frozen.PROPERTIES`). A frozen
-    #: property keeps the value ``inputs`` supplies for it, or its "none"
-    #: (:mod:`langslice.core.frozen`); the ops refuse a write that would
-    #: change it (``FROZEN``), a tool that writes only properties frozen on
-    #: every section is not offered (:attr:`switched_off`) and a task whose
-    #: properties are all frozen on every section is off (:meth:`has`).
+    #: the properties are :data:`langslice.job.settings.frozen.PROPERTIES`). A
+    #: frozen property keeps the value ``inputs`` supplies for it, or its
+    #: "none" (:mod:`langslice.job.settings.frozen`); the ops refuse a write
+    #: that would change it (``FROZEN``), a tool that writes only properties
+    #: frozen on every section is not offered (:attr:`switched_off`) and a
+    #: task whose properties are all frozen on every section is off
+    #: (:meth:`has`).
     frozen: dict[str, list[str]] = field(default_factory=dict)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
@@ -375,7 +387,7 @@ class JobSpec:
         if stray:
             raise ValueError(f"plugin_config names {stray}, which are no plugin of this job")
         if self.plugins:
-            toolset.tools_for(self)  # loads them: refused here when they cannot be
+            tool_table.tools_for(self)  # loads them: refused if they cannot be
         self.frozen = freeze.clean(self.frozen)
         supplied = (self.inputs or {}).get("positions") or {}
         unsupplied = sorted(name for name, held in self.frozen.items()
@@ -385,7 +397,7 @@ class JobSpec:
             raise ValueError(
                 f"frozen: the position of {unsupplied} is frozen, and a position has no "
                 "default: supply it in inputs.positions")
-        reason = toolset.refusal(self)
+        reason = tool_table.refusal(self)
         if reason is not None:
             raise ValueError(reason)
 
@@ -420,16 +432,67 @@ class JobSpec:
     def off(self, name: str) -> bool:
         """Whether the tool or ``tool:option`` *name* is off: disabled, or
         taken off by what is frozen (a tool's options are off with it)."""
-        return toolset.is_off(self.switched_off, name)
+        return tool_table.is_off(self.switched_off, name)
 
     @property
     def switched_off(self) -> list[str]:
         """Every name that is off for this run: ``disabled`` and, after it,
         the tools and options that can change nothing because everything
         they write is frozen on every section
-        (:func:`langslice.core.toolset.frozen_off`). What every door and
-        every text renders by."""
-        return toolset.off_names(self)
+        (:func:`langslice.job.settings.tool_table.off_names`). What every door
+        and every text renders by."""
+        return tool_table.off_names(self)
+
+    def image_settings(self) -> ImageSettings:
+        """Return the settings of this job the core reads.
+
+        Returns
+        -------
+        ImageSettings
+            The atlas and plane, how the sections are shown, the pixel
+            sizes and channel names the host gave, the picture level, the
+            settings a border trace depends on, the whole form as text and
+            what a fit says of a section with no written transform.
+        """
+        inputs: dict[str, object] = self.inputs or {}
+        supplied = inputs.get("pixel_size_um")
+        stack_um, file_um = supplied_pixel_sizes(supplied)
+        names = inputs.get("channel_names")
+        channel_names = None
+        if isinstance(names, list):
+            # reportUnknownArgumentType: a host's list, of anything
+            listed = cast("list[object]", names)
+            channel_names = tuple(str(name) for name in listed)
+        form = self.to_dict()
+        # reportAny: to_dict holds each task's settings as a plain dict
+        nonlinear = cast("dict[str, object]", form["nonlinear"])
+        return ImageSettings(
+            atlas=self.atlas,
+            plane=cast(Plane, self.plane),  # one of PLANES: checked when made
+            preprocess=self.preprocess,
+            host_preprocessing=self.host_preprocessing,
+            supplied_pixel_size=supplied,
+            stack_pixel_size_um=stack_um,
+            file_pixel_sizes_um=file_um,
+            channel_names=channel_names,
+            picture_level=self.image_resolution,
+            trace_settings=tuple(nonlinear.items()),
+            settings_text=json.dumps(form, sort_keys=True, default=str),
+            missing_transform=self.missing_transform(),
+        )
+
+    def missing_transform(self) -> str:
+        """Return what a fit says of a section with no written transform.
+
+        Returns
+        -------
+        str
+            :data:`NO_TRANSFORM`; for a job whose Linear task is off,
+            :data:`NO_TRANSFORM_LINEAR_OFF` for its disabled tools.
+        """
+        if self.has("transform"):
+            return NO_TRANSFORM
+        return render(NO_TRANSFORM_LINEAR_OFF, self.disabled)
 
     @property
     def thickness_mm(self) -> float | None:
@@ -466,15 +529,17 @@ class JobSpec:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
         """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any
-        unknown key (a nested one as ``section.key``)."""
+        unknown key (a nested one as ``section.key``), as the settings table
+        knows them (:func:`~langslice.job.settings.schema.spec_keys`)."""
         nested = {
             "position": PositionSpec,
             "transform": TransformSpec,
             "nonlinear": NonlinearSpec,
         }
-        unknown = [name for name in data if name not in cls.__dataclass_fields__]
-        unknown += [f"{name}.{key}" for name, sub in nested.items()
-                    for key in (data.get(name) or {}) if key not in sub.__dataclass_fields__]
+        top, sections = spec_keys()
+        unknown = [name for name in data if name not in top]
+        unknown += [f"{name}.{key}" for name in nested
+                    for key in (data.get(name) or {}) if key not in sections[name]]
         if unknown:
             raise ValueError(f"Unknown job setting(s) {sorted(unknown)}")
         kwargs: dict[str, Any] = {

@@ -59,10 +59,10 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from langslice.core.spec import JobSpec
 from langslice.doors.jobs import Opened, open_folder
 from langslice.doors.library.replies import Reply, library_reply
 from langslice.doors.library.script_context import ScriptContext
+from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel
 
 logger = logging.getLogger(__name__)
@@ -195,7 +195,7 @@ class JobHandle:
     @property
     def state(self) -> Any:
         """The stack as it stands
-        (:class:`langslice.core.stack.stack.StackState`);
+        (:class:`langslice.core.stack.stack.Stack`);
         read it, write through the verbs."""
         return self._opened.job.state
 
@@ -219,7 +219,7 @@ class JobHandle:
         *full_resolution* the image file's own pixels. A section without a
         placement, or whose deformation record or file cannot be read, raises
         ``ValueError``; an unknown name, ``UNKNOWN_SLICE_IDS``
-        (:class:`langslice.tools.refusal.Refused`, a ``ValueError``)."""
+        (:class:`langslice.core.refusal.Refused`, a ``ValueError``)."""
         from langslice.tools.exports import section_maps
 
         return section_maps(self._opened.job, self._opened.ctx, section,
@@ -358,8 +358,9 @@ def _transform(name: str, value: Any) -> dict[str, Any]:
 
 def _angles(value: Mapping[str, Any]) -> dict[str, Any]:
     """Supplied cutting angles in either form (``inputs.angles``), checked
-    (:func:`langslice.core.spec.supplied_angles`) and as plain floats."""
-    from langslice.core.spec import supplied_angles
+    (:func:`langslice.job.settings.spec.supplied_angles`) and as plain
+    floats."""
+    from langslice.job.settings.spec import supplied_angles
 
     stack, sections = supplied_angles(dict(value))
     if stack is not None:
@@ -413,8 +414,8 @@ def create_job(
     *angles* (``{"pitch": deg, "yaw": deg}`` for the whole stack, or
     ``{filename: {"pitch": deg, "yaw": deg}}`` for each section its own; a
     section the per-section form does not name is flat:
-    :func:`langslice.core.spec.supplied_angles`) and *pixel_size_um* (one
-    number, or ``{filename: um}``); *inputs*
+    :func:`langslice.job.settings.spec.supplied_angles`) and *pixel_size_um*
+    (one number, or ``{filename: um}``); *inputs*
     takes any other key of ``JobSpec.inputs``. *tasks* None: ``nonlinear``,
     plus ``transform`` (``elastix_affine``) unless every section has a supplied
     transform.
@@ -482,7 +483,7 @@ def create_job(
             supplied["orientation"] = {str(name): dict(value)
                                        for name, value in orientation.items()}
         if pixel_size_um is not None:
-            # JobSpec reads it (core.spec.supplied_pixel_sizes) and refuses a bad size.
+            # JobSpec reads it (supplied_pixel_sizes) and refuses a bad size.
             supplied["pixel_size_um"] = (dict(pixel_size_um) if isinstance(pixel_size_um, Mapping)
                                          else pixel_size_um)
         if registration is not None:

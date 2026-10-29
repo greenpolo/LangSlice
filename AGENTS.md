@@ -21,8 +21,8 @@ exceptions: a violation is fixed by moving code.
 
 | Package | Role | Guide |
 |---|---|---|
-| `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; the job spec, tool table and needs marks still live here | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
-| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the tool labels) | `job/CLAUDE.md` |
+| `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; `refusal.py` (the one `Refused` and its `RefusalCode`s); of a job's settings only the `ImageSettings` the workspace carries | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
+| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the form `JobSpec`, the table of every setting `schema.py`, `frozen.py`, the tool table `tool_table.py`, the needs marks `needs.py`, the tool labels); the plugin registry (`plugins.py`) | `job/CLAUDE.md` |
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement, the agent CLI's fixes) | `tools/CLAUDE.md` |
 | `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the ABBA worker (`abba/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth` (`oauth/`), `none`; no task logic | |
@@ -60,12 +60,12 @@ and `environment.yml` hold the worker's source installation.
   writes job state only through the context's operations and files only under
   `plugins/<tool>/`; a job without plugins shows no trace of the seam.
 - Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`
-  (`tool` or `tool:option`; `core/toolset.py` lists the valid names, the
+  (`tool` or `tool:option`; `job/settings/tool_table.py` lists the valid names, the
   spec refuses an unknown name or a list that cannot work). Every sentence
   that names a tool or an option is written with what it needs
-  (`core/needs.py`), so no model-facing text names what the job disables;
+  (`job/settings/needs.py`), so no model-facing text names what the job disables;
   `tests/test_disabled_tools.py` checks it. A new tool or option is a row in
-  `core/toolset.py`, and its text carries its marks.
+  `job/settings/tool_table.py`, and its text carries its marks.
 - Every write is one undo step and checkpoints `state.json`; `registration.json`,
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis

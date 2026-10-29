@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
@@ -15,13 +15,18 @@ from langslice.core.fits.landmarks import (
 )
 from langslice.core.pictures import look
 from langslice.core.pictures.drawn import note
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.landmarks import Pair
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+
+if TYPE_CHECKING:
+    from langslice.core.fits.deformation import RecordStore
 
 
 def pair_picture(
-    ws: Workspace, state: StackState, record: SliceState, pair: dict[str, Any], *, store: Any = None
+    ws: Workspace, state: Stack, record: Section, pair: Pair, *,
+    store: RecordStore | None = None,
 ) -> look.LookPicture:
     """One crop per endpoint, retaining at least half the full anatomical extent."""
     pictures = []
@@ -36,9 +41,9 @@ def pair_picture(
         whole = look.look(ws, state, request, store=store)[0]
         panel = whole.recipe["endpoint_panels"][0]
         point = (
-            transform(np.linalg.inv(panel["pixel_to_native"]), pair["atlas_native_xy"])
+            transform(np.linalg.inv(panel["pixel_to_native"]), pair.atlas_native_xy)
             if role == "atlas"
-            else section_picture_point(panel, pair["section_fraction_xy"])
+            else section_picture_point(panel, pair.section_fraction_xy)
         )
         width, height = whole.recipe["shown"]
         centre = point / np.array([width, height])
@@ -57,11 +62,11 @@ def pair_picture(
     for role, picture in zip(("atlas", "section"), pictures, strict=True):
         panel = picture.recipe["endpoint_panels"][0]
         point = (
-            transform(np.linalg.inv(panel["pixel_to_native"]), pair["atlas_native_xy"])
+            transform(np.linalg.inv(panel["pixel_to_native"]), pair.atlas_native_xy)
             if role == "atlas"
-            else section_picture_point(panel, pair["section_fraction_xy"])
+            else section_picture_point(panel, pair.section_fraction_xy)
         )
-        glyph(picture.image, point, f"{pair['id']} selected", role)
+        glyph(picture.image, point, f"{pair.id} selected", role)
     left, right = pictures
     gap = 24
     image = Image.new(
@@ -81,7 +86,7 @@ def pair_picture(
             np.asarray(panel["pixel_to_file_fraction"]) @ to_local
         ).tolist()
         panels.append(panel)
-    text = f"{record.id} {pair['id']}: atlas template (diamond), preprocessed section (circle)"
+    text = f"{record.id} {pair.id}: atlas template (diamond), preprocessed section (circle)"
     recipe = {
         "renderer": "landmark_pair",
         "endpoint_panels": panels,

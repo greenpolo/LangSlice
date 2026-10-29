@@ -32,7 +32,13 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from langslice.engines import _blocks
-from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec
+from langslice.plugin_api import (
+    RefusalCode,
+    ToolContext,
+    ToolError,
+    ToolResult,
+    ToolSpec,
+)
 
 HERE = Path(__file__).resolve().parent
 NAME = "SPOmiAlign"
@@ -310,11 +316,13 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
     if done.returncode != 0 or not dst.exists():
         missing = _weights_missing()
         if missing:
-            raise ToolError("ENGINE_FAILED", "SPOmiAlign's matcher weights are not in torch's "
+            raise ToolError(RefusalCode.ENGINE_FAILED,
+                            "SPOmiAlign's matcher weights are not in torch's "
                             "hub cache and could not be downloaded: "
                             + ", ".join(WEIGHTS[name] for name in missing))
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError("ENGINE_FAILED", f"SPOmiAlign did not run: {tail[0]}")
+        raise ToolError(RefusalCode.ENGINE_FAILED,
+                        f"SPOmiAlign did not run: {tail[0]}")
     out = np.load(dst)
     results = []
     waited = float(out["gpu_wait_s"]) if "gpu_wait_s" in out.files else 0.0
@@ -380,7 +388,7 @@ def _require(config: dict[str, Any], *keys: str) -> None:
     for key in keys:
         path = Path(str(config[key])).expanduser()
         if not path.exists():
-            raise ToolError("ENGINE_UNAVAILABLE",
+            raise ToolError(RefusalCode.ENGINE_UNAVAILABLE,
                             f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
                             f"it in the plugin_config of {REF})")
 
@@ -447,21 +455,24 @@ def _files(here: Path, pair: dict[str, Any], got: dict[str, Any],
 # --- the tool ---------------------------------------------------------------------------------
 
 
-def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, Any] | None:
+def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, object] | None:
     """Why the engine *mode* cannot start on this section, before the engine runs."""
     sid = view_of.id
     frozen = [prop for prop in WRITES[mode] if prop in view_of.frozen]
     if frozen:
-        return {"id": sid, "status": "error", "error": "FROZEN",
-                "message": f"the section's {' and '.join(frozen)} may not be changed"}
+        refusal = ToolError(RefusalCode.FROZEN,
+                            f"the section's {' and '.join(frozen)} may not be changed")
+        return {"id": sid, **refusal.payload()}
     if frame.placed_atlas_to_section is None:
-        return {"id": sid, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
-                "message": "SPOmiAlign starts from the section's placement: give it a "
-                           "transform first"}
+        refusal = ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                            "SPOmiAlign starts from the section's placement: give it a "
+                            "transform first")
+        return {"id": sid, **refusal.payload()}
     if mode != "warp" and view_of.deformation:
-        return {"id": sid, "status": "error", "error": "HAS_DEFORMATION",
-                "message": "this fit would write a new transform, which clears the "
-                           "section's deformation; fit \"warp\" to build on it"}
+        refusal = ToolError(RefusalCode.HAS_DEFORMATION,
+                            "this fit would write a new transform, which clears the "
+                            "section's deformation; fit \"warp\" to build on it")
+        return {"id": sid, **refusal.payload()}
     return None
 
 
@@ -469,18 +480,20 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
          rigid: bool, section_image: str, atlas_image: str, mask: str, smoothness_um: float,
          matches: int, view: bool) -> ToolResult:
     if fit not in FITS:
-        raise ToolError("BAD_ARGS", f"fit is one of {', '.join(FITS)}; got {fit!r}")
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"fit is one of {', '.join(FITS)}; got {fit!r}")
     if rigid and fit != "transform":
-        raise ToolError("BAD_ARGS", "rigid fits the transform alone: SPOmiAlign's warp "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        "rigid fits the transform alone: SPOmiAlign's warp "
                         "follows an affine or the registration the section holds; give fit "
                         "\"transform\" with rigid, or leave rigid false")
     mode = mode_of(fit, bool(rigid))
     if not sections:
-        raise ToolError("BAD_ARGS", "name one to twenty sections")
+        raise ToolError(RefusalCode.BAD_ARGS, "name one to twenty sections")
     if int(matches) < 3:
-        raise ToolError("BAD_ARGS", "matches is at least 3")
+        raise ToolError(RefusalCode.BAD_ARGS, "matches is at least 3")
     if not float(smoothness_um) > 0:
-        raise ToolError("BAD_ARGS", "smoothness_um is above 0")
+        raise ToolError(RefusalCode.BAD_ARGS, "smoothness_um is above 0")
     matches, smoothness_um = int(matches), float(smoothness_um)
     settings = {"fit": fit, "rigid": bool(rigid), "section_image": section_image,
                 "atlas_image": atlas_image, "mask": mask, "smoothness_um": smoothness_um,
@@ -527,7 +540,7 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                 "pairs_dropped_by_mask": by_mask})
             relative = here.relative_to(ctx.job_dir) if here.is_relative_to(ctx.job_dir) else here
             if "error" in got:
-                rows.append({"id": sid, "status": "error", "error": "FIT_FAILED",
+                rows.append({"id": sid, **ToolError(RefusalCode.FIT_FAILED).payload(),
                              "message": str(got["error"]), "files": str(relative)})
                 continue
             what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"

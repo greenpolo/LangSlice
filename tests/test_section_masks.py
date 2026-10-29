@@ -13,13 +13,16 @@ import pytest
 from langslice.core.fits.deformable.masks import EM_MATCH_THRESHOLD, dilate
 from langslice.core.fits.deformable.record import DeformableRecord
 from langslice.core.sections import masks as section_masks
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json, mask_from_json
+from langslice.core.stack.images import MaskRef
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.layout import JobLayout
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.job.state_file import stack_from_json, stack_to_json
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,
@@ -54,8 +57,9 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *, hole: bool):
     state = ingest(spec, ctx)
     record = state.slices[0]
     record.position_mm = 0.1
-    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                        "calibration": {"section_um_per_px": 25.0, "source": "host"}}
+    record.transform = affine_from_json(
+        {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        "calibration": {"section_um_per_px": 25.0, "source": "host"}})
     box = build_tools(state, ctx, spec)
     return state, ctx, record, box.job, np.asarray(image.convert("L"))
 
@@ -108,23 +112,24 @@ def test_sorting_widths_and_means_can_be_given(tmp_path: Path, atlas):
 # --- files and entries ---------------------------------------------------------------
 
 
-def _meta(state: StackState, record: SliceState, **over: Any) -> dict[str, Any]:
-    return {"kind": "em", "section_image": "preprocessed", "atlas_image": "template",
-            "params": {"match_sd": 0.1}, "inputs": section_masks.grid_digest(record),
-            "registration": section_masks.registration_digest(state, record),
-            "left_out": 0.04, **over}
+def _meta(state: Stack, record: Section, **over: Any) -> MaskRef:
+    return mask_from_json({
+        "kind": "em", "section_image": "preprocessed", "atlas_image": "template",
+        "params": {"match_sd": 0.1}, "inputs": section_masks.grid_digest(record),
+        "registration": section_masks.registration_digest(state, record),
+        "file": "", "left_out": 0.04, **over})
 
 
 def test_a_mask_writes_a_float16_npz_and_reads_back(tmp_path: Path):
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()
-    state = StackState(slices=[SliceState(ID, 0, 0)])
+    state = Stack(slices=[Section(ID, 0, 0)])
     record = state.slices[0]
     weights = np.random.default_rng(0).random((30, 40)).astype(np.float32)
     entry = section_masks.write_mask(layout, record, "hole", weights, _meta(state, record))
     assert record.masks["hole"] == entry
-    assert entry["file"] == "sections/s0/masks/hole.npz" and entry["kind"] == "em"
-    with np.load(layout.folder / entry["file"]) as data:
+    assert entry.file == "sections/s0/masks/hole.npz" and entry.kind == "em"
+    with np.load(layout.folder / entry.file) as data:
         assert data["weights"].dtype == np.float16 and data["weights"].shape == (30, 40)
         assert data["grid"].tolist() == [40, 30]
         assert str(data["made"])
@@ -135,18 +140,18 @@ def test_a_mask_writes_a_float16_npz_and_reads_back(tmp_path: Path):
     assert section_masks.section_weights(view) is view.weights
     assert section_masks.section_weights(None) is None
     # The state entry round-trips through JSON.
-    assert StackState.from_dict(json.loads(json.dumps(state.to_dict()))) == state
+    assert stack_from_json(json.loads(json.dumps(stack_to_json(state)))) == state
 
 
 def test_a_mask_made_again_keeps_the_file_an_undone_state_points_at(tmp_path: Path):
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()
-    state = StackState(slices=[SliceState(ID, 0, 0)])
+    state = Stack(slices=[Section(ID, 0, 0)])
     record = state.slices[0]
     first = section_masks.write_mask(layout, record, "m", np.zeros((8, 8)), _meta(state, record))
     second = section_masks.write_mask(layout, record, "m", np.ones((8, 8)), _meta(state, record))
-    assert first["file"] != second["file"]
-    with np.load(layout.folder / first["file"]) as data:
+    assert first.file != second.file
+    with np.load(layout.folder / first.file) as data:
         assert data["weights"].max() == 0
     assert not list((layout.folder / "sections" / "s0" / "masks").glob("*.partial*"))
 
@@ -154,7 +159,7 @@ def test_a_mask_made_again_keeps_the_file_an_undone_state_points_at(tmp_path: Pa
 def test_bad_masks_are_refused(tmp_path: Path):
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()
-    state = StackState(slices=[SliceState(ID, 0, 0)])
+    state = Stack(slices=[Section(ID, 0, 0)])
     record = state.slices[0]
     for name in ("none", "a b", "", "x" * 41, "../up"):
         with pytest.raises(ValueError, match="mask name"):
@@ -172,7 +177,7 @@ def test_bad_masks_are_refused(tmp_path: Path):
 def test_a_new_registration_marks_a_mask_earlier_but_a_turn_makes_it_stale(tmp_path: Path):
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()
-    state = StackState(atlas="a", slices=[SliceState(ID, 0, 0, position_mm=1.0)])
+    state = Stack(atlas="a", slices=[Section(ID, 0, 0, position_mm=1.0)])
     record = state.slices[0]
     section_masks.write_mask(layout, record, "m", np.ones((6, 6)), _meta(state, record))
     assert section_masks.mask_rows(state, record) == [
@@ -195,7 +200,7 @@ def test_the_status_rows_list_a_sections_masks(tmp_path: Path):
 
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()
-    state = StackState(slices=[SliceState(ID, 0, 0, position_mm=1.0), SliceState("s1.png", 1, 1)])
+    state = Stack(slices=[Section(ID, 0, 0, position_mm=1.0), Section("s1.png", 1, 1)])
     section_masks.write_mask(layout, state.slices[0], "hole", np.ones((6, 6)),
                              _meta(state, state.slices[0]))
     rows = status_rows(state)

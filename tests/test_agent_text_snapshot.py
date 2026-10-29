@@ -50,7 +50,7 @@ _BASE: dict[str, Any] = {"model": "fake-model", "preprocess": "none",
 
 
 def _specs(folder: Path) -> dict[str, Any]:
-    from langslice.core.spec import JobSpec, NonlinearSpec
+    from langslice.job.settings.spec import JobSpec, NonlinearSpec
 
     image_folder = str(folder)
     all_tasks = ["position", "transform", "nonlinear"]
@@ -130,8 +130,8 @@ def _mcp_md(label: str, tasks: list[str], folder: Path) -> str:
 
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from langslice.core.spec import JobSpec
     from langslice.doors.mcp.server import build_server
+    from langslice.job.settings.spec import JobSpec
 
     # Each listing gets its own images folder: the server adopts a job folder
     # an earlier listing left, which would carry that listing's tasks.

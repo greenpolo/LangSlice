@@ -3,7 +3,7 @@
 Each plugin tool's description is an experimental variable, so it is kept
 exactly as the model sees it: per plugin the module, factory, versions, the
 SHA-256 of the source files that declared its tools and the plugin API
-version (:attr:`langslice.core.plugins.LoadedPlugin.provenance`), and per
+version (:attr:`langslice.job.plugins.LoadedPlugin.provenance`), and per
 tool its kind, group, task, writes, limits and its rendered declaration (the
 name, description and argument schema in this job's variant). The record is
 ``job.json``'s ``plugins`` and the run trace's ``plugins`` line; a change of

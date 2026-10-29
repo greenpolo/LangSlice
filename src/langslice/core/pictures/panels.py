@@ -31,8 +31,8 @@ from langslice.core.sections.images import Look
 from langslice.core.sections.reading import mask_box
 from langslice.core.sections.renders import render_slice
 from langslice.core.space import Plane
-from langslice.core.stack.section import Angles, SliceState
-from langslice.core.stack.stack import StackState, plane_angles
+from langslice.core.stack.section import Angles, Section
+from langslice.core.stack.stack import Stack, plane_angles
 from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ ATLAS_IMAGE_PERCENTILE = 99.5
 
 
 def _image_plane(
-    ctx: Workspace, state: StackState, kind: str, position_mm: float, labels: np.ndarray,
+    ctx: Workspace, state: Stack, kind: str, position_mm: float, labels: np.ndarray,
     angles: Angles,
 ) -> np.ndarray:
     """The atlas image *kind* on the native plane grid, percentile-stretched to 0..1."""
@@ -65,7 +65,7 @@ def _image_plane(
 
 
 def atlas_image_picture(
-    ctx: Workspace, state: StackState, kinds: tuple[str, ...], position_mm: float,
+    ctx: Workspace, state: Stack, kinds: tuple[str, ...], position_mm: float,
     *, angles: Angles | None = None,
 ) -> Image.Image | None:
     """The atlas images *kinds* on the native plane grid; None for the template alone.
@@ -109,7 +109,7 @@ def atlas_image_picture(
 
 
 def regions_in_plane(
-    ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
+    ctx: Workspace, state: Stack, position_mm: float, options: DisplayOptions,
     *, angles: Angles | None = None,
 ) -> list[str]:
     """The highlighted regions with at least one pixel in the plane at
@@ -144,7 +144,7 @@ def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
 
 
 def framed_section(
-    ctx: Workspace, state: StackState, record: SliceState, options: DisplayOptions,
+    ctx: Workspace, state: Stack, record: Section, options: DisplayOptions,
     *, long_edge: int | None = None, look: Look | str = "options",
 ) -> Image.Image:
     """One section as corrected, the whole image, in the call's look and zoom.
@@ -169,7 +169,7 @@ def framed_section(
 
 
 def framed_atlas(
-    ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
+    ctx: Workspace, state: Stack, position_mm: float, options: DisplayOptions,
     *, long_edge: int | None = None, um_per_px: float | None = None,
     angles: Angles | None = None,
 ) -> Image.Image:
@@ -279,7 +279,7 @@ def framed_atlas(
     return result
 
 
-def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions,
+def atlas_caption(state: Stack, position_mm: float, options: DisplayOptions,
                   *, angles: Angles | None = None, median: bool = False) -> str:
     """The label burned into an atlas picture drawn at *angles* (the stack's
     when None); *median*: drawn at the median of differing sections' angles,

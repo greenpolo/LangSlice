@@ -1,7 +1,7 @@
 """Damage marks: the atlas regions a section is missing, which every fit leaves out.
 
 A section is damaged exactly when it has marked regions
-(``SliceState.damaged_regions``). :func:`mark_damage` sets a section's regions
+(``Section.damaged_regions``). :func:`mark_damage` sets a section's regions
 and note; the fits and the image model's trace read them
 (:func:`langslice.core.sections.damage.exclusions`). A host's note
 (``inputs.damaged``, ``{filename: note}``) is the section's ``damage_note``
@@ -16,16 +16,16 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import (
-    DamagePictureError,
     damage_picture,
     normalized_entries,
 )
-from langslice.tools.refusal import Refused, check_frozen, unknown_sections
+from langslice.tools.refusal import check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.pictures.options import DisplayOptions
-    from langslice.core.stack.section import SliceState
+    from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -60,7 +60,7 @@ class DamageRegions:
         return [self.id] if self.written else []
 
 
-def _user_note(job: Job, record: SliceState) -> str:
+def _user_note(job: Job, record: Section) -> str:
     """The note the host gave with its mark ("" for none, or no mark)."""
     marks = (job.spec.inputs or {}).get("damaged") or {}
     return str(marks.get(record.id) or "").strip() if record.id in job.host_damaged else ""
@@ -72,11 +72,11 @@ def _joined_note(user: str, agent: str) -> str:
     return "; ".join(dict.fromkeys(parts))
 
 
-def _check_sides(job: Job, workspace: Workspace, record: SliceState, names: Sequence[str]) -> None:
+def _check_sides(job: Job, workspace: Workspace, record: Section, names: Sequence[str]) -> None:
     """Refuse a one-sided entry whose side the section's current placement does
     not have (the picture's check, made before the write); a section without a
     usable placement is not checked."""
-    from langslice.core.atlas.sides import SideError, split_side
+    from langslice.core.atlas.sides import split_side
     from langslice.core.fits.deformable.plane_images import placement_left
     from langslice.core.fits.deformation import fit_grid
 
@@ -84,16 +84,14 @@ def _check_sides(job: Job, workspace: Workspace, record: SliceState, names: Sequ
         placement = fit_grid(job.state, workspace, record).placement
     except ValueError:
         return
-    try:
-        left = placement_left(workspace.atlas, placement, names)
-    except SideError as exc:
-        raise Refused(exc.code, message=str(exc)) from exc
+    atlas = workspace.atlas  # pyright: ignore[reportAny]  # BrainGlobe's, untyped
+    left = placement_left(atlas, placement, names)
     pair = getattr(left, "names", None)
     for name in names:
         side = split_side(name)[1]
         if side is not None and pair is not None and side not in pair:
             runs = "vertically" if side in ("top", "bottom") else "horizontally"
-            raise Refused("WRONG_SIDE_PAIR", message=(
+            raise Refused(RefusalCode.WRONG_SIDE_PAIR, message=(
                 f"On this section the midline runs {runs}, so its halves are "
                 f"{pair[0]!r} and {pair[1]!r}, not {side!r}: name one of those "
                 f"(e.g. \"{split_side(name)[0]}:{pair[0]}\")."))
@@ -133,18 +131,21 @@ def mark_damage(
     from langslice.core.fits.deformable.plane_images import resolve_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
-        raise Refused("BAD_ARGS", message="regions must be a list of acronyms or ids")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="regions must be a list of acronyms or ids")
     try:
         names = normalized_entries(regions)
     except ValueError as exc:
-        raise Refused("BAD_ARGS", message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     if names:
         try:
             resolve_entries(workspace.atlas, names)
         except ValueError as exc:
-            raise Refused("UNKNOWN_REGIONS", message=str(exc)) from exc
+            raise Refused(RefusalCode.UNKNOWN_REGIONS,
+                          message=str(exc)) from exc
         if job.state.plane == "sagittal" and has_sides(names):
-            raise Refused("NO_SIDES", message="A sagittal section lies within one "
+            raise Refused(RefusalCode.NO_SIDES,
+                          message="A sagittal section lies within one "
                           "hemisphere, so a region cannot be limited to one side.")
     with job.writing():
         state = job.state
@@ -174,8 +175,7 @@ def mark_damage(
                 workspace, state, record, store=job.deformations,
                 long_edge=options.long_edge, border_color=options.border_color,
                 border_thickness=options.border_thickness)]
-        except DamagePictureError as exc:
-            failed = {"error": exc.code, "message": str(exc)}
         except Exception as exc:  # noqa: BLE001 - the write stands; say why
-            failed = {"error": getattr(exc, "code", "RENDER_FAILED"), "message": str(exc)}
+            failed = {"error": getattr(exc, "code", RefusalCode.RENDER_FAILED),
+                      "message": str(exc)}
     return DamageRegions(**result, pictures=drawn, render_failed=failed)

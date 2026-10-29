@@ -957,10 +957,14 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
 
 
 def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images):
-    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec
     from langslice.doors.jobs import context
     from langslice.doors.tools.toolbox import build_tools
     from langslice.job.job import Job
+    from langslice.job.settings.spec import (
+        JobSpec,
+        NonlinearSpec,
+        PositionSpec,
+    )
 
     job_folder = init(capsys, images)
     code, envelope = cli(capsys, str(images), "status")
@@ -1111,8 +1115,8 @@ def test_the_cli_and_the_library_cap_no_pictures_or_sections_but_fireants_syn(ca
 def test_a_transform_cap_of_the_job_holds_without_a_picture_cap():
     from types import SimpleNamespace
 
+    from langslice.core.refusal import Refused
     from langslice.tools.catalog import check_section_count
-    from langslice.tools.refusal import Refused
 
     check_section_count(SimpleNamespace(picture_cap=None, transform_cap=None),
                         "elastix_affine", 50)

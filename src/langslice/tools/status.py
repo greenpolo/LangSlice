@@ -9,9 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from langslice.core import frozen as freeze
 from langslice.core.stack.stack import break_ids
 from langslice.core.stack.status import stack_angles_entry, status_rows
+from langslice.job.settings import frozen as freeze
 
 if TYPE_CHECKING:
     from langslice.job.job import Job

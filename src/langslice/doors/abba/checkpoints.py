@@ -6,7 +6,11 @@ import math
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from langslice.job.state_file import stack_to_json
+
 if TYPE_CHECKING:
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.doors.abba.worker import Emit, PreparedLinear
 logger = logging.getLogger(__name__)
 #: Why an ABBA door refuses a job whose sections carry different cutting
@@ -21,9 +25,9 @@ ABBA_MIXED_ANGLES = (
 
 def refuse_mixed_angles(state: Any) -> None:
     """Raise ``ValueError`` (:data:`ABBA_MIXED_ANGLES`) when *state* (a
-    ``StackState`` or its ``to_dict()``) has sections that differ in cutting
+    ``Stack`` or its JSON form) has sections that differ in cutting
     angle; nothing for a single-angle job."""
-    from langslice.core.stack.section import serialized_mixed_angles
+    from langslice.job.state_file import serialized_mixed_angles
 
     mixed = (serialized_mixed_angles(state) if isinstance(state, dict)
              else bool(state.mixed_angles))
@@ -85,7 +89,7 @@ def _host_updates(
 def _stack_angles(data: dict[str, Any]) -> dict[str, float]:
     """A serialized state's stack-wide angles as ``{"pitch_deg", "yaw_deg"}``
     (one angle for the stack: :func:`refuse_mixed_angles` ran first)."""
-    from langslice.core.stack.section import ANGLES_KEY
+    from langslice.core.stack.rows import ANGLES_KEY
 
     angles = data[ANGLES_KEY]
     return {"pitch_deg": float(angles["pitch"]), "yaw_deg": float(angles["yaw"])}
@@ -138,8 +142,8 @@ class HostCheckpoints:
     def warps(self) -> bool:
         return self.prepared.spec.has("nonlinear")
 
-    def __call__(self, state: Any) -> None:
-        current = state.to_dict()
+    def __call__(self, state: Stack) -> None:
+        current = stack_to_json(state)
         # Before anything reaches ABBA: a stack with an angle per section
         # cannot be shown there (the run's own final call raises it too).
         refuse_mixed_angles(current)
@@ -182,16 +186,16 @@ class HostCheckpoints:
         made), ``None`` when it was cleared, undone or kept linear, and
         whenever the placement changed."""
         from langslice.core.fits.deformation import linear_key
-        from langslice.core.stack.stack import StackState
         from langslice.job.public_files import applied_deformation
+        from langslice.job.state_file import stack_from_json
 
-        now, before = StackState.from_dict(current), StackState.from_dict(previous)
+        now, before = stack_from_json(current), stack_from_json(previous)
 
-        def applied(stack: StackState, record: Any) -> str | None:
-            held = applied_deformation(stack, record)
+        def applied(stack: Stack, section: Section) -> str | None:
+            held = applied_deformation(stack, section)
             if held is None:
                 return None
-            return str(held.get("key") or "") or None
+            return held.key or None
 
         warps: dict[str, dict[str, Any] | None] = {}
         for record in now.in_order():
@@ -205,33 +209,38 @@ class HostCheckpoints:
                 warps[record.id] = None
         return warps
 
-    def _warp(self, state: Any, record: Any, key: str) -> dict[str, Any]:
-        """The warp row of *record*'s applied deformation *key*, its measured
+    def _warp(
+        self, state: Stack, section: Section, key: str,
+    ) -> dict[str, Any]:
+        """The warp row of *section*'s applied deformation *key*, its measured
         error logged; ``{"error": reason}``, with a log message, when its
         record cannot be read or its thin-plate spline folds at every grid
         (the connector keeps that row as a failed update and names it; the
         warp ABBA holds is left as it is)."""
         from langslice.core.fits.deformation import linear_key
 
-        cache_key = (record.id, key, linear_key(state, record))
+        cache_key = (section.id, key, linear_key(state, section))
         if cache_key in self._warp_cache:
             return self._warp_cache[cache_key]
         try:
-            row = self._warp_row(state, record, key)
+            row = self._warp_row(state, section, key)
         except (OSError, ValueError) as exc:
             self.emit({"kind": "log", "message": (
-                f"{record.id}: its deformation is not sent to ABBA ({exc}).")})
+                f"{section.id}: its deformation is not sent to ABBA "
+                f"({exc}).")})
             return {"error": f"its deformation could not be converted ({exc})"}
         else:
             self.emit({"kind": "log", "message": (
-                f"{record.id}: deformation sent to ABBA as {row['points']} landmarks; "
+                f"{section.id}: deformation sent to ABBA as {row['points']} landmarks; "
                 f"ABBA's thin-plate spline differs from it by at most "
                 f"{row['max_error_mm'] * 1000:.1f} um (99% of points within "
                 f"{row['p99_error_mm'] * 1000:.1f} um).")})
         self._warp_cache[cache_key] = row
         return row
 
-    def _warp_row(self, state: Any, record: Any, key: str) -> dict[str, Any]:
+    def _warp_row(
+        self, state: Stack, section: Section, key: str,
+    ) -> dict[str, Any]:
         from langslice.core.maps.abba import warp_world_landmarks
         from langslice.core.maps.section_maps import (
             section_frame,
@@ -240,17 +249,18 @@ class HostCheckpoints:
 
         if self.job is None or self.workspace is None:
             raise ValueError("the job's deformation records are not available here")
-        warp = self.job.deformations.get(record.id, key)
+        warp = self.job.deformations.get(section.id, key)
         if warp is None:
             raise ValueError("its deformation record cannot be read")
-        frame = section_frame(state, self.workspace, record)
+        frame = section_frame(state, self.workspace, section)
         report: dict[str, Any] = {}
         source, target = warp_world_landmarks(
-            frame, warp, stored_params(record), size=self.prepared.geometry[record.id],
+            frame, warp, stored_params(section), size=self.prepared.geometry[section.id],
             pixel_size_um=self.prepared.calibration, diagnostics=report)
-        held = record.deformation or {}
+        applied = section.deformation
+        held = None if applied is None else applied.record
         return {"source_mm": source.T.tolist(), "target_mm": target.T.tolist(),
-                "record": str(held.get("record") or key),
+                "record": held or key,
                 "max_error_mm": float(report["max_error_mm"]),
                 "p99_error_mm": float(report["p99_error_mm"]),
                 "points": int(report["points"])}

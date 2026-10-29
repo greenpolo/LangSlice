@@ -138,10 +138,12 @@ class StrictArgumentsPlugin(BasePlugin):
             return None
         from langslice.tools.arguments import argument_refusal
 
+        arguments = dict(tool_args or {})
         try:
-            return argument_refusal(func, dict(tool_args or {}))
+            refusal = argument_refusal(func, arguments)  # pyright: ignore[reportAny]  # ADK's
         except (TypeError, ValueError):  # an unintrospectable tool keeps ADK's behaviour
             return None
+        return None if refusal is None else refusal.payload()
 
 
 def part_summary(part: types.Part) -> dict[str, Any]:

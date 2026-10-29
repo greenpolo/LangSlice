@@ -37,13 +37,14 @@ from langslice.core.pictures.sizes import (
     opening_edge,
 )
 from langslice.core.sections.renders import render_slice
-from langslice.core.spec import JobSpec
+from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context, build_seed_message
 from langslice.doors.agent.media import package_result
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.doors.tools.view_options import image_limit
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.test_linear_physical import TwoRegionAtlas
 
 #: A 6 x 4.5 mm field at 2.5 um/px (2400 x 1800 px) with 4 x 3 mm of tissue:
@@ -217,7 +218,7 @@ def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: s
         "id": "s1.tif", "rotation_deg": 4.0, "scale_x": 1.1, "scale_y": 0.95,
         "translate_x_mm": 0.12, "translate_y_mm": -0.05,
         "shear": 0.0}])
-    assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
+    assert affine_to_json(state.by_id("s1.tif").transform)["params"] == _PINNED_S1_ADJUST
 
 
 def _digest(image: Image.Image) -> str:

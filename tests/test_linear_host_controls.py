@@ -13,11 +13,12 @@ import pytest
 from PIL import Image
 
 from langslice.core.fits import deformation
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.gates import submit_errors
 from langslice.job.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools import transforms as ops_transforms
 from langslice.tools.transforms import AffineFit
 from tests.deformable_synthetic import SyntheticAtlas
@@ -146,7 +147,7 @@ ALIGNED = ["orientation", "affine"]
 
 def test_a_frozen_affine_carries_the_host_identity(tmp_path: Path):
     state, _spec, _tools = _stack(tmp_path, frozen={"s1.png": ALIGNED})
-    transform = state.by_id("s1.png").transform
+    transform = affine_to_json(state.by_id("s1.png").transform)
     assert transform["kind"] == HOST_TRANSFORM_KIND
     assert transform["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     assert state.by_id("s0.png").transform is None
@@ -156,7 +157,7 @@ def test_a_frozen_affine_carries_the_host_identity(tmp_path: Path):
 
 def test_frozen_geometry_is_refused_per_section_and_positions_still_move(tmp_path: Path):
     state, _spec, tools = _stack(tmp_path, frozen={"s1.png": ALIGNED})
-    held = dict(state.by_id("s1.png").transform)
+    held = affine_to_json(state.by_id("s1.png").transform)
 
     turned = tools["interactive_transform"]([
         {"id": "s1.png", "flip": True}, {"id": "s2.png", "rotate_quarter": 90},
@@ -173,7 +174,7 @@ def test_frozen_geometry_is_refused_per_section_and_positions_still_move(tmp_pat
     assert fitted["status"] == "error"
     assert [(row["id"], row["error"], row["properties"]) for row in fitted["results"]] == [
         ("s1.png", "FROZEN", ["affine"])]
-    assert state.by_id("s1.png").transform == held
+    assert affine_to_json(state.by_id("s1.png").transform) == held
 
     moved = tools["position_sections"]([{"id": "s1.png", "position_mm": 2.6}], view=False)
     assert moved["written"] == [{"id": "s1.png", "position_mm": 2.6}]
@@ -187,7 +188,7 @@ def test_frozen_transforms_count_at_submit(tmp_path: Path):
     assert submit_errors(state, spec, []) is None
     unlocked_state, unlocked, _ = _stack(tmp_path, n=2, tasks=["position", "transform"])
     refusal = submit_errors(unlocked_state, unlocked, [])
-    assert refusal is not None and refusal["error"] == "MISSING_TRANSFORMS"
+    assert refusal is not None and refusal.code == "MISSING_TRANSFORMS"
 
 
 def test_the_worker_never_emits_geometry_for_frozen_properties():

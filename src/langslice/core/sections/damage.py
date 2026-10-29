@@ -1,7 +1,7 @@
 """Damage by atlas region: what every fit leaves out, and the picture of a mark.
 
 A section's damage is the atlas regions whose tissue it is missing, or has
-folded over other anatomy (``SliceState.damaged_regions``):
+folded over other anatomy (``Section.damaged_regions``):
 acronyms or ids, each optionally one side (``"CTX:left"``,
 :mod:`langslice.core.atlas.sides`, the section's displayed left and right).
 Named by atlas region, a mark moves with the registration. Every fit and the
@@ -18,18 +18,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.sides import SEPARATOR, split_side
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
+from langslice.core.refusal import RefusalCode, Refused
 
 if TYPE_CHECKING:
+    from langslice.core.fits.deformation import RecordStore
     from langslice.core.pictures.canvas import PanelFrame
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
 
 #: The hatch inside a marked region: the second ink of the deformable fit's
@@ -40,14 +42,6 @@ HATCH_SPACING_PX = 9
 HATCH_WIDTH_PX = 2
 #: Strength of the hatch lines over the picture (the tissue shows between them).
 HATCH_ALPHA = 0.8
-
-
-class DamagePictureError(ValueError):
-    """A mark that cannot be drawn, with its error code."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 def entry_key(entry: str | int) -> tuple[str, str | None]:
@@ -73,7 +67,7 @@ def normalized_entries(entries: Iterable[str | int]) -> list[str]:
 
 
 def exclusions(
-    record: SliceState, restrict_to: Sequence[str] = (),
+    record: Section, restrict_to: Sequence[str] = (),
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(restrict_to, exclude)`` one fit of *record* runs with.
 
@@ -164,10 +158,10 @@ def beside(left: Image.Image, right: Image.Image) -> Image.Image:
 
 def damage_picture(
     ws: Workspace,
-    state: StackState,
-    record: SliceState,
+    state: Stack,
+    record: Section,
     *,
-    store: Any = None,
+    store: RecordStore | None = None,
     long_edge: int | None = None,
     border_color: str = AUTO_BORDER_COLOR,
     border_thickness: float | None = None,
@@ -184,10 +178,10 @@ def damage_picture(
     is *long_edge* on its long side (``display.default_options``'s size
     when None). Captioned with the marked regions and the note.
 
-    :class:`DamagePictureError` ``NO_POSITION`` for a section without a
-    position, ``NO_REGIONS`` for one without marked regions;
-    ``ValueError`` (unknown regions) and ``atlas.sides.SideError`` (a side
-    the placement cannot define) pass through.
+    :class:`Refused` ``NO_POSITION`` for a section without a position,
+    ``NO_REGIONS`` for one without marked regions; ``ValueError`` (unknown
+    regions) and the side refusals (a side the placement cannot define)
+    pass through.
     """
     from langslice.core.fits.affine import calibrate
     from langslice.core.fits.deformable.plane_images import resolve_entries
@@ -206,11 +200,13 @@ def damage_picture(
     from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
 
     if record.position_mm is None:
-        raise DamagePictureError("NO_POSITION", "The section has no position, so its "
-                                 "marked regions cannot be drawn on it.")
+        raise Refused(RefusalCode.NO_POSITION,
+                      "The section has no position, so its "
+                      "marked regions cannot be drawn on it.")
     entries = list(record.damaged_regions)
     if not entries:
-        raise DamagePictureError("NO_REGIONS", "The section has no marked regions.")
+        raise Refused(RefusalCode.NO_REGIONS,
+                      "The section has no marked regions.")
     resolved = resolve_entries(ws.atlas, entries)
     regions = tuple((name, ids) for name, (_region, _side, ids) in zip(entries, resolved,
                                                                      strict=True))
@@ -225,7 +221,7 @@ def damage_picture(
     warp = current_warp(store, state, record) if store is not None else None
     shown = draw_canvas(
         ws, state, record, section, um_per_px, position, params, options, mode="overlay",
-        label=f"{record.id} damage", warp=warp,
+        label=f"{record.id} damage", warp_record=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
     # One arrangement for the whole picture: resolved from the section's own

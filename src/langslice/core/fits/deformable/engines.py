@@ -271,13 +271,21 @@ def gpu_turn(device: str) -> Iterator[GpuTurn]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+#: What cuDNN and cuBLAS write in the error when they cannot allocate.
+GPU_ALLOCATION_FAILURES = (
+    "CUDNN_STATUS_INTERNAL_ERROR",
+    "CUBLAS_STATUS_ALLOC_FAILED",
+)
+
+
 def out_of_memory(exc: BaseException) -> bool:
     """Whether *exc* is the GPU running out of memory (torch raises it as
     ``OutOfMemoryError``, some kernels as a generic CUDA error, cuDNN and cuBLAS
     as their own allocation failures)."""
     text = str(exc)
-    return (type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text
-            or "CUDNN_STATUS_INTERNAL_ERROR" in text or "CUBLAS_STATUS_ALLOC_FAILED" in text)
+    if type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text:
+        return True
+    return any(failure in text for failure in GPU_ALLOCATION_FAILURES)
 
 
 @contextlib.contextmanager

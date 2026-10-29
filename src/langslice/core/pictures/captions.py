@@ -24,14 +24,14 @@ def angles_label(angles: tuple[float, float], template: str = ANGLES_LABEL) -> s
 
 
 #: How a caption names the plane an atlas picture without a section is drawn
-#: at when the sections' cutting angles differ (``StackState.view_angles``).
+#: at when the sections' cutting angles differ (``Stack.view_angles``).
 MEDIAN_ANGLES_LABEL = " at the median of the sections' cutting angles, pitch {:.1f} yaw {:.1f}"
 
 
 def view_angles_label(angles: tuple[float, float], *, median: bool) -> str:
     """The angles of an atlas picture without a section: *median* (the
     sections' angles differ,
-    :meth:`langslice.core.stack.stack.StackState.drawn_at_median`)
+    :meth:`langslice.core.stack.stack.Stack.drawn_at_median`)
     says they are the median, even for the flat plane; else
     :func:`angles_label`."""
     if median:

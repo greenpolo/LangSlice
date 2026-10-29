@@ -24,9 +24,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from langslice.core.toolset import TOOLS
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.layout import (
     EVENTS_FILE,
@@ -41,13 +40,15 @@ from langslice.job.layout import (
     VIEWS_INDEX,
     JobLayout,
 )
+from langslice.job.settings.tool_table import TOOLS
 
 #: How often a watched job's files are looked at, at most.
 POLL_S = 0.25
 #: A job whose files changed this recently is Running.
 RECENT_S = 30.0
-#: The tools whose call is no undo step (``core.toolset`` kind ``read``); any
-#: other (a write, a plugin tool, a tool of an older version) may be one.
+#: The tools whose call is no undo step (``job.settings.tool_table`` kind
+#: ``read``); any other (a write, a plugin tool, a tool of an older version)
+#: may be one.
 _READS = frozenset(name for name, tool in TOOLS.items() if tool.kind == "read")
 #: How many recent jobs the list holds.
 MAX_RECENT = 40
@@ -449,12 +450,15 @@ class JobWatcher:
         if not isinstance(data, dict):
             return
         try:
-            from langslice.core.stack.stack import StackState
-            from langslice.core.stack.status import status_rows
+            from langslice.core.stack.status import (
+                stack_angles_entry,
+                status_rows,
+            )
             from langslice.job.registrations import Registrations
-            from langslice.job.state_file import current_state
+            from langslice.job.state_file import current_state, stack_from_json
 
-            state = StackState.from_dict(current_state(data))
+            fields = current_state(cast("dict[str, Any]", data))
+            state = stack_from_json(fields)
             if self._registrations is None:
                 self._registrations = Registrations(JobLayout(self.folder))
             records = {r.id: r for r in state.slices}
@@ -467,7 +471,7 @@ class JobWatcher:
                     except Exception:  # a listing that cannot be read is no number
                         number = None
                 angles = row.get("cutting_angles_deg") or (
-                    state.cutting_angles_deg if not state.mixed_angles else None)
+                    stack_angles_entry(state) if not state.mixed_angles else None)
                 self.rows.append({
                     "order": order, "id": row["id"], "position_mm": row.get("position_mm"),
                     "angles": angles, "flip": row.get("flip"),

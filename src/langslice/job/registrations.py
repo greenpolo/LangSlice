@@ -25,7 +25,6 @@ it as it is.
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import time
@@ -34,8 +33,18 @@ from typing import Any
 
 from langslice.core.fits.deformation import linear_key
 from langslice.core.fits.frame import digest as content_digest
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.jsonable import JsonObject
+from langslice.core.stack.affine import StoredAffine
+from langslice.core.stack.codec import (
+    affine_from_json,
+    affine_to_json,
+    deformation_from_json,
+    deformation_to_json,
+)
+from langslice.core.stack.deformation import DeformationRef
+from langslice.core.stack.json_reads import as_object
+from langslice.core.stack.section import Angles, Section
+from langslice.core.stack.stack import Stack
 from langslice.job.layout import JobLayout
 
 FILE = "registrations.jsonl"
@@ -45,18 +54,60 @@ FORMAT = 1
 SCRIPT = "script"
 
 
-def value(state: StackState, record: SliceState) -> dict[str, Any] | None:
-    """The section's registration (a copy): orientation, transform and the
-    deformation, when it still sits on this placement; None while it has
-    neither a transform nor a deformation."""
-    deformation = record.deformation
-    if deformation and deformation.get("linear_key") != linear_key(state, record):
+def value(state: Stack, section: Section) -> dict[str, Any] | None:
+    """The section's registration (a copy, in its JSON form): orientation,
+    transform and the deformation, when it still sits on this placement;
+    None while it has neither a transform nor a deformation."""
+    deformation = section.deformation
+    placement = linear_key(state, section)
+    if deformation is not None and deformation.linear_key != placement:
         deformation = None
-    if record.transform is None and not deformation:
+    if section.transform is None and deformation is None:
         return None
-    return {"flip": bool(record.flip), "rotation_deg": int(record.rotation_deg),
-            "transform": copy.deepcopy(record.transform),
-            "deformation": copy.deepcopy(deformation) if deformation else None}
+    transform = None
+    if section.transform is not None:
+        transform = affine_to_json(section.transform)
+    applied = None if deformation is None else deformation_to_json(deformation)
+    return {"flip": bool(section.flip), "rotation_deg": int(section.rotation_deg),
+            "transform": transform, "deformation": applied}
+
+
+def entry_transform(entry: JsonObject) -> StoredAffine | None:
+    """Return the transform a listed registration holds.
+
+    Parameters
+    ----------
+    entry
+        One registration as its listing holds it.
+
+    Returns
+    -------
+    StoredAffine or None
+        The transform; None for a registration without one.
+    """
+    transform = entry.get("transform")
+    if not transform:
+        return None
+    return affine_from_json(as_object("transform", transform))
+
+
+def entry_deformation(entry: JsonObject) -> DeformationRef | None:
+    """Return the deformation a listed registration holds.
+
+    Parameters
+    ----------
+    entry
+        One registration as its listing holds it.
+
+    Returns
+    -------
+    DeformationRef or None
+        The deformation reference; None for a registration without one.
+    """
+    deformation = entry.get("deformation")
+    if not deformation:
+        return None
+    return deformation_from_json(as_object("deformation", deformation))
 
 
 def digest(held: dict[str, Any]) -> str:
@@ -131,7 +182,7 @@ class Registrations:
         return next((entry for entry in self.entries(section_id)
                      if entry.get("digest") == key), None)
 
-    def number_of(self, state: StackState, record: SliceState) -> int | None:
+    def number_of(self, state: Stack, record: Section) -> int | None:
         """The number of the registration *record* holds now, or None (it holds
         none, or one not listed yet)."""
         held = value(state, record)
@@ -141,7 +192,7 @@ class Registrations:
         return int(entry["id"]) if entry is not None else None
 
     def add(self, section_id: str, held: dict[str, Any], *, position_mm: float | None,
-            angles: dict[str, float], by: str, at: str | None) -> dict[str, Any]:
+            angles: Angles, by: str, at: str | None) -> dict[str, Any]:
         """List *held*, a registration of the section, made with it at
         *position_mm* and *angles*: its entry, new or the one it already has.
         Call it holding the job folder's lock."""
@@ -152,7 +203,7 @@ class Registrations:
         entries = self.entries(section_id)
         entry = {"format": FORMAT, "id": max((e["id"] for e in entries), default=0) + 1,
                  "by": by, "at": at, "digest": key, "position_mm": position_mm,
-                 "cutting_angles_deg": dict(angles), **held}
+                 "cutting_angles_deg": {"pitch": angles[0], "yaw": angles[1]}, **held}
         path = self.path(section_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as stream:
@@ -161,4 +212,5 @@ class Registrations:
         return entry
 
 
-__all__ = ["FILE", "SCRIPT", "Registrations", "digest", "made_by", "now", "value"]
+__all__ = ["FILE", "SCRIPT", "Registrations", "digest", "entry_deformation", "entry_transform",
+           "made_by", "now", "value"]

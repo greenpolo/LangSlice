@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import argparse
 
+from langslice.doors.commands.flags import add_flags
 from langslice.doors.commands.linear import (
-    add_linear_arguments,
     add_trace_argument,
     apply_trace_dir,
     build_linear_spec,
@@ -15,7 +15,9 @@ from langslice.doors.commands.linear import (
 )
 
 
-def add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
+def add_mcp_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p = subparsers.add_parser(
         "mcp",
         help="Serve the registration tools over MCP (stdio) to a host that brings its "
@@ -40,7 +42,7 @@ def add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
     # The same job flags as `linear run`, less --fresh and the agent session's
     # (the host runs its own model); they make the job of a folder that holds
     # none (a folder's own job keeps its saved settings).
-    add_linear_arguments(p)
+    add_flags(p, "job")
     add_trace_argument(p)
     p.set_defaults(resume=True)
 

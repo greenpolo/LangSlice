@@ -1,9 +1,10 @@
 """Loading a tool plugin: import it, call its factory, check what it returns.
 
-A plugin is named ``module:factory`` (:attr:`langslice.core.spec.JobSpec.plugins`).
+A plugin is named ``module:factory``
+(:attr:`langslice.job.settings.spec.JobSpec.plugins`).
 :func:`load` imports the module, calls the factory and checks every tool it
-returns (:func:`langslice.core.plugins.check_tool`, plus a name no retired tool
-had); the result is a :class:`~langslice.core.plugins.LoadedPlugin` that
+returns (:func:`langslice.job.plugins.check_tool`, plus a name no retired tool
+had); the result is a :class:`~langslice.job.plugins.LoadedPlugin` that
 carries its provenance: the module and factory, the plugin's and the package's
 versions, the SHA-256 of the source files of everything it declared, and the
 plugin API version.
@@ -27,14 +28,9 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from langslice.core import plugins as core
-from langslice.core.plugins import (
-    PLUGIN_API_VERSION,
-    LoadedPlugin,
-    PluginError,
-    ToolSpec,
-    check_tool,
-)
+from langslice.core.plugins import PLUGIN_API_VERSION, PluginError, ToolSpec
+from langslice.job import plugins as core
+from langslice.job.plugins import LoadedPlugin, check_tool
 
 logger = logging.getLogger(__name__)
 

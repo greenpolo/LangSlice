@@ -12,8 +12,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import (
     _saves_views,
@@ -24,6 +25,7 @@ from langslice.doors.tools.toolbox import (
 from langslice.job.background import Landed
 from langslice.job.job import HOST_TRANSFORM_KIND
 from langslice.job.pictures import PICTURE_FILE
+from langslice.job.state_file import stack_to_json
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
@@ -82,7 +84,7 @@ def test_tool_events_name_the_pictures_and_whether_the_call_failed(tmp_path: Pat
 def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
-    from langslice.core.spec import NonlinearSpec
+    from langslice.job.settings.spec import NonlinearSpec
     from langslice.providers.oauth.transport import _json_schema_dict
 
     _, _, box = _box(tmp_path, tasks=["position", "transform", "nonlinear"],
@@ -116,7 +118,7 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
 
 def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
-    before = state.to_dict()
+    before = stack_to_json(state)
     look = _tool(box, "look")
     top = look("overlay", zoom=[0, 0, 1, 1])
     assert top["error"] == "UNKNOWN_ARGUMENTS" and top["tool"] == "look"
@@ -139,7 +141,7 @@ def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_pa
     turned = _tool(box, "interactive_transform")([{"id": "s0.png", "rotate_deg": 90}])
     assert turned["problems"][0]["argument"] == "sections[0]"
     assert turned["problems"][0]["unknown"] == ["rotate_deg"]
-    assert state.to_dict() == before and not box.job.undo_stack
+    assert stack_to_json(state) == before and not box.job.undo_stack
 
 
 def test_the_adk_plugin_refuses_what_adk_would_drop(tmp_path: Path):
@@ -224,11 +226,12 @@ def test_the_opening_gate_refuses_writes_until_every_page_is_read(tmp_path: Path
 
 
 def test_host_display_targets_follow_each_tools_scope():
-    state = StackState(slices=[
-        SliceState("a", 0, 0, position_mm=2),
-        SliceState("b", 1, 1, position_mm=3,
-                   transform={"kind": HOST_TRANSFORM_KIND, "params": [1, 0, 0, 0, 1, 0]}),
-        SliceState("c", 2, 2),
+    state = Stack(slices=[
+        Section("a", 0, 0, position_mm=2),
+        Section("b", 1, 1, position_mm=3,
+                   transform=affine_from_json(
+                       {"kind": HOST_TRANSFORM_KIND, "params": [1, 0, 0, 0, 1, 0]})),
+        Section("c", 2, 2),
     ])
     every = ["a", "b", "c"]
     for name in ("status", "undo", "redo", "submit"):

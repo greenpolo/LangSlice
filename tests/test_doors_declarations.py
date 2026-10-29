@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
-from langslice.core.spec import JobSpec, TransformSpec
+from langslice.job.settings.spec import JobSpec, TransformSpec
 from langslice.tools.arguments import SectionPosition, SectionTransform
 from langslice.tools.catalog import VERBS
 from langslice.tools.descriptions import render as declarations

@@ -35,7 +35,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.needs import render
+from langslice.core.refusal import RefusalCode
+from langslice.job.settings.needs import render
 from langslice.tools.descriptions.fixes import FIXES
 
 #: The artifacts that are pictures to open (``picture_files``).
@@ -50,8 +51,15 @@ EXIT_INTERNAL = 4
 #: than the job refusing it (exit 3), besides every ``BAD_*``, ``UNKNOWN_*``
 #: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
-    "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "WRONG_SIDE_PAIR", "EMPTY_BOX",
-    "NO_JOB", "NO_IMAGES", "ATLAS_ENDPOINT_OUTSIDE", "NOT_FOUND",
+    RefusalCode.MISSING_ARGUMENTS,
+    RefusalCode.DUPLICATE_SLICE_IDS,
+    RefusalCode.NO_SIDES,
+    RefusalCode.WRONG_SIDE_PAIR,
+    RefusalCode.EMPTY_BOX,
+    RefusalCode.NO_JOB,
+    RefusalCode.NO_IMAGES,
+    RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
+    RefusalCode.NO_SUCH_PATH,
 })
 
 #: The disabled list of the job the call is about, once it is open (set by

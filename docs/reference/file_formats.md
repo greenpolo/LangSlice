@@ -124,7 +124,11 @@ Affine `params` are `[a,b,tx,c,d,ty]` on the oriented section render:
 and y by height. `physical` records rotation, scales, shear, translations
 in millimetres and pivot. A residual's `record` is its folder relative to
 the job folder ([deformation records](#deformation-records-sectionsnamedeformablekey));
-coordinate maps include that deformation as well as the affine.
+coordinate maps include that deformation as well as the affine. A section
+a job of state format 3 left on its linear placement may hold a kept-linear
+marker in `state.json` instead of a reference (`keep_linear`, its note, and
+`linear_key`); it names no record, so its `record` and `key` here are null and
+its `steps` empty.
 Each of its `steps` says how a step was made: a native fit's `method`
 (`fireants_syn`, or `trace_borders` for the fit of a trace; a step a job saved
 before steps named their method has none and is read as one of these),

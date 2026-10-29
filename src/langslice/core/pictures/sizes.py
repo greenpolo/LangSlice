@@ -11,18 +11,18 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
 
-#: Long edge, in pixels, of every picture the agent is SHOWN, per
-#: ``JobSpec.image_resolution``: ``(opening, later)``. *Opening* is each tile
-#: of the opening strips (every section, every atlas section beneath it or in
-#: the atlas reference; :mod:`langslice.core.pictures.opening`); *later* is
-#: each picture a tool returns (each panel of a multi-panel picture). "auto"
-#: opens at 256 and lets the agent pass ``resolution`` per call
-#: (:data:`MIN_RESOLUTION` up to the driver model's own largest image, which
-#: the door passes in), 512 when it does not. The only other bound is the
-#: source: nothing is upsampled past the pixels it is drawn from (a section's
-#: working copy, the atlas plane at its own voxel size), so a small snapshot
-#: stays small. Never a working frame (:data:`PREVIEW_LONG_EDGE`) and never the
-#: image model's input.
+#: Long edge, in pixels, of every picture the agent is SHOWN, per picture
+#: level (``ImageSettings.picture_level``): ``(opening, later)``. *Opening*
+#: is each tile of the opening strips (every section, every atlas section
+#: beneath it or in the atlas reference;
+#: :mod:`langslice.core.pictures.opening`); *later* is each picture a tool
+#: returns (each panel of a multi-panel picture). "auto" opens at 256 and lets
+#: the agent pass ``resolution`` per call (:data:`MIN_RESOLUTION` up to the
+#: driver model's own largest image, which the door passes in), 512 when it
+#: does not. The only other bound is the source: nothing is upsampled past
+#: the pixels it is drawn from (a section's working copy, the atlas plane at
+#: its own voxel size), so a small snapshot stays small. Never a working frame
+#: (:data:`PREVIEW_LONG_EDGE`) and never the image model's input.
 PICTURE_EDGES: dict[str, tuple[int, int]] = {
     "low": (256, 512),
     "medium": (384, 768),
@@ -45,8 +45,20 @@ MAX_IMAGES_PER_CALL = 4
 
 
 def resolution_level(ctx: Workspace) -> str:
-    """This run's ``image_resolution`` ("low" when the spec has none)."""
-    level = str(getattr(getattr(ctx, "spec", None), "image_resolution", "low") or "low")
+    """Return the size level of this run's pictures.
+
+    Parameters
+    ----------
+    ctx
+        The workspace whose settings hold the level.
+
+    Returns
+    -------
+    str
+        A key of :data:`PICTURE_EDGES`: the settings' level, ``low`` for one
+        the table lacks.
+    """
+    level = ctx.settings.picture_level
     return level if level in PICTURE_EDGES else "low"
 
 

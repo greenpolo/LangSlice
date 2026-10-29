@@ -6,9 +6,99 @@ the other.
 
 The job layer: the `Job` (`job.py`: the state, undo, the checkpoint,
 ingest and the host's inputs; `gates.py`: the submit gates;
-`state_file.py`: `state.json`), where its files live and how they are
-named, indexed and filled with pictures, the public files rendered from
-the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
+`state_file.py`: `state.json`), the job's settings (`settings/`), the
+registry of loaded tool plugins (`plugins.py`), where its files live and how
+they are named, indexed and filled with pictures, the public files rendered
+from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
+
+## The job's settings (`settings/`)
+
+- `schema.py`: one row per setting (`SETTINGS`, 44 rows of `Setting`): its
+  name (`atlas`, a section's `position.thickness_um`, a supplied answer's
+  `inputs.positions`), its type and the job's default, the doors that may
+  set it (`run`, `init`, `mcp`, `library`, `abba`), its `job.json` key, the
+  library's keyword, its command-line flags in the commands' order, the
+  values it takes when they are a fixed list, and a door's own default where
+  it is not the job's (`door_defaults`, in that door's terms). It also holds
+  the form's lists (`ALL_TASKS`, `DEFAULT_TASKS`, `PLANES`,
+  `IMAGE_RESOLUTIONS`, `MAX_PARALLEL_TRANSFORMS`, the commands' default
+  tasks `CLI_TASKS` and `REGISTRATION_TASKS`) and imports nothing of
+  LangSlice. Read by the commands' flags (`doors/commands/flags.py` adds
+  them in table order with their help text), and so by `langslice-job
+  schema init`; by `JobSpec.from_dict` (the keys `job.json` takes,
+  `spec_keys`); by the LangSlice window's prompt generator (each flag's
+  spelling, `flag_spellings`). `create_job`'s keywords are checked against
+  it by `tests/test_settings_schema.py`, which also pins the table to
+  `JobSpec`'s fields, types and defaults.
+- `spec.py`: `JobSpec`, the filled form, and its task sections
+  (`PositionSpec`, `TransformSpec`, `NonlinearSpec`), validated when made
+  (`supplied_angles`, `supplied_pixel_sizes`, the disabled list through
+  `tool_table.refusal`, the plugins by loading them). `image_settings()`
+  makes the core's `ImageSettings` (`core/workspace.py`) from it;
+  `missing_transform()` words what a fit says of a section with no written
+  transform (`NO_TRANSFORM`, or `NO_TRANSFORM_LINEAR_OFF` rendered for the
+  disabled list when Linear is off). Protocol metadata:
+  `PositionSpec.thickness_um` and `interval_um`, and the state's millimetre
+  equivalents, are optional (`None` when not supplied); known values are
+  positive integers in micrometres, and strict spacing requires an
+  interval.
+- `tool_table.py` and `needs.py`: what a job can switch off (and, through
+  `ToolDef.writes`, what its frozen properties switch off: `off_names`).
+  `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
+  group, `when`, scripting / image-model / hidden, `options`, `essential`,
+  `needs`; `tools/catalog.py` binds each to its operation), the names a
+  `JobSpec.disabled` takes (`valid_names`: a tool, or `tool:option`;
+  `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
+  cannot work (an unknown or essential name, every `look` mode off, a task
+  with every tool that writes its answer off, a tool without the pictures
+  it needs), which the spec raises as a `ValueError` when it is made. The
+  kinds and groups and the `look` modes are the core's plain names
+  (`core/tool_kinds.py`, `core/pictures/modes.py`). `needs.py`:
+  `render(text, off)`, text written with what it needs (`[[?NAMES
+  text||other]]`, `[[#NAMES=item||...]]` lists), dropped or swapped for the
+  disabled list; with nothing off a text renders to itself without its
+  marks, byte for byte. `tool_table.tools_for(spec)` is the per-spec view
+  (`TOOLS` plus the tools of `spec.plugins`; `TOOLS` itself without
+  plugins), which `valid_names(spec)`, `check_names`, `refusal(spec)`,
+  `off_names`, `catalog(spec)` read, so a job's `disabled` list can name a
+  plugin tool.
+- `frozen.py`: what the agent may not change (`JobSpec.frozen`). The five
+  properties a section has (`PROPERTIES`: `position`, `angles`,
+  `orientation` (flip and quarter turn together), `affine`, `deformation`),
+  the `"*"` key for every section, `clean` (validates and canonicalizes a
+  freeze), `for_section` / `everywhere` / `sections_of` / `groups`,
+  `TASK_PROPERTIES` (what each task writes), `derived` (what a task that is
+  off freezes on every section), the model-facing `statement` (sections
+  sharing a freeze are one clause: every section, their filenames, or their
+  count) and `message` (a refusal's sentence, whose code is
+  `RefusalCode.FROZEN`). A
+  frozen property keeps the value `inputs` supplies, else its "none": the
+  flat plane, no flip and no turn, the host's identity transform, no
+  deformation; a position has none. `JobSpec.has(task)` is False for a task
+  whose properties are all frozen on every section, `JobSpec.frozen_for(id)`
+  includes what a task that is off supplies, and `JobSpec.switched_off` is
+  `disabled` plus the tools that write (`ToolDef.writes`) only properties
+  frozen on every section and the mirror under a frozen orientation
+  (`tool_table.off_names`): every door and text renders by it.
+- `labels.py`: a short label for people per tool and `tool:option`
+  (`TOOL_LABELS`, `label`), per task (`TASK_LABELS`, `TASK_ABOUT`) and per
+  tool group (`GROUP_LABELS`, with the group's task), for the LangSlice
+  window's prompt generator (`hosts/gui/generator.py`, its only importer).
+  Never model-facing; `tests/test_gui_generator.py` checks that every tool
+  and option has one and no other name does, and that none appears in the
+  pinned model-facing text. A new tool or option is a row here too.
+
+`plugins.py`: the job's part of tool plugins (`docs/developers/plugins.md`;
+the types are `core/plugins.py`'s). `check_tool` (the one-line reasons a
+tool declaration is refused), `tool_def` (a plugin tool as a `ToolDef`:
+`when` is its task being on and its `atlases` / `planes` fitting the job;
+`not_offered` names the tools they exclude, which `tool_table.off_names`
+counts as switched off so no text names them) and the registry of loaded
+plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
+`set_loader` is how `doors/plugins` registers the code that imports a
+plugin: nothing here imports one by name). `JobSpec.plugins` /
+`plugin_config` are validated by loading (`tool_table.tools_for`), so a bad
+plugin is refused when the spec is made.
 
 ## The layer rule
 
@@ -65,7 +155,7 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      gives them to the agent); the agent CLI's "viewer"; a saved
                      ABBA job's job_id and its own fields under "host" (kind,
                      params)
-state.json           the checkpoint (StackState, state format 4): THE TRUTH
+state.json           the checkpoint (Stack, state format 4): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
@@ -190,7 +280,7 @@ index) is relative to the job folder (`JobLayout.relative` /
 `JobLayout.resolve`; `job.state_file.state_paths` walks a state's
 paths). The trace identity in a deformation cache key is the stored
 (relative) artifact directory, so keys survive a move of the folder.
-`StackState.image_folder` itself stays absolute (rewritten by `Job.open`
+`Stack.image_folder` itself stays absolute (rewritten by `Job.open`
 to where the images are now). `job.json`'s `image_folder` is `".."`
 (`layout.IMAGES_ARE_PARENT`) for the default job folder, so the job folder
 moves or is renamed with its images; an explicit job folder stores the
@@ -294,7 +384,12 @@ longer exist be taken over by the images it is opened with.
   folder could not be written; owner-only). `folder_id` (an image folder's
   stable id). The channel token stays here, not in a folder that may be
   shared. `register`, `lookup` (refuses a newer entry).
-- `state_file.py` — `state.json`: `write_checkpoint` (atomic, versioned,
+- `state_file.py` — `state.json`, and the one place a `Stack` becomes JSON
+  and comes back: `stack_to_json` (the stack's fields, one row per section,
+  the cutting angles once on the stack while every section shares them,
+  `layers` / `masks` / `images` left out of a row while empty),
+  `stack_from_json` (unknown keys refused, a row without its own angles
+  given the stack's), `serialized_mixed_angles`; `write_checkpoint` (atomic, versioned,
   `STATE_FORMAT_VERSION` 4), `read_checkpoint(path, upgrade=)`,
   `current_state(data, upgrade=)` (format 3, `UPGRADABLE_FORMAT`, through
   *upgrade*: `core.sections.images.Migration`; refuses any other format: a
@@ -325,9 +420,10 @@ longer exist be taken over by the images it is opened with.
   forgotten only once its reply is recorded), `background` (above), `close`
   (the background work, then the pictures), `wire_views` (a saved
   picture's `step` is the undo history's depth), `frozen_for(id)` and
-  `frozen_refusal(ids, *properties)` (the `FROZEN` payload when a write to a
+  `frozen_refusal(ids, *properties)` (the `FROZEN` `Refused` when a write to a
   property the job froze on one of the sections would change it: `ids`,
-  `properties`, `message`), `emit_results` (atomic).
+  `properties`, `message`; `busy_refusal(ids)` the `SECTION_BUSY` one),
+  `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
   checked; `spec.frozen` must name sections that are here, a frozen position
   must have been supplied, and a frozen affine without a supplied transform
@@ -338,8 +434,8 @@ longer exist be taken over by the images it is opened with.
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
-  gates, `submit_errors(state, spec, breaks)`, in order and
-  only for the tasks that are on: `MISSING_POSITIONS` (no position),
+  gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`, or
+  None), in order and only for the tasks that are on: `MISSING_POSITIONS` (no position),
   `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
   `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
@@ -442,15 +538,15 @@ longer exist be taken over by the images it is opened with.
   writes never share one.
 - `browse.py` — read-only browsing of the job folder for `tools/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
-  pointing out are refused with `PathRefused`; one that does not exist with
-  `PathMissing`, naming the nearest folder above it that exists and at most
-  `NEAREST_NAMES` of its names), `list_entries`, `search`
+  pointing out are refused, `Refused` `BAD_PATH`; one that does not exist,
+  `NOT_FOUND` with `nearest`, the nearest folder above it that exists, and
+  `holds`, at most `NEAREST_NAMES` of its names), `list_entries`, `search`
   (regex, else plain text; case-insensitive; text files only), `read_lines`,
   `kind_of` (dir/text/picture/binary), and the caps (`LIST_ENTRIES`,
   `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips
   symlinks leaving the folder. `HIDDEN` (`TRACE_DIR`, the agent transcripts;
   `is_hidden`): left out of every listing, search, walk and a missing path's
-  `holds`, and a path in it (or a symlink into it) refused with `PathRefused`
+  `holds`, and a path in it (or a symlink into it) refused `BAD_PATH`
   whether or not it exists.
 - `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
   placed sections, each anchoring from its exact pixel -> atlas map, so any
@@ -467,7 +563,7 @@ The frame record and the on-demand coordinate map are the core's
 
 ## Landmark state and derived file
 
-Each `SliceState.landmarks` holds its authoritative `next_id` and `pairs`.
+Each `Section.landmarks` holds its authoritative `next_id` and `pairs`.
 Checkpoint refreshes plane-stale flags independently of appearance; the same
 write regenerates `sections/<stem>/landmarks.json` through
 `public_files.write_landmarks`. That JSON is derived and never read back, including

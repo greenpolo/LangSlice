@@ -39,7 +39,7 @@ from PIL import Image
 
 from langslice.core.sections.images import Look
 from langslice.core.sections.reading import IntensityRange, read_pages
-from langslice.core.stack.section import SliceState
+from langslice.core.stack.section import Section
 from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -307,7 +307,7 @@ def fit_look(target: np.ndarray, guide: np.ndarray, *, radius: int = FIT_RADIUS,
     return offset.astype(np.float32), gain.astype(np.float32)
 
 
-def working_look(ws: Workspace, record: SliceState, look: Look) -> np.ndarray:
+def working_look(ws: Workspace, record: Section, look: Look) -> np.ndarray:
     """The section in *look* on its whole working copy, before its quarter
     turn and flip: ``(rows, cols, 3)`` ``0..1``, as an unzoomed picture of it
     shows it (the render is cached)."""
@@ -333,7 +333,7 @@ class NativePixels:
 
 
 def section_pixels(
-    ws: Workspace, record: SliceState, look: Look, x: np.ndarray, y: np.ndarray,
+    ws: Workspace, record: Section, look: Look, x: np.ndarray, y: np.ndarray,
 ) -> NativePixels:
     """The section's pixels at working-copy points ``(x, y)`` (arrays of the
     picture's shape; the working copy before its quarter turn and flip,
@@ -404,7 +404,7 @@ def section_pixels(
 
 
 def framed_window(
-    ws: Workspace, record: SliceState, look: Look, window: tuple[float, ...], long_edge: int,
+    ws: Workspace, record: Section, look: Look, window: tuple[float, ...], long_edge: int,
 ) -> tuple[Image.Image, float]:
     """``(picture, enlarged)``: *window* (``[x0, y0, x1, y1]`` fractions of
     the section's whole picture, turned and flipped as it is shown)
