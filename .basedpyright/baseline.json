@@ -60124,14 +60124,6 @@
         ],
         "./src/langslice/tools/transforms.py": [
             {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 23,
-                    "endColumn": 36,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportUnknownMemberType",
                 "range": {
                     "startColumn": 18,

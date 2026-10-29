@@ -40,8 +40,14 @@ from langslice.core.plugins import (
     ToolSpec,
 )
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.stack.affine import (
+    Calibration,
+    PhysicalAffine,
+    StoredAffine,
+)
 from langslice.core.stack.codec import (
     affine_from_json,
+    affine_to_json,
     deformation_to_json,
     physical_to_json,
 )
@@ -203,6 +209,9 @@ class TransformProposal:
     mirrored: bool
     calibration: dict[str, Any]
     record: dict[str, Any]
+    #: The stored record as the section holds it, for LangSlice's own use.
+    affine: StoredAffine | None = field(
+        default=None, repr=False, compare=False)
 
     def row(self) -> dict[str, Any]:
         return {"id": self.id, "transform": self.record}
@@ -965,15 +974,28 @@ class ToolContext:
         knobs = physical_params(on_canvas, pivot=(canvas_w * pivot[0], canvas_h * pivot[1]),
                                 um_per_px=um_per_px)
         mirrored = bool(decompose_affine(values)["mirrored"])
-        calibration = {"section_um_per_px": round(float(um_per_px), 4), "source": source}
-        stored = {
-            "kind": self._caller.label, "params": values,
-            "physical": {**knobs, "pivot": list(pivot)}, "calibration": calibration,
-            "mirrored": mirrored, "note": str(note or "").strip(),
-        }
+        scale = round(float(um_per_px), 4)
+        calibration = {"section_um_per_px": scale, "source": source}
+        physical = PhysicalAffine(
+            rotation_deg=knobs["rotation_deg"],
+            scale_x=knobs["scale_x"],
+            scale_y=knobs["scale_y"],
+            translate_x_mm=knobs["translate_x_mm"],
+            translate_y_mm=knobs["translate_y_mm"],
+            shear=knobs["shear"],
+            pivot=pivot,
+        )
+        affine = StoredAffine(
+            kind=self._caller.label,
+            params=tuple(values),
+            physical=physical,
+            calibration=Calibration(section_um_per_px=scale, source=source),
+            mirrored=mirrored,
+            note=str(note or "").strip(),
+        )
         return TransformProposal(id=record.id, params=tuple(values), knobs=dict(knobs),
                                  pivot=pivot, mirrored=mirrored, calibration=calibration,
-                                 record=stored)
+                                 record=affine_to_json(affine), affine=affine)
 
     def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
                              meta: Mapping[str, Any] | None = None,
@@ -1559,8 +1581,11 @@ class ToolContext:
             if isinstance(transform, TransformProposal):
                 transform = transform.record
             elif transform is not None and not isinstance(transform, Mapping):
-                transform = self.transform_from_params(record.id, transform).record
-            if transform is not None:
+                transform = self.transform_from_params(record.id, transform).affine
+            if isinstance(transform, StoredAffine):
+                held.transform = transform
+                held.deformation = None
+            elif transform is not None:
                 held.transform = affine_from_json(cast("JsonObject", transform))
                 held.deformation = None
             if proposal.get("position_mm") is not None:
@@ -1870,9 +1895,12 @@ class ToolContext:
                             raise ToolError(RefusalCode.BAD_ARGS,
                                             "a row is {id, transform} or "
                                             "{id, params}")
-                        record = self.transform_from_params(
-                            name, row["params"], note=str(row.get("note") or "")).record
-                    stored = affine_from_json(record)
+                        note = str(row.get("note") or "")
+                        stored = self.transform_from_params(
+                            name, row["params"], note=note).affine
+                    else:  # reportAny: a plugin's plain dict
+                        stored = affine_from_json(cast("JsonObject", record))
+                    assert stored is not None
                     done = transforms.set_transforms(job, {name: stored})
                 except ToolError as exc:
                     out[name] = {"id": name, **Refused(exc.code, message=exc.message).payload()}

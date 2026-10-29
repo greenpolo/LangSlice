@@ -23,10 +23,16 @@ from langslice.core.fits.affine import physical_decomposition
 from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.flags import FitFlag
 from langslice.core.geometry.affine import normalized_physical_affine
+from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.sections.damage import exclusions
-from langslice.core.stack.affine import PhysicalAffine, StoredAffine
-from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack import codec
+from langslice.core.stack.affine import (
+    FitRegions,
+    PhysicalAffine,
+    StoredAffine,
+)
+from langslice.core.stack.json_reads import flag_at, numbers_at, object_at
 from langslice.job.settings.needs import marked, render
 from langslice.tools.refusal import check_frozen, frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs, stale_row
@@ -61,14 +67,15 @@ def transform_record(
     """
     knobs = {**knobs, "shear": knobs.get("shear", 0.0)}
     six = normalized_physical_affine(size=size, um_per_px=um_per_px, pivot=pivot, **knobs)
-    return affine_from_json({
-        "kind": "interactive",
-        "params": six,
-        "physical": {**knobs, "pivot": list(pivot_frac)},
-        "calibration": dict(calibration),
-        "mirrored": physical_decomposition(six, size)["mirrored"],
-        "note": "",
-    })
+    pivot_at = (pivot_frac[0], pivot_frac[1])
+    physical = PhysicalAffine(**knobs, pivot=pivot_at, extra={})
+    # reportAny: the staged calibration and the decomposition are plain dicts
+    scale = codec.calibration_from_json(cast("JsonObject", calibration))
+    decomposed = cast("JsonObject", physical_decomposition(six, size))
+    mirrored = flag_at(decomposed, "mirrored")
+    return StoredAffine(kind="interactive", params=tuple(six),
+                        physical=physical, calibration=scale,
+                        mirrored=mirrored, note="")
 
 
 def same_transform(held: StoredAffine | None, new: StoredAffine) -> bool:
@@ -92,16 +99,17 @@ def fit_transform(
     Regions and a non-default atlas image are recorded only when they were
     used.
     """
-    return affine_from_json({
-        "kind": "elastix",
-        "params": list(fit["params"]),
-        "physical": fit["physical"],
-        "calibration": fit["calibration"],
-        "mirrored": fit["mirrored"],
-        **({"regions": {"include": list(include), "exclude": list(exclude)}}
-           if include or exclude else {}),
-        **({"fit_atlas": fit_atlas} if fit_atlas != "template" else {}),
-    })
+    regions = None
+    if include or exclude:
+        regions = FitRegions(include=tuple(include), exclude=tuple(exclude))
+    atlas = None if fit_atlas == "template" else fit_atlas
+    payload = cast("JsonObject", fit)  # reportAny: the fit's plain dict
+    knobs = codec.physical_from_json(object_at(payload, "physical"))
+    scale = codec.calibration_from_json(object_at(payload, "calibration"))
+    return StoredAffine(kind="elastix", params=numbers_at(payload, "params"),
+                        physical=knobs, calibration=scale,
+                        mirrored=flag_at(payload, "mirrored"), regions=regions,
+                        fit_atlas=atlas)
 
 
 #: A fit that turns a section further than this from its previous transform
