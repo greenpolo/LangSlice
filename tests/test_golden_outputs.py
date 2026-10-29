@@ -109,6 +109,11 @@ TIME_PATTERN = re.compile(
 SECONDS_KEYS = frozenset(
     {"runtime_s", "elapsed_s", "seconds", "wall_s", "gpu_wait_s"}
 )
+#: The ``source`` fields that name the checkout's commit, not the code's
+#: outputs.
+SOURCE_KEY = "source"
+SOURCE_FIELDS = frozenset({"commit", "uncommitted_changes"})
+SOURCE_TOKEN = "<source>"
 #: Tiles per side of the grid a picture's digest is cut into.
 TILES = 8
 #: Changed keys listed per file or call before the rest are counted.
@@ -192,6 +197,11 @@ class Normaliser:
         """Return the JSON value *value* with every string normalised."""
         if key in SECONDS_KEYS and isinstance(value, (int, float)):
             return SECONDS_TOKEN
+        if key == SOURCE_KEY and isinstance(value, dict):
+            value = {
+                name: SOURCE_TOKEN if name in SOURCE_FIELDS else item
+                for name, item in value.items()
+            }
         if isinstance(value, dict):
             return {
                 self.text(str(name)): self.data(item, str(name))
