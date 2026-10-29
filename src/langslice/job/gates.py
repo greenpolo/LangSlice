@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from langslice.core.fits import deformation
-from langslice.core.spec import JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.stack.stack import Stack
+from langslice.job.settings.spec import JobSpec
 
 #: A reported interval break must exceed this multiple of the median spacing.
 INTERVAL_BREAK_MIN_RATIO = 1.5
@@ -17,43 +18,39 @@ STRICT_INTERVAL_TOLERANCE = 0.10
 # --- the submit gates ------------------------------------------------------------
 
 
-def missing_positions(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section has a position, else the rejection
+def missing_positions(state: Stack) -> Refused | None:
+    """``None`` when every section has a position, else the refusal
     naming the sections without one."""
     missing = [
         record.id for record in state.in_order() if record.position_mm is None
     ]
     if not missing:
         return None
-    return {
-        "status": "error",
-        "error": "MISSING_POSITIONS",
-        "missing_ids": missing,
-        "message": (
+    return Refused(
+        RefusalCode.MISSING_POSITIONS,
+        missing_ids=missing,
+        message=(
             f"{len(missing)} of {len(state.slices)} section(s) have no position; "
             "every section needs one, damaged ones included."
         ),
-    }
+    )
 
 
-def strict_interval_error(
-    state: StackState, breaks: list[int]
-) -> dict[str, Any] | None:
+def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
     """Every consecutive spacing within 10% of the interval, no breaks."""
     if breaks:
-        return {
-            "status": "error",
-            "error": "STRICT_INTERVAL",
-            "reported_breaks": [
+        return Refused(
+            RefusalCode.STRICT_INTERVAL,
+            reported_breaks=[
                 record.id
                 for record in state.in_order()
                 if record.index_corrected in set(breaks)
             ],
-            "message": (
+            message=(
                 "strict_interval is on: interval_breaks must be empty, "
                 f"{len(breaks)} were reported."
             ),
-        }
+        )
     interval = float(state.interval_mm or 0.0)
     if interval <= 0:
         return None
@@ -71,23 +68,20 @@ def strict_interval_error(
             )
     if not failures:
         return None
-    return {
-        "status": "error",
-        "error": "STRICT_INTERVAL",
-        "interval_mm": round(interval, 3),
-        "tolerance_mm": round(tolerance, 3),
-        "failures": failures,
-        "message": (
+    return Refused(
+        RefusalCode.STRICT_INTERVAL,
+        interval_mm=round(interval, 3),
+        tolerance_mm=round(tolerance, 3),
+        failures=failures,
+        message=(
             f"strict_interval is on: every consecutive spacing must be within "
             f"{STRICT_INTERVAL_TOLERANCE:.0%} of {interval:.3f} mm; "
             f"{len(failures)} pair(s) are not."
         ),
-    }
+    )
 
 
-def unsupported_breaks(
-    state: StackState, breaks: list[int]
-) -> dict[str, Any] | None:
+def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
     """Check reported interval breaks against the spacing that was WRITTEN.
 
     A break at the section of corrected index *i* (``submit`` names it by
@@ -122,7 +116,7 @@ def unsupported_breaks(
                         if position is not None
                         else {}
                     ),
-                    "error": "NOT_A_GAP",
+                    "error": RefusalCode.NOT_A_GAP,
                     "reason": (
                         "no section comes before it in the stack's order; a break "
                         "names the section AFTER the gap."
@@ -139,7 +133,7 @@ def unsupported_breaks(
         failures.append(
             {
                 "id": after.id,
-                "error": "NOT_A_GAP",
+                "error": RefusalCode.NOT_A_GAP,
                 "written_interval_mm": round(written, 3),
                 "median_interval_mm": round(median, 3),
                 "between": [before.id, after.id],
@@ -147,76 +141,73 @@ def unsupported_breaks(
         )
     if not failures:
         return None
-    return {
-        "status": "error",
-        "error": "INTERVAL_BREAKS_UNSUPPORTED",
-        "failures": failures,
-        "message": (
+    return Refused(
+        RefusalCode.INTERVAL_BREAKS_UNSUPPORTED,
+        failures=failures,
+        message=(
             f"{len(failures)} reported interval break(s) are not in the "
             "positions you wrote. A break is accepted only where the "
             f"written interval exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the "
             "stack's median written spacing."
         ),
-    }
+    )
 
 
-def missing_transforms(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section carries a transform, else the rejection."""
+def missing_transforms(state: Stack) -> Refused | None:
+    """``None`` when every section carries a transform, else the refusal."""
     missing = [
         record.id for record in state.in_order() if record.transform is None
     ]
     if not missing:
         return None
-    return {
-        "status": "error",
-        "error": "MISSING_TRANSFORMS",
-        "missing_ids": missing,
-        "message": (
+    return Refused(
+        RefusalCode.MISSING_TRANSFORMS,
+        missing_ids=missing,
+        message=(
             f"{len(missing)} of {len(state.slices)} section(s) carry no "
             "transform; every section needs one, damaged ones included."
         ),
-    }
+    )
 
 
 def missing_deformations(
-    state: StackState,
+    state: Stack,
     exempt: frozenset[str] | set[str] = frozenset(),
-) -> dict[str, Any] | None:
+) -> Refused | None:
     """``None`` when every section carries a deformation at its current linear
-    placement, or else the rejection. The sections in *exempt* (their
+    placement, or else the refusal. The sections in *exempt* (their
     deformation frozen) need none."""
     missing: list[dict[str, str]] = []
-    for record in state.in_order():
-        if record.id in exempt:
+    for section in state.in_order():
+        if section.id in exempt:
             continue
-        held = record.deformation or {}
-        if not held:
-            missing.append({"id": record.id, "reason": "no deformation"})
-        elif held.get("linear_key") != deformation.linear_key(state, record):
+        held = section.deformation
+        if held is None:
+            missing.append({"id": section.id, "reason": "no deformation"})
+        elif held.linear_key != deformation.linear_key(state, section):
             missing.append(
                 {
-                    "id": record.id,
+                    "id": section.id,
                     "reason": "made at a different linear placement",
                 }
             )
     if not missing:
         return None
-    return {
-        "status": "error",
-        "error": "MISSING_DEFORMATIONS",
-        "sections": missing,
-        "message": (
+    return Refused(
+        RefusalCode.MISSING_DEFORMATIONS,
+        sections=missing,
+        message=(
             f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
             "current placement. The user requires a deformation on every section: fit one on each."
         ),
-    }
+    )
 
 
 def submit_errors(
-    state: StackState,
+    state: Stack,
     spec: JobSpec,
     breaks: list[int],
-) -> dict[str, Any] | None:
+) -> Refused | None:
     """Every gate that applies to this run, in order. The deformation gate
     applies only when the host requires one (``NonlinearSpec.require_deformation``)."""
     if spec.has("position"):

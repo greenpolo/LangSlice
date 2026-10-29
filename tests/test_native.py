@@ -19,10 +19,11 @@ from langslice.core.sections.native import (
     unoriented_fractions,
     unoriented_points,
 )
-from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import SyntheticAtlas
 
 _TURNS = {90: Image.Transpose.ROTATE_90, 180: Image.Transpose.ROTATE_180,
@@ -125,16 +126,17 @@ def big(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _stack(folder: Path, *, rotation: int = 0, flip: bool = False
-           ) -> tuple[Workspace, StackState]:
+           ) -> tuple[Workspace, Stack]:
     atlas = SyntheticAtlas()
     spec = JobSpec(image_folder=str(folder), model="m", preprocess="none",
                    inputs={"pixel_size_um": 2.0})
-    ws = Workspace(spec=spec, image_folder=str(folder), emit=lambda _m: None,
+    ws = Workspace(settings=spec.image_settings(), image_folder=str(folder), emit=lambda _m: None,
                    atlas_loader=lambda _n: atlas)
-    record = SliceState(id="big.tif", index_original=0, index_corrected=0, position_mm=0.15,
+    record = Section(id="big.tif", index_original=0, index_corrected=0, position_mm=0.15,
                         rotation_deg=rotation, flip=flip,
-                        transform={"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
-    return ws, StackState(image_folder=str(folder), atlas=atlas.atlas_name, plane="coronal",
+                        transform=affine_from_json(
+                            {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}))
+    return ws, Stack(image_folder=str(folder), atlas=atlas.atlas_name, plane="coronal",
                           slices=[record])
 
 

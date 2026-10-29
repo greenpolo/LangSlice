@@ -255,7 +255,7 @@ for counts, `idx`, `img`, `df`, `src`, `dst`, `np`, `pd`, `npt`.
 
 **4.4 One name per type.** [linter `type-name`, from annotations] A parameter of a given
 type has one name everywhere: a `Workspace` is `workspace`, never `ws` or
-`ctx`; a `Job` is `job`; a `SliceState` is `section`. A qualifier may
+`ctx`; a `Job` is `job`; a `Section` is `section`. A qualifier may
 precede it (`source_image`, `target_image`). The table of types and names
 lives in the linter's configuration.
 

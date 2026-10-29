@@ -11,12 +11,14 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from langslice.core.spec import JobSpec
+from langslice.core.refusal import RefusalCode
+from langslice.core.stack.codec import affine_from_json, trace_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from langslice.tools import submit as ops_submit
-from langslice.tools.stale import STALE_INPUT, section_inputs
+from langslice.tools.stale import section_inputs
 from langslice.tools.traces import land_trace
 from tests.fakes import SlabAtlas
 
@@ -149,18 +151,20 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     job, ctx = _open(tmp_path, tasks=["nonlinear"])
     record = job.state.slices[0]
     record.position_mm = 2.0
-    record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
-    record.image_correction = {"status": "ok", "geometry_fingerprint": "g"}
+    record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
+    record.image_correction = trace_from_json(
+        {"id": "s0.png", "status": "ok", "geometry_fingerprint": "g"})
     expected = section_inputs(job.state, record, deformation=True)
     _note_step(job, "a write elsewhere")
     assert section_inputs(job.state, record, deformation=True) == expected
     record.position_mm = 2.5  # the section moved while the image call ran
     depth = len(job.undo_stack)
     landed = land_trace(job, ctx, record.id, expected)
-    assert landed.status == FAILED and landed.result["error"] == STALE_INPUT
-    assert landed.text.startswith(f"{STALE_INPUT}: ")
+    assert landed.status == FAILED and landed.result["error"] == RefusalCode.STALE_INPUT
+    assert landed.text.startswith(f"{RefusalCode.STALE_INPUT}: ")
     assert record.deformation is None and len(job.undo_stack) == depth
-    record.image_correction = {"status": "error", "message": "no image"}
+    record.image_correction = trace_from_json(
+        {"id": "s0.png", "geometry_fingerprint": "g", "status": "error", "message": "no image"})
     record.position_mm = 2.0
     failed = land_trace(job, ctx, record.id, expected)
     assert failed.result["error"] == "TRACE_FAILED"

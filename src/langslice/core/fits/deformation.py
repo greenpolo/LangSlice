@@ -32,7 +32,7 @@ import json
 import re
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -66,10 +66,15 @@ from langslice.core.fits.deformable.settings import (
     TOTAL_SIGMA_FRACTION,
     neighbourhood_um_for,
 )
+from langslice.core.fits.flags import SECTION_FLAGS, FitFlag
 from langslice.core.fits.frame import digest
+from langslice.core.jsonable import JsonObject
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_fields
+from langslice.core.stack.deformation import DeformationRef
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
 #: Long edge of the section grid a fit runs on and its record lives on. The
@@ -90,8 +95,6 @@ FIT_BORDERS = "borders"
 TRACED_BORDERS = "traced_borders"
 #: Flags listed per fit before the rest are only counted.
 MAX_FLAGS = 12
-#: Flags about the whole section, listed before any per-region flag.
-SECTION_FLAGS = ("DISPLACEMENT_OUTSIZED", "FOLDS")
 #: Longest one ``fit_deformable`` call waits for running ``trace_borders``
 #: calls its traced section images need (an image call takes ~1-3 minutes).
 TRACE_WAIT_S = 300.0
@@ -102,14 +105,6 @@ USE_PROCESS_POOL = True
 #: beside the agent's own calls): the engines' seed and thread settings are
 #: process-wide.
 _ENGINE_LOCK = threading.Lock()
-
-
-class FitRefusal(Exception):
-    """A refusal with its error code and payload fields."""
-
-    def __init__(self, code: str, message: str, **extra: Any) -> None:
-        super().__init__(message)
-        self.payload = {"status": "error", "error": code, "message": message, **extra}
 
 
 def engine_available() -> bool:
@@ -129,25 +124,24 @@ ENGINE_MISSING = (
 # --- the linear placement a deformation lives on --------------------------
 
 
-def linear_key(state: StackState, record: SliceState) -> str:
+def linear_key(state: Stack, section: Section) -> str:
     """Identity of the section's linear placement: what a warp is fitted on."""
-    transform = record.transform or {}
     return digest({
-        "atlas": state.atlas, "plane": state.plane, "position_mm": record.position_mm,
-        "angles": [record.pitch_deg, record.yaw_deg], "flip": record.flip,
-        "rotation_deg": record.rotation_deg,
-        "transform": {key: transform.get(key) for key in ("params", "calibration")},
+        "atlas": state.atlas, "plane": state.plane, "position_mm": section.position_mm,
+        "angles": [section.pitch_deg, section.yaw_deg], "flip": section.flip,
+        "rotation_deg": section.rotation_deg,
+        "transform": affine_fields(section.transform, ("params", "calibration")),
     })
 
 
-def clear_stale(state: StackState) -> list[str]:
+def clear_stale(state: Stack) -> list[str]:
     """Drop every deformation whose linear placement changed; return those ids."""
     cleared: list[str] = []
-    for record in state.in_order():
-        held = record.deformation
-        if held and held.get("linear_key") != linear_key(state, record):
-            record.deformation = None
-            cleared.append(record.id)
+    for section in state.in_order():
+        held = section.deformation
+        if held and held.linear_key != linear_key(state, section):
+            section.deformation = None
+            cleared.append(section.id)
     return cleared
 
 
@@ -158,26 +152,26 @@ def clear_stale(state: StackState) -> list[str]:
 class Grid:
     """One section's fit grid: its linear placement and the default image."""
 
-    record: SliceState
+    record: Section
     placement: Placement
     handoff: dict[str, Any]
     image: Image.Image
 
 
 def fit_grid(
-    state: StackState, ctx: Workspace, record: SliceState,
-    transform: dict[str, Any] | None = None,
+    state: Stack, ctx: Workspace, section: Section,
+    params: Sequence[float] | None = None,
 ) -> Grid:
     """The section's fit grid (``ValueError`` without a usable linear placement).
 
-    *transform* stands in for the written one (``elastix_affine`` starts
-    from it).
+    *params* stand in for the written transform's six numbers
+    (``elastix_affine`` starts from them).
     """
     from langslice.core.fits.frame import prepare_linear_registration
 
-    prepared = prepare_linear_registration(state, ctx, record.id, long_edge=FIT_LONG_EDGE,
-                                           transform=transform)
-    return Grid(record=record, placement=placement_from_handoff(prepared),
+    prepared = prepare_linear_registration(state, ctx, section.id, long_edge=FIT_LONG_EDGE,
+                                           params=params)
+    return Grid(record=section, placement=placement_from_handoff(prepared),
                 handoff=dict(prepared.metadata), image=prepared.image)
 
 
@@ -187,7 +181,7 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
 
 
 def section_image(
-    ctx: Workspace, state: StackState, grid: Grid, name: str,
+    ctx: Workspace, state: Stack, grid: Grid, name: str,
 ) -> tuple[Image.Image, Any]:
     """``(image, identity)`` of section image *name* a fit reads, on the fit
     grid (:mod:`langslice.core.sections.images`: a raw channel,
@@ -212,7 +206,7 @@ def section_image(
 
 
 def traced_lines(
-    state: StackState, ctx: Workspace, grid: Grid, *, running: bool = False,
+    state: Stack, ctx: Workspace, grid: Grid, *, running: bool = False,
     waited_s: float = TRACE_WAIT_S, root: Path | None = None,
 ) -> tuple[np.ndarray, str]:
     """The image model's lines from ``trace_borders`` at THIS placement, on the grid.
@@ -226,36 +220,43 @@ def traced_lines(
     """
     from langslice.core.fits import frame as handoff
 
-    record = grid.record
-    held = record.image_correction or {}
+    section = grid.record
+    held = section.image_correction
+    status = None if held is None else held.status
     if running:
-        raise FitRefusal("TRACE_TIMEOUT", f"{record.id}'s trace_borders call is still "
-                         f"running after {waited_s:g} s of waiting; call again later.",
-                         id=record.id)
-    if held.get("status") == "running":
-        raise FitRefusal("TRACE_RUNNING", f"{record.id}'s trace_borders result is recorded "
-                         "as running, but no call is running in this session; call "
-                         "trace_borders again.", id=record.id)
-    if held.get("status") == "error":
-        raise FitRefusal("TRACE_FAILED", f"{record.id}'s trace_borders call failed: "
-                         + str(held.get("message") or held.get("error") or "no image"),
-                         id=record.id)
-    if held.get("status") != "ok":
-        raise FitRefusal("NO_TRACE", f"{record.id} has no completed trace_borders "
-                         "result; traced section images need one.", id=record.id)
-    if held.get("geometry_fingerprint") != handoff.correction_fingerprint(state, ctx, record.id):
-        raise FitRefusal("TRACE_STALE", f"{record.id}'s trace_borders result was made at "
-                         "a different placement; trace the current placement first.",
-                         id=record.id)
-    stored = str(held.get("artifact_dir", ""))
+        raise Refused(RefusalCode.TRACE_TIMEOUT,
+                      f"{section.id}'s trace_borders call is still "
+                      f"running after {waited_s:g} s of waiting; call again later.",
+                      id=section.id)
+    if status == "running":
+        raise Refused(RefusalCode.TRACE_RUNNING,
+                      f"{section.id}'s trace_borders result is recorded "
+                      "as running, but no call is running in this session; call "
+                      "trace_borders again.", id=section.id)
+    if held is not None and status == "error":
+        raise Refused(RefusalCode.TRACE_FAILED,
+                      f"{section.id}'s trace_borders call failed: "
+                      + (held.message or held.error or "no image"),
+                      id=section.id)
+    if held is None or status != "ok":
+        raise Refused(RefusalCode.NO_TRACE,
+                      f"{section.id} has no completed trace_borders "
+                      "result; traced section images need one.", id=section.id)
+    if held.geometry_fingerprint != handoff.correction_fingerprint(state, ctx, section.id):
+        raise Refused(RefusalCode.TRACE_STALE,
+                      f"{section.id}'s trace_borders result was made at "
+                      "a different placement; trace the current placement first.",
+                      id=section.id)
+    stored = held.artifact_dir or ""
     directory = Path(stored)
     if not directory.is_absolute() and root is not None:
         directory = Path(root) / directory
     lines_path = directory / "extracted_lines.png"
     request_path = directory / "request.json"
     if not lines_path.exists() or not request_path.exists():
-        raise FitRefusal("NO_TRACE", f"{record.id}'s trace_borders artifacts are missing "
-                         f"({stored}).", id=record.id)
+        raise Refused(RefusalCode.NO_TRACE,
+                      f"{section.id}'s trace_borders artifacts are missing "
+                      f"({stored}).", id=section.id)
     atlas_to_canvas = np.asarray(json.loads(request_path.read_text())["atlas_to_canvas"],
                                  dtype=np.float64)
     with Image.open(lines_path) as opened:
@@ -333,8 +334,8 @@ def engine_settings(settings: FitSettings, brain_scale: float = 1.0) -> dict[str
 
 
 def cache_key(
-    state: StackState, grid: Grid, settings: FitSettings, image_identity: Any,
-    previous_key: str | None, brain_scale: float = 1.0, mask_identity: Any = None,
+    state: Stack, grid: Grid, settings: FitSettings, image_identity: object,
+    previous_key: str | None, brain_scale: float = 1.0, mask_identity: object = None,
 ) -> str:
     """Every input of one fit: the same key means the same result. The atlas
     (in the placement) fixes its *brain_scale*; *mask_identity* names the
@@ -416,12 +417,14 @@ class RecordStore:
         record.saved_as = folder.name
         return folder
 
-    def current(self, state: StackState, record: SliceState) -> DeformableRecord | None:
+    def current(self, state: Stack, section: Section) -> DeformableRecord | None:
         """The section's applied record, when it still sits on its placement."""
-        held = record.deformation
-        if not held or held.get("linear_key") != linear_key(state, record):
+        held = section.deformation
+        if held is None or held.linear_key != linear_key(state, section):
             return None
-        return self.get(record.id, str(held.get("key", "")))
+        if held.key is None:  # a kept-linear marker: no saved fit
+            return None
+        return self.get(section.id, held.key)
 
 
 def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict[str, Any]:
@@ -445,11 +448,12 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
     # Whole-section flags first, so the per-region cap never hides them.
     for flag in sorted(record.diagnostics.get("flags", []),
                        key=lambda item: item.get("code") not in SECTION_FLAGS):
-        if flag.get("code") == "FOLDS":
-            flags.append({"code": "FOLDS", "fold_fraction": round(float(flag["fold_fraction"]), 5)})
+        if flag.get("code") == FitFlag.FOLDS:
+            fold = float(flag["fold_fraction"])  # pyright: ignore[reportAny]  # saved JSON
+            flags.append({"code": FitFlag.FOLDS, "fold_fraction": round(fold, 5)})
             continue
-        if flag.get("code") == "DISPLACEMENT_OUTSIZED":
-            flags.append({"code": "DISPLACEMENT_OUTSIZED",
+        if flag.get("code") == FitFlag.DISPLACEMENT_OUTSIZED:
+            flags.append({"code": FitFlag.DISPLACEMENT_OUTSIZED,
                           **{key: round(float(flag[key]), 3) for key in (
                               "max_mm", "median_mm", "max_limit_mm", "median_limit_mm")}})
             continue
@@ -483,21 +487,21 @@ def flag_words(summary: dict[str, Any]) -> str:
 
 def reference(
     *, folder: Path | str, key: str, linear: str, record: DeformableRecord,
-    step: dict[str, Any], previous: dict[str, Any] | None, numbers: dict[str, Any],
-) -> dict[str, Any]:
-    """What ``SliceState.deformation`` holds for an applied record.
+    step: JsonObject, previous: DeformationRef | None, numbers: JsonObject,
+) -> DeformationRef:
+    """What ``Section.deformation`` holds for an applied record.
 
     *folder* is where the record lives as the job stores it: relative to the
     job folder (the caller makes it so). *step* describes this step (its
     ``start`` is ``current`` when it builds on *previous*, whose steps then
     come first, else ``linear``).
     """
-    steps = list((previous or {}).get("steps") or []) if step.get("start") == "current" else []
-    return {
-        "record": str(folder), "key": key, "linear_key": linear,
-        "steps": [*steps, step], "summary": numbers,
-        "inverse_source": record.inverse_source,
-    }
+    earlier: tuple[JsonObject, ...] = ()
+    if previous is not None and step.get("start") == "current":
+        earlier = previous.steps or ()
+    return DeformationRef(
+        key=key, linear_key=linear, steps=(*earlier, step), record=str(folder),
+        summary=numbers, inverse_source=record.inverse_source)
 
 
 def record_from_map(
@@ -551,7 +555,7 @@ class Job:
     choice: Choice
     settings: FitSettings
     key: str
-    image_identity: Any
+    image_identity: JsonObject
     previous: DeformableRecord | None
     image: Image.Image
     lines: np.ndarray | None

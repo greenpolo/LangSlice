@@ -7,10 +7,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import tool_named as _tool
 

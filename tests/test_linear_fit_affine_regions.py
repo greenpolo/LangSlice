@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 
 LEFT, RIGHT, CORE = 2, 3, 4
 
@@ -97,7 +97,7 @@ def test_a_side_on_a_turned_placement_is_a_refusal_not_an_exception(tmp_path: Pa
         [{"id": "s0.png", "rotation_deg": 90, "scale_x": 1, "scale_y": 1,
           "translate_x_mm": 0, "translate_y_mm": 0}], view=False)
     assert turned["status"] == "ok"
-    before = dict(state.slices[0].transform or {})
+    before = state.slices[0].transform
     result = _tool(box, "elastix_affine")(["s0.png"], restrict_to=["L:left"])
     assert result["error"] == "WRONG_SIDE_PAIR"
     assert result["results"][0]["error"] == "WRONG_SIDE_PAIR"

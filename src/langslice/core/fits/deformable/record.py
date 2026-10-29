@@ -48,6 +48,8 @@ from langslice.core.fits.deformable.ome_warp import (
     at_storage_precision,
 )
 from langslice.core.fits.deformable.settings import FitSettings
+from langslice.core.fits.flags import FitFlag
+from langslice.core.jsonable import to_jsonable
 
 #: Area ratio (warped / placed) limits for solid tissue regions.
 TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
@@ -188,26 +190,26 @@ def diagnose(
             continue
         code = None
         if count[k] == 0:
-            code = "REGION_VANISHED"
+            code = FitFlag.REGION_VANISHED
         elif ratio is None:
-            code = "REGION_FOLDED"
+            code = FitFlag.REGION_FOLDED
         elif ratio < limits[0]:
-            code = "REGION_COMPRESSED"
+            code = FitFlag.REGION_COMPRESSED
         elif ratio > limits[1]:
-            code = "REGION_EXPANDED"
+            code = FitFlag.REGION_EXPANDED
         if code:
             flags.append({"code": code, "id": uid, "acronym": entry["acronym"],
                           "area_ratio": ratio, "limits": list(limits),
                           "ventricle": ventricle})
     if fold_fraction > FOLD_FRACTION_LIMIT:
-        flags.append({"code": "FOLDS", "fold_fraction": fold_fraction,
+        flags.append({"code": FitFlag.FOLDS, "fold_fraction": fold_fraction,
                       "limit": FOLD_FRACTION_LIMIT})
     displacement = displacement_report(
         field_mm if base_field_mm is None else field_mm - base_field_mm,
         mm_per_px, footprint, brain_scale)
     displacement["beyond_landmark_warp"] = base_field_mm is not None
     if displacement["outsized"]:
-        flags.append({"code": "DISPLACEMENT_OUTSIZED",
+        flags.append({"code": FitFlag.DISPLACEMENT_OUTSIZED,
                       **{key: displacement[key] for key in (
                           "max_mm", "median_mm", "max_limit_mm", "median_limit_mm")}})
     return {
@@ -327,8 +329,8 @@ class DeformableRecord:
         (out / "record.json").unlink(missing_ok=True)
         self.round_to_storage()
         ome_warp.write(out, self)
-        (out / "record.json").write_text(json.dumps(self.metadata(), indent=2,
-                                                    default=_json_default) + "\n")
+        metadata = to_jsonable(self.metadata(), strict=True)
+        (out / "record.json").write_text(json.dumps(metadata, indent=2) + "\n")
         self.saved_as = out.name
         return out
 
@@ -387,9 +389,3 @@ def _present(array: np.ndarray | None) -> np.ndarray:
     return array
 
 
-def _json_default(value: Any) -> Any:
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    raise TypeError(f"Not JSON serializable: {type(value).__name__}")

@@ -5,7 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 /**
- * The spec's {@code frozen} map (see core/frozen.py): section name to the properties the agent may not change.
+ * The spec's {@code frozen} map (see job/settings/frozen.py): section name to the properties the agent may not change.
  * A registered slice whose registrations are kept freezes its orientation and affine; a slice the user warped
  * also keeps its deformation then; a slice left out of Nonlinear freezes its deformation.
  */

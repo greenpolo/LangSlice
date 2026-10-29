@@ -17,7 +17,7 @@ absolute position, because the same text runs against every BrainGlobe atlas,
 species and plane.
 
 A line that names a tool or an option is written with what it needs
-(:mod:`langslice.core.needs`) and rendered for the job's disabled list
+(:mod:`langslice.job.settings.needs`) and rendered for the job's disabled list
 (``JobSpec.disabled``); the user's own words are never rendered.
 """
 
@@ -26,14 +26,14 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
-from langslice.core import frozen as freeze
-from langslice.core.needs import render
-from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.job.gates import (
     INTERVAL_BREAK_MIN_RATIO,
     STRICT_INTERVAL_TOLERANCE,
 )
+from langslice.job.settings import frozen as freeze
+from langslice.job.settings.needs import render
+from langslice.job.settings.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -74,7 +74,7 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 }
 
 def display_facts(
-    ctx: Workspace, state: StackState,
+    ctx: Workspace, state: Stack,
 ) -> dict[str, Any]:
     """The job statement's display facts: the raw channels, the atlas layers
     here, and the atlas image the fits' default ``nissl`` is.
@@ -99,7 +99,8 @@ def display_facts(
 
 
 #: The run fact on section images, written with what it needs
-#: (:mod:`langslice.core.needs`); ``{opening}`` is how ``preprocessed`` was made.
+#: (:mod:`langslice.job.settings.needs`); ``{opening}`` is how
+#: ``preprocessed`` was made.
 SECTION_IMAGES_FACT = (
     "- Section images (status lists them[[?list_files , list_files shows their files under "
     "sections/<name>/images/]]): the raw channels of each file[[?make_image , and the images "
@@ -210,7 +211,7 @@ def engine_fact(tool_names: list[str]) -> str | None:
 
 def build_job_statement(
     spec: JobSpec,
-    state: StackState,
+    state: Stack,
     *,
     tool_names: list[str],
     species: str,
@@ -284,8 +285,9 @@ def build_job_statement(
     from langslice.core.sections.images import opening_source, opening_words
 
     absent = {name for name in ("make_image", "trace_borders") if name not in tool_names}
+    opening = opening_words(opening_source(spec.image_settings()))
     facts += channel_facts(channels, atlas_channels, max_resolution if sized else None,
-                           opening=opening_words(opening_source(spec)), nissl_image=nissl_image,
+                           opening=opening, nissl_image=nissl_image,
                            off=set(off) | absent)
     facts += atlas_facts(state.atlas, atlas_channels)
 
@@ -481,7 +483,7 @@ def _bullet(text: str, off: Collection[str]) -> list[str]:
     return [line] if line.strip(" -") else []
 
 
-def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
+def stack_angles_fact(state: Stack, off: Collection[str] = ()) -> str:
     """The job statement's line on the cutting angles: the stack's one
     angle, or, when the sections differ (a registration supplied per
     section), that each status row carries its own. *off*: the job's
@@ -494,7 +496,7 @@ def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
     return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
 
 
-def cutting_protocol_fact(state: StackState) -> str:
+def cutting_protocol_fact(state: Stack) -> str:
     """Supplied protocol values, with unknowns explicit."""
     interval = state.interval_mm
     thickness = state.thickness_mm
@@ -512,7 +514,7 @@ def cutting_protocol_fact(state: StackState) -> str:
 
 
 def run_facts(
-    spec: JobSpec, state: StackState, *, species: str, pos_lo: float,
+    spec: JobSpec, state: Stack, *, species: str, pos_lo: float,
     pos_hi: float, axis_ends: tuple[str, str],
 ) -> list[str]:
     """Shared factual briefing, without any model-specific method advice."""

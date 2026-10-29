@@ -8,14 +8,14 @@ from typing import Any
 
 import pytest
 
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _serialized, build_tools
 
 
 def test_execution_events_run_inside_lock_and_name_their_targets():
-    state = StackState(slices=[SliceState("a", 0, 0), SliceState("b", 1, 1)])
+    state = Stack(slices=[Section("a", 0, 0), Section("b", 1, 1)])
     lock = threading.Lock()
     events = []
 
@@ -87,16 +87,18 @@ def test_callback_failures_never_change_tool_results_or_exceptions():
 
 
 def test_build_tools_forwards_execution_observer(tmp_path):
-    from langslice.core.spec import JobSpec
     from langslice.job.layout import JobLayout, job_folder_for
+    from langslice.job.settings.spec import JobSpec
 
     events = []
-    state = StackState(slices=[SliceState("a", 0, 0)])
+    state = Stack(slices=[Section("a", 0, 0)])
+    spec = JobSpec(str(tmp_path), tasks=[])
     ctx: Any = SimpleNamespace(position_range=(0, 10), brain_scale=1.0,
+                               settings=spec.image_settings(),
                                section_channels=lambda _id: (("gray",), []),
                                layout=JobLayout(job_folder_for(tmp_path), tmp_path),
                                results_path=str(tmp_path / "linear_results.json"))
-    box = build_tools(state, ctx, JobSpec(str(tmp_path), tasks=[]), on_event=events.append)
+    box = build_tools(state, ctx, spec, on_event=events.append)
     result = next(tool for tool in box.tools if tool.__name__ == "status")()
     assert result["status"] == "ok"
     assert [event["kind"] for event in events] == ["tool_start", "tool_end"]

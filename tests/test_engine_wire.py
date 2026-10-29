@@ -48,8 +48,8 @@ def test_cli_protocol_is_optional_and_explicit_values_survive():
 
 
 def test_saved_job_prompt_handles_unknown_protocol():
-    from langslice.core.spec import JobSpec, PositionSpec
     from langslice.doors.abba.saved_jobs import copy_prompt
+    from langslice.job.settings.spec import JobSpec, PositionSpec
 
     spec = JobSpec(image_folder=".", tasks=["position"])
     assert "section thickness not supplied, interval not supplied" in copy_prompt("job", spec)

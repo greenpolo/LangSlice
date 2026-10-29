@@ -19,6 +19,7 @@ from langslice.core.plugins import (
     ToolResult,
     ToolSpec,
 )
+from langslice.core.refusal import RefusalCode
 from langslice.doors.plugins import loader as _loader
 from langslice.doors.plugins.context import (
     AffineView,
@@ -41,7 +42,8 @@ __all__ = [
     "PLUGIN_API_VERSION", "AffineView", "AtlasPlane", "AtlasView", "DeformationProposal",
     "FitFrame", "Layer",
     "LayerRef",
-    "PluginError", "SectionRaster", "SectionView", "ToolContext", "ToolError", "ToolResult",
+    "PluginError", "RefusalCode", "SectionRaster", "SectionView", "ToolContext", "ToolError",
+    "ToolResult",
     "ToolSpec",
     "TransformProposal", "WriteResult", "as_refs", "flag_words", "load",
 ]

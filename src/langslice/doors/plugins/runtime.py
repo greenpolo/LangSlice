@@ -22,32 +22,18 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image
 
-from langslice.core import plugins as core
-from langslice.core.plugins import ToolError, ToolResult, ToolSpec
+from langslice.core.jsonable import to_jsonable
+from langslice.core.plugins import ToolResult, ToolSpec
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.doors.plugins.context import Caller, ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.job import plugins as core
 from langslice.tools.descriptions.render import Variant, declaration
-from langslice.tools.refusal import Refused
 
 if TYPE_CHECKING:
     from langslice.tools.run import Door
 
 logger = logging.getLogger(__name__)
-
-
-def _plain(value: Any) -> Any:
-    """*value* as JSON values (numpy and tuples made plain); anything else as text."""
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, Mapping):
-        return {str(key): _plain(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [_plain(item) for item in value]
-    return str(value)
 
 
 def _picture(item: Any) -> Image.Image | str:
@@ -56,31 +42,35 @@ def _picture(item: Any) -> Image.Image | str:
     return Image.fromarray(np.asarray(item))
 
 
-def _over_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> dict[str, Any] | None:
+def _check_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> None:
+    """Refuse a call naming more sections than the tool's limits allow.
+
+    The refusal is ``TOO_MANY_SECTIONS``, with the cap and the count.
+    """
     cap = tool.limits.get("sections")
     if cap is not None:
-        asked = arguments.get("sections")
-        count = len(asked) if isinstance(asked, (list, tuple)) else 0
+        named = arguments.get("sections")
+        count = len(named) if isinstance(named, (list, tuple)) else 0
         if count > cap:
-            return {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": cap,
-                    "requested": count,
-                    "message": f"{tool.name} takes at most {cap} sections per call (its "
-                    f"plugin's limit); {count} were named. Nothing was done: split them over "
-                    "calls."}
-    return None
+            raise Refused(
+                RefusalCode.TOO_MANY_SECTIONS,
+                max_sections=cap,
+                requested=count,
+                message=f"{tool.name} takes at most {cap} sections per call "
+                f"(its plugin's limit); {count} were named. Nothing was done: "
+                "split them over calls.")
 
 
 def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     """The reply a handler's *result* makes: its ``reply`` (``status`` ``ok``
     unless it says otherwise), and its pictures under the media key, at most
-    ``limits["pictures"]`` of them (the rest counted in ``pictures_not_shown``)."""
+    ``limits["pictures"]`` of them (the rest counted in ``pictures_not_shown``);
+    ``PLUGIN_FAILED`` when it is no :class:`ToolResult`."""
     if not isinstance(result, ToolResult):
-        return {"status": "error", "error": "PLUGIN_FAILED", "tool": tool.name,
-                "message": f"{tool.name}'s handler returned {type(result).__name__}, "
-                "not a ToolResult"}
-    reply = _plain(dict(result.reply))
-    if not isinstance(reply, dict):
-        reply = {"result": reply}
+        kind = type(result).__name__  # pyright: ignore[reportAny]  # a plugin's own reply
+        raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
+                      message=f"{tool.name}'s handler returned {kind}, not a ToolResult")
+    reply = to_jsonable(dict(result.reply))
     out: dict[str, Any] = {"status": "ok", **reply}
     pictures = [_picture(item) for item in result.pictures]
     cap = tool.limits.get("pictures")
@@ -106,9 +96,7 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
 
     def run(**arguments: Any) -> Any:
         tool_context = arguments.pop("tool_context", None)  # ADK's: the call's id
-        refused = _over_limit(tool, arguments)
-        if refused is not None:
-            return refused
+        _check_limit(tool, arguments)
         call_id = getattr(tool_context, "function_call_id", None) or uuid.uuid4().hex[:8]
         context = ToolContext(door, Caller.of_tool(tool), str(call_id))
         try:
@@ -117,14 +105,12 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
                     result = tool.handler(context, **arguments)
             else:  # a long tool takes the lock only to apply; its writes are still one step
                 result = tool.handler(context, **arguments)
-        except ToolError as exc:
-            return exc.payload()
-        except Refused as refusal:
-            return refusal.payload()
+        except Refused:  # a ToolError too: the tool door answers it
+            raise
         except Exception as exc:  # noqa: BLE001 - a plugin's failure is a reply, not a crash
             logger.exception("plugin tool %s failed", tool.name)
-            return {"status": "error", "error": "PLUGIN_FAILED", "tool": tool.name,
-                    "message": f"{type(exc).__name__}: {exc}"}
+            raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
+                          message=f"{type(exc).__name__}: {exc}") from exc
         return reply_of(tool, result)
 
     declared = declaration(tool.name, variant)

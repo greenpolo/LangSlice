@@ -25,10 +25,10 @@ from langslice.core.pictures.opening import (
     strip_layout,
 )
 from langslice.core.pictures.sizes import PICTURE_EDGES
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.agent.media import opening_parts
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

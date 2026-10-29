@@ -10,11 +10,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.core.refusal import Refused
+from langslice.core.stack.codec import affine_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.tools import submit as ops_submit
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -37,7 +38,7 @@ def _placed(tmp_path: Path, **nonlinear: Any) -> Job:
         provider="none", **nonlinear))
     for index, record in enumerate(job.state.in_order()):
         record.position_mm = 2.0 + 0.2 * index
-        record.transform = dict(IDENTITY)
+        record.transform = affine_from_json(dict(IDENTITY))
     return job
 
 

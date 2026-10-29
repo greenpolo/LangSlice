@@ -12,15 +12,15 @@ import pytest
 from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote
-from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
+from langslice.core.refusal import Refused
+from langslice.core.stack.section import Section
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE, PictureRecord
+from langslice.job.settings.spec import JobSpec
 from langslice.tools import atlas as ops_atlas
 from langslice.tools import look as ops_look
 from langslice.tools import zoom as tools_zoom
-from langslice.tools.refusal import Refused
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.look_synthetic import MARKED, POSITIONS, SECTIONS, stack
 
@@ -37,7 +37,7 @@ def _recipe(job: Job, number: int) -> dict[str, Any]:
     return recipe
 
 
-def _section(job: Job, section_id: str) -> SliceState:
+def _section(job: Job, section_id: str) -> Section:
     found = job.state.by_id(section_id)
     assert found is not None
     return found

@@ -1,5 +1,5 @@
 """The prompt generator (``langslice.hosts.gui.generator``, ``static/generator.js``):
-the form's tools come from the toolset, the people's labels never reach a
+the form's tools come from the tool table, the people's labels never reach a
 model, and the message for a few forms, exactly. The message is built in the
 page; these tests run its pure functions under node (skipped without node)
 and check that the command it holds is one ``langslice-job FOLDER init``
@@ -16,9 +16,9 @@ from typing import Any
 
 import pytest
 
-from langslice.core import toolset
 from langslice.hosts.gui import generator
 from langslice.job.settings import labels as tool_labels
+from langslice.job.settings import tool_table
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "src" / "langslice" / "hosts" / "gui" / "static" / "generator.js"
@@ -39,9 +39,9 @@ REQUEST = ("Please register my brain sections with LangSlice, following its regi
 
 def _names() -> set[str]:
     names = set()
-    for tool in toolset.TOOLS:
+    for tool in tool_table.TOOLS:
         names.add(tool)
-        names.update(toolset.option_names(tool))
+        names.update(tool_table.option_names(tool))
     return names
 
 
@@ -50,28 +50,28 @@ def _names() -> set[str]:
 
 def test_the_tools_are_the_catalogs_without_the_scripting_verbs() -> None:
     rows = generator.tools()
-    expected = [entry["name"] for entry in toolset.catalog()
-                if not toolset.TOOLS[entry["name"]].scripting]
+    expected = [entry["name"] for entry in tool_table.catalog()
+                if not tool_table.TOOLS[entry["name"]].scripting]
     assert [row["name"] for row in rows] == expected
     assert "export_maps" not in expected
     for row in rows:
         assert row["label"] == tool_labels.TOOL_LABELS[row["name"]]
-        assert [o["name"] for o in row["options"]] == list(toolset.option_names(row["name"]))
+        assert [o["name"] for o in row["options"]] == list(tool_table.option_names(row["name"]))
         assert all(o["label"] == tool_labels.TOOL_LABELS[o["name"]] for o in row["options"])
     position_only = {row["name"] for row in rows if "position" in row["runs_in"]}
     assert "position_sections" in position_only and "elastix_affine" not in position_only
 
 
-def test_a_tool_the_toolset_no_longer_has_is_not_offered(monkeypatch: pytest.MonkeyPatch) -> None:
-    fewer = {name: tool for name, tool in toolset.TOOLS.items() if name != "zoom"}
-    monkeypatch.setattr(toolset, "TOOLS", fewer)
+def test_a_tool_the_table_no_longer_has_is_not_offered(monkeypatch: pytest.MonkeyPatch) -> None:
+    fewer = {name: tool for name, tool in tool_table.TOOLS.items() if name != "zoom"}
+    monkeypatch.setattr(tool_table, "TOOLS", fewer)
     assert "zoom" not in {row["name"] for row in generator.tools()}
 
 
 def test_every_tool_and_option_has_a_label_and_no_label_names_another() -> None:
     assert set(tool_labels.TOOL_LABELS) == _names()
     assert set(tool_labels.TASK_LABELS) == set(t["name"] for t in generator.payload()["tasks"])
-    assert set(tool_labels.GROUP_LABELS) == set(toolset.GROUPS)
+    assert set(tool_labels.GROUP_LABELS) == set(tool_table.GROUPS)
 
 
 def test_the_labels_are_never_model_facing() -> None:
@@ -235,7 +235,7 @@ def test_a_choice_of_tools_the_spec_would_refuse_gives_no_message() -> None:
     assert made[4]["problems"] == ["Section thickness is a whole number of micrometres (µm)."]
     for form in forms[1:4]:  # the spec refuses the same lists
         with pytest.raises(ValueError):
-            from langslice.core.spec import JobSpec
+            from langslice.job.settings.spec import JobSpec
             JobSpec(image_folder=".", tasks=form["tasks"], disabled=form["off"])
 
 

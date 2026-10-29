@@ -12,7 +12,7 @@ The method spans the layers; each package has its own guide:
 
 | Layer | What | Guide |
 |---|---|---|
-| `core/` | `JobSpec`, `StackState`, `Workspace`, renders, pictures, fits, the deformable engine | `core/CLAUDE.md` |
+| `core/` | `JobSpec`, `Stack`, `Workspace`, renders, pictures, fits, the deformable engine | `core/CLAUDE.md` |
 | `job/` | `Job` (undo, checkpoint, submit gates, image corrections, background work), the job folder | `job/CLAUDE.md` |
 | `tools/` | one operation per verb, `tools/catalog.py` (`VERBS`, `enabled(spec)`) | `tools/CLAUDE.md` |
 | `tools/descriptions/` | the declarations (`render.py`), the job statement (`statement.py`) | `tools/CLAUDE.md` |
@@ -22,7 +22,7 @@ The method spans the layers; each package has its own guide:
 ## One environment, not a pipeline
 
 `langslice linear run FOLDER` is ONE agent environment over a stack of
-sections: one `StackState`, one toolbox, one job statement, one ADK session
+sections: one `Stack`, one toolbox, one job statement, one ADK session
 that ends at `submit`. A single section
 is a stack of one.
 There is no node graph, no per-step agent, no single-section agent and no
@@ -63,9 +63,9 @@ each switchable alone; `fireants_syn` and `trace_borders` with
 `nonlinear` (`trace_borders` only with an image model); everything else,
 `mark_damage` included, in every run. `JobSpec.disabled` takes single tools
 and tool options (`look:positioning`, `interactive_transform:flip`) off on
-top of that (`core/toolset.py` lists the names and refuses a list that cannot
+top of that (`job/settings/tool_table.py` lists the names and refuses a list that cannot
 work); every line of the job statement that names a tool or an option is
-written with what it needs (`core/needs.py`) and rendered for the job.
+written with what it needs (`job/settings/needs.py`) and rendered for the job.
 
 ## Files
 
@@ -118,7 +118,7 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   the range, the optional protocol (`cutting_protocol_fact`: unknown values
   stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections
   the damaged sections and the user's
-  damage notes, what is frozen (`core.frozen.statement`: sections sharing a
+  damage notes, what is frozen (`job.settings.frozen.statement`: sections sharing a
   freeze are one clause), that the order follows the positions;
   `channel_facts`: the raw channels; the section images (`SECTION_IMAGES_FACT`:
   what they are, how `preprocessed` was made, `section_images.opening_words`,
@@ -203,7 +203,7 @@ never dropped). Tools return plain PIL pictures under
 `TOOL_MEDIA_PARTS_KEY`; the ADK driver packages them as JPEG parts
 (`doors.agent.media.packaged`), the MCP door as image blocks.
 
-Conventions: sections are named by filename only (`StackState.resolve`:
+Conventions: sections are named by filename only (`Stack.resolve`:
 the filename, or its stem when no other section shares it; a number is
 refused with the filenames listed, `core.stack.stack.unknown_sections`), in every
 argument, label, caption and status line; ordinary writes answer with the
@@ -229,7 +229,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   the section's `damage_note` (shown in status and the statement) whether or
   not `mark_damage` is disabled; it does not make the section damaged, and it
   stays first in the note whatever the agent marks.
-- **`frozen`** (`--frozen JSON`; `core/frozen.py`, `docs/reference/settings.md`):
+- **`frozen`** (`--frozen JSON`; `job/settings/frozen.py`, `docs/reference/settings.md`):
   per section, which of `position`, `angles`, `orientation`, `affine`,
   `deformation` the agent may not change; `"*"` is every section. A frozen
   property keeps the value `inputs` supplies, else its "none" (a frozen

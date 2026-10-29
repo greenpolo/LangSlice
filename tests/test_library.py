@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.stack.codec import affine_to_json, trace_to_json
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -136,8 +137,8 @@ def test_create_job_from_a_folder(images):
         assert "fireants_syn" in job.verbs
         record = job.state.by_id(ID0)
         assert record.position_mm == POSITIONS[ID0]
-        assert record.transform == {"kind": "interactive", "params": TRANSFORMS[ID0],
-                                    "mirrored": False}
+        assert affine_to_json(record.transform) == {
+            "kind": "interactive", "params": TRANSFORMS[ID0], "mirrored": False}
     elsewhere = images.parent / "jobs" / "arm-a"
     with langslice.create_job(images, positions={ID0: 0.1}, job_dir=elsewhere,
                               image_model=Stub(), preprocess="none") as job:
@@ -202,7 +203,7 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
         assert job.trace_borders(section=ID1, prompt=edited)["status"] == "started"
         job.job.settle_image_corrections()
         job.job.background.wait_all()
-        record = job.state.by_id(ID1).image_correction
+        record = trace_to_json(job.state.by_id(ID1).image_correction)
     sent = PROFILE_PROMPT.replace("{plane}", "coronal")
     assert [request.prompt for request in stub.requests] == [edited]
     # photograph_first: Image 1 is the clean photograph, Image 2 the placed borders.

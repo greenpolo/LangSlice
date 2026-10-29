@@ -3,6 +3,7 @@ one undo step per call, a plain record back, no gates and no pictures."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -10,12 +11,14 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
+from langslice.core.refusal import Refused
+from langslice.core.stack.codec import affine_to_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from langslice.tools import damage, notes, positions, transforms
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -32,7 +35,7 @@ def _open(tmp_path: Path, n: int = 3, **spec_kwargs: Any) -> tuple[Job, Any]:
     return job, ctx
 
 
-def _record(job: Job, name: str) -> SliceState:
+def _record(job: Job, name: str) -> Section:
     record = job.state.by_id(name)
     assert record is not None
     return record
@@ -61,7 +64,7 @@ def test_cutting_angles_drop_the_render_cache(tmp_path: Path):
     job, ctx = _open(tmp_path)
     ctx.render_cache["stale"] = object()
     positions.position_sections(job, ctx, [], {"pitch_deg": 2.0, "yaw_deg": -1.0})
-    assert job.state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
+    assert stack_angles_entry(job.state) == {"pitch": 2.0, "yaw": -1.0}
     # Dropped (the checkpoint's registration.json may render the placed
     # sections again at the new angles).
     assert "stale" not in ctx.render_cache and len(job.undo_stack) == 1
@@ -98,17 +101,18 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     record = transforms.transform_record(
         size=(40, 30), um_per_px=10.0, calibration={"section_um_per_px": 10.0, "source": "host"},
         pivot=None, pivot_frac=[0.5, 0.5], knobs=knobs)
-    assert record["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-    assert record["physical"] == {**knobs, "shear": 0.0, "pivot": [0.5, 0.5]}
+    assert list(record.params) == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    assert affine_to_json(record)["physical"] == {**knobs, "shear": 0.0, "pivot": [0.5, 0.5]}
     assert not transforms.same_transform(None, record)
-    assert transforms.same_transform({**record, "note": "other"}, record)
+    assert transforms.same_transform(replace(record, note="other"), record)
 
     fitted = transforms.fit_transform(
         {"params": [1, 0, 0, 0, 1, 0], "physical": {},
-                    "calibration": {}, "mirrored": False},
+                    "calibration": {"section_um_per_px": 1.0, "source": "host"},
+                    "mirrored": False},
         exclude=["HY"], fit_atlas="nissl")
-    assert fitted["regions"] == {"include": [], "exclude": ["HY"]}
-    assert fitted["fit_atlas"] == "nissl"
+    assert affine_to_json(fitted)["regions"] == {"include": [], "exclude": ["HY"]}
+    assert fitted.fit_atlas == "nissl"
 
     assert transforms.set_transforms(job, {"s0.png": record, "s1.png": fitted}) == [
         "s0.png", "s1.png"]
@@ -116,7 +120,7 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     assert job.undo() and _record(job, "s1.png").transform is None
     with pytest.raises(Refused) as frozen:
         transforms.set_transforms(job, {"s0.png": record, "s2.png": record})
-    assert frozen.value.code == "FROZEN" and frozen.value.details["ids"] == ["s2.png"]
-    assert frozen.value.details["properties"] == ["affine"]
+    assert frozen.value.code == "FROZEN" and frozen.value.facts["ids"] == ["s2.png"]
+    assert frozen.value.facts["properties"] == ["affine"]
     assert _record(job, "s0.png").transform is None
     assert transforms.set_transforms(job, {}) == []

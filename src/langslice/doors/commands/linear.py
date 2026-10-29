@@ -1,5 +1,6 @@
-"""``langslice linear``: the agent run, and the job flags every command
-that opens a stack shares (``linear run``, ``mcp``, ``job FOLDER init``)."""
+"""``langslice linear``: the agent run, and the job spec every command that
+opens a stack makes from the job flags (``linear run``, ``mcp``, ``job
+FOLDER init``; the flags are :mod:`langslice.doors.commands.flags`)."""
 
 from __future__ import annotations
 
@@ -9,18 +10,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.spec import DEFAULT_TASKS as SPEC_DEFAULT_TASKS
-from langslice.core.toolset import valid_names
 from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
+from langslice.doors.commands.flags import add_flags
+from langslice.job.settings.schema import CLI_TASKS, REGISTRATION_TASKS
 
 if TYPE_CHECKING:
-    from langslice.core.spec import JobSpec
+    from langslice.job.settings.spec import JobSpec
 
-#: The tasks a stack-opening command runs without ``--tasks``: the job's own default.
-DEFAULT_TASKS = ",".join(SPEC_DEFAULT_TASKS)
-#: ... and with ``--registration``: only the nonlinear step, on top of the
-#: imported linear registration.
-REGISTRATION_TASKS = "nonlinear"
 #: The flags ``--registration`` cannot be combined with (it supplies what
 #: they would), by argparse destination.
 REGISTRATION_CLASHES = {
@@ -29,255 +25,25 @@ REGISTRATION_CLASHES = {
     "section_angles": "--section-angles", "angles": "--angles",
 }
 
-PLANE_HELP = (
-    "Slicing plane (normal axis). Position is interpreted along this axis "
-    "(AP for coronal, ML for sagittal, DV for horizontal)."
-)
-
-
-def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
+def add_run_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p = subparsers.add_parser(
         "run",
         help="Order, position and transform a folder of sections",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("image_folder", help="Folder containing the section images")
-    add_linear_arguments(p)
-    p.add_argument(
-        "--tool-plugin", dest="tool_plugins", action="append", default=[],
-        metavar="MODULE:FACTORY",
-        help="Add the tools of a tool plugin to the agent's toolbox (repeatable): a "
-        "Python module and the function in it that returns the tools. Importing it runs "
-        "its code; the job records which plugin ran (docs/developers/plugins.md)",
-    )
-    p.add_argument(
-        "--tool-plugin-config", dest="tool_plugin_configs", action="append", default=[],
-        metavar="MODULE:FACTORY=JSON",
-        help="Options for a plugin's factory (repeatable): the plugin's reference, '=', "
-        "then a JSON object or the path of a JSON file",
-    )
-    add_session_arguments(p)
+    add_flags(p, "job")
+    add_flags(p, "plugins")
+    add_flags(p, "session")
     add_trace_argument(p)
-    p.add_argument(
-        "--fresh",
-        dest="resume",
-        action="store_false",
-        default=True,
-        help="Ignore any existing checkpoint and start over",
-    )
+    add_flags(p, "fresh")
     p.add_argument(
         "--gui",
         action="store_true",
         help="Open the LangSlice window on this job (`langslice gui`) to watch the run; "
         "closing it does not stop the run",
-    )
-
-
-def add_linear_arguments(p: argparse.ArgumentParser) -> None:
-    """Every ``linear run`` flag but the folder itself, shared by every
-    command that opens a stack."""
-    p.add_argument(
-        "--tasks",
-        default=None,
-        help="Comma-separated subset of position,transform,nonlinear: position "
-        "places and orders the sections, transform aligns them in-plane, nonlinear "
-        "deforms each linearly aligned section (fireants_syn, and trace_borders with an "
-        "image model). A task left out takes its answer from the flags that supply "
-        "it (--positions, --transforms ...). Default: "
-        f"{DEFAULT_TASKS}; with --registration, {REGISTRATION_TASKS} (the imported "
-        "linear registration kept as it is)",
-    )
-    p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
-    p.add_argument(
-        "--plane",
-        default="coronal",
-        choices=["coronal", "sagittal", "horizontal"],
-        help=PLANE_HELP,
-    )
-    p.add_argument(
-        "--image-provider", default="openai-oauth",
-        help="Image provider for the nonlinear task's trace_borders (openai-oauth, "
-        "openai-api, gemini-api), or none: the nonlinear task then fits deformations "
-        "to the stain alone, with no image model",
-    )
-    p.add_argument(
-        "--image-model", default=None,
-        help="Image model for the nonlinear tool; default is the provider's image model",
-    )
-    p.add_argument(
-        "--image-prompt", default=None, metavar="FILE",
-        help="A UTF-8 text file holding the base prompt trace_borders sends the image "
-        "model, in place of LangSlice's own (NonlinearSpec.image_prompt); {plane} in it "
-        "becomes the section plane. It must describe the provider's attachment order, "
-        "and its traces are recorded as an untested profile. The agent's per-section "
-        "edit starts from it. Default: LangSlice's prompt for the provider",
-    )
-    p.add_argument(
-        "--pixel-size-um",
-        default=None,
-        metavar="UM|JSON",
-        help="Micrometres per pixel of the section images: one number for every "
-        "file, or a JSON file or inline mapping of filenames to micrometres per "
-        "pixel. Default (and for a file the mapping does not name): read from "
-        "each file's TIFF/OME tags",
-    )
-    p.add_argument(
-        "--preprocess",
-        default="auto",
-        choices=["auto", "none"],
-        help="Image preprocessing for everything the agent looks at. Display "
-        "only - the image files are never modified",
-    )
-    p.add_argument(
-        "--image-resolution",
-        default="low",
-        choices=["low", "medium", "high", "auto"],
-        help="Size of the pictures the agent is shown; auto lets it choose per call",
-    )
-    p.add_argument(
-        "--disable",
-        dest="disabled",
-        action="append",
-        default=[],
-        metavar="NAME[,NAME...]",
-        help="Tools and tool options the agent does not get, on top of what the tasks "
-        "give (repeatable): a tool (zoom), or tool:option (look:positioning, "
-        "interactive_transform:flip, which keeps the agent from mirroring sections). "
-        "Valid names: " + ", ".join(valid_names()),
-    )
-    p.add_argument(
-        "--hemisphere-cue",
-        default="",
-        metavar="TEXT",
-        help="What marks a hemisphere in these sections (a notch, an injection...)",
-    )
-    p.add_argument("--thickness", type=int,
-                   help="Known section thickness in microns; omit if unknown")
-    p.add_argument("--interval", type=int,
-                   help="Known section interval in microns; omit to infer spacing")
-    p.add_argument(
-        "--strict-interval",
-        action="store_true",
-        help="Sections must sit exactly one interval apart",
-    )
-    p.add_argument(
-        "--angles", action="store_true", help="Let the agent set the cutting angles"
-    )
-    p.add_argument("--pitch", type=float, default=None, help="Host-given cutting pitch, degrees")
-    p.add_argument("--yaw", type=float, default=None, help="Host-given cutting yaw, degrees")
-    p.add_argument(
-        "--section-angles", default=None, metavar="JSON",
-        help='Host-given cutting angles per section (a registration made elsewhere): JSON '
-        'file or inline mapping of filenames to {"pitch": deg, "yaw": deg}; not with '
-        "--pitch/--yaw",
-    )
-    p.add_argument(
-        "--fact",
-        dest="facts",
-        action="append",
-        default=[],
-        metavar="TEXT",
-        help="A fact about this stack, passed to the agent verbatim (repeatable)",
-    )
-    p.add_argument(
-        "--positions",
-        default=None,
-        metavar="JSON",
-        help='Host-supplied positions: a JSON file path or inline JSON mapping '
-        'filename -> mm',
-    )
-    p.add_argument(
-        "--registration", default=None, metavar="FILE",
-        help="A linear registration made elsewhere, imported as every section's "
-        "position, cutting angles, orientation and in-plane transform: QuickNII or "
-        "VisuAlign JSON/XML, DeepSlice CSV/JSON/XML, or a LangSlice registration.json. "
-        "Not with --positions, --transforms, --orientation, --pitch/--yaw, "
-        "--section-angles or --angles. VisuAlign markers are not imported",
-    )
-    p.add_argument(
-        "--order",
-        default=None,
-        metavar="JSON",
-        help="Host-supplied order: a JSON file path or inline JSON list of filenames",
-    )
-    p.add_argument(
-        "--transforms", default=None, metavar="JSON",
-        help="Host-supplied calibrated linear transforms: JSON file or inline mapping "
-        "of filenames to saved transform records",
-    )
-    p.add_argument(
-        "--orientation", default=None, metavar="JSON",
-        help='Host-supplied orientation: JSON file or inline mapping of filenames to '
-        '{"flip": true|false, "rotation_deg": 0|90|180|270}',
-    )
-    p.add_argument(
-        "--frozen", default=None, metavar="JSON",
-        help='What the agent may not change: JSON file or inline mapping of a filename '
-        '(or "*" for every section) to a list of properties, any of position, angles, '
-        'orientation, affine, deformation; a frozen property keeps the value the '
-        'supplied inputs give it',
-    )
-    p.add_argument(
-        "--damaged", default=None, metavar="JSON",
-        help="Notes on damaged tissue: JSON file or inline mapping of filenames "
-        "to notes; notes alone do not exclude atlas regions from fits",
-    )
-    p.add_argument(
-        "--out",
-        default=None,
-        help="Results JSON path. Default: <job folder>/exports/linear_results.json",
-    )
-    p.add_argument(
-        "--job-dir",
-        default=None,
-        metavar="PATH",
-        help="Put the job folder (checkpoint, undo history, pictures, results) here "
-        "instead of <image_folder>/langslice. A folder holding the job of another "
-        "image folder is refused",
-    )
-    p.add_argument(
-        "--playbook",
-        action="store_true",
-        help="Add optional positioning guidance: compare candidate planes and regions, "
-        "write supported placements, revisit uncertainty and review the stack",
-    )
-    for task in ("position", "transform", "nonlinear"):
-        p.add_argument(
-            f"--{task}-notes", dest=f"{task}_notes", default="", metavar="TEXT",
-            help=f"The user's notes for the {task} task, shown to the agent with the task "
-            f"(one line each; {task.capitalize()}Spec.notes)",
-        )
-
-
-def add_session_arguments(p: argparse.ArgumentParser) -> None:
-    """The flags of the built-in agent's session (``linear run`` only)."""
-    p.add_argument("--model", default=None, help="Model name for the agent session")
-    p.add_argument(
-        "--reasoning",
-        default=None,
-        choices=["low", "medium", "high", "xhigh", "max"],
-        help="Reasoning effort for models that expose one. Default: the "
-        "provider's own",
-    )
-    p.add_argument(
-        "--no-debrief",
-        dest="debrief",
-        action="store_false",
-        help="Skip the post-submit debrief question (what tools the agent missed)",
-    )
-    p.add_argument(
-        "--force-view",
-        dest="force_view",
-        action="store_true",
-        help="The change and fitting tools always return their picture: their view "
-        "argument is not offered (JobSpec.force_view)",
-    )
-    p.add_argument(
-        "--require-deformation",
-        dest="require_deformation",
-        action="store_true",
-        help="Nonlinear task: submit is refused until every section carries a deformation "
-        "(NonlinearSpec.require_deformation); otherwise a deformation is the agent's choice",
     )
 
 
@@ -352,13 +118,13 @@ def build_linear_spec(
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
 ) -> JobSpec:
-    """Args -> :class:`~langslice.core.spec.JobSpec`.
+    """Args -> :class:`~langslice.job.settings.spec.JobSpec`.
 
     Shared by every command that opens a stack (``linear run``, ``mcp``,
-    ``job FOLDER init``):
-    their parsers add the same flags via :func:`add_linear_arguments`. A
-    ``--registration`` file is imported here (:func:`build_job_spec`; its
-    warnings said through *emit*).
+    ``job FOLDER init``): their parsers add the same job flags
+    (:mod:`langslice.doors.commands.flags`). A ``--registration`` file is
+    imported here (:func:`build_job_spec`; its warnings said through
+    *emit*).
     """
     spec, _report = build_job_spec(args, image_folder, atlas_loader=atlas_loader, emit=emit)
     return spec
@@ -385,7 +151,7 @@ def build_job_spec(
 def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     """The spec the flags give, ``--registration`` not yet imported (its
     clashes with other flags refused, its default tasks applied)."""
-    from langslice.core.spec import (
+    from langslice.job.settings.spec import (
         JobSpec,
         NonlinearSpec,
         PositionSpec,
@@ -401,7 +167,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
                              f"angles, orientation and transform; it cannot be combined "
                              f"with {', '.join(given)}")
     tasks = args.tasks if args.tasks is not None else (
-        REGISTRATION_TASKS if registration else DEFAULT_TASKS)
+        REGISTRATION_TASKS if registration else CLI_TASKS)
 
     inputs: dict[str, object] = {}
     positions = load_json_arg(args.positions, "--positions")

@@ -15,7 +15,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from langslice.plugin_api import ToolContext, ToolError
+from langslice.plugin_api import RefusalCode, ToolContext, ToolError
 
 #: The default atlas image, resolved by the job's atlas when the frame is made.
 NISSL = "nissl"
@@ -59,7 +59,8 @@ def atlas_plane(frame: Any, asked: str) -> tuple[np.ndarray, str]:
         key = next((name for name in (BORROWED_NISSL, *named, "template") if name in planes),
                    None)
     if key is None:
-        raise ToolError("BAD_ARGS", f"the atlas has no image {asked!r}; the job statement lists "
+        raise ToolError(RefusalCode.BAD_ARGS,
+                        f"the atlas has no image {asked!r}; the job statement lists "
                         "its images")
     resolved = dict(getattr(frame, "atlas_resolved", None) or {}).get(asked)
     if resolved is None:
@@ -83,7 +84,8 @@ def section_mask(ctx: ToolContext, sid: str, mask: str) -> Any | None:
 def refuse_mask(tool: str, mask: str, why: str) -> None:
     """``MASK_UNSUPPORTED`` for an engine that takes no section mask."""
     if mask != "none":
-        raise ToolError("MASK_UNSUPPORTED", f"{tool} {why}; mask is \"none\" for it. Engines "
+        raise ToolError(RefusalCode.MASK_UNSUPPORTED,
+                        f"{tool} {why}; mask is \"none\" for it. Engines "
                         f"that take a section mask: {MASK_ENGINES}.")
 
 

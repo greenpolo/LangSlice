@@ -35,6 +35,7 @@ from email.parser import HeaderParser
 from pathlib import Path
 from typing import Any
 
+from langslice.core.refusal import RefusalCode
 from langslice.doors.agent_cli.envelope import Envelope
 from langslice.job.layout import ENV_DIR, JobLayout
 
@@ -57,13 +58,14 @@ def command(layout: JobLayout, positional: list[str]) -> Envelope:
                                 "requirements": str(layout.folder / REQUIREMENTS)})
     if action not in ("", "install") or (action == "install" and not packages):
         return Envelope.failure(
-            "BAD_ARGUMENTS", "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.")
+            RefusalCode.BAD_ARGUMENTS,
+            "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.")
     try:
         built = ensure(layout)
         if packages:
             install(layout, packages)
     except (OSError, subprocess.SubprocessError) as exc:
-        return Envelope.failure("ENV_FAILED", str(exc))
+        return Envelope.failure(RefusalCode.ENV_FAILED, str(exc))
     return Envelope(result={**describe(layout), "rebuilt_from_requirements": built})
 
 
@@ -234,15 +236,16 @@ def python(folder: str, rest: list[str]) -> int:
     try:
         layout = JobLayout(find(folder))
     except NoJob as exc:
-        return emit(Envelope.failure("NO_JOB", str(exc)))
+        return emit(Envelope.failure(RefusalCode.NO_JOB, str(exc)))
     if not rest or rest[0].startswith("-"):
         return emit(Envelope.failure(
-            "BAD_ARGUMENTS", f"python takes a script and its arguments: {PYTHON_USAGE} "
+            RefusalCode.BAD_ARGUMENTS, f"python takes a script and its arguments: {PYTHON_USAGE} "
             "(no interpreter options).", verb="python"))
     try:
         ensure(layout)
     except (OSError, subprocess.SubprocessError) as exc:
-        return emit(Envelope.failure("ENV_FAILED", str(exc), verb="python"))
+        return emit(Envelope.failure(RefusalCode.ENV_FAILED,
+                                     str(exc), verb="python"))
     rest = [script_path(layout, rest[0]), *rest[1:]]
     log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest),
                                "warm": warm.in_child()})

@@ -15,7 +15,7 @@ atlas image, artifact and background
 Nothing else: no threshold and no drawn mask. A mask is section-side; the
 damage marks are atlas-side, always applied, and never mask the section.
 
-A mask is a state entry (``SliceState.masks[name]``) plus a file
+A mask is a state entry (``Section.masks[name]``) plus a file
 ``sections/<stem>/masks/<name>.npz`` under the job folder holding ``weights``
 (float16), ``grid`` (``[W, H]``) and ``made`` (ISO time). Files are never
 deleted: undo hides the state reference, and a mask made again under a name
@@ -30,7 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -56,8 +56,9 @@ from langslice.core.fits.deformable.plane_images import (
 from langslice.core.fits.deformable.render import composed_native_grid
 from langslice.core.fits.deformation import RecordStore, fit_grid, linear_key
 from langslice.core.sections.images import images_digest
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.images import MaskRef
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
 #: What a mask's name may be made of; ``none`` means no mask and is reserved.
@@ -100,53 +101,53 @@ class MaskView:
 # --- the registration a mask was made at -----------------------------------------------
 
 
-def registration_parts(state: StackState, record: SliceState) -> dict[str, Any]:
+def registration_parts(state: Stack, section: Section) -> dict[str, Any]:
     """What ``tools.stale.section_inputs`` and :func:`registration_digest` both
     digest: the linear placement, the made images (their digests) and the
     damage marks."""
     return {
-        "linear": linear_key(state, record),
-        "images": images_digest(record),
-        "damage": {"regions": list(record.damaged_regions)},
+        "linear": linear_key(state, section),
+        "images": images_digest(section),
+        "damage": {"regions": list(section.damaged_regions)},
     }
 
 
-def registration_digest(state: StackState, record: SliceState) -> str:
-    """A digest of what a mask of *record* depends on: its linear placement,
+def registration_digest(state: Stack, section: Section) -> str:
+    """A digest of what a mask of *section* depends on: its linear placement,
     its made images, its damage marks and its applied deformation. The same
     content as ``tools.stale.section_inputs(..., deformation=True)``, which a
     mask stores at creation (core cannot import ops)."""
-    held = {**registration_parts(state, record),
-            "deformation": (record.deformation or {}).get("key")}
+    held = {**registration_parts(state, section),
+            "deformation": section.deformation_key}
     text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def grid_digest(record: SliceState) -> str:
+def grid_digest(section: Section) -> str:
     """A digest of what gives a mask's pixels their meaning: the section and how
     its image is oriented (the mask lives on that oriented grid), nothing about
     where the atlas sits."""
-    held = {"id": record.id, "rotation_deg": record.rotation_deg, "flip": bool(record.flip)}
+    held = {"id": section.id, "rotation_deg": section.rotation_deg, "flip": bool(section.flip)}
     return hashlib.sha256(json.dumps(held, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def is_stale(state: StackState, record: SliceState, entry: dict[str, Any]) -> bool:
+def is_stale(state: Stack, section: Section, entry: MaskRef) -> bool:
     """Whether the section's pixel grid differs from the one *entry* was made on."""
-    return str(entry.get("inputs", "")) != grid_digest(record)
+    return entry.inputs != grid_digest(section)
 
 
-def made_earlier(state: StackState, record: SliceState, entry: dict[str, Any]) -> bool:
+def made_earlier(state: Stack, section: Section, entry: MaskRef) -> bool:
     """Whether the section's registration differs from the one *entry* was made at."""
-    return str(entry.get("registration", "")) != registration_digest(state, record)
+    return (entry.registration or "") != registration_digest(state, section)
 
 
-def mask_rows(state: StackState, record: SliceState) -> list[dict[str, Any]]:
-    """``[{name, kind, stale, earlier_registration}]`` of *record*'s masks (the
-    status rows)."""
-    return [{"name": name, "kind": str(entry.get("kind")),
-             "stale": is_stale(state, record, entry),
-             "earlier_registration": made_earlier(state, record, entry)}
-            for name, entry in record.masks.items()]
+def mask_rows(state: Stack, section: Section) -> list[dict[str, Any]]:
+    """``[{name, kind, stale, earlier_registration}]`` of *section*'s masks
+    (the status rows)."""
+    return [{"name": name, "kind": entry.kind,
+             "stale": is_stale(state, section, entry),
+             "earlier_registration": made_earlier(state, section, entry)}
+            for name, entry in section.masks.items()]
 
 
 # --- making a sorting ------------------------------------------------------------------
@@ -162,7 +163,7 @@ def _gray(image: np.ndarray) -> np.ndarray:
 
 
 def em_sorting(
-    ws: Workspace, state: StackState, record: SliceState, store: RecordStore, *,
+    ws: Workspace, state: Stack, record: Section, store: RecordStore, *,
     section_image: np.ndarray, atlas_image: str, params: dict[str, float],
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """The EM sorting of *record*'s section against *atlas_image* at its CURRENT
@@ -230,7 +231,7 @@ def em_sorting(
     return match, facts
 
 
-def fit_weights(store: RecordStore, state: StackState, record: SliceState) -> np.ndarray | None:
+def fit_weights(store: RecordStore, state: Stack, record: Section) -> np.ndarray | None:
     """The applied deformation record's saved sorting as float32 on the fit
     grid, or None when the section holds no deformation or its record saved no
     sorting (``make_mask`` source ``fit``: ``NO_DEFORMATION`` / ``NO_SORTING``)."""
@@ -243,8 +244,8 @@ def fit_weights(store: RecordStore, state: StackState, record: SliceState) -> np
 # --- files and entries -----------------------------------------------------------------
 
 
-def _file_for(layout: _Layout, record: SliceState, name: str) -> Path:
-    folder = layout.masks_dir(record.id)
+def _file_for(layout: _Layout, section: Section, name: str) -> Path:
+    folder = layout.masks_dir(section.id)
     path = folder / f"{name}.npz"
     version = 1
     while path.exists():
@@ -254,25 +255,25 @@ def _file_for(layout: _Layout, record: SliceState, name: str) -> Path:
 
 
 def write_mask(
-    layout: _Layout, record: SliceState, name: str, weights: np.ndarray, meta: dict[str, Any],
-) -> dict[str, Any]:
-    """Save *weights* as *record*'s mask *name* and return its state entry
-    (also set as ``record.masks[name]``). *meta* carries ``kind`` (``em`` or
-    ``fit``), ``section_image``, ``atlas_image`` (resolved), ``params``, ``inputs``
-    (:func:`grid_digest` at creation), ``registration``
-    (:func:`registration_digest` at creation) and ``left_out``. ``ValueError``
-    for a bad name, kind or weights."""
+    layout: _Layout, section: Section, name: str, weights: np.ndarray, facts: MaskRef,
+) -> MaskRef:
+    """Save *weights* as *section*'s mask *name* and return its state entry
+    (also set as ``section.masks[name]``): *facts* with the file written.
+    *facts* carries ``kind`` (``em`` or ``fit``), ``section_image``,
+    ``atlas_image`` (resolved), ``params``, ``inputs`` (:func:`grid_digest` at
+    creation), ``registration`` (:func:`registration_digest` at creation) and
+    ``left_out``. ``ValueError`` for a bad name, kind or weights."""
     if not NAME_PATTERN.match(name) or name in RESERVED_NAMES:
         raise ValueError(f"A mask name is letters, digits, - and _ (up to 40, not "
                          f"{', '.join(RESERVED_NAMES)}); got {name!r}")
-    kind = str(meta.get("kind"))
+    kind = facts.kind
     if kind not in KINDS:
         raise ValueError(f"A mask kind is one of {list(KINDS)}; got {kind!r}")
     array = np.asarray(weights)
     if array.ndim != 2 or not np.isfinite(array).all():
         raise ValueError("A mask is a finite (H, W) weight image")
     stored = np.clip(array.astype(np.float32), 0.0, 1.0).astype(np.float16)
-    path = _file_for(layout, record, name)
+    path = _file_for(layout, section, name)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.stem}.partial.npz")
     try:
@@ -282,32 +283,26 @@ def write_mask(
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
-    entry = {
-        "kind": kind, "section_image": str(meta.get("section_image", "")),
-        "atlas_image": str(meta.get("atlas_image", "")),
-        "params": dict(meta.get("params") or {}), "inputs": str(meta.get("inputs", "")),
-        "registration": str(meta.get("registration", "")),
-        "file": layout.relative(path), "left_out": float(meta.get("left_out", 0.0)),
-    }
-    record.masks[name] = entry
+    entry = replace(facts, file=layout.relative(path))
+    section.masks[name] = entry
     return entry
 
 
-def read_mask(layout: _Layout, state: StackState, record: SliceState, name: str) -> MaskView:
-    """The mask *name* of *record*. ``KeyError`` (the op's ``UNKNOWN_MASK``) when
+def read_mask(layout: _Layout, state: Stack, section: Section, name: str) -> MaskView:
+    """The mask *name* of *section*. ``KeyError`` (the op's ``UNKNOWN_MASK``) when
     the section has none by that name; ``ValueError`` when its file cannot be
     read."""
-    entry = record.masks[name]
-    path = layout.resolve(entry["file"])
+    entry = section.masks[name]
+    path = layout.resolve(entry.file)
     try:
         with np.load(path) as data:
             weights = np.asarray(data["weights"], dtype=np.float32)
     except (OSError, KeyError, ValueError) as exc:
-        raise ValueError(f"{record.id}'s mask {name!r} cannot be read ({path}): {exc}") from exc
-    return MaskView(name=name, kind=str(entry["kind"]), weights=weights,
-                    stale=is_stale(state, record, entry), params=dict(entry.get("params") or {}),
-                    earlier_registration=made_earlier(state, record, entry),
-                    left_out=float(entry.get("left_out", 0.0)))
+        raise ValueError(f"{section.id}'s mask {name!r} cannot be read ({path}): {exc}") from exc
+    return MaskView(name=name, kind=entry.kind, weights=weights,
+                    stale=is_stale(state, section, entry), params=dict(entry.params),
+                    earlier_registration=made_earlier(state, section, entry),
+                    left_out=float(entry.left_out))
 
 
 def section_weights(mask: MaskView | None) -> np.ndarray | None:

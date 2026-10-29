@@ -16,11 +16,11 @@ import pytest
 from langslice.core.pictures.drawn import collecting, note_for
 from langslice.core.pictures.look import LookRequest, look
 from langslice.core.pictures.zoom import (
-    ZoomError,
     box_fractions,
     compose,
     redraw,
 )
+from langslice.core.refusal import Refused
 from tests.look_synthetic import record, stack
 
 
@@ -35,7 +35,7 @@ def test_box_fractions_and_compose():
     assert box_fractions([-10, -10, 500, 500], (100, 50)) == (0.0, 0.0, 1.0, 1.0)
     for box, code in (([1, 2, 3], "BAD_BOX"), (["a", 0, 1, 1], "BAD_BOX"),
                       ([10, 10, 10.5, 40], "EMPTY_BOX"), ([200, 0, 300, 50], "EMPTY_BOX")):
-        with pytest.raises(ZoomError) as caught:
+        with pytest.raises(Refused) as caught:
             box_fractions(box, (100, 100))
         assert caught.value.code == code
     assert compose((), (0.1, 0.2, 0.3, 0.4)) == (0.1, 0.2, 0.3, 0.4)
@@ -65,8 +65,6 @@ def test_section_gone_falls_back_to_the_saved_picture(tmp_path: Path):
 
 
 def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_path: Path):
-    from langslice.core.pictures.look import LookError
-
     ws, state = stack(tmp_path)
     first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
     with collecting() as notes:
@@ -90,7 +88,7 @@ def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_pa
     assert stale.stale and "at 0.15 mm" in stale.caption
     assert stale.recipe["args"]["zoom"] == window
     assert np.array_equal(np.asarray(stale.image)[:height], np.asarray(zoomed.image)[:height])
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         redraw(first.recipe, [], ws, state=state, region="not-a-region")
     assert caught.value.code == "UNKNOWN_REGIONS"
 
@@ -99,25 +97,23 @@ def test_region_zoom_refusals(tmp_path: Path):
     ws, state = stack(tmp_path)
     for mode in ("section", "atlas", "positioning"):
         first = look(ws, state, LookRequest(mode, sections=("s1.png",), positions_mm=(0.15,)))[0]
-        with pytest.raises(ZoomError) as caught:
+        with pytest.raises(Refused) as caught:
             redraw(first.recipe, [], ws, state=state, region="STR")
         assert caught.value.code == "BAD_REGION_PICTURE"
     first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
     for box, region in (([0, 0, 20, 20], "STR"), ([], ["STR", "TH"])):
-        with pytest.raises(ZoomError) as caught:
+        with pytest.raises(Refused) as caught:
             redraw(first.recipe, box, ws, state=state, region=region)
         assert caught.value.code == "BAD_ARGS"
 
 
 def test_region_zoom_resolves_displayed_side_and_reports_absent_region(tmp_path: Path):
-    from langslice.core.pictures.look import LookError
-
     ws, state = stack(tmp_path)
     first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
     left = redraw(first.recipe, [], ws, state=state, region="CTX:left")
     right = redraw(first.recipe, [], ws, state=state, region="CTX:right")
     a, b = left.recipe["args"]["zoom"], right.recipe["args"]["zoom"]
     assert a[0] < b[0] and a[2] < b[2]
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         redraw(first.recipe, [], ws, state=state, region="TH:left")
     assert caught.value.code == "REGION_NOT_IN_PLANE"

@@ -4,14 +4,15 @@ One :class:`Verb` per agent tool (:func:`langslice.doors.tools.toolbox.build_too
 returns exactly these names, checked by ``tests/test_ops_registry.py``): the
 operation the tool body calls, whether it writes, and the task group a host
 shows it under. What of a tool a spec can switch (its task, its options, what
-it needs, whether it can be disabled) is the core's list,
-:data:`langslice.core.toolset.TOOLS`, which this one binds to the operations.
+it needs, whether it can be disabled) is the job's tool table,
+:data:`langslice.job.settings.tool_table.TOOLS`, which this one binds to the
+operations.
 ``Common`` tools are on in every run whatever the tasks (``mark_damage``
 unless the job disables it); the others come with their task: Positioning
 (``position``, or the stack's cutting angles left to the agent,
 ``transform.angles``), Linear (``transform``) or Nonlinear (``nonlinear``),
 the user-facing task names. A task that is off removes its tools, and a
-job's ``disabled`` list (:attr:`langslice.core.spec.JobSpec.disabled`)
+job's ``disabled`` list (:attr:`langslice.job.settings.spec.JobSpec.disabled`)
 removes single tools and tool options on top.
 
 Every door is generated from this list: the agent tools and the MCP tools
@@ -33,7 +34,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.toolset import (
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.job.settings.tool_table import (
     GROUPS,
     TOOLS,
     Group,
@@ -63,7 +65,6 @@ from langslice.tools import (
     status as views,
 )
 from langslice.tools import zoom as tools_zoom
-from langslice.tools.refusal import Refused
 
 __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on", "verbs_for"]
 
@@ -71,7 +72,7 @@ __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on"
 @dataclass(frozen=True)
 class Verb:
     """One tool: its name, its operation, read or write, its task group, and
-    the rest of its :class:`~langslice.core.toolset.ToolDef`."""
+    the rest of its :class:`~langslice.job.settings.tool_table.ToolDef`."""
 
     name: str
     function: Callable[..., Any]
@@ -148,8 +149,8 @@ _LIMITS: dict[str, dict[str, int]] = {
 }
 
 if set(_FUNCTIONS) != set(TOOLS):
-    raise RuntimeError("the registry and langslice.core.toolset.TOOLS name different tools: "
-                       f"{sorted(set(_FUNCTIONS) ^ set(TOOLS))}")
+    raise RuntimeError("the registry and the tool table name different "
+                       f"tools: {sorted(set(_FUNCTIONS) ^ set(TOOLS))}")
 
 #: Every verb, in the order every door lists them.
 VERBS: dict[str, Verb] = {
@@ -176,7 +177,8 @@ def check_section_count(job: Any, name: str, count: int) -> None:
         cap = min(held) if held else None
         reason = " here"
     if cap is not None and count > cap:
-        raise Refused("TOO_MANY_SECTIONS", max_sections=cap, requested=count,
+        raise Refused(RefusalCode.TOO_MANY_SECTIONS,
+                      max_sections=cap, requested=count,
                       message=f"{name} takes at most {cap} sections per call{reason}; "
                       f"{count} were named. Nothing was done: split them over calls.")
 
@@ -187,7 +189,7 @@ def verbs_for(spec: Any = None) -> dict[str, Verb]:
     plugins, :data:`VERBS` itself."""
     if not getattr(spec, "plugins", None):
         return VERBS
-    from langslice.core import plugins
+    from langslice.job import plugins
 
     return {**VERBS, **{
         name: Verb(name, tool.handler, tool.kind, tool.group, plugins.tool_def(tool),
@@ -196,8 +198,9 @@ def verbs_for(spec: Any = None) -> dict[str, Verb]:
 
 
 def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
-    """The verbs a run of *spec* (a :class:`~langslice.core.spec.JobSpec`)
-    has, in :data:`VERBS` order: the tools every door builds for it: those
+    """The verbs a run of *spec*
+    (a :class:`~langslice.job.settings.spec.JobSpec`) has, in :data:`VERBS`
+    order: the tools every door builds for it: those
     its tasks give, less the ones its ``disabled`` list names. The scripting
     verbs (``Verb.scripting``) only with *scripting*: the agent
     CLI's and the library's toolbox, never the agent tools or MCP.

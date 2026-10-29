@@ -50,8 +50,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RUNNING, DONE, FAILED = "running", "done", "failed"
-#: The refusal of a write to a section that running work will write when it lands.
-SECTION_BUSY = "SECTION_BUSY"
 #: A piece of work's states.
 STATUSES = (RUNNING, DONE, FAILED)
 #: Work threads one job runs at once. Each mostly waits for an image-model

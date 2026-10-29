@@ -17,11 +17,13 @@ from typing import Any
 
 import pytest
 
-from langslice.core import plugins as core_plugins
 from langslice.core.plugins import PluginError
+from langslice.core.stack.codec import affine_to_json
 from langslice.doors.plugins import mcp_adapter as adapter
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job import plugins as core_plugins
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
+from tests.shapes import json_of
 
 REF = "langslice.doors.plugins.mcp_adapter:tools"
 SERVER = Path(__file__).parent / "fixtures" / "mcp_server.py"
@@ -108,7 +110,7 @@ def test_a_mapped_answer_becomes_a_layer_and_a_path_in_it_is_never_followed(
     state, _c, box = toolbox(images)
     reply = call(box, "fix__add_points", section="s0.png", count=3)
     assert reply["status"] == "ok" and reply["applied"][0]["name"] == "fixture_points"
-    layer = state.by_id("s0.png").layers[0]
+    layer = json_of(state.by_id("s0.png").layers[0])
     assert layer["tool"] == "fix__add_points" and layer["kind"] == "points"
     assert layer["file"].startswith("plugins/fix__add_points/layers/")
     rows = (box.job.folder / layer["file"]).read_text().splitlines()
@@ -132,7 +134,7 @@ def test_a_mapped_transform_is_one_undo_step_and_obeys_the_job(images: Path):
     depth = len(box.job.undo_stack)
     reply = call(box, "fix__shift", section="s0.png", dx=0.04)
     assert reply["applied"][0]["rows"][0]["status"] == "ok"
-    assert state.by_id("s0.png").transform["params"][2] == 0.04
+    assert affine_to_json(state.by_id("s0.png").transform)["params"][2] == 0.04
     assert len(box.job.undo_stack) == depth + 1
     frozen = call(box, "fix__shift", section="s1.png")
     assert frozen["applied"][0]["rows"][0]["error"] == "FROZEN"

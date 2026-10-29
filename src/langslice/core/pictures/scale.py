@@ -33,19 +33,19 @@ from langslice.core.sections.renders import (
     render_cache_key,
     render_slice,
 )
-from langslice.core.stack.section import Angles, SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Angles, Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
 
-def stored_scale(record: SliceState) -> float:
+def stored_scale(section: Section) -> float:
     """The isotropic scale of the section's stored transform (1.0 without).
 
     The six stored numbers ``[a, b, tx, c, d, ty]`` map the working frame
     onto the canvas; ``sqrt(|ad - bc|)`` is how much larger the placement
     pictures draw each section pixel (the frame's width and height cancel).
     """
-    values = (record.transform or {}).get("params")
+    values = None if section.transform is None else section.transform.params
     if values is None or len(values) != 6:
         return 1.0
     a, b, _tx, c, d, _ty = (float(v) for v in values)
@@ -54,7 +54,7 @@ def stored_scale(record: SliceState) -> float:
 
 
 def section_um_per_px(
-    ws: Workspace, state: StackState, record: SliceState, um_per_px: float | None = None,
+    ws: Workspace, state: Stack, record: Section, um_per_px: float | None = None,
 ) -> float:
     """Micrometres per pixel of the section's working frame as its placement
     pictures draw it: *um_per_px* (None:
@@ -67,7 +67,7 @@ def section_um_per_px(
 
 
 def framed_um_per_px(
-    ws: Workspace, record: SliceState, working_um: float, *, long_edge: int, look: Look = None,
+    ws: Workspace, record: Section, working_um: float, *, long_edge: int, look: Look = None,
 ) -> float:
     """Micrometres per pixel of the render at *long_edge*, given
     *working_um*, that of the working frame."""
@@ -78,7 +78,7 @@ def framed_um_per_px(
     return float(working_um) * shown / working
 
 
-def section_extent_um(ws: Workspace, record: SliceState, working_um: float) -> float:
+def section_extent_um(ws: Workspace, record: Section, working_um: float) -> float:
     """The long edge of the whole section picture, in micrometres."""
     picture = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     return max(picture.size) * framed_um_per_px(ws, record, working_um,
@@ -86,14 +86,14 @@ def section_extent_um(ws: Workspace, record: SliceState, working_um: float) -> f
 
 
 def atlas_extent_um(
-    ws: Workspace, state: StackState, position_mm: float, *, angles: Angles | None = None,
+    ws: Workspace, state: Stack, position_mm: float, *, angles: Angles | None = None,
 ) -> float:
     """The long edge of the anatomy-framed atlas plane at *position_mm*, in micrometres."""
     picture = atlas_section(ws, state, position_mm, frame=True, angles=angles)
     return max(picture.size) * atlas_um_per_px(ws.atlas)
 
 
-def finest_um_per_px(ws: Workspace, record: SliceState, working_um: float) -> float:
+def finest_um_per_px(ws: Workspace, record: Section, working_um: float) -> float:
     """Micrometres per pixel of the section's working copy, given
     *working_um* (the working frame's): no picture draws the section finer."""
     render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
@@ -111,7 +111,7 @@ def pair_um_per_px(extents_um: Any, long_edge: int, *, finest: float = 0.0) -> f
 
 
 def pair_scale(
-    ws: Workspace, state: StackState, record: SliceState, position_mm: float, long_edge: int,
+    ws: Workspace, state: Stack, record: Section, position_mm: float, long_edge: int,
     *, um_per_px: float | None = None,
 ) -> tuple[float, float]:
     """``(picture um/px, working um/px)`` of *record* drawn with the atlas at
@@ -128,7 +128,7 @@ def pair_scale(
 
 
 def section_at(
-    ws: Workspace, record: SliceState, um_per_px: float, *, working_um: float,
+    ws: Workspace, record: Section, um_per_px: float, *, working_um: float,
     long_edge: int, look: Look = None,
 ) -> Image.Image:
     """The whole section picture at exactly *um_per_px*.
@@ -144,7 +144,7 @@ def section_at(
 
 
 def atlas_at(
-    ws: Workspace, state: StackState, position_mm: float, um_per_px: float,
+    ws: Workspace, state: Stack, position_mm: float, um_per_px: float,
     *, angles: Angles | None = None,
 ) -> Image.Image:
     """The atlas template plane at *position_mm*, anatomy-framed, at exactly *um_per_px*."""

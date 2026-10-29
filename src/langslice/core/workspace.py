@@ -2,12 +2,14 @@
 
 :class:`Workspace` is everything the core operations (renders, atlas sections,
 fits, deformations, the image-correction handoff) need that is not stack state:
-the job spec, the image folder, the atlas, each section's working copy, raw
-channels and pixel size, and the render caches. It knows nothing of the agent:
-no model, no message images. The agent driver wraps it
-(:class:`langslice.doors.agent.engine.EngineContext` adds the model and the
-cache of encoded message images), and every core module takes a ``Workspace``,
-so a script can build one and call them without the agent framework loaded.
+the few settings the core reads (:class:`ImageSettings`), the image folder,
+the atlas, each section's working copy, raw channels and pixel size, and the
+render caches. It knows nothing of the agent: no model, no message images,
+and nothing of the job's form beyond its :class:`ImageSettings`. The agent
+driver wraps it (:class:`langslice.doors.agent.engine.EngineContext` adds the
+model and the cache of encoded message images), and every core module takes
+a ``Workspace``, so a script can build one and call them without the agent
+framework loaded.
 """
 
 from __future__ import annotations
@@ -15,9 +17,9 @@ from __future__ import annotations
 import logging
 import os
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 from PIL import Image
 
@@ -31,9 +33,12 @@ from langslice.core.sections.reading import (
     read_working_pages,
 )
 from langslice.core.space import Plane, atlas_space_context, slice_axis_ends
-from langslice.core.spec import JobSpec, supplied_pixel_sizes
 
 logger = logging.getLogger(__name__)
+
+#: A host's channel-blend settings as it gave them (``preprocess.preview``'s:
+#: a mode, CLAHE and its strength, one weight per channel).
+HostPreprocessing = Mapping[str, str | bool | float | Sequence[float]]
 
 
 def log_progress(message: str) -> None:
@@ -41,12 +46,57 @@ def log_progress(message: str) -> None:
     logger.info(message)
 
 
+@dataclass(frozen=True)
+class ImageSettings:
+    """The settings of a job the core reads, and only those.
+
+    The job makes one from its form and hands it to the workspace; the core
+    knows nothing else of the job's settings (its tasks, what is frozen or
+    disabled).
+    """
+
+    #: The BrainGlobe atlas name.
+    atlas: str
+    #: The section plane.
+    plane: Plane
+    #: How the sections are shown and read by the fits: ``auto`` (the
+    #: adaptive preprocess) or ``none`` (the file as it is).
+    preprocess: str
+    #: A host's blend of a multi-page snapshot's channels, which is then each
+    #: section's default appearance; None: the file, through *preprocess*.
+    host_preprocessing: HostPreprocessing | None
+    #: The micrometres per pixel the host gave, as it gave them (one number,
+    #: a mapping of filenames to numbers, or None), for the keys of what
+    #: depends on them.
+    supplied_pixel_size: object
+    #: The host's micrometres per pixel for every file, or None.
+    stack_pixel_size_um: float | None
+    #: The host's micrometres per pixel by filename, over
+    #: *stack_pixel_size_um*.
+    file_pixel_sizes_um: Mapping[str, float]
+    #: The host's name for each page of a multi-page snapshot, or None.
+    channel_names: tuple[str, ...] | None
+    #: The size level of the pictures the agent is shown (``low``,
+    #: ``medium``, ``high`` or ``auto``).
+    picture_level: str
+    #: The settings a border trace's saved reply depends on, as (name,
+    #: value) pairs: a trace made under others is stale.
+    trace_settings: tuple[tuple[str, object], ...]
+    #: All of the job's settings as one sorted JSON text: what frames shared
+    #: across a fork must agree on.
+    settings_text: str
+    #: What a fit says of a section with no written in-plane transform (the
+    #: job words it: for a job whose in-plane task is off, what to supply
+    #: instead).
+    missing_transform: str
+
+
 @dataclass
 class Workspace:
     """One job's sections and atlas: everything a core operation needs that
     is not stack state."""
 
-    spec: JobSpec
+    settings: ImageSettings
     image_folder: str
     emit: Callable[[str], None] = log_progress
     #: Atlas accessor, injectable so tests (and offline hosts) can supply one.
@@ -125,7 +175,7 @@ class Workspace:
         """
         cached = self.source_cache.get(slice_id)
         if cached is None:
-            settings = self.spec.host_preprocessing
+            settings = self.settings.host_preprocessing
             if settings is not None:
                 # A host's snapshot, one page per channel: the default
                 # appearance is the host's blend of the pages (what
@@ -149,15 +199,16 @@ class Workspace:
         cached = self.channel_cache.get(slice_id)
         if cached is None:
             pages, _factor = read_working_pages(self.image_path(slice_id))
-            names = (self.spec.inputs or {}).get("channel_names")
-            cached = channel_planes(pages, list(names) if isinstance(names, list) else None)
+            names = self.settings.channel_names
+            listed = None if names is None else list(names)
+            cached = channel_planes(pages, listed)
             self.channel_cache[slice_id] = cached
         return cached
 
     @property
     def atlas(self) -> Any:
         if self._atlas is None:
-            self._atlas = self.atlas_loader(self.spec.atlas)
+            self._atlas = self.atlas_loader(self.settings.atlas)
         return self._atlas
 
     @property
@@ -174,7 +225,7 @@ class Workspace:
     def position_range(self) -> tuple[float, float]:
         if self._range is None:
             self._range = get_position_range_mm(
-                self.atlas, plane=cast(Plane, self.spec.plane)
+                self.atlas, plane=self.settings.plane
             )
         return self._range
 
@@ -182,22 +233,22 @@ class Workspace:
     def axis_ends(self) -> tuple[str, str]:
         """(low, high) anatomical ends of this run's slicing axis."""
         return slice_axis_ends(
-            atlas_space_context(self.atlas), cast(Plane, self.spec.plane)
+            atlas_space_context(self.atlas), self.settings.plane
         )
 
     def calibration(self, slice_id: str) -> tuple[float | None, str]:
         """``(micrometres per pixel of the FILE, source)`` for one section.
 
-        The host's ``inputs["pixel_size_um"]`` wins when it is given — that is
-        what ``--pixel-size-um`` is for — for the whole stack or per file
-        (:func:`langslice.core.spec.supplied_pixel_sizes`); otherwise the
-        file's own tags answer
+        The host's pixel size wins when it is given — that is what
+        ``--pixel-size-um`` is for — for the whole stack or per file
+        (``ImageSettings.file_pixel_sizes_um`` over its
+        ``stack_pixel_size_um``); otherwise the file's own tags answer
         (:func:`langslice.core.sections.reading.read_pixel_size_um`). ``(None,
         "")`` when nothing says; the caller then reports the section as
         uncalibrated.
         """
-        stack, per_file = supplied_pixel_sizes((self.spec.inputs or {}).get("pixel_size_um"))
-        host = per_file.get(slice_id, stack)
+        host = self.settings.file_pixel_sizes_um.get(
+            slice_id, self.settings.stack_pixel_size_um)
         if host is not None:
             return host, "host"
         if slice_id not in self._pixel_sizes:

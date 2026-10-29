@@ -39,8 +39,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.core.stack.codec import affine_to_json, trace_to_json
+from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent_cli.main import main
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -219,12 +221,12 @@ def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = (),
 
 def assert_external_kept(state: Any) -> None:
     """The supplied registration, verbatim: positions, angles, transforms."""
-    assert state.cutting_angles_deg == EXTERNAL_ANGLES
+    assert stack_angles_entry(state) == EXTERNAL_ANGLES
     for name in IDS:
         record = state.by_id(name)
         assert record.position_mm == POSITIONS[name]
         assert record.flip is False and record.rotation_deg == 0
-        assert record.transform == EXTERNAL_TRANSFORMS[name]
+        assert affine_to_json(record.transform) == EXTERNAL_TRANSFORMS[name]
 
 
 def tool_names(images: Path, tasks: list[str], provider: str = "none",
@@ -435,7 +437,7 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
         assert job.export_maps()["status"] == "ok"
-        assert all((job.state.by_id(name).image_correction or {}).get("status") == "ok"
+        assert all(trace_to_json(job.state.by_id(name).image_correction).get("status") == "ok"
                    for name in (ID0, ID1))
         assert job.state.by_id(ID2).image_correction is None
     assert_exported(images / "langslice", residual=IDS, maps_exported=True)
@@ -535,7 +537,8 @@ def test_6_a_supplied_orientation_is_kept(images):
     with langslice.open_job(images) as job:
         assert job.state.by_id(ID1).flip is True
         assert job.state.by_id(ID1).rotation_deg == 90
-        assert job.state.by_id(ID1).transform == EXTERNAL_TRANSFORMS[ID1]  # kept as supplied
+        # kept as supplied
+        assert affine_to_json(job.state.by_id(ID1).transform) == EXTERNAL_TRANSFORMS[ID1]
         assert job.state.by_id(ID0).flip is False and job.state.by_id(ID0).rotation_deg == 0
         assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
     document = assert_exported(images / "langslice")

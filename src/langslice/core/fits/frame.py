@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Collection
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -24,7 +24,6 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.geometry.affine import denormalized_affine
-from langslice.core.needs import render
 from langslice.core.pictures.canvas import CanvasGeometry, canvas_geometry
 from langslice.core.sections.images import PREPROCESSED, entry_of, is_opening
 from langslice.core.sections.renders import (
@@ -34,40 +33,11 @@ from langslice.core.sections.renders import (
     render_slice,
 )
 from langslice.core.space import Plane
+from langslice.core.stack.codec import affine_fields, angles_to_json
 from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
-    from langslice.core.stack.stack import StackState
-
-
-#: Said when a section has no written in-plane transform and the job cannot
-#: write one (Linear off): what the caller does instead. A missing transform is
-#: the identity to the maps (``core.maps.section_maps``), never to the
-#: nonlinear step.
-_NO_TRANSFORM_LINEAR_OFF = (
-    "A written affine transform is required, and Linear is off for this job, so "
-    "nothing here writes one. Supply the in-plane transforms with the job "
-    "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or switch "
-    "Linear on (task transform)[[?elastix_affine  and run elastix_affine on the section "
-    "first]]."
-)
-NO_TRANSFORM_LINEAR_OFF = render(_NO_TRANSFORM_LINEAR_OFF)
-
-
-def no_transform_linear_off(disabled: Collection[str] = ()) -> str:
-    """:data:`NO_TRANSFORM_LINEAR_OFF` for a job with *disabled* tools."""
-    return render(_NO_TRANSFORM_LINEAR_OFF, disabled)
-
-
-def missing_transform_message(spec: Any) -> str:
-    """The refusal for a section with no written in-plane transform: with
-    Linear (task ``transform``) off, :data:`NO_TRANSFORM_LINEAR_OFF`, what to
-    do instead; with it on, the plain requirement (``elastix_affine`` and
-    ``interactive_transform`` are the job's own tools)."""
-    has = getattr(spec, "has", None)
-    if callable(has) and not has("transform"):
-        return no_transform_linear_off(getattr(spec, "disabled", ()))
-    return "A written affine transform is required"
+    from langslice.core.stack.stack import Stack
 
 
 @dataclass(frozen=True)
@@ -127,12 +97,12 @@ def linear_placement_matrix(
 
 
 def prepare_linear_registration(
-    state: StackState,
+    state: Stack,
     ctx: Workspace,
     section_id: str,
     *,
     long_edge: int = 2048,
-    transform: dict[str, Any] | None = None,
+    params: Sequence[float] | None = None,
 ) -> LinearRegistrationInput:
     """Prepare a supplied affine placement, preserving shear and physical scale.
 
@@ -145,7 +115,7 @@ def prepare_linear_registration(
     pictures show it, also for a section without a pixel size whose position
     moved after its transform was written.
 
-    *transform* stands in for the section's written transform (``params``),
+    *params* stand in for the six numbers of the section's written transform,
     for a fit that starts from a placement it has not written:
     ``elastix_affine`` on a section with no transform yet
     starts from the identity.
@@ -156,75 +126,74 @@ def prepare_linear_registration(
     """
     if isinstance(long_edge, bool) or not isinstance(long_edge, int) or long_edge <= 0:
         raise ValueError("long_edge must be a positive integer")
-    record = state.by_id(section_id)
-    if record is None:
+    section = state.by_id(section_id)
+    if section is None:
         raise ValueError(f"Unknown section: {section_id}")
-    if record.position_mm is None or not np.isfinite(record.position_mm):
+    if section.position_mm is None or not np.isfinite(section.position_mm):
         raise ValueError("A finite written position is required")
-    if transform is None:
-        transform = record.transform
-    if not transform:
-        raise ValueError(missing_transform_message(getattr(ctx, "spec", None)))
-    if transform.get("stale"):
-        raise ValueError("The written affine is marked stale")
-    orientation = transform.get("orientation")
+    orientation = None
+    if params is None:
+        transform = section.transform
+        if transform is None:
+            raise ValueError(ctx.settings.missing_transform)
+        if transform.stale:
+            raise ValueError("The written affine is marked stale")
+        orientation = transform.orientation
+        params = transform.params
     if orientation is not None:
-        expected = {"flip": record.flip, "rotation_deg": record.rotation_deg}
-        if not isinstance(orientation, dict) or any(
-            key in orientation and orientation[key] != value for key, value in expected.items()
-        ):
+        expected = {"flip": section.flip, "rotation_deg": section.rotation_deg}
+        if any(key in orientation and orientation[key] != value
+               for key, value in expected.items()):
             raise ValueError("The written affine has a different section orientation")
-    if state.atlas != ctx.spec.atlas or state.plane != ctx.spec.plane:
+    if state.atlas != ctx.settings.atlas or state.plane != ctx.settings.plane:
         raise ValueError("State and rendering context disagree about the atlas or plane")
     if state.plane not in ("coronal", "sagittal", "horizontal"):
         raise ValueError("Unsupported section plane")
-    if not np.isfinite([record.pitch_deg, record.yaw_deg]).all():
+    if not np.isfinite([section.pitch_deg, section.yaw_deg]).all():
         raise ValueError("Cutting angles must be finite")
-    try:
-        params = np.asarray(transform["params"], dtype=np.float64)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("The written affine must contain six finite parameters") from exc
-    if params.shape != (6,) or not np.isfinite(params).all():
+    six = np.asarray(params, dtype=np.float64)
+    if six.shape != (6,) or not np.isfinite(six).all():
         raise ValueError("The written affine must contain six finite parameters")
 
-    image = render_slice(ctx, record, long_edge=long_edge)
-    held = entry_of(record, PREPROCESSED)
-    remade = None if is_opening(held) else {"name": PREPROCESSED,
-                                            "digest": (held or {}).get("digest")}
-    with Image.open(ctx.image_path(record.id)) as source_image:
+    image = render_slice(ctx, section, long_edge=long_edge)
+    held = entry_of(section, PREPROCESSED)
+    remade = None
+    if held is not None and not is_opening(held):
+        remade = {"name": PREPROCESSED, "digest": held.digest}
+    with Image.open(ctx.image_path(section.id)) as source_image:
         original_size = list(source_image.size)
 
-    um_per_px, source = canvas_um_per_px(ctx, record, long_edge=long_edge)
+    um_per_px, source = canvas_um_per_px(ctx, section, long_edge=long_edge)
     if um_per_px is None:
         from langslice.core.fits.affine import calibrate
 
-        working = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-        preview_um_per_px, source = calibrate(state, ctx, record, working)
-        preview_key = render_cache_key(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-        target_key = render_cache_key(ctx, record, long_edge=long_edge)
+        working = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
+        preview_um_per_px, source = calibrate(state, ctx, section, working)
+        preview_key = render_cache_key(ctx, section, long_edge=PREVIEW_LONG_EDGE)
+        target_key = render_cache_key(ctx, section, long_edge=long_edge)
         um_per_px = preview_um_per_px * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
     if not np.isfinite(um_per_px) or um_per_px <= 0:
         raise ValueError("Section calibration must be finite and positive")
 
     plane = cast(Plane, state.plane)
     atlas_to_slice, geometry = linear_placement_matrix(
-        image.size, um_per_px, ctx.atlas, float(record.position_mm), plane,
-        record.pitch_deg, record.yaw_deg, params)
+        image.size, um_per_px, ctx.atlas, float(section.position_mm), plane,
+        section.pitch_deg, section.yaw_deg, six)
     return LinearRegistrationInput(
         image=image.copy(), atlas_to_slice=atlas_to_slice, atlas_name=state.atlas,
-        position_mm=float(record.position_mm), plane=plane,
-        pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
+        position_mm=float(section.position_mm), plane=plane,
+        pitch_deg=section.pitch_deg, yaw_deg=section.yaw_deg,
         metadata={
-            "source": "linear_state", "section_id": record.id,
-            "orientation": {"rotation_deg": record.rotation_deg, "flip": record.flip},
+            "source": "linear_state", "section_id": section.id,
+            "orientation": {"rotation_deg": section.rotation_deg, "flip": section.flip},
             "orientation_snapshot_checked": orientation is not None,
-            "preprocess": ctx.spec.preprocess,
+            "preprocess": ctx.settings.preprocess,
             **({"section_image": remade} if remade is not None else {}),
             "image_size": list(image.size),
             "image_frame": "oriented rendered section; not acquisition image pixels",
             "source_image_size": original_size,
             "section_um_per_px": float(um_per_px), "calibration_source": source,
-            "linear_params": params.tolist(),
+            "linear_params": six.tolist(),
             "atlas_to_slice": atlas_to_slice.tolist(),
             "atlas_grid_size": list(geometry.annotation.shape[::-1]),
             "image_axes": "native", "atlas_mirror_lr": False,
@@ -238,24 +207,24 @@ def digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -> str:
+def correction_fingerprint(state: Stack, ctx: Workspace, section_id: str) -> str:
     """Identify the source image, placement and rendering settings for a correction."""
-    record = state.by_id(section_id)
-    if record is None:
+    section = state.by_id(section_id)
+    if section is None:
         raise ValueError(f"Unknown section: {section_id}")
-    source = Path(ctx.image_path(record.id)).resolve()
+    source = Path(ctx.image_path(section.id)).resolve()
     stat = source.stat()
-    transform = record.transform or {}
-    nonlinear = dict(ctx.spec.to_dict().get("nonlinear") or {})
+    nonlinear = dict(ctx.settings.trace_settings)
     return digest({
         "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
-        "section_id": record.id, "atlas": state.atlas, "plane": state.plane,
-        "position_mm": record.position_mm, "angles": record.cutting_angles_deg,
-        "flip": record.flip, "rotation_deg": record.rotation_deg,
-        "transform": {key: transform.get(key) for key in (
+        "section_id": section.id, "atlas": state.atlas, "plane": state.plane,
+        "position_mm": section.position_mm,
+        "angles": angles_to_json(section.angles),
+        "flip": section.flip, "rotation_deg": section.rotation_deg,
+        "transform": affine_fields(section.transform, (
             "params", "calibration", "orientation", "stale",
-        )},
-        "preprocess": ctx.spec.preprocess,
-        "pixel_size_um": ctx.spec.inputs.get("pixel_size_um"),
+        )),
+        "preprocess": ctx.settings.preprocess,
+        "pixel_size_um": ctx.settings.supplied_pixel_size,
         "nonlinear": nonlinear,
     })

@@ -19,12 +19,19 @@ from langslice.core.atlas.borders import region_boundaries
 from langslice.core.fits import deformation
 from langslice.core.fits.deformable import DeformableRecord
 from langslice.core.pictures.options import default_options
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import (
+    affine_from_json,
+    deformation_to_json,
+    trace_from_json,
+    trace_to_json,
+)
+from langslice.core.stack.stack import Stack
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.job.state_file import stack_from_json, stack_to_json
 from langslice.tools import deformable as ops_deformable
 from tests.deformable_synthetic import (
     HY,
@@ -35,6 +42,7 @@ from tests.deformable_synthetic import (
 )
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
+from tests.shapes import json_of
 
 ID = "s0.png"
 
@@ -71,8 +79,9 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *,
     state = ingest(spec, ctx)
     record = state.slices[0]
     record.position_mm = 0.1
-    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                        "calibration": {"section_um_per_px": 25.0, "source": "host"}}
+    record.transform = affine_from_json(
+        {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        "calibration": {"section_um_per_px": 25.0, "source": "host"}})
     return state, ctx, spec, build_tools(state, ctx, spec)
 
 
@@ -120,7 +129,7 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert row["displacement_mm"]["max"] > 0 and "fold_fraction" in row
     assert [changed["id"] for changed in result["changed"]] == [ID]
     assert TOOL_MEDIA_PARTS_KEY not in result and "pictures" not in result
-    held = state.slices[0].deformation
+    held = json_of(state.slices[0].deformation)
     assert held is not None and held["steps"][0]["smoothness_um"] == 50.0
     assert not Path(held["record"]).is_absolute()  # relative to the job folder
     record_dir = Path(ctx.job_folder) / held["record"]
@@ -132,15 +141,15 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert saved["provenance"]["estimated"] is None
     assert saved["provenance"]["linear_handoff"]["section_um_per_px"] > 0
     assert saved["placement"]["position_mm"] == pytest.approx(0.1)
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
+    assert json_of(load_checkpoint(ctx.checkpoint_path).slices[0].deformation) == held
     # The state round-trips through JSON like everything else on it.
-    assert StackState.from_dict(json.loads(json.dumps(state.to_dict()))).slices[0].deformation \
-        == held
+    again = stack_from_json(json.loads(json.dumps(stack_to_json(state))))
+    assert json_of(again.slices[0].deformation) == held
     assert _tool(box, "undo")()["status"] == "ok"
     assert state.slices[0].deformation is None
     assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation is None
     _tool(box, "redo")()
-    assert state.slices[0].deformation == held
+    assert json_of(state.slices[0].deformation) == held
 
 
 @needs_engine
@@ -150,7 +159,7 @@ def test_a_second_fit_builds_on_the_first_and_undo_goes_back(tmp_path: Path, atl
     first = state.slices[0].deformation
     row = _syn(box, restrict_to=["STR"], view=False)["results"][0]
     assert row["steps"] == 2 and "step_displacement_mm" in row
-    held = state.slices[0].deformation
+    held = json_of(state.slices[0].deformation)
     assert [step["start"] for step in held["steps"]] == ["linear", "current"]
     assert held["steps"][1]["include"] == ["STR"]
     record = DeformableRecord.load(box.job.layout.resolve(held["record"]))
@@ -187,7 +196,7 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     _fit(box, ctx)
-    held = state.slices[0].deformation
+    held = json_of(state.slices[0].deformation)
     folder = box.job.layout.resolve(held["record"])
     saved = DeformableRecord.load(folder)
 
@@ -203,7 +212,7 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
     box.job.deformations.cache.clear()
     row = _fit(box, ctx).rows[0]
     assert row["status"] == "error" and row["error"] == "DEFORMATION_UNREADABLE", row
-    assert state.slices[0].deformation == held
+    assert json_of(state.slices[0].deformation) == held
 
 
 # --- consequences: linear edits, the overlay -------------------------------------
@@ -214,7 +223,7 @@ def test_a_linear_edit_clears_the_warp_and_says_so(tmp_path: Path, atlas):
     state, ctx, _, box = _setup(tmp_path, atlas)
     _syn(box, view=False)
     held = state.slices[0].deformation
-    transform = dict(state.slices[0].transform)
+    transform = state.slices[0].transform
     # Reads keep the warp.
     for reply in (_tool(box, "status")(), _tool(box, "note")("looked"),
                   _tool(box, "look")("overlay", sections=[ID])):
@@ -268,13 +277,13 @@ def test_look_overlay_draws_the_applied_warp_unless_warp_none(tmp_path: Path, at
 # --- traced section images (the fit a trace gets) ----------------------------------
 
 
-def _fake_trace(state: StackState, ctx: Any, folder: Path, *, fingerprint: str) -> None:
+def _fake_trace(state: Stack, ctx: Any, folder: Path, *, fingerprint: str) -> None:
     """A completed trace_borders result whose lines are the placed atlas borders."""
-    state.slices[0].image_correction = _trace_artifacts(state, ctx, folder,
-                                                        fingerprint=fingerprint)
+    state.slices[0].image_correction = trace_from_json(
+        _trace_artifacts(state, ctx, folder, fingerprint=fingerprint))
 
 
-def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
+def _trace_artifacts(state: Stack, ctx: Any, folder: Path, *,
                      fingerprint: str) -> dict[str, Any]:
     """Write a trace's artifacts (the placed atlas borders as lines); return its result."""
     grid = deformation.fit_grid(state, ctx, state.slices[0])
@@ -287,7 +296,8 @@ def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
     folder.mkdir(parents=True)
     Image.fromarray(edges * 255).save(folder / "extracted_lines.png")
     (folder / "request.json").write_text(json.dumps({"atlas_to_canvas": atlas_to_canvas.tolist()}))
-    return {"status": "ok", "geometry_fingerprint": fingerprint, "artifact_dir": str(folder)}
+    return {"id": "s0.png", "status": "ok", "geometry_fingerprint": fingerprint,
+            "artifact_dir": str(folder)}
 
 
 @needs_engine
@@ -300,13 +310,15 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="earlier")
     assert _fit(box, ctx, TRACED).rows[0]["error"] == "TRACE_STALE"
-    state.slices[0].image_correction["geometry_fingerprint"] = "now"
+    state.slices[0].image_correction = trace_from_json(
+        {**trace_to_json(state.slices[0].image_correction), "geometry_fingerprint": "now"})
     row = _fit(box, ctx, TRACED).rows[0]
     assert row["status"] == "ok", row
     assert row["settings"]["atlas_image"] == "borders"  # traced lines fit against borders
     assert row["engine_settings"]["metric"] == "mean_squares"
     # The step records the trace it fitted (a packaged trace asked again reuses it).
-    assert state.slices[0].deformation["steps"][-1]["trace"] == str(tmp_path / "trace")
+    assert deformation_to_json(
+        state.slices[0].deformation)["steps"][-1]["trace"] == str(tmp_path / "trace")
 
 
 @needs_engine
@@ -316,12 +328,13 @@ def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
-    state.slices[0].image_correction["exclude"] = ["HY"]
+    state.slices[0].image_correction = trace_from_json(
+        {**trace_to_json(state.slices[0].image_correction), "exclude": ["HY"]})
     state.slices[0].damaged_regions = ["VS"]  # marked damage is left out too
     row = _fit(box, ctx, TRACED).rows[0]
     assert row["status"] == "ok", row
     assert row["trace_regions"] == {"include": [], "exclude": ["VS", "HY"]}
-    steps = state.slices[0].deformation["steps"]
+    steps = deformation_to_json(state.slices[0].deformation)["steps"]
     assert steps[-1]["exclude"] == ["VS", "HY"]
     # A stain fit ignores the trace's regions.
     assert "trace_regions" not in _fit(box, ctx).rows[0]
@@ -353,7 +366,8 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     folder = tmp_path / "trace"
-    state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
+    state.slices[0].image_correction = trace_from_json(
+        {"id": "s0.png", "status": "running", "geometry_fingerprint": "now"})
 
     def job() -> dict[str, Any]:
         return _trace_artifacts(state, ctx, folder, fingerprint="now")
@@ -361,8 +375,9 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
     box.job.start_image_job(ID, "now", job, workers=1)
     done = _fit(box, ctx, TRACED, options=default_options("overlay"))
     assert done.rows[0]["status"] == "ok", done.rows
-    assert state.slices[0].image_correction["status"] == "ok"
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
+    assert trace_to_json(state.slices[0].image_correction)["status"] == "ok"
+    assert trace_to_json(
+        load_checkpoint(ctx.checkpoint_path).slices[0].image_correction)["status"] == "ok"
     assert ID not in box.job.image_jobs
     assert len(done.pictures) == 2 and done.traces == [{"id": ID, "image_indexes": [1]}]
     # The trace picture carries the lines in the border color on the section.
@@ -380,14 +395,15 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     monkeypatch.setattr(deformation, "TRACE_WAIT_S", 0.2)
-    state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
+    state.slices[0].image_correction = trace_from_json(
+        {"id": "s0.png", "status": "running", "geometry_fingerprint": "now"})
     release = threading.Event()
 
     def job() -> dict[str, Any]:
         # Held until released, even on a slow CI runner.
         release.wait()
         return {"status": "error", "error": "TransportError", "message": "no image",
-                "geometry_fingerprint": "now"}
+                "id": "s0.png", "geometry_fingerprint": "now"}
 
     box.job.start_image_job(ID, "now", job, workers=1)
     real_wait = box.job.wait_image_job

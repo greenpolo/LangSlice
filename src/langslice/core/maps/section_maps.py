@@ -54,8 +54,8 @@ from langslice.core.space import Plane
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
 
 #: ``[x, y, 1]`` <-> ``[row, col, 1]``.
@@ -179,24 +179,24 @@ def _file_stamp(path: str) -> tuple[int, int] | None:
     return (info.st_size, info.st_mtime_ns)
 
 
-def stored_params(record: SliceState) -> tuple[float, ...]:
+def stored_params(section: Section) -> tuple[float, ...]:
     """The section's six stored numbers (the identity without a transform)."""
-    transform = record.transform or {}
-    params = transform.get("params") if transform else IDENTITY_PARAMS
-    return tuple(float(v) for v in params)  # type: ignore[union-attr]
+    transform = section.transform
+    params = IDENTITY_PARAMS if transform is None else transform.params
+    return tuple(float(v) for v in params)
 
 
-def placement_problem(state: StackState, record: SliceState) -> str | None:
-    """Why *record* has no linear map yet (None: it has one). A section
+def placement_problem(state: Stack, section: Section) -> str | None:
+    """Why *section* has no linear map yet (None: it has one). A section
     without a transform is placed by the identity, as its pictures show it."""
-    if record.position_mm is None or not np.isfinite(record.position_mm):
+    if section.position_mm is None or not np.isfinite(section.position_mm):
         return "no position"
-    transform = record.transform or {}
-    if not transform:
+    transform = section.transform
+    if transform is None:
         return None
-    if transform.get("stale"):
+    if transform.stale:
         return "the stored transform is marked stale"
-    params = transform.get("params")
+    params = transform.params
     try:
         values = np.asarray(params, dtype=np.float64)
     except (TypeError, ValueError):
@@ -233,40 +233,28 @@ FRAME_CACHE_SECTIONS = 512
 _SHARED_FRAMES: dict[str, tuple[tuple[str, str], tuple[Any, ...], Any, SectionFrame]] = {}
 
 
-def _frame_key(state: StackState, workspace: Workspace, record: SliceState) -> tuple[Any, ...]:
+def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any, ...]:
     """Everything a section's frame depends on within one workspace."""
     path = workspace.image_path(record.id)
-    spec = workspace.spec
+    settings = workspace.settings
     return (
         record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
         float(record.position_mm),  # type: ignore[arg-type]
         state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
         stored_params(record),
-        json.dumps((spec.inputs or {}).get("pixel_size_um"), default=str),
-        json.dumps(spec.host_preprocessing, sort_keys=True, default=str),
+        json.dumps(settings.supplied_pixel_size, default=str),
+        json.dumps(settings.host_preprocessing, sort_keys=True, default=str),
     )
-
-
-#: :func:`_scope`'s spec text per spec object (id -> (weak reference, text)).
-_SPEC_TEXTS: dict[int, tuple[Any, str]] = {}
 
 
 def _scope(workspace: Workspace) -> tuple[str, str]:
     """What a frame depends on beyond its key: the image folder and the
-    whole job spec."""
-    import weakref
-
-    spec = workspace.spec
-    held = _SPEC_TEXTS.get(id(spec))
-    if held is None or held[0]() is not spec:
-        for key in [key for key, (ref, _text) in _SPEC_TEXTS.items() if ref() is None]:
-            del _SPEC_TEXTS[key]
-        held = (weakref.ref(spec), json.dumps(spec.to_dict(), sort_keys=True, default=str))
-        _SPEC_TEXTS[id(spec)] = held
-    return (os.path.abspath(workspace.image_folder), held[1])
+    whole of the job's settings."""
+    folder = os.path.abspath(workspace.image_folder)
+    return (folder, workspace.settings.settings_text)
 
 
-def share_frames(state: StackState, workspace: Workspace) -> int:
+def share_frames(state: Stack, workspace: Workspace) -> int:
     """Compute the frame of every placed section of *state* and keep it for
     the workspaces this process makes after it forks (the agent CLI's warm
     process, :mod:`langslice.doors.agent_cli.warm`, calls it before it
@@ -288,7 +276,7 @@ def share_frames(state: StackState, workspace: Workspace) -> int:
     return kept
 
 
-def _shared_frame(workspace: Workspace, record: SliceState,
+def _shared_frame(workspace: Workspace, record: Section,
                   key: tuple[Any, ...]) -> SectionFrame | None:
     held = _SHARED_FRAMES.get(workspace.image_path(record.id))
     if held is None or held[1] != key or held[2] is not workspace.atlas:
@@ -296,7 +284,7 @@ def _shared_frame(workspace: Workspace, record: SliceState,
     return held[3] if held[0] == _scope(workspace) else None
 
 
-def section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
+def section_frame(state: Stack, workspace: Workspace, record: Section) -> SectionFrame:
     """The section's linear frame (``ValueError`` when it has none:
     :func:`placement_problem`). Memoized on the workspace
     (``Workspace.frame_cache``: one frame per section, at the key of
@@ -306,7 +294,8 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
     problem = placement_problem(state, record)
     if problem is not None:
         raise ValueError(f"{record.id}: {problem}")
-    if state.atlas != workspace.spec.atlas or state.plane != workspace.spec.plane:
+    settings = workspace.settings
+    if state.atlas != settings.atlas or state.plane != settings.plane:
         raise ValueError("State and workspace disagree about the atlas or plane")
     key = _frame_key(state, workspace, record)
     cache = workspace.frame_cache
@@ -352,7 +341,8 @@ def render_sizes(workspace: Workspace, section_id: str) -> RenderSizes:
     if cached is not None:
         working, factor = (int(cached[0].size[0]), int(cached[0].size[1])), float(cached[1])
     else:
-        found = working_size(path, pages=workspace.spec.host_preprocessing is not None)
+        pages = workspace.settings.host_preprocessing is not None
+        found = working_size(path, pages=pages)
         if found is None:
             source, factor = workspace.working_source(section_id)
             working = (int(source.size[0]), int(source.size[1]))
@@ -364,7 +354,7 @@ def render_sizes(workspace: Workspace, section_id: str) -> RenderSizes:
                        render_scale=factor * working[0] / float(unturned_render[0]))
 
 
-def _section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
+def _section_frame(state: Stack, workspace: Workspace, record: Section) -> SectionFrame:
     from langslice.core.geometry.oblique import plane_index_affine
     from langslice.core.pictures.layers import atlas_facts
 

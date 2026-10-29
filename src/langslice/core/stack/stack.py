@@ -16,208 +16,232 @@ descending stack, and the emitted corrected order always runs the atlas way
 from __future__ import annotations
 
 import statistics
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.stack.section import (
-    ANGLES_KEY,
-    Angles,
-    MixedAngles,
-    SliceState,
-    angles_tuple,
-    flat_angles,
-)
+from langslice.core.jsonable import JsonObject, empty_object
+from langslice.core.stack.section import FLAT, Angles, MixedAngles, Section
 
 
-def plane_angles(state: StackState, angles: Angles | None) -> Angles:
+def plane_angles(state: Stack, angles: Angles | None) -> Angles:
     """*angles* as floats, or, when None, the stack's one angle
-    (:attr:`StackState.stack_angles`, which refuses a stack whose sections
+    (:attr:`Stack.stack_angles`, which refuses a stack whose sections
     differ). The rule every atlas-plane picture takes its plane by: a
     section's own angles for a picture of that section, the stack's view
     angles for one without."""
-    return state.stack_angles if angles is None else (float(angles[0]), float(angles[1]))
+    return (
+        state.stack_angles
+        if angles is None
+        else (float(angles[0]), float(angles[1]))
+    )
 
 
 @dataclass
-class StackState:
-    """The whole stack: inputs, per-section records, and run bookkeeping."""
+class Stack:
+    """Hold the whole stack: its inputs, its sections and run bookkeeping.
+
+    Mutable: it is the job's live state, written under the job folder's
+    lock and refilled in place by undo (:meth:`replace_with`), since the
+    tools of a run share one stack object.
+
+    Parameters
+    ----------
+    image_folder
+        The folder the section images were discovered in.
+    atlas
+        The BrainGlobe atlas name.
+    plane
+        The cutting plane: ``coronal``, ``sagittal`` or ``horizontal``.
+    interval_mm
+        The nominal distance between sections; None when not supplied.
+    thickness_mm
+        The section thickness; None when not supplied.
+    spec
+        The job's settings as run (the job spec's JSON form).
+    interval_breaks
+        Corrected indices of the sections after a gap the agent concluded
+        is real.
+    notes
+        The run's notes, in order.
+    slices
+        The sections, in discovered order.
+    submitted
+        Whether the registration was submitted.
+    debrief
+        The agent's post-submit debrief (what it reached for that was not
+        there), verbatim: data for the environment's builders.
+    """
 
     image_folder: str = ""
     atlas: str = ""
     plane: str = "coronal"
-    #: Optional protocol values; None means not supplied.
     interval_mm: float | None = None
     thickness_mm: float | None = None
-    #: The JobSpec as run (:meth:`langslice.core.spec.JobSpec.to_dict`).
-    spec: dict[str, Any] = field(default_factory=dict)
-    #: Corrected indices of the sections AFTER a gap the agent concluded is real.
-    interval_breaks: list[int] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
-    slices: list[SliceState] = field(default_factory=list)
+    spec: JsonObject = field(default_factory=empty_object)
+    interval_breaks: list[int] = field(default_factory=list[int])
+    notes: list[str] = field(default_factory=list[str])
+    slices: list[Section] = field(default_factory=list[Section])
     submitted: bool = False
-    #: The agent's post-submit debrief (what it reached for that was not
-    #: there), verbatim. Data for the environment's builders, not for the run.
     debrief: str = ""
 
-    # --- views -----------------------------------------------------------
+    def in_order(self) -> list[Section]:
+        """Return the sections sorted by their corrected order.
 
-    def in_order(self) -> list[SliceState]:
-        """The stack as corrected: sections sorted by ``index_corrected``."""
-        return sorted(self.slices, key=lambda s: s.index_corrected)
+        Returns
+        -------
+        list of Section
+            The stack as corrected.
+        """
+        return sorted(self.slices, key=lambda section: section.index_corrected)
 
-    def by_id(self, slice_id: str) -> SliceState | None:
-        return next((s for s in self.slices if s.id == slice_id), None)
+    def by_id(self, section_id: str) -> Section | None:
+        """Return the section with filename *section_id*.
 
-    def resolve(self, ref: object) -> SliceState | None:
-        """The section *ref* names: its filename, or the filename without its
-        extension when exactly one section has that stem. Never a number:
-        sections are named by filename only (:func:`unknown_sections`)."""
+        Parameters
+        ----------
+        section_id
+            The section's whole filename.
+
+        Returns
+        -------
+        Section or None
+            The section, or None when no section has that filename.
+        """
+        return next((s for s in self.slices if s.id == section_id), None)
+
+    def resolve(self, ref: object) -> Section | None:
+        """Return the section a reference names.
+
+        Sections are named by filename only (:func:`unknown_sections`),
+        never by a number.
+
+        Parameters
+        ----------
+        ref
+            A filename, or a filename without its extension when exactly
+            one section has that stem.
+
+        Returns
+        -------
+        Section or None
+            The section, or None when *ref* names none.
+        """
         text = str(ref).strip()
         hit = self.by_id(text)
         if hit is not None:
             return hit
-        stems = [record for record in self.slices if filename_stem(record.id) == text]
-        return stems[0] if len(stems) == 1 else None
+        stems = [s for s in self.slices if filename_stem(s.id) == text]
+        if len(stems) == 1:
+            return stems[0]
+        return None
 
-    # --- cutting angles ---------------------------------------------------
-    #
-    # Each section carries its own plane (``SliceState.cutting_angles_deg``).
-    # Everything LangSlice angles itself is one plane for the whole stack;
-    # a registration supplied per section may differ section by section.
+    # Each section carries its own plane. Everything LangSlice angles
+    # itself is one plane for the whole stack; a registration supplied
+    # per section may differ section by section.
 
     @property
     def mixed_angles(self) -> bool:
-        """Whether the sections' cutting angles differ."""
-        return len({record.angles for record in self.slices}) > 1
+        """Return whether the sections' cutting angles differ."""
+        return len({section.angles for section in self.slices}) > 1
 
     @property
     def stack_angles(self) -> Angles:
-        """The one ``(pitch, yaw)`` every section shares (flat for an empty
-        stack); :class:`MixedAngles` when they differ, so a reader that
-        should use each section's own angle cannot take one silently."""
-        planes = {record.angles for record in self.slices}
+        """Return the one ``(pitch, yaw)`` every section shares.
+
+        Flat for an empty stack. :class:`MixedAngles` when the sections
+        differ, so a reader that should use each section's own angles
+        cannot take one silently.
+        """
+        planes = {section.angles for section in self.slices}
         if len(planes) > 1:
             raise MixedAngles(
                 "The sections of this stack have different cutting angles; "
-                "read each section's own (SliceState.angles).")
-        return next(iter(planes), (0.0, 0.0))
+                "read each section's own (Section.angles)."
+            )
+        return next(iter(planes), FLAT)
 
     @property
     def view_angles(self) -> Angles:
-        """The plane an atlas picture without a section is drawn at
-        (``look``'s atlas, the opening's atlas reference): the stack's one
-        angle, or, when the sections differ, the median pitch and the median
-        yaw of its sections."""
+        """Return the plane an atlas picture without a section is drawn at.
+
+        The stack's one angle, or, when the sections differ, the median
+        pitch and the median yaw of its sections (``look``'s atlas, the
+        opening's atlas reference).
+        """
         if not self.mixed_angles:
             return self.stack_angles
-        pitches = [record.pitch_deg for record in self.slices]
-        yaws = [record.yaw_deg for record in self.slices]
-        return float(statistics.median(pitches)), float(statistics.median(yaws))
+        pitches = [section.pitch_deg for section in self.slices]
+        yaws = [section.yaw_deg for section in self.slices]
+        return float(statistics.median(pitches)), float(
+            statistics.median(yaws)
+        )
 
     def drawn_at_median(self, angles: Angles) -> bool:
-        """Whether an atlas picture without a section drawn at *angles* is
-        drawn at the median of differing sections' angles (:attr:`view_angles`),
-        which its caption must say."""
-        return self.mixed_angles and (float(angles[0]), float(angles[1])) == self.view_angles
+        """Return whether a picture at *angles* is at the median plane.
 
-    @property
-    def cutting_angles_deg(self) -> dict[str, float]:
-        """The stack-wide angles as ``{"pitch", "yaw"}`` (a copy; assign to
-        change them); :class:`MixedAngles` when the sections differ."""
-        self.stack_angles  # noqa: B018 - raises for a mixed stack
-        if not self.slices:
-            return flat_angles()
-        return dict(self.slices[0].cutting_angles_deg)
+        An atlas picture without a section drawn at the median of
+        differing sections' angles (:attr:`view_angles`) must say so in
+        its caption.
 
-    @cutting_angles_deg.setter
-    def cutting_angles_deg(self, angles: dict[str, Any]) -> None:
-        """Set every section to *angles* (``position_sections``): a stack
-        whose sections differed now has one plane."""
-        pitch, yaw = angles_tuple(angles)
-        for record in self.slices:
-            record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
+        Parameters
+        ----------
+        angles
+            The ``(pitch, yaw)`` the picture is drawn at.
+
+        Returns
+        -------
+        bool
+            True when the sections differ and *angles* is their median.
+        """
+        plane = (float(angles[0]), float(angles[1]))
+        return self.mixed_angles and plane == self.view_angles
+
+    def set_angles(self, angles: Angles) -> None:
+        """Set every section's cutting angles to *angles*.
+
+        A stack whose sections differed then has one plane
+        (``position_sections``).
+
+        Parameters
+        ----------
+        angles
+            The ``(pitch, yaw)`` in degrees.
+        """
+        pitch, yaw = float(angles[0]), float(angles[1])
+        for section in self.slices:
+            section.angles = (pitch, yaw)
 
     @property
     def pitch_deg(self) -> float:
-        """The stack-wide pitch (:attr:`stack_angles`)."""
+        """Return the stack-wide pitch (:attr:`stack_angles`)."""
         return self.stack_angles[0]
 
     @property
     def yaw_deg(self) -> float:
-        """The stack-wide yaw (:attr:`stack_angles`)."""
+        """Return the stack-wide yaw (:attr:`stack_angles`)."""
         return self.stack_angles[1]
 
     @property
     def is_oblique(self) -> bool:
-        """Whether any section's plane is angled."""
-        return any(record.is_oblique for record in self.slices)
+        """Return whether any section's plane is angled."""
+        return any(section.is_oblique for section in self.slices)
 
-    # --- (de)serialization ----------------------------------------------
+    def replace_with(self, new_state: Stack) -> None:
+        """Overwrite this stack's contents with another stack's, in place.
 
-    def to_dict(self) -> dict[str, Any]:
-        """JSON-compatible dict. Same shape for checkpoint and hand-back.
-
-        The cutting angles are written once, on the stack
-        (``"cutting_angles_deg": {"pitch", "yaw"}``), when every section
-        shares them, so a single-angle state reads as it always has; when
-        they differ (state format 3), the stack's is ``null`` and each
-        section row carries its own.
-        """
-        data = asdict(self)
-        rows = data["slices"]
-        if self.mixed_angles:
-            data[ANGLES_KEY] = None
-        else:
-            data[ANGLES_KEY] = (dict(rows[0][ANGLES_KEY]) if rows else flat_angles())
-            for row in rows:
-                row.pop(ANGLES_KEY, None)
-        for row in rows:
-            for optional in ("layers", "masks", "images"):
-                if not row.get(optional):  # most jobs have none: the state reads as it always has
-                    row.pop(optional, None)
-        return data
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> StackState:
-        """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any
-        unknown key (a section row's as ``slices.key``).
-
-        A section row without its own angles carries the stack's
-        (``cutting_angles_deg`` on the stack, flat without), which is how a
-        single-angle state is written.
-        """
-        slice_fields = SliceState.__dataclass_fields__
-        stack_fields = {k for k in cls.__dataclass_fields__ if k != "slices"}
-        unknown = {k for k in data if k not in stack_fields | {"slices", ANGLES_KEY}}
-        unknown |= {f"slices.{k}" for row in data.get("slices", []) for k in row
-                    if k not in slice_fields}
-        if unknown:
-            raise ValueError(f"Unknown stack state key(s) {sorted(unknown)}")
-        stack = data.get(ANGLES_KEY)
-        slices = []
-        for row in data.get("slices", []):
-            kwargs = dict(row)
-            kwargs["damaged_regions"] = [str(name) for name in
-                                         kwargs.get("damaged_regions") or ()]
-            own = kwargs.get(ANGLES_KEY)
-            kwargs[ANGLES_KEY] = dict(own if isinstance(own, dict) else
-                                      stack if isinstance(stack, dict) else flat_angles())
-            slices.append(SliceState(**kwargs))
-        kwargs = {k: v for k, v in data.items() if k in stack_fields}
-        return cls(slices=slices, **kwargs)
-
-    def restore(self, data: dict[str, Any]) -> None:
-        """Overwrite this stack's contents from *data*, in place.
-
-        Tools close over one state object, so undo/redo has to refill it
+        The tools close over one stack object, so undo and redo refill it
         rather than swap it.
+
+        Parameters
+        ----------
+        new_state
+            The stack whose fields this one takes; not copied.
         """
-        other = StackState.from_dict(data)
         for name in self.__dataclass_fields__:
-            setattr(self, name, getattr(other, name))
+            setattr(self, name, getattr(new_state, name))
 
 
-def normalize_to_atlas_order(state: StackState) -> bool:
+def normalize_to_atlas_order(state: Stack) -> bool:
     """Make the corrected order run the atlas way (positions increasing).
 
     Called at submit after the monotonicity gate has passed. When the placed
@@ -235,8 +259,8 @@ def normalize_to_atlas_order(state: StackState) -> bool:
     if last >= first:
         return False
     n = len(ordered)
-    for record in ordered:
-        record.index_corrected = n - 1 - record.index_corrected
+    for section in ordered:
+        section.index_corrected = n - 1 - section.index_corrected
     state.interval_breaks = sorted(n - i for i in state.interval_breaks if 0 < i < n)
     return True
 
@@ -244,7 +268,7 @@ def normalize_to_atlas_order(state: StackState) -> bool:
 # --- naming sections ----------------------------------------------------------------
 #
 # A section is named by its filename everywhere a model, a script or a user
-# names one (:meth:`StackState.resolve`); the stack order is internal.
+# names one (:meth:`Stack.resolve`); the stack order is internal.
 
 #: How many filenames a refusal lists before it says how many it left out.
 NAMES_LISTED = 40
@@ -256,21 +280,22 @@ def filename_stem(name: str) -> str:
     return base if dot and base else name
 
 
-def break_ids(state: StackState) -> list[str]:
+def break_ids(state: Stack) -> list[str]:
     """The interval breaks as the filenames of the sections after each gap
-    (stored as corrected indices, ``StackState.interval_breaks``)."""
-    by_index = {record.index_corrected: record.id for record in state.slices}
+    (stored as corrected indices, ``Stack.interval_breaks``)."""
+    by_index = {
+        section.index_corrected: section.id for section in state.slices}
     return [by_index[index] for index in state.interval_breaks if index in by_index]
 
 
-def unknown_sections(state: StackState, refs: Any) -> dict[str, Any]:
+def unknown_sections(state: Stack, refs: object) -> dict[str, Any]:
     """The facts of a refusal for section names *refs* that name no section:
     ``unknown`` (the refs as text), ``filenames`` (the valid names, the
     first :data:`NAMES_LISTED`) and ``message``, which says that sections
     are named by filename (a number names none; a stem two files share
     needs the whole filename)."""
     unknown = [str(ref) for ref in (refs if isinstance(refs, (list, tuple)) else [refs])]
-    names = sorted(record.id for record in state.slices)
+    names = sorted(section.id for section in state.slices)
     listed = names[:NAMES_LISTED]
     numbers = [ref for ref in unknown if ref.strip().lstrip("-").isdigit()]
     shared = [ref for ref in unknown

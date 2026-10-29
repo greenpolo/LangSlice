@@ -49,11 +49,12 @@ from langslice.core.fits.trace.prompts import (
 )
 from langslice.core.fits.trace.request import SegmentationGenerationRequest
 from langslice.core.geometry.affine import pixel_center_map
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.stack import Stack
     from langslice.providers.connections import ImageModel
 
 #: Width of the placed boundaries in Image 1, in canvas pixels at a 1536-px long edge.
@@ -147,11 +148,11 @@ def _open_attempt(
         with in_progress.open("x") as handle:
             handle.write("Request in progress; no completed outcome recorded yet.\n")
     except FileExistsError:
-        return {
-            "status": "error", "error": "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED",
-            "id": section_id, "geometry_fingerprint": fingerprint,
-            "artifact_dir": str(call_directory),
-        }
+        return Refused(
+            RefusalCode.IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED,
+            id=section_id, geometry_fingerprint=fingerprint,
+            artifact_dir=str(call_directory),
+        ).payload()
     attempt = int((previous or {}).get("attempt", 0)) + 1
     directory = call_directory / f"attempt-{attempt:02d}"
     directory.mkdir()
@@ -265,7 +266,7 @@ MAX_CONCURRENT_IMAGE_CALLS = 8
 
 
 def start_correction(
-    state: StackState,
+    state: Stack,
     ctx: Workspace,
     section_id: str,
     *,

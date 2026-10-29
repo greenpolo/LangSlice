@@ -18,9 +18,10 @@ import pytest
 import tifffile
 from scipy import ndimage
 
-from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.core.stack.codec import trace_to_json
 from langslice.doors.commands.linear import spec_from_args
 from langslice.doors.commands.parser import build_parser
+from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -107,7 +108,7 @@ def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(im
         assert job.trace_borders(section=ID1)["status"] == "started"
         job.job.settle_image_corrections()
         job.job.background.wait_all()
-        record = job.state.by_id(ID1).image_correction
+        record = trace_to_json(job.state.by_id(ID1).image_correction)
     assert [request.prompt for request in stub.requests] == [sent]
     attempt = images / "langslice" / record["artifact_dir"]
     assert (attempt / "base_prompt.txt").read_text() == sent

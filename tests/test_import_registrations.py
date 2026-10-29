@@ -40,9 +40,9 @@ from langslice.core.maps.imported import (
 )
 from langslice.core.maps.section_maps import SWAP, render_sizes, section_frame
 from langslice.core.pictures.layers import atlas_facts
-from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json, affine_to_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.job.imports import matching as imports_matching
 from langslice.job.imports import placements as imports_placements
@@ -50,6 +50,7 @@ from langslice.job.imports import readers as imports
 from langslice.job.layout import JobLayout
 from langslice.job.public_files import registration_document
 from langslice.job.quint import job_export
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import CTX, STR, SyntheticAtlas
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
 
@@ -99,7 +100,8 @@ def make_workspace(folder: Path, atlas: Any, *, plane: str = "coronal",
     inputs = {} if pixel_size is None else {"pixel_size_um": pixel_size}
     spec = JobSpec(image_folder=str(folder), atlas=atlas.atlas_name, plane=plane,
                    inputs=inputs, preprocess="none")
-    return Workspace(spec=spec, image_folder=str(folder), atlas_loader=lambda _name: atlas)
+    return Workspace(settings=spec.image_settings(), image_folder=str(folder),
+                     atlas_loader=lambda _name: atlas)
 
 
 def params_for(workspace: Workspace, given: Given) -> list[float]:
@@ -112,17 +114,18 @@ def params_for(workspace: Workspace, given: Given) -> list[float]:
                                       **{**knobs(0.0, 1.0, 1.0, 0.0, 0.0, 0.0), **given.knobs})
 
 
-def state_of(workspace: Workspace, sections: list[Given]) -> StackState:
+def state_of(workspace: Workspace, sections: list[Given]) -> Stack:
     """A state holding *sections* as given, each at its own cutting angles."""
     records = [
-        SliceState(id=g.section_id, index_original=i, index_corrected=i, flip=g.flip,
+        Section(id=g.section_id, index_original=i, index_corrected=i, flip=g.flip,
                    rotation_deg=g.rotation_deg, position_mm=g.position_mm,
-                   transform={"kind": "interactive", "params": params_for(workspace, g)},
-                   cutting_angles_deg={"pitch": g.pitch_deg, "yaw": g.yaw_deg})
+                   transform=affine_from_json(
+                       {"kind": "interactive", "params": params_for(workspace, g)}),
+                   angles=(g.pitch_deg, g.yaw_deg))
         for i, g in enumerate(sections)
     ]
-    return StackState(image_folder=workspace.image_folder, atlas=workspace.spec.atlas,
-                      plane=workspace.spec.plane, slices=records)
+    return Stack(image_folder=workspace.image_folder, atlas=workspace.settings.atlas,
+                 plane=workspace.settings.plane, slices=records)
 
 
 def pixel_map(workspace: Workspace, given: Given) -> np.ndarray:
@@ -227,7 +230,7 @@ def test_a_fixed_orientation_still_reproduces_the_map(stack: Path):
     again = Given(given.section_id, found.position_mm, found.pitch_deg, found.yaw_deg, 0,
                   False, {})
     state = state_of(workspace, [again])
-    state.slices[0].transform = {"params": list(found.params)}
+    state.slices[0].transform = affine_from_json({"params": list(found.params)})
     redrawn = section_frame(state, workspace, state.slices[0]).pixel_to_atlas_um()
     assert np.allclose(redrawn, matrix, atol=1e-7, rtol=0)
 
@@ -244,7 +247,7 @@ def test_another_pixel_size_moves_the_scale_into_the_six_numbers(stack: Path):
     state = state_of(redrawn_workspace, [Given(given.section_id, found.position_mm,
                                                found.pitch_deg, found.yaw_deg,
                                                found.rotation_deg, found.flip, {})])
-    state.slices[0].transform = {"params": list(found.params)}
+    state.slices[0].transform = affine_from_json({"params": list(found.params)})
     redrawn = section_frame(state, redrawn_workspace, state.slices[0]).pixel_to_atlas_um()
     assert np.allclose(redrawn, matrix, atol=1e-7, rtol=0)
     assert found.in_plane["scale_x"] == pytest.approx(
@@ -405,7 +408,8 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
             assert_recovered(placement, given, params_for(workspace, given))
             record = state.by_id(given.section_id)
             assert record is not None and record.transform is not None
-            assert np.allclose(placement.params, record.transform["params"], atol=TOL_PARAMS)
+            assert np.allclose(placement.params, affine_to_json(
+                record.transform)["params"], atol=TOL_PARAMS)
     # The same registration into a job on another atlas of the same target.
     other = DeepAtlas("allen_mouse_50um")
     elsewhere = make_workspace(stack, other)
@@ -556,7 +560,7 @@ def _assert_redraws(redrawn: Workspace, placement: Any) -> None:
     given = Given(placement.section_id, placement.position_mm, placement.pitch_deg,
                   placement.yaw_deg, placement.rotation_deg, placement.flip, {})
     state = state_of(redrawn, [given])
-    state.slices[0].transform = {"params": list(placement.params)}
+    state.slices[0].transform = affine_from_json({"params": list(placement.params)})
     frame = section_frame(state, redrawn, state.slices[0])
     assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
                        atol=1e-6, rtol=0)

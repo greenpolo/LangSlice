@@ -30,8 +30,9 @@ what the job disables (``JobSpec.disabled``) is gone: an option from the
 argument's enum (``look``'s ``mode``), the arguments only it served
 (:func:`dropped_arguments`), and every passage that needs it. A passage
 that names a tool or an option is written with what it needs
-(``[[?look:positioning ...]]``, :mod:`langslice.core.needs`) and rendered
-for the run. An argument a run drops leaves the description with its entry.
+(``[[?look:positioning ...]]``, :mod:`langslice.job.settings.needs`) and
+rendered for the run. An argument a run drops leaves the description with
+its entry.
 
 Door-only parameters (ADK's ``tool_context``) are the tool body's, never
 declared. Nothing here imports ``google.*``, ``litellm`` or ``openai``.
@@ -49,9 +50,14 @@ from typing import Any, Literal
 
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.fits.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
-from langslice.core.needs import render
 from langslice.core.sections import images
-from langslice.core.toolset import OPTION_SEPARATOR, TOOLS, is_off, options_on
+from langslice.job.settings.needs import render
+from langslice.job.settings.tool_table import (
+    OPTION_SEPARATOR,
+    TOOLS,
+    is_off,
+    options_on,
+)
 from langslice.tools.arguments import (
     CuttingAngles,
     LandmarkPair,
@@ -1111,8 +1117,9 @@ class Variant:
     #: ``elastix_affine`` stands only where the Linear task is on); the native
     #: declarations keep their pinned wording and render by ``off`` alone.
     absent: frozenset[str] = frozenset()
-    #: The tool plugins the job loads (:class:`langslice.core.plugins.LoadedPlugin`,
-    #: compared by identity): their tools are declared from their own stubs.
+    #: The tool plugins the job loads
+    #: (:class:`langslice.job.plugins.LoadedPlugin`, compared by identity):
+    #: their tools are declared from their own stubs.
     #: Empty: no plugin text is in any declaration.
     plugins: tuple[Any, ...] = ()
     #: The job's atlas brain's size next to the adult mouse's
@@ -1124,8 +1131,9 @@ class Variant:
     def of(cls, spec: Any, *, auto: bool, image_model: bool = True, door: str = "agent",
            prompt: str | None = None, uncapped: bool | None = None,
            brain_scale: float = 1.0) -> Variant:
-        """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
-        *image_model* False: the door cannot reach its image model, so no
+        """The variant of a
+        :class:`~langslice.job.settings.spec.JobSpec`'s run; *image_model*
+        False: the door cannot reach its image model, so no
         prompt is described. *prompt* is the image model's own base prompt
         (None: the job's own, ``nonlinear.image_prompt``, else LangSlice's
         for the run's plane and provider). *uncapped* (None: the CLI door
@@ -1143,8 +1151,8 @@ class Variant:
                 text = own.replace(PLANE_PLACEHOLDER, str(spec.plane))
             else:
                 text = base_prompt(str(spec.plane), spec.nonlinear.provider)
-        from langslice.core.plugins import of_spec
-        from langslice.core.toolset import tools_for
+        from langslice.job.plugins import of_spec
+        from langslice.job.settings.tool_table import tools_for
 
         held = tuple(of_spec(spec))
         absent = frozenset(name for name, tool in tools_for(spec).items()

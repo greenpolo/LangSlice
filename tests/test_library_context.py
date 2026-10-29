@@ -18,7 +18,9 @@ from typing import Any
 import numpy as np
 import pytest
 
+from langslice.core.stack.codec import affine_to_json, deformation_to_json
 from tests.cli_child import install
+from tests.shapes import json_of
 from tests.synthetic_stack import (
     ID0,
     ID1,
@@ -100,7 +102,7 @@ def test_an_affine_is_recorded_as_the_scripts_and_undo_reverts_it(images: Path):
         registration = json.loads((Path(job.folder) / "registration.json").read_text())
         entry = next(item for item in registration["sections"] if item["id"] == ID0)
         assert entry["parameters"]["affine"]["kind"] == "script"
-        assert job.state.by_id(ID0).transform["note"] == "shifted"
+        assert affine_to_json(job.state.by_id(ID0).transform)["note"] == "shifted"
         rows = {row["id"]: row for row in job.status()["rows"]}
         assert rows[ID0]["transform"]["kind"] == "script"
         job.undo()
@@ -120,7 +122,7 @@ def test_a_deformation_is_recorded_as_the_scripts_with_its_provenance(images: Pa
         done = c.set_deformations([{"id": ID0, "map": native, "note": "ripple"}],
                                   expect={ID0: digest})
         assert done.written == [ID0], done.rows
-        held = job.state.by_id(ID0).deformation
+        held = json_of(job.state.by_id(ID0).deformation)
         assert held["steps"][-1] == {"method": "script", "start": "linear", "note": "ripple"}
         record = job.job.deformations.current(job.state, job.state.by_id(ID0))
         assert record.engine["name"] == "script"
@@ -333,7 +335,7 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
         record = job.job.deformations.current(job.state, job.state.by_id(ID0))
         assert record.provenance["script"]["meta"]["engine"] == "fireants"
         # The tool's names: the step and the record keep the call's settings by them.
-        step = job.state.by_id(ID0).deformation["steps"][-1]
+        step = deformation_to_json(job.state.by_id(ID0).deformation)["steps"][-1]
         assert step["method"] == "script"
         assert step["settings"]["smoothness_um"] == 50.0 and step["settings"]["mask"] == "tissue"
         assert step["settings"]["metric"] == "mutual_information"
@@ -361,7 +363,7 @@ def test_elastix_with_a_mask_is_a_proposal_recorded_with_its_settings(images: Pa
         assert proposal.record["fit"]["engine"] == "elastix"
         assert proposal.record["fit"]["mask"] == "none"
         assert proposal.record["fit"]["inputs"]["atlas_image"] == "nissl"
-        assert job.state.by_id(ID1).transform["params"] == TRANSFORMS[ID1]
+        assert affine_to_json(job.state.by_id(ID1).transform)["params"] == TRANSFORMS[ID1]
         assert c.set_transforms([proposal.row()]).written == [ID1]
 
 

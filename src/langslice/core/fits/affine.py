@@ -34,16 +34,16 @@ from langslice.core.geometry.affine import (
     denormalized_affine,
     normalized_affine,
 )
-from langslice.core.needs import render
 from langslice.core.pictures.canvas import canvas_geometry
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.renders import (
     PREVIEW_LONG_EDGE,
     canvas_um_per_px,
     render_slice,
 )
 from langslice.core.space import Plane
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 def calibrate(
-    state: StackState, ctx: Workspace, record: SliceState, section: Image.Image
+    state: Stack, ctx: Workspace, record: Section, section: Image.Image
 ) -> tuple[float, str]:
     """``(canvas micrometres per pixel, source)``, never failing.
 
@@ -89,7 +89,7 @@ def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
 
 
 def _fit_payload(
-    record: SliceState,
+    record: Section,
     section: Image.Image,
     um_per_px: float,
     source: str,
@@ -149,10 +149,6 @@ ELASTIX_DETAIL = "standard"
 ELASTIX_MIN_REGION_SPAN = 4
 
 
-class RegionTooSmall(ValueError):
-    """An Elastix fit whose selected anatomy is too small to fit safely."""
-
-
 def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> None:
     if not include:
         return
@@ -168,7 +164,8 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
     ys, xs = np.nonzero(mask)
     span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
     if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN ** 2:
-        raise RegionTooSmall(
+        raise Refused(
+            RefusalCode.REGION_TOO_SMALL,
             "Region is too small for elastix. Select a larger region"
             "[[?interactive_transform  or use interactive_transform]]; no fit was run. "
             f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.")
@@ -224,9 +221,9 @@ class ElastixFit:
 
 
 def elastix_affine(
-    state: StackState,
+    state: Stack,
     ctx: Workspace,
-    record: SliceState,
+    record: Section,
     start_params: Sequence[float],
     *,
     include: Sequence[str] = (),
@@ -259,7 +256,7 @@ def elastix_affine(
     from langslice.core.fits.deformable.engines import run_elastix_affine
 
     start = [float(v) for v in start_params]
-    grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
+    grid = deformation.fit_grid(state, ctx, record, params=start)
     image, look = deformation.section_image(ctx, state, grid, section_image)
     width, height = grid.image.size
     prepared = prepare_fit(
@@ -298,9 +295,9 @@ def elastix_affine(
 
 
 def fit_elastix(
-    state: StackState,
+    state: Stack,
     ctx: Workspace,
-    record: SliceState,
+    section: Section,
     *,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
@@ -318,44 +315,40 @@ def fit_elastix(
     ``calibration`` of the working frame, and a ``regions`` report when
     regions were given.
     """
-    from langslice.core.atlas.sides import SideError
-
-    if record.position_mm is None:
-        return {"status": "error", "error": "NO_POSITION", "id": record.id}
-    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    stored = (record.transform or {}).get("params")
+    if section.position_mm is None:
+        return Refused(RefusalCode.NO_POSITION, id=section.id).payload()
+    rendered = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
+    stored = None if section.transform is None else section.transform.params
     start = (list(stored) if stored is not None and len(stored) == 6
              else list(IDENTITY_PARAMS))
-    um_per_px, source = calibrate(state, ctx, record, section)
+    um_per_px, source = calibrate(state, ctx, section, rendered)
     try:
         geometry = canvas_geometry(
-            section.size,
+            rendered.size,
             um_per_px,
             ctx.atlas,
-            record.position_mm,
+            section.position_mm,
             cast(Plane, state.plane),
-            record.pitch_deg,
-            record.yaw_deg,
+            section.pitch_deg,
+            section.yaw_deg,
         )
-        fit = elastix_affine(state, ctx, record, start,
+        fit = elastix_affine(state, ctx, section, start,
                              include=include, exclude=exclude, atlas_image=atlas_image,
                              section_image=section_image, edges=edges,
                              section_weights=section_weights)
-    except RegionTooSmall as error:
-        return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
-                "message": render(str(error), ctx.spec.switched_off)}
-    except SideError as error:
-        return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
+    except Refused as refusal:  # regions too small, or a side it lacks
+        return Refused(
+            refusal.code, id=section.id, message=refusal.message
+        ).payload()
     except Exception as exc:
-        logger.warning("elastix_affine failed for %s: %s", record.id, exc)
-        return {
-            "status": "error",
-            "error": "FIT_FAILED",
-            "id": record.id,
-            "message": f"The Elastix affine failed: {exc}",
-        }
-    in_section = denormalized_affine(fit.params, section.size)
-    return _fit_payload(record, section, um_per_px, source, geometry, in_section,
+        logger.warning("elastix_affine failed for %s: %s", section.id, exc)
+        return Refused(
+            RefusalCode.FIT_FAILED,
+            id=section.id,
+            message=f"The Elastix affine failed: {exc}",
+        ).payload()
+    in_section = denormalized_affine(fit.params, rendered.size)
+    return _fit_payload(section, rendered, um_per_px, source, geometry, in_section,
                         regions=fit.report if (include or exclude) else None)
 
 

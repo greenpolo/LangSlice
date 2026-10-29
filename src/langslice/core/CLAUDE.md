@@ -5,7 +5,8 @@ project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
 The lowest layer. Its sub-packages hold one topic each: `stack/` (the
-stack and section state, the status table), `geometry/` (affines, oblique
+stack and its sections as declared shapes, their JSON form, the status
+table), `geometry/` (affines, oblique
 planes, the thin-plate kernel, the triangulation, pixel frames), `atlas/`,
 `sections/` (the section files: discovery, reading, preprocessing, renders,
 made images, channels, masks, damage, native windows), `pictures/` (every
@@ -13,11 +14,10 @@ picture the agent sees and its layers), `fits/` (the linear frame, the
 affine, the deformation, landmarks, the engine inputs and log, the
 deformable engine `fits/deformable/` and the image-model border trace
 `fits/trace/`) and `maps/` (section pixels to atlas micrometres, imported
-registrations, ITK, ABBA's frame). The job spec (`spec.py`), what is
-frozen (`frozen.py`), the tool table (`toolset.py`), the needs marks
-(`needs.py`) and the plugin types and registry (`plugins.py`) stay at the
-top of the package while core modules read them. Every module's imports
-are core-only:
+registrations, ITK, ABBA's frame). The core knows nothing of a job's form
+(its tasks, what is frozen or disabled, the tool table; all in
+`job/settings/`): of the settings it reads only the `ImageSettings` the
+workspace carries. Every module's imports are core-only:
 
 - shared foundations: `space.py`, `geometry/oblique.py`, `geometry/affine.py`,
   `sections/reading.py`, `geometry/thin_plate.py` (the thin-plate kernel `maps/abba.py`
@@ -25,45 +25,28 @@ are core-only:
   (`atlas/CLAUDE.md`), `fits/deformable/` (`fits/deformable/CLAUDE.md`) and
   `fits/trace/` (the image-model border route's prompts, request and line
   extraction, `fits/trace/CLAUDE.md`);
-- `toolset.py` and `needs.py`: what a job can switch off (and, through
-  `ToolDef.writes`, what its frozen properties switch off: `off_names`). `toolset.py`
-  lists every tool (`TOOLS`: `ToolDef` name, kind, task group, `when`,
-  scripting / image-model / hidden, `options`, `essential`, `needs`;
-  `tools/catalog.py` binds each to its operation), the `look` modes, the
-  names a `JobSpec.disabled` takes (`valid_names`: a tool, or `tool:option`;
-  `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
-  cannot work (an unknown or essential name, every `look` mode off, a task
-  with every tool that writes its answer off, a tool without the pictures it
-  needs), which the spec raises
-  as a `ValueError` when it is made. `needs.py`: `render(text, off)`, text
-  written with what it needs (`[[?NAMES text||other]]`, `[[#NAMES=item||...]]`
-  lists), dropped or swapped for the disabled list; with nothing off a text
-  renders to itself without its marks, byte for byte. Neither imports
-  anything above the core. `toolset.tools_for(spec)` is the per-spec view
-  (`TOOLS` plus the tools of `spec.plugins`; `TOOLS` itself without plugins),
-  which `valid_names(spec)`, `check_names`, `refusal(spec)`, `off_names`,
-  `catalog(spec)` read, so a job's `disabled` list can name a plugin tool;
-- `job/settings/labels.py`: a short label for people per tool and `tool:option`
-  (`TOOL_LABELS`, `label`), per task (`TASK_LABELS`, `TASK_ABOUT`) and per
-  tool group (`GROUP_LABELS`, with the group's task), for the LangSlice
-  window's prompt generator (`hosts/gui/generator.py`, its only importer).
-  Never model-facing; `tests/test_gui_generator.py` checks that every tool
-  and option has one and no other name does, and that none appears in the
-  pinned model-facing text. A new tool or option is a row here too;
+- `workspace.py`: the `Workspace` (one job's sections and atlas, their
+  caches) and the frozen `ImageSettings` it carries, the job's settings the
+  core reads and only those: `atlas`, `plane`, `preprocess`,
+  `host_preprocessing`, the host's pixel sizes (`supplied_pixel_size` as
+  given, for the keys of what depends on it; `stack_pixel_size_um` and
+  `file_pixel_sizes_um` parsed), `channel_names`, `picture_level`,
+  `trace_settings` (the nonlinear settings a trace's fingerprint holds),
+  `settings_text` (the whole form as sorted JSON, the scope of the frames
+  shared across a fork) and `missing_transform` (the sentence a fit says of
+  a section with no written transform, worded by the job). The job makes it
+  (`JobSpec.image_settings()`); the doors' contexts (`doors/jobs.py`
+  `JobContext`, the agent's `EngineContext`) carry the `JobSpec` beside it;
+- `tool_kinds.py` (`Kind`, `Group`, `GROUPS`: what a tool is listed under)
+  and `pictures/modes.py` (`LOOK_MODES`): plain names with no imports, which
+  the plugin types and the job's tool table share;
 - `plugins.py` and `pictures/plugin_layers.py`: tool plugins (`docs/developers/plugins.md`), the
   core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
-  `ToolError`, `PluginError`, `PLUGIN_API_VERSION`), `check_tool` (the
-  one-line reasons a tool declaration is refused), `tool_def` (a plugin tool
-  as a `ToolDef`: `when` is its task being on and its `atlases` / `planes` fitting
-  the job; `not_offered` names the tools they exclude, which `toolset.off_names`
-  counts as switched off so no text names them) and the registry of loaded
-  plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
-  `SCRIPT_CALLER` `"script"`, what a script's `job.context` writes are recorded
-  as, a name no plugin tool takes;
-  `set_loader` is how `doors/plugins` registers the code that imports a
-  plugin: the core imports nothing by name). `JobSpec.plugins` /
-  `plugin_config` are validated by loading (`toolset.tools_for`), so a bad
-  plugin is refused when the spec is made. `pictures/plugin_layers.py`: the layer
+  `ToolError`, the plugin's name for `refusal.Refused`, `PluginError`, `PLUGIN_API_VERSION`, `NAME_PATTERN`;
+  `SCRIPT_CALLER` `"script"`, what a script's `job.context` writes are
+  recorded as, a name no plugin tool takes). The declaration checks and the
+  registry of loaded plugins are the job's (`job/plugins.py`).
+  `pictures/plugin_layers.py`: the layer
   files per kind (`save_layer`, `load_layer`), and `draw_layers`, which draws
   the layers a `LookRequest.layers` names on a section or overlay picture over
   the landmark panels' geometry (outlines and halo marks, never fills;
@@ -72,24 +55,7 @@ are core-only:
   section's `layers` (state: references only, absent from the serialized
   state while empty, an annotation field of the look snapshot) are read from
   `<job folder>/plugins/` through the workspace's `job_folder`;
-- `frozen.py`: what the agent may not change (`JobSpec.frozen`). The five
-  properties a section has (`PROPERTIES`: `position`, `angles`,
-  `orientation` (flip and quarter turn together), `affine`, `deformation`),
-  the `"*"` key for every section, `clean` (validates and canonicalizes a
-  freeze), `for_section` / `everywhere` / `sections_of` / `groups`,
-  `TASK_PROPERTIES` (what each task writes), `derived` (what a task that is
-  off freezes on every section), the model-facing `statement` (sections sharing a freeze
-  are one clause: every section, their filenames, or their count) and
-  `message` (a refusal's sentence), and the `FROZEN` code. A frozen property
-  keeps the value `inputs` supplies, else its "none": the flat plane, no flip
-  and no turn, the host's identity transform, no deformation; a position has
-  none. `JobSpec.has(task)` is False for a task whose properties are all
-  frozen on every section, `JobSpec.frozen_for(id)` includes what a task that
-  is off supplies, and `JobSpec.switched_off` is `disabled` plus the tools
-  that write (`ToolDef.writes`) only properties frozen on every section and
-  the mirror under a frozen orientation (`toolset.off_names`): every door and
-  text renders by it;
-- the linear method's core: `stack/stack.py`, `spec.py`, `workspace.py`,
+- the linear method's core: `stack/stack.py`, `workspace.py`,
   `sections/images.py`, `atlas/planes.py`, `atlas/search.py`, `pictures/options.py`,
   `pictures/opening.py`, `fits/affine.py`, `fits/deformation.py`, `sections/discovery.py`. Their
   entries are in the linear agent environment's guide
@@ -122,15 +88,10 @@ are core-only:
   over accuracy; the largest grid whose TPS does not fold is sent, and only
   a TPS folding at every grid is refused).
 
-Protocol metadata: `PositionSpec.thickness_um` and `interval_um`, and the
-state's millimetre equivalents, are optional (`None` when not supplied).
-Known values are positive integers in micrometres; strict spacing requires
-an interval. Atlas reference sampling uses atlas extent when none is given.
-
 ## The layer rule
 
 - A core module takes plain inputs: the `core.workspace.Workspace` (atlas,
-  section files, render caches), the `core.stack.stack.StackState` and its
+  section files, render caches, the `ImageSettings`), the `core.stack.stack.Stack` and its
   records, ids, numbers, the core's `core.pictures.options.DisplayOptions`. It
   returns plain outputs: PIL images (captions burned in: tool images reach a
   model as bare attachments), numpy arrays, dicts and frozen dataclasses.
@@ -144,8 +105,8 @@ an interval. Atlas reference sampling uses atlas extent when none is given.
   table, `connections.py` (`CANONICAL_PROVIDERS`,
   `canonical_provider`, and `CUSTOM_PROVIDER` `"custom"`: a job whose image
   model a script hands the library itself, accepted by the spec, never
-  resolved from a name; `providers.connections` re-exports it): `spec.py`
-  validates against it and `fits/trace/` picks the GPT or Gemini prompt
+  resolved from a name; `providers.connections` re-exports it): the job's
+  settings validate against it and `fits/trace/` picks the GPT or Gemini prompt
   wording with it. A model call is only ever the `image_call` a door
   passes in; the border routes refuse a call without one.
 - No undo, no checkpoint, no wording for a
@@ -157,7 +118,7 @@ an interval. Atlas reference sampling uses atlas extent when none is given.
 ## Cutting angles are per section
 
 Every atlas plane drawn, fitted or mapped for a section is at that
-section's own angles (`SliceState.angles`): the placement pictures
+section's own angles (`Section.angles`): the placement pictures
 (`pictures/placement.py`, `CanvasFrame`), the opening's atlas tiles, the fits
 (`fits/affine.py`), the handoff and every deformable fit and trace
 (`fits/frame.py`), the deformation's `linear_key`, the maps and
@@ -165,9 +126,9 @@ section's own angles (`SliceState.angles`): the placement pictures
 angles) and so the QuickNII/VisuAlign anchorings, and `grep_atlas`'s
 in-section check. A picture without a section (`look`'s `atlas` and the
 positioning picture's atlas thumbnails, `grep_atlas_view`, the opening's
-atlas reference) is drawn at `StackState.view_angles` (the shared angle, or
+atlas reference) is drawn at `Stack.view_angles` (the shared angle, or
 the median of the sections' when they differ), and its caption says which:
-`StackState.drawn_at_median(angles)`, `pictures.captions.view_angles_label` ("at the
+`Stack.drawn_at_median(angles)`, `pictures.captions.view_angles_label` ("at the
 median of the sections' cutting angles, pitch .. yaw .."). The atlas-plane
 helpers (`atlas_fetch`, `display`) take `angles=`; None reads the stack's
 one angle (`stack.stack.plane_angles`), which raises `MixedAngles` on a stack
@@ -177,6 +138,22 @@ the angles in a caption (empty for the flat plane).
 
 ## Files
 
+- `refusal.py` — the one refusal: `Refused(code, message, **facts)` (a
+  `ValueError`; `message` positional stands right after the code in the
+  reply, `message=` among the facts stands where it is given; `status`
+  among the facts is the reply's status word, `error` by default,
+  `refused` for a gate), `payload()` the `{"status", "error": code,
+  **facts}` every door answers with (a per-section row is `{"id": ...,
+  **payload}`), `RefusalCode` (every code once, each member a `#:` line
+  saying what it means; the name is the value, `NO_SUCH_PATH` =
+  `"NOT_FOUND"` excepted), `ReplyStatus` (`ok`, `error`, `refused`) and
+  `FAILED_STATUSES`. The members are `TextEnum`s: `repr` is the plain
+  string's, so a reply prints, compares and serializes as before. Core,
+  job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
+  `plugins.ToolError` is its subclass for plugins.
+- `fits/flags.py` — `FitFlag`, the codes of a fit's flags (`FOLDS`,
+  `DISPLACEMENT_OUTSIZED`, `REGION_*`, `SCALE_CHANGED`, `SHEAR`): not
+  refusals, the fit is written; `SECTION_FLAGS`, the whole-section ones.
 - `pictures/placement.py` — a section on its physical canvas at a placement.
   `draw_canvas` is the one renderer of every placement picture (`look`'s
   `overlay` and so every change tool's picture of what it wrote, and
@@ -190,7 +167,7 @@ the angles in a caption (empty for the flat plane).
   `placement_pictures` (one section-position pair on the canvas under the
   complete registration, in the options' mode; returns `Placed`: images,
   row facts, the canvas), and the interactive transform's `stage` (the
-  working frame, calibration, canvas and resolved pivot; `StageFailure`
+  working frame, calibration, canvas and resolved pivot; `Refused`
   `ATLAS_RENDER_FAILED` / `BAD_PIVOT`) and `Staged`.
 - `sections/renders.py` — the section renders and their cache: `render_slice`
   (a look drawn unoriented at the render size, then ROTATE, then FLIP;
@@ -209,7 +186,7 @@ the angles in a caption (empty for the flat plane).
   "`make_image`"): one named grayscale picture of a section that `look`
   draws and every fit reads. **Raw**: a plane of the file
   (`Workspace.section_channels`, `raw_plane` at the working copy's size),
-  never edited. **Made**: `SliceState.images[name]` = `{"source": {"recipe":
+  never edited. **Made**: `Section.images[name]` = `{"source": {"recipe":
   ...} | {"script": note} | {"opening": "adaptive" | "host" | "plain"},
   "file", "digest", "made", "weights_used"?}`, the file
   `sections/<stem>/images/<name>.png` (8-bit gray, the working copy's size,
@@ -228,12 +205,12 @@ the angles in a caption (empty for the flat plane).
   (`payload()`: `{name, kind, file, digest}`, a fit's `inputs.section_image`),
   `identity` (what a fit's cache key holds), `images_digest` (`{name:
   digest}`, part of `section_masks.registration_parts` and so of
-  `tools.stale.section_inputs`). The opening image: `opening_source(spec)`,
+  `tools.stale.section_inputs`). The opening image: `opening_source(settings)`,
   `opening_words`, `opening_render(ws, id)` (the automatic path,
   `sections.reading.adaptive_preprocess` on the working copy, in gray; a host's blend
   is the working copy itself; `preprocess="none"` the copy in gray), written
   once as the file every reader reads, like any made image; `opening_entry`, `ensure_opening` (every section without one,
-  on threads, outside undo: `Job.open` and `Job.load`). `summary(state, spec)`:
+  on threads, outside undo: `Job.open` and `Job.load`). `summary(state, settings)`:
   `status`'s `section_images`. `Migration(ws, layout)`: a format-3 state's fields as
   format 4 (each `appearance` recipe, a section's override honoured, made into
   a file and an entry; `preprocessed` without a recipe the opening image;
@@ -299,6 +276,31 @@ the angles in a caption (empty for the flat plane).
   section's working copy (`pair_um_per_px`, `finest_um_per_px`).
   `pair_scale` sizes a pair at one position. `section_at` / `atlas_at` (and
   `pictures.panels.framed_atlas(um_per_px=)`) draw at exactly that scale.
+- `stack/` — the stack and its sections as declared shapes. `Stack`
+  (`stack.py`) holds the sections (`slices`) and the run's bookkeeping;
+  `Section` (`section.py`) its order, orientation (`flip`, `rotation_deg`),
+  `position_mm`, `angles`, damage, and frozen parts: `transform` a
+  `StoredAffine` (`affine.py`: `params`, the knobs `PhysicalAffine`,
+  `Calibration`, `FitRegions`), `deformation` a `DeformationRef`
+  (`deformation.py`: the saved fit's folder and key, its `linear_key`,
+  steps, summary; `LandmarkWarp` for a landmark warp; `kept_linear` and no
+  key or steps for a format-3 folder's `keep_linear` marker, which names no
+  saved fit), `image_correction` a
+  `BorderTrace` (`trace.py`), `landmarks` (`landmarks.py`: `Landmarks`,
+  `Pair`, `Endpoint`; None before the first pair), and `images` / `masks` /
+  `layers` (`images.py`: `ImageRef`, `MaskRef`, `LayerRef`). Section and
+  Stack are mutable (the job's live state, refilled in place by undo,
+  `Stack.replace_with`); their parts are frozen and replaced whole. The
+  JSON form of each part is `codec.py` and `landmarks_json.py`, read
+  strictly through `json_reads.py` (a key of the wrong type is a
+  `ValueError` naming it; keys a shape does not declare are kept in its
+  `extra` and written back after the declared ones), and a section's row
+  is `rows.py` (`section_to_json`, `section_from_json`, `fields_to_json`,
+  `with_fields`). The core shares that form with the state file
+  (`job/state_file.py`) because a picture's recipe records the section
+  fields it was drawn from (`pictures/look.snapshot`, `restored`) and a
+  placement's digests hash them (`fits.deformation.linear_key`,
+  `fits.frame.correction_fingerprint`), and the core cannot import `job`.
 - `stack/status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
   `status_rows` (each row's `transform` is `transform_entry`: the stored
@@ -319,7 +321,7 @@ the angles in a caption (empty for the flat plane).
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
 - `sections/masks.py` — a section's masks, saved per section
-  (`SliceState.masks`: kind `em` | `fit`, section image, resolved atlas image,
+  (`Section.masks`: kind `em` | `fit`, section image, resolved atlas image,
   params, the registration digest it was made at, file, left-out fraction;
   absent from the serialized state while empty). A mask is a float16 weight
   image `(H, W)` in [0, 1] on the fit grid, in
@@ -358,8 +360,8 @@ the angles in a caption (empty for the flat plane).
   augmented atlas's template; an additional reference whose name contains
   `nissl`; else `template`); `resolve_image` checks a name and resolves the
   alias, and `atlas_volume` resolves it too.
-- `sections/damage.py` — damage by atlas region (`SliceState.damaged_regions`;
-  `SliceState.damaged` is read-only: the section has marked regions;
+- `sections/damage.py` — damage by atlas region (`Section.damaged_regions`;
+  `Section.damaged` is read-only: the section has marked regions;
   `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the
   `(restrict_to, exclude)` every fit and the image model's trace run with,
   the marked regions added to *exclude* except an entry *restrict_to* names
@@ -369,7 +371,7 @@ the angles in a caption (empty for the flat plane).
   current registration (`pictures.placement.draw_canvas`, mode `overlay`, the warp
   from *store*) and on the atlas template (mode `template`), on one canvas
   and crop, side by side (`beside`), their outlines strong over the
-  faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
+  faint borders; `Refused` `NO_POSITION` / `NO_REGIONS`.
 - `pictures/look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, images=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
@@ -408,7 +410,7 @@ the angles in a caption (empty for the flat plane).
   section does not hold. `redraw(recipe, window, ws, state)` draws a recipe at a window,
   from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
   another version of LangSlice saved is `UNREADABLE_RECIPE` (the zoom crops
-  the saved picture). `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
+  the saved picture). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
   `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
@@ -455,7 +457,7 @@ the angles in a caption (empty for the flat plane).
   picture without a recipe, or whose sections are gone, is cropped from
   *picture* (the saved image) and enlarged towards the picture size,
   `redrawn` False, with a `crop` recipe (the box on that source). Returns
-  `Zoomed`; `ZoomError` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
+  `Zoomed`; `Refused` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
   With `region`, exactly one region replaces the box, on an overlay only
   (`BAD_REGION_PICTURE` otherwise); absent anatomy is `REGION_NOT_IN_PLANE`.
   The bounds and borders come from the saved overlay, never today's state.
@@ -522,7 +524,7 @@ the angles in a caption (empty for the flat plane).
   every placed section's frame and keeps it for the workspaces the process
   makes after it forks (`_SHARED_FRAMES`; the agent CLI's warm process,
   `doors/agent_cli/warm.py`): a later workspace takes one only at the same image
-  folder and job spec (`_scope`), key and atlas object. A section with no pixel size (neither the file
+  folder and settings text (`_scope`: `ImageSettings.settings_text`), key and atlas object. A section with no pixel size (neither the file
   nor the host gives one) is mapped at the scale its placement pictures draw
   it at, `core.fits.affine.calibrate` on its working frame (uncalibrated: the
   image width mapped onto the atlas plane's width at its CURRENT position,
@@ -583,11 +585,12 @@ the angles in a caption (empty for the flat plane).
   `correction_fingerprint` (everything an image correction's inputs
   depend on; the trace's call key and a traced fit's staleness test
   read it) and `digest`. A section without a written
-  transform is refused by `missing_transform_message(spec)`: with Linear
-  (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller to
-  supply the transforms (`inputs.transforms`, `--transforms`) or switch
-  Linear on and run `elastix_affine` on the section first (the maps still read a missing
-  transform as the identity). No provider import.
+  transform is refused with the job's own sentence
+  (`ImageSettings.missing_transform`, `JobSpec.missing_transform`): with
+  Linear (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller
+  to supply the transforms (`inputs.transforms`, `--transforms`) or switch
+  Linear on and run `elastix_affine` on the section first (the maps still
+  read a missing transform as the identity). No provider import.
 
 ## The frame of a picture and its layers
 

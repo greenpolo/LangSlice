@@ -30,12 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from langslice.core.needs import render
 from langslice.core.pictures.look import RENDERER as LOOK_RENDERER
-from langslice.core.toolset import LOOK_MODES
+from langslice.core.pictures.modes import LOOK_MODES
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.job import browse
-from langslice.job.browse import PathMissing, PathRefused
-from langslice.tools.refusal import Refused
+from langslice.job.settings.needs import render
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
@@ -83,16 +82,6 @@ def _folder(job: Job) -> Path:
     return job.layout.folder
 
 
-def _resolved(job: Job, path: str) -> Path:
-    try:
-        return browse.resolve(_folder(job), path)
-    except PathMissing as error:
-        raise Refused("NOT_FOUND", message=str(error), nearest=error.nearest,
-                      holds=error.holds) from error
-    except PathRefused as error:
-        raise Refused("BAD_PATH", message=str(error)) from error
-
-
 def _size(size: int) -> str:
     if size < 10_000:
         return f"{size} B"
@@ -108,7 +97,7 @@ def list_files(job: Job, path: str = ".", glob: str = "") -> Listing:
     below *path* whose name or path matches. At most ``browse.LIST_ENTRIES``
     are shown; the reply ends with ``N more`` for the rest.
     """
-    start = _resolved(job, path)
+    start = browse.resolve(_folder(job), path)
     entries, hidden = browse.list_entries(_folder(job), start, str(glob or ""))
     shown = browse.relative(_folder(job), start)
     rows = [f"{e.path}/" if e.kind == "dir" else f"{e.path}  {e.kind}, {_size(e.size)}"
@@ -130,8 +119,8 @@ def search_files(job: Job, query: str, path: str = ".", glob: str = "") -> Found
     not searched. *glob* keeps files whose name or path matches it.
     """
     if not str(query or ""):
-        raise Refused("BAD_ARGS", message="query is empty.")
-    start = _resolved(job, path)
+        raise Refused(RefusalCode.BAD_ARGS, message="query is empty.")
+    start = browse.resolve(_folder(job), path)
     lines, hidden, files = browse.search(_folder(job), start, str(query), str(glob or ""))
     rows = list(lines) or [f"No match in {files} file(s)."]
     if hidden:
@@ -233,10 +222,10 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
     ``look`` picture's view again (on the stack as it is now). A binary file is
     described by its size.
     """
-    real = _resolved(job, path)
+    real = browse.resolve(_folder(job), path)
     shown = browse.relative(_folder(job), real)
     if real.is_dir():
-        raise Refused("BAD_PATH", message=f"'{shown}' is a folder"
+        raise Refused(RefusalCode.BAD_PATH, message=f"'{shown}' is a folder"
                       + ("." if job.spec.off("list_files") else "; list it with list_files."))
     kind = browse.kind_of(real)
     if kind == "picture":
@@ -257,7 +246,8 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
     try:
         numbered, total, more = browse.read_lines(real, offset, limit)
     except OSError as error:
-        raise Refused("BAD_PATH", message=f"'{shown}' cannot be read: {error}") from error
+        raise Refused(RefusalCode.BAD_PATH,
+                      message=f"'{shown}' cannot be read: {error}") from error
     start = max(0, int(offset))
     if not numbered:
         text = (f"{shown} has {total} line(s); nothing at offset {start}." if total

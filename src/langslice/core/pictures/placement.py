@@ -28,12 +28,13 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
 
 from langslice.core.fits.affine import calibrate
+from langslice.core.fits.deformable.record import DeformableRecord
 from langslice.core.geometry.affine import (
     denormalized_affine,
     physical_affine_matrix,
@@ -50,6 +51,7 @@ from langslice.core.pictures.canvas import (
 from langslice.core.pictures.drawn import note
 from langslice.core.pictures.options import MODE_RULES, DisplayOptions
 from langslice.core.pictures.panels import atlas_image_picture
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.images import Look
 from langslice.core.sections.renders import (
     PREVIEW_LONG_EDGE,
@@ -58,12 +60,21 @@ from langslice.core.sections.renders import (
     shown_section,
 )
 from langslice.core.space import Plane
-from langslice.core.stack.section import IDENTITY_KNOBS, SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import physical_to_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+
+if TYPE_CHECKING:
+    from langslice.core.fits.deformation import RecordStore
 
 logger = logging.getLogger(__name__)
 
+#: The knobs of the identity, what a section without a transform is drawn at.
+IDENTITY_KNOBS: dict[str, float] = {
+    "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
+    "translate_x_mm": 0.0, "translate_y_mm": 0.0,
+}
 #: Placement modes that draw the section under its stored placement, where an
 #: applied deformation can be drawn too (``template`` draws the atlas alone).
 WARPED_PLACEMENT_MODES = ("overlay", "section")
@@ -97,7 +108,7 @@ class CanvasFrame:
     params: dict[str, float] | np.ndarray
     pivot: tuple[float, float] | None
     pivot_in_section: tuple[float, float] | None
-    warp: Any
+    warp: DeformableRecord | None
     zoom: list[float] | None
     long_edge: int
 
@@ -116,7 +127,7 @@ class Canvas:
 
 
 def canvas_label(
-    label: str, options: DisplayOptions, state: StackState | None = None,
+    label: str, options: DisplayOptions, state: Stack | None = None,
 ) -> str:
     """A physical picture's caption head: what of the section (with *state*,
     the raw channels' display properties), and any atlas under it."""
@@ -129,8 +140,8 @@ def canvas_label(
 
 def draw_canvas(
     ws: Workspace,
-    state: StackState,
-    record: SliceState,
+    state: Stack,
+    record: Section,
     section: Any,
     um_per_px: float,
     position: float,
@@ -143,7 +154,7 @@ def draw_canvas(
     label: str = "",
     long_edge: int | None = None,
     matrix_label: str = "fitted matrix",
-    warp: Any = None,
+    warp_record: DeformableRecord | None = None,
 ) -> Canvas:
     """The physical canvas pictures of one section at one placement.
 
@@ -153,9 +164,9 @@ def draw_canvas(
     included, comes out at *long_edge* (None: ``options.long_edge``)
     unless the section's working copy has fewer pixels, with a matrix and
     the pivot carried onto it. The one renderer of every placement
-    picture. *warp* (a `DeformableRecord` on this placement) resamples the
-    section into its placed-atlas frame first, so the picture shows the full
-    registration: linear placement plus deformation.
+    picture. *warp_record* (a `DeformableRecord` on this placement)
+    resamples the section into its placed-atlas frame first, so the picture
+    shows the full registration: linear placement plus deformation.
     """
     edge = int(long_edge or options.long_edge)
     window: list[float] = []
@@ -168,7 +179,7 @@ def draw_canvas(
             ws, state, record, section, um_per_px, position, params,
             replace(options, zoom=()), mode=mode, pivot=pivot,
             section_offset=section_offset, label=label, long_edge=long_edge,
-            matrix_label=matrix_label, warp=warp,
+            matrix_label=matrix_label, warp_record=warp_record,
         )
         x0, y0, x1, y1 = whole.panels[0].content_box
         window = options.window((x1 - x0, y1 - y0))
@@ -197,14 +208,14 @@ def draw_canvas(
         section_id=record.id, section=shown, um_per_px=shown_um, position_mm=position,
         plane=state.plane, pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, params=params,
         pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-        warp=warp, zoom=window, long_edge=edge,
+        warp=warp_record, zoom=window, long_edge=edge,
     )
-    detail = (_file_detail(ws, record, options.look(state, record), shown.size, warp)
+    detail = (_file_detail(ws, record, options.look(state, record), shown.size, warp_record)
               if window else None)
-    if warp is not None:
+    if warp_record is not None:
         from langslice.core.fits.deformable import warp_section_image
 
-        shown = warp_section_image(shown, warp)
+        shown = warp_section_image(shown, warp_record)
     panels: list[PanelFrame] = []
     drawn_mode = mode or options.mode
     images = physical_views(
@@ -222,20 +233,23 @@ def draw_canvas(
         matrix_label=matrix_label, template_lines=options.borders, panel_frames=panels,
         detail=detail,
     )
-    applied = (record.deformation or {}).get("record") if warp is not None else None
+    applied = None
+    if warp_record is not None and record.deformation is not None:
+        applied = record.deformation.record
     for image, panel in zip(images, panels, strict=True):
         note(image, sections=(record.id,), mode=drawn_mode, frame=frame, panel=panel,
-             deformation=applied if isinstance(applied, str) else None)
+             deformation=applied)
     return Canvas(images=images, frame=frame, panels=panels)
 
 
 def _file_detail(
-    ws: Workspace, record: SliceState, look: Look, size: tuple[int, int], warp: Any,
+    ws: Workspace, record: Section, look: Look, size: tuple[int, int],
+    warp_record: DeformableRecord | None,
 ) -> SectionDetail:
     """A zoom's section pixels from the image file
     (:mod:`langslice.core.sections.native`):
     points of the *size* render the canvas is drawn from (turned and flipped;
-    with *warp*, its warped picture), carried back through the warp
+    with *warp_record*, its warped picture), carried back through the warp
     and the turn to the working copy and read from the file at its own
     resolution, in *look*. None (the render's own pixels) when the file cannot
     be read."""
@@ -243,10 +257,10 @@ def _file_detail(
 
     def detail(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, float] | None:
         try:
-            if warp is not None:
+            if warp_record is not None:
                 from langslice.core.fits.deformable import warp_source_points
 
-                x, y = warp_source_points(warp, size, x, y)
+                x, y = warp_source_points(warp_record, size, x, y)
             ux, uy = native.unoriented_points(x, y, size, record.rotation_deg, record.flip)
             width, height = ((size[1], size[0]) if int(record.rotation_deg) % 180
                              else size)
@@ -263,22 +277,25 @@ def _file_detail(
     return detail
 
 
-def transform_words(record: SliceState, kind: str, *, warp: bool = False,
+def transform_words(section: Section, kind: str, *, warp: bool = False,
                     index: bool = False) -> str:
-    """The placement a picture of *record* is drawn under, for its caption:
+    """The placement a picture of *section* is drawn under, for its caption:
     the transform's kind and, for a stored one, its knobs
     (:func:`langslice.core.pictures.canvas.knob_words`; in parentheses for the
     index
     caption, *index*); then ``+ deformation`` when *warp* is drawn."""
-    physical = (record.transform or {}).get("physical") if kind != "identity" else None
     words = f"{kind} transform"
-    if isinstance(physical, dict) and all(key in physical for key in IDENTITY_KNOBS):
-        words += (f" ({knob_words(physical, ', ')})" if index
-                  else f" {knob_words(physical)}")
+    transform = section.transform
+    knobs = {}
+    if kind != "identity" and transform is not None and transform.physical is not None:
+        knobs = physical_to_json(transform.physical)
+    if knobs and all(key in knobs for key in IDENTITY_KNOBS):
+        words += (f" ({knob_words(knobs, ', ')})" if index
+                  else f" {knob_words(knobs)}")
     return words + (" + deformation" if warp else "")
 
 
-def orientation_words(record: SliceState) -> str:
+def orientation_words(record: Section) -> str:
     """The section's quarter turn and mirror for a caption (`` turned 90
     flipped``), empty when it has neither."""
     words = (f" turned {record.rotation_deg}" if record.rotation_deg else "") + (
@@ -286,30 +303,34 @@ def orientation_words(record: SliceState) -> str:
     return words
 
 
-def stored_placement(record: SliceState, section: Any) -> tuple[Any, str]:
+def stored_placement(
+    section: Section, rendered: Image.Image,
+) -> tuple[Any, str]:
     """``(params or matrix, kind)`` of the section's in-plane transform.
 
     The six stored numbers are the exact map (shear included); a section
-    without a transform is drawn at identity.
+    without a transform is drawn at identity. *rendered* is the section's
+    render the map is drawn on.
     """
-    transform = record.transform or {}
-    values = transform.get("params")
-    if values is not None and len(values) == 6:
-        return (denormalized_affine(values, section.size),
-                str(transform.get("kind") or "stored"))
+    transform = section.transform
+    if transform is not None and len(transform.params) == 6:
+        return (denormalized_affine(transform.params, rendered.size),
+                transform.kind or "stored")
     return dict(IDENTITY_KNOBS), "identity"
 
 
-def current_warp(store: Any, state: StackState, record: SliceState) -> Any:
+def current_warp(
+    store: RecordStore, state: Stack, section: Section,
+) -> DeformableRecord | None:
     """The section's applied deformation record from *store* (a
     :class:`~langslice.core.fits.deformation.RecordStore`), or None (none held,
     stale, or unreadable)."""
-    if not record.deformation:
+    if section.deformation is None:
         return None
     try:
-        return store.current(state, record)
+        return store.current(state, section)
     except Exception:  # a missing record must not break a placement picture
-        logger.warning("Deformation record unreadable for %s", record.id, exc_info=True)
+        logger.warning("Deformation record unreadable for %s", section.id, exc_info=True)
         return None
 
 
@@ -328,18 +349,18 @@ class Placed:
 
 
 #: Per call, each section's working frame: ``(render, um/px, calibration source)``.
-Working = dict[str, tuple[Any, float, str]]
+Working = dict[str, tuple[Image.Image, float, str]]
 
 
 def placement_pictures(
     ws: Workspace,
-    state: StackState,
-    record: SliceState,
+    state: Stack,
+    record: Section,
     position: float,
     options: DisplayOptions,
     working: Working,
     *,
-    store: Any = None,
+    store: RecordStore | None = None,
     label_note: str = "",
 ) -> Placed:
     """One section-position pair's pictures: the physical canvas in the
@@ -368,7 +389,7 @@ def placement_pictures(
         ws, state, record, section, um_per_px, position, params, options,
         label=f"{record.id}{orientation_words(record)}{label_note} vs atlas {position:.2f} mm",
         matrix_label=transform_words(record, kind, warp=warp is not None),
-        warp=warp,
+        warp_record=warp,
     )
     row["transform"] = kind
     row["transform_words"] = transform_words(record, kind, index=True)
@@ -385,20 +406,11 @@ def placement_pictures(
 # --- the interactive transform --------------------------------------------------
 
 
-class StageFailure(ValueError):
-    """A section that cannot be staged: ``code`` is ``ATLAS_RENDER_FAILED``
-    (no atlas plane at its position) or ``BAD_PIVOT``."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
 @dataclass(frozen=True)
 class Staged:
     """One section ready to be drawn or measured on its physical canvas."""
 
-    record: SliceState
+    record: Section
     section: Any
     um_per_px: float
     calibration_source: str
@@ -439,14 +451,14 @@ class Staged:
 
 
 def stage(
-    ws: Workspace, state: StackState, record: SliceState, params: dict[str, float], pivot: Any,
+    ws: Workspace, state: Stack, record: Section, params: dict[str, float], pivot: object,
 ) -> Staged:
     """*record* (which has a position) with the knobs *params*, its working
     frame, calibration and canvas, and *pivot* ("canvas" or ``[fx, fy]``
     fractions of the canvas) resolved onto it.
 
-    Raises :class:`StageFailure` when the atlas plane cannot be drawn there
-    or the pivot is not one of those.
+    Raises :class:`Refused` ``ATLAS_RENDER_FAILED`` when the atlas plane
+    cannot be drawn there, ``BAD_PIVOT`` when the pivot is not one of those.
     """
     section = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     um_per_px, source = calibrate(state, ws, record, section)
@@ -462,11 +474,12 @@ def stage(
         )
     except Exception as exc:
         logger.warning("transform: atlas render failed for %s: %s", record.id, exc)
-        raise StageFailure("ATLAS_RENDER_FAILED", str(exc)) from exc
+        raise Refused(RefusalCode.ATLAS_RENDER_FAILED,
+                      message=str(exc)) from exc
     try:
         point = pivot_on_canvas(pivot, geometry)
     except ValueError as exc:
-        raise StageFailure("BAD_PIVOT", str(exc)) from exc
+        raise Refused(RefusalCode.BAD_PIVOT, message=str(exc)) from exc
     width, height = geometry.size
     centre = point or (width / 2.0, height / 2.0)
     return Staged(

@@ -17,8 +17,10 @@ from collections.abc import Callable
 from typing import Any
 
 from langslice.core.atlas.images import resolve_image
+from langslice.core.fits.flags import FitFlag
 from langslice.core.pictures.options import default_options
 from langslice.core.pictures.sizes import AUTO_RESOLUTION, picture_edge
+from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.doors.tools.view_options import clamp_resolution
 from langslice.tools import deformable as ops_deformable
 from langslice.tools import exports as ops_exports
@@ -27,7 +29,6 @@ from langslice.tools import look as ops_look
 from langslice.tools import traces as ops_traces
 from langslice.tools import transforms as ops_transforms
 from langslice.tools.catalog import check_section_count
-from langslice.tools.refusal import Refused
 from langslice.tools.run import Door, as_list, drawn_image, pictured
 
 
@@ -42,18 +43,18 @@ def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if message and len(rows) > 1:
             message = f"Every section was refused for this reason. {message}"
         return {"error": code, **({"message": message} if message else {})}
-    return {"error": "NOTHING_FITTED"}
+    return {"error": RefusalCode.NOTHING_FITTED}
 
 
 def affine_flag_words(flag: dict[str, Any]) -> str:
     """One ``elastix_affine`` plausibility flag
     (:func:`langslice.tools.transforms.plausibility_flags`) as a sentence."""
-    if flag.get("code") == "SCALE_CHANGED":
+    if flag.get("code") == FitFlag.SCALE_CHANGED:
         scale, held = flag.get("scale") or [], flag.get("previous") or []
         return (f"SCALE_CHANGED: this fit scales the section to {scale} from {held}, more "
                 "than a section shrinks or swells; it may have stretched the section over "
                 "atlas it does not hold. Compare its picture with the previous one.")
-    if flag.get("code") == "SHEAR":
+    if flag.get("code") == FitFlag.SHEAR:
         return (f"SHEAR: this fit shears the section by {flag.get('shear')} (it held "
                 f"{flag.get('previous')}); a section is rarely sheared that much. Compare its "
                 "picture with the previous one.")
@@ -67,40 +68,29 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def shows(view: bool) -> bool:
         return bool(view) or bool(spec.force_view)
 
-    def atlas_refusal(atlas_image: str) -> dict[str, Any] | None:
+    def check_atlas_image(atlas_image: str) -> None:
         kind = str(atlas_image or "nissl").strip()
         try:
             resolve_image(ctx.atlas, kind)
         except ValueError as exc:
-            return {"status": "error", "error": "BAD_ARGS", "message": str(exc)}
-        return None
+            raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from None
 
     def elastix_affine(sections: list[str], restrict_to: list[str],
                        section_image: str = "preprocessed", atlas_image: str = "nissl",
                        mask: str = "none", edges: bool = True,
                        view: bool = True) -> dict[str, Any]:
-        try:
-            regions = ops_deformable.region_entries(ctx, job.state, as_list(restrict_to))
-        except Refused as refusal:
-            return refusal.payload()
-        refusal = atlas_refusal(atlas_image)
-        if refusal is not None:
-            return refusal
+        regions = ops_deformable.region_entries(ctx, job.state, as_list(restrict_to))
+        check_atlas_image(atlas_image)
         named = as_list(sections)
         if not named:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "sections must name one or more sections"}
-        try:
-            check_section_count(job, "elastix_affine", len(named))
-        except Refused as refusal:
-            return refusal.payload()
-        try:
-            done = ops_transforms.elastix_affine(
-                job, ctx, named, regions, str(section_image or "preprocessed"),
-                str(atlas_image or "nissl"), str(mask or "none"), bool(edges))
-        except Refused as refusal:
-            return refusal.payload()
-        fits = [row for row in done.rows if row.get("status") == "ok"]
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "sections must name one or more sections")
+        check_section_count(job, "elastix_affine", len(named))
+        done = ops_transforms.elastix_affine(
+            job, ctx, named, regions, str(section_image or "preprocessed"),
+            str(atlas_image or "nissl"), str(mask or "none"), bool(edges))
+        fits = [row for row in done.rows
+                if row.get("status") == ReplyStatus.OK]
         for row in fits:
             row.pop("params", None)  # the six raw numbers stay host-side
             # the knobs under the one name every reply gives them
@@ -141,16 +131,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                      mask: str = "none", smoothness_um: float = 80.0,
                      metric: str = "mutual_information", edges: bool = True,
                      detail: str = "standard", view: bool = True) -> dict[str, Any]:
-        try:
-            check_section_count(job, "fireants_syn", len(as_list(sections)))
-            done = ops_deformable.fireants_syn(
-                job, ctx, as_list(sections), restrict_to=as_list(restrict_to),
-                section_image=section_image, atlas_image=atlas_image, mask=mask,
-                smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
-        except Refused as refusal:
-            return refusal.payload()
+        check_section_count(job, "fireants_syn", len(as_list(sections)))
+        done = ops_deformable.fireants_syn(
+            job, ctx, as_list(sections), restrict_to=as_list(restrict_to),
+            section_image=section_image, atlas_image=atlas_image, mask=mask,
+            smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
         rows = done.rows
-        ok = [row for row in rows if row.get("status") == "ok"]
+        ok = [row for row in rows if row.get("status") == ReplyStatus.OK]
         result: dict[str, Any] = {
             "status": "ok" if ok else "error",
             **({} if ok else nothing_fitted(rows)),
@@ -178,12 +165,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def trace_borders(section: str, prompt: str, restrict_to: list[str]) -> dict[str, Any]:
         assert door.image_model is not None  # the tool exists only when traces are on
         options = default_options("borders", long_edge=picture_edge(ctx))
-        try:
-            done = ops_traces.trace_borders(
-                job, ctx, section, image_model=door.image_model, prompt=str(prompt or ""),
-                restrict_to=as_list(restrict_to), options=options)
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_traces.trace_borders(
+            job, ctx, section, image_model=door.image_model, prompt=str(prompt or ""),
+            restrict_to=as_list(restrict_to), options=options)
         trace = {key: done.record[key] for key in (
             "status", "error", "message", "cached", "prompt_edited", "attempt",
             "include", "exclude") if key in done.record}
@@ -203,14 +187,12 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 "submit waits for it."}
 
     def export_maps(sections: list[str], full_resolution: bool) -> dict[str, Any]:
-        try:
-            done = ops_exports.export_maps(job, ctx, as_list(sections),
-                                           full_resolution=bool(full_resolution))
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_exports.export_maps(job, ctx, as_list(sections),
+                                       full_resolution=bool(full_resolution))
         return {
             "status": "ok" if done.sections or not done.skipped else "error",
-            **({} if done.sections or not done.skipped else {"error": "NOTHING_EXPORTED"}),
+            **({} if done.sections or not done.skipped
+               else {"error": RefusalCode.NOTHING_EXPORTED}),
             "written": done.sections, "skipped": done.skipped,
             "full_resolution": done.full_resolution, "files_written": done.written,
             "files": [{"path": path, "kind": kind} for path, kind in done.files],
@@ -220,16 +202,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def set_landmarks(section: str, pairs: list[dict[str, Any]], delete: list[str],
                       view: bool = True) -> dict[str, Any]:
         if shows(view) and len(pairs) > 4:
-            return {"status": "error", "error": "TOO_MANY_LANDMARK_VIEWS",
-                    "message": f"You sent {len(pairs)} pairs with view true, and a call draws one "
+            raise Refused(RefusalCode.TOO_MANY_LANDMARK_VIEWS,
+                          f"You sent {len(pairs)} pairs with view true, and a call draws one "
                                "picture per pair for at most four. Nothing was written. Send "
                                f"the same {len(pairs)} pairs again with view false (no pair "
                                "pictures; the pairs are listed in the reply), or send them in "
-                               "calls of four or fewer."}
-        try:
-            result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete)
-        except Refused as refusal:
-            return refusal.payload()
+                               "calls of four or fewer.")
+        result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete)
         if not shows(view) or not result["changed"]:
             return result
         from langslice.core.pictures.drawn import collecting
@@ -237,11 +216,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
         record = job.state.by_id(result["section"])
         assert record is not None
-        full_pairs = record.landmarks.get("pairs", [])
+        full_pairs = () if record.landmarks is None else record.landmarks.pairs
         try:
             with collecting() as notes:
                 pictures = [pair_picture(ctx, job.state, record, pair, store=job.deformations)
-                            for pair in full_pairs if pair["id"] in result["changed"]]
+                            for pair in full_pairs if pair.id in result["changed"]]
             entries = ops_look.save_pictures(job, ctx, "set_landmarks", pictures, notes, {})
             return pictured(result, ops_look.Looked(
                 pictures=[p.image for p in pictures], entries=entries))
@@ -256,14 +235,12 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             try:
                 edge, note = clamp_resolution(resolution, door.box.max_view_edge)
             except (TypeError, ValueError):
-                return {"status": "error", "error": "BAD_ARGS",
-                        "message": "resolution is a whole number of pixels."}
+                raise Refused(
+                    RefusalCode.BAD_ARGS,
+                    "resolution is a whole number of pixels.") from None
         else:
             note = ""
-        try:
-            result = ops_landmarks.landmark_triangulation(job, ctx, section)
-        except Refused as refusal:
-            return refusal.payload()
+        result = ops_landmarks.landmark_triangulation(job, ctx, section)
         if note:
             result["resolution_note"] = note
         if shows(view):

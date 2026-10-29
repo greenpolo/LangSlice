@@ -41,8 +41,13 @@ from langslice.core.pictures.sizes import (
     MAX_IMAGES_PER_CALL,
     resolution_level,
 )
-from langslice.core.spec import JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.refusal import (
+    FAILED_STATUSES,
+    RefusalCode,
+    Refused,
+    ReplyStatus,
+)
+from langslice.core.stack.stack import Stack
 from langslice.doors.agent.live import LiveCallback, plain
 from langslice.doors.tools import (
     TOOL_MEDIA_PARTS_KEY,
@@ -54,6 +59,7 @@ from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE as VIEW_PICTURE_FILE
 from langslice.job.pictures import captured as captured_views
+from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
 from langslice.tools.arguments import argument_refusal
 from langslice.tools.catalog import enabled, verbs_for
@@ -64,10 +70,6 @@ if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.doors.agent.engine import EngineContext
 
 logger = logging.getLogger(__name__)
-#: The reply statuses that mean a tool failed (every other status, ``ok``,
-#: ``started``, ``running``, ``submitted`` ..., is not a failure). The one
-#: rule: each ``tool_end`` event carries it as ``failed`` for the hosts.
-FAILED_STATUSES = ("error", "refused")
 
 #: Tools whose host display targets are the whole stack.
 _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
@@ -75,7 +77,7 @@ _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
 EVENT_ARGS_BYTES = 2048
 
 
-def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
+def _tool_target_ids(state: Stack, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
     every = [record.id for record in state.in_order()]
     sections = args.get("sections")
@@ -149,7 +151,7 @@ def _job_events(job: Job, door: str) -> LiveCallback:
 
 
 def _serialized(
-    tool: Any, lock: threading.Lock, *, state: StackState | None = None,
+    tool: Any, lock: threading.Lock, *, state: Stack | None = None,
     on_event: LiveCallback | None = None,
     log: LiveCallback | None = None,
     guard: Callable[[], contextlib.AbstractContextManager[Any]] | None = None,
@@ -202,9 +204,9 @@ def _serialized(
                 with captured_views() as saved:
                     result = tool(*args, **kwargs)
             except Exception as exc:
-                notify({"kind": "tool_end", **fields, "failed": True, "response": {
-                    "status": "error", "error": type(exc).__name__, "message": str(exc),
-                }})
+                failure = Refused(type(exc).__name__, message=str(exc))
+                notify({"kind": "tool_end", **fields, "failed": True,
+                        "response": failure.payload()})
                 raise
             # The pictures as saved in the job folder (written in the
             # background): hosts show them from there, never from bytes.
@@ -377,20 +379,24 @@ def _opening_gate(tool: Any, box: ToolBox) -> Any:
     def run(*args: Any, **kwargs: Any) -> Any:
         refusal = box.opening_refusal()
         if refusal is not None:
-            return refusal
+            raise refusal
         return tool(*args, **kwargs)
 
     return run
 
 
 def _strict(tool: Any) -> Any:
-    """Refuse unknown or misplaced arguments before *tool* runs.
+    """Refuse unknown or misplaced arguments before *tool* runs, and answer
+    every refusal of the call with its reply.
 
     :func:`langslice.tools.arguments.argument_refusal` against the tool's
     signature as the model sees it: stray top-level names (direct calls; ADK
     and MCP check those at their own doors, since both drop them before a tool
     runs) and stray keys inside every typed-dict argument (``sections``
-    entries, ``cutting_angles``; every caller).
+    entries, ``cutting_angles``; every caller). A
+    :class:`~langslice.core.refusal.Refused` the tool raises (the opening
+    gate's included) is answered here with :meth:`Refused.payload`, the tool
+    door's one conversion: the steps outside see a reply, as for any call.
     """
     names = list(inspect.signature(tool, eval_str=True).parameters)
 
@@ -400,8 +406,11 @@ def _strict(tool: Any) -> Any:
         given.update(kwargs)
         refusal = argument_refusal(tool, given)
         if refusal is not None:
-            return refusal
-        return tool(*args, **kwargs)
+            return refusal.payload()
+        try:
+            return tool(*args, **kwargs)  # pyright: ignore[reportAny]  # the tool's own reply
+        except Refused as refused:
+            return refused.payload()
 
     return run
 
@@ -454,15 +463,17 @@ class ToolBox:
         if self.opening_unread is not None:
             self.opening_unread.discard(int(page))
 
-    def opening_refusal(self) -> dict[str, Any] | None:
+    def opening_refusal(self) -> Refused | None:
         """The opening-read gate's refusal, or None when it is open."""
         if not self.opening_unread:
             return None
         pages = sorted(self.opening_unread)
-        return {"status": "refused", "error": "OPENING_NOT_READ", "pages": pages,
-                "detail": "Read every opening page before the first write: "
-                + ", ".join(f"show_stack(page={page})" for page in pages)
-                + " (the pictures of the stack the job statement asks for)."}
+        calls = ", ".join(f"show_stack(page={page})" for page in pages)
+        return Refused(
+            RefusalCode.OPENING_NOT_READ, status=ReplyStatus.REFUSED,
+            pages=pages,
+            detail=f"Read every opening page before the first write: {calls}"
+            " (the pictures of the stack the job statement asks for).")
 
 # --- the toolbox ---------------------------------------------------------
 
@@ -485,7 +496,7 @@ def with_job_prompt(spec: JobSpec, image_model: ImageModel) -> ImageModel:
 
 
 def build_tools(
-    state: StackState, ctx: EngineContext, spec: JobSpec, *,
+    state: Stack, ctx: EngineContext, spec: JobSpec, *,
     job: Job | None = None,
     on_event: LiveCallback | None = None,
     max_view_edge: int | None = None,

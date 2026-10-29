@@ -11,7 +11,8 @@ One noun, two kinds, one namespace per section:
   script (``job.context.add_image``), saved as a file
   ``sections/<stem>/images/<name>.png`` (8-bit gray, the working copy's size,
   unoriented: the quarter turn and flip are applied where it is drawn) with an
-  entry in ``SliceState.images``.
+  entry in ``Section.images``
+  (an :class:`~langslice.core.stack.images.ImageRef`).
 
 An entry is ``{"source": {...}, "file": <relative to the job folder>,
 "digest": <8 hex of its pixels>, "made": <ISO time>}`` and, for a recipe whose
@@ -54,6 +55,7 @@ from typing import Any, Protocol
 import numpy as np
 from PIL import Image
 
+from langslice.core.jsonable import JsonObject
 from langslice.core.sections.reading import (
     HOST_CLAHE_CLIP,
     HOST_CLAHE_TILE,
@@ -61,9 +63,11 @@ from langslice.core.sections.reading import (
     coverage_weights,
     custom_appearance,
 )
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
-from langslice.core.workspace import Workspace
+from langslice.core.stack.codec import image_from_json, image_to_json
+from langslice.core.stack.images import ImageRef
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
+from langslice.core.workspace import ImageSettings, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -221,11 +225,15 @@ def compact_recipe(recipe: Mapping[str, Any]) -> dict[str, Any]:
 # --- the opening image -----------------------------------------------------------------
 
 
-def opening_source(spec: Any) -> dict[str, Any]:
-    """How *spec*'s jobs make ``preprocessed`` when they open (an entry's ``source``)."""
-    if spec.host_preprocessing is not None:
-        return {"opening": "host", "settings": dict(spec.host_preprocessing)}
-    if spec.preprocess == "auto":
+def opening_source(settings: ImageSettings) -> dict[str, Any]:
+    """How a job of *settings* makes ``preprocessed`` when it opens.
+
+    The value is the opening image entry's ``source``.
+    """
+    host = settings.host_preprocessing
+    if host is not None:
+        return {"opening": "host", "settings": dict(host)}
+    if settings.preprocess == "auto":
         return {"opening": "adaptive"}
     return {"opening": "plain"}
 
@@ -255,14 +263,15 @@ def opening_render(ws: Workspace, section_id: str) -> Image.Image:
     preprocesses nothing has the copy in gray)."""
     source, _factor = ws.working_source(section_id)
     image = source
-    if ws.spec.preprocess == "auto" and ws.spec.host_preprocessing is None:
+    settings = ws.settings
+    if settings.preprocess == "auto" and settings.host_preprocessing is None:
         image = adaptive_preprocess(source)
     return image.convert("L")
 
 
-def is_opening(entry: Mapping[str, Any] | None) -> bool:
+def is_opening(entry: ImageRef | None) -> bool:
     """Whether *entry* (None: no entry, the opening is implied) is an opening image."""
-    return entry is None or "opening" in (entry.get("source") or {})
+    return entry is None or "opening" in entry.source
 
 
 # --- digests, files ---------------------------------------------------------------------
@@ -303,12 +312,13 @@ def _file_for(layout: _Layout, section_id: str, name: str, digest: str) -> tuple
 
 
 def write_file(
-    layout: _Layout, section_id: str, name: str, array: np.ndarray, source: Mapping[str, Any],
-    **extra: Any,
-) -> dict[str, Any]:
+    layout: _Layout, section_id: str, name: str, array: np.ndarray, source: JsonObject,
+    *, extra: JsonObject | None = None,
+) -> ImageRef:
     """Save *array* (``(H, W)`` uint8) as image *name* of the section and return
     its entry (not set anywhere). A file of the name with the same pixels is
-    reused; another is never overwritten."""
+    reused; another is never overwritten. *extra* is what else its maker
+    records (the weights a recipe used)."""
     held = np.ascontiguousarray(np.asarray(array))
     if held.ndim != 2 or held.dtype != np.uint8:
         raise ValueError("a section image is an (H, W) uint8 array")
@@ -323,17 +333,17 @@ def write_file(
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
-    return {"source": dict(source), "file": layout.relative(path), "digest": digest,
-            "made": _now(), **extra}
+    return ImageRef(source=dict(source), file=layout.relative(path), digest=digest,
+                    made=_now(), extra=dict(extra or {}))
 
 
 def write_image(
-    layout: _Layout, record: SliceState, name: str, array: np.ndarray,
-    source: Mapping[str, Any], **extra: Any,
-) -> dict[str, Any]:
-    """:func:`write_file`, the entry set as ``record.images[name]``."""
-    entry = write_file(layout, record.id, name, array, source, **extra)
-    record.images[name] = entry
+    layout: _Layout, section: Section, name: str, array: np.ndarray,
+    source: JsonObject, *, extra: JsonObject | None = None,
+) -> ImageRef:
+    """:func:`write_file`, the entry set as ``section.images[name]``."""
+    entry = write_file(layout, section.id, name, array, source, extra=extra)
+    section.images[name] = entry
     return entry
 
 
@@ -345,19 +355,19 @@ def raw_names(ws: Workspace, section_id: str) -> list[str]:
     return [str(name) for name in ws.section_channels(section_id)[0]]
 
 
-def image_names(ws: Workspace, record: SliceState) -> list[str]:
-    """Every section image of *record*: its raw channels, then ``preprocessed``,
+def image_names(ws: Workspace, section: Section) -> list[str]:
+    """Every section image of *section*: its raw channels, then ``preprocessed``,
     then the images made since (in the order they were made)."""
-    raw = raw_names(ws, record.id)
-    made = [PREPROCESSED, *(name for name in record.images if name != PREPROCESSED)]
+    raw = raw_names(ws, section.id)
+    made = [PREPROCESSED, *(name for name in section.images if name != PREPROCESSED)]
     return [*raw, *(name for name in made if name not in raw)]
 
 
-def kind_of(ws: Workspace, record: SliceState, name: str) -> str | None:
+def kind_of(ws: Workspace, section: Section, name: str) -> str | None:
     """``raw``, ``made`` or None (no such image on the section)."""
-    if name in raw_names(ws, record.id):
+    if name in raw_names(ws, section.id):
         return RAW
-    if name == PREPROCESSED or name in record.images:
+    if name == PREPROCESSED or name in section.images:
         return MADE
     return None
 
@@ -366,8 +376,8 @@ def _working_size(ws: Workspace, section_id: str) -> tuple[int, int]:
     return ws.working_source(section_id)[0].size
 
 
-def _resolved_file(ws: Workspace, entry: Mapping[str, Any]) -> Path:
-    path = Path(str(entry["file"]))
+def _resolved_file(ws: Workspace, entry: ImageRef) -> Path:
+    path = Path(entry.file)
     if path.is_absolute():
         return path
     folder = getattr(ws, "job_folder", None)
@@ -409,14 +419,14 @@ def raw_plane(ws: Workspace, section_id: str, name: str) -> np.ndarray:
     return _cached(ws, (section_id, f"raw:{name}"), plane)
 
 
-def entry_of(record: SliceState, name: str) -> dict[str, Any] | None:
+def entry_of(section: Section, name: str) -> ImageRef | None:
     """The made image *name*'s entry (None: none, which for ``preprocessed`` is
     the opening image itself)."""
-    return record.images.get(name)
+    return section.images.get(name)
 
 
 def plane_of(
-    ws: Workspace, section_id: str, images: Mapping[str, Any], name: str,
+    ws: Workspace, section_id: str, images: Mapping[str, ImageRef], name: str,
 ) -> np.ndarray:
     """Section image *name* at the working copy's size (uint8 ``(H, W)``,
     unoriented): a raw plane, or a made image's file (``preprocessed`` without
@@ -433,13 +443,13 @@ def plane_of(
         raise ValueError(f"{section_id} has no section image {name!r}; its images: "
                          f"{', '.join([*raw_names(ws, section_id), PREPROCESSED, *images])}")
     path = _resolved_file(ws, entry)
-    return _cached(ws, (section_id, f"file:{entry['file']}:{entry.get('digest')}"),
+    return _cached(ws, (section_id, f"file:{entry.file}:{entry.digest}"),
                    lambda: _read_png(path))
 
 
-def image_plane(ws: Workspace, record: SliceState, name: str) -> np.ndarray:
-    """:func:`plane_of` for a section record."""
-    return plane_of(ws, record.id, record.images, name)
+def image_plane(ws: Workspace, section: Section, name: str) -> np.ndarray:
+    """:func:`plane_of` for a section."""
+    return plane_of(ws, section.id, section.images, name)
 
 
 @dataclass(frozen=True, eq=False)
@@ -461,35 +471,35 @@ class ImageView:
         return {"name": self.name, "kind": self.kind, "file": self.file, "digest": self.digest}
 
 
-def read_image(ws: Workspace, record: SliceState, name: str) -> ImageView:
-    """Section image *name* of *record* (``ValueError`` for a name it lacks)."""
-    kind = kind_of(ws, record, name)
+def read_image(ws: Workspace, section: Section, name: str) -> ImageView:
+    """Section image *name* of *section* (``ValueError`` for a name it lacks)."""
+    kind = kind_of(ws, section, name)
     if kind is None:
-        raise ValueError(f"{record.id} has no section image {name!r}; its images: "
-                         f"{', '.join(image_names(ws, record))}")
-    array = image_plane(ws, record, name)
+        raise ValueError(f"{section.id} has no section image {name!r}; its images: "
+                         f"{', '.join(image_names(ws, section))}")
+    array = image_plane(ws, section, name)
     if kind == RAW:
-        return ImageView(name=name, kind=RAW, array=array, digest=None, file=record.id,
+        return ImageView(name=name, kind=RAW, array=array, digest=None, file=section.id,
                          source=None)
-    entry = entry_of(record, name)
+    entry = entry_of(section, name)
     if entry is None:  # the opening image, implied
         return ImageView(name=name, kind=MADE, array=array, digest=digest_of(array), file=None,
-                         source=opening_source(ws.spec))
-    return ImageView(name=name, kind=MADE, array=array, digest=str(entry.get("digest")),
-                     file=str(entry.get("file")), source=dict(entry.get("source") or {}))
+                         source=opening_source(ws.settings))
+    return ImageView(name=name, kind=MADE, array=array, digest=entry.digest,
+                     file=entry.file, source=dict(entry.source))
 
 
-def identity(ws: Workspace, record: SliceState, name: str) -> dict[str, Any]:
+def identity(ws: Workspace, section: Section, name: str) -> dict[str, Any]:
     """What names the image a fit reads, for its cache key and record:
     ``{name, kind, digest}`` (a raw channel's digest is the file's name)."""
-    view = read_image(ws, record, name)
+    view = read_image(ws, section, name)
     return {"name": name, "kind": view.kind, "digest": view.digest}
 
 
-def images_digest(record: SliceState) -> dict[str, str]:
+def images_digest(section: Section) -> dict[str, str]:
     """``{name: digest}`` of the section's made images: what a long verb
     compares, so remaking an image while it runs makes the section stale."""
-    return {name: str(entry.get("digest")) for name, entry in sorted(record.images.items())}
+    return {name: entry.digest for name, entry in sorted(section.images.items())}
 
 
 # --- making an image from a recipe --------------------------------------------------------
@@ -512,7 +522,7 @@ def _tone(values: np.ndarray, recipe: Mapping[str, Any]) -> np.ndarray:
 
 
 def sources_of(
-    ws: Workspace, section_id: str, images: Mapping[str, Any], recipe: Mapping[str, Any],
+    ws: Workspace, section_id: str, images: Mapping[str, ImageRef], recipe: Mapping[str, Any],
 ) -> tuple[list[str], list[float] | None]:
     """``(source names, weights)`` *recipe* blends on the section: automatic
     weights are every raw channel (weights None, worked out by :func:`make`);
@@ -531,7 +541,7 @@ def sources_of(
 
 
 def make(
-    ws: Workspace, section_id: str, images: Mapping[str, Any], recipe: Mapping[str, Any],
+    ws: Workspace, section_id: str, images: Mapping[str, ImageRef], recipe: Mapping[str, Any],
 ) -> tuple[np.ndarray, dict[str, float]]:
     """*recipe* drawn on the section's working copy: ``(uint8 (H, W), the weights
     used by name)``. The steps on each source: N4, denoise, CLAHE; then the
@@ -554,45 +564,52 @@ def make(
 # --- the opening image of a job ---------------------------------------------------------
 
 
-def opening_entry(ws: Workspace, layout: _Layout, section_id: str) -> dict[str, Any]:
+def opening_entry(ws: Workspace, layout: _Layout, section_id: str) -> ImageRef:
     """The opening ``preprocessed`` image of one section, written: its entry."""
     array = np.asarray(opening_render(ws, section_id), dtype=np.uint8)
-    return write_file(layout, section_id, PREPROCESSED, array, opening_source(ws.spec))
+    source = opening_source(ws.settings)
+    return write_file(layout, section_id, PREPROCESSED, array, source)
 
 
-def ensure_opening(ws: Workspace, layout: _Layout, state: StackState) -> list[str]:
+def ensure_opening(ws: Workspace, layout: _Layout, state: Stack) -> list[str]:
     """Give every section of *state* without a ``preprocessed`` entry its opening
     image (in place, outside undo); the sections given one. A section whose
     file cannot be read is left without (logged): its pictures say so."""
-    missing = [record for record in state.slices if PREPROCESSED not in record.images]
+    missing = [section for section in state.slices if PREPROCESSED not in section.images]
     if not missing:
         return []
 
-    def one(record: SliceState) -> tuple[SliceState, dict[str, Any] | None]:
+    def one(section: Section) -> tuple[Section, ImageRef | None]:
         try:
-            return record, opening_entry(ws, layout, record.id)
+            return section, opening_entry(ws, layout, section.id)
         except Exception:  # noqa: BLE001 - an unreadable file is the section's own problem
-            logger.warning("the opening image of %s could not be made", record.id,
+            logger.warning("the opening image of %s could not be made", section.id,
                            exc_info=True)
-            return record, None
+            return section, None
 
     with ThreadPoolExecutor(max_workers=max(1, min(OPENING_THREADS, len(missing)))) as pool:
         done = list(pool.map(one, missing))
     written: list[str] = []
-    for record, entry in done:
+    for section, entry in done:
         if entry is not None:
-            record.images = {PREPROCESSED: entry, **record.images}
-            written.append(record.id)
+            section.images = {PREPROCESSED: entry, **section.images}
+            written.append(section.id)
     return written
 
 
 # --- status --------------------------------------------------------------------------------
 
 
-def describe_source(entry: Mapping[str, Any] | None, spec: Any = None) -> dict[str, Any]:
+def describe_source(entry: ImageRef | None,
+                    settings: ImageSettings | None = None) -> dict[str, Any]:
     """An entry's source as ``status`` gives it: a recipe (its steps), a
     script's note, or the opening image's recipe with when it was made."""
-    source = dict((entry or {}).get("source") or ({} if spec is None else opening_source(spec)))
+    given: Mapping[str, Any] = {}
+    if entry is not None:
+        given = entry.source
+    if not given and settings is not None:
+        given = opening_source(settings)
+    source = dict(given)
     if "recipe" in source:
         return compact_recipe(source["recipe"])
     if "script" in source:
@@ -602,19 +619,19 @@ def describe_source(entry: Mapping[str, Any] | None, spec: Any = None) -> dict[s
     return {"opening": opening_words(source), "made": "when the job opened"}
 
 
-def summary(state: StackState, spec: Any) -> dict[str, Any]:
+def summary(state: Stack, settings: ImageSettings) -> dict[str, Any]:
     """The made images of the stack for ``status``: each name with its source
     when every section holding it shares one (else the most common one and
     ``varies``: the sections that differ, with theirs), and ``only`` (the
     sections holding it, when fewer than half do) or ``except`` (the sections
     without it)."""
-    records = sorted(state.slices, key=lambda record: record.index_original)
+    records = sorted(state.slices, key=lambda section: section.index_original)
     names = list(dict.fromkeys(
-        [PREPROCESSED, *(name for record in records for name in record.images)]))
+        [PREPROCESSED, *(name for section in records for name in section.images)]))
     out: dict[str, Any] = {}
     for name in names:
-        held = {record.id: describe_source(record.images.get(name), spec)
-                for record in records if name in record.images or name == PREPROCESSED}
+        held = {section.id: describe_source(section.images.get(name), settings)
+                for section in records if name in section.images or name == PREPROCESSED}
         if not held:
             continue
         texts = [json.dumps(value, sort_keys=True) for value in held.values()]
@@ -625,7 +642,7 @@ def summary(state: StackState, spec: Any) -> dict[str, Any]:
                   if text != common}
         if differ:
             row["varies"] = differ
-        lacking = [record.id for record in records if record.id not in held]
+        lacking = [section.id for section in records if section.id not in held]
         if lacking:
             if len(held) < len(records) / 2:
                 row["only"] = list(held)
@@ -668,8 +685,8 @@ class Migration:
         if key not in self.memo:
             try:
                 array, extra = make_array()
-                self.memo[key] = write_file(self.layout, section_id, name, array, source,
-                                            **extra)
+                self.memo[key] = image_to_json(write_file(
+                    self.layout, section_id, name, array, source, extra=extra))
             except Exception:  # noqa: BLE001 - one section's recipe that cannot be made is skipped
                 logger.warning("section image %s of %s could not be made from its recipe",
                                name, section_id, exc_info=True)
@@ -697,7 +714,7 @@ class Migration:
                 if old is None:
                     if name != PREPROCESSED:
                         continue
-                    source = opening_source(self.ws.spec)
+                    source = opening_source(self.ws.settings)
                     entry = self._entry(section_id, name, source, lambda sid=section_id: (
                         np.asarray(opening_render(self.ws, sid), dtype=np.uint8), {}))
                 else:
@@ -711,9 +728,11 @@ class Migration:
                     made = dict(images)
 
                     def drawn(sid: str = section_id, rec: dict[str, Any] = recipe,
-                              held_images: dict[str, Any] = made,
+                              held_images: Mapping[str, JsonObject] = made,
                               ) -> tuple[np.ndarray, dict[str, Any]]:
-                        array, used = make(self.ws, sid, held_images, rec)
+                        made_refs = {key: image_from_json(entry)
+                                     for key, entry in held_images.items()}
+                        array, used = make(self.ws, sid, made_refs, rec)
                         return array, ({"weights_used": used}
                                        if not isinstance(rec["weights"], Mapping) else {})
 

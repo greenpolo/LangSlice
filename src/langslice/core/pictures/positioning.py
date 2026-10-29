@@ -56,8 +56,8 @@ from langslice.core.pictures.scale import (
 )
 from langslice.core.sections.images import Look
 from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
-from langslice.core.stack.section import Angles, SliceState
-from langslice.core.stack.stack import StackState, filename_stem
+from langslice.core.stack.section import Angles, Section
+from langslice.core.stack.stack import Stack, filename_stem
 from langslice.core.workspace import Workspace
 
 #: Widest positioning picture: the largest image every model lane takes in
@@ -562,7 +562,7 @@ class Positioned:
 
 
 def section_extent(
-    ws: Workspace, state: StackState, record: SliceState,
+    ws: Workspace, state: Stack, record: Section,
 ) -> tuple[tuple[float, float], float, float]:
     """``((width, height) um, working um/px, finest um/px)`` of *record*'s
     whole picture as its placement draws it
@@ -575,7 +575,7 @@ def section_extent(
 
 
 def atlas_extent(
-    ws: Workspace, state: StackState, position_mm: float, angles: Angles,
+    ws: Workspace, state: Stack, position_mm: float, angles: Angles,
 ) -> tuple[float, float]:
     """``(width, height)`` micrometres of the anatomy-framed atlas plane."""
     picture = atlas_section(ws, state, position_mm, frame=True, angles=angles)
@@ -583,7 +583,7 @@ def atlas_extent(
     return (picture.width * voxel, picture.height * voxel)
 
 
-def label_candidates(record: SliceState) -> tuple[str, ...]:
+def label_candidates(record: Section) -> tuple[str, ...]:
     """A section's first-line labels, longest first: its filename with short
     correction flags (:func:`langslice.core.pictures.opening.tile_label`), then
     the
@@ -593,11 +593,11 @@ def label_candidates(record: SliceState) -> tuple[str, ...]:
 
 def positioning_pictures(
     ws: Workspace,
-    state: StackState,
-    records: Sequence[SliceState],
+    state: Stack,
+    records: Sequence[Section],
     positions_mm: Sequence[float],
     *,
-    look_of: Callable[[SliceState], Look],
+    look_of: Callable[[Section], Look],
     atlas_options: DisplayOptions,
     angles: Angles,
     tile_edge: int,

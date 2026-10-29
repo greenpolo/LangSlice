@@ -21,9 +21,11 @@ from typing import Any
 import pytest
 
 import langslice
+from langslice.core.stack.codec import affine_to_json, deformation_to_json
 from langslice.doors.agent_cli.main import main
 from langslice.job import registrations as regs
 from langslice.job.background import DONE, Work, notice_text
+from langslice.job.state_file import stack_to_json
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -93,14 +95,14 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     # The reply's row names the registration the write left.
     first = job.fireants_syn(sections=[ID0], view=False)
     assert first["changed"][0]["registration"] == 2 and "registration" not in first
-    fitted = job.state.resolve(ID0).deformation["key"]
+    fitted = deformation_to_json(job.state.resolve(ID0).deformation)["key"]
     # Another section's write comes between, then another fit replaces the first.
     turned = job.interactive_transform(sections=[{"id": ID1, **IDENTITY, "rotation_deg": 3.0}],
                                        view=False)
     assert turned["changed"][0]["registration"] == 2
     again = job.fireants_syn(sections=[ID0], smoothness_um=40.0, view=False)
     assert again["changed"][0]["registration"] == 3
-    assert job.state.resolve(ID0).deformation["key"] != fitted
+    assert deformation_to_json(job.state.resolve(ID0).deformation)["key"] != fitted
 
     listed = job.restore_registration(section=ID0)
     assert listed["held"] == 3
@@ -123,8 +125,9 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     row = restored["results"][0]
     assert row["written"] is True and row["registration"] == 2 and row["replaced"] == 3
     assert restored["changed"][0]["registration"] == 2
-    assert job.state.resolve(ID0).deformation["key"] == fitted
-    assert job.state.resolve(ID1).transform["physical"]["rotation_deg"] == pytest.approx(3.0)
+    assert deformation_to_json(job.state.resolve(ID0).deformation)["key"] == fitted
+    assert affine_to_json(
+        job.state.resolve(ID1).transform)["physical"]["rotation_deg"] == pytest.approx(3.0)
     assert len(job.job.undo_stack) == depth + 1
     assert rows(job)[ID0]["registration"] == 2
     # The same one again writes nothing; undo takes the restore back.
@@ -147,7 +150,8 @@ def test_a_transform_alone_goes_back_and_the_numbers_are_refused_with_a_fix(caps
     assert "list" in unknown["message"]
     back = job.restore_registration(sections=[{"id": ID0, "registration": 1}])
     assert back["results"][0]["written"] is True
-    assert job.state.resolve(ID0).transform["physical"]["scale_x"] == pytest.approx(1.0)
+    assert affine_to_json(
+        job.state.resolve(ID0).transform)["physical"]["scale_x"] == pytest.approx(1.0)
     code, envelope = cli(capsys, str(images), "restore_registration", "--sections",
                          json.dumps([{"id": ID0, "registration": 9}]))
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_REGISTRATION"
@@ -168,15 +172,19 @@ def test_several_sections_go_back_in_one_step_and_a_refused_one_is_its_row(capsy
     assert [row["status"] for row in done["results"]] == ["ok", "error"]
     assert done["results"][1]["error"] == "UNKNOWN_REGISTRATION"
     assert len(job.job.undo_stack) == depth + 1
-    assert job.state.resolve(ID0).transform["physical"]["scale_x"] == pytest.approx(1.0)
-    assert job.state.resolve(ID1).transform["physical"]["scale_x"] == pytest.approx(1.2)
+    assert affine_to_json(
+        job.state.resolve(ID0).transform)["physical"]["scale_x"] == pytest.approx(1.0)
+    assert affine_to_json(
+        job.state.resolve(ID1).transform)["physical"]["scale_x"] == pytest.approx(1.2)
     both = job.restore_registration(sections=[{"id": ID0, "registration": 2},
                                               {"id": ID1, "registration": 1}], view=False)
     assert all(row["written"] for row in both["results"])
     assert len(job.job.undo_stack) == depth + 2
     job.undo()
-    assert job.state.resolve(ID0).transform["physical"]["scale_x"] == pytest.approx(1.0)
-    assert job.state.resolve(ID1).transform["physical"]["scale_x"] == pytest.approx(1.2)
+    assert affine_to_json(
+        job.state.resolve(ID0).transform)["physical"]["scale_x"] == pytest.approx(1.0)
+    assert affine_to_json(
+        job.state.resolve(ID1).transform)["physical"]["scale_x"] == pytest.approx(1.2)
     job.close()
 
 
@@ -201,7 +209,8 @@ def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, image
     with pytest.raises(RuntimeError):
         ops_registrations.restore(job.job, [{"id": ID0, "registration": 1},
                                             {"id": ID1, "registration": 1}])
-    assert job.job.state.by_id(ID0).transform["physical"]["scale_x"] == pytest.approx(1.1)
+    assert affine_to_json(
+        job.job.state.by_id(ID0).transform)["physical"]["scale_x"] == pytest.approx(1.1)
     assert len(job.job.undo_stack) == depth
     on_disk = json.loads((images / "langslice" / "state.json").read_text())
     held = next(row for row in on_disk["slices"] if row["id"] == ID0)
@@ -215,13 +224,13 @@ def test_look_draws_an_earlier_registration_and_writes_nothing(capsys, images):
         sections=[{"id": ID0, **IDENTITY, "rotation_deg": 20.0}])          # registration 2
     drawn = turned["pictures"][0]["id"]
     depth = len(job.job.undo_stack)
-    state = json.dumps(job.job.state.to_dict(), sort_keys=True, default=str)
+    state = json.dumps(stack_to_json(job.job.state), sort_keys=True, default=str)
     looked = job.look(mode="overlay", registrations={ID0: 1})
     assert looked["status"] == "ok" and len(looked["pictures"]) == 1
     caption = looked["pictures"][0]["caption"]
     assert "registration 1 (not held)" in caption
     assert len(job.job.undo_stack) == depth
-    assert json.dumps(job.job.state.to_dict(), sort_keys=True, default=str) == state
+    assert json.dumps(stack_to_json(job.job.state), sort_keys=True, default=str) == state
     held = job.look(mode="overlay", sections=[ID0], registrations={ID0: 2})
     assert "registration 2 (held)" in held["pictures"][0]["caption"]
     # The picture index records which registration each picture shows, and the
