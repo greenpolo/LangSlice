@@ -135,9 +135,7 @@ agents and settings when it starts.
 ## Step 5: Test the connection
 
 1. Start a new Codex chat.
-2. Type `/mcp` and press **Enter**. The list of connected servers includes
-   `langslice`.
-3. Send this message:
+2. Send this message:
 
    ```text
    Call LangSlice's start_job tool with no arguments and tell me what it says.

@@ -29,11 +29,17 @@ while the plugin is enabled; no `agy mcp add` is needed. Antigravity prefixes
 a plugin's servers with the plugin's name, so the server is `langslice_mcp`,
 and its tools need the allow rule `mcp(langslice_mcp/*)` (below).
 
+After installing and restarting, ask Antigravity to "Set up LangSlice.": the
+plugin's `setup` skill checks that `langslice` runs, adds the permission
+rules below to `settings.json` with this machine's folders, and calls
+`start_job` as a test.
+
 ## What is inside
 
 | Part | For | What it is |
 | --- | --- | --- |
 | skill `register-brain` | main session | prepares the job from the user's choices, starts one registration agent with `invoke_subagent`, then checks the job and handles export; it never registers itself |
+| skill `setup` | main session | once per computer: adds LangSlice's permission rules (below) to `settings.json` and tests the connection |
 | skill `abba` | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
 | MCP server `langslice_mcp` | `register` | `langslice mcp`: `start_job`, `show_stack` and the job's tools, whose replies carry the pictures |
 | agent `register` | registers one brain | the LangSlice MCP tools and `view_file`; no shell, no file writes |
@@ -84,8 +90,8 @@ command, so it runs outside the sandbox; an `mcp(langslice_mcp/*)` rule lets
 an agent call its tools without asking.
 Permissions live in one file, `~/.gemini/antigravity-cli/settings.json`, for
 every session (a headless `agy -p` cannot ask, so anything not allowed is
-denied). The settings these agents need, with the paths of this machine
-replaced by yours:
+denied). The settings these agents need, which the `setup` skill adds with
+this machine's paths:
 
 ```json
 {

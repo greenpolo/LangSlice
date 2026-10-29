@@ -141,8 +141,10 @@ agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/a
 In the app, the same is the `plugin` skill: type `/plugin`, pick **plugin**,
 and send "Please install this plugin:" followed by the address above.
 
-Add these rules to `permissions.allow` in
-`~/.gemini/antigravity-cli/settings.json`, merging with what is there:
+Restart Antigravity, then follow the plugin's `setup` skill
+(`skills/setup/SKILL.md`, or ask the app "Set up LangSlice."). It adds these
+rules to `permissions.allow` in `~/.gemini/antigravity-cli/settings.json`,
+merging with what is there:
 
 ```json
 {
@@ -158,7 +160,7 @@ Add these rules to `permissions.allow` in
 `mcp(langslice_mcp/*)` is all the `register` agent needs.
 `register-scripting` needs `command(langslice-job)`, plus the `read_file`
 and `read_url` rules in `connectors/antigravity/README.md` for scripts run
-in the sandbox. Restart Antigravity.
+in the sandbox; setup adds those too. Restart Antigravity.
 
 ### Claude Code (Claude)
 

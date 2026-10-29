@@ -2,8 +2,8 @@
 
 Antigravity is Google's app for AI agents that work on your computer, with
 Gemini models. On this page you install Antigravity, install LangSlice's
-plugin, and allow LangSlice's tools. A **plugin** is a package of add-ons
-that an app installs in one go.
+plugin, and ask Antigravity to finish setting LangSlice up. A **plugin** is a
+package of add-ons that an app installs in one go.
 
 **Before you start:** [install LangSlice](install.md), including
 [step 6, which lets your AI app find LangSlice](install.md#step-6-let-your-ai-app-find-langslice).
@@ -55,7 +55,7 @@ Antigravity installs plugins through a skill of its own, named `plugin`.
 Antigravity's reply after installing the plugin.
 :::
 
-The plugin brings LangSlice's skill, its two registration agents and its MCP
+The plugin brings LangSlice's skills, its two registration agents and its MCP
 server, named `langslice_mcp` in Antigravity.
 
 <details>
@@ -77,6 +77,8 @@ agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/a
   registration, prepares it, starts one registration agent and checks the
   result. It never registers sections itself.
 - skill `abba`: how to work with ABBA.
+- skill `setup`: adds LangSlice's permission rules to Antigravity's settings
+  and tests the connection (step 3).
 - MCP server `langslice_mcp`: LangSlice's tools, started by Antigravity as
   `langslice mcp`.
 - agent `register`: registers one brain through LangSlice's tools only, with
@@ -88,69 +90,58 @@ agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/a
 
 </details>
 
-## Step 3: Allow LangSlice's tools
+## Step 3: Ask Antigravity to set up LangSlice
 
-Antigravity runs an agent's commands in a sandbox, a walled-off space that
-cannot read most of your files. It also asks before using a tool it has no
-rule for.
-LangSlice's commands read the atlas and your images, so they need rules.
-The rules live in one settings file for every session:
-`settings.json` in the folder `.gemini/antigravity-cli` in your home folder.
+Antigravity asks before using a tool it has no rule for, and runs an agent's
+commands in a sandbox, a walled-off space that cannot read most of your files.
+LangSlice's registration agents need rules that let them use LangSlice's tools
+and read the atlas and your images. A skill in the plugin, named `setup`, adds
+them.
 
-1. Open that file in a text editor with the command for your system. If the
-   file does not exist yet, the commands create it.
+1. Click **New Conversation**.
+2. Send this message:
 
-   On Windows, in Miniforge Prompt (click **Yes** if Notepad offers to create
-   the file):
-
-   ```bat
-   mkdir "%USERPROFILE%\.gemini\antigravity-cli"
-   notepad "%USERPROFILE%\.gemini\antigravity-cli\settings.json"
+   ```text
+   Set up LangSlice.
    ```
 
-   On macOS, in Terminal:
+Antigravity follows the `setup` skill. It checks that `langslice` runs, finds
+the folders LangSlice reads, and adds LangSlice's rules to Antigravity's
+settings file. Then it calls one of LangSlice's tools as a test: LangSlice
+answers that no job is named yet and asks for an image folder. That answer
+comes from LangSlice running on your computer, so the connection works.
 
-   ```bash
-   mkdir -p ~/.gemini/antigravity-cli && touch ~/.gemini/antigravity-cli/settings.json
-   open -e ~/.gemini/antigravity-cli/settings.json
-   ```
+Antigravity may ask permission to write a file outside the workspace, the
+folder the conversation works in. Allow it. The file is `settings.json` in the
+folder `.gemini/antigravity-cli` in your home folder, where Antigravity keeps
+its own settings.
 
-   On Linux, in a terminal:
-
-   ```bash
-   mkdir -p ~/.gemini/antigravity-cli && touch ~/.gemini/antigravity-cli/settings.json
-   xdg-open ~/.gemini/antigravity-cli/settings.json
-   ```
-
-2. If the file is empty or new, paste the block below. If it already has
-   content, add the lines inside `"allow": [ ... ]` to its own `"allow"`
-   list.
-
-   ```json
-   {
-     "enableTerminalSandbox": true,
-     "toolPermission": "proceed-in-sandbox",
-     "permissions": {
-       "allow": [
-         "mcp(langslice_mcp/*)",
-         "command(langslice-job)",
-         "read_url(*)",
-         "read_file(/Users/you/Documents/LangSlice-main)",
-         "read_file(/Users/you/miniforge3/envs/langslice)",
-         "read_file(~/.brainglobe)"
-       ]
-     }
-   }
-   ```
-
-3. Replace the two example folder locations with your own: the `LangSlice-main` folder,
-   and the LangSlice environment folder (the location of `langslice` without
-   `/bin/langslice` at the end). On Windows, write them with forward
-   slashes, for example `C:/Users/you/miniforge3/envs/langslice`.
-4. Save the file, then quit Antigravity and open it again.
+:::{admonition} Screenshot to come
+The setup conversation: Antigravity asking to write the settings file, then
+reporting the test answer.
+:::
 
 <details>
-<summary>What each rule does</summary>
+<summary>What setup changed</summary>
+
+Setup adds these rules to the `allow` list in `settings.json`, with the
+folders of your computer, and keeps everything else in the file:
+
+```json
+{
+  "enableTerminalSandbox": true,
+  "toolPermission": "proceed-in-sandbox",
+  "permissions": {
+    "allow": [
+      "mcp(langslice_mcp/*)",
+      "command(langslice-job)",
+      "read_url(*)",
+      "read_file(/Users/you/miniforge3/envs/langslice)",
+      "read_file(~/.brainglobe)"
+    ]
+  }
+}
+```
 
 - `mcp(langslice_mcp/*)` lets an agent call LangSlice's tools without asking.
   This is the only rule the `register` agent needs.
@@ -161,30 +152,18 @@ The rules live in one settings file for every session:
   and documentation.
 - The `read_file` rules let a script in the sandbox read LangSlice, the
   Python it runs on, and the atlases.
+- `enableTerminalSandbox` and `toolPermission` are added only if the file
+  does not set them already.
 
 </details>
 
-## Step 4: Test the connection
-
-1. Start a new conversation in Antigravity.
-2. Send this message:
-
-   ```text
-   Call LangSlice's start_job tool with no arguments and tell me what it says.
-   ```
-
-Antigravity calls the tool and reports LangSlice's answer: no job is named
-yet, and LangSlice asks for an image folder (`start_job(image_folder=...)`).
-That answer comes from LangSlice running on your computer, so the connection
-works.
-
-:::{admonition} Screenshot to come
-The Antigravity conversation after the test message, showing the `start_job`
-call and the reply about naming an image folder.
-:::
-
 If Antigravity says it has no LangSlice tools, or the server failed to start,
 see [Troubleshooting](../troubleshooting.md#the-app-cannot-start-langslice).
+
+## Step 4: Restart Antigravity
+
+Quit Antigravity completely and open it again. Antigravity reads its settings
+file when it starts.
 
 ## Next
 

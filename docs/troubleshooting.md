@@ -108,7 +108,8 @@ Two common causes:
 - **Codex:** add `default_tools_approval_mode = "approve"` under
   `[mcp_servers.langslice]` in `config.toml`.
 - **Antigravity:** add the rule `"mcp(langslice_mcp/*)"` to the `allow` list in
-  its settings file ([step 3](getting-started/connect-antigravity.md#step-3-allow-langslices-tools)).
+  its settings file, or send "Set up LangSlice." again
+  ([step 3](getting-started/connect-antigravity.md#step-3-ask-antigravity-to-set-up-langslice)).
 - **Claude Code:** add the rule `"mcp__plugin_langslice_langslice"` to
   `permissions.allow` in a Claude Code settings file
   ([step 3](getting-started/connect-claude-code.md#step-3-test-the-connection)).
