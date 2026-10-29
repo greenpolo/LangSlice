@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import SCRIPT_CALLER, ToolError
 from langslice.doors.plugins.context import (
     Caller,
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
 
     from langslice.tools.run import Door
 
-from langslice.doors.library.replies import plain
 
 # --- a script's own method ----------------------------------------------------------------
 
@@ -298,7 +298,7 @@ class ScriptContext(ToolContext):
             with job.views.shown(SCRIPT_CALLER, atlas_of=lambda: self._door.ctx.atlas) as shown:
                 for picture in pictures:
                     noted(picture)
-                shown.show(list(pictures), arguments=plain(arguments), call_id=self.call)
+                shown.show(list(pictures), arguments=to_jsonable(arguments), call_id=self.call)
         job.views.flush()
         captions = list(shown.captions) + [None] * len(pictures)
         return [SavedPicture(path=item.folder / PICTURE_FILE, index=item.seq,

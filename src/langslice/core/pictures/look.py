@@ -41,7 +41,6 @@ doors send them beside each picture.
 from __future__ import annotations
 
 import copy
-import json
 import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
@@ -54,6 +53,7 @@ from langslice.core.atlas.borders import atlas_um_per_px
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.planes import atlas_section
 from langslice.core.fits.affine import calibrate
+from langslice.core.jsonable import to_jsonable
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
 from langslice.core.pictures.captions import (
     angles_label,
@@ -263,19 +263,6 @@ class LookPicture:
 # --- the stack a picture depends on ------------------------------------------------
 
 
-def _plain(value: Any) -> Any:
-    """*value* as JSON reads it back (tuples to lists, numpy to numbers)."""
-
-    def default(item: Any) -> Any:
-        if isinstance(item, np.generic):
-            return item.item()
-        if isinstance(item, np.ndarray):
-            return item.tolist()
-        return str(item)
-
-    return json.loads(json.dumps(value, default=default))
-
-
 def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False) -> dict[str, Any]:
     """The facts of *state* a picture of *ids* depends on: each section's
     :data:`SECTION_FIELDS` (their section images included), and with
@@ -290,7 +277,7 @@ def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False
     data: dict[str, Any] = {"sections": sections}
     if view_angles:
         data["view_angles"] = list(state.view_angles)
-    return _plain(data)
+    return to_jsonable(data)
 
 
 #: The section fields that change nothing a picture of the stack shows: the
@@ -312,7 +299,7 @@ def differs_since(state: StackState, held: dict[str, Any]) -> bool:
     """Whether *state* differs from the snapshot *held* at all, landmark
     markers included: then an old picture is drawn from the restored snapshot."""
     ids = list((held.get("sections") or {}).keys())
-    return snapshot(state, ids, view_angles="view_angles" in held) != _plain(held)
+    return snapshot(state, ids, view_angles="view_angles" in held) != to_jsonable(held)
 
 
 #: The section fields a registration is (:mod:`langslice.job.registrations`):
@@ -331,7 +318,7 @@ def changed_since(state: StackState, held: dict[str, Any], *,
     their :data:`REGISTRATION_FIELDS` are not compared."""
     ids = list((held.get("sections") or {}).keys())
     now = _without_annotations(snapshot(state, ids, view_angles="view_angles" in held))
-    then = _without_annotations(_plain(held))
+    then = _without_annotations(to_jsonable(held))
     for section_id in besides:
         for data in (now, then):
             fields = (data.get("sections") or {}).get(section_id)

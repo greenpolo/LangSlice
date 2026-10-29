@@ -43,18 +43,18 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import json
 import logging
 import os
 import threading
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langslice.core import frozen as freeze
 from langslice.core.fits import deformation
 from langslice.core.frozen import FROZEN
+from langslice.core.jsonable import Json, to_jsonable
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.spec import (
@@ -319,12 +319,16 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     if not isinstance(saved_spec, dict) or "inputs" not in saved_spec:
         return []
 
-    def plain(value: Any) -> dict[str, Any]:
-        return json.loads(json.dumps(value or {}, sort_keys=True, default=str))
-
-    saved = saved_spec
-    old, new = plain(saved.get("inputs")), plain(spec.inputs)
-    changed = [key for key in set(old) | set(new) if old.get(key) != new.get(key)]
+    # a checkpoint's spec, read as JSON
+    saved = cast("dict[str, object]", saved_spec)
+    inputs = saved.get("inputs")
+    saved_inputs: Mapping[str, Json] = {}
+    if isinstance(inputs, dict):
+        saved_inputs = cast("dict[str, Json]", inputs)
+    old = to_jsonable(saved_inputs)
+    new = to_jsonable(spec.inputs or {})
+    keys = set(old) | set(new)
+    changed = [key for key in keys if old.get(key) != new.get(key)]
     if freeze.clean(saved.get("frozen")) != freeze.clean(spec.frozen):
         changed.append("frozen")
     return sorted(changed)

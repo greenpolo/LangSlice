@@ -31,6 +31,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core import frozen as freeze
+from langslice.core.jsonable import to_jsonable
 from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.plugins import (
     SCRIPT_CALLER,
@@ -328,18 +329,6 @@ class WriteResult:
             return {"status": "error", "error": self.error, "message": self.message,
                     **self.details}
         return {"written": list(self.written), "rows": [dict(row) for row in self.rows]}
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, Mapping):
-        return {str(key): _plain(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
-    return value
 
 
 # --- who is calling ---------------------------------------------------------------------
@@ -987,22 +976,24 @@ class ToolContext:
         from langslice.tools import deformable
 
         record = self._record(section)
-        plain_meta = _plain(dict(meta or {}))
         try:
+            plain_meta = to_jsonable(dict(meta or {}), strict=True)
             json.dumps(plain_meta)
         except (TypeError, ValueError) as exc:
             raise ToolError("BAD_ARGS", f"meta is JSON values: {exc}") from exc
         text = str(note or "").strip()
+        given = to_jsonable(dict(provenance or {}), strict=True)
+        fitted_with = to_jsonable(dict(settings or {}), strict=True)
+        engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
             warp = deformable.warp_from_map(
                 self._door.job, self._door.ctx, record.id, native_xy,
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
-                                     "pixels", **_plain(dict(provenance or {}))},
+                                     "pixels", **given},
                 weights=weights, start=str(start),
-                settings=_plain(dict(settings)) if settings else None,
-                engine_settings=_plain(dict(engine_settings or {})),
+                settings=fitted_with or None, engine_settings=engine,
                 engine_version=str(engine_version or ""))
         except Refused as refusal:
             raise ToolError(refusal.code, str(refusal), **{
@@ -1675,7 +1666,7 @@ class ToolContext:
                           pictures=[item if isinstance(item, Image.Image)
                                     else Image.fromarray(np.asarray(item))
                                     for item in result.pictures],
-                          result=_plain(reply))
+                          result=to_jsonable(reply))
 
         return job.background.start(caller.name, ids, landing, wait_for_images=False).id
 
