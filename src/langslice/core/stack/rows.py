@@ -30,7 +30,7 @@ from langslice.core.stack.codec import (
     trace_from_json,
     trace_to_json,
 )
-from langslice.core.stack.images import ImageRef, MaskRef
+from langslice.core.stack.images import ImageRef, LayerRef, MaskRef
 from langslice.core.stack.json_reads import (
     as_object,
     flag_at,
@@ -139,6 +139,37 @@ def _or_default(
     return read(row, key)
 
 
+def _named(row: JsonObject, key: str, read: Callable[[JsonObject], _T]) -> _T:
+    """Return what *read* makes of a row.
+
+    Its error names the section and the part *key*.
+    """
+    try:
+        return read(row)
+    except ValueError as exc:
+        raise ValueError(f"section {row.get('id')}, {key}: {exc}") from exc
+
+
+def _part(
+    row: JsonObject, key: str, read: Callable[[JsonObject], _T]
+) -> _T | None:
+    """Return the part a row holds under *key* as *read* makes it.
+
+    None for null; its error names the section and the part.
+    """
+
+    def whole(given: JsonObject) -> _T | None:
+        data = _part_at(given, key)
+        return None if data is None else read(data)
+
+    return _named(row, key, whole)
+
+
+def _layers(row: JsonObject) -> list[LayerRef]:
+    entries = objects_at(row, "layers") if row.get("layers") else ()
+    return [layer_from_json(item) for item in entries]
+
+
 def _part_at(row: JsonObject, key: str) -> JsonObject | None:
     """Return the part a row holds under *key*, or None for null."""
     if row.get(key) is None:
@@ -209,16 +240,12 @@ def section_from_json(row: JsonObject) -> Section:
     Raises
     ------
     ValueError
-        When a key holds a value of the wrong type.
+        When a key holds a value of the wrong type; a part's error names
+        the section and the part (``section <id>, deformation: ...``).
     """
-    transform = trace = deformation = None
-    if (data := _part_at(row, "transform")) is not None:
-        transform = affine_from_json(data)
-    if (data := _part_at(row, "image_correction")) is not None:
-        trace = trace_from_json(data)
-    if (data := _part_at(row, "deformation")) is not None:
-        deformation = deformation_from_json(data)
-    layers = objects_at(row, "layers") if row.get("layers") else ()
+    transform = _part(row, "transform", affine_from_json)
+    trace = _part(row, "image_correction", trace_from_json)
+    deformation = _part(row, "deformation", deformation_from_json)
     return Section(
         id=text_at(row, "id"),
         index_original=integer_at(row, "index_original"),
@@ -231,10 +258,10 @@ def section_from_json(row: JsonObject) -> Section:
         transform=transform,
         image_correction=trace,
         deformation=deformation,
-        landmarks=_landmarks(row),
-        layers=[layer_from_json(item) for item in layers],
-        masks=_masks(row),
-        images=_images(row),
+        landmarks=_named(row, "landmarks", _landmarks),
+        layers=_named(row, "layers", _layers),
+        masks=_named(row, "masks", _masks),
+        images=_named(row, "images", _images),
         caveats=_texts(row, "caveats"),
         angles=_angles(row),
     )
