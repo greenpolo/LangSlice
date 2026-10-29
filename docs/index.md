@@ -1,5 +1,15 @@
 # LangSlice
 
+```{image} ../assets/logo/banner_light.svg
+:alt: LangSlice
+:class: only-light langslice-banner
+```
+
+```{image} ../assets/logo/banner_dark.svg
+:alt: LangSlice
+:class: only-dark langslice-banner
+```
+
 **Give LangSlice a folder of brain-section images. An AI agent places each
 section in a brain atlas and draws the atlas region borders on it. You can
 then assign cells and signal to brain regions.**

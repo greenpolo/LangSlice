@@ -68,7 +68,8 @@ plugin cannot set.
 
 | Part | For | What it is |
 | --- | --- | --- |
-| `.codex-plugin/plugin.json` | Codex | the plugin manifest: name, version, the `skills/` folder |
+| `.codex-plugin/plugin.json` | Codex | the plugin manifest: name, version, the `skills/` folder, the listing's logos |
+| `assets/` | Codex | LangSlice's logo, copies of `assets/logo/` files: `logo.svg` (light theme), `logo-dark.svg` (dark theme), `icon.svg` (the composer) |
 | `skills/setup` (`langslice:setup`) | main session, once | finds `langslice`, copies the agents and the rules into `~/.codex/`, adds the MCP server to `config.toml` |
 | `skills/register-brain` (`langslice:register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
 | `skills/abba` (`langslice:abba`) | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |

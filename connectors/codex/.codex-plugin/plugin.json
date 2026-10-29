@@ -18,6 +18,10 @@
     "defaultPrompt": [
       "Set up LangSlice",
       "Register the brain sections in my image folder"
-    ]
+    ],
+    "brandColor": "#5F6FD1",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/logo.svg",
+    "logoDark": "./assets/logo-dark.svg"
   }
 }

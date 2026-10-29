@@ -5,7 +5,7 @@ regenerate logomark/lockup/banner SVGs. build3.py holds the shared row geometry.
 Textblock v4: no aura; banner ASCII at SUB sub-rows per bar so internal
 structure of the real horizontal section shows. Row rectangles are unchanged,
 so the silhouette is still the mark's."""
-import os, glob, sys
+import os, glob, shutil, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build3 as b3
@@ -136,6 +136,16 @@ def main():
     write_banner(f"{o}/banner_black.svg", PAL["dark"], uid="bk", bg="#000000")
     for n, bg in (("logomark_dark", "#0d1117"), ("logomark_light", "#ffffff")):
         render(f"{o}/{n}.svg", f"{o}/{n}_512.png", 512, bg)
+    # each AI-app plugin installs only its own folder, so it carries copies
+    # (tests/test_connector_logos.py checks they match)
+    con = os.path.join(o, "..", "..", "connectors")
+    for dst, src in (("codex/assets/logo.svg", "logomark_light.svg"),
+                     ("codex/assets/logo-dark.svg", "logomark_dark.svg"),
+                     ("codex/assets/icon.svg", "logomark.svg"),
+                     ("antigravity/assets/logo.svg", "logomark.svg"),
+                     ("claude-code/.claude-plugin/icon.png",
+                      "logomark_light_512.png")):
+        shutil.copyfile(f"{o}/{src}", os.path.join(con, dst))
     print("done")
 
 

@@ -1,0 +1,16 @@
+/* The front page opens with the LangSlice banner, which carries the name;
+   its heading stays in the page for screen readers and the browser tab. */
+section#langslice > h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.langslice-banner {
+  display: block;
+  margin: 0 auto 1.5rem;
+  max-width: 100%;
+}

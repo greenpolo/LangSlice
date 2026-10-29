@@ -38,6 +38,7 @@ it points at this folder. To try it from a checkout:
 | agent `langslice:register` | registers one brain | only LangSlice's MCP tools (`mcp__plugin_langslice_langslice__*`), whose replies carry the pictures; no shell, no file writes, no web |
 | agent `langslice:register-scripting` | registers one brain | Bash, Read, Write, Edit and the web: the `langslice-job` command line plus scripts with the LangSlice Python library, and packages installed in the job's own environment (`langslice-job FOLDER env`) |
 | MCP server `plugin:langslice:langslice` | the `register` agent | `langslice mcp`, started with the session; its tools are also listed in the main session, which leaves them to the subagent |
+| `.claude-plugin/icon.png` | the plugin directory listing | LangSlice's logo, a copy of `assets/logo/logomark_light_512.png` |
 | hook `SubagentStop` | every registration subagent | `langslice session-end --harness claude-code` copies the subagent's transcript into the job's `trace/` folder |
 
 The role split is deliberate. The main session owns everything around the

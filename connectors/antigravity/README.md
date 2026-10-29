@@ -44,6 +44,7 @@ rules below to `settings.json` with this machine's folders, and calls
 | MCP server `langslice_mcp` | `register` | `langslice mcp`: `start_job`, `show_stack` and the job's tools, whose replies carry the pictures |
 | agent `register` | registers one brain | the LangSlice MCP tools and `view_file`; no shell, no file writes |
 | agent `register-scripting` | registers one brain | `run_command`, `view_file`, `write_to_file`, `replace_file_content` and the web: the `langslice-job` command line, scripts with the LangSlice Python library, packages installed in the job's own environment (`langslice-job FOLDER env`) |
+| `assets/logo.svg` | the plugin list | LangSlice's logo, a copy of `assets/logo/logomark.svg` |
 | hook `langslice-transcript` | every session | at the end of a session, `langslice session-end --harness antigravity` copies the transcript into the job's `trace/` folder |
 
 ## The two agents
