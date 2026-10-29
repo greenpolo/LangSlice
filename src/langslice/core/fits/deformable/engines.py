@@ -23,6 +23,8 @@ sampler gets a fixed seed.
 from __future__ import annotations
 
 import contextlib
+import importlib.metadata
+import inspect
 import io
 import logging
 import os
@@ -84,9 +86,10 @@ FIREANTS_SHRINK = 2
 #: same fixed point on the section grid in numpy).
 INVERSE_ITERATIONS = 200
 INVERSE_RELAXATION = 0.5
-#: The release built from github.com/rohitrango/FireANTs at f8a9cc2; part of
-#: the deformable cache key (``core.fits.deformation.cache_key``).
-FIREANTS_VERSION = "1.5.1"
+#: The installed FireANTs release, read from its package metadata so a fit
+#: records the release that ran it; part of the deformable cache key
+#: (``core.fits.deformation.cache_key``).
+FIREANTS_VERSION = importlib.metadata.version("fireants")
 #: CUBLAS needs this before its first use for deterministic matrix products.
 _CUBLAS_ENV = ("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
@@ -154,7 +157,7 @@ _TORCH_LOCK = threading.Lock()
 @contextlib.contextmanager
 def _windows_fcntl() -> Iterator[None]:
     """On Windows, a stand-in ``fcntl`` for the length of FireANTs' import:
-    FireANTs (1.5.1) imports the Unix-only module at the top of
+    FireANTs (1.5.0) imports the Unix-only module at the top of
     ``fireants.io.image`` for a file lock only its multi-GPU training takes,
     which LangSlice never runs. Removed afterwards, so no other library takes
     the stand-in for a working lock."""
@@ -413,6 +416,18 @@ def _global_step_sgd() -> type:
     return GlobalStepSGD
 
 
+def _sgd_options() -> dict[str, int]:
+    """Return FireANTs' SGD options for one composition per step.
+
+    FireANTs 1.5.0's SGD composes each step once and takes no
+    ``compose_n``; a newer FireANTs takes ``compose_n`` and composes ten
+    times by default.
+    """
+    if "compose_n" in inspect.signature(_global_step_sgd()).parameters:
+        return {"compose_n": 1}
+    return {}
+
+
 def _invert(torch: Any, displacement: Any) -> Any:
     """v with v(x) = -u(x + v(x)) for a (1, H, W, 2) normalized displacement u:
     damped fixed point, by sampling only. FireANTs' own inversion
@@ -498,7 +513,7 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
                     loss_type="masked_custom",
                     custom_loss=_channel_loss(torch, terms, 2 * radius + 1, balanced=traced),
                     optimizer="SGD", optimizer_lr=learning_rate,
-                    optimizer_params={"compose_n": 1},
+                    optimizer_params=_sgd_options(),
                     smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
                     progress_bar=False, dtype=torch.float32,
                 )
