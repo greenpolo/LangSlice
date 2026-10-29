@@ -49,6 +49,7 @@ from langslice.core.fits.trace.prompts import (
 )
 from langslice.core.fits.trace.request import SegmentationGenerationRequest
 from langslice.core.geometry.affine import pixel_center_map
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
@@ -147,11 +148,11 @@ def _open_attempt(
         with in_progress.open("x") as handle:
             handle.write("Request in progress; no completed outcome recorded yet.\n")
     except FileExistsError:
-        return {
-            "status": "error", "error": "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED",
-            "id": section_id, "geometry_fingerprint": fingerprint,
-            "artifact_dir": str(call_directory),
-        }
+        return Refused(
+            RefusalCode.IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED,
+            id=section_id, geometry_fingerprint=fingerprint,
+            artifact_dir=str(call_directory),
+        ).payload()
     attempt = int((previous or {}).get("attempt", 0)) + 1
     directory = call_directory / f"attempt-{attempt:02d}"
     directory.mkdir()

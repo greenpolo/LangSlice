@@ -7,7 +7,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.tools.refusal import Refused, check_frozen
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.tools.refusal import check_frozen
 
 if TYPE_CHECKING:
     from langslice.core.stack.section import SliceState
@@ -128,24 +129,30 @@ def position_sections(
     entries = list(sections) if sections is not None else []
     for entry in entries:
         if not isinstance(entry, Mapping) or "id" not in entry:
-            raise Refused("BAD_ARGS", message="each section is {id, position_mm}")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="each section is {id, position_mm}")
         try:
             value = float(entry.get("position_mm"))  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            raise Refused("BAD_ARGS", message="position_mm must be a number") from None
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="position_mm must be a number") from None
         if not math.isfinite(value):
-            raise Refused("BAD_ARGS", message="position_mm must be finite")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="position_mm must be finite")
         pairs.append((entry["id"], value))
     angles: tuple[float, float] | None = None
     if cutting_angles is not None:
         try:
             angles = (float(cutting_angles["pitch_deg"]), float(cutting_angles["yaw_deg"]))
         except (TypeError, ValueError, KeyError):
-            raise Refused("BAD_ARGS", message="cutting_angles is {pitch_deg, yaw_deg}") from None
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="cutting_angles is {pitch_deg, yaw_deg}") from None
         if not all(math.isfinite(value) for value in angles):
-            raise Refused("BAD_ARGS", message="cutting angles must be finite")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message="cutting angles must be finite")
     if not pairs and angles is None:
-        raise Refused("BAD_ARGS", message="give sections or cutting_angles")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="give sections or cutting_angles")
     if pairs:
         named = [record.id for ref, _value in pairs
                  if (record := job.state.resolve(ref)) is not None]

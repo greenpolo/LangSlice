@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from langslice.core import frozen as freeze
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.spec import PLANES
 from langslice.core.toolset import (
     GROUPS,
@@ -67,19 +68,19 @@ KIND_FRAMES: dict[str, tuple[str, ...]] = {
 MAX_LAYER_NAME = 48
 
 
-class ToolError(Exception):
-    """Raised by a plugin handler to refuse a call: nothing is written for
-    it. ``code`` is the machine-readable reason, ``details`` plain facts; the
-    reply is ``{"status": "error", "error": code, "message": ..., **details}``."""
+class ToolError(Refused):
+    """Raised by a plugin handler to refuse a call: nothing is written for it.
+
+    The plugin's name for :class:`~langslice.core.refusal.Refused`: ``code``
+    is the machine-readable reason (a ``RefusalCode`` member, or a code of
+    the plugin's own), ``message`` says why (the code when it is empty) and
+    ``details`` are plain facts; the reply is ``{"status": "error", "error":
+    code, "message": ..., **details}``.
+    """
 
     def __init__(self, code: str, message: str = "", **details: Any) -> None:
-        super().__init__(message or code)
-        self.code = str(code)
-        self.message = str(message or code)
+        super().__init__(str(code), str(message or code), **details)
         self.details = details
-
-    def payload(self) -> dict[str, Any]:
-        return {"status": "error", "error": self.code, "message": self.message, **self.details}
 
 
 class PluginError(ValueError):
@@ -223,41 +224,53 @@ class Layer:
     def check(self) -> None:
         """``ToolError`` ``BAD_LAYER`` naming what is wrong."""
         if self.kind not in LAYER_KINDS:
-            raise ToolError("BAD_LAYER", f"a layer's kind is one of {', '.join(LAYER_KINDS)}; "
+            raise ToolError(RefusalCode.BAD_LAYER,
+                            f"a layer's kind is one of {', '.join(LAYER_KINDS)}; "
                             f"got {self.kind!r}")
         if self.frame not in KIND_FRAMES[self.kind]:
-            raise ToolError("BAD_LAYER", f"a {self.kind} layer's frame is "
+            raise ToolError(RefusalCode.BAD_LAYER,
+                            f"a {self.kind} layer's frame is "
                             f"{' or '.join(KIND_FRAMES[self.kind])}; got {self.frame!r}")
         if len(self.name) > MAX_LAYER_NAME:
-            raise ToolError("BAD_LAYER", f"a layer's name is at most {MAX_LAYER_NAME} characters")
+            raise ToolError(RefusalCode.BAD_LAYER,
+                            f"a layer's name is at most {MAX_LAYER_NAME} characters")
         width = 2 if self.frame == "section_px" else 3
         if self.kind == "points":
             if self.xy is None or self.xy.ndim != 2 or self.xy.shape[1] != width:
-                raise ToolError("BAD_LAYER", f"points in {self.frame} are an (N, {width}) array")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                f"points in {self.frame} are an (N, {width}) array")
             if not np.isfinite(self.xy).all():
-                raise ToolError("BAD_LAYER", "points must be finite")
+                raise ToolError(RefusalCode.BAD_LAYER, "points must be finite")
             if self.tags and len(self.tags) != len(self.xy):
-                raise ToolError("BAD_LAYER", "points take one label each, or none")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                "points take one label each, or none")
             if self.values and len(self.values) != len(self.xy):
-                raise ToolError("BAD_LAYER", "points take one value each, or none")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                "points take one value each, or none")
         elif self.kind == "lines":
             for coordinates, _closed in self.paths:
                 if coordinates.ndim != 2 or coordinates.shape[1] != width \
                         or len(coordinates) < 2 or not np.isfinite(coordinates).all():
-                    raise ToolError("BAD_LAYER", f"each line in {self.frame} is a finite "
+                    raise ToolError(RefusalCode.BAD_LAYER,
+                                    f"each line in {self.frame} is a finite "
                                     f"(M, {width}) array with at least two points")
             if self.tags and len(self.tags) != len(self.paths):
-                raise ToolError("BAD_LAYER", "lines take one label each, or none")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                "lines take one label each, or none")
         elif self.kind in ("labels", "scalar"):
             raster = self.raster
             if raster is None or raster.ndim != 2 or raster.size == 0:
-                raise ToolError("BAD_LAYER", f"a {self.kind} layer is a 2-D raster")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                f"a {self.kind} layer is a 2-D raster")
             if self.kind == "labels" and not np.issubdtype(raster.dtype, np.integer):
-                raise ToolError("BAD_LAYER", "a labels raster holds integers")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                "a labels raster holds integers")
             if self.kind == "labels" and raster.size and int(raster.min()) < 0:
-                raise ToolError("BAD_LAYER", "label ids are not negative")
+                raise ToolError(RefusalCode.BAD_LAYER,
+                                "label ids are not negative")
         elif self.image is None:
-            raise ToolError("BAD_LAYER", "a picture layer holds an image")
+            raise ToolError(RefusalCode.BAD_LAYER,
+                            "a picture layer holds an image")
 
 
 # --- the declaration checks -----------------------------------------------------------

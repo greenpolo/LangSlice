@@ -36,9 +36,6 @@ PROPERTIES: tuple[str, ...] = ("position", "angles", "orientation", "affine", "d
 #: The key of ``frozen`` that names every section.
 EVERY = "*"
 
-#: The code of a write refused because it would change a frozen property.
-FROZEN = "FROZEN"
-
 #: The properties each task writes (``JobSpec.tasks``).
 TASK_PROPERTIES: dict[str, tuple[str, ...]] = {
     "position": ("position", "angles"),

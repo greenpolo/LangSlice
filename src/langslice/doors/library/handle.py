@@ -219,7 +219,7 @@ class JobHandle:
         *full_resolution* the image file's own pixels. A section without a
         placement, or whose deformation record or file cannot be read, raises
         ``ValueError``; an unknown name, ``UNKNOWN_SLICE_IDS``
-        (:class:`langslice.tools.refusal.Refused`, a ``ValueError``)."""
+        (:class:`langslice.core.refusal.Refused`, a ``ValueError``)."""
         from langslice.tools.exports import section_maps
 
         return section_maps(self._opened.job, self._opened.ctx, section,

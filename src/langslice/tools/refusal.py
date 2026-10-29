@@ -1,12 +1,17 @@
-"""What an operation answers when it cannot do what it was asked."""
+"""The refusals every tool shares: an unknown section, a frozen or busy one.
+
+The refusal itself is the core's (:class:`langslice.core.refusal.Refused`,
+its codes :class:`langslice.core.refusal.RefusalCode`); these are the ones
+the job's rules decide, raised for a whole call or given as one section's
+row of a per-section answer.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.atlas.sides import SideError
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import StackState
 from langslice.core.stack.stack import (
     unknown_sections as state_unknown_sections,
@@ -15,52 +20,13 @@ from langslice.core.stack.stack import (
 if TYPE_CHECKING:
     from langslice.job.job import Job
 
-#: The code of a call naming a section that is not in the stack.
-UNKNOWN_SLICE_IDS = "UNKNOWN_SLICE_IDS"
 
-
-class Refused(ValueError):
-    """An operation refused, with nothing written.
-
-    *code* is the machine-readable reason (``UNKNOWN_SLICE_IDS``,
-    ``BAD_ARGS``...); *details* are the plain facts behind it (the ids, the
-    allowed values). *status* is ``error`` (the call could not run) or
-    ``refused`` (a gate: the call is valid but the job is not ready, as
-    ``submit``'s). :meth:`payload` is the shape every door answers with.
-    """
-
-    def __init__(self, code: str, *, status: str = "error", **details: Any) -> None:
-        super().__init__(str(details.get("message") or code))
-        self.code = code
-        self.status = status
-        self.details = details
-
-    @classmethod
-    def of(cls, payload: Mapping[str, Any]) -> Refused:
-        """The refusal a ``{"status", "error", ...}`` payload states (a job gate's)."""
-        rest = {key: value for key, value in payload.items() if key not in ("status", "error")}
-        return cls(str(payload.get("error")), status=str(payload.get("status") or "error"),
-                   **rest)
-
-    def payload(self) -> dict[str, Any]:
-        return {"status": self.status, "error": self.code, **self.details}
-
-
-@contextmanager
-def sides_refused() -> Iterator[None]:
-    """Inside the block a :class:`~langslice.core.atlas.sides.SideError` (a side
-    the placement cannot define) becomes the :class:`Refused` of its own code."""
-    try:
-        yield
-    except SideError as exc:
-        raise Refused(exc.code, message=str(exc)) from exc
-
-
-def unknown_sections(state: StackState, refs: Any) -> Refused:
+def unknown_sections(state: StackState, refs: object) -> Refused:
     """``UNKNOWN_SLICE_IDS`` for *refs* that name no section: the refs, the
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.stack.stack.unknown_sections`)."""
-    return Refused(UNKNOWN_SLICE_IDS, **state_unknown_sections(state, refs))
+    return Refused(RefusalCode.UNKNOWN_SLICE_IDS,
+                   **state_unknown_sections(state, refs))
 
 
 def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> None:
@@ -70,7 +36,7 @@ def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> No
     the job froze: the whole call refuses, nothing written."""
     found = job.busy_refusal(section_ids) or job.frozen_refusal(section_ids, *properties)
     if found is not None:
-        raise Refused(found.pop("error"), **found)
+        raise found
 
 
 def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | None:
@@ -80,7 +46,7 @@ def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | 
     found = job.busy_refusal([section_id]) or job.frozen_refusal([section_id], *properties)
     if found is None:
         return None
-    extra = ({"work": found["work"]} if "work" in found
-             else {"properties": found["properties"]})
-    return {"id": section_id, "status": "error", "error": found["error"], **extra,
-            "message": found["message"]}
+    named = "work" if "work" in found.facts else "properties"
+    row = Refused(found.code,
+                  **{named: found.facts[named]}, message=found.message)
+    return {"id": section_id, **row.payload()}

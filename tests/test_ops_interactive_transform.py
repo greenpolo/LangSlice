@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.tools import transforms
-from langslice.tools.refusal import Refused
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,
     _left_half_section,

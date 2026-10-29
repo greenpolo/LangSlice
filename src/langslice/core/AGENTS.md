@@ -52,7 +52,8 @@ are core-only:
   pinned model-facing text. A new tool or option is a row here too;
 - `plugins.py` and `pictures/plugin_layers.py`: tool plugins (`docs/developers/plugins.md`), the
   core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
-  `ToolError`, `PluginError`, `PLUGIN_API_VERSION`), `check_tool` (the
+  `ToolError`, the plugin's name for `refusal.Refused`, `PluginError`,
+  `PLUGIN_API_VERSION`), `check_tool` (the
   one-line reasons a tool declaration is refused), `tool_def` (a plugin tool
   as a `ToolDef`: `when` is its task being on and its `atlases` / `planes` fitting
   the job; `not_offered` names the tools they exclude, which `toolset.off_names`
@@ -177,6 +178,22 @@ the angles in a caption (empty for the flat plane).
 
 ## Files
 
+- `refusal.py` — the one refusal: `Refused(code, message, **facts)` (a
+  `ValueError`; `message` positional stands right after the code in the
+  reply, `message=` among the facts stands where it is given; `status`
+  among the facts is the reply's status word, `error` by default,
+  `refused` for a gate), `payload()` the `{"status", "error": code,
+  **facts}` every door answers with (a per-section row is `{"id": ...,
+  **payload}`), `RefusalCode` (every code once, each member a `#:` line
+  saying what it means; the name is the value, `NO_SUCH_PATH` =
+  `"NOT_FOUND"` excepted), `ReplyStatus` (`ok`, `error`, `refused`) and
+  `FAILED_STATUSES`. The members are `TextEnum`s: `repr` is the plain
+  string's, so a reply prints, compares and serializes as before. Core,
+  job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
+  `plugins.ToolError` is its subclass for plugins.
+- `fits/flags.py` — `FitFlag`, the codes of a fit's flags (`FOLDS`,
+  `DISPLACEMENT_OUTSIZED`, `REGION_*`, `SCALE_CHANGED`, `SHEAR`): not
+  refusals, the fit is written; `SECTION_FLAGS`, the whole-section ones.
 - `pictures/placement.py` — a section on its physical canvas at a placement.
   `draw_canvas` is the one renderer of every placement picture (`look`'s
   `overlay` and so every change tool's picture of what it wrote, and
@@ -190,7 +207,7 @@ the angles in a caption (empty for the flat plane).
   `placement_pictures` (one section-position pair on the canvas under the
   complete registration, in the options' mode; returns `Placed`: images,
   row facts, the canvas), and the interactive transform's `stage` (the
-  working frame, calibration, canvas and resolved pivot; `StageFailure`
+  working frame, calibration, canvas and resolved pivot; `Refused`
   `ATLAS_RENDER_FAILED` / `BAD_PIVOT`) and `Staged`.
 - `sections/renders.py` — the section renders and their cache: `render_slice`
   (a look drawn unoriented at the render size, then ROTATE, then FLIP;
@@ -369,7 +386,7 @@ the angles in a caption (empty for the flat plane).
   current registration (`pictures.placement.draw_canvas`, mode `overlay`, the warp
   from *store*) and on the atlas template (mode `template`), on one canvas
   and crop, side by side (`beside`), their outlines strong over the
-  faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
+  faint borders; `Refused` `NO_POSITION` / `NO_REGIONS`.
 - `pictures/look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, images=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
@@ -408,7 +425,7 @@ the angles in a caption (empty for the flat plane).
   section does not hold. `redraw(recipe, window, ws, state)` draws a recipe at a window,
   from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
   another version of LangSlice saved is `UNREADABLE_RECIPE` (the zoom crops
-  the saved picture). `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
+  the saved picture). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
   `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
@@ -455,7 +472,7 @@ the angles in a caption (empty for the flat plane).
   picture without a recipe, or whose sections are gone, is cropped from
   *picture* (the saved image) and enlarged towards the picture size,
   `redrawn` False, with a `crop` recipe (the box on that source). Returns
-  `Zoomed`; `ZoomError` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
+  `Zoomed`; `Refused` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
   With `region`, exactly one region replaces the box, on an overlay only
   (`BAD_REGION_PICTURE` otherwise); absent anatomy is `REGION_NOT_IN_PLANE`.
   The bounds and borders come from the saved overlay, never today's state.

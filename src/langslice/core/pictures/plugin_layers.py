@@ -37,6 +37,7 @@ from PIL import Image, ImageDraw
 
 from langslice.core.fits.landmarks import transform
 from langslice.core.plugins import Layer, ToolError
+from langslice.core.refusal import RefusalCode
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 
@@ -259,7 +260,8 @@ class _Mapper:
 
     def from_section_px(self, xy: np.ndarray) -> np.ndarray:
         if self.section is None:
-            raise ToolError("LAYER_NOT_DRAWABLE", "this picture has no section to place a "
+            raise ToolError(RefusalCode.LAYER_NOT_DRAWABLE,
+                            "this picture has no section to place a "
                             "section layer on")
         width, height = self.file_size()
         fractions = (np.asarray(xy, dtype=np.float64) + 0.5) / np.array([width, height])
@@ -275,7 +277,8 @@ class _Mapper:
             native_xy = rowcol[:, ::-1]
             return transform(np.linalg.inv(np.asarray(self.atlas["pixel_to_native"])), native_xy)
         if self.section is None:
-            raise ToolError("LAYER_NOT_DRAWABLE", "this picture shows no plane to place an "
+            raise ToolError(RefusalCode.LAYER_NOT_DRAWABLE,
+                            "this picture shows no plane to place an "
                             "atlas layer on")
         width, height = frame.file_size
         matrix = np.asarray(frame.pixel_to_atlas_um(), dtype=np.float64)
@@ -294,7 +297,8 @@ class _Mapper:
         it lies on the section (``inside``). ``(rows, cols, inside)`` stacked as
         two arrays of the bounds' shape plus the mask."""
         if self.section is None:
-            raise ToolError("LAYER_NOT_DRAWABLE", "this picture has no section to place a "
+            raise ToolError(RefusalCode.LAYER_NOT_DRAWABLE,
+                            "this picture has no section to place a "
                             "raster layer on")
         x0, y0, x1, y1 = self.bounds
         xs, ys = np.meshgrid(np.arange(int(x0), int(x1)), np.arange(int(y0), int(y1)))

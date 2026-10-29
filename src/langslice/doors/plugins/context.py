@@ -39,13 +39,18 @@ from langslice.core.plugins import (
     ToolResult,
     ToolSpec,
 )
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
-from langslice.tools.refusal import Refused, frozen_row, unknown_sections
-from langslice.tools.stale import STALE_INPUT, section_inputs, stale_row
+from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
     from langslice.tools.run import Door
+
+
+#: The row of a write row whose ``id`` names no section, after its ``id``.
+UNKNOWN_ROW = Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload()
 
 
 # --- what a handler reads ---------------------------------------------------------------
@@ -319,14 +324,13 @@ class WriteResult:
     @classmethod
     def refused(cls, refusal: Refused) -> WriteResult:
         return cls(ok=False, error=refusal.code, message=str(refusal),
-                   details={key: value for key, value in refusal.details.items()
+                   details={key: value for key, value in refusal.facts.items()
                             if key != "message"})
 
     def reply(self) -> dict[str, Any]:
         """The result as reply fields: ``written`` and ``rows``, or the refusal."""
         if not self.ok:
-            return {"status": "error", "error": self.error, "message": self.message,
-                    **self.details}
+            return Refused(str(self.error), message=self.message, **self.details).payload()
         return {"written": list(self.written), "rows": [dict(row) for row in self.rows]}
 
 
@@ -406,7 +410,7 @@ class Caller:
 
 
 def _not_for_scripts(what: str) -> ToolError:
-    return ToolError("NOT_FOR_SCRIPTS", what)
+    return ToolError(RefusalCode.NOT_FOR_SCRIPTS, what)
 
 
 # --- the context -------------------------------------------------------------------------
@@ -473,7 +477,7 @@ class ToolContext:
         state = self._door.state
         record = state.resolve(section)
         if record is None:
-            raise ToolError("UNKNOWN_SLICE_IDS", **unknown_sections(state, [str(section)]).details)
+            raise _as_tool_error(unknown_sections(state, [str(section)]))
         return record
 
     def _view(self, record: SliceState) -> SectionView:
@@ -575,7 +579,7 @@ class ToolContext:
         try:
             return np.array(raw_plane(self._door.ctx, record.id, str(name)))
         except ValueError as exc:
-            raise ToolError("UNKNOWN_IMAGE", str(exc)) from exc
+            raise ToolError(RefusalCode.UNKNOWN_IMAGE, str(exc)) from exc
 
     def working_rgb(self, section: object) -> np.ndarray:
         """The section's working copy as read, ``uint8`` ``(H, W, 3)`` in the image
@@ -611,7 +615,8 @@ class ToolContext:
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         if view.stale:
-            raise ToolError("STALE_MASK", f"{record.id}'s mask {name!r} was made before the "
+            raise ToolError(RefusalCode.STALE_MASK,
+                            f"{record.id}'s mask {name!r} was made before the "
                             "section changed; make it again with make_mask.")
         return view
 
@@ -662,31 +667,35 @@ class ToolContext:
         elif level in PICTURE_EDGES:
             edge = PICTURE_EDGES[level][1]
         else:
-            raise ToolError("BAD_ARGS", f"level is a pixel size or one of "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"level is a pixel size or one of "
                             f"{', '.join(PICTURE_EDGES)}; got {level!r}")
         names = [str(name) for name in images or ()]
         known = self.image_names(record.id)
         unknown = [name for name in names if name not in known]
         if unknown:
-            raise ToolError("UNKNOWN_IMAGE", f"{record.id} has no section image "
+            raise ToolError(RefusalCode.UNKNOWN_IMAGE,
+                            f"{record.id} has no section image "
                             f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
         look: Any = None
         if raw:
             if len(names) > 1 or (names and kind_of(self._door.ctx, record, names[0]) != "raw"):
-                raise ToolError("BAD_ARGS", "raw takes no image (the file as it is) or one "
+                raise ToolError(RefusalCode.BAD_ARGS,
+                                "raw takes no image (the file as it is) or one "
                                 "raw channel name")
             look = {"image": names[0]} if names else {"file": True}
         elif len(names) == 1:
             look = {"image": names[0]}
         elif names:
             if any(kind_of(self._door.ctx, record, name) != "raw" for name in names):
-                raise ToolError("BAD_ARGS", "several images are drawn together only when all "
+                raise ToolError(RefusalCode.BAD_ARGS,
+                                "several images are drawn together only when all "
                                 "are raw channels")
             look = {"overlay": names}
         try:
             image = render_slice(self._door.ctx, record, long_edge=edge, look=look)
         except ValueError as exc:
-            raise ToolError("BAD_ARGS", str(exc)) from exc
+            raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
             file_size=tuple(render_sizes(self._door.ctx, record.id).file_size),  # type: ignore[arg-type]
@@ -697,7 +706,8 @@ class ToolContext:
         from langslice.core.geometry.affine import IDENTITY_PARAMS
 
         if record.position_mm is None:
-            raise ToolError("NO_POSITION", f"{record.id} has no position yet")
+            raise ToolError(RefusalCode.NO_POSITION,
+                            f"{record.id} has no position yet")
         # Keyed by what the grid is drawn from: a script's context outlives a
         # placement change.
         key = (record.id, section_inputs(self._door.state, record))
@@ -707,7 +717,8 @@ class ToolContext:
                     self._door.state, self._door.ctx, record,
                     transform={"params": list(IDENTITY_PARAMS)})
             except ValueError as exc:
-                raise ToolError("INVALID_LINEAR_PLACEMENT", f"{record.id}: {exc}") from exc
+                raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                f"{record.id}: {exc}") from exc
         return self._grids[key]
 
     def fit_frame(self, section: object, *, atlas: Sequence[str] = (
@@ -799,7 +810,8 @@ class ToolContext:
 
             known = self.image_names(record.id)
             if wanted not in known:
-                raise ToolError("UNKNOWN_IMAGE", f"{record.id} has no section image "
+                raise ToolError(RefusalCode.UNKNOWN_IMAGE,
+                                f"{record.id} has no section image "
                                 f"{wanted!r}; its images: {', '.join(known)}",
                                 images=list(known))
             picture = np.asarray(deformation.section_image(
@@ -844,12 +856,13 @@ class ToolContext:
         point = np.asarray(point_um, dtype=np.float64)
         if normal.shape != (3,) or point.shape != (3,) or not (
                 np.isfinite(normal).all() and np.isfinite(point).all()) or not normal.any():
-            raise ToolError("BAD_PLANE", "normal_um and point_um are three finite numbers, "
+            raise ToolError(RefusalCode.BAD_PLANE,
+                            "normal_um and point_um are three finite numbers, "
                             "the normal not zero")
         try:
             pitch, yaw = plane_angles(normal, atlas, plane)
         except ValueError as exc:
-            raise ToolError("BAD_PLANE", str(exc)) from exc
+            raise ToolError(RefusalCode.BAD_PLANE, str(exc)) from exc
         return {"position_mm": float(plane_position_mm(point, normal, atlas, plane)),
                 "pitch_deg": float(pitch), "yaw_deg": float(yaw)}
 
@@ -861,7 +874,8 @@ class ToolContext:
 
         offered = ("annotation", *atlas_images(self._door.ctx.atlas))
         if kind not in offered:
-            raise ToolError("BAD_ARGS", f"kind is one of {', '.join(offered)}; got {kind!r}")
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"kind is one of {', '.join(offered)}; got {kind!r}")
         frame = self.fit_frame(section, atlas=(kind,))
         return frame.atlas[kind]
 
@@ -885,7 +899,8 @@ class ToolContext:
         width, height = grid.image.size
         m = np.vstack([np.asarray(matrix, dtype=np.float64).reshape(2, 3), [0.0, 0.0, 1.0]])
         if not np.isfinite(m).all() or abs(np.linalg.det(m[:2, :2])) < 1e-9:
-            raise ToolError("BAD_MATRIX", "the map is degenerate or not finite")
+            raise ToolError(RefusalCode.BAD_MATRIX,
+                            "the map is degenerate or not finite")
         start = np.vstack([denormalized_affine(list(IDENTITY_PARAMS), (width, height)),
                            [0.0, 0.0, 1.0]])
         step = np.asarray(grid.placement.atlas_to_section, dtype=np.float64) @ m
@@ -912,9 +927,11 @@ class ToolContext:
         record = self._record(section)
         values = [float(v) for v in params]
         if len(values) != 6 or not np.isfinite(values).all():
-            raise ToolError("BAD_ARGS", "a transform is six finite numbers [a, b, tx, c, d, ty]")
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "a transform is six finite numbers [a, b, tx, c, d, ty]")
         if record.position_mm is None:
-            raise ToolError("NO_POSITION", f"{record.id} has no position yet")
+            raise ToolError(RefusalCode.NO_POSITION,
+                            f"{record.id} has no position yet")
         workspace, state = self._door.ctx, self._door.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, workspace, record, rendered)
@@ -923,7 +940,8 @@ class ToolContext:
                                        record.position_mm, state.plane,  # type: ignore[arg-type]
                                        record.pitch_deg, record.yaw_deg)
         except ValueError as exc:
-            raise ToolError("INVALID_LINEAR_PLACEMENT", f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                            f"{record.id}: {exc}") from exc
         in_section = denormalized_affine(values, rendered.size)
         ox, oy = (float(v) for v in geometry.section_offset)
         shift = np.array([[1.0, 0.0, ox], [0.0, 1.0, oy], [0.0, 0.0, 1.0]])
@@ -991,7 +1009,8 @@ class ToolContext:
         try:
             json.dumps(plain_meta)
         except (TypeError, ValueError) as exc:
-            raise ToolError("BAD_ARGS", f"meta is JSON values: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"meta is JSON values: {exc}") from exc
         text = str(note or "").strip()
         try:
             warp = deformable.warp_from_map(
@@ -1005,9 +1024,7 @@ class ToolContext:
                 engine_settings=_plain(dict(engine_settings or {})),
                 engine_version=str(engine_version or ""))
         except Refused as refusal:
-            raise ToolError(refusal.code, str(refusal), **{
-                key: value for key, value in refusal.details.items()
-                if key != "message"}) from refusal
+            raise _as_tool_error(refusal) from refusal
         consistency = warp.record.diagnostics.get("inverse_consistency_mm") or {}
         return DeformationProposal(
             id=record.id, key=warp.key, summary=copy.deepcopy(warp.numbers),
@@ -1062,7 +1079,8 @@ class ToolContext:
             position = plane.get("position_mm", record.position_mm)
             angles = plane.get("angles") or (record.pitch_deg, record.yaw_deg)
             if position is None:
-                raise ToolError("NO_POSITION", f"{name} has no position to read the file at")
+                raise ToolError(RefusalCode.NO_POSITION,
+                                f"{name} has no position to read the file at")
             planes[name] = (float(position), float(angles[0]), float(angles[1]))
         result = import_placements(
             Path(path), self._door.ctx, section_ids=names,
@@ -1109,7 +1127,8 @@ class ToolContext:
         workspace = self._door.ctx
         values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
         if not np.isfinite(values).all():
-            raise ToolError("BAD_ARGS", "position_mm, pitch_deg and yaw_deg are finite numbers")
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "position_mm, pitch_deg and yaw_deg are finite numbers")
         placement = Placement(atlas_name=str(self._door.state.atlas), position_mm=values[0],
                               plane=self._door.state.plane,  # type: ignore[arg-type]
                               pitch_deg=values[1], yaw_deg=values[2],
@@ -1135,7 +1154,8 @@ class ToolContext:
         if kind == "annotation":
             return np.asarray(atlas.annotation)
         if kind not in atlas_images(atlas):
-            raise ToolError("BAD_ARGS", f"kind is annotation or one of "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"kind is annotation or one of "
                             f"{', '.join(atlas_images(atlas))}; got {kind!r}")
         return volume(atlas, kind)
 
@@ -1227,7 +1247,8 @@ class ToolContext:
         from langslice.core.maps.itk import IMAGE_FORMATS, write_image
 
         if format not in IMAGE_FORMATS:
-            raise ToolError("BAD_ARGS", f"format is one of {', '.join(IMAGE_FORMATS)}; "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"format is one of {', '.join(IMAGE_FORMATS)}; "
                             f"got {format!r}")
         record = self._record(section)
         f = self.fit_frame(record.id, stain=True)
@@ -1295,10 +1316,12 @@ class ToolContext:
         from langslice.core.maps.itk import inverted, mapped_points
 
         if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
-            raise ToolError("BAD_ARGS", "fixed is 'section' or 'atlas'; atlas is 'placed' or "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "fixed is 'section' or 'atlas'; atlas is 'placed' or "
                             "'native'")
         if fixed == "atlas" and atlas == "native":
-            raise ToolError("BAD_ARGS", "a field with the atlas fixed is read on the fit grid: "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "a field with the atlas fixed is read on the fit grid: "
                             "register against placed_template (atlas='placed')")
         record = self._record(section)
         width, height = self._grid(record).image.size
@@ -1307,7 +1330,8 @@ class ToolContext:
             if fixed == "atlas":
                 points = inverted(points)
         except (ValueError, RuntimeError) as exc:
-            raise ToolError("BAD_FIELD", f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_FIELD,
+                            f"{record.id}: {exc}") from exc
         if atlas == "native":
             return points
         to_native = np.linalg.inv(self._placed(record))
@@ -1327,17 +1351,20 @@ class ToolContext:
         from langslice.core.maps.itk import linear_matrix
 
         if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
-            raise ToolError("BAD_ARGS", "fixed is 'section' or 'atlas'; atlas is 'placed' or "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "fixed is 'section' or 'atlas'; atlas is 'placed' or "
                             "'native'")
         record = self._record(section)
         size = self._grid(record).image.size
         try:
             matrix = linear_matrix(source, (int(size[0]), int(size[1])), spacing=float(spacing))
         except (ValueError, RuntimeError) as exc:
-            raise ToolError("BAD_MATRIX", f"{record.id}: {exc}") from exc
+            raise ToolError(RefusalCode.BAD_MATRIX,
+                            f"{record.id}: {exc}") from exc
         if fixed == "atlas":
             if abs(np.linalg.det(matrix[:2, :2])) < 1e-12:
-                raise ToolError("BAD_MATRIX", f"{record.id}: the map is degenerate")
+                raise ToolError(RefusalCode.BAD_MATRIX,
+                                f"{record.id}: the map is degenerate")
             matrix = np.linalg.inv(matrix)
         if atlas == "placed":
             matrix = np.linalg.inv(self._placed(record)) @ matrix
@@ -1354,7 +1381,8 @@ class ToolContext:
                     self._door.state, self._door.ctx, record).placement.atlas_to_section,
                     dtype=np.float64)
             except ValueError as exc:
-                raise ToolError("INVALID_LINEAR_PLACEMENT", f"{record.id}: {exc}") from exc
+                raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                f"{record.id}: {exc}") from exc
         return np.asarray(self._grid(record).placement.atlas_to_section, dtype=np.float64)
 
     # --- the native engines, with settings of your own --------------------------------------
@@ -1399,9 +1427,11 @@ class ToolContext:
         workspace = self._door.ctx
         label = _mask_name(mask)
         if str(metric) not in METRICS:
-            raise ToolError("BAD_ARGS", f"metric is one of {list(METRICS)}; got {metric!r}")
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"metric is one of {list(METRICS)}; got {metric!r}")
         if str(detail) not in DETAILS:
-            raise ToolError("BAD_ARGS", f"detail is one of {list(DETAILS)}; got {detail!r}")
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"detail is one of {list(DETAILS)}; got {detail!r}")
         try:
             regions = region_entries(workspace, self._door.job.state, list(restrict_to))
             left_out = region_entries(workspace, self._door.job.state, list(exclude))
@@ -1413,7 +1443,7 @@ class ToolContext:
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         except (TypeError, ValueError) as exc:  # checked as the settings are made
-            raise ToolError("BAD_ARGS", str(exc)) from exc
+            raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         try:
             fitted = fit_record(self._door.job, workspace, record.id, chosen, start=start,
                                 mask=label, marked=bool(marked),
@@ -1492,13 +1522,15 @@ class ToolContext:
         store = self._door.job.deformations
         if proposal and proposal.get("deformation") is not None:
             if set(proposal) - {"deformation"}:
-                raise ToolError("BAD_ARGS", "a deformation proposal is drawn on the "
+                raise ToolError(RefusalCode.BAD_ARGS,
+                                "a deformation proposal is drawn on the "
                                 "section's current placement: give it alone")
             warped = proposal["deformation"]
             if not isinstance(warped, DeformationProposal):
                 warped = self.deformation_from_map(record.id, warped)
             elif warped.id != record.id:
-                raise ToolError("BAD_ARGS", f"the proposal is {warped.id}'s, not {record.id}'s")
+                raise ToolError(RefusalCode.BAD_ARGS,
+                                f"the proposal is {warped.id}'s, not {record.id}'s")
             store = self._proposal_store(warped)
             state = StackState.from_dict(copy.deepcopy(state.to_dict()))
             held = state.by_id(record.id)
@@ -1530,8 +1562,8 @@ class ToolContext:
         request = looks.LookRequest(mode="overlay", sections=(record.id,), long_edge=edge)
         try:
             drawn = looks.look(self._door.ctx, state, request, store=store)
-        except looks.LookError as exc:
-            raise ToolError(exc.code, str(exc)) from exc
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
         if proposal:  # a proposal not written shows no registration the section holds
             _no_registration(drawn[0].image)
         return drawn[0].image
@@ -1556,7 +1588,8 @@ class ToolContext:
         from langslice.doors.tools.changing import _positions
 
         if self._door.spec.off("look:positioning"):
-            raise ToolError("POSITIONING_OFF", "the positioning picture is switched off for "
+            raise ToolError(RefusalCode.POSITIONING_OFF,
+                            "the positioning picture is switched off for "
                             "this job")
         names = [self._record(ref).id for ref in ids]
         state = self._door.state
@@ -1567,7 +1600,8 @@ class ToolContext:
                 assert held is not None
                 unknown = set(change) - {"position_mm", "angles"}
                 if unknown:
-                    raise ToolError("BAD_ARGS", "a positioning proposal gives position_mm and/or "
+                    raise ToolError(RefusalCode.BAD_ARGS,
+                                    "a positioning proposal gives position_mm and/or "
                                     f"angles per section; got {sorted(unknown)}")
                 if change.get("position_mm") is not None:
                     held.position_mm = float(change["position_mm"])
@@ -1584,8 +1618,8 @@ class ToolContext:
                                     part=part)
         try:
             drawn = looks.look(self._door.ctx, state, request, store=self._door.job.deformations)
-        except looks.LookError as exc:
-            raise ToolError(exc.code, str(exc)) from exc
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
         images = [picture.image for picture in drawn]
         if proposal:
             for image in images:  # a proposal not written shows no registration held
@@ -1661,15 +1695,15 @@ class ToolContext:
         ids = [self._record(section).id for section in sections]
         busy = job.busy_refusal(ids)
         if busy is not None:
-            raise Refused(busy.pop("error"), **busy)
+            raise busy
         door, caller = self._door, self._caller
 
         def landing() -> Landed:
             context = ToolContext(door, caller, f"{self.call}-bg")
             try:
                 result = land(context)
-            except (ToolError, Refused) as exc:
-                return Landed(status=FAILED, text=str(getattr(exc, "message", "") or exc))
+            except Refused as refusal:  # a ToolError too
+                return Landed(status=FAILED, text=str(refusal))
             reply = dict(result.reply)
             return Landed(status=DONE, text=str(reply.pop("notice", "") or "done."),
                           pictures=[item if isinstance(item, Image.Image)
@@ -1684,11 +1718,13 @@ class ToolContext:
     def _require(self, *properties: str) -> None:
         caller = self._caller
         if caller.kind != "write":
-            raise ToolError("READ_TOOL_WRITES", f"{caller.name} is declared a read tool and "
+            raise ToolError(RefusalCode.READ_TOOL_WRITES,
+                            f"{caller.name} is declared a read tool and "
                             "writes nothing; declare kind='write'")
         outside = [name for name in properties if name not in caller.writes]
         if outside:
-            raise ToolError("WRITE_NOT_DECLARED", f"{caller.name} writes {outside} but "
+            raise ToolError(RefusalCode.WRITE_NOT_DECLARED,
+                            f"{caller.name} writes {outside} but "
                             f"declares writes={list(caller.writes)}")
 
     @contextlib.contextmanager
@@ -1752,8 +1788,7 @@ class ToolContext:
             stale = self._stale([name for name in ids if name], expect)
             for row, name in zip(rows, ids, strict=True):
                 if not name:
-                    out[str(row.get("id"))] = {"id": str(row.get("id")), "status": "error",
-                                               "error": "UNKNOWN_SLICE_IDS"}
+                    out[str(row.get("id"))] = {"id": str(row.get("id")), **UNKNOWN_ROW}
                 elif name in stale:
                     out[name] = stale[name]
                 elif (frozen := frozen_row(job, name, "position")) is not None:
@@ -1810,8 +1845,7 @@ class ToolContext:
             written: list[str] = []
             for row, name in zip(rows, ids, strict=True):
                 if not name:
-                    out[str(row.get("id"))] = {"id": str(row.get("id")), "status": "error",
-                                               "error": "UNKNOWN_SLICE_IDS"}
+                    out[str(row.get("id"))] = {"id": str(row.get("id")), **UNKNOWN_ROW}
                     continue
                 if name in stale:
                     out[name] = stale[name]
@@ -1820,17 +1854,17 @@ class ToolContext:
                 try:
                     if record is None:
                         if "params" not in row:
-                            raise ToolError("BAD_ARGS", "a row is {id, transform} or "
+                            raise ToolError(RefusalCode.BAD_ARGS,
+                                            "a row is {id, transform} or "
                                             "{id, params}")
                         record = self.transform_from_params(
                             name, row["params"], note=str(row.get("note") or "")).record
                     done = transforms.set_transforms(job, {name: dict(record)})
                 except ToolError as exc:
-                    out[name] = {"id": name, "status": "error", "error": exc.code,
-                                 "message": exc.message}
+                    out[name] = {"id": name, **Refused(exc.code, message=exc.message).payload()}
                     continue
                 except Refused as refusal:
-                    out[name] = {"id": name, "status": "error", **refusal.payload()}
+                    out[name] = {"id": name, **refusal.payload()}
                     out[name].pop("ids", None)
                     continue
                 written += done
@@ -1867,8 +1901,7 @@ class ToolContext:
         for row in rows:
             name = self._resolve_id(row.get("id"))
             if not name:
-                out[str(row.get("id"))] = {"id": str(row.get("id")), "status": "error",
-                                           "error": "UNKNOWN_SLICE_IDS"}
+                out[str(row.get("id"))] = {"id": str(row.get("id")), **UNKNOWN_ROW}
                 continue
             frozen = frozen_row(job, name, "deformation")
             if frozen is not None:
@@ -1878,17 +1911,18 @@ class ToolContext:
             try:
                 if proposal is None:
                     if "map" not in row:
-                        raise ToolError("BAD_ARGS", "a row is {id, map, note?, meta?} or "
+                        raise ToolError(RefusalCode.BAD_ARGS,
+                                        "a row is {id, map, note?, meta?} or "
                                         "{id, deformation}")
                     proposal = self.deformation_from_map(
                         name, row["map"], note=str(row.get("note") or ""),
                         meta=row.get("meta"))
                 elif not isinstance(proposal, DeformationProposal) or proposal.id != name:
-                    raise ToolError("BAD_ARGS", "deformation is this section's "
+                    raise ToolError(RefusalCode.BAD_ARGS,
+                                    "deformation is this section's "
                                     "DeformationProposal (deformation_from_map)")
             except ToolError as exc:
-                out[name] = {"id": name, "status": "error", "error": exc.code,
-                             "message": exc.message}
+                out[name] = {"id": name, **Refused(exc.code, message=exc.message).payload()}
                 continue
             out[name] = {"id": name}
             proposals.append(proposal)
@@ -1917,8 +1951,7 @@ class ToolContext:
             for row in rows:
                 name = self._resolve_id(row.get("id"))
                 if not name:
-                    out.append({"id": str(row.get("id")), "status": "error",
-                                "error": "UNKNOWN_SLICE_IDS"})
+                    out.append({"id": str(row.get("id")), **UNKNOWN_ROW})
                     continue
                 stale = self._stale([name], expect)
                 if name in stale:
@@ -1928,7 +1961,7 @@ class ToolContext:
                     done = damage.mark_damage(job, workspace, name, list(row.get("regions") or ()),
                                               str(row.get("note") or ""))
                 except Refused as refusal:
-                    out.append({"id": name, "status": "error", **refusal.payload()})
+                    out.append({"id": name, **refusal.payload()})
                     continue
                 out.append({"id": name, "status": "ok", "regions": list(done.regions),
                             "written": done.written})
@@ -1976,13 +2009,19 @@ def _mask_name(mask: Any) -> str:
     (``make_mask``), so every door leaves the same trace."""
     if isinstance(mask, str):
         return mask.strip() or "none"
-    raise ToolError("BAD_ARGS", "mask is 'none' or the NAME of a mask of the section made "
+    raise ToolError(RefusalCode.BAD_ARGS,
+                    "mask is 'none' or the NAME of a mask of the section made "
                     "with make_mask; an array is not taken (make the mask with make_mask first)")
 
 
 def _as_tool_error(refusal: Refused) -> ToolError:
+    """Turn *refusal* into the :class:`ToolError` a plugin catches.
+
+    The same code, its message first and the other facts after it.
+    """
     return ToolError(refusal.code, str(refusal), **{
-        key: value for key, value in refusal.details.items() if key != "message"})
+        key: value for key, value in refusal.facts.items() if key != "message"})
+
 
 
 def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
@@ -2031,5 +2070,5 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
 __all__ = [
     "AffineView", "AtlasPlane", "AtlasView", "Caller", "DeformationProposal", "FitFrame",
     "LayerRef", "SectionRaster", "SectionView", "ToolContext",
-    "TransformProposal", "WriteResult", "STALE_INPUT",
+    "TransformProposal", "WriteResult",
 ]

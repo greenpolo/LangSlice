@@ -6,7 +6,7 @@ meanwhile. Before it applies, under the lock and after the job has reloaded
 what others wrote (:meth:`langslice.job.job.Job.writing`), it compares
 each section's :func:`section_inputs` with the value it computed from: an
 unchanged section is applied, a changed one is refused as that section's
-row (:data:`STALE_INPUT`) and the others still apply.
+row (``STALE_INPUT``) and the others still apply.
 """
 
 from __future__ import annotations
@@ -15,15 +15,13 @@ import hashlib
 import json
 from typing import Any
 
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.masks import (
     registration_digest,
     registration_parts,
 )
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
-
-#: A section whose inputs changed while its result was computed.
-STALE_INPUT = "STALE_INPUT"
 
 
 def section_inputs(
@@ -49,7 +47,12 @@ def section_inputs(
 
 
 def stale_row(section_id: str) -> dict[str, Any]:
-    """The row of a section refused because its inputs changed."""
-    return {"id": section_id, "status": "error", "error": STALE_INPUT,
-            "message": "This section's placement, images or deformation changed while "
-            "the fit ran; nothing was written for it. Run the fit again."}
+    """The row of a section refused because its inputs changed.
+
+    The refusal is ``STALE_INPUT``.
+    """
+    refusal = Refused(
+        RefusalCode.STALE_INPUT,
+        "This section's placement, images or deformation changed while the "
+        "fit ran; nothing was written for it. Run the fit again.")
+    return {"id": section_id, **refusal.payload()}

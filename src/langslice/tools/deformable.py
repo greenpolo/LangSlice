@@ -44,12 +44,13 @@ from langslice.core.fits.inputs import (
     mask_block,
 )
 from langslice.core.pictures import deformation as pictures_deformation
+from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import SliceState
 from langslice.tools import masks as ops_masks
 from langslice.tools.images import check_image
-from langslice.tools.refusal import Refused, frozen_row, unknown_sections
+from langslice.tools.refusal import frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
@@ -245,7 +246,7 @@ def fit_deformable(
     The fits run outside the job's write lock, from the state as it stood;
     applying takes the lock (:meth:`~langslice.job.job.Job.writing`) and
     refuses a section whose inputs changed meanwhile
-    (:data:`langslice.tools.stale.STALE_INPUT`, that section's row), applying
+    (``STALE_INPUT``, that section's row), applying
     the others.
     """
     state = job.state
@@ -278,10 +279,11 @@ def fit_deformable(
             current, unreadable = None, True
         if unreadable or (current is None and held
                           and held.get("linear_key") == deformation.linear_key(state, record)):
-            rows.append({"id": record.id, "status": "error", "error": "DEFORMATION_UNREADABLE",
-                         "message": "The section's applied deformation record cannot be read "
-                         f"({held.get('record')}); it is not replaced by a fit from the "
-                         "linear placement."})
+            rows.append({"id": record.id, **Refused(
+                RefusalCode.DEFORMATION_UNREADABLE,
+                "The section's applied deformation record cannot be read "
+                f"({held.get('record')}); it is not replaced by a fit from the "
+                "linear placement.").payload()})
             continue
         own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
@@ -290,13 +292,14 @@ def fit_deformable(
         try:
             grid = deformation.fit_grid(state, workspace, record)
         except (ValueError, OSError) as exc:
-            rows.append({"id": record.id, "status": "error",
-                         "error": "INVALID_LINEAR_PLACEMENT", "message": str(exc)})
+            rows.append({"id": record.id, **Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                message=str(exc)).payload()})
             continue
         previous = current
         previous_key = None if current is None else str((record.deformation or {}).get("key"))
         own = exclusions(record, tuple(restrict_to))
-        failure = {"id": record.id, "status": "error", "settings": choice.tool_settings()}
+        failure = {"id": record.id, "status": ReplyStatus.ERROR,
+                   "settings": choice.tool_settings()}
         regions = traced_regions(record, *own) if traced_choice else own
         try:
             weights = ops_masks.section_weights(job, record, choice.mask)
@@ -317,11 +320,12 @@ def fit_deformable(
             settings = choice.settings(*regions, brain_scale=workspace.brain_scale)
             if overrides:
                 settings = replace(settings, **dict(overrides))
-        except deformation.FitRefusal as refusal:
-            rows.append({**failure, **refusal.payload, "id": record.id})
+        except Refused as refusal:  # the trace the fit reads
+            rows.append({**failure, **refusal.payload()})
             continue
         except (ValueError, OSError) as exc:
-            rows.append({**failure, "error": "BAD_SETTINGS", "message": str(exc)})
+            refusal = Refused(RefusalCode.BAD_SETTINGS, message=str(exc))
+            rows.append({**failure, **refusal.payload()})
             continue
         held_mask = (record.masks or {}).get(choice.mask)
         key = deformation.cache_key(
@@ -382,9 +386,11 @@ def _apply(
         block = blocks.get(index)
         row["settings"] = fit.choice.tool_settings()
         if not isinstance(outcome, deformation.DeformableRecord):
-            row.update(status="error", error="FIT_FAILED", message=failure_message(
+            message = failure_message(
                 str(getattr(outcome, "error", "no result")), job.engine_log,
-                f"the fit of {fit.grid.record.id} failed"))
+                f"the fit of {fit.grid.record.id} failed")
+            row.update(Refused(RefusalCode.FIT_FAILED,
+                               message=message).payload())
             continue
         store.put(fit.key, outcome)
         numbers = deformation.summary(outcome, fit.previous)
@@ -421,7 +427,9 @@ def _apply(
         try:
             folder = store.save(record.id, fit.key, outcome)
         except OSError as exc:
-            row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
+            refusal = Refused(RefusalCode.RECORD_WRITE_FAILED,
+                              message=str(exc))
+            row.update(refusal.payload())
             continue
         traced_fit = fit.choice.fit_section == deformation.TRACED_BORDERS
         record.deformation = deformation.reference(
@@ -509,39 +517,47 @@ def warp_from_map(
     if record is None:
         raise unknown_sections(job.state, [str(section)])
     if start not in ("linear", "current"):
-        raise Refused("BAD_ARGS", message="start is 'linear' or 'current'.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="start is 'linear' or 'current'.")
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
     except (ValueError, OSError) as exc:
-        raise Refused("INVALID_LINEAR_PLACEMENT", message=f"{record.id}: {exc}") from exc
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                      message=f"{record.id}: {exc}") from exc
     previous: deformation.DeformableRecord | None = None
     if start == "current":
         try:
             previous = job.deformations.current(job.state, record)
         except ValueError as exc:
-            raise Refused("DEFORMATION_UNREADABLE", message=f"{record.id}: {exc}") from exc
+            raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
+                          message=f"{record.id}: {exc}") from exc
         if previous is None:
-            raise Refused("BAD_ARGS", message=f"{record.id} holds no deformation to build on: "
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message=f"{record.id} holds no deformation to build on: "
                           "start is 'linear'.")
     parent_key = (str((record.deformation or {}).get("key")) if previous is not None
                   else None)
     width, height = grid.image.size
     array = np.asarray(native_xy)
     if not np.issubdtype(array.dtype, np.floating):
-        raise Refused("BAD_FIELD", message=f"{record.id}: the map is a float array, not "
+        raise Refused(RefusalCode.BAD_FIELD,
+                      message=f"{record.id}: the map is a float array, not "
                       f"{array.dtype}.")
     if array.shape != (height, width, 2):
-        raise Refused("BAD_FIELD", message=f"{record.id}: the map is (H, W, 2) = "
+        raise Refused(RefusalCode.BAD_FIELD,
+                      message=f"{record.id}: the map is (H, W, 2) = "
                       f"({height}, {width}, 2) on the fit grid; got {array.shape}.",
                       expected_shape=[height, width, 2])
     if not np.isfinite(array).all():
-        raise Refused("BAD_FIELD", message=f"{record.id}: the map has values that are not "
+        raise Refused(RefusalCode.BAD_FIELD,
+                      message=f"{record.id}: the map has values that are not "
                       "finite.")
     stored_weights = None
     if weights is not None:
         held = np.asarray(weights)
         if held.shape != (height, width) or not np.isfinite(held.astype(np.float64)).all():
-            raise Refused("BAD_FIELD", message=f"{record.id}: weights are a finite (H, W) = "
+            raise Refused(RefusalCode.BAD_FIELD,
+                          message=f"{record.id}: weights are a finite (H, W) = "
                           f"({height}, {width}) array on the fit grid; got {held.shape}.",
                           expected_shape=[height, width])
         stored_weights = np.clip(held.astype(np.float32), 0.0, 1.0).astype(np.float16)
@@ -599,7 +615,7 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
         for warp in warps:
             record = job.state.by_id(warp.id)
             if record is None:
-                rows.append({"id": warp.id, "status": "error", "error": "UNKNOWN_SLICE_IDS"})
+                rows.append({"id": warp.id, **Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload()})
                 continue
             frozen = frozen_row(job, record.id, "deformation")
             if frozen is not None:
@@ -614,8 +630,8 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
             try:
                 folder = store.save(record.id, warp.key, warp.record)
             except (OSError, ValueError) as exc:
-                rows.append({"id": record.id, "status": "error",
-                             "error": "RECORD_WRITE_FAILED", "message": str(exc)})
+                rows.append({"id": record.id, **Refused(RefusalCode.RECORD_WRITE_FAILED,
+                                    message=str(exc)).payload()})
                 continue
             record.deformation = deformation.reference(
                 folder=job.layout.relative(folder), key=warp.key, linear=warp.linear_key,
@@ -790,7 +806,8 @@ def refuse_without_engine() -> None:
     """Refuse ``ENGINE_MISSING`` (nothing done) when the deformable engine does
     not import."""
     if not engine_ready():
-        raise Refused("ENGINE_MISSING", message=deformation.ENGINE_MISSING + ".")
+        raise Refused(RefusalCode.ENGINE_MISSING,
+                      message=deformation.ENGINE_MISSING + ".")
 
 
 def fit_record(
@@ -827,22 +844,26 @@ def fit_record(
         raise unknown_sections(job.state, [str(section)])
     if not isinstance(settings, FitSettings) or settings.engine != "fireants" or (
             settings.section_image != "stain" or settings.labels != "none"):
-        raise Refused("BAD_ARGS", message="settings are a FireANTs stain fit's FitSettings "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="settings are a FireANTs stain fit's FitSettings "
                       "(engine fireants, section_image stain, labels none).")
     if start not in ("linear", "current"):
-        raise Refused("BAD_ARGS", message="start is 'linear' or 'current'.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="start is 'linear' or 'current'.")
     refuse_without_engine()
     label = str(mask or ops_masks.NO_MASK).strip()
     weights = ops_masks.section_weights(job, record, label)
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
     except (ValueError, OSError) as exc:
-        raise Refused("INVALID_LINEAR_PLACEMENT", message=f"{record.id}: {exc}") from exc
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                      message=f"{record.id}: {exc}") from exc
     previous = None
     if start == "current":
         previous = job.deformations.current(job.state, record)
         if previous is None:
-            raise Refused("BAD_ARGS", message=f"{record.id} has no deformation to start from.")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message=f"{record.id} has no deformation to start from.")
     image_name = check_image(job, workspace, [record], section_image)
     _kept, dropped = exclusions(record, tuple(str(name) for name in settings.structures))
     if marked:
@@ -856,7 +877,8 @@ def fit_record(
                                                       f"FireANTs fit of {record.id}"):
             outcome = run_prepared(prepared)
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
-        raise Refused("FIT_FAILED", message=f"{record.id}: " + failure_message(
+        raise Refused(RefusalCode.FIT_FAILED,
+                      message=f"{record.id}: " + failure_message(
             f"{type(exc).__name__}: {exc}", job.engine_log,
             f"the FireANTs fit of {record.id} failed")) from exc
     block = inputs_block(
@@ -881,18 +903,21 @@ def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str,
     from langslice.core.sections.damage import normalized_entries
 
     if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
-        raise Refused("BAD_ARGS", message="restrict_to is a list of atlas regions.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="restrict_to is a list of atlas regions.")
     try:
         names = normalized_entries(str(entry) for entry in entries)
     except ValueError as exc:
-        raise Refused("BAD_ARGS", message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     if names:
         try:
             resolve_entries(workspace.atlas, names)
         except ValueError as exc:
-            raise Refused("UNKNOWN_REGIONS", message=str(exc)) from exc
+            raise Refused(RefusalCode.UNKNOWN_REGIONS,
+                          message=str(exc)) from exc
         if state.plane == "sagittal" and has_sides(names):
-            raise Refused("NO_SIDES", message="A sagittal section lies within one "
+            raise Refused(RefusalCode.NO_SIDES,
+                          message="A sagittal section lies within one "
                           "hemisphere, so a region cannot be limited to one side.")
     return tuple(names)
 
@@ -946,22 +971,26 @@ def fireants_syn(
 
     refs = list(sections or [])
     if not refs:
-        raise Refused("BAD_ARGS", message="Name the sections to fit.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="Name the sections to fit.")
     kind = str(atlas_image or "nissl").strip()
     try:
         resolve_image(workspace.atlas, kind)
     except ValueError as exc:
-        raise Refused("BAD_ARGS", message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     metric_name = str(metric or "mutual_information").strip()
     if metric_name not in METRICS:
-        raise Refused("BAD_ARGS", message=f"metric is one of {list(METRICS)}.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"metric is one of {list(METRICS)}.")
     level = str(detail or "standard").strip().lower()
     if level not in DETAILS:
-        raise Refused("BAD_ARGS", message=f"detail is one of {list(DETAILS)}.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"detail is one of {list(DETAILS)}.")
     low, high = SMOOTHNESS_BOUNDS_UM
     if isinstance(smoothness_um, bool) or not isinstance(smoothness_um, (int, float)) or not (
             low <= smoothness_um <= high):
-        raise Refused("BAD_ARGS", message=f"smoothness_um is a number of micrometres from "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"smoothness_um is a number of micrometres from "
                       f"{low:g} to {high:g}.")
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
@@ -1006,7 +1035,7 @@ def refuse_unknown_inputs(
     if label != ops_masks.NO_MASK:
         lacking = [record.id for record in records if label not in (record.masks or {})]
         if lacking:
-            raise Refused("UNKNOWN_MASK", sections=lacking,
+            raise Refused(RefusalCode.UNKNOWN_MASK, sections=lacking,
                           message=f"No mask {label!r} on {', '.join(lacking)}; make it with "
                           "make_mask.")
     return image

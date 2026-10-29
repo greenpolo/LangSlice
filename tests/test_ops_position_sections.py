@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec, TransformSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.tools import positions
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -109,10 +109,10 @@ def test_supplied_positions_are_refused_and_so_are_supplied_angles(tmp_path: Pat
     job, ctx = _open(tmp_path, tasks=["transform"], inputs={"positions": supplied})
     with pytest.raises(Refused) as refused:
         positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0}])
-    assert refused.value.code == "FROZEN" and refused.value.details["properties"] == ["position"]
+    assert refused.value.code == "FROZEN" and refused.value.facts["properties"] == ["position"]
     with pytest.raises(Refused) as angles:
         positions.position_sections(job, ctx, [], {"pitch_deg": 1.0, "yaw_deg": 1.0})
-    assert angles.value.code == "FROZEN" and angles.value.details["properties"] == ["angles"]
+    assert angles.value.code == "FROZEN" and angles.value.facts["properties"] == ["angles"]
     assert job.undo_stack == [] and _position(job, "s0.png") == 1.0
 
 

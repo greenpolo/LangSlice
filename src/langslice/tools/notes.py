@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from langslice.tools.refusal import Refused
+from langslice.core.refusal import RefusalCode, Refused
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
@@ -17,7 +17,7 @@ def add_note(job: Job, text: str) -> list[str]:
     """
     cleaned = str(text or "").strip()
     if not cleaned:
-        raise Refused("BAD_ARGS")
+        raise Refused(RefusalCode.BAD_ARGS)
     before = job.snapshot()
     job.state.notes.append(cleaned)
     job.commit(before)

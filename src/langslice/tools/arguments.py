@@ -32,6 +32,8 @@ from typing import Any
 from pydantic import ConfigDict, with_config
 from typing_extensions import TypedDict, is_typeddict
 
+from langslice.core.refusal import RefusalCode, Refused
+
 # --- per-entry arguments ----------------------------------------------------
 
 
@@ -247,8 +249,11 @@ def normalize_arguments(func: Callable[..., Any], args: Mapping[str, Any]) -> di
     return out
 
 
-def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[str, Any] | None:
+def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refused | None:
     """The refusal for unknown or misplaced arguments, or None when all are known.
+
+    The refusal is ``UNKNOWN_ARGUMENTS``, with ``tool``, ``problems`` and
+    ``message``.
 
     Checks the top-level names against *func*'s signature, and every key of
     an argument typed as a typed dict (``cutting_angles``) or a list of them
@@ -299,5 +304,5 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[
         + ("".join(f" {text}" for text in problem.get("notes", [])))
         for problem in problems
     )
-    return {"status": "error", "error": "UNKNOWN_ARGUMENTS", "tool": name,
-            "problems": problems, "message": f"{name}: {message} Nothing was done."}
+    return Refused(RefusalCode.UNKNOWN_ARGUMENTS, tool=name, problems=problems,
+                   message=f"{name}: {message} Nothing was done.")

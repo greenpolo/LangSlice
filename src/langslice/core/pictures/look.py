@@ -81,6 +81,7 @@ from langslice.core.pictures.positioning import (
 )
 from langslice.core.pictures.scale import framed_um_per_px
 from langslice.core.pictures.sizes import picture_edge
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as images_
 from langslice.core.sections.channels import colour_words
 from langslice.core.sections.images import PREPROCESSED
@@ -127,20 +128,6 @@ logger = logging.getLogger(__name__)
 #: Said after a picture's micrometres per pixel when the section has no pixel
 #: size: its image width is mapped onto the atlas plane's width.
 UNCALIBRATED = " (uncalibrated)"
-
-
-class LookError(ValueError):
-    """A request look cannot draw: ``code`` is ``UNKNOWN_MODE``,
-    ``UNKNOWN_SECTION``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
-    ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS`` (atlas mode
-    without ``positions_mm``), ``NO_POSITION`` (a section without one, in
-    overlay mode), ``BAD_WARP``, ``UNKNOWN_PART`` (a positioning part past
-    the call's last picture) or ``UNKNOWN_REGIONS`` (a highlighted region
-    the atlas does not have)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 @dataclass(frozen=True)
@@ -220,8 +207,8 @@ class LookRequest:
     def from_args(cls, args: dict[str, Any]) -> LookRequest:
         unknown = sorted(set(args) - set(cls.__dataclass_fields__))
         if unknown:  # a recipe another version of LangSlice saved
-            raise LookError("UNREADABLE_RECIPE",
-                            f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
+            raise Refused(RefusalCode.UNREADABLE_RECIPE,
+                          f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
         layers = args["atlas_layers"]
         return cls(
             mode=str(args["mode"]), sections=tuple(str(s) for s in args["sections"]),
@@ -343,13 +330,14 @@ def changed_since(state: StackState, held: dict[str, Any], *,
 
 def restored(state: StackState, held: dict[str, Any]) -> StackState:
     """A copy of *state* with the snapshot *held* put back; *state* is
-    untouched. :class:`LookError` ``UNKNOWN_SECTION`` when a section of the
+    untouched. :class:`Refused` ``UNKNOWN_SECTION`` when a section of the
     snapshot is no longer in the stack."""
     out = StackState.from_dict(copy.deepcopy(state.to_dict()))
     for section_id, fields in (held.get("sections") or {}).items():
         record = out.by_id(section_id)
         if record is None:
-            raise LookError("UNKNOWN_SECTION", f"{section_id} is no longer in the stack")
+            raise Refused(RefusalCode.UNKNOWN_SECTION,
+                          f"{section_id} is no longer in the stack")
         for name, value in fields.items():
             if name == "cutting_angles_deg":
                 value = {"pitch": float(value["pitch"]), "yaw": float(value["yaw"])}
@@ -373,18 +361,20 @@ def _images_for(ws: Workspace, record: SliceState,
     known = images_.image_names(ws, record)
     unknown = [name for name in wanted if name not in known]
     if unknown:
-        raise LookError("UNKNOWN_IMAGE", f"{record.id} has no section image "
-                        f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
+        raise Refused(RefusalCode.UNKNOWN_IMAGE,
+                      f"{record.id} has no section image "
+                      f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
     if len(wanted) == 1:
         return (), wanted[0]
     raw = images_.raw_names(ws, record.id)
     made = [name for name in wanted if name not in raw]
     if made:
-        raise LookError("MIXED_IMAGES", f"{made[0]!r} is a made image and is drawn alone; "
-                        "several images are drawn together only when all are raw channels")
+        raise Refused(RefusalCode.MIXED_IMAGES,
+                      f"{made[0]!r} is a made image and is drawn alone; "
+                      "several images are drawn together only when all are raw channels")
     if len(wanted) > MAX_OVERLAY_CHANNELS:
-        raise LookError("TOO_MANY_CHANNELS",
-                        f"at most {MAX_OVERLAY_CHANNELS} raw channels are drawn together")
+        raise Refused(RefusalCode.TOO_MANY_CHANNELS,
+                      f"at most {MAX_OVERLAY_CHANNELS} raw channels are drawn together")
     return wanted, ""
 
 
@@ -408,14 +398,15 @@ def _atlas_layers(ws: Workspace, request: LookRequest) -> tuple[str, ...]:
     allowed = available_atlas_channels(ws)
     unknown = [name for name in layers if name not in allowed]
     if unknown:
-        raise LookError("UNKNOWN_LAYER", f"atlas layer {', '.join(map(repr, unknown))} is not "
-                        f"drawn here; layers: {', '.join(allowed)}")
+        raise Refused(RefusalCode.UNKNOWN_LAYER,
+                      f"atlas layer {', '.join(map(repr, unknown))} is not "
+                      f"drawn here; layers: {', '.join(allowed)}")
     return tuple(name for name in allowed if name in layers)
 
 
 def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozenset[int]], ...]:
     """The request's highlighted regions as the renderers take them,
-    ``(name, ids with descendants)``; :class:`LookError` ``UNKNOWN_REGIONS``."""
+    ``(name, ids with descendants)``; :class:`Refused` ``UNKNOWN_REGIONS``."""
     if not request.highlight:
         return ()
     from langslice.core.fits.deformable.plane_images import resolve_entries
@@ -424,7 +415,7 @@ def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozen
     try:
         found = resolve_entries(ws.atlas, names)
     except ValueError as exc:
-        raise LookError("UNKNOWN_REGIONS", str(exc)) from None
+        raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from None
     return tuple((name, frozenset(ids)) for name, (_region, _side, ids) in zip(
         names, found, strict=True))
 
@@ -492,7 +483,8 @@ def _records(state: StackState, ids: Sequence[str]) -> list[SliceState]:
     for section_id in ids:
         record = state.by_id(str(section_id))
         if record is None:
-            raise LookError("UNKNOWN_SECTION", f"no section {section_id!r} in the stack")
+            raise Refused(RefusalCode.UNKNOWN_SECTION,
+                          f"no section {section_id!r} in the stack")
         out.append(record)
     return out
 
@@ -593,7 +585,8 @@ def _overlay_picture(
     base: tuple[int, int] | None, store: Any,
 ) -> LookPicture:
     if record.position_mm is None:
-        raise LookError("NO_POSITION", f"{record.id} has no position to draw the atlas at")
+        raise Refused(RefusalCode.NO_POSITION,
+                      f"{record.id} has no position to draw the atlas at")
     names, picked = _images_for(ws, record, request.images)
     layers = _atlas_layers(ws, request)
     options = _options(request, names=names, image=picked, layers=layers,
@@ -692,24 +685,21 @@ def overlay_region_window(
     drawn = restored(state, held) if held else state
     records = _records(drawn, request.sections)
     if len(records) != 1:
-        raise LookError("BAD_REGION_PICTURE", "Region zoom needs a single-section overlay.")
+        raise Refused(RefusalCode.BAD_REGION_PICTURE,
+                      "Region zoom needs a single-section overlay.")
     record = records[0]
     names, image = _images_for(ws, record, request.images)
     options = _options(request, names=names, image=image,
                        layers=_atlas_layers(ws, request),
                        long_edge=int(request.long_edge or picture_edge(ws)),
                        regions=_highlighted(ws, request))
-    from langslice.core.atlas.sides import SideError
-
-    try:
-        placed = placement_pictures(ws, drawn, record, float(record.position_mm or 0),
-                                    options, {}, store=store)
-    except SideError as exc:
-        raise LookError(exc.code, str(exc)) from exc
+    placed = placement_pictures(ws, drawn, record, float(record.position_mm or 0),
+                                options, {}, store=store)
     assert placed.canvas is not None
     panel = placed.canvas.panels[0]
     if not panel.highlighted:
-        raise LookError("REGION_NOT_IN_PLANE", f"Region {region!r} is absent from this overlay.")
+        raise Refused(RefusalCode.REGION_NOT_IN_PLANE,
+                      f"Region {region!r} is absent from this overlay.")
     points = np.concatenate(panel.highlighted)
     geometry = panel.geometry
     points = points * geometry.atlas_scale + np.asarray(geometry.atlas_offset)
@@ -912,7 +902,7 @@ def _positioning(
             zoom_edge=zoom_edge, shown=words[0] if len(words) == 1 else "",
         )
     except IndexError as exc:
-        raise LookError("UNKNOWN_PART", str(exc)) from None
+        raise Refused(RefusalCode.UNKNOWN_PART, message=str(exc)) from None
     held = snapshot(state, [record.id for record in records], view_angles=True)
     whole = replace(request, sections=tuple(r.id for r in records))
     out: list[LookPicture] = []
@@ -959,9 +949,11 @@ def look(
     long edge (None: the unzoomed picture's).
     """
     if request.mode not in MODES:
-        raise LookError("UNKNOWN_MODE", f"mode must be one of {', '.join(MODES)}")
+        raise Refused(RefusalCode.UNKNOWN_MODE,
+                      f"mode must be one of {', '.join(MODES)}")
     if request.warp not in WARP_CHOICES:
-        raise LookError("BAD_WARP", f"warp must be one of {', '.join(WARP_CHOICES)}")
+        raise Refused(RefusalCode.BAD_WARP,
+                      f"warp must be one of {', '.join(WARP_CHOICES)}")
     long_edge = int(request.long_edge or picture_edge(ws))
     plane = angles if angles is not None else state.view_angles
     if request.mode == "positioning":
@@ -971,19 +963,22 @@ def look(
             records = _records(state, request.sections)
             for record in records:
                 if record.position_mm is None:
-                    raise LookError("NO_POSITION", f"{record.id} has no position to draw its "
-                                    "atlas plane at")
+                    raise Refused(RefusalCode.NO_POSITION,
+                                  f"{record.id} has no position to draw its "
+                                  "atlas plane at")
             own = tuple(float(record.position_mm or 0.0) for record in records)
             if request.positions_mm and tuple(request.positions_mm) != own:
-                raise LookError("BAD_ARGS", "Name sections or give positions_mm, not both: a "
-                                "section's atlas picture is at its own plane.")
+                raise Refused(RefusalCode.BAD_ARGS,
+                              "Name sections or give positions_mm, not both: a "
+                              "section's atlas picture is at its own plane.")
             return [_atlas_picture(ws, state, float(record.position_mm or 0.0),
                                    replace(request, sections=(record.id,),
                                            positions_mm=(float(record.position_mm or 0.0),)),
                                    long_edge, base, base_um, record.angles)
                     for record in records]
         if not request.positions_mm:
-            raise LookError("NO_POSITIONS", "atlas mode needs positions_mm or sections")
+            raise Refused(RefusalCode.NO_POSITIONS,
+                          "atlas mode needs positions_mm or sections")
         return [_atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
                 for mm in request.positions_mm]
     records = _records(state, request.sections)
@@ -1001,7 +996,7 @@ def redraw(
     """The picture of *recipe* drawn again at *window* (fractions of its
     unzoomed content; empty: whole), from the stack as it was when the
     recipe was made (``stale`` when it has changed since).
-    :class:`LookError` ``UNKNOWN_SECTION`` when a section it showed is gone.
+    :class:`Refused` ``UNKNOWN_SECTION`` when a section it showed is gone.
     """
     request = replace(LookRequest.from_args(recipe["args"]),
                       zoom=tuple(float(v) for v in window))
@@ -1036,7 +1031,7 @@ def _base_um(recipe: dict[str, Any]) -> float | None:
 
 
 __all__ = [
-    "ATLAS_LAYER_DEFAULTS", "LookError", "LookPicture", "LookRequest", "MODES",
+    "ATLAS_LAYER_DEFAULTS", "LookPicture", "LookRequest", "MODES",
     "RENDERER", "changed_since", "differs_since", "image_words",
     "look", "redraw", "restored", "snapshot",
 ]

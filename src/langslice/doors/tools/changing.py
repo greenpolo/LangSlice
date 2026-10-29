@@ -20,6 +20,7 @@ from langslice.core.atlas.images import nissl_note
 from langslice.core.pictures import drawn as pictures_drawn
 from langslice.core.pictures.options import default_options
 from langslice.core.pictures.sizes import picture_edge
+from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.stack.stack import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.tools import damage as ops_damage
@@ -32,7 +33,7 @@ from langslice.tools import registrations as ops_registrations
 from langslice.tools import submit as ops_submit
 from langslice.tools import transforms as ops_transforms
 from langslice.tools.catalog import check_section_count
-from langslice.tools.refusal import Refused
+from langslice.tools.refusal import unknown_sections as unknown_refusal
 from langslice.tools.run import Door, as_list, drawn_image, pictured, spread
 
 #: Positions closer than this (mm) are one atlas picture in a positioning picture.
@@ -52,7 +53,7 @@ def _first_refusal(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The top-level error of a call that wrote nothing: the first row's code
     and message (every row keeps its own)."""
     first = rows[0] if rows else {}
-    return {"error": first.get("error", "NOTHING_WRITTEN"),
+    return {"error": first.get("error", RefusalCode.NOTHING_WRITTEN),
             **({"message": first["message"]} if first.get("message") else {})}
 
 
@@ -68,15 +69,12 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                           view: bool = True) -> dict[str, Any]:
         entries = as_list(sections)
         angles = cutting_angles if cutting_angles else None
-        try:
-            done = ops_positions.position_sections(job, ctx, entries, angles)
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_positions.position_sections(job, ctx, entries, angles)
         unknown = unknown_sections(job.state, done.unknown) if done.unknown else None
         if not done.written and done.cutting_angles is None:
-            return {"status": "error", "error": "NOTHING_WRITTEN",
-                    **({"unknown_ids": done.unknown, "message": unknown["message"],
-                        "filenames": unknown["filenames"]} if unknown else {})}
+            facts = ({"unknown_ids": done.unknown, "message": unknown["message"],
+                      "filenames": unknown["filenames"]} if unknown else {})
+            raise Refused(RefusalCode.NOTHING_WRITTEN, **facts)
         result: dict[str, Any] = {
             "written": [{"id": name, "position_mm": round(value, 3)}
                         for name, value in done.written],
@@ -108,21 +106,18 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                               view: bool = True) -> dict[str, Any]:
         entries = as_list(sections)
         if not entries:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "sections must name one or more sections"}
-        try:
-            check_section_count(job, "interactive_transform", len(entries))
-        except Refused as refusal:
-            return refusal.payload()
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "sections must name one or more sections")
+        check_section_count(job, "interactive_transform", len(entries))
         named = [job.state.resolve(entry.get("id", "")) for entry in entries
                  if isinstance(entry, dict)]
         ids = [record.id for record in named if record is not None]
         duplicates = sorted({name for name in ids if ids.count(name) > 1})
         if duplicates:
-            return {"status": "error", "error": "DUPLICATE_SLICE_IDS",
-                    "duplicate_ids": duplicates,
-                    "message": "A call sets each section once; look at the first result "
-                    "before a dependent correction."}
+            raise Refused(RefusalCode.DUPLICATE_SLICE_IDS,
+                          duplicate_ids=duplicates,
+                          message="A call sets each section once; look at the first "
+                          "result before a dependent correction.")
         done = ops_transforms.interactive_transform(job, ctx, entries)
         rows: list[dict[str, Any]] = []
         drawn: list[str] = []
@@ -142,7 +137,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         ok = bool(drawn)
         result: dict[str, Any] = {
             "status": "ok" if ok else "error",
-            **({} if ok else {"error": "NOTHING_WRITTEN"}),
+            **({} if ok else {"error": RefusalCode.NOTHING_WRITTEN}),
             "results": rows,
             **({"changed": door.changed(done.written)["changed"]} if done.written else {}),
         }
@@ -158,11 +153,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     def mark_damage(section: str, regions: list[str], note: str) -> dict[str, Any]:
         options = default_options("overlay", long_edge=picture_edge(ctx))
-        try:
-            done = ops_damage.mark_damage(job, ctx, section, as_list(regions), note,
-                                          options=options)
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_damage.mark_damage(job, ctx, section, as_list(regions), note,
+                                      options=options)
         result: dict[str, Any] = {
             "status": "ok", "id": done.id, "regions": done.regions, "note": done.note,
             "damaged": done.damaged, "written": done.written,
@@ -186,20 +178,16 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if named:
             scope, unknown = door.resolve_many(named)
             if unknown or not scope:
-                return {"status": "error", "error": "UNKNOWN_SLICE_IDS",
-                        **unknown_sections(job.state, unknown)}
+                raise unknown_refusal(job.state, unknown)
             ids = [record.id for record in scope]
-        try:
-            done = ops_masks.make_mask(
-                job, ctx, str(name), ids, source=str(source or "em"),
-                section_image=str(section_image or "preprocessed"),
-                atlas_image=str(atlas_image or "nissl"), sorting=dict(sorting or {}),
-                delete=bool(delete))
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_masks.make_mask(
+            job, ctx, str(name), ids, source=str(source or "em"),
+            section_image=str(section_image or "preprocessed"),
+            atlas_image=str(atlas_image or "nissl"), sorting=dict(sorting or {}),
+            delete=bool(delete))
         rows: list[dict[str, Any]] = []
         for row in done.rows:
-            if row["status"] != "ok":
+            if row["status"] != ReplyStatus.OK:
                 rows.append(row)
                 continue
             entry = row.get("entry") or {}
@@ -225,10 +213,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return pictured(result, pictures)
 
     def note(text: str) -> dict[str, Any]:
-        try:
-            return {"status": "ok", "notes": ops_notes.add_note(job, text)}
-        except Refused as refusal:
-            return refusal.payload()
+        return {"status": "ok", "notes": ops_notes.add_note(job, text)}
 
     def stepped(word: str, depth_key: str, step: Any, asked: int) -> dict[str, Any]:
         """The reply to an undo or redo: which steps it took back or forward
@@ -262,21 +247,21 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def undo(steps: int = 1) -> dict[str, Any]:
         count = step_count(steps)
         if count is None:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "steps is a whole number, 1 or more."}
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "steps is a whole number, 1 or more.")
         step = ops_history.undo(job, count)
         if not step.done:
-            return {"status": "error", "error": "NOTHING_TO_UNDO"}
+            raise Refused(RefusalCode.NOTHING_TO_UNDO)
         return stepped("undone", "undo_depth", step, count)
 
     def redo(steps: int = 1) -> dict[str, Any]:
         count = step_count(steps)
         if count is None:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "steps is a whole number, 1 or more."}
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "steps is a whole number, 1 or more.")
         step = ops_history.redo(job, count)
         if not step.done:
-            return {"status": "error", "error": "NOTHING_TO_REDO"}
+            raise Refused(RefusalCode.NOTHING_TO_REDO)
         return stepped("redone", "redo_depth", step, count)
 
     def restore_registration(section: str = "",
@@ -284,19 +269,17 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                              view: bool = True) -> dict[str, Any]:
         entries = as_list(sections)
         if bool(str(section or "").strip()) == bool(entries):
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "Give section alone to list its registrations, or sections "
-                    "([{\"id\": filename, \"registration\": number}]) to put them back; "
-                    "not both."}
-        try:
-            if not entries:
-                listed = ops_registrations.listing(job, str(section))
-                return {"status": "ok", "id": listed.id, "registrations": listed.rows,
-                        **({"held": listed.held} if listed.held is not None else {})}
-            done = ops_registrations.restore(job, entries)
-        except Refused as refusal:
-            return refusal.payload()
-        ok = [row["id"] for row in done.rows if row.get("status") == "ok"]
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "Give section alone to list its registrations, "
+                          "or sections ([{\"id\": filename, \"registration\": number}]) to "
+                          "put them back; not both.")
+        if not entries:
+            listed = ops_registrations.listing(job, str(section))
+            return {"status": "ok", "id": listed.id, "registrations": listed.rows,
+                    **({"held": listed.held} if listed.held is not None else {})}
+        done = ops_registrations.restore(job, entries)
+        ok = [row["id"] for row in done.rows
+              if row.get("status") == ReplyStatus.OK]
         result: dict[str, Any] = {
             "status": "ok" if ok else "error",
             **({} if ok else _first_refusal(done.rows)),
@@ -313,13 +296,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     def submit(summary: str, notes: list[str], interval_breaks: list[str],
                tool_context: Any = None) -> dict[str, Any]:
-        try:
-            done = ops_submit.submit(
-                job, summary=summary, notes=as_list(notes),
-                interval_breaks=as_list(interval_breaks),
-                traces=door.traces_on, workspace=ctx)
-        except Refused as refusal:
-            return refusal.payload()
+        done = ops_submit.submit(
+            job, summary=summary, notes=as_list(notes),
+            interval_breaks=as_list(interval_breaks),
+            traces=door.traces_on, workspace=ctx)
         door.box.submission.update({"summary": done.summary, "notes": done.notes,
                                     "interval_breaks": done.interval_breaks})
         if tool_context is not None:

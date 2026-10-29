@@ -2098,6 +2098,12 @@
 {"path": "src/langslice/providers/vlm_config.py", "symbol": "_vertex_project", "new_path": "src/langslice/providers/gemini_api.py", "new_symbol": "_vertex_project"},
 {"path": "src/langslice/providers/vlm_config.py", "symbol": "_vertex_location", "new_path": "src/langslice/providers/gemini_api.py", "new_symbol": "_vertex_location"},
 {"path": "src/langslice/providers/vlm_config.py", "symbol": "close_client", "new_path": "src/langslice/providers/gemini_api.py", "new_symbol": "close_client"},
-{"path": "src/langslice/providers/vlm_config.py", "symbol": "get_client", "new_path": "src/langslice/providers/gemini_api.py", "new_symbol": "get_client"}
+{"path": "src/langslice/providers/vlm_config.py", "symbol": "get_client", "new_path": "src/langslice/providers/gemini_api.py", "new_symbol": "get_client"},
+{"path": "src/langslice/tools/refusal.py", "symbol": "Refused", "new_path": "src/langslice/core/refusal.py", "new_symbol": "Refused"},
+{"path": "src/langslice/tools/refusal.py", "symbol": "Refused.__init__", "new_path": "src/langslice/core/refusal.py", "new_symbol": "Refused.__init__"},
+{"path": "src/langslice/tools/refusal.py", "symbol": "Refused.payload", "new_path": "src/langslice/core/refusal.py", "new_symbol": "Refused.payload"},
+{"path": "src/langslice/tools/transforms.py", "symbol": "has_deformation_row", "new_path": "src/langslice/tools/transforms.py", "new_symbol": "refit_refusal"},
+{"path": "src/langslice/doors/plugins/runtime.py", "symbol": "_over_limit", "new_path": "src/langslice/doors/plugins/runtime.py", "new_symbol": "_check_limit"},
+{"path": "src/langslice/doors/tools/fitting.py", "symbol": "bodies.atlas_refusal", "new_path": "src/langslice/doors/tools/fitting.py", "new_symbol": "bodies.check_atlas_image"}
 ]
 }

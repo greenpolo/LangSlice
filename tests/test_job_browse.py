@@ -11,12 +11,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job import browse
 from langslice.job.job import Job
 from langslice.tools import files
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -50,12 +50,12 @@ def test_paths_outside_the_job_folder_are_refused(tmp_path: Path):
         _refused(files.search_files, job, "outside", bad)
     missing = _refused(files.read_file, job, "history/no_such_file.txt", code="NOT_FOUND")
     # A path that does not exist names the nearest folder above it and what it holds.
-    assert missing.details["nearest"] == "history"
+    assert missing.facts["nearest"] == "history"
     assert "the nearest folder above it that does, 'history', holds:" in str(
-        missing.details["message"])
+        missing.facts["message"])
     deep = _refused(files.list_files, job, "sections/s0/deformable/x", code="NOT_FOUND")
-    assert deep.details["nearest"] == "sections/s0"
-    assert deep.details["holds"] == sorted(deep.details["holds"], key=lambda name: (
+    assert deep.facts["nearest"] == "sections/s0"
+    assert deep.facts["holds"] == sorted(deep.facts["holds"], key=lambda name: (
         not name.endswith("/"), name))
 
 
@@ -220,7 +220,7 @@ def test_the_agent_transcripts_are_neither_listed_searched_nor_read(tmp_path: Pa
                            (files.search_files, ("needle", path))):
             refused = _refused(call, job, *args)
             assert "the agent transcripts, which these tools do not open" in str(
-                refused.details["message"])
+                refused.facts["message"])
     # A missing path's refusal does not name the folder among the job folder's names.
     missing = _refused(files.read_file, job, "no_such_file", code="NOT_FOUND")
-    assert "trace/" not in missing.details["holds"]
+    assert "trace/" not in missing.facts["holds"]

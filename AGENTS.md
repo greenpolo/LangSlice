@@ -21,7 +21,7 @@ exceptions: a violation is fixed by moving code.
 
 | Package | Role | Guide |
 |---|---|---|
-| `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; the job spec, tool table and needs marks still live here | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
+| `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; `refusal.py` (the one `Refused` and its `RefusalCode`s); the job spec, tool table and needs marks still live here | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
 | `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the tool labels) | `job/CLAUDE.md` |
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement, the agent CLI's fixes) | `tools/CLAUDE.md` |
 | `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the ABBA worker (`abba/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |

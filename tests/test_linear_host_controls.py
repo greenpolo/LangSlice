@@ -187,7 +187,7 @@ def test_frozen_transforms_count_at_submit(tmp_path: Path):
     assert submit_errors(state, spec, []) is None
     unlocked_state, unlocked, _ = _stack(tmp_path, n=2, tasks=["position", "transform"])
     refusal = submit_errors(unlocked_state, unlocked, [])
-    assert refusal is not None and refusal["error"] == "MISSING_TRANSFORMS"
+    assert refusal is not None and refusal.code == "MISSING_TRANSFORMS"
 
 
 def test_the_worker_never_emits_geometry_for_frozen_properties():

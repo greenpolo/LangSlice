@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from langslice.tools.refusal import Refused, unknown_sections
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.tools.refusal import unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -63,12 +64,15 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
         raise unknown_sections(job.state, [str(section)])
     problem = placement_problem(job.state, record)
     if problem is not None:
-        raise Refused("INVALID_LINEAR_PLACEMENT", message=f"{record.id}: {problem}")
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                      message=f"{record.id}: {problem}")
     frame = section_frame(job.state, workspace, record)
     try:
         warp = applied_record(job, job.state, record)
     except ValueError as exc:
-        raise Refused("DEFORMATION_UNREADABLE", message=f"{record.id}: {exc}") from exc
+        name = record.id  # pyright: ignore[reportAny]  # the section the warp reads
+        raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
+                      message=f"{name}: {exc}") from exc
     return record, frame, warp
 
 
@@ -91,13 +95,15 @@ def _points(value: Any, width: int, name: str) -> np.ndarray:
     if array.ndim == 1:
         array = array[None, :]
     if array.ndim != 2 or array.shape[1] != width or not np.isfinite(array).all():
-        raise Refused("BAD_ARGS", message=f"{name} is N x {width} finite numbers.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"{name} is N x {width} finite numbers.")
     return array
 
 
 def _frame_of(frame_name: str) -> str:
     if frame_name not in FRAMES:
-        raise Refused("BAD_ARGS", message=f"frame is one of {list(FRAMES)}.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"frame is one of {list(FRAMES)}.")
     return frame_name
 
 
@@ -153,7 +159,9 @@ def section_points(job: Job, workspace: Workspace, section: Any, xyz_um: Any, *,
     try:
         x, y = file_points(held, warp, cols, rows)
     except ValueError as exc:
-        raise Refused("DEFORMATION_UNREADABLE", message=f"{record.id}: {exc}") from exc
+        name = record.id  # pyright: ignore[reportAny]  # the section the warp reads
+        raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
+                      message=f"{name}: {exc}") from exc
     if _frame_of(frame) == "fit":
         x, y = apply(_fit_matrix(job, workspace, record, held, warp), x, y)
     return SectionPoints(xy=np.stack([np.ravel(x), np.ravel(y)], axis=-1),
