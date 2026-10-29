@@ -40,7 +40,9 @@ python -m pytest
 python -m langslice version
 ```
 
-`pytest` runs in parallel (pytest-xdist) and deselects the `slow` and `golden` tests; run those with `python -m pytest -m slow` and `python -m pytest -m golden` (the [golden outputs](docs/developers/architecture.md#verification-and-diagnostics)). A test that fails only in parallel is re-run with `-n 0`.
+`pytest` runs in parallel (pytest-xdist) and deselects the `slow` and `golden` tests; run those with `python -m pytest -m slow` and `python -m pytest -m golden` (the [golden outputs](docs/developers/architecture.md#verification-and-diagnostics), one test per door: the library, the agent CLI and MCP). A test that fails only in parallel is re-run with `-n 0`.
+
+A change meant to alter no output passes the golden test unchanged. The goldens are per-checkout and not under version control, so compare a branch with goldens generated on `main`: `LANGSLICE_UPDATE_GOLDEN=1 python -m pytest -m golden` regenerates them only on `main` (with `LANGSLICE_GOLDEN_FORCE=1` as well, anywhere), records the commit in `tests/golden/data/expected/<door>/provenance.json`, and fails once with the diff for review.
 
 ## The style checks
 
