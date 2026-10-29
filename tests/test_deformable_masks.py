@@ -1,8 +1,8 @@
-"""The masks a deformable fit is given (``core.deformable.masks``,
+"""The masks a deformable fit is given (``core.fits.deformable.masks``,
 ``prepare_fit(section_weights=)``) and the FireANTs engine's determinism.
 
 No fit sorts the section by itself: a section mask (``make_mask``'s EM
-sorting, :func:`~langslice.core.deformable.masks.em_weights`) reaches a fit as
+sorting, :func:`~langslice.core.fits.deformable.masks.em_weights`) reaches a fit as
 weights thresholded at 0.5 and ANDed into the section (fixed) mask; the
 atlas-side damage zone stays as it was. The Elastix affine and the fits of
 traced lines keep the footprint masks, built exactly as before.
@@ -19,14 +19,14 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.deformable import FitSettings, prepare_fit
-from langslice.core.deformable.fit import (
+from langslice.core.fits.deformable import FitSettings, prepare_fit
+from langslice.core.fits.deformable.fit import (
     RESTRICTED_TAPER_MM,
     run_fit,
     run_prepared,
     with_section_mask,
 )
-from langslice.core.deformable.masks import (
+from langslice.core.fits.deformable.masks import (
     EM_MATCH_THRESHOLD,
     SORTING_KEYS,
     Masks,
@@ -131,7 +131,7 @@ def test_a_script_s_boolean_mask_and_the_weights_both_narrow_the_fixed_mask(atla
 
 
 def test_there_is_no_em_path_inside_a_fit():
-    from langslice.core.deformable import fit, masks
+    from langslice.core.fits.deformable import fit, masks
 
     assert not hasattr(masks, "EMContext") and not hasattr(masks, "em_masks")
     assert not hasattr(fit.PreparedFit, "em")

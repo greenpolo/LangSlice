@@ -13,18 +13,19 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.core import deformation
-from langslice.core import landmarks as geometry
-from langslice.core.landmark_views import pair_picture
-from langslice.core.layers import collecting
-from langslice.core.picture_geometry import SourceFrame, source_frame
+from langslice.core.fits import deformation
+from langslice.core.fits import landmarks as geometry
+from langslice.core.geometry.pixel_frames import SourceFrame, source_frame
+from langslice.core.pictures.drawn import collecting
+from langslice.core.pictures.grid import draw_grid
+from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.spec import NonlinearSpec
-from langslice.core.state import StackState
-from langslice.core.zoom_grid import draw_grid
+from langslice.core.stack.stack import StackState
 from langslice.job.job import Job
-from langslice.job.views import DiscardedViews
-from langslice.ops import atlas, damage, landmarks, look
-from langslice.ops.refusal import Refused
+from langslice.job.pictures import DiscardedViews
+from langslice.tools import atlas, damage, landmarks, look
+from langslice.tools import zoom as tools_zoom
+from langslice.tools.refusal import Refused
 from tests.test_ops_look import _job
 
 
@@ -71,7 +72,7 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         assert len(job.undo_stack) == depth + 1 and record.deformation is None
         derived = job.layout.section_dir(record.id) / "landmarks.json"
         assert json.loads(derived.read_text())["pairs"] == record.landmarks["pairs"]
-        from langslice.job.checkpoint import read_checkpoint
+        from langslice.job.state_file import read_checkpoint
 
         restored = StackState.from_dict(read_checkpoint(job.checkpoint_path))
         assert restored.by_id(record.id).landmarks == record.landmarks
@@ -167,7 +168,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
             )
         assert caught.value.code == "BAD_LANDMARK_POINT"
         box = [b[0] - 30, b[1] - 25, b[0] + 30, b[1] + 25]
-        zoom = look.zoom(job, ws, box=box, picture=entry["id"])
+        zoom = tools_zoom.zoom(job, ws, box=box, picture=entry["id"])
         job.views.flush()
         zoom_record = job.views.lookup(zoom.entries[0]["id"])
         assert zoom_record.recipe["args"]["box"] == [round(v, 2) for v in box]
@@ -190,7 +191,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         assert record.landmarks["pairs"][0]["section_fraction_xy"] == pytest.approx(
             pair["section_fraction_xy"]
         )
-        again = look.zoom(
+        again = tools_zoom.zoom(
             job,
             ws,
             picture=zoom.entries[0]["id"],
@@ -226,7 +227,7 @@ def test_explicit_application_composes_without_running_an_engine(tmp_path, monke
     job, ws, record = setup(tmp_path)
     try:
         monkeypatch.setattr(
-            "langslice.core.deformable.engines.run_engine",
+            "langslice.core.fits.deformable.engines.run_engine",
             lambda *_args: pytest.fail("No registration engine for landmarks"),
         )
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record, delta=(2.0, 1.0)))
@@ -331,9 +332,9 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
 
 
 def test_doors_have_typed_landmarks_and_apply_through_normal_tools(tmp_path):
-    from langslice.doors.declarations import arguments_schema
     from langslice.doors.tools.toolbox import build_tools
-    from langslice.ops.exports import export_maps
+    from langslice.tools.descriptions.render import arguments_schema
+    from langslice.tools.exports import export_maps
 
     job, ws, record = setup(tmp_path)
     try:
@@ -371,9 +372,9 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
     from mcp.types import ImageContent
     from PIL import Image
 
-    from langslice.doors.mcp import server
+    from langslice.doors.mcp import pages
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.reply import fit_reply
+    from langslice.tools.reply import fit_reply
 
     job, ws, record = setup(tmp_path)
     try:
@@ -384,8 +385,8 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
         original = Image.open(job.folder / old.path / "view.jpg").convert("RGB")
         expected = landmarks._endpoint(job, record, point, "section")["canonical_xy"]
         # A deliberately tiny transport budget guarantees multiple resizes.
-        monkeypatch.setattr(server, "fit_reply", lambda items: fit_reply(items, budget=12000))
-        blocks = server.result_blocks(
+        monkeypatch.setattr(pages, "fit_reply", lambda items: fit_reply(items, budget=12000))
+        blocks = pages.result_blocks(
             {"pictures": [{"id": old.seq}], "regions": [{"id": old.seq}],
              "results": [{"pictures": [{"id": old.seq}]}],
              TOOL_MEDIA_PARTS_KEY: [original]}, job=job
@@ -411,9 +412,9 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
         with pytest.raises(Refused, match="caption/gutter"):
             landmarks._endpoint(job, record,
                                 {"picture": new_id, "x": x, "y": delivered.height-1}, "section")
-        zoomed = look.zoom(job, ws, picture=new_id, box=[x-10, y-10, x+10, y+10])
+        zoomed = tools_zoom.zoom(job, ws, picture=new_id, box=[x-10, y-10, x+10, y+10])
         assert zoomed.redrawn
-        assert server.result_blocks({TOOL_MEDIA_PARTS_KEY: [original]}, job=job)
+        assert pages.result_blocks({TOOL_MEDIA_PARTS_KEY: [original]}, job=job)
     finally:
         job.close()
 
@@ -548,15 +549,16 @@ def test_a_landmark_edit_alone_leaves_old_pictures_unstale(tmp_path):
         job.views.flush()
         number = first.entries[0]["id"]
         landmarks.set_landmarks(job, ws, record.id, edits)
-        assert not look.zoom(job, ws, box=[0, 0, 40, 40], picture=number).stale
+        assert not tools_zoom.zoom(job, ws, box=[0, 0, 40, 40], picture=number).stale
         newer = look.look(job, ws, "section", sections=[record.id])
         job.views.flush()
         landmarks.set_landmarks(job, ws, record.id, delete=["L2"])
-        assert not look.zoom(job, ws, box=[0, 0, 400, 400], picture=newer.entries[0]["id"]).stale
+        assert not tools_zoom.zoom(job, ws, box=[0, 0, 400, 400],
+        picture=newer.entries[0]["id"]).stale
         before = job.snapshot()
         record.position_mm += 0.01
         job.commit(before)
-        assert look.zoom(job, ws, box=[0, 0, 40, 40], picture=number).stale
+        assert tools_zoom.zoom(job, ws, box=[0, 0, 40, 40], picture=number).stale
     finally:
         job.close()
 
@@ -630,7 +632,7 @@ def test_the_reply_names_the_region_at_each_atlas_endpoint_and_refuses_one_outsi
 
 
 def _mesh_of(current):
-    from langslice.core.triangulation import PiecewiseAffine
+    from langslice.core.geometry.triangulation import PiecewiseAffine
 
     params = current.engine["native_parameters"]
     source, target = np.array(params["source_xy"]), np.array(params["target_xy"])
@@ -714,7 +716,7 @@ def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_pa
 
 
 def _zoom(job, ws, picture, box):
-    done = look.zoom(job, ws, box=box, picture=picture)
+    done = tools_zoom.zoom(job, ws, box=box, picture=picture)
     job.views.flush()
     return done
 
@@ -882,8 +884,8 @@ def test_marking_damage_does_not_make_a_zoom_stale(tmp_path):
         seq = _overlay(job, ws, record)
         regions = [str(v["acronym"]) for v in ws.atlas.structures.values()][1:2]
         damage.mark_damage(job, ws, record.id, regions)
-        assert look.zoom(job, ws, box=[10, 10, 100, 100], picture=seq).stale is False
+        assert tools_zoom.zoom(job, ws, box=[10, 10, 100, 100], picture=seq).stale is False
         job.state.by_id(record.id).position_mm += 0.05  # a placement change does
-        assert look.zoom(job, ws, box=[10, 10, 100, 100], picture=seq).stale is True
+        assert tools_zoom.zoom(job, ws, box=[10, 10, 100, 100], picture=seq).stale is True
     finally:
         job.close()

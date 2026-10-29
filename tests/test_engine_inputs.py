@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from langslice.core import deformation
-from langslice.core.engine_inputs import (
+from langslice.core.fits import deformation
+from langslice.core.fits.inputs import (
     NATIVE_BRIGHTNESS,
     EstimatedBlock,
     InputsBlock,

@@ -27,19 +27,19 @@ dependencies = [
     # Codecs for compressed TIFFs (LZW, Deflate, JPEG and others): tifffile
     # reads them only through imagecodecs.
     "imagecodecs",
-    # Windowed and pyramid-level TIFF reads (langslice.core.native) go through
+    # Windowed and pyramid-level TIFF reads (langslice.core.sections.native) go through
     # tifffile's zarr store; a deformation record's arrays are an OME-Zarr
-    # store (langslice.core.deformable.ome_warp).
+    # store (langslice.core.fits.deformable.ome_warp).
     "zarr>=3",
     "python-dotenv",
     "itk-elastix",
-    # The deformable engine (langslice.core.deformable): fireants_syn and the
+    # The deformable engine (langslice.core.fits.deformable): fireants_syn and the
     # packaged trace_borders fit with FireANTs' SyN on torch (on the GPU when
     # torch sees one). FireANTs 1.5.1 is not on PyPI; its GitHub archive at
     # f8a9cc2 builds without the private submodule a git install trips on.
     # SimpleITK is the one dependency of FireANTs it imports; it also runs N4
     # bias-field correction and denoising of the preprocessed channel
-    # (langslice.core.image_prep).
+    # (langslice.core.sections.reading).
     "torch>=2.3",
     "SimpleITK>=2.2.1",
     "fireants @ https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz",
@@ -49,7 +49,7 @@ dependencies = [
 
 [project.scripts]
 langslice = "langslice.cli:main"
-langslice-job = "langslice.doors.cli.jobcli:main"
+langslice-job = "langslice.doors.agent_cli.main:main"
 
 [project.optional-dependencies]
 # HDF5 reading (h5py). The deformable engine is a core dependency (above).
@@ -95,7 +95,7 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["core/atlas/*.json", "hosts/integrations/static/*", "hosts/gui/static/*"]
+langslice = ["core/atlas/*.json", "hosts/abba/static/*", "hosts/gui/static/*"]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs
@@ -109,25 +109,39 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "layers"
-name = "Layers: hosts, engines > doors : agent > ops > job > core"
+name = "Layers: hosts, engines > doors > tools > job > core"
 type = "layers"
 containers = ["langslice"]
-layers = ["hosts : engines", "doors : agent", "ops", "job", "core"]
+layers = ["hosts : engines", "doors", "tools", "job", "core"]
 
 [[tool.importlinter.contracts]]
 id = "no-models-below-doors"
-name = "core, job and ops import no provider, agent framework or model client"
+name = "core, job and tools import no provider, agent framework or model client"
 type = "forbidden"
-source_modules = ["langslice.core", "langslice.job", "langslice.ops"]
+source_modules = ["langslice.core", "langslice.job", "langslice.tools"]
 forbidden_modules = ["langslice.providers", "google", "litellm", "openai", "mcp"]
 
 [[tool.importlinter.contracts]]
-id = "providers-below-doors"
-name = "providers import no job, operation, door, driver or host"
+id = "providers-import-core-only"
+name = "providers import no job, tool, door, host or engine"
 type = "forbidden"
 source_modules = ["langslice.providers"]
 forbidden_modules = [
-    "langslice.job", "langslice.ops", "langslice.doors", "langslice.agent", "langslice.hosts",
+    "langslice.job", "langslice.tools", "langslice.doors", "langslice.hosts",
+    "langslice.engines",
+]
+
+[[tool.importlinter.contracts]]
+id = "engines-import-plugin-api-only"
+name = "engines import the plugin API only, no layer and no provider"
+type = "forbidden"
+# The plugin API itself reaches the layers; an engine may not reach them
+# past it.
+allow_indirect_imports = true
+source_modules = ["langslice.engines"]
+forbidden_modules = [
+    "langslice.core", "langslice.job", "langslice.tools", "langslice.doors",
+    "langslice.hosts", "langslice.providers",
 ]
 
 [tool.pytest.ini_options]
@@ -192,21 +206,24 @@ type_names = { Workspace = "workspace", "langslice.job.job.Job" = "job", JobSpec
 # STYLE.md 5.1 and 3.6: the modules that read and write JSON files and wire
 # formats, where a TypedDict or a dict of results may stand.
 json_boundary_modules = [
-    "langslice.agent.trace",
-    "langslice.core.deformable.record",
-    "langslice.doors.api.models",
-    "langslice.doors.cli.envelope",
-    "langslice.doors.tools.arguments",
-    "langslice.doors.trace",
-    "langslice.hosts.api.service",
-    "langslice.job.checkpoint",
-    "langslice.job.formats",
+    "langslice.core.fits.deformable.record",
+    "langslice.doors.abba.contract",
+    "langslice.doors.agent.trace",
+    "langslice.doors.agent_cli.envelope",
+    "langslice.doors.call_log",
+    "langslice.hosts.service",
     "langslice.job.history",
-    "langslice.job.imports",
+    "langslice.job.imports.matching",
+    "langslice.job.imports.placements",
+    "langslice.job.imports.readers",
     "langslice.job.index",
+    "langslice.job.pictures",
     "langslice.job.plugin_store",
+    "langslice.job.public_files",
     "langslice.job.recent",
-    "langslice.job.views",
+    "langslice.job.state_file",
+    "langslice.tools.arguments",
+    "langslice.tools.descriptions.fixes",
     "tools.stylecheck.baseline",
     "tools.stylecheck.jsondata",
     "tools.stylecheck.pyright_baseline",
@@ -215,17 +232,23 @@ json_boundary_modules = [
 # STYLE.md 8.5: the command modules, where print and sys.stdout.write belong.
 cli_modules = [
     "langslice.cli",
-    "langslice.doors.cli",
-    "langslice.doors.cli.envelope",
-    "langslice.doors.cli.job",
-    "langslice.doors.cli.jobcli",
-    "langslice.doors.cli.linear",
-    "langslice.doors.cli.transcripts",
-    "langslice.doors.cli.warm",
+    "langslice.doors.agent_cli.background",
+    "langslice.doors.agent_cli.calls",
+    "langslice.doors.agent_cli.catalog",
+    "langslice.doors.agent_cli.envelope",
+    "langslice.doors.agent_cli.environment",
+    "langslice.doors.agent_cli.launch",
+    "langslice.doors.agent_cli.main",
+    "langslice.doors.agent_cli.warm",
+    "langslice.doors.commands.linear",
+    "langslice.doors.commands.mcp",
+    "langslice.doors.commands.parser",
+    "langslice.doors.commands.transcripts",
+    "langslice.tools.descriptions.fixes",
     "tools.stylecheck.__main__",
 ]
 # STYLE.md 9.2: the one module that builds tool descriptions.
-docs_renderer_module = "langslice.doors.declarations"
+docs_renderer_module = "langslice.tools.descriptions.render"
 # STYLE.md 10.3, 8.1 and 2.6: no decorators module, codes enum or
 # infrastructure package exists yet. While decorators_module is empty,
 # decorator-location is off and nested-definition exempts no module, so a

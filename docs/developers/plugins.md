@@ -55,7 +55,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/doors/declarations.py`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/tools/descriptions/render.py`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -492,7 +492,7 @@ plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).
 
 ## The MCP adapter
 
-`langslice.doors.plugins.mcp:tools` is a plugin that makes LangSlice a client of
+`langslice.doors.plugins.mcp_adapter:tools` is a plugin that makes LangSlice a client of
 an MCP server on this machine. Its options (`plugin_config`) name the server,
 by command LangSlice starts or by a streamable-HTTP URL, and the **allow-list**
 of its tools; only those are offered, each as `<server>__<tool>` (characters

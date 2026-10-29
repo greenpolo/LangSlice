@@ -20,10 +20,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core.opening import pair_tiles
-from langslice.core.scale import stored_scale
+from langslice.core.pictures.opening import pair_tiles
+from langslice.core.pictures.scale import stored_scale
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
 from tests.deformable_synthetic import (
     SECTION_SIZE,

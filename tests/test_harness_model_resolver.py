@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from langslice.agent import model_resolver
+from langslice.doors.agent import models as model_resolver
 
 
 class _FakeLiteLlm:

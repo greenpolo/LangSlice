@@ -26,7 +26,14 @@ import numpy as np
 
 from langslice.core import frozen as freeze
 from langslice.core.spec import PLANES
-from langslice.core.toolset import GROUPS, TOOLS, Group, Kind, ToolDef, positions_on
+from langslice.core.toolset import (
+    GROUPS,
+    TOOLS,
+    Group,
+    Kind,
+    ToolDef,
+    positions_on,
+)
 
 #: The plugin API's version. A plugin that names another is refused.
 PLUGIN_API_VERSION = 1
@@ -85,12 +92,11 @@ class ToolSpec:
     """One tool a plugin adds (``docs/developers/plugins.md``).
 
     ``stub`` is a function whose signature is the tool's arguments and whose
-    docstring is its description, written like the stubs of
-    ``langslice.doors.declarations`` (needs marks allowed); ``handler`` is
-    called as ``handler(ctx, **arguments)`` with a
-    :class:`langslice.doors.plugins.ToolContext` and returns a
-    :class:`ToolResult`. A ``write`` tool writes section properties only
-    through the context, and only those named in ``writes``.
+    docstring is its description, written like the stubs of the native tools'
+    declarations (needs marks allowed); ``handler`` is called as ``handler(ctx,
+    **arguments)`` with a :class:`langslice.doors.plugins.ToolContext` and
+    returns a :class:`ToolResult`. A ``write`` tool writes section properties
+    only through the context, and only those named in ``writes``.
     """
 
     name: str

@@ -14,7 +14,9 @@ Options::
     --paths PATH ...     only these files or folders
     --explain NAME       print what a check flags, and exit
     --show-warnings      list each warning, not only their counts
-    --prune              lower the baseline to the current counts
+    --prune              lower the baseline to the current counts; with
+                         --against, also drop the move map's rows that
+                         are inert at REF
     --write-baseline     create the baseline from the current errors
     --replace-baseline   with --write-baseline, overwrite an existing one
     --against REF        also fail if a baseline grew, or a setting
@@ -26,6 +28,7 @@ Options::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 import time
 from pathlib import Path
@@ -34,6 +37,7 @@ from tools.stylecheck.against import check_against
 from tools.stylecheck.baseline import (
     Baseline,
     BaselineError,
+    CountChange,
     compare,
     count_errors,
     prune,
@@ -43,6 +47,7 @@ from tools.stylecheck.baseline import (
 from tools.stylecheck.core import Config, Project, Violation, load_project
 from tools.stylecheck.external import ExternalToolError
 from tools.stylecheck.history import HistoryError
+from tools.stylecheck.moves import MovesError, read_moves, write_moves
 from tools.stylecheck.pyright_baseline import PyrightBaselineError
 from tools.stylecheck.report import format_against, format_report
 from tools.stylecheck.run import (
@@ -68,6 +73,7 @@ USAGE_ERRORS = (
     CheckFailedError,
     ExternalToolError,
     HistoryError,
+    MovesError,
     PyrightBaselineError,
     UnknownRuleError,
 )
@@ -196,6 +202,8 @@ def _run(arguments: Arguments, root: Path) -> int:
         baseline = Baseline(counts, record)
         write_baseline(baseline_path, baseline)
         print(f"Pruned {config.baseline}.")
+        if arguments.against is not None:
+            _prune_moves(root, arguments.against)
 
     comparison = compare(violations, baseline.counts, scope)
     report = format_report(
@@ -204,7 +212,9 @@ def _run(arguments: Arguments, root: Path) -> int:
     print(report, end="")
     status = 1 if comparison.failing else 0
     if arguments.against is not None:
-        status = max(status, _against(arguments, project, config, baseline))
+        slack = comparison.shrinkable
+        result = _against(arguments, project, config, baseline, slack)
+        status = max(status, result)
     elif baseline_path.exists() and differences(baseline.record, record):
         print(
             f"{config.baseline} records other checks or settings than this "
@@ -258,9 +268,16 @@ def _write(
 
 
 def _against(
-    arguments: Arguments, project: Project, config: Config, baseline: Baseline
+    arguments: Arguments,
+    project: Project,
+    config: Config,
+    baseline: Baseline,
+    slack: tuple[CountChange, ...],
 ) -> int:
-    """Compare with ``--against``'s commit; return 1 when the commit fails."""
+    """Compare with ``--against``'s commit; return 1 when the commit fails.
+
+    The baseline's entries above the run's counts (``slack``) fail it too.
+    """
     record = current_record(project.root, config, check_names())
     result = check_against(
         arguments.against or "HEAD",
@@ -270,8 +287,19 @@ def _against(
         record=record,
         allow_loosening=arguments.allow_loosening,
     )
+    result = dataclasses.replace(result, slack=slack)
     print(format_against(result), end="")
     return int(result.fails)
+
+
+def _prune_moves(root: Path, ref: str) -> None:
+    """Drop the move map's rows whose old definition is not at a commit."""
+    moves = read_moves(root)
+    live = moves.live(root, ref)
+    if len(live.rows) < len(moves.rows):
+        write_moves(root, live)
+        dropped = len(moves.rows) - len(live.rows)
+        print(f"Dropped {dropped} move rows that are inert at {ref}.")
 
 
 def _relative_paths(paths: list[str], root: Path) -> tuple[str, ...]:

@@ -4,7 +4,7 @@ A section placed at a tilt (the synthetic atlas turned 30 degrees, and mirrored)
 is drawn on the canvas with the atlas's dorsal direction straight up and its
 midline down the canvas's middle; the rough borders drawn there, extracted as
 a model's lines would be and read back through the request's
-``atlas_to_canvas`` (``core.deformation.traced_lines``), land on the atlas
+``atlas_to_canvas`` (``core.fits.deformation.traced_lines``), land on the atlas
 borders placed directly on the section.
 """
 
@@ -19,18 +19,20 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core import deformation, handoff
-from langslice.core.atlas.render import (
+from langslice.core.atlas.borders import (
     annotation_slice,
     placed_border_coverage,
 )
-from langslice.core.handoff import LinearRegistrationInput
-from langslice.core.nonlinear import registration_tool as tool
-from langslice.core.nonlinear.upright import upright
-from langslice.core.oblique import plane_index_affine
+from langslice.core.fits import deformation
+from langslice.core.fits import frame as handoff
+from langslice.core.fits.frame import LinearRegistrationInput
+from langslice.core.fits.trace import trace as tool
+from langslice.core.fits.trace.canvas import upright
+from langslice.core.geometry.oblique import plane_index_affine
 from langslice.core.space import atlas_space_context
-from langslice.core.state import SliceState, StackState
-from langslice.providers.registry import ImageModel, resolve_image_model
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
+from langslice.providers.connections import ImageModel, resolve_image_model
 from tests.deformable_synthetic import SyntheticAtlas
 
 POSITION_MM = 0.1

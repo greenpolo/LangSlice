@@ -6,7 +6,7 @@ from collections.abc import Sequence
 import numpy as np
 import pytest
 
-from langslice.core.atlas.core import (
+from langslice.core.atlas.load import (
     get_position_range_mm,
     get_reference_slice,
     index_to_position_mm,

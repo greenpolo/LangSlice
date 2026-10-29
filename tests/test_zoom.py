@@ -1,4 +1,4 @@
-"""Zoom (core/zoom.py): a box of an earlier picture, drawn again.
+"""Zoom (core/pictures/zoom.py): a box of an earlier picture, drawn again.
 
 Box maths and composition, positioning zoom, a section gone falls back to the
 saved picture, and region zoom (selected borders only, displayed side, refusals).
@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from langslice.core.layers import collecting, note_for
-from langslice.core.look import LookRequest, look
-from langslice.core.zoom import (
+from langslice.core.pictures.drawn import collecting, note_for
+from langslice.core.pictures.look import LookRequest, look
+from langslice.core.pictures.zoom import (
     ZoomError,
     box_fractions,
     compose,
@@ -65,7 +65,7 @@ def test_section_gone_falls_back_to_the_saved_picture(tmp_path: Path):
 
 
 def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_path: Path):
-    from langslice.core.look import LookError
+    from langslice.core.pictures.look import LookError
 
     ws, state = stack(tmp_path)
     first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
@@ -110,7 +110,7 @@ def test_region_zoom_refusals(tmp_path: Path):
 
 
 def test_region_zoom_resolves_displayed_side_and_reports_absent_region(tmp_path: Path):
-    from langslice.core.look import LookError
+    from langslice.core.pictures.look import LookError
 
     ws, state = stack(tmp_path)
     first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]

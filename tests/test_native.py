@@ -1,5 +1,5 @@
 """Zooms read the section from its image file at the file's own resolution
-(:mod:`langslice.core.native`): the windowed reader, the orientation
+(:mod:`langslice.core.sections.native`): the windowed reader, the orientation
 inverses, the look carried by the local fit, and the zoom pictures."""
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.core.look import LookRequest, look, redraw
-from langslice.core.native import (
+from langslice.core.pictures.look import LookRequest, look, redraw
+from langslice.core.sections.native import (
     fit_look,
     read_region,
     unorient,
@@ -20,7 +20,8 @@ from langslice.core.native import (
     unoriented_points,
 )
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
 from tests.deformable_synthetic import SyntheticAtlas
 

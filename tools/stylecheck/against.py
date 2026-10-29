@@ -5,14 +5,24 @@ A commit passes when, compared with the reference commit:
 - every entry of the checker's baseline is at most its count there, except
   the entries the reference could not have had: a rule it did not run (a
   new check, a newly selected code), errors that a setting made stricter
-  since then adds on today's code, and the entries of a definition whose
-  file was moved (the same rule and definition, at the reference, in a file
-  that no longer exists; at most its count there);
+  since then adds on today's code, and the entries of a definition the
+  move map declares moved (:mod:`tools.stylecheck.moves`; the places of
+  one old entry share at most what it lost since the reference, except
+  that each place inherits a rule that reports once per file);
+- the baseline holds no more than the code has: an entry above the run's
+  count is pruned, so a fixed error cannot come back unseen;
 - the file's record of checks and settings is the one the checker runs
   with now, and no setting is looser than at the reference
-  (:mod:`tools.stylecheck.settings`), unless ``--allow-loosening`` is given;
+  (:mod:`tools.stylecheck.settings`), with the modules the reference's
+  settings name read through the move map, unless ``--allow-loosening``
+  is given;
 - basedpyright's baseline only shrank, per file and rule
-  (:mod:`tools.stylecheck.pyright_baseline`).
+  (:mod:`tools.stylecheck.pyright_baseline`); an entry that left a file
+  the move map moves definitions out of may reappear once in a file it
+  moves them into, matched by its span first and else by its rule.
+
+Only the rows of the move map that hold at the reference and now are
+followed: the old definition was there, and the new one is here.
 
 Which version of each baseline is the reference is
 :func:`tools.stylecheck.history.reference`'s choice: the file at the
@@ -22,7 +32,6 @@ commit, its first committed version when it was created later, or nothing.
 from __future__ import annotations
 
 import functools
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -34,6 +43,7 @@ from tools.stylecheck.baseline import (
 )
 from tools.stylecheck.core import Config, Project
 from tools.stylecheck.history import Reference, ReferenceKind, reference
+from tools.stylecheck.moves import Move, Moves, read_moves
 from tools.stylecheck.pyright_baseline import (
     PYRIGHT_BASELINE,
     PyrightChange,
@@ -41,7 +51,7 @@ from tools.stylecheck.pyright_baseline import (
     parse_pyright_baseline,
     pyright_growth,
 )
-from tools.stylecheck.run import internal_violations
+from tools.stylecheck.run import internal_violations, per_file_rules
 from tools.stylecheck.scope import Key
 from tools.stylecheck.settings import (
     Record,
@@ -63,7 +73,8 @@ class Growth:
     n_adopted
         How many errors entered as a new rule or a stricter setting.
     n_moved
-        How many errors entered with a definition whose file moved.
+        How many errors entered with a definition whose move the move map
+        declares.
     """
 
     changes: tuple[CountChange, ...]
@@ -92,6 +103,12 @@ class AgainstResult:
         What basedpyright's baseline was compared with, in words.
     pyright_changes
         Each file and rule of basedpyright's baseline that grew.
+    slack
+        Each entry of the checker's baseline above the run's count, which
+        the caller fills in from its run.
+    unhonoured
+        The rows of the move map, live at the reference, that it does not
+        follow: their new definition is not in the code.
     """
 
     reference: str
@@ -101,6 +118,8 @@ class AgainstResult:
     loosening_allowed: bool
     pyright_reference: str
     pyright_changes: tuple[PyrightChange, ...]
+    slack: tuple[CountChange, ...] = ()
+    unhonoured: tuple[Move, ...] = ()
 
     @property
     def fails(self) -> bool:
@@ -111,6 +130,7 @@ class AgainstResult:
             or self.unrecorded
             or loosened
             or self.pyright_changes
+            or self.slack
         )
 
 
@@ -151,23 +171,30 @@ def check_against(
         When ``ref`` names no commit, or git fails.
     tools.stylecheck.baseline.BaselineError
         When the reference's baseline cannot be read.
+    tools.stylecheck.moves.MovesError
+        When the move map cannot be read.
     """
     root = project.root
     version = reference(root, ref, config.baseline)
+    live = read_moves(root).live(root, ref)
+    moves = live.honoured(ref, project)
     before: Baseline | None = None
     if version.text is not None:
-        before = parse_baseline(version.text, f"{ref}:{config.baseline}")
+        read = parse_baseline(version.text, f"{ref}:{config.baseline}")
+        before = Baseline(read.counts, moves.translate(read.record, record))
 
     loosening: list[SettingChange] = []
     growth = Growth((), 0, 0)
     if before is not None:
         loosening = loosenings(before.record, record)
     if version.kind is not ReferenceKind.NEW:
-        growth = _growth(project, config, before, baseline.counts, record)
+        growth = _growth(
+            project, config, before, baseline.counts, record, moves
+        )
 
     earlier = None if before is None else before.record
     pyright = reference(root, ref, PYRIGHT_BASELINE)
-    pyright_changes = _pyright_changes(root, pyright, earlier, record)
+    pyright_changes = _pyright_changes(root, pyright, earlier, record, moves)
     return AgainstResult(
         reference=version.description,
         growth=growth,
@@ -176,6 +203,7 @@ def check_against(
         loosening_allowed=allow_loosening,
         pyright_reference=pyright.description,
         pyright_changes=tuple(pyright_changes),
+        unhonoured=tuple(row for row in live.rows if row not in moves.rows),
     )
 
 
@@ -185,13 +213,14 @@ def _growth(
     before: Baseline | None,
     counts: dict[Key, int],
     record: Record,
+    moves: Moves,
 ) -> Growth:
     """Return the entries above what the reference baseline allows."""
     allowed_counts = {} if before is None else before.counts
     stricter: dict[Key, int] = {}
     if before is not None and record.differs("stylecheck.", before.record):
         stricter = _stricter_errors(project, config, before.record)
-    pool = _moved_pool(project.root, allowed_counts, counts)
+    lent = moves.lent(allowed_counts, counts, per_file=per_file_rules())
 
     changes: list[CountChange] = []
     n_adopted = n_moved = 0
@@ -207,9 +236,7 @@ def _growth(
         n_adopted += extra
         allowed += extra
 
-        rule, _, symbol = key
-        moved = min(count - allowed, pool[(rule, symbol)])
-        pool[(rule, symbol)] -= moved
+        moved = lent.take(key, count - allowed)
         n_moved += moved
         allowed += moved
         if count > allowed:
@@ -235,24 +262,12 @@ def _stricter_errors(
     }
 
 
-def _moved_pool(
-    root: Path, allowed_counts: dict[Key, int], counts: dict[Key, int]
-) -> Counter[tuple[str, str]]:
-    """Count the reference's errors per rule and definition in gone files.
-
-    An entry counts when its file no longer exists and the baseline no
-    longer lists its key, so each error moves once.
-    """
-    pool: Counter[tuple[str, str]] = Counter()
-    for key, count in allowed_counts.items():
-        rule, path, symbol = key
-        if key not in counts and not (root / path).exists():
-            pool[(rule, symbol)] += count
-    return pool
-
-
 def _pyright_changes(
-    root: Path, version: Reference, earlier: Record | None, record: Record
+    root: Path,
+    version: Reference,
+    earlier: Record | None,
+    record: Record,
+    moves: Moves,
 ) -> list[PyrightChange]:
     """Return the files and rules of basedpyright's baseline that grew."""
     path = root / PYRIGHT_BASELINE
@@ -266,17 +281,24 @@ def _pyright_changes(
         source = f"the reference's {PYRIGHT_BASELINE}"
         before = parse_pyright_baseline(version.text, source)
 
+    sources = moves.sources_by_target()
     return pyright_growth(
         before,
         after,
         is_adopted=functools.partial(_pyright_adopted, earlier, record),
-        is_gone=functools.partial(_is_gone, root),
+        move_sources=functools.partial(_move_sources, sources),
     )
 
 
-def _is_gone(root: Path, name: str) -> bool:
-    """Return whether a file of a baseline no longer exists."""
-    return not (root / name).exists()
+def _move_sources(
+    sources: dict[str, tuple[str, ...]], name: str
+) -> tuple[str, ...]:
+    """Return the files the move map moves definitions out of into a file.
+
+    The names are basedpyright's, which start with ``./``.
+    """
+    origins = sources.get(name.removeprefix("./"), ())
+    return tuple(f"./{source}" for source in origins)
 
 
 def _pyright_adopted(

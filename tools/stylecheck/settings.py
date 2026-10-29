@@ -46,6 +46,7 @@ from tools.stylecheck.jsondata import (
     canonical,
     load_toml,
 )
+from tools.stylecheck.pyright_levels import default_level
 from tools.stylecheck.scope import Key, Tool
 
 
@@ -64,7 +65,8 @@ class Direction(enum.StrEnum):
     IGNORES = "ignores"
     #: Names to values; entries may only be added.
     TABLE = "table"
-    #: A basedpyright report level, which may only rise.
+    #: A basedpyright report level, which may only rise; an unset level
+    #: is its checking mode's default (:mod:`tools.stylecheck.pyright_levels`).
     SEVERITY = "severity"
     #: basedpyright's ``typeCheckingMode``, which may only rise.
     MODE = "mode"
@@ -343,7 +345,13 @@ def loosenings(before: Record, after: Record) -> list[SettingChange]:
             continue  # a field the checker gained, with the code that reads it
 
         direction = setting_direction(name)
-        if not _ACCEPTS[direction](old, new):
+        compared = (old, new)
+        if direction is Direction.SEVERITY:
+            compared = (
+                _level_or_default(before, name),
+                _level_or_default(after, name),
+            )
+        if not _ACCEPTS[direction](*compared):
             changes.append(
                 SettingChange(
                     name, _json(old), _json(new), _RULE_WORDS[direction]
@@ -545,6 +553,15 @@ def _table(old: object, new: object) -> bool:
     return all(after.get(name) == value for name, value in before.items())
 
 
+def _level_or_default(record: Record, name: str) -> object:
+    """Return a basedpyright rule's level, its mode's default when unset."""
+    level = record.settings.get(name)
+    if level is not None:
+        return level
+    mode = as_text(record.settings.get("basedpyright.typeCheckingMode"))
+    return default_level(mode, name.removeprefix("basedpyright."))
+
+
 def _rank(value: object, order: tuple[str, ...]) -> int | None:
     """Return a level's place in its order; None for an unknown level."""
     if value is True:
@@ -558,8 +575,14 @@ def _rank(value: object, order: tuple[str, ...]) -> int | None:
 
 
 def _level_rose(order: tuple[str, ...], old: object, new: object) -> bool:
-    """Accept a level that stayed or went up in its order."""
+    """Accept a level that stayed or went up in its order.
+
+    The highest level is at least as strict as any other, an unknown one
+    included.
+    """
     before, after = _rank(old, order), _rank(new, order)
+    if after == len(order) - 1:
+        return True
     return before is not None and after is not None and after >= before
 
 

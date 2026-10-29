@@ -13,8 +13,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from langslice.core.deformable import DeformableRecord, Placement, ome_warp
-from langslice.core.deformation import RecordStore
+from langslice.core.fits.deformable import (
+    DeformableRecord,
+    Placement,
+    ome_warp,
+)
+from langslice.core.fits.deformation import RecordStore
 
 SCHEMAS = Path(__file__).parent / "fixtures" / "ngff_0.6"
 H, W = 60, 80
@@ -221,7 +225,7 @@ def test_the_store_transformations_reproduce_the_records_mapping(tmp_path: Path)
     for row, col in [(0, 0), (17, 33), (H - 1, W - 1)]:
         section = np.array([row, col], dtype=float) * MM  # (y, x) mm
         atlas_um = _apply(placement, _apply(warp, section, store), store)
-        # The record's own composition (core.maps.native_points).
+        # The record's own composition (core.maps.section_maps.native_points).
         field = record.field_mm[row, col].astype(np.float64)
         native = inverse @ [col + field[0] / MM, row + field[1] / MM, 1.0]
         expected = 25.0 * (np.asarray(NATIVE_TO_VOLUME) @ native)

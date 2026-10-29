@@ -10,14 +10,11 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.checkpoint import (
-    STATE_FORMAT_VERSION,
-    write_checkpoint,
-)
 from langslice.job.job import Job
+from langslice.job.state_file import STATE_FORMAT_VERSION, write_checkpoint
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool

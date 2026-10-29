@@ -115,6 +115,32 @@ def show(root: Path, commit: str, relpath: str) -> str | None:
     return done.stdout
 
 
+def tracked_files(root: Path, commit: str) -> list[str]:
+    """Return every file a commit holds.
+
+    Parameters
+    ----------
+    root
+        The repository root, where git runs.
+    commit
+        A commit's hash or any name git resolves.
+
+    Returns
+    -------
+    list of str
+        Each file relative to ``root``, with forward slashes.
+
+    Raises
+    ------
+    HistoryError
+        When git cannot list the commit's files.
+    """
+    done = _git(root, ["ls-tree", "-r", "--name-only", "-z", commit])
+    if done.returncode != 0:
+        raise HistoryError(f"git ls-tree failed: {done.stderr.strip()}")
+    return [name for name in done.stdout.split("\0") if name]
+
+
 def _git(root: Path, arguments: list[str]) -> subprocess.CompletedProcess[str]:
     """Run one git command in ``root`` and return what it printed."""
     return subprocess.run(

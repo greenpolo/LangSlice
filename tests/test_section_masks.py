@@ -1,4 +1,4 @@
-"""Section masks (``core.section_masks``): the EM sorting at the current
+"""Section masks (``core.sections.masks``): the EM sorting at the current
 registration, the files and state entries, staleness."""
 
 from __future__ import annotations
@@ -10,12 +10,13 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.agent.engine import build_context
-from langslice.core import section_masks
-from langslice.core.deformable.masks import EM_MATCH_THRESHOLD, dilate
-from langslice.core.deformable.record import DeformableRecord
+from langslice.core.fits.deformable.masks import EM_MATCH_THRESHOLD, dilate
+from langslice.core.fits.deformable.record import DeformableRecord
+from langslice.core.sections import masks as section_masks
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.layout import JobLayout
@@ -190,7 +191,7 @@ def test_a_new_registration_marks_a_mask_earlier_but_a_turn_makes_it_stale(tmp_p
 
 
 def test_the_status_rows_list_a_sections_masks(tmp_path: Path):
-    from langslice.core.status import status_rows
+    from langslice.core.stack.status import status_rows
 
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()

@@ -10,9 +10,9 @@ from google.adk.agents import LlmAgent
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-from langslice.agent.session import run_agent_session
-from langslice.agent.trace import SessionTrace
-from langslice.providers import openai_oauth
+from langslice.doors.agent.session import run_agent_session
+from langslice.doors.agent.trace import SessionTrace
+from langslice.providers.oauth import transport as openai_oauth
 from langslice.providers.usage import (
     item_descriptor,
     request_descriptor,

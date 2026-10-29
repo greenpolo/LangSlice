@@ -11,14 +11,14 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 
-from langslice.doors.api.models import (
+from langslice.doors.abba.contract import (
     ENGINE_METHODS,
     EngineRequest,
     export_schema_bundle,
 )
-from langslice.doors.cli import build_parser, main
-from langslice.hosts.api.service import handle_request, run_stdio
+from langslice.doors.commands.parser import build_parser, main
 from langslice.hosts.cli import run_abba
+from langslice.hosts.service import handle_request, run_stdio
 
 # --- parser -----------------------------------------------------------------
 
@@ -30,7 +30,7 @@ def test_serve_requires_stdio() -> None:
 
 
 def test_run_abba_without_a_connector_jar_says_how_to_get_one(monkeypatch, tmp_path) -> None:
-    from langslice.hosts.integrations import abba_launch
+    from langslice.hosts.abba import launch as abba_launch
 
     monkeypatch.delenv(abba_launch.CONNECTOR_JAR_ENV, raising=False)
     monkeypatch.setattr(abba_launch, "repository_root", lambda: tmp_path)
@@ -49,7 +49,7 @@ def test_cli_protocol_is_optional_and_explicit_values_survive():
 
 def test_saved_job_prompt_handles_unknown_protocol():
     from langslice.core.spec import JobSpec, PositionSpec
-    from langslice.doors.api.saved_jobs import copy_prompt
+    from langslice.doors.abba.saved_jobs import copy_prompt
 
     spec = JobSpec(image_folder=".", tasks=["position"])
     assert "section thickness not supplied, interval not supplied" in copy_prompt("job", spec)
@@ -106,7 +106,7 @@ def test_handle_request_unknown_method_still_raises_for_bypassed_validation() ->
 
 
 def test_login_url_is_a_structured_event(monkeypatch):
-    from langslice.doors.api import setup
+    from langslice.doors import credentials as setup
 
     def login(on_url, timeout_s):
         assert timeout_s == 30
@@ -125,7 +125,7 @@ def test_login_url_is_a_structured_event(monkeypatch):
 
 
 def test_api_key_validation_and_exception_never_echo_secret(monkeypatch):
-    from langslice.doors.api import setup
+    from langslice.doors import credentials as setup
 
     secret = "test-private-api-key"
     invalid = _run_lines(json.dumps({
@@ -147,7 +147,8 @@ def test_api_key_validation_and_exception_never_echo_secret(monkeypatch):
 
 
 def test_linear_service_emits_checkpoint_before_result(monkeypatch):
-    from langslice.doors.api import abba_worker, setup
+    from langslice.doors import credentials as setup
+    from langslice.doors.abba import worker as abba_worker
 
     monkeypatch.setattr(setup, "apply_saved_credentials", lambda: None)
 
@@ -168,8 +169,8 @@ def test_native_stdout_is_separate_from_wire_in_real_process(tmp_path):
 
     script = """
 import os
-from langslice.doors.api import setup
-from langslice.hosts.api.service import run_stdio
+from langslice.doors import credentials as setup
+from langslice.hosts.service import run_stdio
 def status():
     print('Python diagnostic')
     os.write(1, b'native diagnostic\\n')

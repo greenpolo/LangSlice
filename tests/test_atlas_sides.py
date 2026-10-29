@@ -14,16 +14,16 @@ from langslice.core.atlas.sides import (
     native_left,
     split_side,
 )
-from langslice.core.deformable import (
+from langslice.core.fits.deformable import (
     FitSettings,
     draw_warped_borders,
     prepare_fit,
 )
-from langslice.core.deformable.plane_images import (
+from langslice.core.fits.deformable.plane_images import (
     regions_mask,
     whole_region_ids,
 )
-from langslice.core.deformable.record import (
+from langslice.core.fits.deformable.record import (
     OUTSIZED_MAX_FRACTION,
     OUTSIZED_MEDIAN_MM,
     diagnose,

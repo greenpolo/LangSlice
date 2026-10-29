@@ -6,7 +6,6 @@ checkpoints and optional loopback-only ABBA updates. No model is called here.
 
 from __future__ import annotations
 
-import base64
 import inspect
 import json
 import logging
@@ -17,7 +16,7 @@ from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field, replace
 from functools import partial
-from io import BytesIO, TextIOWrapper
+from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
 
@@ -27,25 +26,23 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
-from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
-from PIL import Image
+from mcp.types import ContentBlock, TextContent, ToolAnnotations
 
-from langslice.agent.engine import EngineContext, build_context
-from langslice.core.jpeg import encode_jpeg
-from langslice.core.layers import PictureNote
-from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
-from langslice.core.picture_geometry import resized_recipe
+from langslice.core.pictures.opening import (
+    CLAUDE_MAX_VIEW_EDGE,
+)
 from langslice.core.spec import JobSpec
-from langslice.core.state import StackState
+from langslice.core.stack.stack import StackState
 from langslice.core.toolset import refusal
-from langslice.doors.api.abba_worker import (
+from langslice.doors.abba.checkpoints import checkpoint_callback
+from langslice.doors.abba.saved_jobs import load_job
+from langslice.doors.abba.worker import (
     PreparedLinear,
-    checkpoint_callback,
     prepare_linear,
     public_event,
 )
-from langslice.doors.api.saved_jobs import load_job
-from langslice.doors.card import write_card
+from langslice.doors.agent.engine import EngineContext, build_context
+from langslice.doors.call_log import TRACE_DIR_ENV, HostTrace
 from langslice.doors.jobs import (
     NoJob,
     close_job,
@@ -55,20 +52,21 @@ from langslice.doors.jobs import (
     read_spec,
 )
 from langslice.doors.mcp.host_channel import HostChannel
-from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
-from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.reply import (
-    REPLY_BYTES,
-    Item,
-    fit_reply,
-    paged,
-    shrunk_note,
-    strip_bytes,
+from langslice.doors.mcp.pages import (
+    describe_blocks,
+    opening_pages,
+    result_blocks,
+    save_page,
+)
+from langslice.doors.reference_card import write_card
+from langslice.doors.statement import (
+    job_statement,
+    opening_for_mcp,
+    read_notes,
 )
 from langslice.doors.tools.toolbox import ToolBox, build_tools
-from langslice.doors.trace import TRACE_DIR_ENV, HostTrace
 from langslice.job.job import Job
-from langslice.ops.registry import VERBS
+from langslice.tools.catalog import VERBS
 
 logger = logging.getLogger(__name__)
 
@@ -108,11 +106,11 @@ class Session:
     """One open job as this door holds it.
 
     ``job`` is the core :class:`~langslice.job.job.Job` (state, spec,
-    undo/redo, checkpoint, submit gates), the one ``langslice.agent.engine.run``
-    opens; ``box`` is the tools over it, whose gates and delivery bookkeeping
-    this door shares with the ADK agent's. The rest is the door's own: the
-    saved-job record, the host channel and its update callback, the opening
-    pages and the trace.
+    undo/redo, checkpoint, submit gates), the one
+    ``langslice.doors.agent.engine.run`` opens; ``box`` is the tools over it,
+    whose gates and delivery bookkeeping this door shares with the ADK agent's.
+    The rest is the door's own: the saved-job record, the host channel and its
+    update callback, the opening pages and the trace.
     """
 
     job: Job
@@ -156,102 +154,6 @@ class Session:
             logger.warning("Could not finish the job in %s", self.job.folder, exc_info=True)
 
 
-# --- content conversion ----------------------------------------------------
-
-
-def image_block(image: Image.Image | bytes) -> ImageContent:
-    """One core picture (or its JPEG bytes) as an MCP image block (the doors'
-    JPEG encoding)."""
-    data = image if isinstance(image, bytes) else encode_jpeg(image)
-    return ImageContent(type="image", data=base64.b64encode(data).decode("ascii"),
-                        mimeType="image/jpeg")
-
-
-def blocks_of(items: list[Item]) -> list[ContentBlock]:
-    """Texts and JPEG bytes (:data:`langslice.doors.tools.reply.Item`) as MCP blocks."""
-    return [TextContent(type="text", text=item) if isinstance(item, str) else image_block(item)
-            for item in items]
-
-
-def result_blocks(result: Any, *, job: Job | None = None) -> list[ContentBlock]:
-    """A toolbox result as MCP content: its JSON, then its media in order.
-
-    The tools return plain pictures (PIL images, captions burned in) and
-    lines of text under ``TOOL_MEDIA_PARTS_KEY``; each picture becomes an
-    image block in the doors' JPEG encoding (:func:`image_block`), each
-    non-empty text a text block. ``images_attached`` counts both. The whole
-    reply stays within the host's reply budget
-    (:func:`langslice.doors.tools.reply.fit_reply`): past it every picture is
-    shrunk together and a last text says so and how to get full-size ones.
-    """
-    media: list[Any] = []
-    if isinstance(result, dict):
-        body = dict(result)
-        listed = body.pop(TOOL_MEDIA_PARTS_KEY, None)
-        if isinstance(listed, list):
-            media = [item for item in listed if isinstance(item, (str, Image.Image))]
-            body["images_attached"] = len(media)
-        elif listed is not None:
-            # Already text (e.g. a note that the pictures were not produced).
-            body[TOOL_MEDIA_PARTS_KEY] = listed
-    else:
-        body = result
-    items: list[Item] = [json.dumps(body, default=str)]
-    items += [item if isinstance(item, str) else encode_jpeg(item)
-              for item in media if not isinstance(item, str) or item]
-    fitted, shrunk = fit_reply(items)
-    if shrunk is not None:
-        if job is not None and isinstance(body, dict):
-            # Each delivered size gets its own immutable picture number. The
-            # old saved picture remains valid for callers who already saw it.
-            refs = body.get("pictures") or []
-            indexes = [i for i, item in enumerate(fitted) if isinstance(item, bytes)]
-            replacements: dict[int, int] = {}
-            for ref, index in zip(refs, indexes, strict=False):
-                old = job.views.lookup(ref["id"])
-                if old is None:
-                    raise ValueError(f"Returned picture {ref['id']} is not saved")
-                original, delivered = items[index], fitted[index]
-                assert isinstance(original, bytes) and isinstance(delivered, bytes)
-                with (Image.open(BytesIO(original)) as source,
-                      Image.open(BytesIO(delivered)) as target):
-                    recipe = resized_recipe(old.recipe, source.size, target.size)
-                held = PictureNote(sections=old.sections, mode=old.mode, recipe=recipe,
-                                   caption=old.caption, extra={"transport_source_picture": old.seq})
-                names = job.views.save(tool=old.tool, pictures=[(delivered, held)],
-                                       arguments={"transport_source_picture": old.seq})
-                replacements[old.seq] = int(names[0].split("_", 1)[0])
-
-            def picture_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-                return [{**entry, "id": replacements.get(entry["id"], entry["id"])}
-                        for entry in entries]
-
-            if refs:
-                body["pictures"] = picture_entries(refs)
-            if body.get("results"):
-                body["results"] = [{**one, "pictures": picture_entries(one["pictures"])}
-                                   if one.get("pictures") else one for one in body["results"]]
-            fitted[0] = json.dumps(body, default=str)
-        fitted.append(shrunk_note(sum(isinstance(item, bytes) for item in fitted), shrunk))
-    return blocks_of(fitted)
-
-
-# --- trace -----------------------------------------------------------------
-
-
-def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
-    described: list[dict[str, Any]] = []
-    for block in blocks:
-        if isinstance(block, ImageContent):
-            described.append({
-                "image": block.mimeType,
-                "bytes": len(base64.b64decode(block.data)),
-            })
-        elif isinstance(block, TextContent):
-            described.append({"text": block.text})
-    return described
-
-
 # --- the job ---------------------------------------------------------------
 
 
@@ -281,48 +183,12 @@ def open_job(
     return Session(job, ctx, box, trace, image_model_off=off, events=events)
 
 
-#: The serialized bytes of one ``show_stack`` page, JSON and base64 included
-#: (every MCP reply's budget, :data:`langslice.doors.tools.reply.REPLY_BYTES`).
-PAGE_BYTES = REPLY_BYTES
-
-
-def opening_pages(session: Session) -> list[list[ContentBlock]]:
-    """The opening strips (:mod:`langslice.core.opening`) at Claude's image
-    size, each strip composed within a page's byte budget (fewer sections per
-    strip, never a shrunk strip: :func:`langslice.doors.tools.reply.strip_bytes`),
-    paged under :data:`PAGE_BYTES` (:func:`langslice.doors.tools.reply.paged`);
-    a strip and its text stay together."""
-    items = opening_items(session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT,
-                          max_bytes=strip_bytes(PAGE_BYTES))
-    encoded: list[Item] = [item if isinstance(item, str) else encode_jpeg(item)
-                           for item in items]
-    return [blocks_of(page) for page in paged(encoded, PAGE_BYTES)]
-
-
-def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> list[str]:
-    """Save the page's pictures in the job folder, as the bytes the host got;
-    return their paths (written in the background)."""
-    from langslice.job.views import PICTURE_FILE, captured
-
-    pictures = [base64.b64decode(block.data) for block in blocks
-                if isinstance(block, ImageContent)]
-    try:
-        with captured() as saved:
-            session.job.views.save(tool="show_stack", arguments={"page": page},
-                                   pictures=[(data, None) for data in pictures])
-        return [str(item.folder / PICTURE_FILE) for item in saved]
-    except Exception:  # saving must never break a page
-        logger.warning("Could not queue the pictures of show_stack page %s", page,
-                       exc_info=True)
-        return []
-
-
 def mcp_statement(session: Session) -> str:
     """The job statement as the MCP door words it: the toolbox's tool names, its
     picture limit, the ``show_stack`` pages (drawn now when not yet), the
     user's notes and the image-model line. ``start_job(job_id=...)`` returns it
     (:func:`briefing`) and so does ``langslice-job FOLDER launch --role register``
-    (:mod:`langslice.doors.cli.launch`), so the two cannot drift."""
+    (:mod:`langslice.doors.agent_cli.launch`), so the two cannot drift."""
     if not session.pages:
         session.pages = opening_pages(session)
     return job_statement(
@@ -360,7 +226,7 @@ def opened_reply(session: Session) -> list[ContentBlock]:
 
 
 def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Session:
-    """A saved ABBA job (:mod:`langslice.doors.api.saved_jobs`), by id."""
+    """A saved ABBA job (:mod:`langslice.doors.abba.saved_jobs`), by id."""
     folder, record = load_job(job_id)
     prepared = prepare_linear(record["params"])
     session = open_job(replace(prepared.spec, resume=True), atlas_loader, folder)
@@ -459,15 +325,15 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
     FastMCP validates arguments against a model built from the signature and
     drops keys it does not know, so a stray argument would run the tool with
     its default. The registered tool's argument check is replaced by one that
-    first applies :func:`langslice.doors.tools.arguments.argument_refusal` (the
-    same rule the ADK plugin and the toolbox apply) to the arguments as sent,
-    after FastMCP's JSON pre-parse of string-encoded objects, then
-    :func:`~langslice.doors.tools.arguments.normalize_arguments`, so what the ADK
+    first applies :func:`langslice.tools.arguments.argument_refusal` (the same
+    rule the ADK plugin and the toolbox apply) to the arguments as sent, after
+    FastMCP's JSON pre-parse of string-encoded objects, then
+    :func:`~langslice.tools.arguments.normalize_arguments`, so what the ADK
     agent may send (a number where a filename belongs, a null picture option)
-    passes FastMCP's schema check here too. A refusal is traced like any
-    tool result (*trace*: the session's trace, when it keeps one).
+    passes FastMCP's schema check here too. A refusal is traced like any tool
+    result (*trace*: the session's trace, when it keeps one).
     """
-    from langslice.doors.tools.arguments import argument_refusal, normalize_arguments
+    from langslice.tools.arguments import argument_refusal, normalize_arguments
 
     registered = server._tool_manager.get_tool(name)  # noqa: SLF001 — FastMCP has no hook
     if registered is None:
@@ -525,7 +391,8 @@ def build_server(
 
     def install(session: Session) -> None:
         """List the session's tools: the verbs the registry gives its spec
-        (``session.box.tools``, declared by :mod:`langslice.doors.declarations`),
+        (``session.box.tools``, declared by
+        :mod:`langslice.tools.descriptions.render`),
         then the door's own ``show_stack``."""
         old = current.get("job")
         if old is not None:

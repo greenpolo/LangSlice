@@ -6,7 +6,7 @@ to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
 generator and Settings (top right). The agent viewer is a preliminary layout in the
-ABBA log's styling (`hosts/integrations/static/chat.css`'s palette and type,
+ABBA log's styling (`hosts/abba/static/chat.css`'s palette and type,
 the comparison window's blue-grey picture panel); Nash designs the final one.
 
 ## The rule
@@ -14,20 +14,20 @@ the comparison window's blue-grey picture panel); Nash designs the final one.
 The GUI is a separate process from every run (the built-in agent, an MCP
 server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
-imports the core (`core.state`, `core.status`, `core.toolset`, `core.spec`,
-`core.tool_labels`, `core.atlas.details`) and the job
-layer (`job.layout` names, `job.checkpoint.current_state`, `job.history`,
+imports the core (`core.stack.stack`, `core.stack.status`, `core.toolset`, `core.spec`,
+`job.settings.labels`, `core.atlas.details`) and the job
+layer (`job.layout` names, `job.state_file.current_state`, `job.history`,
 `job.registrations`), and for the Settings tab the doors' setup
-(`doors.api.setup`: key presence, `save_api_key`, `login_oauth`) and the
-user's settings file (`doors.api.settings`). Nothing imports it but
-`hosts/cli.py` (`langslice gui`); `doors/cli/linear.py`'s `--gui` starts that
+(`doors.credentials`: key presence, `save_api_key`, `login_oauth`) and the
+user's settings file (`doors.user_settings`). Nothing imports it but
+`hosts/cli.py` (`langslice gui`); `doors/commands/linear.py`'s `--gui` starts that
 command as a process (`open_gui`). The viewer and the prompt generator are
 read-only: every job and generator endpoint is GET only, nothing is written to
 a job folder. The Settings tab's three POSTs are the only writes (the user's
 settings file, a saved key, the ChatGPT login); sign-in runs in this window's
 process, never inside an agent tool call. Nothing in it is model-facing: the
 prompt generator's message is the person's to send, and its labels
-(`core.tool_labels`) are for people.
+(`job.settings.labels`) are for people.
 
 ## Settings
 
@@ -36,7 +36,7 @@ Connections (`openai-oauth` signed in by the browser flow; `openai-api`,
 an Anthropic key also counted from `~/.langslice/anthropic_api_key`), one chosen;
 "Registration runs in" (`app` / `langslice`), greyed until the chosen
 connection is present, `langslice` until the user picks; the chosen
-connection's agent model and reasoning. Saved in `doors/api/settings.py`'s file
+connection's agent model and reasoning. Saved in `doors/user_settings.py`'s file
 (`~/.langslice/settings.json`, `LANGSLICE_SETTINGS` another file or `off`;
 the test suite sets it off). `runs_in` is read by NOTHING yet: acting on it is
 Phase 5 (model-facing, awaiting Nash's approval). The agent entry IS read:
@@ -44,9 +44,9 @@ Phase 5 (model-facing, awaiting Nash's approval). The agent entry IS read:
 chosen connection's saved model and effort (`apply_saved_agent_choice`); no
 file, no connection or no saved model leaves its default. Choosing a
 connection saves LangSlice's default model for it where there is one
-(`doors.api.settings.agent_models`: the ChatGPT account's from
-`providers.registry`, the same model for the OpenAI API key; Claude and
-Gemini keys list the models `agent.spend.PRICES` prices, with no default).
+(`doors.user_settings.agent_models`: the ChatGPT account's from
+`providers.connections`, the same model for the OpenAI API key; Claude and
+Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 
 ## Files
 
@@ -69,7 +69,7 @@ Gemini keys list the models `agent.spend.PRICES` prices, with no default).
   from `view.json`; a path outside the folder is refused), `agent` and
   `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
   script writes, session start and end, a trace error). The sections table:
-  `core.status.status_rows` of `StackState.from_dict(current_state(...))` with
+  `core.stack.status.status_rows` of `StackState.from_dict(current_state(...))` with
   each section's registration number (`job.registrations`); a state this
   version does not read (another format) shows its raw `slices` fields with a
   note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
@@ -115,7 +115,7 @@ Gemini keys list the models `agent.spend.PRICES` prices, with no default).
   `species`: Mouse, Rat or Other by name) and `JobSpec`'s default atlas, the
   planes.
 - `settings.py` — `Settings(login=)`: `state()` (each connection's presence
-  word from `doors.api.setup.connections`, never a key or token; the saved
+  word from `doors.credentials.connections`, never a key or token; the saved
   choices; `runs_in` `{saved, enabled, value}`; per connection `models`,
   `default`, `model`, `reasoning`; the sign-in's `running` / `url` /
   `error`), `post(resource, body)`: `settings` (`connection`, `runs_in`,

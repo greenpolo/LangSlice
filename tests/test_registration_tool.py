@@ -7,20 +7,21 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.handoff import (
+from langslice.core.fits.frame import (
     LinearRegistrationInput,
     prepare_linear_registration,
 )
-from langslice.core.nonlinear import registration_tool as tool
-from langslice.core.nonlinear.border_refinement import (
+from langslice.core.fits.trace import trace as tool
+from langslice.core.fits.trace.canvas import Upright
+from langslice.core.fits.trace.lines import (
     border_overlay,
     smooth_border_overlay,
 )
-from langslice.core.nonlinear.prompts import border_correction_tool_prompt
-from langslice.core.nonlinear.upright import Upright
+from langslice.core.fits.trace.prompts import border_correction_tool_prompt
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState, StackState
-from langslice.providers.registry import ImageModel, resolve_image_model
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
+from langslice.providers.connections import ImageModel, resolve_image_model
 
 
 def _correct(state, ctx, section_id, **kwargs):

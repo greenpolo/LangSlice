@@ -20,7 +20,7 @@ def _make_slice(size: tuple[int, int] = (12, 8)) -> Image.Image:
 def test_root_mask_is_binary_alpha_at_target_size():
     """Non-zero annotation is opaque (255), the background transparent (0), and
     resizing is NEAREST so the silhouette gets no halo."""
-    from langslice.core.atlas.core import get_root_mask
+    from langslice.core.atlas.load import get_root_mask
 
     mask = get_root_mask(SlabAtlas(), 5.0, (32, 24), plane="coronal")
     assert mask.shape == (24, 32) and mask.dtype == np.uint8
@@ -35,7 +35,7 @@ def test_root_mask_is_binary_alpha_at_target_size():
     ((24, 9), (24, 9), (0.0, 0.0)),
 ])
 def test_canvas_aspect_clamps_into_the_supported_range(size, padded, offset):
-    from langslice.core.nonlinear.image_gen_registration import prepare_canvas
+    from langslice.core.fits.trace.canvas import prepare_canvas
 
     canvas, render_to_canvas = prepare_canvas(
         _make_slice(size), provider="none", image_model="gpt-image-2.5-sunburst",

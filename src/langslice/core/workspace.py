@@ -1,14 +1,13 @@
 """The core workspace: one job's sections and atlas, and their caches.
 
-:class:`Workspace` is everything the core operations (renders, atlas
-sections, fits, deformations, the image-correction handoff) need that is not
-stack state: the job spec, the image folder, the atlas, each section's
-working copy, raw channels and pixel size, and the
-render caches. It knows nothing of the agent: no model, no message images.
-The agent driver wraps it (:class:`langslice.agent.engine.EngineContext`
-adds the model and the cache of encoded message images), and every core
-module takes a ``Workspace``, so a script can build one and call them
-without the agent framework loaded.
+:class:`Workspace` is everything the core operations (renders, atlas sections,
+fits, deformations, the image-correction handoff) need that is not stack state:
+the job spec, the image folder, the atlas, each section's working copy, raw
+channels and pixel size, and the render caches. It knows nothing of the agent:
+no model, no message images. The agent driver wraps it
+(:class:`langslice.doors.agent.engine.EngineContext` adds the model and the
+cache of encoded message images), and every core module takes a ``Workspace``,
+so a script can build one and call them without the agent framework loaded.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ from typing import Any, cast
 
 from PIL import Image
 
-from langslice.core.atlas.core import get_position_range_mm, load_atlas
-from langslice.core.image_prep import (
+from langslice.core.atlas.load import get_position_range_mm, load_atlas
+from langslice.core.sections.reading import (
     channel_planes,
     host_preprocess,
     normalize_image,
@@ -64,39 +63,43 @@ class Workspace:
     render_scale: dict[tuple[str, bool, int, int, str], float] = field(
         default_factory=dict, repr=False
     )
-    #: Each file's working copy (:func:`langslice.core.image_prep.read_working_image`)
-    #: and how many file pixels one of its pixels spans. Every render above
-    #: is drawn from it, so a whole-slide scan is read once, small.
+    #: Each file's working copy
+    #: (:func:`langslice.core.sections.reading.read_working_image`) and how
+    #: many file pixels one of its pixels spans. Every render above is drawn
+    #: from it, so a whole-slide scan is read once, small.
     source_cache: dict[str, tuple[Image.Image, float]] = field(
         default_factory=dict, repr=False
     )
     #: Each file's raw channels at working size: names and 8-bit planes
-    #: (:func:`langslice.core.image_prep.channel_planes`). Shared: read only.
+    #: (:func:`langslice.core.sections.reading.channel_planes`). Shared: read
+    #: only.
     channel_cache: dict[str, tuple[tuple[str, ...], list[Any]]] = field(
         default_factory=dict, repr=False
     )
     #: Each file's raw channels' map from file intensities to their 8-bit
-    #: planes, by channel name (:func:`langslice.core.channels.intensity_ranges`).
+    #: planes, by channel name
+    #: (:func:`langslice.core.sections.channels.intensity_ranges`).
     intensity_cache: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
-    #: Each placed section's linear frame (:func:`langslice.core.maps.section_frame`:
-    #: file pixels to atlas micrometres), keyed by everything it depends on,
-    #: so ``registration.json`` is rewritten on every write without
-    #: recomputing the sections that did not move: section id -> (key, frame),
-    #: one per section, least recently used first (bounded by
-    #: ``core.maps.FRAME_CACHE_SECTIONS``). Shared: read only.
+    #: Each placed section's linear frame
+    #: (:func:`langslice.core.maps.section_maps.section_frame`: file pixels to
+    #: atlas micrometres), keyed by everything it depends on, so
+    #: ``registration.json`` is rewritten on every write without recomputing
+    #: the sections that did not move: section id -> (key, frame), one per
+    #: section, least recently used first (bounded by
+    #: ``core.maps.section_maps.FRAME_CACHE_SECTIONS``). Shared: read only.
     frame_cache: OrderedDict[str, tuple[tuple[Any, ...], Any]] = field(
         default_factory=OrderedDict, repr=False)
-    #: Atlas template planes (:func:`langslice.core.atlas_fetch.atlas_section`),
-    #: keyed ``(position, plane, pitch, yaw, frame)``, least recently used
-    #: first (bounded by ``core.atlas_fetch.PLANE_CACHE_SIZE``): the opening
-    #: and the pictures size and draw the same plane more than once. Shared:
-    #: read only.
+    #: Atlas template planes
+    #: (:func:`langslice.core.atlas.planes.atlas_section`), keyed ``(position,
+    #: plane, pitch, yaw, frame)``, least recently used first (bounded by
+    #: ``core.atlas.planes.PLANE_CACHE_SIZE``): the opening and the pictures
+    #: size and draw the same plane more than once. Shared: read only.
     plane_cache: OrderedDict[tuple[float, str, float, float, bool], Image.Image] = field(
         default_factory=OrderedDict, repr=False)
     #: Section images at the working copy's size, uint8 (raw planes, made
-    #: images' files, the opening image): ``(section id, what)`` -> array, least
-    #: recently used first (bounded by ``core.section_images.IMAGE_CACHE_SIZE``).
-    #: Shared: read only.
+    #: images' files, the opening image): ``(section id, what)`` -> array,
+    #: least recently used first (bounded by
+    #: ``core.sections.images.IMAGE_CACHE_SIZE``). Shared: read only.
     image_cache: OrderedDict[tuple[str, str], Any] = field(
         default_factory=OrderedDict, repr=False)
     #: The job folder whose files the made section images are read from (set by
@@ -160,9 +163,10 @@ class Workspace:
     @property
     def brain_scale(self) -> float:
         """The atlas brain's size next to the adult mouse's
-        (:func:`langslice.core.atlas.size.brain_scale`): what the deformable
+        (:func:`langslice.core.atlas.brain_size.brain_scale`): what the
+        deformable
         fits and the positioning ruler multiply their distances by."""
-        from langslice.core.atlas.size import brain_scale
+        from langslice.core.atlas.brain_size import brain_scale
 
         return brain_scale(self.atlas)
 
@@ -186,9 +190,10 @@ class Workspace:
 
         The host's ``inputs["pixel_size_um"]`` wins when it is given — that is
         what ``--pixel-size-um`` is for — for the whole stack or per file
-        (:func:`langslice.core.spec.supplied_pixel_sizes`); otherwise the file's
-        own tags answer (:func:`langslice.core.image_prep.read_pixel_size_um`).
-        ``(None, "")`` when nothing says; the caller then reports the section as
+        (:func:`langslice.core.spec.supplied_pixel_sizes`); otherwise the
+        file's own tags answer
+        (:func:`langslice.core.sections.reading.read_pixel_size_um`). ``(None,
+        "")`` when nothing says; the caller then reports the section as
         uncalibrated.
         """
         stack, per_file = supplied_pixel_sizes((self.spec.inputs or {}).get("pixel_size_um"))

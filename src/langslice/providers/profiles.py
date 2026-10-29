@@ -1,12 +1,13 @@
 """Model profiles: an image model and the prompt written for it.
 
 Different image models need different prompts, so the trace's model and its
-prompt travel together as one :class:`~langslice.providers.registry.ImageModel`
-(its ``prompt``, ``photograph_first``, ``profile`` and ``tested`` fields).
+prompt travel together as one
+:class:`~langslice.providers.connections.ImageModel` (its ``prompt``,
+``photograph_first``, ``profile`` and ``tested`` fields).
 
 - A built-in profile is a provider's own model with LangSlice's prompt for it
-  (:func:`langslice.core.nonlinear.prompts.border_correction_tool_prompt`,
-  the GPT wording for the OpenAI providers, the general wording otherwise):
+  (:func:`langslice.core.fits.trace.prompts.border_correction_tool_prompt`, the
+  GPT wording for the OpenAI providers, the general wording otherwise):
   ``image_model("openai-oauth")``.
 - A custom profile names a model (a provider and model name, an
   ``ImageModel``, any object with a ``call``, or a plain function) and,
@@ -26,11 +27,18 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
-from langslice.providers.registry import CANONICAL_PROVIDERS, ImageModel, resolve_image_model
+from langslice.core.connections import CUSTOM_PROVIDER, canonical_provider
+from langslice.providers.connections import (
+    CANONICAL_PROVIDERS,
+    ImageModel,
+    resolve_image_model,
+)
 
 if TYPE_CHECKING:
-    from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
+    from langslice.core.fits.trace.request import (
+        GeneratedSegmentation,
+        SegmentationGenerationRequest,
+    )
 
 #: The name a custom profile gets when the caller gives none.
 CUSTOM_PROFILE = "custom"
@@ -43,7 +51,7 @@ def default_prompt(provider: str = "openai-oauth", plane: str = "coronal") -> st
     plane belongs."""
     from typing import cast
 
-    from langslice.core.nonlinear.prompts import border_correction_tool_prompt
+    from langslice.core.fits.trace.prompts import border_correction_tool_prompt
     from langslice.core.space import Plane
 
     return border_correction_tool_prompt(cast(Plane, plane), provider=canonical_provider(provider))
@@ -72,7 +80,7 @@ def _wrapped_call(function: Callable[..., Any], provider: str, model: str | None
     def call(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
         from PIL import Image
 
-        from langslice.core.nonlinear.types import GeneratedSegmentation
+        from langslice.core.fits.trace.request import GeneratedSegmentation
 
         reply = function(request)
         if isinstance(reply, GeneratedSegmentation):
@@ -109,12 +117,13 @@ def image_model(
       with *model* the image model (None: the
       provider's default). Without *prompt* or *prompt_file* this is the
       provider's built-in profile (LangSlice's prompt; ``tested``).
-    - an :class:`~langslice.providers.registry.ImageModel`, or any object
-      with a ``call`` attribute (and optionally ``provider`` and ``model``),
-      or a plain function: the model of the caller's own. ``call(request)``
-      takes a :class:`~langslice.core.nonlinear.types.SegmentationGenerationRequest`
-      (``prompt``, ``slice_image`` = Image 1, ``reference_images[0]`` =
-      Image 2) and returns the edited image (a PIL image, an array or a
+    - an :class:`~langslice.providers.connections.ImageModel`, or any object
+      with a ``call`` attribute (and optionally ``provider`` and ``model``), or
+      a plain function: the model of the caller's own. ``call(request)`` takes
+      a
+      :class:`~langslice.core.fits.trace.request.SegmentationGenerationRequest`
+      (``prompt``, ``slice_image`` = Image 1, ``reference_images[0]`` = Image
+      2) and returns the edited image (a PIL image, an array or a
       ``GeneratedSegmentation``).
 
     *prompt* (text) or *prompt_file* (a UTF-8 text file) is the base prompt

@@ -7,9 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.nonlinear.image_gen_registration import (
-    crop_to_aspect,
-)
+from langslice.core.fits.trace.canvas import crop_to_aspect
 
 
 @pytest.mark.parametrize("size", [(1536, 1024), (1024, 1536)])

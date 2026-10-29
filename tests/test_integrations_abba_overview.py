@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from langslice.hosts.integrations.abba_overview import (
+from langslice.hosts.abba.viewer_overview import (
     native_centers,
     native_position_x,
 )

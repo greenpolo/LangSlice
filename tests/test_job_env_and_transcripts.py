@@ -16,8 +16,9 @@ from typing import Any
 
 import pytest
 
-from langslice.doors.cli import jobenv, transcripts
-from langslice.doors.cli.jobcli import main
+from langslice.doors.agent_cli import environment as jobenv
+from langslice.doors.agent_cli.main import main
+from langslice.doors.commands import transcripts
 from langslice.job.layout import JobLayout
 from tests.cli_child import install
 from tests.synthetic_stack import PIXEL_SIZE_UM, atlas_loader, write_sections

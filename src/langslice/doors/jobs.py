@@ -1,16 +1,15 @@
 """Opening a job folder without an agent: the CLI's and the library's way in.
 
-The agent driver opens its job through ``agent.engine.build_context``,
-which brings the agent framework along. A coding agent's CLI call and a
-script open the same job folder here instead, with nothing but the core and
-the job layer loaded: :func:`open_folder` reads an existing job as it stands
-(``job.job.Job.load``: nothing rewritten, so a call beside a running
-agent changes nothing until its first write) and :func:`create` makes one
-from an image folder through the same ingest every host uses
-(``Job.open``). Both write the job folder's reference card
-(:mod:`langslice.doors.card`). The tools on top are the same toolbox the
-agent and MCP doors use (:meth:`Opened.tools`), with the picture size the
-caller's.
+The agent driver opens its job through ``doors.agent.engine.build_context``,
+which brings the agent framework along. A coding agent's CLI call and a script
+open the same job folder here instead, with nothing but the core and the job
+layer loaded: :func:`open_folder` reads an existing job as it stands
+(``job.job.Job.load``: nothing rewritten, so a call beside a running agent
+changes nothing until its first write) and :func:`create` makes one from an
+image folder through the same ingest every host uses (``Job.open``). Both write
+the job folder's reference card (:mod:`langslice.doors.reference_card`). The
+tools on top are the same toolbox the agent and MCP doors use
+(:meth:`Opened.tools`), with the picture size the caller's.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.spec import JobSpec
 from langslice.core.workspace import Workspace, log_progress
 from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
-from langslice.doors.card import write_card
+from langslice.doors.reference_card import write_card
 from langslice.job.job import Job
 from langslice.job.layout import (
     JobLayout,
@@ -36,13 +35,13 @@ from langslice.job.layout import (
 
 if TYPE_CHECKING:
     from langslice.doors.tools.toolbox import ToolBox
-    from langslice.providers.registry import ImageModel
+    from langslice.providers.connections import ImageModel
 
 #: The largest picture a script call may ask for (``view.resolution``): no
 #: model's limit applies, only the source's own pixels (nothing is upsampled
-#: past them) and :data:`langslice.core.sizes.MIN_RESOLUTION`. The agent
-#: CLI's pictures are read by a model: its job's viewer sets the cap
-#: (:func:`job_viewer`, :data:`langslice.core.opening.VIEWER_LIMITS`).
+#: past them) and :data:`langslice.core.pictures.sizes.MIN_RESOLUTION`. The
+#: agent CLI's pictures are read by a model: its job's viewer sets the cap
+#: (:func:`job_viewer`, :data:`langslice.core.pictures.opening.VIEWER_LIMITS`).
 OPEN_MAX_VIEW_EDGE = 1 << 15
 
 #: ``job.json``'s field naming the agent CLI's viewer (``init --viewer``).
@@ -52,8 +51,8 @@ VIEWER_KEY = "viewer"
 def job_viewer(layout: JobLayout) -> str:
     """The job's viewer for the agent CLI's pictures (``job.json``
     ``viewer``, written by ``langslice-job FOLDER init --viewer``), else
-    :data:`langslice.core.opening.DEFAULT_VIEWER`."""
-    from langslice.core.opening import DEFAULT_VIEWER, VIEWER_LIMITS
+    :data:`langslice.core.pictures.opening.DEFAULT_VIEWER`."""
+    from langslice.core.pictures.opening import DEFAULT_VIEWER, VIEWER_LIMITS
 
     try:
         held = (read_job_file(layout) or {}).get(VIEWER_KEY)
@@ -68,7 +67,7 @@ def close_job(job: Job) -> None:
     pictures are flushed. Every door ends a job through it: the agent CLI
     and the library (:meth:`Opened.close`), the MCP door (a replaced
     session, the end of ``serve``) and LangSlice's own agent
-    (``agent.engine.run``)."""
+    (``doors.agent.engine.run``)."""
     if job.image_jobs:
         job.settle_image_corrections()
     job.close()
@@ -78,12 +77,13 @@ def provider_connected(spec: JobSpec) -> bool:
     """Whether *spec*'s own image model can be reached here, with no model
     handed in: True when the spec names none; never for a ``custom``
     provider (a script's own model, handed in); else its provider's key or
-    login is present (:func:`langslice.doors.api.setup.image_model_connected`,
+    login is present
+    (:func:`langslice.doors.credentials.image_model_connected`,
     an offline presence check)."""
     if not spec.nonlinear.uses_image_model:
         return True
-    from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
-    from langslice.doors.api.setup import image_model_connected
+    from langslice.core.connections import CUSTOM_PROVIDER, canonical_provider
+    from langslice.doors.credentials import image_model_connected
 
     provider = spec.nonlinear.provider
     return canonical_provider(provider) != CUSTOM_PROVIDER and image_model_connected(provider)
@@ -192,11 +192,13 @@ class Opened:
     #: an untested profile, reopened without it).
     traces_off: bool = False
     #: Who reads the tools' declarations (``agent``: a script, the library;
-    #: ``cli``: the agent CLI; :data:`langslice.doors.declarations.DOORS`).
+    #: ``cli``: the agent CLI;
+    #: :data:`langslice.tools.descriptions.render.DOORS`).
     door: str = "agent"
     #: The model that reads the pictures, which sets their largest size
-    #: (:data:`langslice.core.opening.VIEWER_LIMITS`; None: a script, no cap
-    #: but the source's pixels). The agent CLI's is the job's (:func:`job_viewer`).
+    #: (:data:`langslice.core.pictures.opening.VIEWER_LIMITS`; None: a script,
+    #: no cap but the source's pixels). The agent CLI's is the job's
+    #: (:func:`job_viewer`).
     viewer: str | None = None
     _box: ToolBox | None = field(default=None, repr=False)
 
@@ -210,7 +212,7 @@ class Opened:
         :data:`OPEN_MAX_VIEW_EDGE` for a script."""
         if self.viewer is None:
             return OPEN_MAX_VIEW_EDGE
-        from langslice.core.opening import VIEWER_LIMITS
+        from langslice.core.pictures.opening import VIEWER_LIMITS
 
         return VIEWER_LIMITS[self.viewer][1]
 
@@ -233,7 +235,7 @@ class Opened:
         calls are logged in ``logs/events.jsonl`` as door ``cli``, or
         ``library`` for a script (door ``agent``)."""
         if self._box is None:
-            from langslice.core.sizes import AUTO_RESOLUTION
+            from langslice.core.pictures.sizes import AUTO_RESOLUTION
             from langslice.doors.tools.toolbox import build_tools
 
             self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
@@ -271,7 +273,7 @@ def open_folder(
     ``cli`` opens it for the agent CLI: its declarations worded for the CLI,
     its pictures capped at the job's viewer's (:func:`job_viewer`).
     """
-    from langslice.doors.api.setup import load_credentials
+    from langslice.doors.credentials import load_credentials
 
     folder = find(path)
     spec = read_spec(folder)
@@ -320,7 +322,8 @@ def with_registration(
     """*spec* with the linear registration in the file *registration* (made
     elsewhere: QuickNII/VisuAlign JSON or XML, DeepSlice CSV/JSON/XML, a
     LangSlice ``registration.json``) as its supplied inputs, and the import
-    report (``job.imports.registration_inputs``: sections placed, what did
+    report (``job.imports.placements.registration_inputs``: sections placed,
+    what did
     not match, refusals, ``warnings``, each also said through *emit*).
 
     ``ValueError`` when *spec* already supplies positions, transforms,
@@ -328,7 +331,7 @@ def with_registration(
     entries cannot be matched one to one, or when no section could be
     placed.
     """
-    from langslice.job.imports import registration_inputs
+    from langslice.job.imports.placements import registration_inputs
 
     clashes = [key for key in REGISTRATION_EXCLUDES if (spec.inputs or {}).get(key)]
     if clashes:

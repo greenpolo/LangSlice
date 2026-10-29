@@ -5,8 +5,11 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from langslice.core import canvas, layers
-from langslice.core.oblique import plane_index_affine, plane_index_coordinates
+from langslice.core.geometry.oblique import (
+    plane_index_affine,
+    plane_index_coordinates,
+)
+from langslice.core.pictures import canvas, layers
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -59,7 +62,7 @@ def test_the_plane_affine_is_the_sampled_plane():
 
 
 #: Which picture edge a positive angle puts at the larger position, per plane:
-#: the convention the angle conventions in `core.oblique` keep.
+#: the convention the angle conventions in `core.geometry.oblique` keep.
 ANGLE_EDGES = {
     "coronal": {"pitch": "top", "yaw": "right"},
     "sagittal": {"pitch": "left", "yaw": "bottom"},
@@ -68,7 +71,7 @@ ANGLE_EDGES = {
 
 
 def test_the_cutting_angle_directions_are_the_described_ones():
-    from langslice.core.oblique import plane_axes
+    from langslice.core.geometry.oblique import plane_axes
 
     atlas = SyntheticAtlas()
     for plane, edges in ANGLE_EDGES.items():

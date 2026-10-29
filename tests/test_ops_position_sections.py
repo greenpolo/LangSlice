@@ -1,4 +1,4 @@
-"""`ops.positions.position_sections`: positions and cutting angles in one undo step,
+"""`tools.positions.position_sections`: positions and cutting angles in one undo step,
 the stack numbered by position, supplied positions refused."""
 
 from __future__ import annotations
@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec, TransformSpec
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.ops import positions
-from langslice.ops.refusal import Refused
+from langslice.tools import positions
+from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

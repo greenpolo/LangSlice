@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 
@@ -106,7 +106,7 @@ def test_a_side_on_a_turned_placement_is_a_refusal_not_an_exception(tmp_path: Pa
 
 
 def test_tiny_region_is_refused_before_elastix_and_does_not_write(tmp_path: Path, monkeypatch):
-    from langslice.core.deformable import engines
+    from langslice.core.fits.deformable import engines
 
     atlas = HalvesAtlas()
     # Three atlas pixels across: the case that can crash the native engine.

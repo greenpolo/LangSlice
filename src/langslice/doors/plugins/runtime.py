@@ -1,11 +1,12 @@
 """The bodies of plugin tools: what the tool door runs for a call.
 
-A plugin tool is declared from its own stub (:func:`langslice.doors.declarations.declaration`
-reads it from the variant) and wrapped by the toolbox exactly as a native tool
-is: opening-read gate for writes, strict argument check, stale-deformation
-sweep, picture saving, background notices, the job's write lock. This module
-supplies the part between: it makes the call's :class:`ToolContext`, checks
-the tool's per-call limits, runs the handler and turns its
+A plugin tool is declared from its own stub
+(:func:`langslice.tools.descriptions.render.declaration` reads it from the
+variant) and wrapped by the toolbox exactly as a native tool is: opening-read
+gate for writes, strict argument check, stale-deformation sweep, picture
+saving, background notices, the job's write lock. This module supplies the part
+between: it makes the call's :class:`ToolContext`, checks the tool's per-call
+limits, runs the handler and turns its
 :class:`~langslice.core.plugins.ToolResult` into the reply, with the pictures
 under the media key like every native tool's.
 """
@@ -23,13 +24,13 @@ from PIL import Image
 
 from langslice.core import plugins as core
 from langslice.core.plugins import ToolError, ToolResult, ToolSpec
-from langslice.doors.declarations import Variant, declaration
 from langslice.doors.plugins.context import Caller, ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.ops.refusal import Refused
+from langslice.tools.descriptions.render import Variant, declaration
+from langslice.tools.refusal import Refused
 
 if TYPE_CHECKING:
-    from langslice.doors.tools.door import Door
+    from langslice.tools.run import Door
 
 logger = logging.getLogger(__name__)
 

@@ -39,7 +39,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.layers import collecting, note_for
+from langslice.core.pictures.drawn import collecting, note_for
 from langslice.job.lock import LockYielded
 
 if TYPE_CHECKING:
@@ -55,7 +55,7 @@ SECTION_BUSY = "SECTION_BUSY"
 #: A piece of work's states.
 STATUSES = (RUNNING, DONE, FAILED)
 #: Work threads one job runs at once. Each mostly waits for an image-model
-#: call; the fits themselves run one at a time (``core.deformation``).
+#: call; the fits themselves run one at a time (``core.fits.deformation``).
 MAX_WORKERS = 8
 #: Prefix of a work id (``w1``, ``w2``, ... in the order the job started them).
 ID_PREFIX = "w"

@@ -1,11 +1,11 @@
 """The job spec: one filled form per ``langslice linear`` run.
 
-A host (CLI, ABBA connector, engine service) fills a :class:`JobSpec` and hands it
-to :func:`langslice.agent.engine.run`. Every checkbox a user sees maps to a field
-here; nothing else is user-facing. ``tasks`` switches whole capabilities on and
-off — a task that is OFF takes its answer from ``inputs`` instead of from the
-agent, and its tools are not built at all. ``disabled`` takes single tools and
-tool options off on top of what the tasks give.
+A host (CLI, ABBA connector, engine service) fills a :class:`JobSpec` and hands
+it to :func:`langslice.doors.agent.engine.run`. Every checkbox a user sees maps
+to a field here; nothing else is user-facing. ``tasks`` switches whole
+capabilities on and off — a task that is OFF takes its answer from ``inputs``
+instead of from the agent, and its tools are not built at all. ``disabled``
+takes single tools and tool options off on top of what the tasks give.
 
 See ``docs/reference/settings.md`` for the design this mirrors.
 """
@@ -27,8 +27,8 @@ PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
 #: How large the pictures the agent is shown are drawn: a long edge for the
 #: opening images and one for every later picture per level
-#: (:data:`langslice.core.sizes.PICTURE_EDGES`); "auto" lets the agent pass
-#: ``resolution`` per call. Nothing a fit computes or a transform stores
+#: (:data:`langslice.core.pictures.sizes.PICTURE_EDGES`); "auto" lets the agent
+#: pass ``resolution`` per call. Nothing a fit computes or a transform stores
 #: depends on it, and the image model's inputs do not change.
 IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")
 
@@ -187,10 +187,10 @@ class NonlinearSpec:
     chooses to trace, to the borders the image model draws.
 
     ``provider`` is the image model's access method (``providers/registry``);
-    ``"none"`` runs the task without an image model: no ``trace_borders``,
-    no traced section images. No section ever needs a trace. ``"custom"``
-    (:data:`langslice.core.provider_names.CUSTOM_PROVIDER`): an image model
-    the caller hands the library itself (``langslice.open_job(...,
+    ``"none"`` runs the task without an image model: no ``trace_borders``, no
+    traced section images. No section ever needs a trace. ``"custom"``
+    (:data:`langslice.core.connections.CUSTOM_PROVIDER`): an image model the
+    caller hands the library itself (``langslice.open_job(...,
     image_model=...)``); a door that is handed none offers no
     ``trace_borders``.
     """
@@ -203,18 +203,18 @@ class NonlinearSpec:
     #: until each section carries one at its current placement. Off, a
     #: deformation is the agent's choice, section by section.
     require_deformation: bool = False
-    #: The base prompt ``trace_borders`` sends the image model for this job,
-    #: in place of LangSlice's own for the provider
-    #: (:func:`langslice.core.nonlinear.prompts.border_correction_tool_prompt`);
+    #: The base prompt ``trace_borders`` sends the image model for this job, in
+    #: place of LangSlice's own for the provider
+    #: (:func:`langslice.core.fits.trace.prompts.border_correction_tool_prompt`);
     #: ``{plane}`` in it becomes the section plane. It must describe the
     #: provider's attachment order (the OpenAI providers: Image 1 the clean
-    #: photograph, Image 2 the placed borders; the others the other way
-    #: round). The agent's per-section edit starts from it, and its traces
-    #: are recorded as an untested profile (``custom``). None: LangSlice's own.
+    #: photograph, Image 2 the placed borders; the others the other way round).
+    #: The agent's per-section edit starts from it, and its traces are recorded
+    #: as an untested profile (``custom``). None: LangSlice's own.
     image_prompt: str | None = None
 
     def __post_init__(self) -> None:
-        from langslice.core.provider_names import (
+        from langslice.core.connections import (
             CANONICAL_PROVIDERS,
             CUSTOM_PROVIDER,
             canonical_provider,
@@ -236,7 +236,7 @@ class NonlinearSpec:
     @property
     def uses_image_model(self) -> bool:
         """Whether the image model is part of this run (provider is not ``none``)."""
-        from langslice.core.provider_names import canonical_provider
+        from langslice.core.connections import canonical_provider
 
         return canonical_provider(str(self.provider or "")) != "none"
 
@@ -256,16 +256,16 @@ class JobSpec:
     #: Where the job folder goes (``--job-dir``). None: next to the images,
     #: ``<images>/langslice`` (:func:`langslice.job.layout.locate_job_folder`).
     job_dir: str | None = None
-    #: Display-side preprocessing for everything the agent looks at:
-    #: "auto" runs :func:`langslice.core.image_prep.adaptive_preprocess`, "none"
+    #: Display-side preprocessing for everything the agent looks at: "auto"
+    #: runs :func:`langslice.core.sections.reading.adaptive_preprocess`, "none"
     #: shows the raw section. Never written back to the user's files.
     preprocess: str = "auto"
     #: A host's channel-blend settings (``preprocess.preview``'s
     #: ``PreprocessingSettings``: auto, or custom weights and CLAHE) for
     #: snapshots exported one page per channel. Set, every section's DEFAULT
-    #: appearance is :func:`langslice.core.image_prep.host_preprocess` over its raw
-    #: pages; the pages themselves stay readable as channels. None: the file
-    #: is shown through ``preprocess`` as above.
+    #: appearance is :func:`langslice.core.sections.reading.host_preprocess`
+    #: over its raw pages; the pages themselves stay readable as channels.
+    #: None: the file is shown through ``preprocess`` as above.
     host_preprocessing: dict[str, Any] | None = None
     #: Size of every picture the agent sees: "low", "medium", "high" or
     #: "auto" (:data:`IMAGE_RESOLUTIONS`). Display only: fits, working frames

@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from langslice.doors.api import settings as store
-from langslice.doors.api import setup
+from langslice.doors import credentials as setup
+from langslice.doors import user_settings as store
 from langslice.hosts.gui.server import GuiServer
 from langslice.hosts.gui.settings import Settings
 from langslice.hosts.gui.watch import JobList
@@ -130,7 +130,7 @@ def _args(**given: Any) -> argparse.Namespace:
 
 
 def test_linear_run_keeps_its_default_without_the_file(home: Path) -> None:
-    from langslice.doors.cli.linear import apply_saved_agent_choice
+    from langslice.doors.commands.linear import apply_saved_agent_choice
 
     args = _args()
     assert apply_saved_agent_choice(args) is False
@@ -142,7 +142,7 @@ def test_linear_run_keeps_its_default_without_the_file(home: Path) -> None:
 
 def test_linear_run_keeps_its_default_with_settings_off(home: Path,
                                                         monkeypatch: pytest.MonkeyPatch) -> None:
-    from langslice.doors.cli.linear import apply_saved_agent_choice
+    from langslice.doors.commands.linear import apply_saved_agent_choice
 
     store.write({"connection": "anthropic-api",
                  "agent": {"anthropic-api": {"model": "anthropic-api/claude-opus-5-5"}}})
@@ -152,7 +152,7 @@ def test_linear_run_keeps_its_default_with_settings_off(home: Path,
 
 
 def test_linear_run_reads_the_chosen_model_only_without_flags(home: Path) -> None:
-    from langslice.doors.cli.linear import apply_saved_agent_choice
+    from langslice.doors.commands.linear import apply_saved_agent_choice
 
     store.write({"connection": "anthropic-api", "agent": {
         "anthropic-api": {"model": "anthropic-api/claude-opus-5-5", "reasoning": "high"},
@@ -244,7 +244,7 @@ def test_run_location_waits_for_a_working_connection(server: GuiServer) -> None:
 
 
 def test_models_default_to_langslices_and_save_per_connection(server: GuiServer) -> None:
-    from langslice.providers import registry
+    from langslice.providers import connections as registry
 
     _, answer = _request(server, "settings", {"connection": "openai-oauth"})
     oauth = json.loads(answer)["agent"]["openai-oauth"]

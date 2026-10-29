@@ -1,4 +1,4 @@
-"""Section images (``core.section_images``): recipes, made images as files, the
+"""Section images (``core.sections.images``): recipes, made images as files, the
 opening ``preprocessed`` image, orientation at draw, geometry that no image moves,
 and the migration of a format-3 job."""
 
@@ -12,19 +12,19 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import deformation
-from langslice.core import section_images as images
-from langslice.core.handoff import prepare_linear_registration
-from langslice.core.image_prep import (
+from langslice.core.fits import deformation
+from langslice.core.fits.frame import prepare_linear_registration
+from langslice.core.maps.section_maps import section_frame
+from langslice.core.sections import images
+from langslice.core.sections.reading import (
     adaptive_preprocess,
     prepare_image_for_vlm,
 )
-from langslice.core.maps import section_frame
-from langslice.core.sections import render_slice
+from langslice.core.sections.renders import render_slice
 from langslice.core.spec import JobSpec
-from langslice.job.checkpoint import FORMAT_KEY, STATE_FORMAT_VERSION
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
+from langslice.job.state_file import FORMAT_KEY, STATE_FORMAT_VERSION
 from tests.deformable_synthetic import SyntheticAtlas
 
 UM = 25.0

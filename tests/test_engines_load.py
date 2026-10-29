@@ -18,7 +18,7 @@ import pytest
 from langslice.core import plugins as core_plugins
 from langslice.core.spec import JobSpec
 from langslice.doors.tools.toolbox import build_tools
-from langslice.ops.registry import VERBS, verbs_for
+from langslice.tools.catalog import VERBS, verbs_for
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 
 REFS = [

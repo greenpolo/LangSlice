@@ -6,12 +6,13 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import EngineContext
-from langslice.core import canvas
-from langslice.core.affine import normalized_affine
-from langslice.core.handoff import prepare_linear_registration
+from langslice.core.fits.frame import prepare_linear_registration
+from langslice.core.geometry.affine import normalized_affine
+from langslice.core.pictures import canvas
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
+from langslice.doors.agent.engine import EngineContext
 
 
 def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: bool = True):
@@ -82,7 +83,7 @@ def test_without_a_pixel_size_the_scale_is_the_pictures_one(tmp_path, monkeypatc
     """No pixel size: the scale every picture draws the section at
     (``calibrate`` on its working frame), carried to the requested grid; the
     calibration stored with the transform is not read."""
-    from langslice.core import transform as core_transform
+    from langslice.core.fits import affine as core_transform
 
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch, known=False)
     monkeypatch.setattr(core_transform, "calibrate", lambda *a, **k: (12.5, "uncalibrated"))

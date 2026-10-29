@@ -76,6 +76,8 @@ def format_against(result: AgainstResult) -> str:
         A paragraph per comparison, ending with a newline.
     """
     lines = _growth_lines(result)
+    lines.extend(_slack_lines(result))
+    lines.extend(_move_lines(result))
     lines.extend(_pyright_lines(result))
     if result.unrecorded:
         lines.append(
@@ -118,6 +120,34 @@ def _growth_lines(result: AgainstResult) -> list[str]:
         "The baseline may only shrink: fix the new errors instead of "
         "listing them."
     )
+    return lines
+
+
+def _slack_lines(result: AgainstResult) -> list[str]:
+    """Return the report lines of baseline entries above the run's counts."""
+    if not result.slack:
+        return []
+    n_lower = sum(change.allowed - change.current for change in result.slack)
+    return [
+        f"The baseline allows {n_lower} errors the code no longer has, in "
+        f"{len(result.slack)} entries. Run with --prune and commit the "
+        "smaller baseline with the fixes, so a fixed error cannot come "
+        "back unseen."
+    ]
+
+
+def _move_lines(result: AgainstResult) -> list[str]:
+    """Return the report lines of the move map's rows it does not follow."""
+    if not result.unhonoured:
+        return []
+    lines = [
+        "These rows of the move map are not followed: their new definition "
+        "is not in the code:"
+    ]
+    for row in result.unhonoured:
+        lines.append(
+            f"  {row.path} {row.symbol} -> {row.new_path} {row.new_symbol}"
+        )
     return lines
 
 

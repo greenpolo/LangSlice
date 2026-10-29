@@ -22,8 +22,8 @@ from typing import Any
 import pytest
 
 import langslice
-from langslice.core import deformation
-from langslice.doors.cli.jobcli import main
+from langslice.core.fits import deformation
+from langslice.doors.agent_cli.main import main
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -97,7 +97,7 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
 
 
 def _needs_engine() -> None:
-    from langslice.ops.deformable import engine_ready
+    from langslice.tools.deformable import engine_ready
 
     if not engine_ready():
         pytest.skip("fireants_syn needs FireANTs")
@@ -163,7 +163,7 @@ def test_a_fit_whose_section_image_was_made_again_meanwhile_is_refused(
 
 def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, monkeypatch):
     pytest.importorskip("itk")
-    from langslice.core import transform
+    from langslice.core.fits import affine as transform
 
     agent = langslice.open_job(images)
     during(monkeypatch, transform, "fit_elastix",
@@ -294,7 +294,7 @@ def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch:
 
     from PIL import Image
 
-    from langslice.job import views
+    from langslice.job import pictures as views
     from langslice.job.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")

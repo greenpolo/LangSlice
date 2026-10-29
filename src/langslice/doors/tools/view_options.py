@@ -11,14 +11,18 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from langslice.core.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS, VIEW_EDGES
-from langslice.core.sizes import MIN_RESOLUTION
-from langslice.providers.registry import canonical_provider
+from langslice.core.pictures.opening import (
+    DEFAULT_IMAGE_LIMIT,
+    IMAGE_LIMITS,
+    VIEW_EDGES,
+)
+from langslice.core.pictures.sizes import MIN_RESOLUTION
+from langslice.providers.connections import canonical_provider
 
 
 def image_limit(ctx: Any) -> tuple[int, int]:
     """``(long edge, patch budget)`` of one image for this run's model lane
-    (:data:`langslice.core.opening.IMAGE_LIMITS`), read off the driver
+    (:data:`langslice.core.pictures.opening.IMAGE_LIMITS`), read off the driver
     context's ``model`` (a ``provider/name`` string)."""
     return IMAGE_LIMITS.get(_provider(ctx), DEFAULT_IMAGE_LIMIT)
 

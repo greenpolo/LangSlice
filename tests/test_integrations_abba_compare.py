@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from langslice.hosts.integrations.abba_compare import (
+from langslice.hosts.abba.viewer_compare import (
     ComparisonWindow,
     atlas_channel_indices,
     camera_parameters,

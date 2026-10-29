@@ -159,7 +159,7 @@ without writing them ([library](../developers/library.md#reading-results)). The 
 is the section's working copy (a whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
 file downsampled to at most 3072 px), or with `full_resolution` the file's
 own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
-(`langslice.core.affine.pixel_center_map`); `maps.json` gives the grid's own
+(`langslice.core.geometry.affine.pixel_center_map`); `maps.json` gives the grid's own
 `pixel_to_atlas_um`.
 
 The maps cover every pixel that maps into the atlas volume.
@@ -249,7 +249,7 @@ short is skipped.
 
 Each picture a door showed is saved as a folder `<number>_<tool>[_<mode>]/`
 under `views/` (several sections) or `sections/<name>/views/` (one;
-`job/views.py`), holding `view.jpg` (the bytes the model got) and `view.json`
+`job/pictures.py`), holding `view.jpg` (the bytes the model got) and `view.json`
 (tool, arguments, caption, history step, the recipe `zoom` redraws it from,
 and `registrations`: the number of the registration each of its sections was
 drawn under, `{filename: number}`, for the sections that held a listed one or
@@ -546,7 +546,7 @@ like every made image, each reader reads the file, resized to its own size.
 
 State format 4 holds these entries; a job of format 3 (the stack's
 `appearance`: recipes and raw channels' display properties) is read through
-the migration when it opens (`core.section_images.Migration`): each recipe is
+the migration when it opens (`core.sections.images.Migration`): each recipe is
 made into a file and an entry per section (a section's own override
 honoured), `preprocessed` without a recipe becomes the opening image, the
 display properties are dropped, a mask's `channel` is named `section_image`,

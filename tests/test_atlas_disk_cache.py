@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from langslice.core import oblique
 from langslice.core.atlas import disk_cache
+from langslice.core.geometry import oblique
 from tests.deformable_synthetic import SyntheticAtlas
 
 

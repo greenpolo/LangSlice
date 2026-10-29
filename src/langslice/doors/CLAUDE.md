@@ -5,20 +5,20 @@ project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
 A verb (an agent tool) has ONE name, one argument list and one description;
-every door is generated from them and from the registry (`ops/registry.py`:
+every door is generated from them and from the registry (`tools/catalog.py`:
 `VERBS`, `enabled(spec)`):
 
 | Door | Built by | Driver |
 |---|---|---|
-| agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
-| MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `cli/launch.py`) | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`cli/warm.py`) | Claude Code, Antigravity, Codex |
-| library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
+| agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `langslice.tools.descriptions.render.declare`d | LangSlice's agent (`doors/agent/`) |
+| MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `agent_cli/launch.py`) | Claude Desktop, Claude Code locked to it |
+| agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`agent_cli/warm.py`) | Claude Code, Antigravity, Codex |
+| library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
 the native ones on every door: the toolbox (agent and MCP), `ops` / `schema`
 (for the job in the folder), the card and the library's `verbs` read the
-per-spec view (`registry.verbs_for(spec)`).
+per-spec view (`catalog.verbs_for(spec)`, `langslice/tools/catalog.py`).
 A job without plugins declares, replies and draws exactly as before.
 
 The text snapshot (`tests/snapshots/agent_text/`) pins what the doors
@@ -27,32 +27,34 @@ declare.
 ## The layer rule
 
 Doors translate; they hold no registration logic. They import the core, the
-job layer, the operations, the agent driver (`agent/`, the same layer: the
-CLI's `linear run` and the MCP server start its engine) and the providers (a
-door resolves a provider name); never a host (`hosts/`). Only the ADK
-packaging (`tools/media.py`) imports `google.*`. import-linter's layers
+job layer, the tools (`langslice/tools/`: the operations, `Door`, the
+arguments, the replies, the declarations and the job statement) and the
+providers (a door resolves a provider name); never a host (`hosts/`). The
+built-in agent is a door here (`agent/`: the CLI's `linear run` and the MCP
+server start its engine). Only the ADK packaging (`agent/media.py`) imports
+`google.*`. import-linter's layers
 contract (`pyproject.toml`, `tests/test_import_layers.py`) checks it, with no
 exceptions listed. The host commands (`abba`, `gui`, `serve`) live in
-`hosts/cli.py`; `cli/__init__.py` names them by module path
+`hosts/cli.py`; `commands/parser.py` names them by module path
 (`HOST_COMMANDS`) and imports that module when it builds the parser.
 `tests/test_core_imports.py` loads the doors' agent-free modules in a fresh
 interpreter and runs `import langslice; langslice.open_job(...)` and
-`create_job` with a script's own image model. An operation (`ops/`) never imports a door.
+`create_job` with a script's own image model. An operation (`tools/`) never imports a door.
 
 What every door shares beyond the verbs: the job statement
 (`statement.py`), the ending of a job (`jobs.close_job`), the host trace
-(`trace.py`), the reply byte budget and paging (`tools/reply.py`), the
+(`call_log.py`), the reply byte budget and paging (`tools/reply.py`), the
 image-model check (`jobs.provider_connected`, `jobs.image_model_off`), and in
 the `ToolBox` the opening-read gate (`require_opening`, `opening_read`, `opening_refusal`;
 armed by the MCP door only). Deliberately different: the host owns the loop
 for MCP and the CLI (no turn budget, nudges, debrief, image working set or
 quota accounting there); pictures are files and artifacts in the CLI, inline elsewhere;
 each CLI call is a process of its own (cold, or the child the job's warm
-process forks for it, `cli/warm.py`).
+process forks for it, `agent_cli/warm.py`).
 
 ## Files
 
-- `declarations.py` — each verb's declaration: a stub function per verb
+- `langslice/tools/descriptions/render.py` — each verb's declaration: a stub function per verb
   (signature = the arguments, docstring = the description a model reads,
   re-indented by `model_doc`). The description is the tool's only
   description: the job statement names the tools and describes none.
@@ -82,7 +84,7 @@ process forks for it, `cli/warm.py`).
   picture and section counts of `look`, `grep_atlas_view`,
   `make_image`, `make_mask`, `interactive_transform` and
   `elastix_affine` without the ADK and MCP cap; `brain_scale` (the job's
-  atlas brain's, `core.atlas.size`, passed by the toolbox and the CLI's
+  atlas brain's, `core.atlas.brain_size`, passed by the toolbox and the CLI's
   `schema` for a job): `_SCALED_DOCS` states the distances a description
   gives (`elastix_affine`'s 300 um neighbourhood) at that scale, unchanged at 1. `declaration(name, variant)`
   (cached), `summary(name)`, `declare(name, body, variant)` (a function with
@@ -119,21 +121,21 @@ process forks for it, `cli/warm.py`).
   render); `section_raster(images=, raw=)`;
   conversions `transform_from_matrix` / `transform_from_params`, and
   `deformation_from_map` (a full fit-grid-to-native map as a
-  `DeformationProposal`, `ops.deformable.warp_from_map`; `start="current"`
+  `DeformationProposal`, `tools.deformable.warp_from_map`; `start="current"`
   for a map made on top of the held deformation, its chain kept; `settings`,
   `engine_settings`, `engine_version` kept as a native fit's); writes
   `set_positions`, `set_transforms`, `set_deformations`
-  (`ops.deformable.apply_warps`, maps converted before the lock),
-  `mark_damage` through `ops/`, `add_image` (a made section image,
-  `ops.images.add_image`), `add_layer`
+  (`tools.deformable.apply_warps`, maps converted before the lock),
+  `mark_damage` through `tools/`, `add_image` (a made section image,
+  `tools.images.add_image`), `add_layer`
   through `job/plugin_store` (a script's under `plugins/script/`), `expect=` fingerprints refusing `STALE_INPUT`
   rows; `writing()` holds the lock around several writes; a plugin call's writes are
   one undo step unless another write came between; `atlas_plane` /
   `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
-  `from_atlas_um` / `plane_distance_um` / `region_at` (`ops.points`),
-  `write_frame` / `map_from_itk` / `transform_from_itk` (`core.itk_io`: an
+  `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`),
+  `write_frame` / `map_from_itk` / `transform_from_itk` (`core.maps.itk`: an
   outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
-  (`ops.deformable.fit_record`, `ops.transforms.elastix_fit`: the native
+  (`tools.deformable.fit_record`, `tools.transforms.elastix_fit`: the native
   engines with settings and a mask of the caller's own, by the tools' names
   and with their defaults (`restrict_to`, `section_image`, `atlas_image`,
   `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
@@ -151,14 +153,14 @@ process forks for it, `cli/warm.py`).
   `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
   adapter plugin (LangSlice as a client of a configured server, allow-list,
   `server__tool` names, `inputs` / `results` mapping through the context).
-  `declarations.Variant.plugins` makes `declaration` read a plugin stub;
+  `langslice.tools.descriptions.render.Variant.plugins` makes `declaration` read a plugin stub;
   `look` takes `layers` on every job (plugins and scripts leave them; dropped
   without the `section` and `overlay` modes).
 - `statement.py` — the job statement every door gives a registration agent:
   `SYSTEM_PROMPT` (the ADK agent's system prompt, the same for every job and
   naming no tool a job can switch off; the statement is its first message; the connectors' agent files carry the same text, `tests/test_connector_agents.py`),
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
-  max_resolution=, image_model_off=, auto=)` (`agent.prompt.build_job_statement`
+  max_resolution=, image_model_off=, auto=)` (`langslice.tools.descriptions.statement.build_job_statement`
   worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF`
   (`image_model_off_text(disabled)`) when the image model is not connected,
   the user's notes, `status_and_notes`).
@@ -174,7 +176,7 @@ process forks for it, `cli/warm.py`).
   the model), `find(path)` (a job folder, or the image folder beside one;
   `NoJob`), `read_spec` (`job.json`'s spec, as a resume), `open_folder(path,
   persist=, door=)` (`Job.load`: nothing rewritten; the card brought up to
-  date; the model keys loaded by `api.setup.load_credentials`),
+  date; the model keys loaded by `credentials.load_credentials`),
   `create(spec)` (`Job.open`, the ingest every host uses; the card), both
   taking `image_model=`. `Opened.tools()`
   (the toolbox with `level="auto"`, `scripting=True`,
@@ -188,15 +190,15 @@ process forks for it, `cli/warm.py`).
   `image_model_off(spec, connected)`: the nonlinear task names an image
   model that is not connected. `door` (`agent`, or `cli`: its declarations
   worded for the CLI) and `viewer` (the CLI's: `job_viewer(layout)`,
-  `job.json` `viewer`, default `claude`; `core.opening.VIEWER_LIMITS`).
+  `job.json` `viewer`, default `claude`; `core.pictures.opening.VIEWER_LIMITS`).
   `with_registration(spec, file, atlas_loader=, emit=)`: the spec
   with a registration made elsewhere as its supplied inputs
-  (`job.imports.registration_inputs`) and the import report; refuses a spec
+  (`job.imports.placements.registration_inputs`) and the import report; refuses a spec
   that already supplies any of `REGISTRATION_EXCLUDES`. Every door that
   takes `--registration` / `registration=` goes through it.
-- `library.py` — `open_job(folder, image_model=, atlas_loader=, emit=)` ->
+- `library/handle.py` — `open_job(folder, image_model=, atlas_loader=, emit=)` ->
   `JobHandle`: every verb the job has as a method (the tool, same
-  arguments, run inside `job.views.captured()`, then the pictures flushed,
+  arguments, run inside `job.pictures.captured()`, then the pictures flushed,
   so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
   `imported`, `wait(timeout=None)` (waits for background work and returns its landing as the CLI does:
   `background` notices, `work`, `running`, pictures; uses `toolbox.work_pictures`), `context` (one `ScriptContext` per handle, on the toolbox's
@@ -209,15 +211,15 @@ process forks for it, `cli/warm.py`).
   return `SavedPicture`s (a linear proposal's overlay keeps its frame and
   layers, a deformation's none); its docstring is the how-to the card points
   to), `section_maps(section, full_resolution=)` (a section's maps in
-  memory, `ops.exports.section_maps`), `export_stack()` (what `submit`
-  writes after its step, `ops.exports.export_stack`), `close` (image-model calls settled, pictures flushed), a
+  memory, `tools.exports.section_maps`), `export_stack()` (what `submit`
+  writes after its step, `tools.exports.export_stack`), `close` (image-model calls settled, pictures flushed), a
   context manager. A method's reply is `library_reply`: a `Reply` (a dict
-  of JSON values, `plain`; its status rows `core.status.with_uniform_rows`;
+  of JSON values, `plain`; its status rows `core.stack.status.with_uniform_rows`;
   the pictures' files under `artifacts` as the CLI lists them,
-  `job.views.artifacts`; their text lines under `media_texts`; an unsaved
+  `job.pictures.artifacts`; their text lines under `media_texts`; an unsaved
   picture under `warnings`) whose `images` ATTRIBUTE holds the PIL
   pictures. Every handle's job is tracked (`_track`) and closed at
-  interpreter exit by `_close_open`, registered with `job.views.at_exit`
+  interpreter exit by `_close_open`, registered with `job.pictures.at_exit`
   (before `concurrent.futures` stops taking work), so a script that never
   calls `close` keeps its `trace_borders` results and pictures. `create_job(images | JobSpec, atlas=, plane=, tasks=,
   image_model=, job_dir=, positions=, transforms=, angles=,
@@ -233,7 +235,7 @@ process forks for it, `cli/warm.py`).
   without `image_model=`, sets `Opened.traces_off`. `langslice/__init__.py`
   exposes `open_job`, `create_job`, `image_model`, `default_prompt`,
   `coordinate_map` and `load_atlas`, each imported on first use.
-- `card.py` — the job folder's reference card, `AGENTS.md` and `CLAUDE.md`
+- `reference_card.py` — the job folder's reference card, `AGENTS.md` and `CLAUDE.md`
   (identical; Codex reads one, Claude Code the other): `card_text(layout)`
   (the folder's files, the maps and their coordinate convention, the CLI
   with every listed verb, `long` marked and its per-call limits
@@ -251,7 +253,7 @@ process forks for it, `cli/warm.py`).
   `write_card` (writes where missing or worded differently; never raises);
   `TOOLS_FILE` (`TOOLS.md`, which the card names and `init` / `launch` write).
   Written by every door that opens or makes a job.
-- `trace.py` — `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`), `HostTrace` (the MCP
+- `call_log.py` — `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`), `HostTrace` (the MCP
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
   file per job folder), `log_call` (`logs/calls.jsonl`) and `save_reply`
@@ -292,38 +294,38 @@ process forks for it, `cli/warm.py`).
   pictures into sheets at the box's `max_view_edge`: the reply's `pictures`
   are the sheets, `tiled` the pictures they tile), `zoom` (on a sheet, the
   tile's picture, with `sheet` and `box`), `make_image`
-  (its `section` pictures through `ops.look.show_result`, none where
+  (its `section` pictures through `tools.look.show_result`, none where
   `look:section` is off, which also drops its `view`), `grep_atlas`,
   `grep_atlas_view`, `status` (`raw_channels`, `section_images`:
-  `core.section_images.summary`), the job-folder tools;
+  `core.sections.images.summary`), the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
   `mark_damage`, `make_mask` (per-section `rows`), `note`, `undo`, `redo` (`steps`, default 1: that many in
-  one call, `ops.history`), `restore_registration` (`section` lists,
-  `ops.registrations.listing`; `sections` `[{id, registration}]` puts them
+  one call, `tools.history`), `restore_registration` (`section` lists,
+  `tools.registrations.listing`; `sections` `[{id, registration}]` puts them
   back, per-section `results`, one undo step, and shows their overlays;
   both or neither `BAD_ARGS`), `submit`; `fitting.py`:
   `elastix_affine` (its `turn_deg` and plausibility `flags` worded in the
   row's `warning`, `affine_flag_words`; the knobs under `transform`),
   `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
-  `ops.look.show_result` unless its `view` is false and the host does not
+  `tools.look.show_result` unless its `view` is false and the host does not
   force it (a fit's and an `em` mask's picture drawn on the section image
   it read, `door.drawn_image`); `interactive_transform` and `elastix_affine` drop the
   deformations their write made stale before drawing it, so the picture
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past
-  `ops.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
+  `tools.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
   picture with its caption; `work_pictures` is the saved files of those pictures, for the CLI and `JobHandle.wait`), `arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
-  `core.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host,
+  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host,
   `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys
-  from `core/media_keys.py`.
+  from `core/pictures/media_keys.py`.
 - `mcp/` — the MCP server (`server.py`; `connectors/claude-desktop/`):
   `open_job` (the job opened as the engine does, the toolbox at
   `CLAUDE_MAX_VIEW_EDGE`, `trace_borders` only when the image model is
@@ -342,10 +344,11 @@ process forks for it, `cli/warm.py`).
   tool events (and one `seed` per `show_stack` page) over its host channel
   (`host_channel.py`) as `agent_event`s; `tool_end` events carry `views`,
   the saved pictures' paths.
-- `api/` — what the MCP door, the CLI and the engine service share (the
-  service itself is `hosts/api/`): `models.py` (the engine contract's
-  Pydantic models, `export_schema_bundle`),
-  `setup.py` (offline setup status, saved credentials, login;
+- `abba/`, `credentials.py`, `user_settings.py` — what the MCP door, the
+  CLI and the engine service share (the service itself is
+  `hosts/service.py`): `abba/contract.py` (the engine contract's Pydantic
+  models, `export_schema_bundle`),
+  `credentials.py` (offline setup status, saved credentials, login;
   `load_credentials`: `.env`, then the keys saved by setup, an explicit
   environment setting winning, an unknown or unreadable entry skipped with a
   warning; `image_model_connected(provider)`: provider not `none` and its
@@ -359,7 +362,7 @@ process forks for it, `cli/warm.py`).
   (`off`: none; the test suite's): the chosen `connection`, `runs_in` (read by
   nothing yet), an `agent` model and effort per connection; `agent_models()`
   the models offered and LangSlice's defaults; `agent_choice()`, which
-  `cli/linear.py`'s `apply_saved_agent_choice` gives `linear run` when it has
+  `commands/linear.py`'s `apply_saved_agent_choice` gives `linear run` when it has
   neither `--model` nor `--reasoning`), `saved_jobs.py` (saved ABBA jobs,
   `prepare_saved_job` for the engine method `mcp.prepare`: the job folder
   next to the snapshots, the id index, the host channel, the copy prompt) and
@@ -371,16 +374,17 @@ process forks for it, `cli/warm.py`).
   the snapshots, and no host row is ever emitted for a property frozen on a
   section, `_host_updates(..., frozen=spec.frozen_for)`), `checkpoint_callback` (a
   `HostCheckpoints` tracker: ABBA-world linear rows; with the `nonlinear`
-  task `warp` rows from `core/abba_warp.py`, each logged with its measured
+  task `warp` rows from `core/maps/abba.py`, each logged with its measured
   `max_error_mm` / `p99_error_mm`; `host_angles` on a stack-wide angle
   change), `run_linear` (ends with a checkpoint of the final state),
   `public_event`, `preview_preprocess`). ABBA shows one atlas angle per
   stack, so the tracker refuses a state whose sections differ in cutting
   angle (`refuse_mixed_angles`, `ABBA_MIXED_ANGLES`), which also fails the
   MCP door's opening of such a saved ABBA job.
-- `cli/` — the `langslice` and `langslice-job` commands, one module per
-  group; `langslice/cli.py` keeps the entry point `langslice.cli:main`.
-  `__init__.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
+- `commands/` and `agent_cli/` — the `langslice` and `langslice-job`
+  commands, one module per group; `langslice/cli.py` keeps the entry point
+  `langslice.cli:main`, `agent_cli/main.py` is `langslice-job`'s.
+  `commands/parser.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
   commands, `session-end`, `login`, `version`), `linear.py` (`linear run` and the job flags every
   stack-opening command shares: `add_linear_arguments` (`--disable
   NAME[,NAME...]`: the job's `disabled` list), `build_linear_spec`,
@@ -394,8 +398,8 @@ process forks for it, `cli/warm.py`).
   `mcp.py` (`mcp`), and the agent CLI
   (`docs/agents/cli.md`), a command of its own so that allowing it allows
   no agent, server, host or login:
-  - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,
-    also `python -m langslice.doors.cli.jobcli`): `main()` without argv
+  - `jobcli.py` — `langslice-job` (entry point `langslice.doors.agent_cli.main:main`,
+    also `python -m langslice.doors.agent_cli.main`): `main()` without argv
     (the process's own command line) asks the job's warm process first
     (`warm.run`), importing nothing else until that is decided (the
     package's `__init__` imports its command groups where it builds its
@@ -416,8 +420,8 @@ process forks for it, `cli/warm.py`).
     (`$XDG_RUNTIME_DIR/langslice-warm`, else `/tmp/langslice-warm-<uid>`,
     0700), `Place` (`.sock`, `.lock`, `.log`, `.refused`). Server
     `serve_main`: the lock, `warm_up` (the CLI's modules,
-    `core.deformable.engines.preload`, the job opened read-only, its tools,
-    atlas arrays, `core.maps.share_frames`, the oblique template volumes when
+    `core.fits.deformable.engines.preload`, the job opened read-only, its tools,
+    atlas arrays, `core.maps.section_maps.share_frames`, the oblique template volumes when
     its sections are tilted; `_quiet_pools` stops dask's, zarr's,
     fsspec's and the sampling threads; `gc.freeze`), `Server` (one thread,
     `selectors`; `refusal`: protocol, identity, `Sources.changed` (the
@@ -481,7 +485,7 @@ process forks for it, `cli/warm.py`).
     `schema NAME` declared for FOLDER's job when it has one.
   - `job.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every
     call logged by `record` (its line in `calls.jsonl` with an error's code
-    and message and `reply`, the envelope kept by `trace.save_reply`) and,
+    and message and `reply`, the envelope kept by `call_log.save_reply`) and,
     with `LANGSLICE_TRACE_DIR`, traced; `FOLDER ops` answers `catalog.ops`
     for the job; any
     `HELP_FLAGS` token, `--help` / `-h`, answers `catalog.describe` and runs
@@ -492,7 +496,7 @@ process forks for it, `cli/warm.py`).
     `corrected_call` as the fix: every argument with the first sentence of its
     `Args` entry (`_first_sentence`: not cut at an abbreviation's full stop,
     `ABBREVIATIONS`, or inside brackets),
-    `declarations.argument_texts`, and its default, then the
+    `langslice.tools.descriptions.render.argument_texts`, and its default, then the
     call without the unknown ones, a short signature's others at their
     defaults), `FOLDER schema [VERB ...]` (catalog's `schema` for that job),
     `call` (open, `VERB_OFF` /
@@ -500,14 +504,14 @@ process forks for it, `cli/warm.py`).
     start; a long verb without `--background` where `background.detaching()`
     runs as a background run the call waits for, `_detached`: at most
     `background.WAIT_S`, then answered as `wait` answers, Ctrl-C ending the run
-    too; dry run, run), `_run` (the tool inside `job.views.captured()`; an
+    too; dry run, run), `_run` (the tool inside `job.pictures.captured()`; an
     image-model verb's calls settled before answering, each landed outcome
     shown; `submit` writes the results; pictures listed as artifacts with
-    `index` and `label`, `job.views.artifacts`; an image-model verb waits
+    `index` and `label`, `job.pictures.artifacts`; an image-model verb waits
     for the background work it started and answers with its notices, the
     work's pictures listed after the call's own, `_work_pictures`;
     `would_change` on a dry run), `shape` (status rows uniform,
-    `core.status.with_uniform_rows`;
+    `core.stack.status.with_uniform_rows`;
     concise: a reply with pictures keeps its description as `picture_note`,
     a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
     parser `init_parser`: the job flags of `linear run`, `--notes`,
@@ -573,7 +577,7 @@ folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
 `elastix_affine`, `fireants_syn`, `trace_borders`,
 `export_maps`), which compute outside it and take it to apply, refusing a
-section whose inputs changed (`ops.inputs`, `STALE_INPUT`), and the reads
+section whose inputs changed (`tools.stale`, `STALE_INPUT`), and the reads
 (`kind` "read"), which never wait for another process's writer
 (`Job.reading`: the state as last saved); the lock timing
 out is `JOB_BUSY` (exit 3). Every call runs as its verb (`Job.acting`), so the

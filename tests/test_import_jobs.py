@@ -24,9 +24,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.core.layers import atlas_facts
+from langslice.core.pictures.layers import atlas_facts
 from langslice.core.spec import NonlinearSpec
-from langslice.doors.cli.jobcli import main
+from langslice.doors.agent_cli.main import main
 from langslice.job.quint import job_export
 from tests.cli_child import install
 from tests.synthetic_stack import (
@@ -72,7 +72,7 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, atlas: DeepAtlas) ->
     """The deep atlas wherever a door opens a job, the stub image model
     wherever one resolves a model, no network, a private HOME."""
     import langslice.doors.tools.toolbox as toolbox
-    import langslice.providers.images as transport
+    import langslice.providers.image_calls as transport
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     install(lambda _name: atlas, monkeypatch.setattr)
@@ -85,7 +85,7 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, atlas: DeepAtlas) ->
 
     monkeypatch.setattr(toolbox, "resolve_image_model", resolve)
     # The stub stands for a connected image model (its key or login present).
-    from langslice.doors.api import setup
+    from langslice.doors import credentials as setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
 

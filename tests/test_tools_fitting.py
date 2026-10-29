@@ -18,15 +18,15 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import deformation
-from langslice.core.nonlinear.types import GeneratedSegmentation
-from langslice.core.sizes import picture_edge
+from langslice.core.fits import deformation
+from langslice.core.fits.trace.request import GeneratedSegmentation
+from langslice.core.pictures.sizes import picture_edge
 from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
-from langslice.providers.registry import resolve_image_model
+from langslice.providers.connections import resolve_image_model
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -144,7 +144,7 @@ def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
     """An Elastix fit whose scale changes by more than a section shrinks or
     swells, or that shears it, carries flags, worded in the row's warning."""
     from langslice.doors.tools.fitting import affine_flag_words
-    from langslice.ops.transforms import plausibility_flags
+    from langslice.tools.transforms import plausibility_flags
 
     def fit(**physical: float) -> dict[str, Any]:
         return {"physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
@@ -178,7 +178,7 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
     assert set(row["displacement_mm"]) == {"max", "median"}
     held = result["changed"][0]["deformation"]
     assert held["method"] == "fireants_syn" and held["steps"] == ["fireants_syn"]
-    from langslice.core.deformation import (
+    from langslice.core.fits.deformation import (
         DETAIL_LEVEL,  # the tests' patched level
     )
 

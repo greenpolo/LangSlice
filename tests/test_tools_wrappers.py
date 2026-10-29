@@ -12,7 +12,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from langslice.core.state import SliceState, StackState
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import (
     _saves_views,
@@ -22,7 +23,7 @@ from langslice.doors.tools.toolbox import (
 )
 from langslice.job.background import Landed
 from langslice.job.job import HOST_TRANSFORM_KIND
-from langslice.job.views import PICTURE_FILE
+from langslice.job.pictures import PICTURE_FILE
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
@@ -82,7 +83,7 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
     from langslice.core.spec import NonlinearSpec
-    from langslice.providers.openai_oauth import _json_schema_dict
+    from langslice.providers.oauth.transport import _json_schema_dict
 
     _, _, box = _box(tmp_path, tasks=["position", "transform", "nonlinear"],
                      nonlinear=NonlinearSpec(provider="none"))
@@ -144,7 +145,7 @@ def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_pa
 def test_the_adk_plugin_refuses_what_adk_would_drop(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
-    from langslice.agent.plugins import StrictArgumentsPlugin
+    from langslice.doors.agent.adk_plugins import StrictArgumentsPlugin
 
     _, _, box = _box(tmp_path, placed=True)
     look = _tool(box, "look")

@@ -1,4 +1,4 @@
-"""Operator spend warnings: the dollar meter and the price table (agent/spend.py).
+"""Operator spend warnings: the dollar meter and the price table (doors/agent/spend.py).
 
 The window-share warnings run through a whole fake session in
 tests/test_linear_engine.py.
@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from types import SimpleNamespace
 
-from langslice.agent.spend import PRICES, SpendMonitor, lane_of, rate_for
+from langslice.doors.agent.spend import PRICES, SpendMonitor, lane_of, rate_for
 
 
 def usage(prompt=0, cached=0, out=0, thoughts=0):

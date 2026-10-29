@@ -4,17 +4,18 @@ Package guide for `src/langslice/job/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The job layer: the `Job` (`job.py`: the state, undo, the checkpoint, the
-submit gates), where its files live and how they are named, indexed and
-filled with pictures, the public files rendered from the state, and the
-QUINT (QuickNII/VisuAlign) reading and writing.
+The job layer: the `Job` (`job.py`: the state, undo, the checkpoint,
+ingest and the host's inputs; `gates.py`: the submit gates;
+`state_file.py`: `state.json`), where its files live and how they are
+named, indexed and filled with pictures, the public files rendered from
+the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
 
 ## The layer rule
 
-Job layer: imports the core (`core.state`, `core.discovery`,
-`core.deformation`, `core.layers`, `core.jpeg`, `core.maps`, `core.atlas`,
-...) and itself only. Never an operation (`ops/`), a door (`doors/`), the
-agent driver (`agent/`), a host (`hosts/`), a provider or `google.*`,
+Job layer: imports the core (`core.stack.stack`, `core.sections.discovery`,
+`core.fits.deformation`, `core.pictures.layers`, `core.pictures.jpeg`, `core.maps.section_maps`, `core.atlas`,
+...) and itself only. Never a tool (`tools/`), a door (`doors/`, the
+built-in agent included), a host (`hosts/`), a provider or `google.*`,
 `litellm`, `openai`. import-linter's contracts (`pyproject.toml`, run by
 `tests/test_import_layers.py`) check the imports;
 `tests/test_core_imports.py` loads each module in a fresh interpreter and
@@ -73,10 +74,10 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                              warp.ome.zarr, the parent a sibling it names
   registrations.jsonl        every registration the section has held, numbered
                              (registrations.py); read back by restore_registration
-  images/<name>.png          made section images (core/section_images.py: the
+  images/<name>.png          made section images (core/sections/images.py: the
                              opening preprocessed, make_image's, a script's
                              add_image); never deleted, <name>.2.png on a remake
-  masks/<name>.npz           section masks (core/section_masks.py); never deleted
+  masks/<name>.npz           section masks (core/sections/masks.py); never deleted
   image_correction/<key>/    trace_borders calls, attempt-NN inside
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
   coords.tif, labels.tif,    the section's maps (formats.py), written only by
@@ -106,17 +107,17 @@ logs/calls/<n>_<verb>.json  each agent-CLI call's envelope as printed
 logs/launches/<n>_<role>.md  the exact launch prompts of `langslice-job FOLDER launch` (`LAUNCHES_DIR`)
 trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
                      built-in agent's trace, a coding agent's session copied in by
-                     `langslice session-end` (`doors/cli/transcripts.py`); the
+                     `langslice session-end` (`doors/commands/transcripts.py`); the
                      agent's file tools never show or open it (`browse.HIDDEN`)
-env/                 the job's own Python environment (`ENV_DIR`; `doors/cli/jobenv.py`)
+env/                 the job's own Python environment (`ENV_DIR`; `doors/agent_cli/environment.py`)
 prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
-                     (`doors/card.py`) and rewritten when stale
+                     (`doors/reference_card.py`) and rewritten when stale
 TOOLS.md             every verb of the job, its description and arguments (by `init`, `launch`)
 ```
 
 **The public files (`docs/reference/file_formats.md` has every field).**
-`state.json` stays the one working source; `formats.py` renders it for scripts and other programs, in BrainGlobe micrometres (the
+`state.json` stays the one working source; `public_files.py` renders it for scripts and other programs, in BrainGlobe micrometres (the
 atlas's axis order, voxel `i`'s centre at `i * resolution`) and image-file
 pixels `[row, col]`, and never reads any of it back. `Job.checkpoint`
 writes the state and owes `registration.json`; it is rewritten atomically
@@ -124,17 +125,17 @@ once, as the outermost hold of the job folder's lock ends
 (`FolderLock.before_release` calls `Job._write_derived`, still holding the
 lock), so a write that checkpoints twice in one hold (the write, then the
 deformations it made stale) maps the stack once, from the state it leaves
-(`formats.write_registration`, through `Job.workspace`, which `Job.open`,
+(`public_files.write_registration`, through `Job.workspace`, which `Job.open`,
 `Job.load` and the tool door set; a failure is logged, never raised): per
 section its parameters in public units (atlas, plane, orientation, the six
 numbers and their knobs, the applied deformation's record), the file
-pixel -> atlas matrix of its linear placement (`core.maps`), why it has none
+pixel -> atlas matrix of its linear placement (`core.maps.section_maps`), why it has none
 (`problem`), and its written maps with whether they are still `current`
 (`maps.json`'s `parameters_digest`). The maps (`write_section_maps`:
 `coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
-`residual.tif`, `maps.json`) are written only by `ops.exports.export_maps`
+`residual.tif`, `maps.json`) are written only by `tools.exports.export_maps`
 (on demand; a section's `maps` entry is null until then), the exports by it
-and at submit (`ops.exports.export_stack`). `Job.persist` False
+and at submit (`tools.exports.export_stack`). `Job.persist` False
 writes none of it.
 
 **Resuming with other inputs is refused.** `Job.open` with `spec.resume`
@@ -156,9 +157,9 @@ folder's job refused): the agent CLI and the library open a job per call
 this way (`doors/jobs.py`), so a call beside a running agent changes
 nothing until its first write. `Job.persist` False (`Job.load(...,
 persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
-checkpoint, no history, and `views.DiscardedViews` saves no picture.
+checkpoint, no history, and `pictures.DiscardedViews` saves no picture.
 `Job.engine_log` is where the engines' own output goes while they fit
-(`logs/engine.log`, `core.engine_output`); None for a job that persists
+(`logs/engine.log`, `core.fits.engine_log`); None for a job that persists
 nothing.
 
 **One writer at a time, across processes.** Every write goes lock -> sync -> apply -> commit -> unlock: `Job.writing()` holds
@@ -186,7 +187,7 @@ process's write enters this job's history as that job's step.
 **Paths are relative.** Every path a job file stores (a deformation's
 `record`, an image correction's `artifact_dir` / `artifact_paths`, the views
 index) is relative to the job folder (`JobLayout.relative` /
-`JobLayout.resolve`; `job.checkpoint.state_paths` walks a state's
+`JobLayout.resolve`; `job.state_file.state_paths` walks a state's
 paths). The trace identity in a deformation cache key is the stored
 (relative) artifact directory, so keys survive a move of the folder.
 `StackState.image_folder` itself stays absolute (rewritten by `Job.open`
@@ -262,7 +263,7 @@ longer exist be taken over by the images it is opened with.
   the tool's manifest `layers.json` and puts its reference in the section's
   `layers` (the state: undo hides it, the files stay); `read_manifest`,
   `layer_rows`, `export_layers` (copies the shown layers to
-  `exports/plugins/<tool>/`, called by `ops.exports`). `job.json`'s `plugins`
+  `exports/plugins/<tool>/`, called by `tools.exports`). `job.json`'s `plugins`
   (the provenance `doors/plugins` records) is written with `write_job_file`.
   `JobLayout.plugins_dir` / `plugin_dir(tool)`. `Job.pushed` counts undo steps
   and `Job.merge_steps(mark)` makes the steps since `mark` one (a plugin tool's
@@ -293,16 +294,16 @@ longer exist be taken over by the images it is opened with.
   folder could not be written; owner-only). `folder_id` (an image folder's
   stable id). The channel token stays here, not in a folder that may be
   shared. `register`, `lookup` (refuses a newer entry).
-- `checkpoint.py` — `state.json`: `write_checkpoint` (atomic, versioned,
+- `state_file.py` — `state.json`: `write_checkpoint` (atomic, versioned,
   `STATE_FORMAT_VERSION` 4), `read_checkpoint(path, upgrade=)`,
   `current_state(data, upgrade=)` (format 3, `UPGRADABLE_FORMAT`, through
-  *upgrade*: `core.section_images.Migration`; refuses any other format: a
+  *upgrade*: `core.sections.images.Migration`; refuses any other format: a
   newer LangSlice's asks for an update, an older pre-release's for a new job,
   `--fresh` or `resume=False`; history steps are read the same way), `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
 - `job.py` — `Job`: `open` (resume or ingest, the opening `preprocessed`
-  image of every section without one, `core.section_images.ensure_opening`,
+  image of every section without one, `core.sections.images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records
   `resumed`; the job added to the recent jobs list, `recent.remember`), `load` (as it stands, writing nothing, except once for a job of
   state format 3 or without its opening images: then the migrated state and
@@ -344,7 +345,7 @@ longer exist be taken over by the images it is opened with.
   `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
   section (`NonlinearSpec.require_deformation`). The sections whose
   deformation is frozen need no deformation and no image correction.
-- `formats.py` — the public files (above): `registration_document`,
+- `public_files.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
   `applied_deformation`, `maps_status`, `write_registration`,
   `write_section_maps` (float maps as ImageJ hyperstacks, deflate without
@@ -353,7 +354,7 @@ longer exist be taken over by the images it is opened with.
   index with the atlas colours of indexes 1-255 as its lookup table, the
   csv), `derived_files` (the CLI's artifacts after submit), the file names
   (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`, `VISUALIGN_FILE`).
-- `imports.py` — a linear registration made elsewhere, read (never
+- `imports/readers.py` — a linear registration made elsewhere, read (never
   written to the job): `read_registration` (QuickNII/VisuAlign/DeepSlice
   JSON, QuickNII/DeepSlice XML, DeepSlice CSV, a job's `registration.json`),
   `match_sections` (exact name, then stem ignoring case, then one `_sNNN`
@@ -364,7 +365,7 @@ longer exist be taken over by the images it is opened with.
   map on the job's file, VisuAlign markers rescaled to the file and raw;
   `transform()` the stored-transform dict, kind `imported`; `unmatched`,
   `missing`, `refused`). Geometry through `job/quint.py`'s inverses and
-  `core/import_geometry.py`; `docs/reference/file_formats.md` ("Importing a
+  `core/maps/imported.py`; `docs/reference/file_formats.md` ("Importing a
   registration made elsewhere"). `registration_inputs(source,
   workspace)` -> `RegistrationInputs`: the result as `JobSpec.inputs`
   (`positions`, `angles` stack-wide when every section's agree to within
@@ -376,9 +377,9 @@ longer exist be taken over by the images it is opened with.
   False, `warnings`: including `MARKERS_NOT_IMPORTED` when the file has
   VisuAlign markers) and the full `ImportResult`; `ValueError` when nothing
   is placed. The doors call it through `doors.jobs.with_registration`.
-- `views.py` — `ViewStore` (`Job.views`): every picture the model was
+- `pictures.py` — `ViewStore` (`Job.views`): every picture the model was
   shown. The hook every door uses is `ViewStore.shown(tool,
-  atlas_of=)`: a context manager that collects what `core.layers` notes
+  atlas_of=)`: a context manager that collects what `core.pictures.layers` notes
   while the door's operation runs; the door hands it the pictures it sends
   (`Shown.show(pictures, arguments=, call_id=)`; after the block `Shown.names`,
   `numbers` and `captions` say what was saved) and the store queues each
@@ -390,11 +391,11 @@ longer exist be taken over by the images it is opened with.
   (`engine.save_opening`), the MCP door each `show_stack` page's image
   blocks (`server.save_page`), as the bytes sent, through `save`. Per picture a folder `<seq>_<tool>[_<mode>]` (six-digit
   sequence across the job's life, continued on reopen) with `view.jpg` (the
-  exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
+  exact bytes the door sent: the same `core.pictures.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
   number and id, arguments, `caption`, `step`, `recipe`, sections, mode, picture size and bytes, `frame`)
   and, for a placement picture or an `fireants_syn` picture (its note's
-  `warp`, `core.layers.warp_layers`), `labels.tif` (uint32, zlib) and
+  `warp`, `core.pictures.layers.warp_layers`), `labels.tif` (uint32, zlib) and
   `borders.png` (8-bit coverage), plus `residual.tif` for an `fireants_syn`
   picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
@@ -412,7 +413,7 @@ longer exist be taken over by the images it is opened with.
   `Job.registration_numbers`, the numbers the sections hold now).
   `save(tiles=True)`: a sheet's tiles, their JPEGs listed as artifacts of kind
   `tile` (`Saved.view_kind`), not `view`. One background
-  thread per store, ending when its queue is empty; `flush` (`ops.submit`,
+  thread per store, ending when its queue is empty; `flush` (`tools.submit`,
   `Job.emit_results`, `Job.close`, the library after every verb) and
   `flush_all` (interpreter exit) wait for it. `at_exit(fn)` runs a function
   at interpreter exit while threads can still start: Python's threading
@@ -439,7 +440,7 @@ longer exist be taken over by the images it is opened with.
   and last call numbers, under its own file lock `views.seq.lock`;
   `ViewStore._numbering`), so two stores that queue pictures before either
   writes never share one.
-- `browse.py` — read-only browsing of the job folder for `ops/files.py`: `resolve`
+- `browse.py` — read-only browsing of the job folder for `tools/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
   pointing out are refused with `PathRefused`; one that does not exist with
   `PathMissing`, naming the nearest folder above it that exists and at most
@@ -454,22 +455,22 @@ longer exist be taken over by the images it is opened with.
 - `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
   placed sections, each anchoring from its exact pixel -> atlas map, so any
   plane and cutting angle; `exports/quicknii.json` and `visualign.json`,
-  through `ops.exports`), the atlas micrometre <-> QuickNII voxel
-  conversions and their inverses (read by `imports.py`), the `.cutlas` target per
+  through `tools.exports`), the atlas micrometre <-> QuickNII voxel
+  conversions and their inverses (read by `imports/readers.py`), the `.cutlas` target per
   atlas (every Allen resolution exported to the 25 um target, its voxel
   grid rescaled; `ccfv3augmented_mouse_25um` to the same target on the Allen
   grid, shifted by `core.atlas.images.AUGMENTED_AP_OFFSET_MM`, in both
   directions).
 
 The frame record and the on-demand coordinate map are the core's
-(`core/layers.py`, `core/CLAUDE.md`).
+(`core/pictures/layers.py`, `core/CLAUDE.md`).
 
 ## Landmark state and derived file
 
 Each `SliceState.landmarks` holds its authoritative `next_id` and `pairs`.
 Checkpoint refreshes plane-stale flags independently of appearance; the same
 write regenerates `sections/<stem>/landmarks.json` through
-`formats.write_landmarks`. That JSON is derived and never read back, including
+`public_files.write_landmarks`. That JSON is derived and never read back, including
 on undo/redo. Pair IDs, both canonical endpoints, original picture numbers and
 pixel coordinates, exact endpoint geometry and registration context stay in
 state. Landmark applications use normal saved `DeformableRecord`s, so the job's

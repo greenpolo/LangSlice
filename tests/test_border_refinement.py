@@ -3,7 +3,7 @@
 import numpy as np
 from PIL import Image
 
-from langslice.core.nonlinear import border_refinement as borders
+from langslice.core.fits.trace import lines as borders
 
 
 def test_lines_replace_only_their_own_pixels_of_the_photograph():

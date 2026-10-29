@@ -6,9 +6,9 @@ app, a short request and the job's ``langslice-job FOLDER init`` command,
 which the main agent's ``register-brain`` skill runs. This module gives the
 page what the choices are, so nothing in the form is written by hand twice:
 
-- the tools and their options from :func:`langslice.core.toolset.catalog`
-  (the scripting verbs left out: a script's, never the agent's to lose), each
-  with its people's label (:mod:`langslice.core.tool_labels`), so a renamed or
+- the tools and their options from :func:`langslice.core.toolset.catalog` (the
+  scripting verbs left out: a script's, never the agent's to lose), each with
+  its people's label (:mod:`langslice.job.settings.labels`), so a renamed or
   removed tool can never linger in the form;
 - the tasks, :data:`~langslice.core.spec.DEFAULT_TASKS` and the tools that
   write each task's answer (:data:`~langslice.core.toolset.TASK_WRITERS`), so
@@ -25,9 +25,10 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Any
 
-from langslice.core import tool_labels, toolset
+from langslice.core import toolset
 from langslice.core.atlas.details import descriptions
 from langslice.core.spec import ALL_TASKS, DEFAULT_TASKS, PLANES, JobSpec
+from langslice.job.settings import labels as tool_labels
 
 #: The atlas species the list is grouped by, in order: (group, words in a name).
 SPECIES: tuple[tuple[str, tuple[str, ...]], ...] = (

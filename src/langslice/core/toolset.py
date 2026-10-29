@@ -1,9 +1,9 @@
 """The tools a job can have, and what of them can be switched off.
 
 One :class:`ToolDef` per agent tool (the verbs of
-:data:`langslice.ops.registry.VERBS`, which binds each to its operation):
-whether it writes, its task group, when a spec has it (``when``), the parts
-of it that can be switched off on their own (``options``), whether it can be
+:data:`langslice.tools.catalog.VERBS`, which binds each to its operation):
+whether it writes, its task group, when a spec has it (``when``), the parts of
+it that can be switched off on their own (``options``), whether it can be
 switched off at all (``essential``) and what it needs while it is on
 (``needs``). Every door is built from this list.
 
@@ -66,9 +66,9 @@ class ToolDef:
     #: Whether a run of a spec has this tool (a task's switch, a host
     #: switch); every tool exists in some run.
     when: Callable[[Any], bool] = _always
-    #: A long verb computes outside the job's write lock and takes it only
-    #: to apply, re-checking each section's inputs (``ops.inputs``); every
-    #: other verb runs whole under the lock (the doors hold it).
+    #: A long verb computes outside the job's write lock and takes it only to
+    #: apply, re-checking each section's inputs (``tools.stale``); every other
+    #: verb runs whole under the lock (the doors hold it).
     long: bool = False
     #: A scripting verb is offered by the doors a script or a coding agent
     #: uses (the agent CLI, the library) and never to a model through the

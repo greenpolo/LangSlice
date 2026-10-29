@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from langslice.core.affine import (
+from langslice.core.geometry.affine import (
     affine_matrix,
     decompose_affine,
     normalized_affine,
@@ -157,7 +157,7 @@ def test_decompose_affine_reads_a_pure_rotation_on_a_wide_image_when_given_its_s
 
 def test_the_six_numbers_go_back_to_the_pixels_they_came_from():
     """A stored transform has to be DRAWN again, shear and all."""
-    from langslice.core.affine import denormalized_affine
+    from langslice.core.geometry.affine import denormalized_affine
 
     size = (300, 200)
     matrix = np.array([[1.03, 0.21, 12.0], [-0.07, 0.94, -5.0]])

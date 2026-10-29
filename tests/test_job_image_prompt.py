@@ -19,8 +19,8 @@ import tifffile
 from scipy import ndimage
 
 from langslice.core.spec import JobSpec, NonlinearSpec
-from langslice.doors.cli import build_parser
-from langslice.doors.cli.linear import spec_from_args
+from langslice.doors.commands.linear import spec_from_args
+from langslice.doors.commands.parser import build_parser
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -45,7 +45,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture
 def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A private copy of the stack, a private HOME, and no real image model."""
-    import langslice.providers.images as transport
+    import langslice.providers.image_calls as transport
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     install(atlas_loader(), monkeypatch.setattr)
@@ -96,7 +96,7 @@ def test_a_bad_image_prompt_is_refused(settings, message):
 
 def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(images):
     import langslice
-    from langslice.doors.declarations import Variant
+    from langslice.tools.descriptions.render import Variant
 
     stub = Stub()
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,

@@ -12,18 +12,14 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core import deformation
+from langslice.core.fits import deformation
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.job import (
-    HOST_TRANSFORM_KIND,
-    apply_host_inputs,
-    ingest,
-    submit_errors,
-)
-from langslice.ops import transforms as ops_transforms
-from langslice.ops.transforms import AffineFit
+from langslice.job.gates import submit_errors
+from langslice.job.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest
+from langslice.tools import transforms as ops_transforms
+from langslice.tools.transforms import AffineFit
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.fakes import SlabAtlas
 
@@ -195,7 +191,7 @@ def test_frozen_transforms_count_at_submit(tmp_path: Path):
 
 
 def test_the_worker_never_emits_geometry_for_frozen_properties():
-    from langslice.doors.api.abba_worker import _host_updates
+    from langslice.doors.abba.checkpoints import _host_updates
 
     def row(transform, flip=False, position=4.0):
         return {"id": "a.tif", "position_mm": position, "index_corrected": 0,
@@ -219,7 +215,7 @@ class _NeverCalled:
     """An image model whose call must not happen (the refusal comes first)."""
 
     def __init__(self) -> None:
-        from langslice.providers.registry import resolve_image_model
+        from langslice.providers.connections import resolve_image_model
 
         resolved = resolve_image_model("openai-oauth", None)
         self.model = dataclasses.replace(resolved, call=self.generate)

@@ -1,4 +1,4 @@
-"""The operations (``langslice.ops``) as a script calls them: plain arguments,
+"""The operations (``langslice.tools``) as a script calls them: plain arguments,
 one undo step per call, a plain record back, no gates and no pictures."""
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
-from langslice.core.state import SliceState
+from langslice.core.stack.section import SliceState
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.ops import damage, notes, positions, transforms
-from langslice.ops.refusal import Refused
+from langslice.tools import damage, notes, positions, transforms
+from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

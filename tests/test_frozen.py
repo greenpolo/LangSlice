@@ -13,11 +13,11 @@ import langslice
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.toolset import TOOLS
 from langslice.doors import jobs
-from langslice.job.job import submit_errors
-from langslice.ops import deformable as ops_deformable
-from langslice.ops import positions, transforms
-from langslice.ops.refusal import Refused
-from langslice.ops.registry import enabled
+from langslice.job.gates import submit_errors
+from langslice.tools import deformable as ops_deformable
+from langslice.tools import positions, transforms
+from langslice.tools.catalog import enabled
+from langslice.tools.refusal import Refused
 from tests.linear_tool_helpers import SLAB, tool_named
 from tests.test_disabled_tools import (
     _base_specs,
@@ -152,7 +152,7 @@ def test_a_frozen_affine_can_still_be_looked_at_with_its_own_numbers(tmp_path: P
 def test_elastix_affine_and_set_transforms_refuse_a_frozen_affine(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     seen: list[str] = []
-    monkeypatch.setattr("langslice.core.transform.fit_elastix",
+    monkeypatch.setattr("langslice.core.fits.affine.fit_elastix",
                         lambda _s, _w, record, **_k: seen.append(record.id) or _ok_fit(1.0))
     job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]})
     done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
@@ -194,7 +194,7 @@ def _ok_fit(determinant: float) -> dict[str, Any]:
 @pytest.mark.parametrize("determinant, kept", [(1.0, True), (-1.0, False)])
 def test_a_fit_under_a_frozen_orientation_keeps_the_handedness(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch, determinant: float, kept: bool):
-    monkeypatch.setattr("langslice.core.transform.fit_elastix",
+    monkeypatch.setattr("langslice.core.fits.affine.fit_elastix",
                         lambda _s, _w, _r, **_k: _ok_fit(determinant))
     job, ctx = _open(tmp_path, frozen={"s0.png": ["orientation"]})
     done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
@@ -279,7 +279,7 @@ def test_the_carey_configuration_end_to_end(tmp_path: Path, monkeypatch: pytest.
     assert set(enabled(spec)) >= {"interactive_transform", "elastix_affine", "fireants_syn"}
     assert "position_sections" not in enabled(spec)
     assert spec.off("interactive_transform:flip") and not spec.off("interactive_transform")
-    monkeypatch.setattr("langslice.core.transform.fit_elastix",
+    monkeypatch.setattr("langslice.core.fits.affine.fit_elastix",
                         lambda _s, _w, _r, **_k: _ok_fit(1.0))
     created = jobs.create(spec, atlas_loader=lambda _n: SLAB)
     created.close()

@@ -12,9 +12,9 @@ fits' and ``trace_borders`` pictures show, never the animal's
 anatomical left. They are derived, never guessed from the tissue:
 
 1. Each native atlas-plane pixel's medio-lateral volume index comes from
-   :func:`langslice.core.oblique.plane_index_coordinates` (the same pixel grid as
-   ``annotation_slice``, cutting angles included) on the ML axis that
-   :func:`langslice.core.space.atlas_space_context` derives from the atlas
+   :func:`langslice.core.geometry.oblique.plane_index_coordinates` (the same
+   pixel grid as ``annotation_slice``, cutting angles included) on the ML axis
+   that :func:`langslice.core.space.atlas_space_context` derives from the atlas
    orientation through ``brainglobe_space``.
 2. The two halves are split where BrainGlobe splits a symmetric atlas
    (``BrainGlobeAtlas.hemispheres``: index ``round(n_ml / 2)`` starts the
@@ -107,7 +107,7 @@ def ml_halves(
     *gradient* is (d ML / d native x, d ML / d native y), in volume voxels per
     native pixel (the plane is flat, so one vector holds everywhere).
     """
-    from langslice.core.oblique import plane_index_coordinates
+    from langslice.core.geometry.oblique import plane_index_coordinates
     from langslice.core.space import atlas_space_context
 
     if plane == "sagittal":

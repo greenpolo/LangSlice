@@ -1,11 +1,11 @@
 """The job folder's public files: ``registration.json`` and each section's maps.
 
 One synthetic stack (the shared one, tests/synthetic_stack.py), placed through the library as a
-script would: s0 warped by a deformable fit (``ops.deformable.fit_deformable``,
+script would: s0 warped by a deformable fit (``tools.deformable.fit_deformable``,
 Elastix), s1 turned a quarter, flipped and left linear, s2 placed without a
 transform (the identity, as its pictures show it). Checked: the matrices
 agree with what every picture shows (``look`` and ``zoom`` placement
-pictures and the deformable-fit pictures ``ops.deformable.fit_deformable``
+pictures and the deformable-fit pictures ``tools.deformable.fit_deformable``
 draws, through ``coordinate_map``), ``labels.tif`` is the atlas read at
 ``coords.tif``, ``coords = pixel_to_atlas_um @ (p + residual)``, the QuickNII anchoring and
 VisuAlign markers reproduce the maps, the files are what
@@ -36,13 +36,13 @@ from tests.synthetic_stack import (
 
 
 def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
-    """``ops.deformable.fit_deformable`` with one FireANTs setting, applied, its
+    """``tools.deformable.fit_deformable`` with one FireANTs setting, applied, its
     pictures (a deformable-fit picture, with the residual layer) saved as a
     door saves a tool's pictures (``Job.views.shown``), under the tool whose
     landing draws them: ``trace_borders``."""
-    from langslice.core import deformation
-    from langslice.core.display import default_options
-    from langslice.ops.deformable import fit_deformable
+    from langslice.core.fits import deformation
+    from langslice.core.pictures.options import default_options
+    from langslice.tools.deformable import fit_deformable
 
     choice = deformation.Choice(fit_section="preprocessed", fit_atlas="template",
                                 smoothness_um=80.0)
@@ -196,9 +196,9 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
     """A placement picture's coordinate map and registration.json's file
     matrix name the same atlas point for the same section point, including a
     turned and flipped section and a zoomed picture."""
-    from langslice.core.affine import pixel_center_map
-    from langslice.core.layers import coordinate_map
-    from langslice.core.maps import orientation_matrix, unturned
+    from langslice.core.geometry.affine import pixel_center_map
+    from langslice.core.maps.section_maps import orientation_matrix, unturned
+    from langslice.core.pictures.layers import coordinate_map
 
     job, root, _exported = placed
     registration = json.loads((root / "registration.json").read_text())
@@ -230,14 +230,14 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     """A deformable-fit picture's coordinate map (its residual layer
     included) and the section's own composed map agree, up to resampling
     the field at the picture's size."""
-    from langslice.core.affine import pixel_center_map
-    from langslice.core.layers import coordinate_map
-    from langslice.core.maps import (
+    from langslice.core.geometry.affine import pixel_center_map
+    from langslice.core.maps.section_maps import (
         native_points,
         orientation_matrix,
         section_frame,
         unturned,
     )
+    from langslice.core.pictures.layers import coordinate_map
 
     job, root, _exported = placed
     record = job.state.by_id(ID0)
@@ -265,7 +265,7 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
 
 
 def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
-    from langslice.core.layers import atlas_facts
+    from langslice.core.pictures.layers import atlas_facts
     from langslice.job.quint import atlas_um_to_quicknii_points
 
     job, root, _exported = placed
@@ -297,7 +297,7 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
     markers = np.asarray(item["markers"])
     assert len(markers) > 20
     record = job.state.by_id(ID0)
-    from langslice.core.maps import native_points, section_frame
+    from langslice.core.maps.section_maps import native_points, section_frame
 
     frame = section_frame(job.state, job.workspace, record)
     warp = job.job.deformations.current(job.state, record)
@@ -378,7 +378,7 @@ def test_full_resolution_maps_are_on_the_file_pixels(placed, tmp_path, monkeypat
 
 
 def test_working_size_reads_the_header_as_the_decoder_would(tmp_path):
-    from langslice.core.image_prep import (
+    from langslice.core.sections.reading import (
         read_working_image,
         read_working_pages,
         working_size,
@@ -406,7 +406,7 @@ def test_working_size_reads_the_header_as_the_decoder_would(tmp_path):
 
 @pytest.mark.parametrize(("rotation", "flip"), [(0, False), (90, True), (180, True)])
 def test_orientation_matrix_is_the_render_order(rotation, flip):
-    from langslice.core.maps import apply, orientation_matrix
+    from langslice.core.maps.section_maps import apply, orientation_matrix
 
     ops = {90: Image.Transpose.ROTATE_90, 180: Image.Transpose.ROTATE_180,
            270: Image.Transpose.ROTATE_270}
@@ -462,8 +462,8 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
     a transform written at another position."""
     import logging
 
-    from langslice.core.handoff import prepare_linear_registration
-    from langslice.core.sections import PREVIEW_LONG_EDGE
+    from langslice.core.fits.frame import prepare_linear_registration
+    from langslice.core.sections.renders import PREVIEW_LONG_EDGE
 
     job = _uncalibrated_job(tmp_path, monkeypatch)
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
@@ -506,8 +506,8 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
 
 
 def prepared_render_size(path: Path) -> tuple[int, int]:
-    from langslice.core.image_prep import prepared_size
-    from langslice.core.sections import PREVIEW_LONG_EDGE
+    from langslice.core.sections.reading import prepared_size
+    from langslice.core.sections.renders import PREVIEW_LONG_EDGE
 
     with Image.open(path) as image:
         return prepared_size(image.size, max_long_edge=PREVIEW_LONG_EDGE)
@@ -533,7 +533,7 @@ def _two_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: Any) -> t
 def test_export_maps_syncs_before_it_writes(placed, tmp_path, monkeypatch):
     """The operation itself (not only the doors around it) reloads what
     another writer saved before it writes registration.json and the maps."""
-    from langslice.ops.exports import export_maps
+    from langslice.tools.exports import export_maps
 
     first, second = _two_jobs(tmp_path, monkeypatch, placed)
     first.status()  # first holds the state as it was
@@ -555,9 +555,9 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
     """The heavy maps are computed outside the job lock (another writer
     gets it meanwhile); a section that writer changed is not written
     (``STALE_INPUT``), the others are."""
-    from langslice.core import maps as core_maps
+    from langslice.core.maps import section_maps as core_maps
     from langslice.job.lock import FolderLock
-    from langslice.ops.exports import export_maps
+    from langslice.tools.exports import export_maps
 
     first, second = _two_jobs(tmp_path, monkeypatch, placed)
     real = core_maps.section_maps

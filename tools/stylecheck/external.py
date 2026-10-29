@@ -67,6 +67,10 @@ RUFF_IGNORE = (
     "N818",
 )
 
+#: The tools' rules that report at most one error per file, at its module
+#: level: the formatter's verdict on the whole file.
+PER_FILE_RULES = frozenset({"format"})
+
 #: ruff's width when ``[tool.ruff]`` gives no ``line-length``.
 DEFAULT_LINE_LENGTH = 88
 

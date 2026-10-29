@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from langslice.core.spec import JobSpec, PositionSpec, TransformSpec
-from langslice.core.state import SliceState, StackState, unknown_sections
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState, unknown_sections
 
 
 def _stack(n: int = 3) -> StackState:

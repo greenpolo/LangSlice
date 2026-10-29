@@ -1,5 +1,5 @@
 """The atlas brain's size scales the deformable fit's distances
-(``core.atlas.size``): the adult mouse brain is 1 and fits as it always did."""
+(``core.atlas.brain_size``): the adult mouse brain is 1 and fits as it always did."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.atlas import size
-from langslice.core.deformable import FitSettings, prepare_fit
-from langslice.core.deformable.masks import em_parameters
-from langslice.core.deformable.record import diagnose
+from langslice.core.atlas import brain_size as size
+from langslice.core.fits.deformable import FitSettings, prepare_fit
+from langslice.core.fits.deformable.masks import em_parameters
+from langslice.core.fits.deformable.record import diagnose
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,
@@ -152,14 +152,14 @@ def test_the_factor_is_the_cube_root_of_the_volume_ratio_rounded():
 
 
 def test_the_ruler_margins_follow_the_brain():
-    from langslice.core.positioning import ruler_range
+    from langslice.core.pictures.positioning import ruler_range
 
     assert ruler_range([5.0], (0.0, 20.0)) == (4.5, 5.5)
     assert ruler_range([5.0], (0.0, 20.0), brain_scale=2.0) == (4.0, 6.0)
 
 
 def test_a_description_states_the_neighbourhood_at_the_brain_scale():
-    from langslice.doors.declarations import Variant, declaration
+    from langslice.tools.descriptions.render import Variant, declaration
 
     assert "atlas within 300 um of them" in declaration("elastix_affine", Variant()).doc
     rat = declaration("elastix_affine", Variant(brain_scale=1.7)).doc
@@ -168,7 +168,7 @@ def test_a_description_states_the_neighbourhood_at_the_brain_scale():
 
 @pytest.mark.slow
 def test_real_atlases_measure_their_brains():
-    from langslice.core.atlas.core import load_atlas
+    from langslice.core.atlas.load import load_atlas
 
     expected = {"allen_mouse_25um": 1.0, "allen_mouse_50um": 1.0,
                 "ccfv3augmented_mouse_25um": 1.0, "whs_sd_rat_39um": 1.7,

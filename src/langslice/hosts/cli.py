@@ -2,8 +2,8 @@
 LangSlice connector), ``gui`` (the LangSlice window: the agent viewer on job
 folders) and ``serve`` (the engine service the Fiji connector starts).
 
-The ``langslice`` command (:mod:`langslice.doors.cli`) registers them by
-module path and loads this module only when it builds its parser
+The ``langslice`` command (:mod:`langslice.doors.commands.parser`) registers
+them by module path and loads this module only when it builds its parser
 (``HOST_COMMANDS``), so the doors never import a host.
 """
 
@@ -44,7 +44,7 @@ def add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run_abba(args: argparse.Namespace) -> None:
-    from langslice.hosts.integrations.abba_launch import connector_jar, run_abba_session
+    from langslice.hosts.abba.launch import connector_jar, run_abba_session
 
     try:
         jar = connector_jar(args.connector_jar)
@@ -105,6 +105,6 @@ def add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
 def run_serve(args: argparse.Namespace) -> None:
     if not args.stdio:
         raise SystemExit("serve currently requires --stdio")
-    from langslice.hosts.api.service import run_stdio
+    from langslice.hosts.service import run_stdio
 
     raise SystemExit(run_stdio())

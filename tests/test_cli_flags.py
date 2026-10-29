@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from langslice.doors.cli import build_parser
-from langslice.doors.cli.linear import spec_from_args
+from langslice.doors.commands.linear import spec_from_args
+from langslice.doors.commands.parser import build_parser
 
 
 def _parse(args: list[str]):
@@ -36,7 +36,7 @@ def test_force_view_and_require_deformation_flags_reach_the_spec(tmp_path):
 
 @pytest.mark.parametrize("command", [["linear", "run"], ["mcp"]])
 def test_a_bad_job_flag_ends_with_a_message_not_a_traceback(tmp_path, command):
-    from langslice.doors.cli import main
+    from langslice.doors.commands.parser import main
 
     with pytest.raises(SystemExit) as stopped:
         main([*command, str(tmp_path), "--positions", "{not json"])

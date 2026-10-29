@@ -159,7 +159,7 @@ def test_returned_values_allows_dicts_in_json_modules() -> None:
     violations = check_source(
         source,
         "returned-values",
-        relpath="src/langslice/job/formats.py",
+        relpath="src/langslice/job/public_files.py",
     )
     assert violations == []
 

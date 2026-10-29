@@ -1,22 +1,24 @@
 """The job statement every door gives a registration agent, in one place.
 
-LangSlice's own agent (:mod:`langslice.agent.engine`), the MCP door
+LangSlice's own agent (:mod:`langslice.doors.agent.engine`), the MCP door
 (:mod:`langslice.doors.mcp.server`, ``start_job``) and the agent CLI
-(``langslice-job FOLDER launch``, :mod:`langslice.doors.cli.launch`) give the
-agent the same job: the statement :func:`langslice.agent.prompt.build_job_statement`
-words (job, run facts, one line per tool, constraints, method), the opening
-pictures (:func:`langslice.core.opening.opening_items`), the status table with
+(``langslice-job FOLDER launch``, :mod:`langslice.doors.agent_cli.launch`) give
+the agent the same job: the statement
+:func:`langslice.tools.descriptions.statement.build_job_statement` words (job,
+run facts, one line per tool, constraints, method), the opening pictures
+(:func:`langslice.core.pictures.opening.opening_items`), the status table with
 the recent run notes (:func:`status_and_notes`) and the user's notes
 (:func:`read_notes`, kept in ``job.json`` so every door reads them).
 
-What differs is only what each door must say differently, chosen by its
-name (``agent``, ``mcp``, ``cli``: :data:`langslice.doors.declarations.DOORS`):
-where the opening pictures are (the seed message; ``show_stack`` pages;
-picture files the ``launch`` command saved) and how a long call answers. The
-ADK agent's system prompt is :data:`SYSTEM_PROMPT`, the same for every job;
-its first message is the statement, the user's notes, the pictures and
-:func:`status_and_notes`. A host-owned door (:func:`job_statement`) gets
-everything as one text, the pictures delivered its own way.
+What differs is only what each door must say differently, chosen by its name
+(``agent``, ``mcp``, ``cli``:
+:data:`langslice.tools.descriptions.render.DOORS`): where the opening pictures
+are (the seed message; ``show_stack`` pages; picture files the ``launch``
+command saved) and how a long call answers. The ADK agent's system prompt is
+:data:`SYSTEM_PROMPT`, the same for every job; its first message is the
+statement, the user's notes, the pictures and :func:`status_and_notes`. A
+host-owned door (:func:`job_statement`) gets everything as one text, the
+pictures delivered its own way.
 """
 
 from __future__ import annotations
@@ -28,8 +30,8 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.needs import render
 from langslice.core.spec import JobSpec
-from langslice.core.state import StackState
-from langslice.core.status import status_text
+from langslice.core.stack.stack import StackState
+from langslice.core.stack.status import status_text
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -126,7 +128,7 @@ def opening_for_cli(folder: str, listing: list[str],
         "Open every one of these pictures before any write.",
     ]
     if spec is not None:  # a verb the run does not have is not mentioned either
-        from langslice.ops.registry import enabled, verbs_for
+        from langslice.tools.catalog import enabled, verbs_for
 
         run = set(enabled(spec, scripting=True))
         disabled = [*disabled, *(name for name in verbs_for(spec) if name not in run)]
@@ -159,10 +161,10 @@ def opening_for_cli(folder: str, listing: list[str],
 
 def long_verbs(disabled: Collection[str] = (), spec: Any = None) -> list[str]:
     """The verbs that compute outside the job lock and may take long
-    (:attr:`langslice.ops.registry.Verb.long`), in registry order, less the
+    (:attr:`langslice.tools.catalog.Verb.long`), in registry order, less the
     ones *disabled* names and, given *spec*, the ones its run does not have."""
     from langslice.core.toolset import is_off
-    from langslice.ops.registry import verbs_for
+    from langslice.tools.catalog import verbs_for
 
     return [name for name, verb in verbs_for(spec).items()
             if verb.long and not is_off(disabled, name)
@@ -182,10 +184,13 @@ def job_statement(
     status table with the recent run notes.
 
     *image_model_off*: the job's image model is not connected here
-    (:func:`langslice.doors.api.setup.image_model_connected`), so the
+    (:func:`langslice.doors.credentials.image_model_connected`), so the
     statement is that of a run without one, plus :data:`IMAGE_MODEL_OFF`.
     """
-    from langslice.agent.prompt import build_job_statement, display_facts
+    from langslice.tools.descriptions.statement import (
+        build_job_statement,
+        display_facts,
+    )
 
     low, high = ctx.position_range
     if image_model_off:  # a copy that is not checked again: it is this door's view

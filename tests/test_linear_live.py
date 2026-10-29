@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from google.genai import types
 
-from langslice.agent.live import LiveEvents
+from langslice.doors.agent.live import LiveEvents
 
 
 def event(parts, *, partial=False):
@@ -78,7 +78,7 @@ def test_observer_failures_do_not_fail_the_agent(caplog):
 
 
 def test_session_streaming_counts_final_calls_once_and_debrief_once(monkeypatch):
-    from langslice.agent import session
+    from langslice.doors.agent import session
     records = []
     options = []
     submitted = [False]
@@ -130,7 +130,7 @@ def test_session_streaming_counts_final_calls_once_and_debrief_once(monkeypatch)
 def test_session_closes_runner_in_original_context_before_debrief(monkeypatch):
     from contextvars import ContextVar
 
-    from langslice.agent import session
+    from langslice.doors.agent import session
 
     context = ContextVar('test_runner_context', default='outside')
     closed = []

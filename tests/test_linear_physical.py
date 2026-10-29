@@ -13,19 +13,19 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
-from langslice.core.affine import physical_affine_matrix
-from langslice.core.atlas.levels import OVERLAY_DEPTH
-from langslice.core.atlas.render import (
+from langslice.core.atlas.borders import (
     annotation_slice,
     region_boundaries,
     region_outlines,
 )
-from langslice.core.canvas import canvas_geometry, physical_views
-from langslice.core.image_prep import read_pixel_size_um
-from langslice.core.sections import canvas_um_per_px
+from langslice.core.atlas.levels import OVERLAY_DEPTH
+from langslice.core.fits.affine import calibrate
+from langslice.core.geometry.affine import physical_affine_matrix
+from langslice.core.pictures.canvas import canvas_geometry, physical_views
+from langslice.core.sections.reading import read_pixel_size_um
+from langslice.core.sections.renders import canvas_um_per_px
 from langslice.core.spec import JobSpec
-from langslice.core.transform import calibrate
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
 
 #: The atlas fake below is 25 um per voxel, like allen_mouse_25um.
@@ -169,7 +169,7 @@ def test_two_neighbouring_regions_share_one_outline():
     """Each region is traced along its pixels' outer edges, so the border two
     regions share is one line, not one line per side a voxel apart (which a
     zoomed picture shows as a double line)."""
-    from langslice.core.atlas.render import region_contours
+    from langslice.core.atlas.borders import region_contours
 
     labels = np.zeros((60, 80), dtype=np.int32)
     labels[10:50, 10:40] = 1
@@ -266,7 +266,7 @@ def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
     record.position_mm = 0.2
     assert canvas_um_per_px(ctx, record)[0] is None
 
-    from langslice.core.sections import render_slice
+    from langslice.core.sections.renders import render_slice
 
     section = render_slice(ctx, record, long_edge=512)
     um, source = calibrate(state, ctx, record, section)
@@ -280,8 +280,8 @@ def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
 
 
 def test_reasoning_effort_reaches_a_model_that_has_one():
-    from langslice.agent.session import build_agent
-    from langslice.providers.openai_oauth import OpenAIOAuthLlm
+    from langslice.doors.agent.session import build_agent
+    from langslice.providers.oauth.transport import OpenAIOAuthLlm
 
     agent = build_agent(
         model=OpenAIOAuthLlm(model="gpt-5.6-sol"),

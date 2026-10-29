@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from langslice.core.image_prep import enhance_plane
+from langslice.core.sections.reading import enhance_plane
 
 
 def _tissue(seed: int = 0) -> np.ndarray:

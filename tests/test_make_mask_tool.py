@@ -8,13 +8,13 @@ from typing import Any
 
 import pytest
 
-from langslice.agent.engine import build_context
-from langslice.core.section_masks import registration_digest
+from langslice.core.sections.masks import registration_digest
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
-from langslice.ops import masks as ops_masks
-from langslice.ops.inputs import section_inputs
+from langslice.tools import masks as ops_masks
+from langslice.tools.stale import section_inputs
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,

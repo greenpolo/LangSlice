@@ -6,20 +6,21 @@ job and the same operations. Package `CLAUDE.md` files (with identical
 
 ## Layers
 
-Dependencies flow downward: `hosts` → `doors` / `agent` → `ops` → `job` →
-`core`. Import-linter enforces the boundaries without exceptions.
+Dependencies flow downward: `hosts` → `doors` → `tools` → `job` → `core`.
+`providers` sits beside the layers and imports `core` only; `engines` (the
+in-tree plugins) sits beside `hosts` and imports the plugin API only.
+Import-linter enforces the boundaries without exceptions.
 
 | Package | Responsibility |
 |---|---|
-| `core` | State and job spec, calibrated geometry, atlas access, pictures, registration engines, image-model border processing |
-| `job` | Job folder, checkpoint, undo history, submit checks and exports |
-| `ops` | Operations on a job; `registry.py` lists tools, task conditions and call limits |
-| `doors` | Shared declarations, native agent tools, MCP, CLI, Python library and worker contract |
-| `agent` | Built-in ADK agent session |
+| `core` | The science and the stack's shapes: the stack and section state (`stack/`), geometry, atlas access, the section files and images (`sections/`), pictures, the registration methods and engines (`fits/`), maps; the job spec and the tool table |
+| `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports |
+| `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
+| `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command, the Python library and the worker contract |
 | `hosts` | JSON-lines service, ABBA launcher, viewer and log, the LangSlice window (`langslice gui`) |
 | `providers` | Model access, beside the layers; receives no task logic |
 
-`core`, `job` and `ops` import no provider or model SDK. Image models are
+`core`, `job` and `tools` import no provider or model SDK. Image models are
 passed in as arguments. `connectors/` contains code installed in another
 program: Fiji's Java plugin and the Claude Desktop, Claude Code, Antigravity
 and Codex setups.
@@ -28,8 +29,8 @@ and Codex setups.
 
 An interface creates a `JobSpec` or opens saved settings, then calls
 operations on a `Job`. `core/toolset.py` lists the tools, their options and
-what each needs, and `ops/registry.py` binds them to the operations and
-decides tool availability; `doors/declarations.py` supplies the common
+what each needs, and `tools/catalog.py` binds them to the operations and
+decides tool availability; `tools/descriptions/render.py` supplies the common
 argument declarations. Tasks remove whole registration tools, a job's
 `disabled` list removes single tools and options, and viewing and image
 tools remain available otherwise. Model-facing text that names a tool or an
@@ -39,7 +40,7 @@ job. See [tools and options](../reference/tools.md).
 A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
 whose tools join the toolbox. `core/plugins.py` holds the plugin types and the
 registry of loaded plugins, which `core/toolset.py` (`tools_for(spec)`) and
-`ops/registry.py` (`verbs_for(spec)`) merge with the native tables for that
+`tools/catalog.py` (`verbs_for(spec)`) merge with the native tables for that
 spec; `doors/plugins/` loads them, gives each handler a context that writes
 through the same operations, and builds their declarations, provenance and the
 MCP adapter. The native tables are unchanged, and a job without plugins has
@@ -53,7 +54,7 @@ back. Source images remain immutable. Processes
 share a file lock and reload changed state before calls; a read never waits
 for the lock and reads the state as last saved. The agent CLI's calls
 on one job folder are answered by that folder's warm process
-(`doors/cli/warm.py`, [details](../agents/cli.md#the-warm-process)): it loads the
+(`doors/agent_cli/warm.py`, [details](../agents/cli.md#the-warm-process)): it loads the
 libraries and the atlas once and forks a child per call, which runs the cold
 call's code as a process of its own. Long operations
 compute outside the lock, then validate their inputs before applying;
@@ -74,8 +75,8 @@ user workflow are in [ABBA](../abba.md).
 Protocol version 1 uses one JSON object per line. Requests have `id`,
 `method`, `params`; responses carry the same `id` and `type` of `event`,
 `result` or `error`. Stdout is protocol-only; diagnostics go to stderr.
-The contract is `doors/api/models.py`, preparation and translation are in
-`doors/api/abba_worker.py`, and transport is in `hosts/api/service.py`.
+The contract is `doors/abba/contract.py`, preparation and translation are in
+`doors/abba/worker.py`, and transport is in `hosts/service.py`.
 
 | Method | Purpose |
 |---|---|
@@ -149,26 +150,54 @@ only metrics.
 
 A golden test (`tests/test_golden_outputs.py`) pins everything else a run
 produces, so a change meant to alter no output can show that it alters
-none. A script registers three real sections
-to `allen_mouse_50um` through the library alone, with no model: positions,
-hand transforms, `elastix_affine`, a mask, a damage mark, `fireants_syn`
-(coarse, on the CPU), landmarks, undo and redo, `export_maps`, with every
-`look` mode, a zoom and `status` after each write. The test compares, with
-no tolerance, every reply, every JSON file of the job folder (paths and
-clock times replaced by tokens), and the decoded pixels or arrays of every
-picture, map, mask, section image and deformation record with the
-goldens. The pictures the writing tools return are kept there whole. The
-sections are unpublished data, so they and the goldens live outside the
-repository, in `tests/golden/data/` (git-ignored) or the folder
-`LANGSLICE_GOLDEN_DATA` names, and the test is skipped where they are
-missing. It needs the atlas in the local BrainGlobe cache, records this
-machine's pixels and takes about 30 s, so the default run leaves it out:
-run it with `python -m pytest -m golden`. A failure writes the run's
-outputs, every picture among them, to `actual/` beside the goldens and lists each
-changed key, array and picture (the differing pixels and the largest
-difference). An intended change is recorded with
-`LANGSLICE_UPDATE_GOLDEN=1 python -m pytest -m golden`, which rewrites the
-goldens and fails once, printing the diff, so that it is reviewed.
+none. Scripts in `tests/golden/` register three real sections to
+`allen_mouse_50um` with no model, once through each door, each door a test
+of its own so a failure names the door that changed:
+
+- `library`: the public library calls every tool that needs no image
+  model (positions, hand transforms, `elastix_affine`, section images,
+  masks, a damage mark, `fireants_syn` coarse on the CPU, landmarks, undo
+  and redo, `restore_registration`, `export_maps`, the atlas lookups and
+  job-folder reads, `note`, refusals and `submit`), with every `look` mode,
+  a zoom and `status` after each write and `look` with its other options;
+- `cli`: the installed `langslice-job` command, one process per call: the
+  catalog, `init`, reads, writes, a dry run, a fit, refusals and a launch
+  prompt, each call's exit code and printed envelope;
+- `mcp`: the installed `langslice mcp` server over stdio with the `mcp`
+  library's client: the greeting, the tool lists (names, descriptions,
+  input schemas) before and after `start_job`, every `show_stack` page and
+  reads, writes and refusals, each result's text blocks whole and image
+  blocks as decoded-pixel digests.
+
+The declarations LangSlice's own agent sends its model have no public
+entry point without a model call; the text snapshot pins them. Each script
+runs in a child interpreter on the checkout's code, through public entry
+points only, with a fresh home folder and only the caller's `PATH` and
+locale, so no setting, credential or saved job of the user's reaches it;
+BrainGlobe's configuration there points at the user's atlas folder. The
+test compares, with no tolerance, every reply, every JSON and text file of
+the job folder (the event log, the agent CLI's call log and the engine log
+included; paths, clock times, durations and call ids replaced by tokens),
+and the decoded pixels or arrays of every picture, map, mask, section
+image and deformation record with the goldens. The pictures the writing
+tools return are kept there whole. The sections are unpublished data, so
+they and the goldens live outside the repository, in `tests/golden/data/`
+(git-ignored) or the folder `LANGSLICE_GOLDEN_DATA` names, and the test is
+skipped where they are missing. It needs the atlas in the local BrainGlobe
+cache, records this machine's pixels and takes about 30 s with the doors in
+parallel, so the default run leaves it out: run it with
+`python -m pytest -m golden`. A failure writes the run's outputs, every
+picture among them, to `actual/<door>/` beside the goldens and lists each
+changed key (a changed text around its first difference), array and
+picture (the differing pixels and the largest difference), headed by the
+door and the commit the goldens were recorded at. An intended change is
+recorded on `main` with `LANGSLICE_UPDATE_GOLDEN=1 python -m pytest -m
+golden`, which rewrites the goldens, records the commit, branch, date and
+uncommitted files in each door's `provenance.json` and fails once, printing
+the diff, so that it is reviewed. Because the goldens are not under version
+control, a branch that regenerated its own would pass on its own changes:
+the update refuses to run on any branch but `main` unless
+`LANGSLICE_GOLDEN_FORCE=1` is set as well.
 
 [Agent traces](../agents/builtin.md#logs-and-credentials) record calls and results.
 `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` additionally writes redacted ADK request

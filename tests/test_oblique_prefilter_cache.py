@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from scipy.ndimage import map_coordinates, spline_filter
 
-from langslice.core import oblique
+from langslice.core.geometry import oblique
 from tests.deformable_synthetic import SyntheticAtlas
 
 

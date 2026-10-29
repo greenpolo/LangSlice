@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from langslice.doors.cli.jobcli import main
+from langslice.doors.agent_cli.main import main
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,
@@ -73,8 +73,8 @@ def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
 
 
 def test_schema_of_one_verb_and_of_every_verb(capsys):
-    from langslice.doors.cli.catalog import SCHEMA_VERSION
-    from langslice.doors.declarations import FULL, Variant, declaration
+    from langslice.doors.agent_cli.catalog import SCHEMA_VERSION
+    from langslice.tools.descriptions.render import FULL, Variant, declaration
 
     assert SCHEMA_VERSION == 3
     code, envelope = cli(capsys, "schema", "interactive-transform")
@@ -160,7 +160,7 @@ def test_stdout_holds_the_envelope_alone_when_the_atlas_prints(capsys, images, m
 def test_load_atlas_keeps_brainglobe_notices_off_stdout(capsys, monkeypatch):
     import brainglobe_atlasapi
 
-    from langslice.core.atlas.core import load_atlas
+    from langslice.core.atlas.load import load_atlas
 
     class Notice:
         def __init__(self, name: str, **_kwargs: Any) -> None:
@@ -219,8 +219,8 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert job == images / "langslice"
     agents = (job / "AGENTS.md").read_text()
     assert agents == (job / "CLAUDE.md").read_text()
-    from langslice.ops.deformable import MAX_FIREANTS_SYN_SECTIONS
-    from langslice.ops.registry import VERBS
+    from langslice.tools.catalog import VERBS
+    from langslice.tools.deformable import MAX_FIREANTS_SYN_SECTIONS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " launch --role register`", "STALE_INPUT",
@@ -258,10 +258,13 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
 
 def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any]:
     """The ADK agent's statement and opening picture bytes for the job in *images*."""
-    from langslice.agent.prompt import build_job_statement, display_facts
+    from langslice.doors.agent.media import opening_parts
     from langslice.doors.jobs import open_folder
-    from langslice.doors.tools.media import opening_parts
     from langslice.doors.tools.toolbox import build_tools
+    from langslice.tools.descriptions.statement import (
+        build_job_statement,
+        display_facts,
+    )
 
     opened = open_folder(images, atlas_loader=atlas_loader(), persist=False)
     job, ctx = opened.job, opened.ctx
@@ -277,7 +280,7 @@ def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any
 
 
 def test_launch_register_scripting_is_the_native_statement_and_opening(capsys, images):
-    from langslice.core.opening import DEFAULT_IMAGE_LIMIT
+    from langslice.core.pictures.opening import DEFAULT_IMAGE_LIMIT
 
     job = init(capsys, images, "--notes", "Section 2 is torn.", "--viewer", "codex")
     code, envelope = cli(capsys, str(images), "launch", "--role", "register-scripting")
@@ -416,7 +419,7 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
 
     assert IMAGE_MODEL_OFF in launch["result"]["prompt"]
     # Connected (a login present), the verb is offered, as the MCP door offers it.
-    from langslice.doors.api import setup
+    from langslice.doors import credentials as setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
     code, status = cli(capsys, str(images), "status")
@@ -680,7 +683,7 @@ def test_exit_codes_and_fix_hints(capsys, images):
 
 def test_an_internal_error_exits_4(capsys, images, monkeypatch):
     init(capsys, images)
-    import langslice.ops.notes as notes
+    import langslice.tools.notes as notes
 
     def broken(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError("boom")
@@ -692,7 +695,7 @@ def test_an_internal_error_exits_4(capsys, images, monkeypatch):
 
 
 def test_a_first_sentence_ends_at_a_sentence_not_an_abbreviation():
-    from langslice.doors.cli.job import _first_sentence
+    from langslice.doors.agent_cli.calls import _first_sentence
 
     assert _first_sentence('A glob (e.g. "*.json"): every file. Empty lists it.') == (
         'A glob (e.g. "*.json"): every file.')
@@ -714,7 +717,7 @@ def test_folder_ops_lists_the_job_s_own_verbs(capsys, images):
 
 
 def test_a_failed_fit_says_the_first_line_and_keeps_the_rest_in_the_log(tmp_path):
-    from langslice.core.engine_output import failure_message
+    from langslice.core.fits.engine_log import failure_message
 
     log = tmp_path / "logs" / "engine.log"
     text = ("AcceleratorError: CUDA error: out of memory\nSearch for "
@@ -793,7 +796,7 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
     """The packaged trace starts background work; the CLI process waits for
     it and answers with its notice and its pictures as artifacts."""
     pytest.importorskip("fireants")
-    from langslice.doors.api import setup
+    from langslice.doors import credentials as setup
     from langslice.doors.tools import toolbox
     from tests.synthetic_stack import stub_image_model
 
@@ -829,7 +832,7 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
 
 
 def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, monkeypatch):
-    from langslice.doors.cli import background
+    from langslice.doors.agent_cli import background
 
     init(capsys, images)
     # install() pointed background runs at tests.cli_child (the synthetic atlas).
@@ -866,7 +869,7 @@ def test_wait_answers_still_running_within_its_default_wait(capsys, images, monk
     again: an answer (ok, exit 0), not an error."""
     import time
 
-    from langslice.doors.cli import background
+    from langslice.doors.agent_cli import background
     from langslice.job.layout import JobLayout
 
     job = init(capsys, images)
@@ -900,7 +903,7 @@ def test_wait_answers_still_running_within_its_default_wait(capsys, images, monk
 def test_detaching_follows_the_setting_and_claude_code(monkeypatch):
     """A long verb's foreground call runs detached unless LANGSLICE_DETACH says
     no, or, unset, under Claude Code, whose sandbox ends what a command leaves."""
-    from langslice.doors.cli.background import DETACH_ENV, detaching
+    from langslice.doors.agent_cli.background import DETACH_ENV, detaching
 
     monkeypatch.delenv(DETACH_ENV, raising=False)
     monkeypatch.delenv("CLAUDECODE", raising=False)
@@ -919,7 +922,7 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
     --background runs as a background run: the call answers with its result
     when it lands in time, else with its run id and state running (the run
     goes on, and `wait` collects it)."""
-    from langslice.doors.cli import background
+    from langslice.doors.agent_cli import background
     from langslice.job.layout import JobLayout
 
     init(capsys, images)
@@ -1038,7 +1041,7 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
 
 
 def _dead_run(tmp_path: Path) -> tuple[Any, str]:
-    from langslice.doors.cli import background
+    from langslice.doors.agent_cli import background
     from langslice.job.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
@@ -1054,7 +1057,7 @@ def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch):
     import threading
     import types
 
-    from langslice.doors.cli import background
+    from langslice.doors.agent_cli import background
 
     monkeypatch.setattr(background, "WINDOWS", True)
     fake = types.SimpleNamespace(pid_exists=lambda pid: pid != 424242)
@@ -1075,7 +1078,7 @@ def test_the_cli_and_the_library_cap_no_pictures_or_sections_but_fireants_syn(ca
     """``Verb.limits`` (what the card lists) holds the compute cap only; the
     pictures and the transform sections of one call are not capped."""
     import langslice
-    from langslice.ops.registry import VERBS
+    from langslice.tools.catalog import VERBS
 
     init(capsys, images)
     limits = {name: dict(verb.limits) for name, verb in VERBS.items() if verb.limits}
@@ -1108,8 +1111,8 @@ def test_the_cli_and_the_library_cap_no_pictures_or_sections_but_fireants_syn(ca
 def test_a_transform_cap_of_the_job_holds_without_a_picture_cap():
     from types import SimpleNamespace
 
-    from langslice.ops.refusal import Refused
-    from langslice.ops.registry import check_section_count
+    from langslice.tools.catalog import check_section_count
+    from langslice.tools.refusal import Refused
 
     check_section_count(SimpleNamespace(picture_cap=None, transform_cap=None),
                         "elastix_affine", 50)

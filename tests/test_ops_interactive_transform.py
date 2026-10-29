@@ -1,4 +1,4 @@
-"""`ops.transforms.interactive_transform` (orientation and knobs, absolute values, one
+"""`tools.transforms.interactive_transform` (orientation and knobs, absolute values, one
 undo step) and `elastix_affine` (regions, automatic damage exclusion, region box)."""
 
 from __future__ import annotations
@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
+from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.ops import transforms
-from langslice.ops.refusal import Refused
+from langslice.tools import transforms
+from langslice.tools.refusal import Refused
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,
     _left_half_section,
@@ -140,7 +140,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
                              "pivot": [0.5, 0.5]},
                 "calibration": {}, "mirrored": False}
 
-    monkeypatch.setattr("langslice.core.transform.fit_elastix", fake)
+    monkeypatch.setattr("langslice.core.fits.affine.fit_elastix", fake)
     return seen
 
 

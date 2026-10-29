@@ -20,11 +20,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langslice.core.plugin_layers import save_layer
+from langslice.core.pictures.plugin_layers import save_layer
 from langslice.core.plugins import Layer
-from langslice.core.state import SliceState, StackState
-from langslice.job.checkpoint import write_json_atomic
+from langslice.core.stack.section import SliceState
+from langslice.core.stack.stack import StackState
 from langslice.job.layout import JobLayout
+from langslice.job.state_file import write_json_atomic
 
 #: The manifest of a tool's layers, in its folder.
 MANIFEST_FILE = "layers.json"

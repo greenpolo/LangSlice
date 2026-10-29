@@ -488,6 +488,10 @@ Check = TypeVar("Check", ModuleCheck, ProjectCheck)
 MODULE_CHECKS: dict[str, ModuleCheck] = {}
 PROJECT_CHECKS: dict[str, ProjectCheck] = {}
 
+#: The checks that report at most one error per file, at its module level:
+#: a state of the whole file, which every piece of a split file shares.
+PER_FILE_CHECKS: set[str] = set()
+
 
 @dataclass(frozen=True)
 class Registration(Generic[Check]):
@@ -501,10 +505,14 @@ class Registration(Generic[Check]):
     name
         The check's name, used in reports and the baseline; it is also the
         ``rule`` of every violation the check yields.
+    per_file
+        Whether the check reports at most one error per file, at its
+        module level.
     """
 
     table: dict[str, Check]
     name: str
+    per_file: bool = False
 
     def __call__(self, check: Check) -> Check:
         """Record a check and return it unchanged.
@@ -527,23 +535,30 @@ class Registration(Generic[Check]):
         if self.name in MODULE_CHECKS or self.name in PROJECT_CHECKS:
             raise ValueError(f"Two checks are named {self.name!r}.")
         self.table[self.name] = check
+        if self.per_file:
+            PER_FILE_CHECKS.add(self.name)
         return check
 
 
-def module_check(name: str) -> Registration[ModuleCheck]:
+def module_check(
+    name: str, *, per_file: bool = False
+) -> Registration[ModuleCheck]:
     """Register a check that looks at one module at a time.
 
     Parameters
     ----------
     name
         The check's name, used in reports and the baseline.
+    per_file
+        Declare that the check reports at most one error per file, at its
+        module level, by construction.
 
     Returns
     -------
     Registration
         The decorator that records the check in ``MODULE_CHECKS``.
     """
-    return Registration(MODULE_CHECKS, name)
+    return Registration(MODULE_CHECKS, name, per_file)
 
 
 def project_check(name: str) -> Registration[ProjectCheck]:

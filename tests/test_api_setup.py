@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from langslice.doors.api import setup
+from langslice.doors import credentials as setup
 
 
 @pytest.fixture

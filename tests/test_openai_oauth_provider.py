@@ -13,7 +13,8 @@ from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 from PIL import Image
 
-from langslice.providers import openai_oauth as chatgpt
+from langslice.providers.oauth import login as oauth_login
+from langslice.providers.oauth import transport as chatgpt
 
 
 # --- helpers -----------------------------------------------------------------
@@ -57,23 +58,23 @@ def _sse(events: list[dict[str, Any]]) -> list[str]:
 
 # --- credentials -------------------------------------------------------------
 def test_credentials_and_headers():
-    assert chatgpt.account_id_from_id_token(_id_token("acct_123", "pro")) == "acct_123"
-    assert chatgpt.account_id_from_id_token(None) is None
-    assert chatgpt.account_id_from_id_token("garbage") is None
+    assert oauth_login.account_id_from_id_token(_id_token("acct_123", "pro")) == "acct_123"
+    assert oauth_login.account_id_from_id_token(None) is None
+    assert oauth_login.account_id_from_id_token("garbage") is None
 
     nested = {"tokens": {"access_token": "A", "refresh_token": "R", "id_token": _id_token()}}
-    creds = chatgpt.creds_from_doc(nested, "test")
+    creds = oauth_login.creds_from_doc(nested, "test")
     assert (creds.access_token, creds.refresh_token) == ("A", "R")
     assert creds.account_id == "acct_9"  # derived from id_token
     flat = {"access_token": "A2", "account_id": "acct_explicit"}
-    assert chatgpt.creds_from_doc(flat, "test").account_id == "acct_explicit"
+    assert oauth_login.creds_from_doc(flat, "test").account_id == "acct_explicit"
     with pytest.raises(ValueError):
-        chatgpt.creds_from_doc({"tokens": {}}, "test")
+        oauth_login.creds_from_doc({"tokens": {}}, "test")
 
-    headers = chatgpt._headers(chatgpt.Creds("ACCESS", account_id="acct_5"), "sess-1")
+    headers = chatgpt._headers(oauth_login.Creds("ACCESS", account_id="acct_5"), "sess-1")
     assert headers["Authorization"] == "Bearer ACCESS"
     assert headers["chatgpt-account-id"] == "acct_5"
-    assert "chatgpt-account-id" not in chatgpt._headers(chatgpt.Creds("A"), "sess-1")
+    assert "chatgpt-account-id" not in chatgpt._headers(oauth_login.Creds("A"), "sess-1")
 
 
 def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
@@ -96,16 +97,16 @@ def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chatgpt.requests, "post", fake_post)
 
-    codex = chatgpt.Creds("OLD", "R", None, "acct_1", source="/home/x/.codex/auth.json")
-    refreshed = chatgpt.refresh(codex)
+    codex = oauth_login.Creds("OLD", "R", None, "acct_1", source="/home/x/.codex/auth.json")
+    refreshed = oauth_login.refresh(codex)
     assert refreshed.access_token == "NEW"
     assert not creds_path.exists()  # never rewrite the Codex CLI's file
-    assert posted["url"] == chatgpt.TOKEN_URL
+    assert posted["url"] == oauth_login.TOKEN_URL
     assert posted["json"]["grant_type"] == "refresh_token"
-    assert posted["json"]["client_id"] == chatgpt.CLIENT_ID
+    assert posted["json"]["client_id"] == oauth_login.CLIENT_ID
 
-    ours = chatgpt.Creds("OLD", "R", None, "acct_1", source=str(creds_path))
-    chatgpt.refresh(ours)
+    ours = oauth_login.Creds("OLD", "R", None, "acct_1", source=str(creds_path))
+    oauth_login.refresh(ours)
     saved = json.loads(creds_path.read_text())
     assert saved["tokens"]["access_token"] == "NEW"
     assert saved["tokens"]["refresh_token"] == "NEWR"
@@ -118,16 +119,16 @@ def test_load_credentials_prefers_our_file_and_refreshes_when_expired(tmp_path, 
     expired = _fake_jwt({"exp": 0})
     creds_path.write_text(json.dumps({"tokens": {"access_token": expired, "refresh_token": "R"}}))
     monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(creds_path))
-    monkeypatch.setattr(chatgpt, "refresh", lambda creds: chatgpt.Creds("FRESH"))
+    monkeypatch.setattr(oauth_login, "refresh", lambda creds: oauth_login.Creds("FRESH"))
 
-    assert chatgpt.load_credentials().access_token == "FRESH"
+    assert oauth_login.load_credentials().access_token == "FRESH"
 
 
 def test_load_credentials_without_any_source_is_actionable(tmp_path, monkeypatch):
     monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(tmp_path / "none.json"))
 
     with pytest.raises(RuntimeError, match="langslice login"):
-        chatgpt.load_credentials()
+        oauth_login.load_credentials()
 
 
 # --- wire shaping ------------------------------------------------------------
@@ -448,7 +449,7 @@ def test_function_result_round_trip_body(monkeypatch):
 def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
     """The registration path calls the direct edits endpoint: one GPT model
     (the pilot), one image model — no routing model rewriting the prompt."""
-    from langslice.providers import images as providers
+    from langslice.providers import image_calls as providers
 
     captured: dict[str, Any] = {}
 
@@ -482,7 +483,7 @@ def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
 def test_user_content_preserves_text_image_interleaving():
     from google.genai import types as gt
 
-    from langslice.providers.openai_oauth import content_to_input_items
+    from langslice.providers.oauth.transport import content_to_input_items
 
     png = b"\x89PNG\r\n\x1a\nfakebytes"
     content = gt.Content(

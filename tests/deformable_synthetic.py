@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.core.deformable.geometry import Placement
+from langslice.core.fits.deformable.geometry import Placement
 
 CTX, STR, TH, HY, VS, VL = 2, 3, 4, 5, 73, 81
 SECTION_MM_PER_PX = 0.025
@@ -120,8 +120,12 @@ def render_section(
 
 def fit_section(section_image, atlas, placement, settings=None, **options):
     """Prepare, run and record one fit (options as ``prepare_fit``)."""
-    from langslice.core.deformable import FitSettings, finish_fit, prepare_fit
-    from langslice.core.deformable.engines import run_engine
+    from langslice.core.fits.deformable import (
+        FitSettings,
+        finish_fit,
+        prepare_fit,
+    )
+    from langslice.core.fits.deformable.engines import run_engine
 
     prepared = prepare_fit(section_image, atlas, placement, settings or FitSettings(), **options)
     return finish_fit(prepared, run_engine(prepared.inputs, prepared.settings))

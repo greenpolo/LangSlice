@@ -36,7 +36,7 @@ OVERFLOW_ENDING = re.compile(r"(?:_|^)(?:part\d*|more|extra)$|(?<!\d)\d$")
 INIT_NAMES = frozenset({"__all__", "__version__"})
 
 
-@module_check("module-size")
+@module_check("module-size", per_file=True)
 def check_module_size(
     module: Module, project: Project, config: Config
 ) -> Iterator[Violation]:
@@ -70,7 +70,7 @@ def check_module_size(
         )
 
 
-@module_check("module-name")
+@module_check("module-name", per_file=True)
 def check_module_name(
     module: Module, project: Project, config: Config
 ) -> Iterator[Violation]:
