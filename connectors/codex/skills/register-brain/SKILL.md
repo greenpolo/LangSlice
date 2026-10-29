@@ -77,10 +77,10 @@ task. Run one subagent per job at a time, and one `register` at a
 time in this session (the LangSlice MCP server holds one open job).
 
 `register` needs the LangSlice MCP server in Codex's `config.toml`; if no
-`langslice` MCP tools are listed, point the user to
-`connectors/codex/README.md` (Install) and stop. If the user wants the agent
-limited further, the same README's "Sandboxing, and the gaps" says what each
-agent can still do and how the sandbox and rules file restrict it.
+`langslice` MCP tools are listed, follow the `setup` skill and stop. If the
+user wants the agent limited further, "Sandboxing, and the gaps" in
+`connectors/codex/README.md` says what each agent can still do and how the
+sandbox and rules file restrict it.
 
 ## 4. Check the result yourself
 

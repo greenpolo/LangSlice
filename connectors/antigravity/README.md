@@ -16,11 +16,13 @@ the plugin's MCP server runs `langslice mcp`, `register-scripting` runs
 `langslice-job`, and the plugin's hook runs `langslice`.
 
 ```bash
-agy plugin install connectors/antigravity      # from a checkout
-agy plugin install https://github.com/greenpolo/LangSlice   # or from GitHub
+agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/antigravity
 ```
 
-`agy plugin install` copies the folder; install again after changing it, and
+Or ask Antigravity's `/plugin` skill, in a chat, to install that URL. To try
+it from a checkout: `agy plugin install connectors/antigravity`.
+
+`agy plugin install` copies the folder; install again after a change, and
 restart Antigravity. The plugin brings its own MCP server
 ([`mcp_config.json`](mcp_config.json): `langslice mcp` over stdio), started
 while the plugin is enabled; no `agy mcp add` is needed. Antigravity prefixes
