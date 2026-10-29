@@ -40,7 +40,7 @@ python -m pytest
 python -m langslice version
 ```
 
-`pytest` runs in parallel (pytest-xdist) and deselects the `slow` tests; run those with `python -m pytest -m slow`. A test that fails only in parallel is re-run with `-n 0`.
+`pytest` runs in parallel (pytest-xdist) and deselects the `slow` and `golden` tests; run those with `python -m pytest -m slow` and `python -m pytest -m golden` (the [golden outputs](docs/developers/architecture.md#verification-and-diagnostics)). A test that fails only in parallel is re-run with `-n 0`.
 
 ## The style checks
 

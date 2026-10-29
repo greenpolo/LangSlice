@@ -28,3 +28,6 @@ tmp/
 *.nii
 *.nii.gz
 /data/
+
+# The golden sections and outputs, unpublished data (tests/test_golden_outputs.py)
+tests/golden/data/
