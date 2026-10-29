@@ -5,8 +5,7 @@ Gemini models. On this page you install Antigravity, install LangSlice's
 plugin, and ask Antigravity to finish setting LangSlice up. A **plugin** is a
 package of add-ons that an app installs in one go.
 
-**Before you start:** [install LangSlice](install.md), including
-[step 6, which lets your AI app find LangSlice](install.md#step-6-let-your-ai-app-find-langslice).
+**Before you start:** [install LangSlice](install.md).
 
 ```{note}
 The pictures on this page are from the app on Linux. The steps are untested
@@ -77,8 +76,8 @@ agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/a
   registration, prepares it, starts one registration agent and checks the
   result. It never registers sections itself.
 - skill `abba`: how to work with ABBA.
-- skill `setup`: adds LangSlice's permission rules to Antigravity's settings
-  and tests the connection (step 3).
+- skill `setup`: lets Antigravity find LangSlice, and adds LangSlice's
+  permission rules to Antigravity's settings (step 3).
 - MCP server `langslice_mcp`: LangSlice's tools, started by Antigravity as
   `langslice mcp`.
 - agent `register`: registers one brain through LangSlice's tools only, with
@@ -92,11 +91,13 @@ agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/a
 
 ## Step 3: Ask Antigravity to set up LangSlice
 
+The plugin starts LangSlice by its name, `langslice`, and so far that name
+works only in a terminal where the LangSlice environment is active. Also,
 Antigravity asks before using a tool it has no rule for, and runs an agent's
 commands in a sandbox, a walled-off space that cannot read most of your files.
 LangSlice's registration agents need rules that let them use LangSlice's tools
-and read the atlas and your images. A skill in the plugin, named `setup`, adds
-them.
+and read the atlas and your images. A skill in the plugin, named `setup`,
+fixes both.
 
 1. Click **New Conversation**.
 2. Send this message:
@@ -105,24 +106,46 @@ them.
    Set up LangSlice.
    ```
 
-Antigravity follows the `setup` skill. It checks that `langslice` runs, finds
-the folders LangSlice reads, and adds LangSlice's rules to Antigravity's
-settings file. Then it calls one of LangSlice's tools as a test: LangSlice
-answers that no job is named yet and asks for an image folder. That answer
-comes from LangSlice running on your computer, so the connection works.
+Antigravity follows the `setup` skill. It finds `langslice` on your
+computer, adds its folder to the list of places your computer looks for
+programs, finds the folders LangSlice reads, and adds LangSlice's rules to
+Antigravity's settings file. When it is done, it tells you to restart the
+app.
 
-Antigravity may ask permission to write a file outside the workspace, the
-folder the conversation works in. Allow it. The file is `settings.json` in the
-folder `.gemini/antigravity-cli` in your home folder, where Antigravity keeps
-its own settings.
+Antigravity may ask permission to write files outside the workspace, the
+folder the conversation works in. Allow it. The files are your shell's
+startup files in your home folder (on Windows, your user environment
+variables instead), and `settings.json` in the folder
+`.gemini/antigravity-cli` in your home folder, where Antigravity keeps its
+own settings.
+
+In this first conversation, Antigravity may say that LangSlice's server
+failed to start or that it has no LangSlice tools. That is expected until
+setup is done and the app restarts.
 
 :::{admonition} Screenshot to come
 The setup conversation: Antigravity asking to write the settings file, then
-reporting the test answer.
+reporting what it set up.
 :::
 
 <details>
 <summary>What setup changed</summary>
+
+- `PATH`, the list of folders your computer searches for programs, gets the
+  folder that holds `langslice` and `langslice-job`, added at the end. On
+  macOS and Linux, setup adds these two lines, with that folder, to your
+  shell's startup files (`~/.zprofile` and `~/.zshrc` for zsh, the default
+  on macOS; `~/.bashrc` and `~/.bash_profile` or `~/.profile` for bash):
+
+  ```sh
+  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  case ":$PATH:" in *":/Users/you/miniforge3/envs/langslice/bin:"*) ;; *) export PATH="$PATH:/Users/you/miniforge3/envs/langslice/bin" ;; esac
+  ```
+
+  On Windows, setup adds the folder, such as
+  `C:\Users\you\miniforge3\envs\langslice\Scripts`, to the `Path` in your
+  user environment variables. Setup does not activate the LangSlice
+  environment and changes nothing else.
 
 Setup adds these rules to the `allow` list in `settings.json`, with the
 folders of your computer, and keeps everything else in the file:
@@ -157,13 +180,32 @@ folders of your computer, and keeps everything else in the file:
 
 </details>
 
-If Antigravity says it has no LangSlice tools, or the server failed to start,
-see [Troubleshooting](../troubleshooting.md#the-app-cannot-start-langslice).
-
 ## Step 4: Restart Antigravity
 
-Quit Antigravity completely and open it again. Antigravity reads its settings
-file when it starts.
+Quit Antigravity completely and open it again. Antigravity reads `PATH` and
+its settings file when it starts.
+
+## Step 5: Test the connection
+
+1. Click **New Conversation**.
+2. Send this message:
+
+   ```text
+   Call LangSlice's start_job tool with no arguments and tell me what it says.
+   ```
+
+Antigravity calls the tool and reports LangSlice's answer: no job is named
+yet, and LangSlice asks for an image folder (`start_job(image_folder=...)`).
+That answer comes from LangSlice running on your computer, so the connection
+works.
+
+:::{admonition} Screenshot to come
+The conversation after the test message, showing the reply about naming an
+image folder.
+:::
+
+If Antigravity says it has no LangSlice tools, or the server failed to start,
+see [Troubleshooting](../troubleshooting.md#the-app-cannot-start-langslice).
 
 ## Next
 

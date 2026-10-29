@@ -12,8 +12,11 @@ the scripting subagent and the skills use the `langslice-job` command line
 ## Install
 
 LangSlice itself must be installed first (the conda environment of
-`environment.yml`) with `langslice` on the PATH of the shell that starts
-Claude Code (`langslice version` must work).
+`environment.yml`). Claude Code must then find `langslice` and
+`langslice-job` on PATH: the MCP server runs `langslice mcp`, the hook runs
+`langslice`, and the skills and `register-scripting` run `langslice-job`.
+Claude Desktop reads PATH from the login shell (`$SHELL -ilc`) on macOS and
+Linux, and from the user and system environment variables on Windows.
 
 In the Claude desktop app: Customize > Plugins > Add > Add marketplace >
 Add from a repository, enter `greenpolo/LangSlice`, then install the
@@ -25,6 +28,15 @@ claude plugin marketplace add greenpolo/LangSlice
 claude plugin install langslice@langslice
 ```
 
+Then, in a new session, ask Claude to "Set up LangSlice." The
+`langslice:setup` skill finds `langslice` (on PATH, else in a conda
+environment named `langslice`), appends its folder to PATH (a guarded line in
+`~/.zprofile` and `~/.zshrc` for zsh; in `~/.bashrc` and the bash login file
+for bash; the user `Path` on Windows), and adds
+`"mcp__plugin_langslice_langslice"` to `permissions.allow` in
+`~/.claude/settings.json`. Until then the MCP server fails to start. Restart
+the app afterwards.
+
 The marketplace is `.claude-plugin/marketplace.json` at the repository root;
 it points at this folder. To try it from a checkout:
 `claude --plugin-dir connectors/claude-code`.
@@ -34,6 +46,7 @@ it points at this folder. To try it from a checkout:
 | Part | For | What it is |
 | --- | --- | --- |
 | skill `langslice:register-brain` | main session | prepares the job from the user's choices (tasks, atlas, image model or none, `--registration FILE`, pixel size), launches one subagent, then checks `status`, `registration.json`, the exports and the pictures, and handles export. It never registers itself. |
+| skill `langslice:setup` | main session, once | puts `langslice`'s folder on PATH and allows LangSlice's MCP tools in `~/.claude/settings.json` |
 | skill `langslice:abba` | main session | ABBA's own 0.24.x commands (import, state, export), how to reach a running Fiji, moving files between ABBA and a job |
 | agent `langslice:register` | registers one brain | only LangSlice's MCP tools (`mcp__plugin_langslice_langslice__*`), whose replies carry the pictures; no shell, no file writes, no web |
 | agent `langslice:register-scripting` | registers one brain | Bash, Read, Write, Edit and the web: the `langslice-job` command line plus scripts with the LangSlice Python library, and packages installed in the job's own environment (`langslice-job FOLDER env`) |
@@ -76,7 +89,8 @@ CLAUDE.md files; managed policy files still load).
 
 Claude Code asks before each MCP tool call unless a permission rule allows
 it; `"allow": ["mcp__plugin_langslice_langslice"]` in a settings file allows
-every LangSlice MCP tool.
+every LangSlice MCP tool, and the `setup` skill adds it to the user's
+settings.
 
 Claude Code can also attach its advisor tool (a second model the agent may
 consult) to every agent, these included; neither `tools` nor

@@ -5,8 +5,7 @@ install the app, add LangSlice's plugin to Codex, and ask Codex to finish
 setting LangSlice up. A **plugin** is a package of add-ons that an app
 installs in one go.
 
-**Before you start:** [install LangSlice](install.md), including
-[step 6, which lets your AI app find LangSlice](install.md#step-6-let-your-ai-app-find-langslice).
+**Before you start:** [install LangSlice](install.md).
 
 ```{note}
 The pictures on this page are from the app on Linux. The steps are untested
@@ -62,8 +61,9 @@ LangSlice in the plugin list, with its install button.
 ## Step 3: Ask Codex to set up LangSlice
 
 The plugin brings LangSlice's instructions for Codex. Codex also needs
-LangSlice's registration agents and settings in its own folder. A skill in
-the plugin, named `setup`, puts them there.
+LangSlice's registration agents and settings in its own folder, and its
+agents need to find `langslice` by name. A skill in the plugin, named
+`setup`, does both.
 
 1. Click **New chat**.
 2. Send this message:
@@ -72,15 +72,18 @@ the plugin, named `setup`, puts them there.
    Set up LangSlice.
    ```
 
-Codex follows the `setup` skill. It finds `langslice` on your computer and
+Codex follows the `setup` skill. It finds `langslice` on your computer,
+adds its folder to the list of places your computer looks for programs, and
 copies LangSlice's two registration agents and its rules file into Codex's
 folders. It then adds LangSlice's MCP server to Codex's settings, and turns
 on one setting LangSlice needs. When it is done, it tells you to restart the
 app.
 
 Codex may ask permission to write files outside the project, the folder the
-chat works in. Allow it. The files go into the `.codex` folder in your home
-folder, where Codex keeps its own settings.
+chat works in. Allow it. The files are your shell's startup files in your
+home folder (on Windows, your user environment variables instead), and files
+in the `.codex` folder in your home folder, where Codex keeps its own
+settings.
 
 :::{admonition} Screenshot to come
 The setup chat: Codex asking to write outside the project, then reporting
@@ -89,6 +92,22 @@ what it set up.
 
 <details>
 <summary>What setup changed</summary>
+
+- `PATH`, the list of folders your computer searches for programs, gets the
+  folder that holds `langslice` and `langslice-job`, added at the end. On
+  macOS and Linux, setup adds these two lines, with that folder, to your
+  shell's startup files (`~/.zprofile` and `~/.zshrc` for zsh, the default
+  on macOS; `~/.bashrc` and `~/.bash_profile` or `~/.profile` for bash):
+
+  ```sh
+  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  case ":$PATH:" in *":/Users/you/miniforge3/envs/langslice/bin:"*) ;; *) export PATH="$PATH:/Users/you/miniforge3/envs/langslice/bin" ;; esac
+  ```
+
+  On Windows, setup adds the folder, such as
+  `C:\Users\you\miniforge3\envs\langslice\Scripts`, to the `Path` in your
+  user environment variables. Setup does not activate the LangSlice
+  environment and changes nothing else.
 
 In the `.codex` folder in your home folder:
 
@@ -129,8 +148,8 @@ ABBA.
 
 ## Step 4: Restart the app
 
-Quit the ChatGPT desktop app completely and open it again. Codex reads its
-agents and settings when it starts.
+Quit the ChatGPT desktop app completely and open it again. Codex reads
+`PATH`, its agents and its settings when it starts.
 
 ## Step 5: Test the connection
 

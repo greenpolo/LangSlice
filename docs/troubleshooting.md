@@ -49,9 +49,10 @@ The LangSlice environment is not active in this terminal. Run
 `conda activate langslice` and try again. The line where you type then starts
 with `(langslice)`.
 
-If you see this in a new terminal after
-[step 6 of the install](getting-started/install.md#step-6-let-your-ai-app-find-langslice),
-that step did not take effect. Do it again, then open a new terminal.
+Once your AI app has set LangSlice up, `langslice` works in every new
+terminal without that command. If it does not, send `Set up LangSlice.` to
+your app again (see [The app cannot start LangSlice](#the-app-cannot-start-langslice)),
+then open a new terminal.
 
 ### The first registration waits a long time before anything happens
 
@@ -65,17 +66,19 @@ LangSlice is downloading the atlas, about 600 MB for the Allen mouse atlas at
 The app says the LangSlice server failed to start, or its agent says it has no
 LangSlice tools.
 
-- **Any app:** the app cannot find `langslice` outside the LangSlice
-  environment. Open a new terminal without running `conda activate langslice`,
-  and run `langslice version`. If it fails, redo
-  [step 6 of the install](getting-started/install.md#step-6-let-your-ai-app-find-langslice).
-- **Codex:** Codex's settings name a `langslice` that is not there any more,
-  for example after LangSlice was installed again in another folder. In a new
-  chat, send `Set up LangSlice.` Codex looks up `langslice` again and updates
-  its settings
-  ([step 3](getting-started/connect-codex.md#step-3-ask-codex-to-set-up-langslice)).
-- **Every app:** quit the app completely and open it again after a change. It
-  reads its settings when it starts.
+The app cannot find `langslice`: setup has not run yet, or LangSlice was
+installed again in another folder. In a new conversation, send
+`Set up LangSlice.` The app's setup skill finds `langslice` again, adds its
+folder to `PATH`, and updates the app's settings. Then quit the app
+completely and open it again: it reads `PATH` and its settings when it
+starts. Setup is step 3 of each connect page:
+[Claude Code](getting-started/connect-claude-code.md#step-3-ask-claude-to-set-up-langslice),
+[Codex](getting-started/connect-codex.md#step-3-ask-codex-to-set-up-langslice),
+[Antigravity](getting-started/connect-antigravity.md#step-3-ask-antigravity-to-set-up-langslice).
+
+To check outside the app, open a new terminal without running
+`conda activate langslice`, and run `langslice version`. It prints the version
+once setup has added LangSlice to `PATH`.
 
 ### Codex sees only `start_job`, and the registration agent cannot find the job's tools
 
@@ -111,8 +114,9 @@ Two common causes:
   its settings file, or send "Set up LangSlice." again
   ([step 3](getting-started/connect-antigravity.md#step-3-ask-antigravity-to-set-up-langslice)).
 - **Claude Code:** add the rule `"mcp__plugin_langslice_langslice"` to
-  `permissions.allow` in a Claude Code settings file
-  ([step 3](getting-started/connect-claude-code.md#step-3-test-the-connection)).
+  `permissions.allow` in a Claude Code settings file, or send
+  "Set up LangSlice." again
+  ([step 3](getting-started/connect-claude-code.md#step-3-ask-claude-to-set-up-langslice)).
 
 ### A second registration in the same conversation took over the first one's job
 

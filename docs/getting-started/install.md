@@ -111,83 +111,27 @@ langslice 0.1.0
 ```
 
 Run `conda activate langslice` each time you open a new terminal for
-LangSlice. Your AI app cannot do that, so the next step lets it find
-LangSlice without it.
+LangSlice. Your AI app does not need it: when you connect the app, its setup
+skill finds LangSlice and lets the app start it.
 
 :::{admonition} Screenshot to come
 Miniforge Prompt (Windows) and Terminal (macOS) after `langslice version`,
 showing `(langslice)` and `langslice 0.1.0`.
 :::
 
-## Step 6: Let your AI app find LangSlice
-
-Your AI app starts LangSlice by its name, `langslice`. So far that name works
-only in a terminal where the LangSlice environment is active. This step makes
-it work everywhere on your computer, including in the app.
-
-### Windows
-
-1. In Miniforge Prompt, with the LangSlice environment active, run:
-
-   ```bat
-   where langslice
-   ```
-
-   It prints one line, for example
-   `C:\Users\you\miniforge3\envs\langslice\Scripts\langslice.exe`.
-2. Copy that line without `\langslice.exe` at its end, for example
-   `C:\Users\you\miniforge3\envs\langslice\Scripts`.
-3. Open the Start menu, type `environment variables`, and choose **Edit
-   environment variables for your account**.
-4. Under **User variables**, select **Path** and click **Edit**.
-5. Click **New**, paste the folder from item 2, and click **OK** twice.
-
-:::{admonition} Screenshot to come
-The **Edit environment variable** window with the LangSlice `Scripts` folder
-added.
-:::
-
-### macOS
-
-In Terminal, run:
-
-```bash
-echo 'conda activate langslice' >> ~/.zshrc
-```
-
-### Linux
-
-In a terminal, run:
-
-```bash
-echo 'conda activate langslice' >> ~/.bashrc
-```
-
-On macOS and Linux, every new terminal now starts in the LangSlice
-environment, and apps read the same setting when they start.
-
-### Check it
-
-Open a new terminal: **Command Prompt** on Windows (search for it in the Start
-menu), **Terminal** on macOS and Linux. Without running
-`conda activate langslice`, run:
-
-```bash
-langslice version
-```
-
-It prints `langslice 0.1.0`. If your AI app was already open, quit it
-completely and open it again, so it picks up the change.
-
 <details>
-<summary>Under the hood: how the apps look for LangSlice</summary>
+<summary>Under the hood: how the apps find LangSlice</summary>
 
 Claude Desktop and Antigravity start the command `langslice mcp` by name, and
-look for it in the folders listed in the `PATH` setting. On macOS and Linux,
-Claude Desktop reads `PATH` from the same startup settings a new terminal
-uses, `~/.zshrc` or `~/.bashrc` among them. On Windows it reads your user and
-system environment variables. Codex's setup looks up the full location of
-`langslice` once and writes it into Codex's settings.
+LangSlice's agents run `langslice` and `langslice-job` by name. Each looks
+for them in the folders listed in the `PATH` setting. On macOS and Linux, the
+apps read `PATH` from your login shell when they start; on Windows, from your
+user and system environment variables. The setup skill adds the LangSlice
+environment's `bin` folder (`Scripts` on Windows) to the end of `PATH`: in
+your shell's startup files on macOS and Linux, and in your user environment
+variables on Windows. It does not activate the environment. Codex starts
+LangSlice's MCP server from its full location, which its setup writes into
+Codex's settings.
 
 </details>
 

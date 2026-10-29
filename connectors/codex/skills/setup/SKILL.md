@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Set up LangSlice in Codex once the LangSlice plugin is installed: find the langslice program, copy LangSlice's two registration agents and its command rules into Codex's folder, and add LangSlice's MCP server to Codex's config.toml. Use when the user asks to set up LangSlice, connect LangSlice, or install LangSlice's agents.
+description: Set up LangSlice in Codex once the LangSlice plugin is installed: find the langslice program, put its folder on PATH, copy LangSlice's two registration agents and its command rules into Codex's folder, and add LangSlice's MCP server to Codex's config.toml. Use when the user asks to set up LangSlice, connect LangSlice, or install LangSlice's agents.
 ---
 
 # Set up LangSlice in Codex
@@ -11,8 +11,9 @@ server, so you put these in Codex's own folder. Do the steps in order.
 
 Codex's folder is `~/.codex` on macOS and Linux and `%USERPROFILE%\.codex`
 (`$HOME\.codex` in PowerShell) on Windows; if the `CODEX_HOME` environment
-variable is set, use that folder instead everywhere below. Writing there is
-outside the workspace: ask for approval when the sandbox refuses a write.
+variable is set, use that folder instead everywhere below. Codex's folder and
+the shell files of step 2 are outside the workspace: ask for approval when the
+sandbox refuses a write.
 
 ## 1. Find `langslice`
 
@@ -29,9 +30,60 @@ outside the workspace: ask for approval when the sandbox refuses a write.
   and stop.
 - Run `<path> version`. If it fails, show the user the error and stop.
 
-Keep this absolute path for step 3.
+Keep this absolute path for steps 2 and 4.
 
-## 2. Copy the agents and the rules
+## 2. Put LangSlice's folder on PATH
+
+Apps and LangSlice's agents run `langslice` and `langslice-job` by name, so
+the folder that holds them must be on PATH everywhere, not only in a terminal
+where the LangSlice environment is active. That folder is the one holding the
+path from step 1 (the environment's `bin`, or `Scripts` on Windows). Add it
+to the end of PATH and change nothing else: no `conda activate`.
+
+macOS and Linux:
+
+- Skip to step 3 if a new login shell already finds it:
+  `"$SHELL" -ilc 'command -v langslice'` prints the path from step 1.
+- Otherwise add these two lines, with the folder in place of `FOLDER`, to
+  the end of each file the table names for the user's shell (`$SHELL`).
+  Create a file that is missing; leave alone a file that already holds the
+  comment line.
+
+  ```sh
+  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  case ":$PATH:" in *":FOLDER:"*) ;; *) export PATH="$PATH:FOLDER" ;; esac
+  ```
+
+  | Shell | Files |
+  | --- | --- |
+  | zsh | `~/.zprofile` and `~/.zshrc` |
+  | bash | `~/.bashrc`, and `~/.bash_profile` if it exists, else `~/.bash_login` if it exists, else `~/.profile` |
+  | another | tell the user the folder to add to PATH, and go on |
+
+  Both files, because each kind of shell reads a different one: the apps
+  read PATH from a login, interactive shell (`$SHELL -ilc`), agents' commands
+  may run in a login shell that is not interactive (`-lc`), and a new
+  terminal on Linux is interactive but not a login shell.
+- Check: `"$SHELL" -ilc 'command -v langslice'` and
+  `"$SHELL" -lc 'command -v langslice'` each print the path from step 1.
+
+Windows (PowerShell), with the folder in place of `FOLDER`:
+
+```powershell
+$dir = 'FOLDER'
+$user = [Environment]::GetEnvironmentVariable('Path', 'User')
+$all = "$user;" + [Environment]::GetEnvironmentVariable('Path', 'Machine')
+if (($all -split ';') -notcontains $dir) {
+  $parts = @($user -split ';' | Where-Object { $_ }) + $dir
+  [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
+}
+```
+
+This appends the folder to the user's Path and keeps every entry already
+there. Check: `[Environment]::GetEnvironmentVariable('Path', 'User')` ends
+with the folder (or the folder was already on Path).
+
+## 3. Copy the agents and the rules
 
 The plugin folder is two levels above the folder of this `SKILL.md`
 (`skills/setup/` sits inside it). It holds `agents/register.toml`,
@@ -55,7 +107,7 @@ Copy-Item -Force "$plugin\agents\register.toml", "$plugin\agents\register_script
 Copy-Item -Force "$plugin\rules\langslice.rules" "$HOME\.codex\rules\"
 ```
 
-## 3. Add LangSlice to `config.toml`
+## 4. Add LangSlice to `config.toml`
 
 Edit `config.toml` in Codex's folder (create it if it is missing). Keep
 everything else in the file as it is.
@@ -83,12 +135,12 @@ everything else in the file as it is.
   lists `langslice` with the path from step 1 (and fails if the file does not
   parse). Otherwise read the file back.
 
-## 4. Restart and test
+## 5. Restart and test
 
 Tell the user:
 
-1. Quit the Codex app completely and open it again: Codex reads its agents,
-   rules and settings when it starts.
+1. Quit the Codex app completely and open it again: Codex reads PATH, its
+   agents, rules and settings when it starts.
 2. In a new chat, send: "Call LangSlice's start_job tool with no arguments
    and tell me what it says." LangSlice answers that no job is named yet and
    asks for an image folder; that answer means LangSlice is connected.

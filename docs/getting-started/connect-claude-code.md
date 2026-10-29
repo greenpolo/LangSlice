@@ -1,13 +1,13 @@
 # Connect Claude Code (Claude)
 
 Claude Code is the coding agent in the **Code** tab of the Claude desktop app.
-On this page you install the app and add LangSlice's plugin to it. A
-**plugin** is a package of add-ons that an app installs in one go.
+On this page you install the app, add LangSlice's plugin to it, and ask
+Claude to finish setting LangSlice up. A **plugin** is a package of add-ons
+that an app installs in one go.
 
 **Before you start:**
 
-- [Install LangSlice](install.md), including
-  [step 6, which lets your AI app find LangSlice](install.md#step-6-let-your-ai-app-find-langslice).
+- [Install LangSlice](install.md).
 - Have a paid Claude plan. Claude Code is not part of the free Claude plan.
   On the free plan, use [Codex](connect-codex.md) with a free ChatGPT account
   instead.
@@ -85,6 +85,8 @@ LangSlice in the plugin list, with its install button.
   and pixel size. It prepares the job, starts one registration agent, checks
   the result and handles export. It never registers sections itself.
 - skill `langslice:abba`: how to work with ABBA.
+- skill `langslice:setup`: lets the app find LangSlice and lets LangSlice's
+  tools run without asking (step 3).
 - agent `langslice:register`: registers one brain through LangSlice's tools
   only, with no terminal, no file writing and no web.
 - agent `langslice:register-scripting`: registers one brain with LangSlice's
@@ -96,7 +98,80 @@ LangSlice in the plugin list, with its install button.
 
 </details>
 
-## Step 3: Test the connection
+## Step 3: Ask Claude to set up LangSlice
+
+The plugin starts LangSlice by its name, `langslice`, and so far that name
+works only in a terminal where the LangSlice environment is active. Claude
+Code also asks before each use of a LangSlice tool. A skill in the plugin,
+named `setup`, fixes both.
+
+1. Start a new session in the **Code** tab.
+2. Send this message:
+
+   ```text
+   Set up LangSlice.
+   ```
+
+Claude follows the `langslice:setup` skill. It finds `langslice` on your
+computer, adds its folder to the list of places your computer looks for
+programs, and adds a rule to Claude Code's settings that lets LangSlice's
+tools run without asking. When it is done, it tells you to restart the app.
+
+Claude asks permission before it changes files outside the folder the
+session works in. Allow it. The files are your shell's startup files in your
+home folder (on Windows, your user environment variables instead), and
+`settings.json` in the `.claude` folder in your home folder, where Claude
+Code keeps its own settings.
+
+In this first session, Claude may say that LangSlice's server failed to start
+or that it has no LangSlice tools. That is expected until setup is done and
+the app restarts.
+
+:::{admonition} Screenshot to come
+The setup session: Claude asking to change a file outside the folder, then
+reporting what it set up.
+:::
+
+<details>
+<summary>What setup changed</summary>
+
+- `PATH`, the list of folders your computer searches for programs, gets the
+  folder that holds `langslice` and `langslice-job`, added at the end. On
+  macOS and Linux, setup adds these two lines, with that folder, to your
+  shell's startup files (`~/.zprofile` and `~/.zshrc` for zsh, the default
+  on macOS; `~/.bashrc` and `~/.bash_profile` or `~/.profile` for bash):
+
+  ```sh
+  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  case ":$PATH:" in *":/Users/you/miniforge3/envs/langslice/bin:"*) ;; *) export PATH="$PATH:/Users/you/miniforge3/envs/langslice/bin" ;; esac
+  ```
+
+  On Windows, setup adds the folder, such as
+  `C:\Users\you\miniforge3\envs\langslice\Scripts`, to the `Path` in your
+  user environment variables. Setup does not activate the LangSlice
+  environment and changes nothing else.
+- `settings.json` in the `.claude` folder gets this rule, and keeps everything
+  else in the file:
+
+  ```json
+  {
+    "permissions": {
+      "allow": ["mcp__plugin_langslice_langslice"]
+    }
+  }
+  ```
+
+  The rule lets all of LangSlice's tools run without asking you before each
+  call.
+
+</details>
+
+## Step 4: Restart the app
+
+Quit the Claude desktop app completely and open it again. The app reads
+`PATH` and Claude Code's settings when it starts.
+
+## Step 5: Test the connection
 
 1. Start a new session in the **Code** tab.
 2. Type `/` in the message box. The list includes
@@ -107,37 +182,16 @@ LangSlice in the plugin list, with its install button.
    Call LangSlice's start_job tool with no arguments and tell me what it says.
    ```
 
-4. Claude asks for permission before it uses a LangSlice tool. Allow it.
-
 Claude reports LangSlice's answer: no job is named yet, and LangSlice asks for
 an image folder (`start_job(image_folder=...)`). That answer comes from
 LangSlice running on your computer, so the connection works.
 
 :::{admonition} Screenshot to come
-Claude's permission request for `start_job`, then the reply about naming an
-image folder.
+The reply about naming an image folder after the test message.
 :::
 
 If Claude says it has no LangSlice tools, or the server failed to start, see
 [Troubleshooting](../troubleshooting.md#the-app-cannot-start-langslice).
-
-<details>
-<summary>Stop Claude asking before each LangSlice tool</summary>
-
-Claude Code asks before each call to an MCP tool unless a permission rule
-allows it. This rule, in the `permissions` of a Claude Code settings file
-(`.claude/settings.json` in your home folder for every folder), allows all of
-LangSlice's tools:
-
-```json
-{
-  "permissions": {
-    "allow": ["mcp__plugin_langslice_langslice"]
-  }
-}
-```
-
-</details>
 
 ## Next
 
