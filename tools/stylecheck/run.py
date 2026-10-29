@@ -17,6 +17,7 @@ from tools.stylecheck import rules as rules  # registers every check
 from tools.stylecheck.core import Config, Project, Violation
 from tools.stylecheck.external import (
     FORMAT_EXPLANATION,
+    PER_FILE_RULES,
     format_violations,
     ruff_explanation,
     ruff_violations,
@@ -162,6 +163,18 @@ def _project_check(
         raise CheckFailedError(
             f"The check {name} failed: {error!r}."
         ) from error
+
+
+def per_file_rules() -> frozenset[str]:
+    """Return the rules that report at most one error per file.
+
+    Returns
+    -------
+    frozenset of str
+        The checks registered with ``per_file`` and the external tools'
+        rules of that kind, such as ``format``.
+    """
+    return frozenset(core.PER_FILE_CHECKS) | PER_FILE_RULES
 
 
 def check_names() -> list[str]:

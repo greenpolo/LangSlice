@@ -8,9 +8,9 @@ adds every current error, which is the hole this module closes. Under
 ``--against REF`` the count of entries per file and rule may not rise above
 its count at the reference, with two exceptions: a rule whose report level
 or the checking mode changed since the reference (a rule being adopted, which
-the settings record shows), and the entries of a file that was moved (an
-entry of the same rule and columns at the reference, in a file that no
-longer exists, or that left a file the move map moves definitions out of).
+the settings record shows), and the entries that left a file the move map
+moves definitions out of, which may reappear in a file it moves them into.
+A file that is gone without a declared move takes its entries with it.
 """
 
 from __future__ import annotations
@@ -128,7 +128,6 @@ def pyright_growth(
     after: Iterable[PyrightEntry],
     *,
     is_adopted: Callable[[PyrightEntry], bool],
-    is_gone: Callable[[str], bool],
     move_sources: Callable[[str], tuple[str, ...]],
 ) -> list[PyrightChange]:
     """Find the files and rules with more entries than at a reference.
@@ -142,10 +141,6 @@ def pyright_growth(
     is_adopted
         Tells whether an entry belongs to a rule adopted since the
         reference; such entries may be new.
-    is_gone
-        Tells whether a file of the reference no longer exists; its
-        entries may reappear in another file with the same span, each one
-        once.
     move_sources
         Gives the files the move map moves definitions out of into a file;
         an entry that left one of them may reappear in that file, each one
@@ -164,7 +159,7 @@ def pyright_growth(
     for entry in after:
         if not is_adopted(entry):
             groups.setdefault((entry.path, entry.code), []).append(entry)
-    pool = _Departed.from_baselines(before, after, is_gone, move_sources)
+    pool = _Departed.from_baselines(before, after, move_sources)
 
     previous = Counter(before)
     changes: list[PyrightChange] = []
@@ -181,12 +176,10 @@ def pyright_growth(
 class _Departed:
     """Hold the reference's entries that left their file, once each.
 
-    ``gone`` counts, by rule and span, the entries of files that no longer
-    exist and that the move map does not name; ``left`` holds, per file the
-    move map moves definitions out of, its entries that are no longer there.
+    ``left`` holds, per file the move map moves definitions out of, its
+    entries that are no longer there.
     """
 
-    gone: Counter[tuple[str, tuple[int, int, int]]]
     left: dict[str, Counter[PyrightEntry]]
     move_sources: Callable[[str], tuple[str, ...]]
 
@@ -195,24 +188,18 @@ class _Departed:
         cls,
         before: list[PyrightEntry],
         after: list[PyrightEntry],
-        is_gone: Callable[[str], bool],
         move_sources: Callable[[str], tuple[str, ...]],
     ) -> _Departed:
         """Return the entries that left their files between two baselines."""
         sources: set[str] = set()
         for path in {entry.path for entry in after}:
             sources.update(move_sources(path))
-        gone = Counter(
-            (entry.code, entry.columns)
-            for entry in before
-            if is_gone(entry.path) and entry.path not in sources
-        )
         left: dict[str, Counter[PyrightEntry]] = {}
         for source in sources:
             then = Counter(entry for entry in before if entry.path == source)
             now = Counter(entry for entry in after if entry.path == source)
             left[source] = then - now
-        return cls(gone, left, move_sources)
+        return cls(left, move_sources)
 
     def take(self, entries: list[PyrightEntry], excess: int) -> int:
         """Count new entries as moved, up to the excess; return how many."""
@@ -226,10 +213,6 @@ class _Departed:
 
     def _take_one(self, entry: PyrightEntry) -> bool:
         """Use up one departed entry for a new one, by span, else by rule."""
-        signature = (entry.code, entry.columns)
-        if self.gone[signature] > 0:
-            self.gone[signature] -= 1
-            return True
         sources = self.move_sources(entry.path)
         for source in sources:
             same = PyrightEntry(source, entry.code, entry.columns)

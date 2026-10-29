@@ -158,9 +158,10 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
         affine = {
             "kind": transform.get("kind"),
             "params": transform.get("params"),
+            # Kept as written: the text is in parameters_digest.
             "params_convention": (
                 "normalized 2x3 [a, b, tx, c, d, ty] on the oriented section render: "
-                "x as a fraction of its width, y of its height (langslice.core.geometry.affine)"),
+                "x as a fraction of its width, y of its height (langslice.core.affine)"),
             "physical": transform.get("physical"),
             "mirrored": bool(transform.get("mirrored", False)),
         }

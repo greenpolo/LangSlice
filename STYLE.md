@@ -498,9 +498,13 @@ Keep these through every refactor:
 
 The baselines of `tools/stylecheck` and basedpyright only shrink, and the
 settings of every tool above only tighten; CI holds both against the
-previous commit. A commit that moves code declares each moved definition
-in `tools/stylecheck/moves.json`, and its errors and the modules the
-settings name follow the move, at most what the old entry lost.
+previous commit, and the checker's baseline may hold no more than the
+code has. Declaring each moved or renamed definition in
+`tools/stylecheck/moves.json`, reviewed in the diff, is the one way
+baselined code changes its file or name: its errors and the modules the
+settings name follow the move, all of an old entry's new places together
+at most what it lost. An error no row leads to is new
+(`CONTRIBUTING.md`, "Moving or renaming code that has baseline entries").
 
 A rule the tools cannot check is marked [review] and is part of code review,
 not optional.

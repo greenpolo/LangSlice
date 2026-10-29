@@ -82,17 +82,42 @@ entry, which `--prune` after the merge writes.
 
 CI runs the checker with `--against` the previous commit (the pull
 request's base), and `tests/test_style.py` runs it against `HEAD`. It
-fails when an entry is new or larger than at that commit, with two
-exceptions: the errors of a function whose file was moved or renamed (the
-same rule and function, in a file that no longer exists, at most its old
-count), and the errors of a rule being adopted (below). A function moved
-between files that both still exist counts as new unless the commit
-declares the move in `tools/stylecheck/moves.json` (each entry an old
-`path` and `symbol` and a `new_path` and `new_symbol`; generate it, never
-type it): its errors are then accepted under the new name up to what the
-old entry lost (its whole count once it is gone; a split module lists its
-module level once per part), and the settings that name modules are read
-through the same map, so a moved module is not a loosened setting.
+fails when an entry is new or larger than at that commit, unless the
+errors belong to a rule being adopted (below) or followed their code
+through the move map. It also fails while the baseline holds more than
+the code has: an entry the report says can shrink is pruned in the same
+commit, so a fixed error cannot come back later unseen.
+
+### Moving or renaming code that has baseline entries
+
+The one way to move or rename baselined code is to declare it in
+`tools/stylecheck/moves.json`, which is reviewed in the diff like the
+code. Each row names an old `path` and `symbol` and a `new_path` and
+`new_symbol` (a definition's qualified name, such as `Job.save`, or
+`<module>` for module-level code); a rename inside a file is a row with
+the same `path` and `new_path`. Generate the rows, never type them. An
+error in a file or under a name no row leads to counts as new, even when
+an error of the same rule left a file that is gone.
+
+A row is followed only when, at the reference, its `path` held its
+`symbol` and, now, its `new_path` holds its `new_symbol`; `--against`
+lists the rows whose new definition is missing. Its new place may then have up to
+what the old entry lost since the reference (its whole count once it is
+gone). A definition moved to several places, such as the module level of
+a module split into parts, lists one row per place, and the places share
+what it lost: together they may have no more than the old entry had. A
+rule that reports at most one error per file (`format`, `module-size`,
+`module-name`; declared with `per_file` where the check is registered) is
+the state of the whole file, so each part of a split file may inherit its
+error, once the old file has lost it. The
+settings that name modules are read at the reference through the same
+map, a package's name standing for every module moved out of it, so a
+moved module is not a loosened setting; each exemption list names every
+module its old entries' code went to. A row whose old definition is not
+at the reference (its `path` absent there, or without the `symbol`) is
+inert, as all rows become once the move has landed;
+`python -m tools.stylecheck --prune --against REF` removes the rows inert
+at `REF`, and an empty map is fine.
 
 The file also records the checks that ran and every setting that decides
 what they report: `[tool.stylecheck]`, the checker's ruff rules in
@@ -134,9 +159,12 @@ file by itself, so commit the smaller file with the fixes; in CI
 basedpyright leaves the file as it is. Never run
 `basedpyright --writebaseline`, which lists every current error: the
 checker's `--against` holds this file to "only shrinks" as well (the
-entries per file and rule may not grow, except for a moved file, an
-entry that left a file `moves.json` moves definitions out of, and a rule
-whose report level changed).
+entries per file and rule may not grow, except for an entry that left a
+file `moves.json` moves definitions out of, which may reappear once in a
+file it moves them into, and a rule whose report level changed). A new
+`report` key is a tightening when its level is at least the checking
+mode's default for that rule, which the checker reads from the installed
+basedpyright.
 
 ## Pull requests
 

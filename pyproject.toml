@@ -213,6 +213,8 @@ json_boundary_modules = [
     "langslice.doors.call_log",
     "langslice.hosts.service",
     "langslice.job.history",
+    "langslice.job.imports.matching",
+    "langslice.job.imports.placements",
     "langslice.job.imports.readers",
     "langslice.job.index",
     "langslice.job.pictures",
@@ -221,6 +223,7 @@ json_boundary_modules = [
     "langslice.job.recent",
     "langslice.job.state_file",
     "langslice.tools.arguments",
+    "langslice.tools.descriptions.fixes",
     "tools.stylecheck.baseline",
     "tools.stylecheck.jsondata",
     "tools.stylecheck.pyright_baseline",
@@ -229,13 +232,19 @@ json_boundary_modules = [
 # STYLE.md 8.5: the command modules, where print and sys.stdout.write belong.
 cli_modules = [
     "langslice.cli",
+    "langslice.doors.agent_cli.background",
     "langslice.doors.agent_cli.calls",
+    "langslice.doors.agent_cli.catalog",
     "langslice.doors.agent_cli.envelope",
+    "langslice.doors.agent_cli.environment",
+    "langslice.doors.agent_cli.launch",
     "langslice.doors.agent_cli.main",
     "langslice.doors.agent_cli.warm",
     "langslice.doors.commands.linear",
+    "langslice.doors.commands.mcp",
     "langslice.doors.commands.parser",
     "langslice.doors.commands.transcripts",
+    "langslice.tools.descriptions.fixes",
     "tools.stylecheck.__main__",
 ]
 # STYLE.md 9.2: the one module that builds tool descriptions.
