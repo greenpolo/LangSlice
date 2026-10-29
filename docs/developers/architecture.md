@@ -147,6 +147,29 @@ reviewed by looking at them.
 Image correctness requires inspecting raw output and fitted anatomy, not
 only metrics.
 
+A golden test (`tests/test_golden_outputs.py`) pins everything else a run
+produces, so a change meant to alter no output can show that it alters
+none. A script registers three real sections
+to `allen_mouse_50um` through the library alone, with no model: positions,
+hand transforms, `elastix_affine`, a mask, a damage mark, `fireants_syn`
+(coarse, on the CPU), landmarks, undo and redo, `export_maps`, with every
+`look` mode, a zoom and `status` after each write. The test compares, with
+no tolerance, every reply, every JSON file of the job folder (paths and
+clock times replaced by tokens), and the decoded pixels or arrays of every
+picture, map, mask, section image and deformation record with the
+goldens. The pictures the writing tools return are kept there whole. The
+sections are unpublished data, so they and the goldens live outside the
+repository, in `tests/golden/data/` (git-ignored) or the folder
+`LANGSLICE_GOLDEN_DATA` names, and the test is skipped where they are
+missing. It needs the atlas in the local BrainGlobe cache, records this
+machine's pixels and takes about 30 s, so the default run leaves it out:
+run it with `python -m pytest -m golden`. A failure writes the run's
+outputs, every picture among them, to `actual/` beside the goldens and lists each
+changed key, array and picture (the differing pixels and the largest
+difference). An intended change is recorded with
+`LANGSLICE_UPDATE_GOLDEN=1 python -m pytest -m golden`, which rewrites the
+goldens and fails once, printing the diff, so that it is reviewed.
+
 [Agent traces](../agents/builtin.md#logs-and-credentials) record calls and results.
 `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` additionally writes redacted ADK request
 captures. Credentials belong to user settings, not job or ABBA project files.

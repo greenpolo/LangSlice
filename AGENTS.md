@@ -72,8 +72,11 @@ and `environment.yml` hold the worker's source installation.
 - Model-facing text (tool descriptions, job statements, refusals) is pinned
   by a text snapshot (`tests/test_agent_text_snapshot.py`,
   `tests/snapshots/agent_text/`); an intended change regenerates it with
-  `LANGSLICE_UPDATE_SNAPSHOT=1` and the diff is reviewed. Pictures are
-  pinned by no test: a change to them is judged by looking (below).
+  `LANGSLICE_UPDATE_SNAPSHOT=1` and the diff is reviewed. A change meant to
+  alter no output is checked by the golden test
+  (`python -m pytest -m golden`, `tests/test_golden_outputs.py`), which pins
+  a scripted run's pictures, files and replies on this machine; a change
+  meant to alter pictures is judged by looking (below).
 - Image-model prompts live in `core/nonlinear/prompts.py`; every sentence of an
   edit is audited for a second reading, and no border line is made conditional
   on visibility (`src/langslice/core/nonlinear/CLAUDE.md`).

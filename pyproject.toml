@@ -134,9 +134,10 @@ forbidden_modules = [
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 # Tests run in parallel; an idle worker takes queued tests from a busy one.
-addopts = "-ra -m 'not slow' -n auto --dist worksteal"
+addopts = "-ra -m 'not slow and not golden' -n auto --dist worksteal"
 markers = [
     "slow: integration tests that load real atlases or start a real JVM",
+    "golden: pixel and result goldens of a scripted run on a real atlas (tests/test_golden_outputs.py)",
 ]
 pythonpath = ["src"]
 
