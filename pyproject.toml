@@ -202,7 +202,7 @@ extend-ignore-names = ["sitk"]
 # that name LangSlice's own modules and types. Modules are import names.
 [tool.stylecheck]
 # STYLE.md 4.4: the one parameter name of each central type.
-type_names = { Workspace = "workspace", "langslice.job.job.Job" = "job", JobSpec = "spec", JobLayout = "layout", StackState = "state", SliceState = "section", Stack = "state", Section = "section", DeformableRecord = "record", ToolContext = "context", DisplayOptions = "options", ImageModel = "image_model" }
+type_names = { Workspace = "workspace", "langslice.job.job.Job" = "job", JobSpec = "spec", JobLayout = "layout", Stack = "state", Section = "section", DeformableRecord = "record", ToolContext = "context", DisplayOptions = "options", ImageModel = "image_model" }
 # STYLE.md 5.1 and 3.6: the modules that read and write JSON files and wire
 # formats, where a TypedDict or a dict of results may stand.
 json_boundary_modules = [

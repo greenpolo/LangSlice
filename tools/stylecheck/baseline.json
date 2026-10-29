@@ -105,7 +105,7 @@
 "stylecheck.max_returned_values": 3,
 "stylecheck.min_parameter_words": 3,
 "stylecheck.paths": ["src/langslice", "tools/stylecheck"],
-"stylecheck.type_names": {"DeformableRecord": "record", "DisplayOptions": "options", "ImageModel": "image_model", "JobLayout": "layout", "JobSpec": "spec", "Section": "section", "SliceState": "section", "Stack": "state", "StackState": "state", "ToolContext": "context", "Workspace": "workspace", "langslice.job.job.Job": "job"}
+"stylecheck.type_names": {"DeformableRecord": "record", "DisplayOptions": "options", "ImageModel": "image_model", "JobLayout": "layout", "JobSpec": "spec", "Section": "section", "Stack": "state", "ToolContext": "context", "Workspace": "workspace", "langslice.job.job.Job": "job"}
 },
 "entries": [
 {"rule": "any-annotation", "path": "src/langslice/__init__.py", "symbol": "__getattr__", "count": 1},
