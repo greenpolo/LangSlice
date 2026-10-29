@@ -1,44 +1,53 @@
-# LangSlice for Codex
+# LangSlice plugin for Codex
 
 Skills for the main session and two custom agents that register one brain:
 `register` works only through LangSlice's MCP tools (`langslice mcp`), and
 `register_scripting` works through the shell, the `langslice-job` command line
-([`docs/agents/cli.md`](../../docs/agents/cli.md)) and the Python library. Install the
-supplied skill, agent and rule files and the MCP server entry directly; this
-folder contains no plugin package.
-
-LangSlice must be installed (conda env of `environment.yml`) with `langslice`
-and `langslice-job` on PATH.
+([`docs/agents/cli.md`](../../docs/agents/cli.md)) and the Python library.
+The plugin carries the skills; its `setup` skill puts the agents, the command
+rules and the MCP server entry in Codex's own folder.
 
 ## Install
 
-From the repository root:
+LangSlice itself must be installed first (the conda environment of
+`environment.yml`, [install guide](https://langslice.readthedocs.io/en/latest/getting-started/install.html)).
 
-```bash
-cd connectors/codex
-# skills (Codex scans .agents/skills in the repo, then ~/.agents/skills)
-mkdir -p ~/.agents/skills
-cp -r skills/* ~/.agents/skills/
-# custom agents (personal: ~/.codex/agents/, project: .codex/agents/)
-mkdir -p ~/.codex/agents && cp agents/*.toml ~/.codex/agents/
-# optional command rules
-mkdir -p ~/.codex/rules && cp rules/langslice.rules ~/.codex/rules/
-```
+1. Add the marketplace: in the Codex app, Plugins > Add > Add a marketplace,
+   source `greenpolo/LangSlice`; or in a terminal,
+   `codex plugin marketplace add greenpolo/LangSlice`.
+2. Install the LangSlice plugin from it (in the app, or
+   `codex plugin add langslice@langslice`).
+3. In a Codex chat, ask Codex to set up LangSlice. The `setup` skill finds
+   `langslice` (on PATH, else in a conda environment named `langslice`),
+   copies `agents/*.toml` into `~/.codex/agents/` and `rules/langslice.rules`
+   into `~/.codex/rules/` from the installed plugin, and adds this to
+   `~/.codex/config.toml`, with the full path of `langslice`:
 
-Then add the LangSlice MCP server to `~/.codex/config.toml` (or a trusted
-project's `.codex/config.toml`), with the full path of `langslice` (`which
-langslice`):
+   ```toml
+   [mcp_servers.langslice]
+   command = "/path/to/env/bin/langslice"
+   args = ["mcp"]
+   tool_timeout_sec = 3600
+   default_tools_approval_mode = "approve"
 
-```toml
-[mcp_servers.langslice]
-command = "/path/to/env/bin/langslice"
-args = ["mcp"]
-tool_timeout_sec = 3600
-default_tools_approval_mode = "approve"
+   [features]
+   mcp_tool_list_changed = true
+   ```
 
-[features]
-mcp_tool_list_changed = true
-```
+4. Quit Codex and open it again.
+
+The marketplace is `.agents/plugins/marketplace.json` at the repository root,
+which Codex reads before Claude Code's `.claude-plugin/marketplace.json`; it
+points at this folder. To try it from a checkout:
+`codex plugin marketplace add /path/to/LangSlice`.
+
+Why the plugin carries skills only: Codex loads custom agents and rules only
+from its own folder (`~/.codex/agents/`, `~/.codex/rules/`) or a trusted
+project's `.codex/`, not from a plugin.
+A plugin can carry an MCP server, but `register` sets `plugins = false`, and
+an agent with plugins off does not see a plugin's server; it does see one in
+`config.toml`. `mcp_tool_list_changed` is a Codex feature switch, which a
+plugin cannot set.
 
 - `args = ["mcp"]` names no folder: the agent opens its job with
   `start_job(image_folder=...)`, which opens the job `langslice-job FOLDER
@@ -55,13 +64,14 @@ mcp_tool_list_changed = true
   the job's `--image-resolution`, at most 2000 px), within the 2048 px Codex
   accepts. `init --viewer codex` sizes the pictures of the `langslice-job`
   command line only.
-
 ## What is inside
 
 | Part | For | What it is |
 | --- | --- | --- |
-| `skills/register-brain` (`$register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
-| `skills/abba` | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
+| `.codex-plugin/plugin.json` | Codex | the plugin manifest: name, version, the `skills/` folder |
+| `skills/setup` (`langslice:setup`) | main session, once | finds `langslice`, copies the agents and the rules into `~/.codex/`, adds the MCP server to `config.toml` |
+| `skills/register-brain` (`langslice:register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
+| `skills/abba` (`langslice:abba`) | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
 | `agents/register.toml` | registers one brain | LangSlice's MCP tools only; no shell |
 | `agents/register_scripting.toml` | registers one brain | the `langslice-job` CLI plus Python-library scripts in the job folder, workspace-write sandbox |
 | `rules/langslice.rules` | sandboxing | allows `langslice-job` commands outside the sandbox, forbids `curl` |

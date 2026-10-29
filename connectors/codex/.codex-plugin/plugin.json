@@ -1,0 +1,23 @@
+{
+  "name": "langslice",
+  "version": "0.1.0",
+  "description": "Register histology brain sections to a BrainGlobe atlas: skills for the main Codex session, among them one that sets up LangSlice's registration agents and MCP server.",
+  "author": { "name": "LangSlice" },
+  "homepage": "https://github.com/greenpolo/LangSlice",
+  "repository": "https://github.com/greenpolo/LangSlice",
+  "keywords": ["histology", "atlas", "registration", "brainglobe", "abba"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "LangSlice",
+    "shortDescription": "Register brain sections",
+    "longDescription": "Register a folder of histology section images to a BrainGlobe atlas. The main session prepares the job and checks the result; a registration agent registers the brain with LangSlice's tools.",
+    "developerName": "LangSlice",
+    "category": "Scientific Research",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/greenpolo/LangSlice",
+    "defaultPrompt": [
+      "Set up LangSlice",
+      "Register the brain sections in my image folder"
+    ]
+  }
+}

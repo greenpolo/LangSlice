@@ -15,9 +15,14 @@ LangSlice itself must be installed first (the conda environment of
 `environment.yml`) with `langslice` on the PATH of the shell that starts
 Claude Code (`langslice version` must work).
 
-```text
-/plugin marketplace add greenpolo/LangSlice
-/plugin install langslice@langslice
+In the Claude desktop app: Customize > Plugins > Add > Add marketplace >
+Add from a repository, enter `greenpolo/LangSlice`, then install the
+LangSlice plugin. On Windows, the desktop app's marketplace actions need Git
+for Windows. Or in a terminal:
+
+```bash
+claude plugin marketplace add greenpolo/LangSlice
+claude plugin install langslice@langslice
 ```
 
 The marketplace is `.claude-plugin/marketplace.json` at the repository root;
