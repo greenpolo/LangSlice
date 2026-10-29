@@ -79,7 +79,7 @@ def _warp(job: Job, state: Stack, record: Section,
     held = applied_deformation(state, record)
     if held is None:
         return None, None
-    loaded = job.deformations.get(record.id, held.key)
+    loaded = job.deformations.get(record.id, held.key or "")
     if loaded is None:
         raise ValueError("its applied deformation record cannot be read")
     return loaded, held.record or None

@@ -460,7 +460,7 @@ def _apply(
         )
         row["written"] = True
         written.append(record.id)
-        row["steps"] = len(record.deformation.steps)
+        row["steps"] = len(record.deformation.steps or ())
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
 

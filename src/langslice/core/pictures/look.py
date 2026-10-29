@@ -641,7 +641,8 @@ def _overlay_picture(
         to_section = np.linalg.inv(swap @ section_to_picture(panel) @ swap)
         warp_key = None
         if drawn:
-            warp_key = "" if record.deformation is None else record.deformation.key
+            applied = record.deformation
+            warp_key = "" if applied is None else applied.key or ""
         panels = [section_panel(record, placed.canvas.frame.section.size,
                                 pixel_to_render=to_section, bounds=panel.content_box,
                                 warp_key=warp_key),

@@ -422,6 +422,8 @@ class RecordStore:
         held = section.deformation
         if held is None or held.linear_key != linear_key(state, section):
             return None
+        if held.key is None:  # a kept-linear marker: no saved fit
+            return None
         return self.get(section.id, held.key)
 
 
@@ -496,7 +498,7 @@ def reference(
     """
     earlier: tuple[JsonObject, ...] = ()
     if previous is not None and step.get("start") == "current":
-        earlier = previous.steps
+        earlier = previous.steps or ()
     return DeformationRef(
         key=key, linear_key=linear, steps=(*earlier, step), record=str(folder),
         summary=numbers, inverse_source=record.inverse_source)

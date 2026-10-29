@@ -273,9 +273,10 @@ def affine_from_json(data: JsonObject) -> StoredAffine:
 
 #: The keys of a deformation reference.
 DEFORMATION_KEYS = (
-    "record", "key", "linear_key", "steps", "summary", "inverse_source",
-    "landmark_revision", "landmark_pairs", "landmark_folds",
-    "landmark_baseline_key", "landmark_baseline_steps",
+    "keep_linear", "record", "key", "linear_key", "steps", "summary",
+    "inverse_source", "landmark_revision", "landmark_pairs",
+    "landmark_folds", "landmark_holds", "landmark_baseline_key",
+    "landmark_baseline_steps",
 )  # fmt: skip
 
 
@@ -283,7 +284,8 @@ def deformation_to_json(deformation: DeformationRef) -> Written:
     """Return a deformation reference in its JSON form.
 
     A landmark warp writes its key first and its steps last, around its
-    landmark facts; every other fit writes its record folder first.
+    landmark facts; every other fit writes its record folder first, and a
+    kept-linear marker its note first.
 
     Parameters
     ----------
@@ -299,6 +301,7 @@ def deformation_to_json(deformation: DeformationRef) -> Written:
     if warp is None:
         form = set_items(
             [
+                ("keep_linear", deformation.kept_linear),
                 ("record", deformation.record),
                 ("key", deformation.key),
                 ("linear_key", deformation.linear_key),
@@ -318,6 +321,7 @@ def deformation_to_json(deformation: DeformationRef) -> Written:
                 ("landmark_revision", warp.revision),
                 ("landmark_pairs", warp.pairs),
                 ("landmark_folds", warp.folds),
+                ("landmark_holds", warp.holds),
             ]
         )
         # a warp built on the linear placement writes its baseline as null
@@ -343,6 +347,7 @@ def _landmark_warp(data: JsonObject) -> LandmarkWarp | None:
         folds=object_at(data, "landmark_folds"),
         baseline_key=_baseline_key(data),
         baseline_steps=objects_at(data, "landmark_baseline_steps"),
+        holds=optional_at(data, "landmark_holds", list_at),
     )
 
 
@@ -359,14 +364,22 @@ def deformation_from_json(data: JsonObject) -> DeformationRef:
     DeformationRef
         The reference.
     """
+    kept_linear = optional_at(data, "keep_linear", text_at)
+    key = optional_at(data, "key", text_at)
+    steps = optional_at(data, "steps", objects_at)
+    if kept_linear is None:
+        # every fit's reference names its saved fit and the steps that made it
+        key = text_at(data, "key")
+        steps = objects_at(data, "steps")
     return DeformationRef(
-        key=text_at(data, "key"),
+        key=key,
         linear_key=text_at(data, "linear_key"),
-        steps=objects_at(data, "steps"),
+        steps=steps,
         record=optional_at(data, "record", text_at),
         summary=optional_at(data, "summary", object_at),
         inverse_source=optional_at(data, "inverse_source", text_at),
         landmark=_landmark_warp(data),
+        kept_linear=kept_linear,
         extra=other_keys(data, DEFORMATION_KEYS),
     )
 

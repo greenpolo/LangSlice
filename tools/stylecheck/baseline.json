@@ -8284,7 +8284,7 @@
 {"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_images_for", "count": 3},
 {"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_mask_words", "count": 4},
 {"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_options", "count": 3},
-{"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_overlay_picture", "count": 22},
+{"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_overlay_picture", "count": 21},
 {"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_positioning", "count": 10},
 {"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_positioning.look_of", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/core/pictures/look.py", "symbol": "_recipe", "count": 2},

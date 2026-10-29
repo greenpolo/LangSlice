@@ -283,7 +283,9 @@ the angles in a caption (empty for the flat plane).
   `StoredAffine` (`affine.py`: `params`, the knobs `PhysicalAffine`,
   `Calibration`, `FitRegions`), `deformation` a `DeformationRef`
   (`deformation.py`: the saved fit's folder and key, its `linear_key`,
-  steps, summary; `LandmarkWarp` for a landmark warp), `image_correction` a
+  steps, summary; `LandmarkWarp` for a landmark warp; `kept_linear` and no
+  key or steps for a format-3 folder's `keep_linear` marker, which names no
+  saved fit), `image_correction` a
   `BorderTrace` (`trace.py`), `landmarks` (`landmarks.py`: `Landmarks`,
   `Pair`, `Endpoint`; None before the first pair), and `images` / `masks` /
   `layers` (`images.py`: `ImageRef`, `MaskRef`, `LayerRef`). Section and

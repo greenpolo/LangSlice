@@ -643,7 +643,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             baseline_key = applied_warp.baseline_key
             baseline_steps = applied_warp.baseline_steps
         elif held is not None:
-            baseline_key, baseline_steps = held.key, held.steps
+            baseline_key, baseline_steps = held.key, held.steps or ()
         size = grid.image.size
         source = (
             geometry.transform(

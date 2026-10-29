@@ -154,7 +154,7 @@ def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
         deformation = None
     else:
         deformation = {"kind": "residual", "record": held.record,
-                       "key": held.key, "steps": to_jsonable(held.steps),
+                       "key": held.key, "steps": to_jsonable(held.steps or ()),
                        "inverse_source": held.inverse_source}
     position = record.position_mm
     affine: dict[str, Any] | None = None
