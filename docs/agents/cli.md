@@ -255,6 +255,6 @@ connector:
 
 | Role | Tools |
 |---|---|
-| `register` | LangSlice's MCP tools only, no shell. The Claude Code and Antigravity plugins ship the MCP server; for Codex it goes in the session's `config.toml` with `[features] mcp_tool_list_changed = true`, so the job's tools appear after `start_job`. The server holds one job at a time: one `register` per session |
+| `register` | LangSlice's MCP tools only, no shell. The Claude Code and Antigravity plugins ship the MCP server; for Codex the plugin's `setup` skill writes it into Codex's `config.toml` with `[features] mcp_tool_list_changed = true`, so the job's tools appear after `start_job`. The server holds one job at a time: one `register` per session |
 | `register-scripting` (`register_scripting` in Codex) | a shell, `langslice-job` and the [Python library](../developers/library.md) |
 

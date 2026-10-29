@@ -58,7 +58,7 @@ Terminal after the reopen, with `(base)` at the start of the line.
 2. Click the green **Code** button, then **Download ZIP**.
 3. Unzip the file. You get a folder named `LangSlice-main`.
 4. Move that folder somewhere it can stay, such as your **Documents**
-   folder. Later steps copy files from it.
+   folder. Later steps use it.
 
 :::{admonition} Screenshot to come
 The GitHub page with the **Code** menu open and **Download ZIP** marked.
@@ -111,35 +111,85 @@ langslice 0.1.0
 ```
 
 Run `conda activate langslice` each time you open a new terminal for
-LangSlice. Your AI app does not need it; the next page shows how the app
-finds LangSlice.
+LangSlice. Your AI app cannot do that, so the next step lets it find
+LangSlice without it.
 
 :::{admonition} Screenshot to come
 Miniforge Prompt (Windows) and Terminal (macOS) after `langslice version`,
 showing `(langslice)` and `langslice 0.1.0`.
 :::
 
-## Step 6: Note where LangSlice is installed
+## Step 6: Let your AI app find LangSlice
 
-Connecting an AI app needs the full location of the `langslice` program. With
-the environment active, run:
+Your AI app starts LangSlice by its name, `langslice`. So far that name works
+only in a terminal where the LangSlice environment is active. This step makes
+it work everywhere on your computer, including in the app.
 
-On Windows:
+### Windows
+
+1. In Miniforge Prompt, with the LangSlice environment active, run:
+
+   ```bat
+   where langslice
+   ```
+
+   It prints one line, for example
+   `C:\Users\you\miniforge3\envs\langslice\Scripts\langslice.exe`.
+2. Copy that line without `\langslice.exe` at its end, for example
+   `C:\Users\you\miniforge3\envs\langslice\Scripts`.
+3. Open the Start menu, type `environment variables`, and choose **Edit
+   environment variables for your account**.
+4. Under **User variables**, select **Path** and click **Edit**.
+5. Click **New**, paste the folder from item 2, and click **OK** twice.
+
+:::{admonition} Screenshot to come
+The **Edit environment variable** window with the LangSlice `Scripts` folder
+added.
+:::
+
+### macOS
+
+In Terminal, run:
 
 ```bash
-where langslice
+echo 'conda activate langslice' >> ~/.zshrc
 ```
 
-On macOS and Linux:
+### Linux
+
+In a terminal, run:
 
 ```bash
-which langslice
+echo 'conda activate langslice' >> ~/.bashrc
 ```
 
-It prints one line, for example
-`C:\Users\you\miniforge3\envs\langslice\Scripts\langslice.exe` on Windows or
-`/Users/you/miniforge3/envs/langslice/bin/langslice` on macOS. Keep this
-terminal open, or copy the line somewhere: you need it on the next page.
+On macOS and Linux, every new terminal now starts in the LangSlice
+environment, and apps read the same setting when they start.
+
+### Check it
+
+Open a new terminal: **Command Prompt** on Windows (search for it in the Start
+menu), **Terminal** on macOS and Linux. Without running
+`conda activate langslice`, run:
+
+```bash
+langslice version
+```
+
+It prints `langslice 0.1.0`. If your AI app was already open, quit it
+completely and open it again, so it picks up the change.
+
+<details>
+<summary>Under the hood: how the apps look for LangSlice</summary>
+
+Claude Desktop and Antigravity start the command `langslice mcp` by name, and
+look for it in the folders listed in the `PATH` setting. On macOS and Linux,
+Claude Desktop reads `PATH` from the same startup settings a new terminal
+uses, `~/.zshrc` or `~/.bashrc` among them. On Windows it reads your user and
+system environment variables. Codex's setup looks up the full location of
+`langslice` once and writes it into Codex's settings.
+
+</details>
 
 ## The atlas
 
