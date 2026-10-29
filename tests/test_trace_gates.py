@@ -10,11 +10,11 @@ from pathlib import Path
 import pytest
 
 from langslice.core.fits import frame as handoff
-from langslice.core.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from langslice.core.stack.stack import StackState
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
 from langslice.job.job import apply_host_inputs
+from langslice.job.settings.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool

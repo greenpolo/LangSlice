@@ -34,7 +34,6 @@ from langslice.core.geometry.affine import (
     denormalized_affine,
     normalized_affine,
 )
-from langslice.core.needs import render
 from langslice.core.pictures.canvas import canvas_geometry
 from langslice.core.sections.renders import (
     PREVIEW_LONG_EDGE,
@@ -343,7 +342,7 @@ def fit_elastix(
                              section_weights=section_weights)
     except RegionTooSmall as error:
         return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
-                "message": render(str(error), ctx.spec.switched_off)}
+                "message": str(error)}
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
     except Exception as exc:

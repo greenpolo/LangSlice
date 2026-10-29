@@ -9,11 +9,11 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 
 #: The atlas of :func:`stack`: 20 slices, 1 mm each (positions 0-19 mm).

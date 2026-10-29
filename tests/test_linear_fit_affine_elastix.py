@@ -15,11 +15,11 @@ from PIL import Image
 from langslice.core.fits.deformable import engines
 from langslice.core.geometry.affine import decompose_affine, normalized_affine
 from langslice.core.pictures.canvas import canvas_geometry
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import SECTION_SIZE, TH, SyntheticAtlas
 from tests.linear_tool_helpers import tool_named as _tool
 

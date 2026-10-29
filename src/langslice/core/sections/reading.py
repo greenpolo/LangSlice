@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -252,7 +253,7 @@ def _page_channel(page: np.ndarray) -> np.ndarray:
 
 
 def host_preprocess_settings(
-    settings: dict[str, object] | None, n_pages: int
+    settings: Mapping[str, object] | None, n_pages: int
 ) -> dict[str, object]:
     """Validated host preprocessing settings for an image of *n_pages* pages.
 
@@ -332,7 +333,7 @@ def _blend_channels(
 
 
 def host_preprocess(
-    pages: list[np.ndarray], settings: dict[str, object] | None = None
+    pages: list[np.ndarray], settings: Mapping[str, object] | None = None
 ) -> Image.Image:
     """The one grayscale image the agent is shown, from a host's exported pages.
 

@@ -9,10 +9,10 @@ from PIL import Image
 from langslice.core.fits.frame import prepare_linear_registration
 from langslice.core.geometry.affine import normalized_affine
 from langslice.core.pictures import canvas
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.doors.agent.engine import EngineContext
+from langslice.job.settings.spec import JobSpec
 
 
 def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: bool = True):
@@ -25,7 +25,8 @@ def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: boo
         inputs={"pixel_size_um": 10.0} if known else {},
     )
     context = EngineContext(
-        spec=spec, image_folder=str(tmp_path), job_folder=str(tmp_path / "langslice"),
+        settings=spec.image_settings(), spec=spec, image_folder=str(tmp_path),
+        job_folder=str(tmp_path / "langslice"),
         results_path=str(tmp_path / "result.json"), model="unused", atlas_loader=lambda _: object(),
     )
     labels = np.zeros((70, 90), dtype=np.int32)

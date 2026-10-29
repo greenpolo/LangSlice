@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core.spec import JobSpec
 from langslice.job import recent
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from tests.test_linear_engine import _ctx, _make_stack
 
 

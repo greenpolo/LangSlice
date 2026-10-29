@@ -61,6 +61,7 @@ from langslice.core.pictures.captions import (
     view_angles_label,
 )
 from langslice.core.pictures.drawn import annotate, note
+from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.pictures.options import (
     DEFAULT_ATLAS_OPACITY,
     DEFAULT_BORDER_THICKNESS,
@@ -88,7 +89,6 @@ from langslice.core.sections.native import framed_window
 from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.stack.section import Angles, SliceState
 from langslice.core.stack.stack import StackState
-from langslice.core.toolset import LOOK_MODES
 from langslice.core.workspace import Workspace
 
 #: look's modes, in the order the docs list them.
@@ -393,7 +393,7 @@ def image_text(ws: Workspace, record: SliceState, name: str) -> str:
     if images_.kind_of(ws, record, name) == images_.RAW:
         return "raw channel, as the file holds it"
     entry = images_.entry_of(record, name) or {}
-    held = dict(entry.get("source") or images_.opening_source(ws.spec))
+    held = dict(entry.get("source") or images_.opening_source(ws.settings))
     if "recipe" in held:
         return images_.recipe_words(held["recipe"])
     if "script" in held:

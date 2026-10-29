@@ -56,7 +56,7 @@ FUNCTION_PATTERN = re.compile(r"_?[a-z][a-z0-9]*(?:_[a-z0-9]+)+")
 MIN_CLASS_LETTERS = 4
 
 #: The module that lists the tools, one ``ToolDef`` call per tool.
-TOOLSET_MODULE = "langslice.core.toolset"
+TOOLSET_MODULE = "langslice.job.settings.tool_table"
 
 #: The call that declares one tool, its name the first argument.
 TOOL_DECLARATION = "ToolDef"

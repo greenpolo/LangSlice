@@ -61,8 +61,8 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     pytest.importorskip("fireants")
     import langslice
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
+    from langslice.job.settings.spec import NonlinearSpec
 
     root = tmp_path_factory.mktemp("formats")
     patch = pytest.MonkeyPatch()
@@ -431,8 +431,8 @@ def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """The shared stack with no pixel size anywhere (no host input, the PNGs
     carry none)."""
     import langslice
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
+    from langslice.job.settings.spec import NonlinearSpec
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     folder = tmp_path / "stack"

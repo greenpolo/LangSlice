@@ -18,9 +18,9 @@ import pytest
 import tifffile
 from scipy import ndimage
 
-from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.commands.linear import spec_from_args
 from langslice.doors.commands.parser import build_parser
+from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,

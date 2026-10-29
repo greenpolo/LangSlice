@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 #: What to do about a code (the envelope's ``error.fix``), written with what
-#: it needs (:mod:`langslice.core.needs`); ``{job}`` is the job folder,
+#: it needs (:mod:`langslice.job.settings.needs`); ``{job}`` is the job folder,
 #: ``{verb}`` the verb.
 FIXES: dict[str, str] = {
     "UNKNOWN_VERB": "List the verbs with `langslice-job ops`.",

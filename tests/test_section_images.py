@@ -21,9 +21,9 @@ from langslice.core.sections.reading import (
     prepare_image_for_vlm,
 )
 from langslice.core.sections.renders import render_slice
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import FORMAT_KEY, STATE_FORMAT_VERSION
 from tests.deformable_synthetic import SyntheticAtlas
 
@@ -202,14 +202,14 @@ def test_no_image_moves_the_geometry(tmp_path: Path, atlas):
 
 def test_the_status_summary_names_each_image_and_where_it_differs(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
-    summary = images.summary(job.state, ctx.spec)
+    summary = images.summary(job.state, ctx.settings)
     assert summary == {"preprocessed": {"weights": "auto", "clahe_clip": 4.0, "clahe_tiles": 8,
                                         "made": "when the job opened"}}
     record = job.state.by_id("s1.png")
     assert record is not None
     images.write_image(job.layout, record, "hema", np.zeros((120, 160), np.uint8),
                        {"script": "colour deconvolution"})
-    held = images.summary(job.state, ctx.spec)["hema"]
+    held = images.summary(job.state, ctx.settings)["hema"]
     assert held == {"script": "colour deconvolution", "except": ["s0.png"]}
 
 

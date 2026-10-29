@@ -236,34 +236,22 @@ _SHARED_FRAMES: dict[str, tuple[tuple[str, str], tuple[Any, ...], Any, SectionFr
 def _frame_key(state: StackState, workspace: Workspace, record: SliceState) -> tuple[Any, ...]:
     """Everything a section's frame depends on within one workspace."""
     path = workspace.image_path(record.id)
-    spec = workspace.spec
+    settings = workspace.settings
     return (
         record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
         float(record.position_mm),  # type: ignore[arg-type]
         state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
         stored_params(record),
-        json.dumps((spec.inputs or {}).get("pixel_size_um"), default=str),
-        json.dumps(spec.host_preprocessing, sort_keys=True, default=str),
+        json.dumps(settings.supplied_pixel_size, default=str),
+        json.dumps(settings.host_preprocessing, sort_keys=True, default=str),
     )
-
-
-#: :func:`_scope`'s spec text per spec object (id -> (weak reference, text)).
-_SPEC_TEXTS: dict[int, tuple[Any, str]] = {}
 
 
 def _scope(workspace: Workspace) -> tuple[str, str]:
     """What a frame depends on beyond its key: the image folder and the
-    whole job spec."""
-    import weakref
-
-    spec = workspace.spec
-    held = _SPEC_TEXTS.get(id(spec))
-    if held is None or held[0]() is not spec:
-        for key in [key for key, (ref, _text) in _SPEC_TEXTS.items() if ref() is None]:
-            del _SPEC_TEXTS[key]
-        held = (weakref.ref(spec), json.dumps(spec.to_dict(), sort_keys=True, default=str))
-        _SPEC_TEXTS[id(spec)] = held
-    return (os.path.abspath(workspace.image_folder), held[1])
+    whole of the job's settings."""
+    folder = os.path.abspath(workspace.image_folder)
+    return (folder, workspace.settings.settings_text)
 
 
 def share_frames(state: StackState, workspace: Workspace) -> int:
@@ -306,7 +294,8 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
     problem = placement_problem(state, record)
     if problem is not None:
         raise ValueError(f"{record.id}: {problem}")
-    if state.atlas != workspace.spec.atlas or state.plane != workspace.spec.plane:
+    settings = workspace.settings
+    if state.atlas != settings.atlas or state.plane != settings.plane:
         raise ValueError("State and workspace disagree about the atlas or plane")
     key = _frame_key(state, workspace, record)
     cache = workspace.frame_cache
@@ -352,7 +341,8 @@ def render_sizes(workspace: Workspace, section_id: str) -> RenderSizes:
     if cached is not None:
         working, factor = (int(cached[0].size[0]), int(cached[0].size[1])), float(cached[1])
     else:
-        found = working_size(path, pages=workspace.spec.host_preprocessing is not None)
+        pages = workspace.settings.host_preprocessing is not None
+        found = working_size(path, pages=pages)
         if found is None:
             source, factor = workspace.working_source(section_id)
             working = (int(source.size[0]), int(source.size[1]))

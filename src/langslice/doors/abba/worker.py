@@ -16,11 +16,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from langslice.core.spec import JobSpec
     from langslice.doors.abba.contract import (
         PreprocessPreviewRequest,
         PreprocessPreviewResult,
     )
+    from langslice.job.settings.spec import JobSpec
 
 from langslice.doors.abba.checkpoints import checkpoint_callback
 
@@ -121,7 +121,7 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     from PIL import Image
 
     from langslice.core.sections.discovery import discover_slices
-    from langslice.core.spec import JobSpec
+    from langslice.job.settings.spec import JobSpec
 
     unknown = sorted(set(params) - set(REQUEST_KEYS))
     if unknown:

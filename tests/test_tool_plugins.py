@@ -9,6 +9,7 @@ door's wrappers, the operations behind the context's writes.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import json
 import sys
@@ -20,11 +21,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core import plugins as core_plugins
 from langslice.core.plugins import Layer, PluginError
-from langslice.core.spec import JobSpec, TransformSpec
-from langslice.core.toolset import tools_for, valid_names
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job import plugins as core_plugins
+from langslice.job.settings.spec import JobSpec, TransformSpec
+from langslice.job.settings.tool_table import tools_for, valid_names
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.render import FULL, Variant, declaration
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
@@ -656,7 +657,7 @@ NONLINEAR = {"tasks": ["position", "transform", "nonlinear"]}
 def warp_box(images: Path, *plugins: str, transforms: tuple[str, ...] = ("s0.png", "s1.png"),
              **spec: Any):
     """A box whose stack can take deformations; *transforms* get an in-plane shift."""
-    from langslice.core.spec import NonlinearSpec
+    from langslice.job.settings.spec import NonlinearSpec
 
     state, ctx, box = box_of(images, EXAMPLE, *plugins, nonlinear=NonlinearSpec(provider="none"),
                              **{**NONLINEAR, **spec})
@@ -1608,7 +1609,7 @@ def test_a_tool_is_offered_only_on_its_atlases_and_planes_and_no_text_names_it(
     assert names & set(enabled(spec)) == expected
     assert names & set(tools_for(spec)) == names  # defined everywhere, on only where offered
     assert set(spec.switched_off) >= names - expected
-    from langslice.core.needs import render
+    from langslice.job.settings.needs import render
 
     for name in expected:
         text = declaration(name, _variant(spec)).doc
@@ -1731,7 +1732,7 @@ def test_raw_section_raster_is_the_oriented_file_not_the_preprocessed_blend(make
     delivered = rng.integers(0, 120, size=(30, 40, 3), dtype=np.uint8)  # dim, like a stain
     Image.fromarray(delivered).save(images / "s0.png")
     state, ctx, box = box_of(images, ref, n=0)
-    ctx.spec.preprocess = "auto"
+    ctx.settings = dataclasses.replace(ctx.settings, preprocess="auto")
     record = state.by_id("s0.png")
     for rotation, flip in ((0, False), (0, True), (90, True)):
         record.rotation_deg, record.flip = rotation, flip
@@ -1753,7 +1754,7 @@ def test_raw_section_raster_of_one_channel_is_that_page_as_gray(make, images: Pa
     pages = rng.integers(0, 255, size=(2, 30, 40), dtype=np.uint8)
     tifffile.imwrite(images / "s0.tif", pages)
     state, ctx, box = box_of(images, ref, n=0, inputs={"channel_names": ["DAPI", "GFP"]})
-    ctx.spec.preprocess = "auto"
+    ctx.settings = dataclasses.replace(ctx.settings, preprocess="auto")
     record = state.by_id("s0.tif")
     record.flip = True
     ctx.source_cache.clear()

@@ -30,11 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from langslice.core.needs import render
 from langslice.core.pictures.look import RENDERER as LOOK_RENDERER
-from langslice.core.toolset import LOOK_MODES
+from langslice.core.pictures.modes import LOOK_MODES
 from langslice.job import browse
 from langslice.job.browse import PathMissing, PathRefused
+from langslice.job.settings.needs import render
 from langslice.tools.refusal import Refused
 
 if TYPE_CHECKING:

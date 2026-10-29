@@ -18,9 +18,9 @@ from langslice.core.fits.trace.lines import (
     smooth_border_overlay,
 )
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
+from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
 
 
@@ -41,7 +41,8 @@ def case(tmp_path, monkeypatch):
     original.save(tmp_path / "section.png")
     spec = JobSpec(image_folder=str(tmp_path), atlas="test", preprocess="none")
     ctx = SimpleNamespace(
-        spec=spec, atlas=object(), image_path=lambda _: str(tmp_path / "section.png"),
+        settings=spec.image_settings(), atlas=object(),
+        image_path=lambda _: str(tmp_path / "section.png"),
     )
     record = SliceState(
         id="section.png", index_original=0, index_corrected=0, position_mm=4,
@@ -168,7 +169,9 @@ def test_another_image_provider_makes_a_trace_stale(case):
     state, ctx, record, *_ = case
     first = tool.correction_fingerprint(state, ctx, record.id)
     assert tool.correction_fingerprint(state, ctx, record.id) == first
-    ctx.spec.nonlinear.provider = "gemini-api"
+    spec = JobSpec(image_folder=".", atlas="test", preprocess="none",
+                   nonlinear=NonlinearSpec(provider="gemini-api"))
+    ctx.settings = spec.image_settings()
     assert tool.correction_fingerprint(state, ctx, record.id) != first
 
 

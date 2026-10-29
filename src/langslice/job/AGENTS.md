@@ -6,9 +6,98 @@ the other.
 
 The job layer: the `Job` (`job.py`: the state, undo, the checkpoint,
 ingest and the host's inputs; `gates.py`: the submit gates;
-`state_file.py`: `state.json`), where its files live and how they are
-named, indexed and filled with pictures, the public files rendered from
-the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
+`state_file.py`: `state.json`), the job's settings (`settings/`), the
+registry of loaded tool plugins (`plugins.py`), where its files live and how
+they are named, indexed and filled with pictures, the public files rendered
+from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
+
+## The job's settings (`settings/`)
+
+- `schema.py`: one row per setting (`SETTINGS`, 44 rows of `Setting`): its
+  name (`atlas`, a section's `position.thickness_um`, a supplied answer's
+  `inputs.positions`), its type and the job's default, the doors that may
+  set it (`run`, `init`, `mcp`, `library`, `abba`), its `job.json` key, the
+  library's keyword, its command-line flags in the commands' order, the
+  values it takes when they are a fixed list, and a door's own default where
+  it is not the job's (`door_defaults`, in that door's terms). It also holds
+  the form's lists (`ALL_TASKS`, `DEFAULT_TASKS`, `PLANES`,
+  `IMAGE_RESOLUTIONS`, `MAX_PARALLEL_TRANSFORMS`, the commands' default
+  tasks `CLI_TASKS` and `REGISTRATION_TASKS`) and imports nothing of
+  LangSlice. Read by the commands' flags (`doors/commands/flags.py` adds
+  them in table order with their help text), and so by `langslice-job
+  schema init`; by `JobSpec.from_dict` (the keys `job.json` takes,
+  `spec_keys`); by the LangSlice window's prompt generator (each flag's
+  spelling, `flag_spellings`). `create_job`'s keywords are checked against
+  it by `tests/test_settings_schema.py`, which also pins the table to
+  `JobSpec`'s fields, types and defaults.
+- `spec.py`: `JobSpec`, the filled form, and its task sections
+  (`PositionSpec`, `TransformSpec`, `NonlinearSpec`), validated when made
+  (`supplied_angles`, `supplied_pixel_sizes`, the disabled list through
+  `tool_table.refusal`, the plugins by loading them). `image_settings()`
+  makes the core's `ImageSettings` (`core/workspace.py`) from it;
+  `missing_transform()` words what a fit says of a section with no written
+  transform (`NO_TRANSFORM`, or `NO_TRANSFORM_LINEAR_OFF` rendered for the
+  disabled list when Linear is off). Protocol metadata:
+  `PositionSpec.thickness_um` and `interval_um`, and the state's millimetre
+  equivalents, are optional (`None` when not supplied); known values are
+  positive integers in micrometres, and strict spacing requires an
+  interval.
+- `tool_table.py` and `needs.py`: what a job can switch off (and, through
+  `ToolDef.writes`, what its frozen properties switch off: `off_names`).
+  `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
+  group, `when`, scripting / image-model / hidden, `options`, `essential`,
+  `needs`; `tools/catalog.py` binds each to its operation), the names a
+  `JobSpec.disabled` takes (`valid_names`: a tool, or `tool:option`;
+  `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
+  cannot work (an unknown or essential name, every `look` mode off, a task
+  with every tool that writes its answer off, a tool without the pictures
+  it needs), which the spec raises as a `ValueError` when it is made. The
+  kinds and groups and the `look` modes are the core's plain names
+  (`core/tool_kinds.py`, `core/pictures/modes.py`). `needs.py`:
+  `render(text, off)`, text written with what it needs (`[[?NAMES
+  text||other]]`, `[[#NAMES=item||...]]` lists), dropped or swapped for the
+  disabled list; with nothing off a text renders to itself without its
+  marks, byte for byte. `tool_table.tools_for(spec)` is the per-spec view
+  (`TOOLS` plus the tools of `spec.plugins`; `TOOLS` itself without
+  plugins), which `valid_names(spec)`, `check_names`, `refusal(spec)`,
+  `off_names`, `catalog(spec)` read, so a job's `disabled` list can name a
+  plugin tool.
+- `frozen.py`: what the agent may not change (`JobSpec.frozen`). The five
+  properties a section has (`PROPERTIES`: `position`, `angles`,
+  `orientation` (flip and quarter turn together), `affine`, `deformation`),
+  the `"*"` key for every section, `clean` (validates and canonicalizes a
+  freeze), `for_section` / `everywhere` / `sections_of` / `groups`,
+  `TASK_PROPERTIES` (what each task writes), `derived` (what a task that is
+  off freezes on every section), the model-facing `statement` (sections
+  sharing a freeze are one clause: every section, their filenames, or their
+  count) and `message` (a refusal's sentence), and the `FROZEN` code. A
+  frozen property keeps the value `inputs` supplies, else its "none": the
+  flat plane, no flip and no turn, the host's identity transform, no
+  deformation; a position has none. `JobSpec.has(task)` is False for a task
+  whose properties are all frozen on every section, `JobSpec.frozen_for(id)`
+  includes what a task that is off supplies, and `JobSpec.switched_off` is
+  `disabled` plus the tools that write (`ToolDef.writes`) only properties
+  frozen on every section and the mirror under a frozen orientation
+  (`tool_table.off_names`): every door and text renders by it.
+- `labels.py`: a short label for people per tool and `tool:option`
+  (`TOOL_LABELS`, `label`), per task (`TASK_LABELS`, `TASK_ABOUT`) and per
+  tool group (`GROUP_LABELS`, with the group's task), for the LangSlice
+  window's prompt generator (`hosts/gui/generator.py`, its only importer).
+  Never model-facing; `tests/test_gui_generator.py` checks that every tool
+  and option has one and no other name does, and that none appears in the
+  pinned model-facing text. A new tool or option is a row here too.
+
+`plugins.py`: the job's part of tool plugins (`docs/developers/plugins.md`;
+the types are `core/plugins.py`'s). `check_tool` (the one-line reasons a
+tool declaration is refused), `tool_def` (a plugin tool as a `ToolDef`:
+`when` is its task being on and its `atlases` / `planes` fitting the job;
+`not_offered` names the tools they exclude, which `tool_table.off_names`
+counts as switched off so no text names them) and the registry of loaded
+plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
+`set_loader` is how `doors/plugins` registers the code that imports a
+plugin: nothing here imports one by name). `JobSpec.plugins` /
+`plugin_config` are validated by loading (`tool_table.tools_for`), so a bad
+plugin is refused when the spec is made.
 
 ## The layer rule
 

@@ -82,7 +82,7 @@ def test_tool_events_name_the_pictures_and_whether_the_call_failed(tmp_path: Pat
 def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
-    from langslice.core.spec import NonlinearSpec
+    from langslice.job.settings.spec import NonlinearSpec
     from langslice.providers.oauth.transport import _json_schema_dict
 
     _, _, box = _box(tmp_path, tasks=["position", "transform", "nonlinear"],

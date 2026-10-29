@@ -16,7 +16,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from langslice.core.spec import JobSpec
 from langslice.doors import credentials as provider_setup
 from langslice.doors.abba.worker import prepare_linear
 from langslice.job import index
@@ -27,6 +26,7 @@ from langslice.job.layout import (
     read_job_file,
     write_job_file,
 )
+from langslice.job.settings.spec import JobSpec
 
 #: The saved job's own format inside ``job.json`` (``host``); a newer one is
 #: refused.

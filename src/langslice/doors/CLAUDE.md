@@ -70,7 +70,7 @@ process forks for it, `agent_cli/warm.py`).
   `interactive_transform`'s sections lose `flip` and `rotate_quarter`
   (`SectionTransformNoFlip`, `NoRotate`, `NoOrientation`),
   and every passage of a description written with `[[?needs ...]]` marks
-  (`core/needs.py`) is dropped or swapped; `look`'s `resolution`
+  (`job/settings/needs.py`) is dropped or swapped; `look`'s `resolution`
   only where the caller sizes pictures; the change tools' `view`
   (`VIEW_TOOLS`) not offered where the host forces their pictures on
   (`JobSpec.force_view`); `position_sections`' `sections` only with the
@@ -97,7 +97,7 @@ process forks for it, `agent_cli/warm.py`).
   without a job (LangSlice's coronal base prompt for the OpenAI models).
 - `plugins/` — tool plugins (`docs/developers/plugins.md`); `langslice/plugin_api.py`
   re-exports its names. `loader.py`: `load(ref, config)` imports
-  `module:factory`, calls it, checks every tool (`core.plugins.check_tool`),
+  `module:factory`, calls it, checks every tool (`job.plugins.check_tool`),
   builds the provenance (module, factory, versions, source
   SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
   at import); `as_refs` (the library's objects: factory functions by
@@ -171,9 +171,10 @@ process forks for it, `agent_cli/warm.py`).
   `read_notes(layout)`: the user's notes, `job.json` `notes` (written by
   ABBA's Claude mode and `job FOLDER init --notes`), read by every door. `image_model_state(spec, connected=)`: the
   image model as the CLI's `status` and `init` report it.
-- `jobs.py` — opening a job without the agent: `JobContext` (the workspace
-  plus the job folder and results path; the driver's `EngineContext` adds
-  the model), `find(path)` (a job folder, or the image folder beside one;
+- `jobs.py` — opening a job without the agent: `JobContext` (the workspace,
+  its `ImageSettings` made by `JobSpec.image_settings()`, plus the `JobSpec`,
+  the job folder and results path; the driver's `EngineContext` adds the
+  model), `find(path)` (a job folder, or the image folder beside one;
   `NoJob`), `read_spec` (`job.json`'s spec, as a resume), `open_folder(path,
   persist=, door=)` (`Job.load`: nothing rewritten; the card brought up to
   date; the model keys loaded by `credentials.load_credentials`),
@@ -385,15 +386,20 @@ process forks for it, `agent_cli/warm.py`).
   commands, one module per group; `langslice/cli.py` keeps the entry point
   `langslice.cli:main`, `agent_cli/main.py` is `langslice-job`'s.
   `commands/parser.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
-  commands, `session-end`, `login`, `version`), `linear.py` (`linear run` and the job flags every
-  stack-opening command shares: `add_linear_arguments` (`--disable
-  NAME[,NAME...]`: the job's `disabled` list), `build_linear_spec`,
-  `spec_from_args` (`--frozen JSON`: the job's `frozen`); `--tasks` defaults to `DEFAULT_TASKS`, or with
-  `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
-  of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
-  with a message; `linear run` alone also takes `--tool-plugin
-  MODULE:FACTORY` and `--tool-plugin-config REF=JSON`, `with_tool_plugins`,
-  and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
+  commands, `session-end`, `login`, `version`), `flags.py` (the job flags
+  every stack-opening command shares, added from the settings table
+  `job/settings/schema.py` in its order by `add_flags(parser, group)`: the
+  table gives each setting's spellings, default and choices, `FLAGS` each
+  flag's help text, argparse handling and group: `job` for every command,
+  `plugins` and `session` for `linear run`, `fresh` for `linear run` and
+  `init`, `init` for `init`), `linear.py` (`linear run`: `build_linear_spec`,
+  `spec_from_args` (`--disable NAME[,NAME...]`: the job's `disabled` list;
+  `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
+  `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
+  `--registration` with any of `REGISTRATION_CLASHES` is refused; a bad flag
+  value ends the command with a message; `linear run` alone also takes
+  `--tool-plugin MODULE:FACTORY` and `--tool-plugin-config REF=JSON`,
+  `with_tool_plugins`, and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
   process of its own, by command, never importing the host),
   `mcp.py` (`mcp`), and the agent CLI
   (`docs/agents/cli.md`), a command of its own so that allowing it allows
@@ -514,8 +520,9 @@ process forks for it, `agent_cli/warm.py`).
     `core.stack.status.with_uniform_rows`;
     concise: a reply with pictures keeps its description as `picture_note`,
     a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
-    parser `init_parser`: the job flags of `linear run`, `--notes`,
-    `--viewer`; `--registration`'s report under `result.registration`,
+    parser `init_parser`: the job flags of `linear run`, `--fresh`,
+    `--notes`, `--viewer` (`add_flags`, the viewers from
+    `core.pictures.opening.VIEWER_LIMITS`); `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or

@@ -145,7 +145,7 @@ def verbs_table(spec: Any = None) -> list[dict[str, Any]]:
     """Every verb: name, kind, group, one-line description, and
     ``long: true`` for a long verb. For the job *spec* of a folder that loads
     tool plugins, their tools follow the native ones."""
-    from langslice.core.toolset import TOOLS
+    from langslice.job.settings.tool_table import TOOLS
     from langslice.tools.catalog import verbs_for
     from langslice.tools.descriptions.render import Variant, summary
 

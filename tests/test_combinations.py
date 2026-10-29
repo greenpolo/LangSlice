@@ -39,8 +39,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.doors.agent_cli.main import main
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from tests.cli_child import install
 from tests.synthetic_stack import (
     ID0,

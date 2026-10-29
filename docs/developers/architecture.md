@@ -13,8 +13,8 @@ Import-linter enforces the boundaries without exceptions.
 
 | Package | Responsibility |
 |---|---|
-| `core` | The science and the stack's shapes: the stack and section state (`stack/`), geometry, atlas access, the section files and images (`sections/`), pictures, the registration methods and engines (`fits/`), maps; the job spec and the tool table |
-| `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports |
+| `core` | The science and the stack's shapes: the stack and section state (`stack/`), geometry, atlas access, the section files and images (`sections/`), pictures, the registration methods and engines (`fits/`), maps; of a job's settings it reads only the few the workspace carries (`ImageSettings`) |
+| `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports; the job's settings (`settings/`: the form `JobSpec`, the table of every setting, what is frozen, the tool table, the needs marks) and the registry of loaded plugins |
 | `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
 | `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command, the Python library and the worker contract |
 | `hosts` | JSON-lines service, ABBA launcher, viewer and log, the LangSlice window (`langslice gui`) |
@@ -28,18 +28,29 @@ and Codex setups.
 ## One job through every interface
 
 An interface creates a `JobSpec` or opens saved settings, then calls
-operations on a `Job`. `core/toolset.py` lists the tools, their options and
-what each needs, and `tools/catalog.py` binds them to the operations and
-decides tool availability; `tools/descriptions/render.py` supplies the common
-argument declarations. Tasks remove whole registration tools, a job's
-`disabled` list removes single tools and options, and viewing and image
-tools remain available otherwise. Model-facing text that names a tool or an
-option is written with what it needs (`core/needs.py`) and rendered for the
+operations on a `Job`. Every setting is one row of
+`job/settings/schema.py`: its name, type, default, command-line flags,
+library keyword, `job.json` key and the doors that may set it. The commands'
+flags are added from it (`doors/commands/flags.py` holds their help text),
+the agent CLI's `schema init` lists those flags, the `job.json` reader
+checks keys against it and the LangSlice window's prompt generator spells
+its flags from it. The job hands the core only the settings it reads, as
+an `ImageSettings` value on the workspace (atlas, plane, preprocessing, the
+host's pixel sizes and channel names, the picture level).
+
+`job/settings/tool_table.py` lists the tools, their options and what each
+needs, and `tools/catalog.py` binds them to the operations and decides tool
+availability; `tools/descriptions/render.py` supplies the common argument
+declarations. Tasks remove whole registration tools, a job's `disabled`
+list removes single tools and options, and viewing and image tools remain
+available otherwise. Model-facing text that names a tool or an option is
+written with what it needs (`job/settings/needs.py`) and rendered for the
 job. See [tools and options](../reference/tools.md).
 
 A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
-whose tools join the toolbox. `core/plugins.py` holds the plugin types and the
-registry of loaded plugins, which `core/toolset.py` (`tools_for(spec)`) and
+whose tools join the toolbox. `core/plugins.py` holds the plugin types and
+`job/plugins.py` the declaration checks and the registry of loaded plugins,
+which `job/settings/tool_table.py` (`tools_for(spec)`) and
 `tools/catalog.py` (`verbs_for(spec)`) merge with the native tables for that
 spec; `doors/plugins/` loads them, gives each handler a context that writes
 through the same operations, and builds their declarations, provenance and the

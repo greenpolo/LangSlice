@@ -41,7 +41,6 @@ from langslice.core.pictures.sizes import (
     MAX_IMAGES_PER_CALL,
     resolution_level,
 )
-from langslice.core.spec import JobSpec
 from langslice.core.stack.stack import StackState
 from langslice.doors.agent.live import LiveCallback, plain
 from langslice.doors.tools import (
@@ -54,6 +53,7 @@ from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE as VIEW_PICTURE_FILE
 from langslice.job.pictures import captured as captured_views
+from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
 from langslice.tools.arguments import argument_refusal
 from langslice.tools.catalog import enabled, verbs_for

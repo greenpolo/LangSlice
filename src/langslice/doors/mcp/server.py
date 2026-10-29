@@ -31,9 +31,7 @@ from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from langslice.core.pictures.opening import (
     CLAUDE_MAX_VIEW_EDGE,
 )
-from langslice.core.spec import JobSpec
 from langslice.core.stack.stack import StackState
-from langslice.core.toolset import refusal
 from langslice.doors.abba.checkpoints import checkpoint_callback
 from langslice.doors.abba.saved_jobs import load_job
 from langslice.doors.abba.worker import (
@@ -66,6 +64,8 @@ from langslice.doors.statement import (
 )
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
+from langslice.job.settings.tool_table import refusal
 from langslice.tools.catalog import VERBS
 
 logger = logging.getLogger(__name__)

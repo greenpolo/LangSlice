@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 
 from langslice.core.sections.masks import registration_digest
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools import masks as ops_masks
 from langslice.tools.stale import section_inputs
 from tests.deformable_synthetic import (

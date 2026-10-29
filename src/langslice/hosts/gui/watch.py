@@ -26,7 +26,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from langslice.core.toolset import TOOLS
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.layout import (
     EVENTS_FILE,
@@ -41,13 +40,15 @@ from langslice.job.layout import (
     VIEWS_INDEX,
     JobLayout,
 )
+from langslice.job.settings.tool_table import TOOLS
 
 #: How often a watched job's files are looked at, at most.
 POLL_S = 0.25
 #: A job whose files changed this recently is Running.
 RECENT_S = 30.0
-#: The tools whose call is no undo step (``core.toolset`` kind ``read``); any
-#: other (a write, a plugin tool, a tool of an older version) may be one.
+#: The tools whose call is no undo step (``job.settings.tool_table`` kind
+#: ``read``); any other (a write, a plugin tool, a tool of an older version)
+#: may be one.
 _READS = frozenset(name for name, tool in TOOLS.items() if tool.kind == "read")
 #: How many recent jobs the list holds.
 MAX_RECENT = 40

@@ -20,8 +20,8 @@ from langslice.core.pictures.opening import (
     CLAUDE_MAX_IMAGE_PATCHES,
     patches,
 )
-from langslice.core.spec import JobSpec
 from langslice.doors.mcp.server import build_server, initialization_options
+from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 
 #: ABBA's stack-wide angles as the connector always sends them (flat).
@@ -232,8 +232,8 @@ def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path:
 
 
 def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_path: Path):
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.mcp.server import open_job
+    from langslice.job.settings.spec import NonlinearSpec
 
     spec = JobSpec(image_folder=str(_folder(tmp_path)), preprocess="none",
                    tasks=["nonlinear"],

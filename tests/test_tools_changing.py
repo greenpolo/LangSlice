@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langslice.core.spec import PositionSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.settings.spec import PositionSpec
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.linear_tool_helpers import (
     ToolContext,

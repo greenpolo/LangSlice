@@ -8,10 +8,10 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.sections.renders import render_slice
-from langslice.core.spec import JobSpec
 from langslice.core.stack.status import status_rows
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

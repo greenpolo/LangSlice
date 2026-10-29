@@ -40,7 +40,6 @@ from langslice.core.maps.imported import (
 )
 from langslice.core.maps.section_maps import SWAP, render_sizes, section_frame
 from langslice.core.pictures.layers import atlas_facts
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
@@ -50,6 +49,7 @@ from langslice.job.imports import readers as imports
 from langslice.job.layout import JobLayout
 from langslice.job.public_files import registration_document
 from langslice.job.quint import job_export
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import CTX, STR, SyntheticAtlas
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
 
@@ -99,7 +99,8 @@ def make_workspace(folder: Path, atlas: Any, *, plane: str = "coronal",
     inputs = {} if pixel_size is None else {"pixel_size_um": pixel_size}
     spec = JobSpec(image_folder=str(folder), atlas=atlas.atlas_name, plane=plane,
                    inputs=inputs, preprocess="none")
-    return Workspace(spec=spec, image_folder=str(folder), atlas_loader=lambda _name: atlas)
+    return Workspace(settings=spec.image_settings(), image_folder=str(folder),
+                     atlas_loader=lambda _name: atlas)
 
 
 def params_for(workspace: Workspace, given: Given) -> list[float]:
@@ -121,8 +122,8 @@ def state_of(workspace: Workspace, sections: list[Given]) -> StackState:
                    cutting_angles_deg={"pitch": g.pitch_deg, "yaw": g.yaw_deg})
         for i, g in enumerate(sections)
     ]
-    return StackState(image_folder=workspace.image_folder, atlas=workspace.spec.atlas,
-                      plane=workspace.spec.plane, slices=records)
+    return StackState(image_folder=workspace.image_folder, atlas=workspace.settings.atlas,
+                      plane=workspace.settings.plane, slices=records)
 
 
 def pixel_map(workspace: Workspace, given: Given) -> np.ndarray:

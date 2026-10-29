@@ -10,10 +10,10 @@ from typing import Any
 import pytest
 
 import langslice
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.toolset import TOOLS
 from langslice.doors import jobs
 from langslice.job.gates import submit_errors
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.job.settings.tool_table import TOOLS
 from langslice.tools import deformable as ops_deformable
 from langslice.tools import positions, transforms
 from langslice.tools.catalog import enabled

@@ -15,15 +15,16 @@ import logging
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
 from langslice.core.fits.affine import physical_decomposition
 from langslice.core.fits.engine_log import engine_output, failure_message
-from langslice.core.frozen import FROZEN
 from langslice.core.geometry.affine import normalized_physical_affine
 from langslice.core.sections.damage import exclusions
+from langslice.job.settings.frozen import FROZEN
+from langslice.job.settings.needs import marked, render
 from langslice.tools.refusal import (
     Refused,
     check_frozen,
@@ -303,6 +304,11 @@ def _fit_elastix(
             outcome["message"] = failure_message(
                 str(outcome.get("message", "")), job.engine_log,
                 f"the Elastix affine of {record.id} failed")
+        else:
+            # reportAny: the fit's payload is a plain dict
+            text = str(cast(object, outcome.get("message", "")))
+            if marked(text):  # the message names another tool
+                outcome["message"] = render(text, job.spec.switched_off)
         rows.append(outcome)
         if outcome["status"] != "ok":
             continue

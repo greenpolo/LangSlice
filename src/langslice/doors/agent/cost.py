@@ -94,7 +94,7 @@ def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
     estimate can honestly be given, :func:`unavailable` with the reason
     (module text); ``ValueError`` only for malformed inputs.
     """
-    from langslice.core.spec import JobSpec
+    from langslice.job.settings.spec import JobSpec
 
     if n_slices < 1:
         raise ValueError("n_slices must be at least 1")

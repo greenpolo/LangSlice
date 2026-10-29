@@ -14,9 +14,9 @@ the comparison window's blue-grey picture panel); Nash designs the final one.
 The GUI is a separate process from every run (the built-in agent, an MCP
 server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
-imports the core (`core.stack.stack`, `core.stack.status`, `core.toolset`, `core.spec`,
-`job.settings.labels`, `core.atlas.details`) and the job
-layer (`job.layout` names, `job.state_file.current_state`, `job.history`,
+imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`)
+and the job layer (`job.settings.tool_table`, `job.settings.spec`,
+`job.settings.schema`, `job.settings.labels`, `job.layout` names, `job.state_file.current_state`, `job.history`,
 `job.registrations`), and for the Settings tab the doors' setup
 (`doors.credentials`: key presence, `save_api_key`, `login_oauth`) and the
 user's settings file (`doors.user_settings`). Nothing imports it but
@@ -74,7 +74,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   version does not read (another format) shows its raw `slices` fields with a
   note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
   depth after the call, capped at `UNDO_DEPTH`): a call that deepens it names
-  the new depth; at the cap a call of any tool but a read (`core.toolset` kind
+  the new depth; at the cap a call of any tool but a read (`job.settings.tool_table` kind
   `read`; a plugin's or an older version's tool counts as a write) drops the
   oldest name; `undo` / `redo` move names between the sides; a depth no event
   names is `Step n`. `status`:
@@ -104,7 +104,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `{"error"}`. PUT, DELETE, PATCH, HEAD: 405. The Settings code in `server.py`,
   `index.html` and `app.css` sits between `Settings tab` marker comments.
 - `generator.py` — the prompt generator's choices, `payload()` (`GET
-  generator`): `tools()` (`toolset.catalog()` without the scripting verbs,
+  generator`): `tools()` (`tool_table.catalog()` without the scripting verbs,
   each with its `tool_labels` label, its options' names and labels, and
   `runs_in`: the task choices, comma-joined, whose `JobSpec` has it by
   `ToolDef.when`), the tasks (label, sentence, default), the groups (label,
@@ -112,8 +112,10 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   section, `angles` / `orientation`, with their tasks) and `frozen_off` (what
   a freeze of each switches off, `JobSpec.switched_off`), the atlases
   (`core.atlas.details.descriptions()`, each with BrainGlobe's paragraph and
-  `species`: Mouse, Rat or Other by name) and `JobSpec`'s default atlas, the
-  planes.
+  `species`: Mouse, Rat or Other by name) and the default atlas, the
+  planes, and `flags`: each setting's flag as the settings table spells it
+  (`job.settings.schema.flag_spellings`, setting name -> flag), which the
+  page writes the command with.
 - `settings.py` — `Settings(login=)`: `state()` (each connection's presence
   word from `doors.credentials.connections`, never a key or token; the saved
   choices; `runs_in` `{saved, enabled, value}`; per connection `models`,
@@ -139,13 +141,13 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   thickness, interval, pixel size, the tasks when none is chosen) and one on
   bash quoting when a word is quoted, then a fenced `bash` block: the
   `langslice-job FOLDER init` command, one flag per line, only the fields
-  set (`--tasks`, `--atlas`, `--plane`, `--thickness`, `--interval`,
+  set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--thickness`, `--interval`,
   `--pixel-size-um`, `--disable` in table order: the tools of this run off
   whole, then the options off of tools still on, a name a kept property
   already switches off left out; `--frozen {"*": [...]}`, `--damaged`
   `{file: note}` from `file: note` lines, `--fact` for the cutting order,
   `--notes`). `problems` (no message while one stands) mirror
-  `toolset.refusal` on the form: the folder, whole micrometres, `look`
+  `tool_table.refusal` on the form: the folder, whole micrometres, `look`
   keeps a mode, each chosen task keeps a writer, each tool on keeps what it
   needs (one sentence per needed group). The form's DOM is built in the
   file; every text goes in by `textContent`.
@@ -169,7 +171,7 @@ fallback, undo labels and the cap, a path outside the folder, the job list,
 a truncated file; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
 `tests/test_gui_server.py` (token and Host, GET only, snapshot and pictures,
 refused paths), `tests/test_gui_generator.py` (the catalog-driven tools, a
-tool the toolset loses is not offered, every name labelled, no label in the
+tool the tool table loses is not offered, every name labelled, no label in the
 pinned model-facing text and `tool_labels` imported only here, the payload
 and its endpoint; under node, skipped without it: golden messages for a
 default and a filled form, read back by `init`'s parser into a `JobSpec`, a

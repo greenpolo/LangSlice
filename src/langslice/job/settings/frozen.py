@@ -19,10 +19,10 @@ deformation. A position has no "none", so a frozen position must be supplied.
 
 A tool that writes only properties frozen on every section is not offered,
 and a task whose properties are all frozen on every section is off
-(:mod:`langslice.core.spec`, :meth:`~langslice.core.spec.JobSpec.has`). A task
-switched off freezes its properties on every section as well (:func:`derived`),
-so "the host supplied this" is one rule. This module imports nothing above the
-core.
+(:mod:`langslice.job.settings.spec`,
+:meth:`~langslice.job.settings.spec.JobSpec.has`). A task switched off
+freezes its properties on every section as well (:func:`derived`), so "the
+host supplied this" is one rule. This module imports nothing.
 """
 
 from __future__ import annotations

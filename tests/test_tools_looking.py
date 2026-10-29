@@ -11,12 +11,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,

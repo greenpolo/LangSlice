@@ -22,9 +22,9 @@ from PIL import Image
 
 from langslice.core.pictures.opening import pair_tiles
 from langslice.core.pictures.scale import stored_scale
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import (
     SECTION_SIZE,
     SyntheticAtlas,

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -16,7 +16,6 @@ from langslice.core.maps.imported import (
     placement_from_pixel_map,
 )
 from langslice.core.maps.section_maps import SWAP, orientation_matrix
-from langslice.core.space import Plane
 from langslice.job.quint import (
     anchoring_from_pixel_map,
     from_target_grid,
@@ -257,7 +256,7 @@ def import_placements(
     matched = match_sections(names, ids)
     atlas_object = workspace.atlas
     atlas = atlas_facts(atlas_object)
-    plane = cast(Plane, workspace.spec.plane)
+    plane = workspace.settings.plane
     file_target = held.target or (
         DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None)
 
@@ -376,7 +375,7 @@ def registration_inputs(
     workspace: Workspace,
 ) -> RegistrationInputs:
     """Import *source* (:func:`import_placements`) into the job of
-    *workspace*'s spec, as the supplied inputs a job is made from.
+    *workspace*'s settings, as the supplied inputs a job is made from.
 
     The pixel size: the caller's (``inputs.pixel_size_um``) or each file's
     own when they have one; otherwise the size the imported maps imply
@@ -390,7 +389,7 @@ def registration_inputs(
 
     held = source if isinstance(source, RegistrationFile) else read_registration(source)
     result = import_placements(held, workspace)
-    host_size = bool((workspace.spec.inputs or {}).get("pixel_size_um"))
+    host_size = bool(workspace.settings.supplied_pixel_size)
     pixel_size: float | None = None
     overridden: list[str] = []
     if not host_size and result.pixel_size_source == "imported" \
@@ -399,10 +398,12 @@ def registration_inputs(
         overridden = [p.section_id for p in result.placements
                       if p.pixel_size_source != "imported"]
         if overridden:  # one pixel size for the job: place every section against it
-            spec = workspace.spec
-            fixed = type(spec).from_dict({**spec.to_dict(), "inputs": {
-                **(spec.inputs or {}), "pixel_size_um": pixel_size}})
-            again = Plain(spec=fixed, image_folder=workspace.image_folder,
+            # The settings text stays the job's: these frames are keyed by
+            # the pixel size, so none is shared with the job's own.
+            fixed = replace(
+                workspace.settings, supplied_pixel_size=pixel_size,
+                stack_pixel_size_um=pixel_size, file_pixel_sizes_um={})
+            again = Plain(settings=fixed, image_folder=workspace.image_folder,
                           emit=workspace.emit, atlas_loader=workspace.atlas_loader)
             result = import_placements(held, again)
     if not result.placements:

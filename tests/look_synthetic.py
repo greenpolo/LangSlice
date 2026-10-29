@@ -14,10 +14,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,
@@ -75,7 +75,7 @@ def stack(tmp_path: Path, *, marked: bool = False) -> tuple[Workspace, StackStat
         positions.append(0.2)
     spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
                    inputs={"pixel_size_um": 25.0})
-    ws = Workspace(spec=spec, image_folder=str(folder), emit=lambda _m: None,
+    ws = Workspace(settings=spec.image_settings(), image_folder=str(folder), emit=lambda _m: None,
                    atlas_loader=lambda _name: atlas)
     state = StackState(image_folder=str(folder), atlas=atlas.atlas_name, plane="coronal",
                        slices=[SliceState(id=name, index_original=k, index_corrected=k,

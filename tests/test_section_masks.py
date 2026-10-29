@@ -13,13 +13,13 @@ import pytest
 from langslice.core.fits.deformable.masks import EM_MATCH_THRESHOLD, dilate
 from langslice.core.fits.deformable.record import DeformableRecord
 from langslice.core.sections import masks as section_masks
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.layout import JobLayout
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,

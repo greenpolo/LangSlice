@@ -127,8 +127,8 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     import dataclasses
 
     import langslice
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
+    from langslice.job.settings.spec import NonlinearSpec
     from tests.synthetic_stack import atlas_loader, full_spec, write_sections
 
     monkeypatch.setattr(setup, "load_dotenv", lambda: None)  # no developer .env here

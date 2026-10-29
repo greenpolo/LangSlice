@@ -35,7 +35,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.needs import render
+from langslice.job.settings.needs import render
 from langslice.tools.descriptions.fixes import FIXES
 
 #: The artifacts that are pictures to open (``picture_files``).
