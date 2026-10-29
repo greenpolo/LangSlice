@@ -1,6 +1,6 @@
 """The in-plane transform: the stored record, from knobs or from a fit, and its write.
 
-Every stored transform has one shape (``SliceState.transform``): ``kind``
+Every stored transform has one shape (``Section.transform``): ``kind``
 (``interactive``, ``elastix``, or the host's), ``params`` (the six normalized
 numbers on the section's working frame, the exact map,
 :mod:`langslice.core.geometry.affine`), ``physical`` (the same map as the knobs
@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -24,6 +24,8 @@ from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.frozen import FROZEN
 from langslice.core.geometry.affine import normalized_physical_affine
 from langslice.core.sections.damage import exclusions
+from langslice.core.stack.affine import PhysicalAffine, StoredAffine
+from langslice.core.stack.codec import affine_from_json
 from langslice.tools.refusal import (
     Refused,
     check_frozen,
@@ -34,7 +36,7 @@ from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
     from langslice.core.pictures.placement import Staged
-    from langslice.core.stack.section import SliceState
+    from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -48,7 +50,7 @@ def transform_record(
     pivot: tuple[float, float] | None,
     pivot_frac: Sequence[float],
     knobs: Mapping[str, float],
-) -> dict[str, Any]:
+) -> StoredAffine:
     """The stored record of a transform given as knobs (``interactive_transform``).
 
     *size* and *um_per_px* are the section's working frame and its calibration;
@@ -62,22 +64,22 @@ def transform_record(
     """
     knobs = {**knobs, "shear": knobs.get("shear", 0.0)}
     six = normalized_physical_affine(size=size, um_per_px=um_per_px, pivot=pivot, **knobs)
-    return {
+    return affine_from_json({
         "kind": "interactive",
         "params": six,
         "physical": {**knobs, "pivot": list(pivot_frac)},
         "calibration": dict(calibration),
         "mirrored": physical_decomposition(six, size)["mirrored"],
         "note": "",
-    }
+    })
 
 
-def same_transform(held: Mapping[str, Any] | None, new: Mapping[str, Any]) -> bool:
+def same_transform(held: StoredAffine | None, new: StoredAffine) -> bool:
     """Whether *new* is the transform already held, its note aside.
 
     The same numbers again are a look, not a write: no undo step for it.
     """
-    return held is not None and {**held, "note": ""} == {**new, "note": ""}
+    return held is not None and replace(held, note="") == replace(new, note="")
 
 
 def fit_transform(
@@ -86,14 +88,14 @@ def fit_transform(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     fit_atlas: str = "template",
-) -> dict[str, Any]:
+) -> StoredAffine:
     """The stored record of one Elastix affine fit (kind ``elastix``).
 
     *fit* is :func:`langslice.core.fits.affine.fit_elastix`'s ok payload.
     Regions and a non-default atlas image are recorded only when they were
     used.
     """
-    return {
+    return affine_from_json({
         "kind": "elastix",
         "params": list(fit["params"]),
         "physical": fit["physical"],
@@ -102,7 +104,7 @@ def fit_transform(
         **({"regions": {"include": list(include), "exclude": list(exclude)}}
            if include or exclude else {}),
         **({"fit_atlas": fit_atlas} if fit_atlas != "template" else {}),
-    }
+    })
 
 
 #: A fit that turns a section further than this from its previous transform
@@ -110,9 +112,16 @@ def fit_transform(
 LARGE_TURN_DEG = 45.0
 
 
-def _turn_deg(previous: Mapping[str, Any] | None, outcome: Mapping[str, Any]) -> float:
+def _knobs(transform: StoredAffine | None) -> PhysicalAffine:
+    """Return a stored transform's knobs; none set without a transform."""
+    if transform is None or transform.physical is None:
+        return PhysicalAffine()
+    return transform.physical
+
+
+def _turn_deg(previous: StoredAffine | None, outcome: Mapping[str, Any]) -> float:
     """How far a fit turns the section from its previous transform, in degrees (0-180)."""
-    before = float(((previous or {}).get("physical") or {}).get("rotation_deg") or 0.0)
+    before = float(_knobs(previous).rotation_deg or 0.0)
     after = float((outcome.get("physical") or {}).get("rotation_deg") or 0.0)
     return abs((after - before + 180.0) % 360.0 - 180.0)
 
@@ -125,40 +134,41 @@ SCALE_CHANGE_LIMITS = (0.8, 1.25)
 SHEAR_CHANGE_LIMIT = 0.15
 
 
-def plausibility_flags(previous: Mapping[str, Any] | None,
+def plausibility_flags(previous: StoredAffine | None,
                        outcome: Mapping[str, Any]) -> list[dict[str, Any]]:
     """An affine fit's implausible changes from the section's *previous*
     transform (none: the identity), as the deformable fits' flags are given:
     ``SCALE_CHANGED`` (``scale``, ``previous``, ``limits`` per axis ratio) and
     ``SHEAR`` (``shear``, ``previous``, ``limit`` on the change)."""
-    before = (previous or {}).get("physical") or {}
+    before = _knobs(previous)
     after = outcome.get("physical") or {}
     scale = [float(after.get(key) or 1.0) for key in ("scale_x", "scale_y")]
-    held = [float(before.get(key) or 1.0) for key in ("scale_x", "scale_y")]
+    held = [float(value or 1.0) for value in (before.scale_x, before.scale_y)]
     low, high = SCALE_CHANGE_LIMITS
     flags: list[dict[str, Any]] = []
     if any(not low <= new / old <= high for new, old in zip(scale, held, strict=True) if old):
         flags.append({"code": "SCALE_CHANGED", "scale": [round(v, 3) for v in scale],
                       "previous": [round(v, 3) for v in held], "limits": [low, high]})
-    shear, was = float(after.get("shear") or 0.0), float(before.get("shear") or 0.0)
+    shear, was = float(after.get("shear") or 0.0), float(before.shear or 0.0)
     if abs(shear - was) > SHEAR_CHANGE_LIMIT:
         flags.append({"code": "SHEAR", "shear": round(shear, 3), "previous": round(was, 3),
                       "limit": SHEAR_CHANGE_LIMIT})
     return flags
 
 
-def det_sign(transform: Mapping[str, Any] | None) -> int:
+def det_sign(transform: StoredAffine | None) -> int:
     """The sign (1, -1, or 0 for a transform with none to read) of a stored
     transform's 2x2 determinant: positive keeps the section's handedness in
     the frame its orientation sets, negative turns it over."""
-    params = np.asarray((transform or {}).get("params"), dtype=float)
+    numbers = () if transform is None else transform.params
+    params = np.asarray(numbers, dtype=float)
     if params.shape != (6,) or not np.isfinite(params).all():
         return 0
     det = params[0] * params[4] - params[1] * params[3]
     return 1 if det > 0 else -1 if det < 0 else 0
 
 
-def reverses_orientation(record: SliceState, transform: Mapping[str, Any]) -> bool:
+def reverses_orientation(record: Section, transform: StoredAffine) -> bool:
     """Whether writing *transform* on *record* would turn the section over,
     which its orientation, when frozen, forbids: its determinant's sign
     differs from the sign of the transform it replaces (a supplied transform
@@ -173,7 +183,7 @@ def _mirrors(name: str) -> str:
             "handedness.")
 
 
-def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> list[str]:
+def set_transforms(job: Job, transforms: Mapping[str, StoredAffine]) -> list[str]:
     """Write each ``{section id: transform record}`` as ONE undo step.
 
     The record replaces the section's transform whole. A section whose affine
@@ -190,7 +200,7 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
             raise Refused(FROZEN, ids=[name], properties=["orientation"],
                           message=_mirrors(name))
     with job.writing():
-        records = []
+        records: list[Section] = []
         for name in transforms:
             record = job.state.by_id(name)
             if record is None:
@@ -200,7 +210,7 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
             return []
         before = job.snapshot()
         for record in records:
-            record.transform = dict(transforms[record.id])
+            record.transform = transforms[record.id]
         job.commit(before)
         return [record.id for record in records]
 
@@ -225,7 +235,7 @@ class AffineFit:
 HAS_DEFORMATION = "HAS_DEFORMATION"
 
 
-def has_deformation_row(record: SliceState) -> dict[str, Any]:
+def has_deformation_row(record: Section) -> dict[str, Any]:
     """The row of a section refused a linear refit because it holds a deformation."""
     return {"id": record.id, "status": "error", "error": HAS_DEFORMATION,
             "message": f"{record.id} holds a deformation, which a new transform would "
@@ -233,7 +243,7 @@ def has_deformation_row(record: SliceState) -> dict[str, Any]:
 
 
 def _fit_elastix(
-    job: Job, workspace: Workspace, records: Sequence[SliceState], *, fit_atlas: str,
+    job: Job, workspace: Workspace, records: Sequence[Section], *, fit_atlas: str,
     restrict_to: tuple[str, ...], section_image: str = "preprocessed", asked_atlas: str = "",
     mask: str = "none", edges: bool = True,
 ) -> AffineFit:
@@ -268,7 +278,7 @@ def _fit_elastix(
 
     state = job.state
     rows: list[dict[str, Any]] = []
-    fits: list[tuple[SliceState, dict[str, Any], tuple[str, ...], tuple[str, ...]]] = []
+    fits: list[tuple[Section, dict[str, Any], tuple[str, ...], tuple[str, ...]]] = []
     expected: dict[str, str] = {}
     for record in records:
         expected[record.id] = section_inputs(state, record)
@@ -319,7 +329,7 @@ def _fit_elastix(
             outcome["flags"] = flags
         fits.append((record, outcome, kept, dropped))
     with job.writing():
-        records_out: dict[str, dict[str, Any]] = {}
+        records_out: dict[str, StoredAffine] = {}
         for record, outcome, kept, dropped in fits:
             now = state.by_id(record.id)
             if now is None or section_inputs(state, now) != expected[record.id]:
@@ -385,7 +395,7 @@ def elastix_fit(
     if marked:
         include, marks = exclusions(record, include)
         dropped = tuple(dict.fromkeys((*dropped, *marks)))
-    stored = (record.transform or {}).get("params")
+    stored = None if record.transform is None else record.transform.params
     start = list(stored) if stored is not None and len(stored) == 6 else list(IDENTITY_PARAMS)
     try:
         with engine_output(job.engine_log, f"Elastix affine of {record.id}"):
@@ -421,9 +431,9 @@ class Adjustment:
     #: used.
     staged: Staged | None = None
     #: The section's transform before the call.
-    previous: dict[str, Any] | None = None
+    previous: StoredAffine | None = None
     #: The stored record these knobs make (:func:`transform_record`).
-    transform: dict[str, Any] | None = None
+    transform: StoredAffine | None = None
     #: Whether it differs from *previous* (the same numbers again write nothing).
     written: bool = False
     #: The section's id; its flip and quarter turn after the call
@@ -459,14 +469,24 @@ KNOB_DEFAULTS: dict[str, float] = {
 }
 
 
-def held_knobs(record: SliceState) -> dict[str, float]:
+def held_knobs(section: Section) -> dict[str, float]:
     """The six knob values the section's stored transform has (identity without one)."""
-    physical = (record.transform or {}).get("physical") or {}
-    held: dict[str, float] = {}
+    physical = _knobs(section.transform)
+    if section.transform is None or section.transform.physical is None:
+        return dict(KNOB_DEFAULTS)
+    given = {
+        "rotation_deg": physical.rotation_deg,
+        "scale_x": physical.scale_x,
+        "scale_y": physical.scale_y,
+        "translate_x_mm": physical.translate_x_mm,
+        "translate_y_mm": physical.translate_y_mm,
+        "shear": physical.shear,
+    }
+    knobs: dict[str, float] = {}
     for name, default in KNOB_DEFAULTS.items():
-        value = physical.get(name)
-        held[name] = default if value is None else float(value)
-    return held
+        value = given[name]
+        knobs[name] = default if value is None else float(value)
+    return knobs
 
 
 def interactive_transform(
@@ -512,7 +532,7 @@ def interactive_transform(
 
     state = job.state
     done: list[Adjustment] = []
-    pending: dict[str, tuple[bool, int, dict[str, Any] | None]] = {}
+    pending: dict[str, tuple[bool, int, StoredAffine | None]] = {}
     for entry in sections:
         if not isinstance(entry, Mapping):
             done.append(Adjustment(error={"status": "error", "error": "BAD_ARGS"}))
@@ -583,7 +603,8 @@ def interactive_transform(
         if record.position_mm is None:
             refuse("NO_POSITION")
             continue
-        pivot = ((held or {}).get("physical") or {}).get("pivot")
+        stored_pivot = _knobs(held).pivot
+        pivot = None if stored_pivot is None else list(stored_pivot)
         twin = replace(record, flip=flip, rotation_deg=rotation)
         try:
             staged = stage(workspace, state, twin, knobs,
@@ -648,7 +669,7 @@ def zoom_window(box: Sequence[float] | None) -> list[float] | None:
 
 
 def region_box(
-    workspace: Workspace, state: Any, record: SliceState, regions: Sequence[str],
+    workspace: Workspace, state: Any, record: Section, regions: Sequence[str],
 ) -> list[float] | None:
     """The atlas regions' bounding box on the section's canvas.
 
@@ -702,7 +723,7 @@ def elastix_affine(
     :func:`langslice.core.atlas.images.atlas_images`; ``nissl`` is its Nissl
     image where it has one, else its template), with the section mask *mask* by
     name (``"none"`` or one each section holds) and, with *edges*, the edge
-    pair. *sections* are one or more filenames (``StackState.resolve``).
+    pair. *sections* are one or more filenames (``Stack.resolve``).
     *restrict_to* fits by those atlas regions only (sides allowed; empty: every
     region). Each section's marked damage regions are left out automatically
     (:func:`langslice.core.sections.damage.exclusions`). A section that holds a

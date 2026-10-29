@@ -22,8 +22,9 @@ from typing import Any
 
 from langslice.core.pictures.plugin_layers import save_layer
 from langslice.core.plugins import Layer
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import layer_from_json, layer_to_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.job.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
@@ -51,7 +52,7 @@ def read_manifest(layout: JobLayout, tool: str) -> dict[str, Any]:
 
 
 def register_layer(
-    layout: JobLayout, record: SliceState, tool: str, call: str, layer: Layer, *,
+    layout: JobLayout, record: Section, tool: str, call: str, layer: Layer, *,
     persist: bool = True,
 ) -> dict[str, Any]:
     """Write *layer*'s file under the tool's folder, list it in the manifest
@@ -80,18 +81,19 @@ def register_layer(
         manifest.setdefault("layers", []).append({**ref, "section": record.id})
         layout.plugin_dir(tool).mkdir(parents=True, exist_ok=True)
         write_json_atomic(str(manifest_path(layout, tool)), manifest)
-    record.layers = [item for item in record.layers if item.get("name") != name] + [ref]
+    kept = [item for item in record.layers if item.name != name]
+    record.layers = [*kept, layer_from_json(ref)]
     return ref
 
 
-def layer_rows(state: StackState) -> list[dict[str, Any]]:
+def layer_rows(state: Stack) -> list[dict[str, Any]]:
     """Every layer the sections show, one row each (``section``, then the
     reference's fields), in stack order."""
-    return [{"section": record.id, **ref}
-            for record in state.in_order() for ref in record.layers]
+    return [{"section": section.id, **layer_to_json(ref)}
+            for section in state.in_order() for ref in section.layers]
 
 
-def export_layers(layout: JobLayout, state: StackState) -> list[str]:
+def export_layers(layout: JobLayout, state: Stack) -> list[str]:
     """Copy the layers the sections show to ``exports/plugins/<tool>/`` with a
     manifest each; the paths written (relative to the job folder). Nothing
     when no section has a layer."""

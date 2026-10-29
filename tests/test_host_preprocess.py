@@ -23,6 +23,21 @@ from langslice.core.sections.reading import (
 from langslice.doors.abba.worker import run_linear
 from langslice.hosts.service import run_stdio
 
+
+@pytest.fixture(autouse=True)
+def _fake_states_are_their_json(monkeypatch):
+    """The fake states these runs hand back are their JSON form already
+    (``SimpleNamespace(to_dict=...)``); a real stack is written as it is."""
+    from langslice.job import state_file
+
+    def as_json(state):
+        if isinstance(state, SimpleNamespace):
+            return state.to_dict()
+        return state_file.stack_to_json(state)
+
+    for module in ("langslice.doors.abba.checkpoints", "langslice.doors.abba.worker"):
+        monkeypatch.setattr(f"{module}.stack_to_json", as_json)
+
 #: ABBA's stack-wide angles as the connector always sends them (flat).
 FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
 

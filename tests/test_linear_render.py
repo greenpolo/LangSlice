@@ -9,6 +9,7 @@ from PIL import Image
 
 from langslice.core.sections.renders import render_slice
 from langslice.core.spec import JobSpec
+from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.status import status_rows
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
@@ -74,11 +75,11 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     state.slices[1].position_mm = 1.5
     state.slices[1].flip = True
     state.slices[2].damage_note = "half the section is gone"
-    state.slices[0].transform = {
+    state.slices[0].transform = affine_from_json({
         "kind": "silhouette",
         "params": [],
         "mirrored": True,
-    }
+    })
 
     rows = status_rows(state)
     assert [row["id"] for row in rows] == ["s0.png", "s1.png", "s2.png"]

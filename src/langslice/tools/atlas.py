@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
@@ -34,11 +34,12 @@ from langslice.core.pictures.panels import (
 from langslice.core.pictures.positioning import ATLAS_UPSAMPLE
 from langslice.core.pictures.sizes import picture_edge
 from langslice.core.stack.section import Angles
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.tools.look import not_shown, save_pictures, split_shown
 from langslice.tools.refusal import Refused, sides_refused, unknown_sections
 
 if TYPE_CHECKING:
+    from langslice.core.fits.deformation import RecordStore
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -287,7 +288,7 @@ class RegionsView:
     clamped: list[tuple[float, float]] = field(default_factory=list)
 
 
-def _resolved(workspace: Workspace, state: StackState, regions: Any,
+def _resolved(workspace: Workspace, state: Stack, regions: object,
               ) -> list[tuple[str, frozenset[int]]]:
     """``(name as asked, ids with descendants)`` per region. Refused:
     ``BAD_ARGS``, ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``."""
@@ -322,7 +323,7 @@ def _zoom_pixels(window: Sequence[float], size: tuple[float, float]) -> tuple[fl
 
 
 def _region_picture(
-    workspace: Workspace, state: StackState, regions: list[tuple[str, frozenset[int]]],
+    workspace: Workspace, state: Stack, regions: list[tuple[str, frozenset[int]]],
     position_mm: float, long_edge: int, angles: Angles, *, window: Sequence[float] = (),
     base: tuple[int, int] | None = None, base_um: float | None = None,
 ) -> looks.LookPicture:
@@ -372,8 +373,8 @@ def _region_picture(
 
 
 def _redraw_regions(
-    recipe: dict[str, Any], window: Sequence[float], workspace: Workspace, state: StackState,
-    store: Any, zoom_edge: int | None,
+    recipe: dict[str, Any], window: Sequence[float], workspace: Workspace, state: Stack,
+    store: RecordStore | None, zoom_edge: int | None,
 ) -> looks.LookPicture:
     """:func:`langslice.core.pictures.zoom.redraw`'s redrawer for a
     ``grep_atlas_view``
@@ -390,7 +391,9 @@ def _redraw_regions(
         extent = (max((earlier[2] - earlier[0]) * base[0], (earlier[3] - earlier[1]) * base[1])
                   if earlier else max(shown))
         base_um = float(um) * extent / max(max(shown), 1)
-    regions = _resolved(workspace, drawn, args["regions"])
+    # a recipe's arguments are JSON
+    given: object = cast("object", args["regions"])
+    regions = _resolved(workspace, drawn, given)
     position = float(args["positions_mm"][0])
     picture = _region_picture(
         workspace, drawn, regions, position, int(args.get("long_edge") or picture_edge(workspace)),
@@ -406,7 +409,7 @@ def grep_atlas_view(
     job: Job, workspace: Workspace, regions: Sequence[str], positions_mm: Sequence[float],
 ) -> RegionsView:
     """The atlas template at each of *positions_mm* (clamped into the atlas
-    range), at the stack's cutting angles (``StackState.view_angles``), with
+    range), at the stack's cutting angles (``Stack.view_angles``), with
     only the borders of *regions* drawn.
     A region may name a side (``"CTX:left"``, as the section is displayed).
 

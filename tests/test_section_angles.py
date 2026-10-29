@@ -25,8 +25,10 @@ from langslice.core.spec import (
     TransformSpec,
     supplied_angles,
 )
-from langslice.core.stack.section import MixedAngles, SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import angles_to_json, trace_to_json
+from langslice.core.stack.section import MixedAngles, Section
+from langslice.core.stack.stack import Stack
+from langslice.job.state_file import stack_from_json, stack_to_json
 from tests import test_combinations as combinations
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM
 from tests.test_combinations import (
@@ -55,11 +57,11 @@ SECTION_ANGLES = {
 }
 
 
-def _stack(angles: list[tuple[float, float]] | None = None) -> StackState:
-    slices = [SliceState(id=f"s{i}.png", index_original=i, index_corrected=i) for i in range(3)]
+def _stack(angles: list[tuple[float, float]] | None = None) -> Stack:
+    slices = [Section(id=f"s{i}.png", index_original=i, index_corrected=i) for i in range(3)]
     for record, (pitch, yaw) in zip(slices, angles or [], strict=False):
-        record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
-    return StackState(atlas="allen_mouse_25um", slices=slices)
+        record.angles = (pitch, yaw)
+    return Stack(atlas="allen_mouse_25um", slices=slices)
 
 
 def _external(**extra: Any) -> dict[str, Any]:
@@ -73,28 +75,28 @@ def _external(**extra: Any) -> dict[str, Any]:
 def test_a_mixed_state_keeps_each_sections_angles_and_round_trips():
     state = _stack([(1.0, 0.0), (2.0, -1.0), (1.0, 0.0)])
     assert state.mixed_angles and state.is_oblique
-    data = state.to_dict()
+    data = stack_to_json(state)
     assert data["cutting_angles_deg"] is None
     assert [row["cutting_angles_deg"] for row in data["slices"]] == [
         {"pitch": 1.0, "yaw": 0.0}, {"pitch": 2.0, "yaw": -1.0}, {"pitch": 1.0, "yaw": 0.0}]
-    again = StackState.from_dict(json.loads(json.dumps(data)))
+    again = stack_from_json(json.loads(json.dumps(data)))
     assert [record.angles for record in again.slices] == [(1.0, 0.0), (2.0, -1.0), (1.0, 0.0)]
-    assert again.to_dict() == data
+    assert stack_to_json(again) == data
     # No stack-wide angle to read: a reader that should use the section's own fails loudly.
     with pytest.raises(MixedAngles):
         _ = state.pitch_deg
     with pytest.raises(MixedAngles):
-        _ = state.cutting_angles_deg
+        _ = state.stack_angles
     # A picture without a section is drawn at the median of the sections' angles.
     assert state.view_angles == (1.0, 0.0)
 
 
 def test_undo_restores_each_sections_angles():
     state = _stack([(1.0, 0.0), (2.0, -1.0), (0.0, 0.5)])
-    snapshot = state.to_dict()
-    state.cutting_angles_deg = {"pitch": 4.0, "yaw": 0.0}
+    snapshot = stack_to_json(state)
+    state.set_angles((4.0, 0.0))
     assert not state.mixed_angles and state.stack_angles == (4.0, 0.0)
-    state.restore(snapshot)
+    state.replace_with(stack_from_json(snapshot))
     assert [record.angles for record in state.slices] == [(1.0, 0.0), (2.0, -1.0), (0.0, 0.5)]
 
 
@@ -116,7 +118,7 @@ def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_p
     assert state is not None
     assert [record.angles for record in state.slices] == [(2.0, -1.0)] * 3
     assert not state.mixed_angles
-    assert state.to_dict()["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
+    assert stack_to_json(state)["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
     write_checkpoint(state, str(path))
     written = json.loads(path.read_text())
     assert written[FORMAT_KEY] == STATE_FORMAT_VERSION
@@ -170,9 +172,9 @@ def test_a_section_not_named_keeps_the_flat_plane(images):
 # --- kept verbatim from the input to the exports ------------------------------------------
 
 
-def _uniform_copy(state: StackState, angles: tuple[float, float]) -> StackState:
-    copied = StackState.from_dict(state.to_dict())
-    copied.cutting_angles_deg = {"pitch": angles[0], "yaw": angles[1]}
+def _uniform_copy(state: Stack, angles: tuple[float, float]) -> Stack:
+    copied = stack_from_json(stack_to_json(state))
+    copied.set_angles((angles[0], angles[1]))
     return copied
 
 
@@ -228,7 +230,7 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
     with langslice.open_job(images) as job:
         state = job.state
         assert state.mixed_angles
-        assert {name: state.by_id(name).cutting_angles_deg for name in IDS} == SECTION_ANGLES
+        assert {name: angles_to_json(state.by_id(name).angles) for name in IDS} == SECTION_ANGLES
         status = job.status()
         assert status["cutting_angles_deg"] == "per section"
         assert {row["id"]: row["cutting_angles_deg"] for row in status["rows"]} == (
@@ -242,8 +244,8 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
-        assert job.state.by_id(ID1).image_correction["status"] == "ok"
-        assert {name: job.state.by_id(name).cutting_angles_deg for name in IDS} == (
+        assert trace_to_json(job.state.by_id(ID1).image_correction)["status"] == "ok"
+        assert {name: angles_to_json(job.state.by_id(name).angles) for name in IDS} == (
             SECTION_ANGLES)
         folder = Path(job.folder)
         # Submit writes the traced section's reply, never its maps;
@@ -307,7 +309,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
 
     state = load_checkpoint(str(job / "state.json"))
     assert state is not None
-    assert {name: state.by_id(name).cutting_angles_deg for name in IDS} == SECTION_ANGLES
+    assert {name: angles_to_json(state.by_id(name).angles) for name in IDS} == SECTION_ANGLES
     saved = json.loads((job / "state.json").read_text())
     assert saved["format_version"] == 4 and saved["cutting_angles_deg"] is None
     # --section-angles and --pitch exclude each other.
@@ -345,7 +347,7 @@ def test_cutting_angles_flatten_a_mixed_stack_and_undo_restores_it(images):
         document = json.loads((Path(job.folder) / "registration.json").read_text())
         assert document["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -0.5}
         assert job.undo()["status"] == "ok"
-        assert {name: job.state.by_id(name).cutting_angles_deg for name in IDS} == (
+        assert {name: angles_to_json(job.state.by_id(name).angles) for name in IDS} == (
             SECTION_ANGLES)
         document = json.loads((Path(job.folder) / "registration.json").read_text())
         assert document["cutting_angles_deg"] is None

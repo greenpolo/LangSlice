@@ -12,13 +12,14 @@ import pytest
 
 from langslice.core.sections.damage import exclusions, normalized_entries
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.stack.section import SliceState
+from langslice.core.stack.section import Section
 from langslice.core.stack.status import status_rows, status_text, uniform_rows
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
 from langslice.tools import damage, deformable, traces, transforms
 from langslice.tools.refusal import Refused
+from tests.shapes import json_of
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,
     _left_half_section,
@@ -46,12 +47,12 @@ def _box(folder: Path, *, inputs: dict[str, Any] | None = None, plane: str = "co
 
 
 def test_exclusions_add_the_marked_regions_and_an_explicit_request_wins():
-    record = SliceState(ID, 0, 0, damaged_regions=["CTX:left", "OB"])
+    record = Section(ID, 0, 0, damaged_regions=["CTX:left", "OB"])
     assert exclusions(record) == ((), ("CTX:left", "OB"))
     # restrict_to naming a marked entry exactly takes it back; another side does not.
     assert exclusions(record, ("ctx:LEFT",)) == (("ctx:LEFT",), ("OB",))
     assert exclusions(record, ("CTX:right",)) == (("CTX:right",), ("CTX:left", "OB"))
-    assert exclusions(SliceState(ID, 0, 0)) == ((), ())
+    assert exclusions(Section(ID, 0, 0)) == ((), ())
     assert normalized_entries([" CTX:Left ", "ctx:left", "", "OB", 672]) == [
         "CTX:left", "OB", "672"]
     with pytest.raises(ValueError):
@@ -62,7 +63,7 @@ def test_exclusions_add_the_marked_regions_and_an_explicit_request_wins():
 
 
 def test_damaged_is_read_only_and_follows_the_marks():
-    record = SliceState(ID, 0, 0)
+    record = Section(ID, 0, 0)
     assert not record.damaged
     with pytest.raises(AttributeError):
         record.damaged = True  # type: ignore[misc]
@@ -165,7 +166,7 @@ def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, mon
 
     def spy(state: Any, ctx: Any, section_id: str, **kwargs: Any):
         seen.append(kwargs)
-        return {"status": "ok", "geometry_fingerprint": "fp", "cached": True,
+        return {"id": "s0.png", "status": "ok", "geometry_fingerprint": "fp", "cached": True,
                 "include": list(kwargs["include"]), "exclude": list(kwargs["exclude"])}, None
 
     monkeypatch.setattr(registration_tool, "start_correction", spy)
@@ -183,5 +184,5 @@ def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, mon
     assert [(call["include"], call["exclude"]) for call in seen] == [
         ((), ("R",)), (("L",), ("R",))]
     # A traced fit then reads the trace's exclusions along with the marks.
-    held = state.by_id(ID).image_correction
+    held = json_of(state.by_id(ID).image_correction)
     assert held["exclude"] == ["R"]

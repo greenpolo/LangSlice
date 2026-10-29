@@ -21,7 +21,7 @@ from langslice.core.sections.reading import (
     prepare_image_for_vlm,
     read_working_image,
 )
-from langslice.core.stack.section import SliceState
+from langslice.core.stack.section import Section
 from langslice.core.workspace import Workspace
 
 #: Working frame for transform fits and their preview panels. A COMPUTE
@@ -36,7 +36,7 @@ _ROTATE_OPS = {
 }
 
 
-def drawn_look(record: SliceState, look: Look) -> dict[str, Any]:
+def drawn_look(record: Section, look: Look) -> dict[str, Any]:
     """*look* with the section image it draws resolved on *record*: None is
     ``{"image": "preprocessed"}``, and a made image carries its file's digest
     (``{"image", "digest"}``)."""
@@ -46,17 +46,17 @@ def drawn_look(record: SliceState, look: Look) -> dict[str, Any]:
     entry = images.entry_of(record, name)
     if entry is None:
         return {"image": name}
-    return {"image": name, "digest": entry.get("digest")}
+    return {"image": name, "digest": entry.digest}
 
 
-def look_token(ctx: Workspace, record: SliceState, look: Look) -> str:
+def look_token(ctx: Workspace, record: Section, look: Look) -> str:
     """The render-cache slot of a look on *record* (a made image's is its
     file's digest)."""
     return json.dumps(drawn_look(record, look), sort_keys=True)
 
 
 def render_cache_key(
-    ctx: Workspace, record: SliceState, *, long_edge: int, look: Look = None,
+    ctx: Workspace, record: Section, *, long_edge: int, look: Look = None,
 ) -> tuple[str, bool, int, int, str]:
     """The key a render is cached under: the section plus everything it shows."""
     return (record.id, record.flip, record.rotation_deg, long_edge,
@@ -65,7 +65,7 @@ def render_cache_key(
 
 def render_slice(
     ctx: Workspace,
-    record: SliceState,
+    record: Section,
     *,
     long_edge: int = PREVIEW_LONG_EDGE,
     look: Look = None,
@@ -122,7 +122,7 @@ def _gray(plane: Any) -> Image.Image:
 
 
 def _look_image(
-    ctx: Workspace, record: SliceState, look: dict[str, Any], size: tuple[int, int],
+    ctx: Workspace, record: Section, look: dict[str, Any], size: tuple[int, int],
 ) -> Image.Image:
     """*look* (resolved, :func:`drawn_look`) drawn unoriented at *size*, RGB."""
 
@@ -146,7 +146,7 @@ def _look_image(
 
 def canvas_um_per_px(
     ctx: Workspace,
-    record: SliceState,
+    record: Section,
     *,
     long_edge: int = PREVIEW_LONG_EDGE,
 ) -> tuple[float | None, str]:
@@ -166,7 +166,7 @@ def canvas_um_per_px(
 
 
 def shown_section(
-    ctx: Workspace, record: SliceState, section: Image.Image, um_per_px: float,
+    ctx: Workspace, record: Section, section: Image.Image, um_per_px: float,
     look: Look = None, *, long_edge: int = PREVIEW_LONG_EDGE,
 ) -> tuple[Image.Image, float, tuple[float, float]]:
     """The render a PICTURE of *section* is drawn from, *long_edge* at most.

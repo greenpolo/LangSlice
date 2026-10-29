@@ -33,6 +33,7 @@ written.
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from collections.abc import Sequence
@@ -44,8 +45,9 @@ from langslice.tools.refusal import unknown_sections
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
     from langslice.core.maps.section_maps import SectionMaps
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
+    from langslice.core.stack.trace import BorderTrace
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -67,7 +69,7 @@ class Exported:
     seconds: float = 0.0
 
 
-def _warp(job: Job, state: StackState, record: SliceState,
+def _warp(job: Job, state: Stack, record: Section,
           ) -> tuple[DeformableRecord | None, str | None]:
     """The section's applied deformation record (None: linear) and its
     stored folder; ``ValueError`` when one is applied but cannot be read."""
@@ -76,13 +78,13 @@ def _warp(job: Job, state: StackState, record: SliceState,
     held = applied_deformation(state, record)
     if held is None:
         return None, None
-    loaded = job.deformations.get(record.id, str(held.get("key", "")))
+    loaded = job.deformations.get(record.id, held.key)
     if loaded is None:
         raise ValueError("its applied deformation record cannot be read")
-    return loaded, str(held.get("record") or "") or None
+    return loaded, held.record or None
 
 
-def applied_record(job: Job, state: StackState, record: SliceState,
+def applied_record(job: Job, state: Stack, record: Section,
                    ) -> DeformableRecord | None:
     """The section's applied deformation record (None: linear);
     ``ValueError`` when one is applied but cannot be read."""
@@ -111,13 +113,12 @@ def export_maps(
         section_frame,
     )
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.core.stack.stack import StackState
     from langslice.job import public_files as formats
     from langslice.tools.stale import STALE_INPUT, section_inputs
 
     started = time.perf_counter()
     with job.writing():
-        state = StackState.from_dict(job.snapshot())
+        state = copy.deepcopy(job.state)
     records = state.in_order()
     if ids:
         unknown = [str(ref) for ref in ids if state.resolve(ref) is None]
@@ -206,13 +207,12 @@ def export_stack(job: Job, workspace: Workspace) -> Exported:
         section_frame,
     )
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.core.stack.stack import StackState
 
     started = time.perf_counter()
     if not job.persist:
         return Exported(written=False)
     with job.writing():
-        state = StackState.from_dict(job.snapshot())
+        state = copy.deepcopy(job.state)
     files: list[tuple[str, str]] = []
     for record in state.in_order():
         if _completed_trace(record) is None or placement_problem(state, record) is not None:
@@ -244,10 +244,9 @@ def section_maps(
         placement_problem,
         section_frame,
     )
-    from langslice.core.stack.stack import StackState
 
     with job.writing():
-        state = StackState.from_dict(job.snapshot())
+        state = copy.deepcopy(job.state)
     record = state.resolve(section)
     if record is None:
         raise unknown_sections(state, [str(section)])
@@ -259,14 +258,16 @@ def section_maps(
     return _section_maps(workspace, frame, warp, full_resolution)
 
 
-def _completed_trace(record: SliceState) -> dict[str, Any] | None:
+def _completed_trace(section: Section) -> BorderTrace | None:
     """The section's trace record when its last ``trace_borders`` call holds a reply."""
-    held = record.image_correction or {}
-    return held if held.get("status") == "ok" and held.get("artifact_dir") else None
+    held = section.image_correction
+    if held is None or held.status != "ok" or not held.artifact_dir:
+        return None
+    return held
 
 
 def _export_trace(
-    job: Job, workspace: Workspace, state: StackState, record: SliceState,
+    job: Job, workspace: Workspace, state: Stack, record: Section,
     grid_size: tuple[int, int], full_resolution: bool,
 ) -> list[tuple[str, str]]:
     """Write the section's trace reply on its maps' grid
@@ -288,12 +289,12 @@ def _export_trace(
         if path.exists():
             path.unlink()
         return []
-    artifact_dir = str(held["artifact_dir"])
+    artifact_dir = held.artifact_dir or ""
     try:
         file_size = render_sizes(workspace, record.id).file_size
         borders, reply, grid_from_canvas = reply_on_grid(
             layout.resolve(artifact_dir), file_size, grid_size)
-        current = held.get("geometry_fingerprint") == correction_fingerprint(
+        current = held.geometry_fingerprint == correction_fingerprint(
             state, workspace, record.id)
     except (OSError, ValueError, KeyError) as exc:
         logger.warning("Could not export the trace reply of %s: %s", record.id, exc)
@@ -304,16 +305,18 @@ def _export_trace(
         "frame": "the image file as stored (no rotation or flip applied), resized to "
                  "grid_size; the grid of the section's maps",
         "grid_from_canvas": grid_from_canvas.tolist(), "artifact_dir": artifact_dir,
-        "attempt": held.get("attempt"), "provider": held.get("provider"),
-        "model": held.get("model"), "prompt_edited": bool(held.get("prompt_edited")),
-        **({"profile": held["profile"], "untested": True} if held.get("untested") else {}),
-        **{key: held[key] for key in ("include", "exclude") if held.get(key)},
+        "attempt": held.attempt, "provider": held.provider,
+        "model": held.model, "prompt_edited": bool(held.prompt_edited),
+        **({"profile": held.profile, "untested": True} if held.untested else {}),
+        **{key: list(value) for key, value in (("include", held.include),
+                                               ("exclude", held.exclude)) if value},
         "placement_current": bool(current),
         "written_by": f"LangSlice {langslice.__version__}",
     }
     with job.writing():
         now = job.state.by_id(record.id)
-        if now is None or (now.image_correction or {}).get("artifact_dir") != artifact_dir:
+        trace_now = None if now is None else now.image_correction
+        if trace_now is None or trace_now.artifact_dir != artifact_dir:
             return []  # traced again meanwhile: the next export writes the new reply
         try:
             written = formats.write_trace_reply(layout, record.id, borders, reply, info)

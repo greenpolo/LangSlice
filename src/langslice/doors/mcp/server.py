@@ -32,7 +32,7 @@ from langslice.core.pictures.opening import (
     CLAUDE_MAX_VIEW_EDGE,
 )
 from langslice.core.spec import JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.core.toolset import refusal
 from langslice.doors.abba.checkpoints import checkpoint_callback
 from langslice.doors.abba.saved_jobs import load_job
@@ -66,6 +66,7 @@ from langslice.doors.statement import (
 )
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
+from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import VERBS
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ class Session:
     job_dir: Path | None = None
     notes: str = ""
     #: Sends the host (ABBA) its live update after every checkpoint.
-    host_update: Callable[[StackState], None] | None = None
+    host_update: Callable[[Stack], None] | None = None
     prepared: PreparedLinear | None = None
     channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
@@ -138,7 +139,7 @@ class Session:
         return self.job.spec
 
     @property
-    def state(self) -> StackState:
+    def state(self) -> Stack:
         return self.job.state
 
     def close(self) -> None:
@@ -268,7 +269,7 @@ def finish(session: Session) -> None:
         session.host_update(session.state)
     session.job.emit_results(session.ctx.progress)
     if session.job_dir is not None and session.prepared is not None:
-        result = {"state": session.state.to_dict(), "output_dir": str(session.job_dir)}
+        result = {"state": stack_to_json(session.state), "output_dir": str(session.job_dir)}
         if session.channel is not None:
             session.channel.send({"type": "result", "result": result})
             session.channel.close()

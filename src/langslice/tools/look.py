@@ -22,6 +22,7 @@ beside them and must not save them again.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -33,6 +34,7 @@ from langslice.core.pictures import look as looks
 from langslice.core.pictures import sheet as sheets
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
 from langslice.core.pictures.sizes import MIN_RESOLUTION
+from langslice.job import registrations as regs
 from langslice.job.pictures import has_frame
 from langslice.tools.refusal import Refused, unknown_sections
 
@@ -174,7 +176,7 @@ def look(
     No argument reads the job's state: no *sections* is every section, no
     *images* the ``preprocessed`` image (one section image is drawn alone, in
     gray; several raw channels together in their colours), no *atlas_layers*
-    the mode's default. *sections* are filenames (``StackState.resolve``).
+    the mode's default. *sections* are filenames (``Stack.resolve``).
     *resolution* is a picture's long edge (clamped up to
     :data:`~langslice.core.pictures.sizes.MIN_RESOLUTION`); a door passes one
     only where its caller sizes the pictures (image_resolution ``auto``, or the
@@ -281,7 +283,6 @@ def _under_registrations(
     """``(state, ids, shown)``: a copy of the job's state with each section
     *registrations* names under that registration of its own, the sections to
     draw, and ``(section, number, held)`` per section named. Nothing is written."""
-    from langslice.core.stack.stack import StackState
     from langslice.tools import registrations as ops_registrations
 
     if mode not in ("section", "overlay"):
@@ -289,7 +290,7 @@ def _under_registrations(
                       "overlay.")
     if not isinstance(registrations, Mapping):
         raise Refused("BAD_ARGS", message="registrations is {filename: number}.")
-    trial = StackState.from_dict(job.state.to_dict())
+    trial = copy.deepcopy(job.state)
     shown: list[tuple[str, int, bool]] = []
     for ref, number in registrations.items():
         record, entry, held = ops_registrations.entry_for(job, ref, number)
@@ -301,8 +302,8 @@ def _under_registrations(
         assert copy_ is not None
         copy_.flip = bool(entry.get("flip"))
         copy_.rotation_deg = int(entry.get("rotation_deg") or 0)
-        copy_.transform = entry.get("transform")
-        copy_.deformation = entry.get("deformation")
+        copy_.transform = regs.entry_transform(entry)
+        copy_.deformation = regs.entry_deformation(entry)
         shown.append((record.id, int(entry["id"]), held == int(entry["id"])))
     drawn = ids or [name for name, _number, _held in shown]
     return trial, drawn, tuple(shown)
@@ -329,7 +330,7 @@ def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) 
     state = job.state
     records = [r for r in (state.by_id(i) for i in ids) if r is not None] if ids \
         else list(state.slices)
-    held = sorted({name for record in records for name in (getattr(record, "masks", None) or {})})
+    held = sorted({name for record in records for name in record.masks})
     unknown = [name for name in names if name not in held]
     if unknown:
         raise Refused("UNKNOWN_MASK", unknown=unknown, masks=held,

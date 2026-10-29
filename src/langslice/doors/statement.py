@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.needs import render
 from langslice.core.spec import JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import status_text
 
 if TYPE_CHECKING:
@@ -78,7 +78,7 @@ RECENT_NOTES = 12
 NOTES_KEY = "notes"
 
 
-def status_and_notes(state: StackState) -> str:
+def status_and_notes(state: Stack) -> str:
     """The status table with its header, then the recent run notes: the text
     the ADK agent's first message ends with, and every other door's statement."""
     return (
@@ -172,7 +172,7 @@ def long_verbs(disabled: Collection[str] = (), spec: Any = None) -> list[str]:
 
 
 def job_statement(
-    spec: JobSpec, state: StackState, ctx: Workspace, *, door: str,
+    spec: JobSpec, state: Stack, ctx: Workspace, *, door: str,
     tool_names: list[str], opening: list[str], notes: str = "",
     max_resolution: int | None = None, image_model_off: bool = False,
     auto: bool | None = None,

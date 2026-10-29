@@ -8,14 +8,14 @@ from typing import Any
 
 import pytest
 
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _serialized, build_tools
 
 
 def test_execution_events_run_inside_lock_and_name_their_targets():
-    state = StackState(slices=[SliceState("a", 0, 0), SliceState("b", 1, 1)])
+    state = Stack(slices=[Section("a", 0, 0), Section("b", 1, 1)])
     lock = threading.Lock()
     events = []
 
@@ -91,7 +91,7 @@ def test_build_tools_forwards_execution_observer(tmp_path):
     from langslice.job.layout import JobLayout, job_folder_for
 
     events = []
-    state = StackState(slices=[SliceState("a", 0, 0)])
+    state = Stack(slices=[Section("a", 0, 0)])
     ctx: Any = SimpleNamespace(position_range=(0, 10), brain_scale=1.0,
                                section_channels=lambda _id: (("gray",), []),
                                layout=JobLayout(job_folder_for(tmp_path), tmp_path),

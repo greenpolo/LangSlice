@@ -29,6 +29,7 @@ from langslice.core.pictures.positioning import (
     split,
 )
 from langslice.core.pictures.zoom import redraw
+from langslice.job.state_file import stack_to_json
 from tests.look_synthetic import SECTIONS, stack
 
 #: A coronal-ish section and atlas plane, micrometres.
@@ -184,9 +185,9 @@ def test_unplaced_sections_can_compare_candidates_without_writing(tmp_path: Path
         record.position_mm = None
     if placed:
         state.slices[1].position_mm = 0.15
-    before = state.to_dict()
+    before = stack_to_json(state)
     pictures = look(ws, state, LookRequest("positioning", positions_mm=(0.05, 0.2)))
-    assert state.to_dict() == before
+    assert stack_to_json(state) == before
     assert len(pictures) == 1
     picture = pictures[0]
     assert picture.extra["positions_mm"] == [0.05, 0.2]
@@ -196,4 +197,4 @@ def test_unplaced_sections_can_compare_candidates_without_writing(tmp_path: Path
     width, height = picture.recipe["shown"]
     zoomed = redraw(picture.recipe, [0, 0, width, height], ws, state=state)
     assert zoomed.sections == expected
-    assert state.to_dict() == before
+    assert stack_to_json(state) == before

@@ -1,7 +1,7 @@
 """Damage by atlas region: what every fit leaves out, and the picture of a mark.
 
 A section's damage is the atlas regions whose tissue it is missing, or has
-folded over other anatomy (``SliceState.damaged_regions``):
+folded over other anatomy (``Section.damaged_regions``):
 acronyms or ids, each optionally one side (``"CTX:left"``,
 :mod:`langslice.core.atlas.sides`, the section's displayed left and right).
 Named by atlas region, a mark moves with the registration. Every fit and the
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
@@ -27,9 +27,10 @@ from langslice.core.atlas.sides import SEPARATOR, split_side
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
 
 if TYPE_CHECKING:
+    from langslice.core.fits.deformation import RecordStore
     from langslice.core.pictures.canvas import PanelFrame
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
 
 #: The hatch inside a marked region: the second ink of the deformable fit's
@@ -73,7 +74,7 @@ def normalized_entries(entries: Iterable[str | int]) -> list[str]:
 
 
 def exclusions(
-    record: SliceState, restrict_to: Sequence[str] = (),
+    record: Section, restrict_to: Sequence[str] = (),
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(restrict_to, exclude)`` one fit of *record* runs with.
 
@@ -164,10 +165,10 @@ def beside(left: Image.Image, right: Image.Image) -> Image.Image:
 
 def damage_picture(
     ws: Workspace,
-    state: StackState,
-    record: SliceState,
+    state: Stack,
+    record: Section,
     *,
-    store: Any = None,
+    store: RecordStore | None = None,
     long_edge: int | None = None,
     border_color: str = AUTO_BORDER_COLOR,
     border_thickness: float | None = None,
@@ -225,7 +226,7 @@ def damage_picture(
     warp = current_warp(store, state, record) if store is not None else None
     shown = draw_canvas(
         ws, state, record, section, um_per_px, position, params, options, mode="overlay",
-        label=f"{record.id} damage", warp=warp,
+        label=f"{record.id} damage", warp_record=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
     # One arrangement for the whole picture: resolved from the section's own

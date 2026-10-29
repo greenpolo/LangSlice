@@ -22,6 +22,11 @@ from PIL import Image
 from langslice.core.fits import deformation
 from langslice.core.fits.trace.request import GeneratedSegmentation
 from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.core.stack.codec import (
+    affine_from_json,
+    deformation_to_json,
+    trace_to_json,
+)
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.providers.connections import resolve_image_model
@@ -34,6 +39,7 @@ from tests.deformable_synthetic import (
     SyntheticAtlas,
     render_section,
 )
+from tests.shapes import json_of
 
 if not deformation.engine_available():
     pytest.skip("trace_borders fits with FireANTs", allow_module_level=True)
@@ -83,8 +89,9 @@ def _job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubModel]:
         before = job.snapshot()
         record = job.state.slices[0]
         record.position_mm = 0.1
-        record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                            "calibration": {"section_um_per_px": 25.0, "source": "host"}}
+        record.transform = affine_from_json(
+            {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            "calibration": {"section_um_per_px": 25.0, "source": "host"}})
         job.commit(before)
     return job, ctx, StubModel(spec)
 
@@ -112,8 +119,8 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
                                   "top of its linear placement.")
     assert "undo removes it while it is the latest step" in work.notice
     record = job.state.by_id(ID)
-    assert record is not None and record.image_correction["status"] == "ok"
-    held = record.deformation
+    assert record is not None and trace_to_json(record.image_correction)["status"] == "ok"
+    held = json_of(record.deformation)
     assert held is not None and len(held["steps"]) == 1
     assert held["steps"][0]["fit_section"] == deformation.TRACED_BORDERS
     assert held["steps"][0]["smoothness_um"] == 80.0
@@ -121,10 +128,10 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     assert job.undo()
     record = job.state.by_id(ID)
     assert record is not None and record.deformation is None
-    assert record.image_correction["status"] == "ok"  # the trace stays
+    assert trace_to_json(record.image_correction)["status"] == "ok"  # the trace stays
 
     # The prompt sent is saved with the attempt in the job folder.
-    folder = Path(job.folder) / str(record.image_correction["artifact_dir"])
+    folder = Path(job.folder) / str(trace_to_json(record.image_correction)["artifact_dir"])
     assert (folder / "prompt.txt").read_text() == "Move each yellow line onto its edge."
     assert len(stub.calls) == 1
 
@@ -139,8 +146,8 @@ def _landed_job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubMode
     record = job.state.by_id(ID)
     assert record is not None and record.deformation is not None
     # The traced step records the trace it fitted.
-    assert [step.get("trace") for step in record.deformation["steps"]] == [
-        record.image_correction["artifact_dir"]]
+    assert [step.get("trace") for step in deformation_to_json(record.deformation)["steps"]] == [
+        trace_to_json(record.image_correction)["artifact_dir"]]
     return job, ctx, stub
 
 
@@ -178,7 +185,7 @@ def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_pa
     (work,) = job.background.notices()
     assert work.status == "done", work.notice
     assert "on top of its previous deformation" in work.notice
-    held = job.state.slices[0].deformation
+    held = json_of(job.state.slices[0].deformation)
     assert held is not None and len(held["steps"]) == 2
     # The fit and the trace, saved among the job's pictures.
     assert len(work.pictures) == 2 and len(work.images) == 2
@@ -196,7 +203,7 @@ def test_restrict_to_traces_and_warps_that_region_only(tmp_path, atlas):
     artifacts = Path(job.folder) / str(started.record["artifact_dir"])
     request = json.loads((artifacts / "request.json").read_text())
     assert request["include"] == ["TH"]
-    step = job.state.slices[0].deformation["steps"][0]  # type: ignore[index]
+    step = deformation_to_json(job.state.slices[0].deformation)["steps"][0]  # type: ignore[index]
     assert step["include"] == ["TH"]
 
 

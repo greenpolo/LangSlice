@@ -62,7 +62,7 @@ toolbox are still `doors/tools/`.
   written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
   every door answers with (`status` "refused" for a gate, `Refused.of`
   turns a job gate's payload into one).
-- A section is named by its filename (`StackState.resolve`: the filename,
+- A section is named by its filename (`Stack.resolve`: the filename,
   or its stem when no other section shares it; never a number). A name
   that is no section's is `refusal.unknown_sections(state, refs)`:
   `UNKNOWN_SLICE_IDS` with `unknown`, `filenames` and a `message` saying

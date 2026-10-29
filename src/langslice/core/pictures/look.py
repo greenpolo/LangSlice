@@ -8,7 +8,7 @@ One entry point, :func:`look`, takes a :class:`LookRequest` and returns one
   images (:mod:`langslice.core.sections.images`; ``preprocessed`` by default),
   or several raw channels together (:mod:`langslice.core.sections.channels`);
 - ``atlas`` — the atlas plane alone at each of ``positions_mm``, at the stack's
-  view angles (``StackState.view_angles``), in the chosen atlas layers (the
+  view angles (``Stack.view_angles``), in the chosen atlas layers (the
   atlas's images and ``borders``;
   :func:`langslice.core.pictures.panels.framed_atlas`);
 - ``overlay`` — each section under its current registration with the atlas
@@ -44,7 +44,7 @@ import copy
 import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
@@ -53,7 +53,7 @@ from langslice.core.atlas.borders import atlas_um_per_px
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.planes import atlas_section
 from langslice.core.fits.affine import calibrate
-from langslice.core.jsonable import to_jsonable
+from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
 from langslice.core.pictures.captions import (
     angles_label,
@@ -86,10 +86,15 @@ from langslice.core.sections.channels import colour_words
 from langslice.core.sections.images import PREPROCESSED
 from langslice.core.sections.native import framed_window
 from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
-from langslice.core.stack.section import Angles, SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.rows import fields_to_json, with_fields
+from langslice.core.stack.section import Angles, Section
+from langslice.core.stack.stack import Stack
 from langslice.core.toolset import LOOK_MODES
 from langslice.core.workspace import Workspace
+
+if TYPE_CHECKING:
+    from langslice.core.fits.deformable.record import DeformableRecord
+    from langslice.core.fits.deformation import RecordStore
 
 #: look's modes, in the order the docs list them.
 MODES: tuple[str, ...] = LOOK_MODES
@@ -263,17 +268,17 @@ class LookPicture:
 # --- the stack a picture depends on ------------------------------------------------
 
 
-def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False) -> dict[str, Any]:
+def snapshot(state: Stack, ids: Sequence[str], *, view_angles: bool = False) -> dict[str, Any]:
     """The facts of *state* a picture of *ids* depends on: each section's
     :data:`SECTION_FIELDS` (their section images included), and with
     *view_angles* the angles an atlas picture without a section is drawn at."""
     sections: dict[str, Any] = {}
     for section_id in ids:
-        record = state.by_id(section_id)
-        if record is not None:
-            sections[section_id] = {name: getattr(record, name) for name in SECTION_FIELDS}
-            if record.layers:  # only a section with plugin layers records them
-                sections[section_id]["layers"] = record.layers
+        section = state.by_id(section_id)
+        if section is not None:
+            # only a section with plugin layers records them
+            names = (*SECTION_FIELDS, "layers") if section.layers else SECTION_FIELDS
+            sections[section_id] = fields_to_json(section, names)
     data: dict[str, Any] = {"sections": sections}
     if view_angles:
         data["view_angles"] = list(state.view_angles)
@@ -295,7 +300,7 @@ def _without_annotations(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "sections": sections}
 
 
-def differs_since(state: StackState, held: dict[str, Any]) -> bool:
+def differs_since(state: Stack, held: dict[str, Any]) -> bool:
     """Whether *state* differs from the snapshot *held* at all, landmark
     markers included: then an old picture is drawn from the restored snapshot."""
     ids = list((held.get("sections") or {}).keys())
@@ -308,7 +313,7 @@ def differs_since(state: StackState, held: dict[str, Any]) -> bool:
 REGISTRATION_FIELDS: tuple[str, ...] = ("flip", "rotation_deg", "transform", "deformation")
 
 
-def changed_since(state: StackState, held: dict[str, Any], *,
+def changed_since(state: Stack, held: dict[str, Any], *,
                   besides: Collection[str] = ()) -> bool:
     """Whether *state* differs from the snapshot *held* in anything the
     picture depends on (a section gone included). Landmark markers and
@@ -328,28 +333,26 @@ def changed_since(state: StackState, held: dict[str, Any], *,
     return now != then
 
 
-def restored(state: StackState, held: dict[str, Any]) -> StackState:
+def restored(state: Stack, held: dict[str, Any]) -> Stack:
     """A copy of *state* with the snapshot *held* put back; *state* is
     untouched. :class:`LookError` ``UNKNOWN_SECTION`` when a section of the
     snapshot is no longer in the stack."""
-    out = StackState.from_dict(copy.deepcopy(state.to_dict()))
-    for section_id, fields in (held.get("sections") or {}).items():
-        record = out.by_id(section_id)
-        if record is None:
+    out = copy.deepcopy(state)
+    snapshots = cast("dict[str, JsonObject]", held.get("sections") or {})
+    for section_id in snapshots:
+        if out.by_id(section_id) is None:
             raise LookError("UNKNOWN_SECTION", f"{section_id} is no longer in the stack")
-        for name, value in fields.items():
-            if name == "cutting_angles_deg":
-                value = {"pitch": float(value["pitch"]), "yaw": float(value["yaw"])}
-            setattr(record, name, copy.deepcopy(value))
-        if "layers" not in fields:
-            record.layers = []
+    for index, section in enumerate(out.slices):
+        fields = snapshots.get(section.id)
+        if fields is not None:
+            out.slices[index] = with_fields(section, {"layers": [], **fields})
     return out
 
 
 # --- options and words ----------------------------------------------------------------
 
 
-def _images_for(ws: Workspace, record: SliceState,
+def _images_for(ws: Workspace, record: Section,
                 images: Sequence[str]) -> tuple[tuple[str, ...], str]:
     """``(raw names drawn together, image drawn alone)`` for *record*: the
     ``preprocessed`` image by default, one named image alone, or several raw
@@ -375,12 +378,13 @@ def _images_for(ws: Workspace, record: SliceState,
     return wanted, ""
 
 
-def image_text(ws: Workspace, record: SliceState, name: str) -> str:
+def image_text(ws: Workspace, record: Section, name: str) -> str:
     """What section image *name* of *record* is, for a caption."""
     if images_.kind_of(ws, record, name) == images_.RAW:
         return "raw channel, as the file holds it"
-    entry = images_.entry_of(record, name) or {}
-    held = dict(entry.get("source") or images_.opening_source(ws.spec))
+    entry = images_.entry_of(record, name)
+    source = None if entry is None else entry.source
+    held: dict[str, Any] = dict(source or images_.opening_source(ws.spec))
     if "recipe" in held:
         return images_.recipe_words(held["recipe"])
     if "script" in held:
@@ -433,7 +437,7 @@ def _options(
     )
 
 
-def image_words(ws: Workspace, record: SliceState, names: Sequence[str], image: str,
+def image_words(ws: Workspace, record: Section, names: Sequence[str], image: str,
                 ) -> tuple[str, str]:
     """``(short, full)``: what of the section is drawn, for a burned label and
     for the index caption: the section image and what it is, or the raw
@@ -444,7 +448,7 @@ def image_words(ws: Workspace, record: SliceState, names: Sequence[str], image: 
     return image, f"section image {image} ({image_text(ws, record, image)})"
 
 
-def _orientation(record: SliceState) -> str:
+def _orientation(record: Section) -> str:
     turns = []
     if record.rotation_deg:
         turns.append(f"rotated {record.rotation_deg}")
@@ -453,7 +457,7 @@ def _orientation(record: SliceState) -> str:
     return f" ({', '.join(turns)})" if turns else ""
 
 
-def _registration_words(request: LookRequest, record: SliceState) -> str:
+def _registration_words(request: LookRequest, record: Section) -> str:
     """``, registration 3 (not held)``: the registration a picture draws the
     section under, when the request names one; empty otherwise."""
     named = request.registration_of(record.id)
@@ -463,7 +467,7 @@ def _registration_words(request: LookRequest, record: SliceState) -> str:
     return f", registration {number} ({'held' if held else 'not held'})"
 
 
-def _where(record: SliceState) -> str:
+def _where(record: Section) -> str:
     if record.position_mm is None:
         return "no position"
     return f"at {float(record.position_mm):.2f} mm{angles_label(record.angles)}"
@@ -472,10 +476,10 @@ def _where(record: SliceState) -> str:
 # --- the four modes -------------------------------------------------------------------
 
 
-def _records(state: StackState, ids: Sequence[str]) -> list[SliceState]:
+def _records(state: Stack, ids: Sequence[str]) -> list[Section]:
     if not ids:
         return sorted(state.slices, key=lambda record: record.index_original)
-    out: list[SliceState] = []
+    out: list[Section] = []
     for section_id in ids:
         record = state.by_id(str(section_id))
         if record is None:
@@ -505,7 +509,7 @@ def _recipe(request: LookRequest, held: dict[str, Any], *, base: tuple[int, int]
 
 
 def _section_picture(
-    ws: Workspace, state: StackState, record: SliceState, request: LookRequest, long_edge: int,
+    ws: Workspace, state: Stack, record: Section, request: LookRequest, long_edge: int,
     base: tuple[int, int] | None,
 ) -> LookPicture:
     names, image = _images_for(ws, record, request.images)
@@ -576,8 +580,8 @@ def _section_picture(
 
 
 def _overlay_picture(
-    ws: Workspace, state: StackState, record: SliceState, request: LookRequest, long_edge: int,
-    base: tuple[int, int] | None, store: Any,
+    ws: Workspace, state: Stack, record: Section, request: LookRequest, long_edge: int,
+    base: tuple[int, int] | None, store: RecordStore | None,
 ) -> LookPicture:
     if record.position_mm is None:
         raise LookError("NO_POSITION", f"{record.id} has no position to draw the atlas at")
@@ -642,7 +646,9 @@ def _overlay_picture(
         panel = placed.canvas.panels[0]
         swap = np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]])
         to_section = np.linalg.inv(swap @ section_to_picture(panel) @ swap)
-        warp_key = str((record.deformation or {}).get("key", "")) if drawn else None
+        warp_key = None
+        if drawn:
+            warp_key = "" if record.deformation is None else record.deformation.key
         panels = [section_panel(record, placed.canvas.frame.section.size,
                                 pixel_to_render=to_section, bounds=panel.content_box,
                                 warp_key=warp_key),
@@ -651,7 +657,7 @@ def _overlay_picture(
                    "native_size": list(panel.geometry.annotation.shape[::-1])}]
         draw_landmarks(image, panels, state, record, warp=placed.canvas.frame.warp)
     drawn_layers = _draw_layers(image, panels, state, record, request, ws,
-                                warp=placed.canvas.frame.warp if placed.canvas else None)
+                                warp_record=placed.canvas.frame.warp if placed.canvas else None)
     drawn_masks = _draw_masks(image, panels, state, record, request, ws,
                               warp=placed.canvas.frame.warp if placed.canvas else None)
     text += _mask_words(drawn_masks, record)
@@ -665,7 +671,8 @@ def _overlay_picture(
 
 
 def overlay_region_window(
-    ws: Workspace, state: StackState, recipe: dict[str, Any], region: str, *, store: Any = None,
+    ws: Workspace, state: Stack, recipe: dict[str, Any], region: str, *,
+    store: RecordStore | None = None,
 ) -> tuple[dict[str, Any], tuple[float, ...]]:
     """A single region's bounds on the saved overlay's full canvas.
 
@@ -709,8 +716,8 @@ def overlay_region_window(
 
 
 def _draw_layers(
-    picture: Image.Image, panels: list[dict[str, Any]], state: StackState, record: SliceState,
-    request: LookRequest, ws: Workspace, *, warp: Any = None,
+    picture: Image.Image, panels: list[dict[str, Any]], state: Stack, record: Section,
+    request: LookRequest, ws: Workspace, *, warp_record: DeformableRecord | None = None,
 ) -> list[dict[str, Any]]:
     """The plugin layers *request* names, drawn on *picture* over its *panels*
     (:mod:`langslice.core.pictures.plugin_layers`); one note per layer, empty
@@ -720,11 +727,12 @@ def _draw_layers(
         return []
     from langslice.core.pictures.plugin_layers import draw_layers
 
-    return draw_layers(picture, panels, state, record, request.layers, ws=ws, warp=warp)
+    return draw_layers(picture, panels, state, record, request.layers,
+                       workspace=ws, warp_record=warp_record)
 
 
 def _draw_masks(
-    picture: Image.Image, panels: list[dict[str, Any]], state: StackState, record: SliceState,
+    picture: Image.Image, panels: list[dict[str, Any]], state: Stack, record: Section,
     request: LookRequest, ws: Workspace, *, warp: Any = None,
 ) -> list[dict[str, Any]]:
     """The masks *request* names, outlined on *picture* over its *panels* where their
@@ -743,7 +751,7 @@ def _draw_masks(
     from langslice.core.plugins import Layer
     from langslice.core.sections import masks as section_masks
     from langslice.core.sections.native import unorient
-    held: dict[str, Any] = getattr(record, "masks", None) or {}
+    held = record.masks
     layout: Any = getattr(ws, "layout", None)
     mapper = _Mapper(state, record, panels, ws, warp)
     notes: list[dict[str, Any]] = []
@@ -772,20 +780,24 @@ def _draw_masks(
     return notes
 
 
-def _mask_words(notes: list[dict[str, Any]], record: SliceState) -> str:
+def _mask_words(notes: list[dict[str, Any]], record: Section) -> str:
     """The caption sentence saying what a mask outline means (the ringed patches are the
     section pixels the mask leaves out of a fit) and the mask's name and source."""
-    held: dict[str, Any] = getattr(record, "masks", None) or {}
     parts = []
     for note_ in notes:
         if not note_.get("drawn"):
             continue
-        entry = held.get(note_["name"]) or {}
+        # a drawn mask's name
+        entry = record.masks.get(cast("str", note_["name"]))
         if note_.get("kind") == "fit":
             source = "copied from the sorting the section's deformation saved"
         else:
-            source = (f"sorted from section image {entry.get('section_image', '?')} against "
-                      f"atlas image {entry.get('atlas_image', '?')}")
+            section_image, atlas_image = "?", "?"
+            if entry is not None:
+                section_image = entry.section_image
+                atlas_image = entry.atlas_image
+            source = (f"sorted from section image {section_image} against "
+                      f"atlas image {atlas_image}")
         parts.append(f"{note_['name']!r} ({source})")
     if not parts:
         return ""
@@ -794,14 +806,14 @@ def _mask_words(notes: list[dict[str, Any]], record: SliceState) -> str:
             "uses it, the rest is compared; mask " + ", ".join(parts))
 
 
-def _landmark_context(state: StackState, record: SliceState) -> dict[str, Any]:
+def _landmark_context(state: Stack, record: Section) -> dict[str, Any]:
     from langslice.core.fits.landmarks import context
 
     return context(state, record)
 
 
 def _atlas_picture(
-    ws: Workspace, state: StackState, position_mm: float, request: LookRequest, long_edge: int,
+    ws: Workspace, state: Stack, position_mm: float, request: LookRequest, long_edge: int,
     base: tuple[int, int] | None, base_um: float | None, angles: Angles,
 ) -> LookPicture:
     layers = _atlas_layers(ws, request)
@@ -874,7 +886,7 @@ def _atlas_picture(
 
 
 def _positioning(
-    ws: Workspace, state: StackState, request: LookRequest, long_edge: int, angles: Angles,
+    ws: Workspace, state: Stack, request: LookRequest, long_edge: int, angles: Angles,
     zoom_edge: int | None,
 ) -> list[LookPicture]:
     records = _records(state, request.sections)
@@ -882,7 +894,7 @@ def _positioning(
     atlas_options = _options(request, names=(), image="", layers=layers, long_edge=long_edge)
     shown_words: dict[str, str] = {}
 
-    def look_of(record: SliceState) -> Any:
+    def look_of(record: Section) -> Any:
         names, image = _images_for(ws, record, request.images)
         shown_words.setdefault(record.id, image_words(ws, record, names, image)[0])
         return _options(request, names=names, image=image, layers=(),
@@ -910,8 +922,9 @@ def _positioning(
                          if slot.position_mm is not None else f"{slot.label[0]} no position"
                          for slot in layout.sections)
         text = one.caption + (f". Sections: {rows}" if rows else "")
-        counts = [f"{section.id}: {len(section.landmarks.get('pairs', []))}"
-                  for section in records if section.id in ids and section.landmarks.get("pairs")]
+        counts = [f"{section.id}: {len(section.landmarks.pairs)}"
+                  for section in records
+                  if section.id in ids and section.landmarks and section.landmarks.pairs]
         if counts:
             counts_text = "landmarks " + ", ".join(counts)
             text += f"; {counts_text}"
@@ -929,7 +942,7 @@ def _positioning(
 
 
 def look(
-    ws: Workspace, state: StackState, request: LookRequest, *, store: Any = None,
+    ws: Workspace, state: Stack, request: LookRequest, *, store: RecordStore | None = None,
     angles: Angles | None = None, base: tuple[int, int] | None = None,
     base_um: float | None = None, zoom_edge: int | None = None,
 ) -> list[LookPicture]:
@@ -939,7 +952,7 @@ def look(
 
     *store* (a :class:`~langslice.core.fits.deformation.RecordStore`) gives an
     overlay its applied deformation. *angles* is the plane an atlas picture
-    without a section is drawn at (None: ``StackState.view_angles``). *base* /
+    without a section is drawn at (None: ``Stack.view_angles``). *base* /
     *base_um* are the unzoomed picture's content size and scale when the
     request zooms (:func:`redraw` passes the recipe's); without them the
     unzoomed picture is measured first. *zoom_edge* is a positioning zoom's
@@ -982,8 +995,8 @@ def look(
 
 
 def redraw(
-    recipe: dict[str, Any], window: Sequence[float], ws: Workspace, state: StackState,
-    *, store: Any = None, zoom_edge: int | None = None,
+    recipe: dict[str, Any], window: Sequence[float], ws: Workspace, state: Stack,
+    *, store: RecordStore | None = None, zoom_edge: int | None = None,
 ) -> LookPicture:
     """The picture of *recipe* drawn again at *window* (fractions of its
     unzoomed content; empty: whole), from the stack as it was when the

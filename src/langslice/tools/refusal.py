@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.atlas.sides import SideError
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.core.stack.stack import (
     unknown_sections as state_unknown_sections,
 )
@@ -56,7 +56,7 @@ def sides_refused() -> Iterator[None]:
         raise Refused(exc.code, message=str(exc)) from exc
 
 
-def unknown_sections(state: StackState, refs: Any) -> Refused:
+def unknown_sections(state: Stack, refs: object) -> Refused:
     """``UNKNOWN_SLICE_IDS`` for *refs* that name no section: the refs, the
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.stack.stack.unknown_sections`)."""

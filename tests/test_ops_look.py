@@ -13,7 +13,7 @@ from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote
 from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
+from langslice.core.stack.section import Section
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE, PictureRecord
@@ -37,7 +37,7 @@ def _recipe(job: Job, number: int) -> dict[str, Any]:
     return recipe
 
 
-def _section(job: Job, section_id: str) -> SliceState:
+def _section(job: Job, section_id: str) -> Section:
     found = job.state.by_id(section_id)
     assert found is not None
     return found

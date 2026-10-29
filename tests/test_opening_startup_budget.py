@@ -48,7 +48,7 @@ def test_opening_of_100_angled_sections_filters_the_volume_once(
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 0.2 + 0.008 * index
-        record.cutting_angles_deg = {"pitch": 4.0, "yaw": -3.0}
+        record.angles = (4.0, -3.0)
     monkeypatch.setattr(oblique, "_filtered_cache", {})
     calls = []
     real = oblique._spline_filter_threaded

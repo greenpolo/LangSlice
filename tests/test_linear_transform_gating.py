@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from langslice.core.spec import TransformSpec
+from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack.status import stack_angles_entry
 from langslice.job.gates import submit_errors
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import single_transform
@@ -54,7 +56,7 @@ def test_angles_alone_give_position_sections_without_sections(tmp_path: Path):
     assert list(inspect.signature(write).parameters) == ["cutting_angles", "view"]
     result = write(cutting_angles={"pitch_deg": 2.0, "yaw_deg": 1.0}, view=False)
     assert result["status"] == "ok"
-    assert state.cutting_angles_deg == {"pitch": 2.0, "yaw": 1.0}
+    assert stack_angles_entry(state) == {"pitch": 2.0, "yaw": 1.0}
     refused = write(sections=[{"id": "s0.png", "position_mm": 9.0}])
     assert refused["error"] == "UNKNOWN_ARGUMENTS"
     assert state.by_id("s0.png").position_mm == 2.0
@@ -63,7 +65,7 @@ def test_angles_alone_give_position_sections_without_sections(tmp_path: Path):
 def test_a_manual_transform_meets_the_transform_gate_and_undo_restores_it(tmp_path):
     state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
     for record in state.slices[1:]:
-        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+        record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     assert _submit(box)["error"] == "MISSING_TRANSFORMS"
     row = single_transform(_tool(box, "interactive_transform"))("s0.png", 5, 1.1, 1, .25, 0)
     assert row["status"] == "ok"
@@ -86,7 +88,7 @@ def test_a_damaged_section_takes_any_transform(tmp_path, transform):
     are left out of the fits, and any transform counts at submit."""
     state, _, spec = _stack(tmp_path, tasks=["transform"], placed=True)
     for record in state.slices:
-        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+        record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     state.slices[0].damaged_regions = ["CTX"]
     state.slices[0].transform = transform
     assert state.slices[0].damaged

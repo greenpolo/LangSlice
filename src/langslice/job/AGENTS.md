@@ -65,7 +65,7 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      gives them to the agent); the agent CLI's "viewer"; a saved
                      ABBA job's job_id and its own fields under "host" (kind,
                      params)
-state.json           the checkpoint (StackState, state format 4): THE TRUTH
+state.json           the checkpoint (Stack, state format 4): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
@@ -190,7 +190,7 @@ index) is relative to the job folder (`JobLayout.relative` /
 `JobLayout.resolve`; `job.state_file.state_paths` walks a state's
 paths). The trace identity in a deformation cache key is the stored
 (relative) artifact directory, so keys survive a move of the folder.
-`StackState.image_folder` itself stays absolute (rewritten by `Job.open`
+`Stack.image_folder` itself stays absolute (rewritten by `Job.open`
 to where the images are now). `job.json`'s `image_folder` is `".."`
 (`layout.IMAGES_ARE_PARENT`) for the default job folder, so the job folder
 moves or is renamed with its images; an explicit job folder stores the
@@ -294,7 +294,12 @@ longer exist be taken over by the images it is opened with.
   folder could not be written; owner-only). `folder_id` (an image folder's
   stable id). The channel token stays here, not in a folder that may be
   shared. `register`, `lookup` (refuses a newer entry).
-- `state_file.py` — `state.json`: `write_checkpoint` (atomic, versioned,
+- `state_file.py` — `state.json`, and the one place a `Stack` becomes JSON
+  and comes back: `stack_to_json` (the stack's fields, one row per section,
+  the cutting angles once on the stack while every section shares them,
+  `layers` / `masks` / `images` left out of a row while empty),
+  `stack_from_json` (unknown keys refused, a row without its own angles
+  given the stack's), `serialized_mixed_angles`; `write_checkpoint` (atomic, versioned,
   `STATE_FORMAT_VERSION` 4), `read_checkpoint(path, upgrade=)`,
   `current_state(data, upgrade=)` (format 3, `UPGRADABLE_FORMAT`, through
   *upgrade*: `core.sections.images.Migration`; refuses any other format: a
@@ -467,7 +472,7 @@ The frame record and the on-demand coordinate map are the core's
 
 ## Landmark state and derived file
 
-Each `SliceState.landmarks` holds its authoritative `next_id` and `pairs`.
+Each `Section.landmarks` holds its authoritative `next_id` and `pairs`.
 Checkpoint refreshes plane-stale flags independently of appearance; the same
 write regenerates `sections/<stem>/landmarks.json` through
 `public_files.write_landmarks`. That JSON is derived and never read back, including

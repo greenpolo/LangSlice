@@ -26,6 +26,17 @@ Json: TypeAlias = Union[  # noqa: UP007 - a recursive alias needs the string for
 JsonObject: TypeAlias = Mapping[str, Json]
 
 
+def empty_object() -> JsonObject:
+    """Return a new empty JSON object (a dataclass field's default).
+
+    Returns
+    -------
+    JsonObject
+        A mapping with no keys.
+    """
+    return {}
+
+
 @overload
 def to_jsonable(
     value: Mapping[str, Json], *, strict: bool = False

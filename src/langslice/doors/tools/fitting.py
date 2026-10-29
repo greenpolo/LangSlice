@@ -237,11 +237,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
         record = job.state.by_id(result["section"])
         assert record is not None
-        full_pairs = record.landmarks.get("pairs", [])
+        full_pairs = () if record.landmarks is None else record.landmarks.pairs
         try:
             with collecting() as notes:
                 pictures = [pair_picture(ctx, job.state, record, pair, store=job.deformations)
-                            for pair in full_pairs if pair["id"] in result["changed"]]
+                            for pair in full_pairs if pair.id in result["changed"]]
             entries = ops_look.save_pictures(job, ctx, "set_landmarks", pictures, notes, {})
             return pictured(result, ops_look.Looked(
                 pictures=[p.image for p in pictures], entries=entries))

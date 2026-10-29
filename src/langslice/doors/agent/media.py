@@ -23,7 +23,7 @@ from PIL import Image
 
 from langslice.core.pictures.jpeg import JPEG_QUALITY, encode_jpeg
 from langslice.core.pictures.opening import opening_items
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.view_options import image_limit
 
@@ -85,7 +85,7 @@ def packaged_tools(tools: Sequence[Callable[..., Any]]) -> list[Callable[..., An
 
 
 def opening_parts(
-    state: StackState, ctx: EngineContext, *, limit: tuple[int, int] | None = None,
+    state: Stack, ctx: EngineContext, *, limit: tuple[int, int] | None = None,
 ) -> list[types.Part]:
     """The opening strips
     (:func:`langslice.core.pictures.opening.opening_items`) as

@@ -10,10 +10,26 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.stack.codec import deformation_to_json
 from langslice.doors.abba.worker import run_linear
 
 #: ABBA's stack-wide angles as the connector always sends them (flat).
 FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
+
+
+@pytest.fixture(autouse=True)
+def _fake_states_are_their_json(monkeypatch):
+    """The fake states these runs hand back are their JSON form already
+    (``SimpleNamespace(to_dict=...)``); a real stack is written as it is."""
+    from langslice.job import state_file
+
+    def as_json(state):
+        if isinstance(state, SimpleNamespace):
+            return state.to_dict()
+        return state_file.stack_to_json(state)
+
+    for module in ("langslice.doors.abba.checkpoints", "langslice.doors.abba.worker"):
+        monkeypatch.setattr(f"{module}.stack_to_json", as_json)
 
 
 @pytest.fixture
@@ -152,14 +168,14 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
 
 
 def _angled_state(*angles):
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
 
-    slices = [SliceState(id=f"s{i}.tif", index_original=i, index_corrected=i)
+    slices = [Section(id=f"s{i}.tif", index_original=i, index_corrected=i)
               for i in range(len(angles))]
     for record, (pitch, yaw) in zip(slices, angles, strict=True):
-        record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
-    return StackState(slices=slices)
+        record.angles = (pitch, yaw)
+    return Stack(slices=slices)
 
 
 def test_an_angle_per_section_is_refused_before_abba_sees_it(params, monkeypatch):
@@ -385,7 +401,7 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
         assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
         tracker(job.state)
     record = job.state.by_id(ID0)
-    key = str(record.deformation["key"])
+    key = str(deformation_to_json(record.deformation)["key"])
     real = tracker._warp_row
 
     def folds(*_args):

@@ -23,6 +23,7 @@ from PIL import Image
 from langslice.core.pictures.opening import pair_tiles
 from langslice.core.pictures.scale import stored_scale
 from langslice.core.spec import JobSpec
+from langslice.core.stack.codec import affine_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
 from tests.deformable_synthetic import (
@@ -121,7 +122,8 @@ def test_a_wrong_pixel_size_shows_as_a_wrong_size(tmp_path: Path):
 def test_a_stored_transform_scale_is_drawn_as_the_overlay_draws_it(tmp_path: Path):
     state, ctx = _job(tmp_path)
     record = state.by_id("whole.png")
-    record.transform = {"params": [0.8, 0.0, 0.1, 0.0, 0.8, 0.1], "kind": "stored"}
+    record.transform = affine_from_json(
+        {"params": [0.8, 0.0, 0.1, 0.0, 0.8, 0.1], "kind": "stored"})
     assert stored_scale(record) == pytest.approx(0.8)
     section, atlas = pair_tiles(ctx, state, record, 0.1, 256)
     _assert_true_size(section, atlas, ratio=0.8)

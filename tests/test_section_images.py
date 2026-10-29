@@ -22,9 +22,14 @@ from langslice.core.sections.reading import (
 )
 from langslice.core.sections.renders import render_slice
 from langslice.core.spec import JobSpec
+from langslice.core.stack.codec import affine_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.job.state_file import FORMAT_KEY, STATE_FORMAT_VERSION
+from langslice.job.state_file import (
+    FORMAT_KEY,
+    STATE_FORMAT_VERSION,
+    stack_to_json,
+)
 from tests.deformable_synthetic import SyntheticAtlas
 
 UM = 25.0
@@ -58,8 +63,9 @@ def _open(tmp_path: Path, atlas: SyntheticAtlas, *, preprocess: str = "auto") ->
         before = job.snapshot()
         for record in job.state.slices:
             record.position_mm = 0.1
-            record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                                "calibration": {"section_um_per_px": UM, "source": "host"}}
+            record.transform = affine_from_json(
+                {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                                "calibration": {"section_um_per_px": UM, "source": "host"}})
         job.commit(before)
     return job, ctx
 
@@ -99,12 +105,12 @@ def test_the_opening_image_is_one_file_every_reader_reads(tmp_path: Path, atlas)
     job, ctx = _open(tmp_path, atlas)
     for record in job.state.slices:
         entry = record.images[images.PREPROCESSED]
-        assert entry["source"] == {"opening": "adaptive"}
-        assert entry["file"].endswith(f"{Path(record.id).stem}/images/preprocessed.png")
+        assert entry.source == {"opening": "adaptive"}
+        assert entry.file.endswith(f"{Path(record.id).stem}/images/preprocessed.png")
         source, _factor = ctx.working_source(record.id)
-        held = Image.open(job.folder / entry["file"])
+        held = Image.open(job.folder / entry.file)
         assert np.array_equal(np.asarray(held, dtype=np.int16), _gray(adaptive_preprocess(source)))
-        assert entry["digest"] == images.digest_of(np.asarray(held))
+        assert entry.digest == images.digest_of(np.asarray(held))
         for edge in (64, 120, 160, 512):
             drawn = render_slice(ctx, record, long_edge=edge)
             expected = prepare_image_for_vlm(held, max_long_edge=edge)
@@ -115,16 +121,16 @@ def test_the_opening_image_is_one_file_every_reader_reads(tmp_path: Path, atlas)
         expected = prepare_image_for_vlm(held, max_long_edge=deformation.FIT_LONG_EDGE)
         assert np.array_equal(_gray(image), _gray(expected))
         assert identity == {"name": images.PREPROCESSED, "kind": "made",
-                            "digest": entry["digest"]}
+                            "digest": entry.digest}
         assert images.read_image(ctx, record, images.PREPROCESSED).payload() == {
-            "name": images.PREPROCESSED, "kind": "made", "file": entry["file"],
-            "digest": entry["digest"]}
+            "name": images.PREPROCESSED, "kind": "made", "file": entry.file,
+            "digest": entry.digest}
 
 
 def test_a_job_that_preprocesses_nothing_opens_on_the_file_in_gray(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas, preprocess="none")
     record = job.state.slices[0]
-    assert record.images[images.PREPROCESSED]["source"] == {"opening": "plain"}
+    assert record.images[images.PREPROCESSED].source == {"opening": "plain"}
     drawn = render_slice(ctx, record, long_edge=160)
     expected = Image.open(tmp_path / record.id).convert("L")
     assert np.array_equal(_gray(drawn), np.asarray(expected, dtype=np.int16))
@@ -142,19 +148,19 @@ def test_a_made_image_is_a_file_read_back_and_a_chain_composes(tmp_path: Path, a
     assert used == {"green": 1.0} and array.dtype == np.uint8
     assert array.shape == ctx.working_source(record.id)[0].size[::-1]
     entry = images.write_image(job.layout, record, "greens", array, {"recipe": recipe})
-    assert entry["file"].endswith("images/greens.png")
+    assert entry.file.endswith("images/greens.png")
     assert np.array_equal(images.image_plane(ctx, record, "greens"), array)
     view = images.read_image(ctx, record, "greens")
-    assert view.payload() == {"name": "greens", "kind": "made", "file": entry["file"],
-                              "digest": entry["digest"]}
+    assert view.payload() == {"name": "greens", "kind": "made", "file": entry.file,
+                              "digest": entry.digest}
     # The same pixels again reuse the file; other pixels never overwrite it.
     again = images.write_file(job.layout, record.id, "greens", array, {"recipe": recipe})
-    assert again["file"] == entry["file"]
+    assert again.file == entry.file
     inverted = images.validate_recipe(weights={"greens": 1}, clahe_clip=0, invert=True)
     chained, _ = images.make(ctx, record.id, record.images, inverted)
     assert np.abs(chained.astype(int) + array.astype(int) - 255).max() <= 1
     other = images.write_file(job.layout, record.id, "greens", chained, {"recipe": inverted})
-    assert other["file"].endswith("images/greens.2.png")
+    assert other.file.endswith("images/greens.2.png")
     with pytest.raises(ValueError):
         images.make(ctx, record.id, record.images, images.validate_recipe(weights={"nope": 1}))
     assert images.image_names(ctx, record) == ["red", "green", "blue", "preprocessed",
@@ -221,7 +227,7 @@ OLD_RECIPE = {"weights": {"green": 1.0}, "clahe_clip": 2.0, "clahe_tiles": 8, "n
 
 
 def _format_three(job: Job) -> dict[str, Any]:
-    data = job.state.to_dict()
+    data = stack_to_json(job.state)
     for row in data["slices"]:
         row.pop("images", None)
     data["appearance"] = {
@@ -256,14 +262,14 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
     loaded = Job.load(job.spec, fresh, folder=folder)
     s0, s1 = loaded.state.by_id("s0.png"), loaded.state.by_id("s1.png")
     assert s0 is not None and s1 is not None
-    assert s0.images["preprocessed"]["source"] == {"opening": "adaptive"}
-    assert s1.images["preprocessed"]["source"]["recipe"]["weights"] == {"green": 1.0}
-    assert s0.images["dapi"]["source"]["recipe"]["invert"] is True
-    assert s0.images["dapi"]["source"]["recipe"]["weights"] == "auto"
+    assert s0.images["preprocessed"].source == {"opening": "adaptive"}
+    assert s1.images["preprocessed"].source["recipe"]["weights"] == {"green": 1.0}
+    assert s0.images["dapi"].source["recipe"]["invert"] is True
+    assert s0.images["dapi"].source["recipe"]["weights"] == "auto"
     assert "dapi" not in s1.images
     for record in (s0, s1):
         for entry in record.images.values():
-            assert (folder / entry["file"]).is_file()
+            assert (folder / entry.file).is_file()
     # Display properties are gone, the state is format 4 on disk, history too.
     saved = json.loads((folder / "state.json").read_text())
     assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 4 and "appearance" not in saved

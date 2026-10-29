@@ -23,7 +23,7 @@ from google.genai import types
 
 from langslice.core.atlas.load import load_atlas
 from langslice.core.spec import JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import log_progress
 from langslice.doors.agent.live import LiveCallback
 from langslice.doors.agent.media import opening_parts, packaged_tools
@@ -121,7 +121,7 @@ def build_context(
 # --- the session ---------------------------------------------------------
 
 
-def build_seed_message(state: StackState, ctx: EngineContext, job: str) -> types.Content:
+def build_seed_message(state: Stack, ctx: EngineContext, job: str) -> types.Content:
     """The first message: *job* (the job statement and the user's notes), the
     stack as ABBA-style strips (:mod:`langslice.core.pictures.opening`), the
     table."""
@@ -180,7 +180,7 @@ def background_message(job: Job) -> list[Any] | None:
 
 
 async def run_session(
-    state: StackState,
+    state: Stack,
     ctx: EngineContext,
     spec: JobSpec,
     box: ToolBox,
@@ -256,10 +256,10 @@ async def run(
     *,
     emit: Callable[[str], None] | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
-    on_write: Callable[[StackState], None] | None = None,
+    on_write: Callable[[Stack], None] | None = None,
     on_event: LiveCallback | None = None,
     on_open: Callable[[Job, EngineContext], None] | None = None,
-) -> StackState:
+) -> Stack:
     """Run one linear job and return the final stack state.
 
     *on_write* is a host adapter that wants to watch the run live (the ABBA

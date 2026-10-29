@@ -42,7 +42,7 @@ from langslice.core.pictures.sizes import (
     resolution_level,
 )
 from langslice.core.spec import JobSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.doors.agent.live import LiveCallback, plain
 from langslice.doors.tools import (
     TOOL_MEDIA_PARTS_KEY,
@@ -75,7 +75,7 @@ _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
 EVENT_ARGS_BYTES = 2048
 
 
-def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
+def _tool_target_ids(state: Stack, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
     every = [record.id for record in state.in_order()]
     sections = args.get("sections")
@@ -149,7 +149,7 @@ def _job_events(job: Job, door: str) -> LiveCallback:
 
 
 def _serialized(
-    tool: Any, lock: threading.Lock, *, state: StackState | None = None,
+    tool: Any, lock: threading.Lock, *, state: Stack | None = None,
     on_event: LiveCallback | None = None,
     log: LiveCallback | None = None,
     guard: Callable[[], contextlib.AbstractContextManager[Any]] | None = None,
@@ -485,7 +485,7 @@ def with_job_prompt(spec: JobSpec, image_model: ImageModel) -> ImageModel:
 
 
 def build_tools(
-    state: StackState, ctx: EngineContext, spec: JobSpec, *,
+    state: Stack, ctx: EngineContext, spec: JobSpec, *,
     job: Job | None = None,
     on_event: LiveCallback | None = None,
     max_view_edge: int | None = None,

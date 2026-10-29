@@ -6,7 +6,9 @@ import copy
 import logging
 import time
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from dataclasses import replace
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import scipy
@@ -18,16 +20,21 @@ from langslice.core.fits import landmarks as geometry
 from langslice.core.fits.deformable import finish_fit, prepare_warp
 from langslice.core.fits.deformable.engines import EngineResult
 from langslice.core.fits.deformable.geometry import WorkingGrid
+from langslice.core.fits.deformable.record import DeformableRecord
 from langslice.core.fits.frame import digest
 from langslice.core.geometry.pixel_frames import source_frame
 from langslice.core.geometry.triangulation import (
     DegenerateMesh,
     visualign_mesh,
 )
+from langslice.core.jsonable import JsonObject, to_jsonable
+from langslice.core.stack.deformation import DeformationRef, LandmarkWarp
+from langslice.core.stack.landmarks import Endpoint, Landmarks, Pair
+from langslice.core.stack.landmarks_json import pair_to_json
 from langslice.tools.refusal import Refused, check_frozen, unknown_sections
 
 if TYPE_CHECKING:
-    from langslice.core.stack.section import SliceState
+    from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -38,7 +45,7 @@ logger = logging.getLogger(__name__)
 DELETE_ALL = "all"
 
 
-def _section(job: Job, section: str) -> SliceState:
+def _section(job: Job, section: str) -> Section:
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [section])
@@ -73,8 +80,8 @@ def _plane_words(plane: dict[str, Any]) -> str:
 
 
 def _endpoint(
-    job: Job, record: SliceState, point: dict[str, Any], role: str, label: str = "the pair"
-) -> dict[str, Any]:
+    job: Job, record: Section, point: dict[str, Any], role: str, label: str = "the pair"
+) -> Endpoint:
     """The saved endpoint of *point* (``picture``, ``x``, ``y``) in *role*;
     *label* says which pair of the call it is, for the refusals."""
     here = f"{label}, {role} endpoint"
@@ -186,17 +193,21 @@ def _endpoint(
                 f"{_content(seq, [panel], frame)}. Coordinates are never clamped."
             ),
         )
-    return {
-        "canonical_xy": canonical.tolist(),
-        "picture": seq,
-        "pixel_xy": list(given),
-        "registration_context": copy.deepcopy(held),
-        "geometry": copy.deepcopy(panel),
-    }
+    canonical_x, canonical_y = cast("list[float]", canonical.tolist())
+    # the picture's record and panel, read back from its saved recipe
+    context = copy.deepcopy(cast("JsonObject", held))
+    panel_facts = copy.deepcopy(cast("JsonObject", panel))
+    return Endpoint(
+        canonical_xy=(canonical_x, canonical_y),
+        picture=seq,
+        pixel_xy=given,
+        registration_context=context,
+        geometry=panel_facts,
+    )
 
 
 def _atlas_regions(
-    workspace: Workspace, plane: dict[str, Any], items: Sequence[dict[str, Any]]
+    workspace: Workspace, plane: dict[str, Any], items: Sequence[Pair]
 ) -> dict[str, str]:
     """The region drawn at each of *items*' atlas endpoint on the atlas *plane*
     (``plane_context``), as ``ACRONYM (name)`` by pair id."""
@@ -206,8 +217,8 @@ def _atlas_regions(
         return {}
     annotation = plane_annotation(workspace, plane)
     structures = structure_table(workspace.atlas)
-    return {item["id"]: region_words(structures, label_at(annotation,
-                                                         item["atlas_native_xy"]) or 0)
+    return {item.id: region_words(structures, label_at(annotation,
+                                                       item.atlas_native_xy) or 0)
             for item in items}
 
 
@@ -217,7 +228,7 @@ INSIDE_MARGIN_PX = 1.5
 
 
 def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
-                    placed: Sequence[tuple[str, dict[str, Any]]]) -> None:
+                    placed: Sequence[tuple[str, Pair]]) -> None:
     """Refuse the call (``ATLAS_ENDPOINT_OUTSIDE``, nothing written) when an
     atlas endpoint of *placed* (``(label, pair)``) lies outside the atlas on
     *plane*, naming for each the nearest point inside it in the numbers it
@@ -230,7 +241,7 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
         return
     annotation = plane_annotation(workspace, plane)
     outside = [(label, pair) for label, pair in placed
-               if not label_at(annotation, pair["atlas_native_xy"])]
+               if not label_at(annotation, pair.atlas_native_xy)]
     if not outside:
         return
     inside = annotation != 0
@@ -242,17 +253,17 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
                                                 return_indices=True))
     sentences = []
     for label, pair in outside:
-        endpoint = pair["atlas"]
-        seq = endpoint["picture"]
-        x, y = endpoint["pixel_xy"]
+        endpoint = pair.atlas
+        seq = endpoint.picture
+        x, y = endpoint.pixel_xy
         sentence = (f"{label}, atlas endpoint: the point ({x:g}, {y:g}) in picture {seq} is "
                     "outside the atlas, where no brain is drawn, so it would pair empty atlas "
                     "with the tissue")
         c, r = (int(np.clip(np.rint(v), 0, n - 1)) for v, n in zip(
-            pair["atlas_native_xy"], (annotation.shape[1], annotation.shape[0]), strict=True))
+            pair.atlas_native_xy, (annotation.shape[1], annotation.shape[0]), strict=True))
         if target.any():
             row, col = int(nearest[0][r, c]), int(nearest[1][r, c])
-            matrix = np.asarray(endpoint["geometry"]["pixel_to_native"], dtype=float)
+            matrix = np.asarray(endpoint.geometry["pixel_to_native"], dtype=float)
             full = np.vstack([matrix[:2], [0.0, 0.0, 1.0]])
             px, py = geometry.transform(np.linalg.inv(full)[:2], [float(col), float(row)])
             picture = job.views.lookup(seq)
@@ -268,18 +279,19 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
         "the atlas endpoint on the drawn border or just inside it.")
 
 
-def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
+def _listing(job: Job, record: Section) -> list[dict[str, Any]]:
     """One compact record per pair: id, the endpoints as the call gave them
     (picture, x, y) and the state (``applied``, ``moved``, ``pending`` or
     ``stale``)."""
     states = geometry.pair_states(job.state, record)
-    rows = []
-    for pair in record.landmarks.get("pairs", []):
-        row: dict[str, Any] = {"id": pair["id"]}
-        for role in ("atlas", "section"):
-            x, y = pair[role]["pixel_xy"]
-            row[role] = {"picture": pair[role]["picture"], "x": round(x, 1), "y": round(y, 1)}
-        row["state"] = states[pair["id"]]
+    rows: list[dict[str, Any]] = []
+    for pair in geometry.section_pairs(record):
+        row: dict[str, Any] = {"id": pair.id}
+        for role, endpoint in (("atlas", pair.atlas), ("section", pair.section)):
+            x, y = endpoint.pixel_xy
+            row[role] = {"picture": endpoint.picture, "x": round(x, 1),
+                         "y": round(y, 1)}
+        row["state"] = states[pair.id]
         rows.append(row)
     return rows
 
@@ -288,6 +300,41 @@ def _counts(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
     states = [row["state"] for row in rows]
     kinds = ("applied", "moved", "pending", "stale")
     return {"total": len(states), **{k: states.count(k) for k in kinds}}
+
+
+def _edited_pair(
+    job: Job, section: Section, previous: Pair | None, pair_id: str,
+    edit: JsonObject, label: str,
+) -> Pair:
+    """Return pair *pair_id* after *edit* (a new pair without *previous*).
+
+    Each endpoint the edit gives is read off its picture and the others
+    kept; the atlas plane is the section's now when the atlas end moved.
+    """
+    atlas_end = None if previous is None else previous.atlas
+    section_end = None if previous is None else previous.section
+    # an endpoint as the call gave it, checked by _endpoint
+    if "atlas" in edit:
+        given = cast("dict[str, Any]", edit["atlas"])
+        atlas_end = _endpoint(job, section, given, "atlas", label)
+    if "section" in edit:
+        given = cast("dict[str, Any]", edit["section"])
+        section_end = _endpoint(job, section, given, "section", label)
+    # a new pair gives both endpoints (refused above otherwise)
+    assert atlas_end is not None and section_end is not None
+    plane: JsonObject = {} if previous is None else previous.plane
+    if "atlas" in edit:
+        plane = geometry.plane_context(job.state, section)
+    item = Pair(
+        id=pair_id, atlas=atlas_end, atlas_native_xy=atlas_end.canonical_xy,
+        section=section_end, section_fraction_xy=section_end.canonical_xy,
+        plane=plane, stale=False)
+    if previous is not None:
+        item = replace(
+            previous, atlas=item.atlas, atlas_native_xy=item.atlas_native_xy,
+            section=item.section, section_fraction_xy=item.section_fraction_xy,
+            plane=plane)
+    return replace(item, stale=geometry.stale(job.state, section, item))
 
 
 def set_landmarks(
@@ -319,14 +366,15 @@ def set_landmarks(
             "BAD_ARGS", message="pairs is a list of objects; delete is a list of pair IDs."
         )
     record = _section(job, section)
-    current = copy.deepcopy(record.landmarks or {"next_id": 1, "pairs": []})
-    by_id = {pair["id"]: pair for pair in current["pairs"]}
+    saved = record.landmarks or Landmarks()
+    next_id = saved.next_id
+    by_id = {pair.id: pair for pair in saved.pairs}
     if len(set(delete)) != len(delete) or len({p.get("id") for p in pairs if p.get("id")}) != sum(
         bool(p.get("id")) for p in pairs
     ):
         raise Refused("BAD_ARGS", message="A pair ID may be edited or deleted only once per batch.")
     changed: list[str] = []
-    placed: list[dict[str, Any]] = []
+    placed: list[Pair] = []
     labels: list[str] = []
     deleted = list(by_id) if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
@@ -366,28 +414,18 @@ def set_landmarks(
                 "BAD_ARGS",
                 message=f"{label}: a new pair needs explicit atlas and section endpoints.",
             )
-        item = copy.deepcopy(previous or {})
         if not pair_id:
-            pair_id = f"L{current['next_id']}"
-            current["next_id"] += 1
-        item["id"] = pair_id
-        for role in ("atlas", "section"):
-            if role in edit:
-                endpoint = _endpoint(job, record, edit[role], role, label)
-                item[role] = endpoint
-                item["atlas_native_xy" if role == "atlas" else "section_fraction_xy"] = endpoint[
-                    "canonical_xy"
-                ]
+            pair_id = f"L{next_id}"
+            next_id += 1
+        item = _edited_pair(job, record, previous, pair_id, edit, label)
         if "atlas" in edit:
-            item["plane"] = geometry.plane_context(job.state, record)
             placed.append(item)
             labels.append(label)
-        item["stale"] = geometry.stale(job.state, record, item)
         by_id[pair_id] = item
         changed.append(pair_id)
     _refuse_outside(job, workspace, geometry.plane_context(job.state, record),
                     list(zip(labels, placed, strict=True)))
-    current["pairs"] = list(by_id.values())
+    current = Landmarks(next_id=next_id, pairs=tuple(by_id.values()))
     before = job.snapshot()
     written = bool(pairs or delete) and record.landmarks != current
     if written:
@@ -478,16 +516,16 @@ def _folds_reply(folds: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _require_applicable(job: Job, record: SliceState) -> list[dict[str, Any]]:
+def _require_applicable(job: Job, record: Section) -> tuple[Pair, ...]:
     """The section's pairs, refusing too few of them or any placed against another plane."""
-    pairs = record.landmarks.get("pairs", [])
+    pairs = geometry.section_pairs(record)
     if len(pairs) < 3:
         raise Refused(
             "INSUFFICIENT_LANDMARKS",
             message=f"{record.id} has {len(pairs)} saved pair(s); at least three corresponding "
             "pairs are required (set_landmarks adds them).",
         )
-    stale_ids = [pair["id"] for pair in pairs if geometry.stale(job.state, record, pair)]
+    stale_ids = [pair.id for pair in pairs if geometry.stale(job.state, record, pair)]
     if stale_ids:
         raise Refused(
             "STALE_LANDMARK_PLANE",
@@ -518,46 +556,46 @@ def _mesh(
 
 
 def _landmark_reference(
-    job: Job, record: SliceState, folder: Any, key: str, result: Any, numbers: dict[str, Any],
-    revision: str, pairs: list[dict[str, Any]], folds: dict[str, Any],
-    baseline_key: str | None, baseline_steps: list[Any], composed: bool,
-) -> dict[str, Any]:
+    job: Job, section: Section, folder: Path, key: str,
+    result: DeformableRecord, numbers: dict[str, Any],
+    revision: str, pairs: Sequence[Pair], folds: dict[str, Any],
+    baseline_key: str | None, baseline_steps: tuple[JsonObject, ...],
+    composed: bool,
+) -> DeformationRef:
     """The deformation reference the section holds for a landmark application."""
-    return {
-        "key": key,
-        "record": job.layout.relative(folder),
-        "linear_key": deformation.linear_key(job.state, record),
-        "summary": numbers,
-        "inverse_source": result.inverse_source,
+    step: JsonObject = {
+        "method": "landmark_triangulation",
+        "start": "current" if composed else "linear",
         "landmark_revision": revision,
-        "landmark_pairs": {p["id"]: geometry.pair_key(p) for p in pairs},
-        "landmark_folds": folds,
-        "landmark_baseline_key": baseline_key,
-        "landmark_baseline_steps": baseline_steps,
-        "steps": [
-            *baseline_steps,
-            {
-                "method": "landmark_triangulation",
-                "start": "current" if composed else "linear",
-                "landmark_revision": revision,
-                "landmark_count": len(pairs),
-            },
-        ],
+        "landmark_count": len(pairs),
     }
+    keys = {p.id: geometry.pair_key(p) for p in pairs}
+    warp = LandmarkWarp(
+        revision=revision, pairs=keys, folds=folds,
+        baseline_key=baseline_key, baseline_steps=baseline_steps)
+    return DeformationRef(
+        key=key, linear_key=deformation.linear_key(job.state, section),
+        steps=(*baseline_steps, step), record=job.layout.relative(folder),
+        summary=numbers, inverse_source=result.inverse_source, landmark=warp)
 
 
-def _unchanged_reply(record: SliceState, pairs: list[dict[str, Any]]) -> dict[str, Any]:
+def _unchanged_reply(record: Section, pairs: Sequence[Pair]) -> dict[str, Any]:
     """The reply when the section's warp is already the one these pairs make."""
-    held = record.deformation or {}
+    applied = record.deformation
+    summary: JsonObject = {}
+    if applied is not None and applied.summary is not None:
+        summary = applied.summary
+    warp = geometry.landmark_warp(record)
+    folds = None if warp is None else to_jsonable(warp.folds)
     return {
         "status": "ok",
         "section": record.id,
         "written": False,
         "landmark_count": len(pairs),
-        "built_from": [p["id"] for p in pairs],
-        **held.get("summary", {}),
+        "built_from": [p.id for p in pairs],
+        **summary,
         DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
-        **_folds_reply(held.get("landmark_folds")),
+        **_folds_reply(folds),
     }
 
 
@@ -568,9 +606,11 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
     # The warp is the pairs' and the four corners' mesh alone; a warp saved
     # before that (with automatic holds) has another revision, so the same
     # pairs build it again.
-    revision = digest({"pairs": pairs, "mesh": "pairs and corners"})
-    held = record.deformation or {}
-    if held.get("landmark_revision") == revision:
+    pair_forms = [pair_to_json(pair) for pair in pairs]
+    revision = digest({"pairs": pair_forms, "mesh": "pairs and corners"})
+    held = record.deformation
+    applied_warp = geometry.landmark_warp(record)
+    if applied_warp is not None and applied_warp.revision == revision:
         return _unchanged_reply(record, pairs)
     started = time.monotonic()
     try:
@@ -580,33 +620,36 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         except ValueError:  # its record.json does not load (the error names it)
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current = None
-        if held and current is None:
+        if held is not None and current is None:
             raise Refused(
                 "LANDMARK_WARP_UNAVAILABLE",
                 message="The current deformation cannot be read; undo it first.",
             )
         replacing = current is not None and current.engine.get("name") == "landmark_triangulation"
         previous = current.parent if replacing and current is not None else current
-        baseline_key = held.get("landmark_baseline_key") if replacing else held.get("key")
-        baseline_steps = copy.deepcopy(
-            held["landmark_baseline_steps"] if replacing else held.get("steps", [])
-        )
+        baseline_key: str | None = None
+        baseline_steps: tuple[JsonObject, ...] = ()
+        if replacing and applied_warp is not None:
+            baseline_key = applied_warp.baseline_key
+            baseline_steps = applied_warp.baseline_steps
+        elif held is not None:
+            baseline_key, baseline_steps = held.key, held.steps
         size = grid.image.size
         source = (
             geometry.transform(
                 np.linalg.inv(geometry.orientation(record)),
-                [p["section_fraction_xy"] for p in pairs],
+                [p.section_fraction_xy for p in pairs],
             )
             * np.asarray(size)
             - 0.5
         )
         target = geometry.transform(
-            grid.placement.atlas_to_section, [p["atlas_native_xy"] for p in pairs]
+            grid.placement.atlas_to_section, [p.atlas_native_xy for p in pairs]
         )
         if previous is not None:
             assert previous.inverse_field_mm is not None
             target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
-        names = [p["id"] for p in pairs]
+        names = [p.id for p in pairs]
         prepared = prepare_warp(workspace.atlas, grid.placement, size, deformation.DETAIL_LEVEL,
                                 previous=previous)
         mesh = _mesh(names, source, target, size)
@@ -654,7 +697,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "section_id": record.id,
         "landmark_revision": revision,
         "landmark_baseline_key": baseline_key,
-        "pairs": copy.deepcopy(pairs),
+        "pairs": pair_forms,
     }
     job.deformations.put(key, result)
     folder = job.deformations.save(record.id, key, result)
@@ -669,7 +712,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "section": record.id,
         "written": True,
         "landmark_count": len(pairs),
-        "built_from": [p["id"] for p in pairs],
+        "built_from": [p.id for p in pairs],
         "composed": previous is not None,
         "replaced": replacing,
         **numbers,

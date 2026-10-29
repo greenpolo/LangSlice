@@ -19,15 +19,15 @@ from langslice.core.sections.masks import (
     registration_digest,
     registration_parts,
 )
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 
 #: A section whose inputs changed while its result was computed.
 STALE_INPUT = "STALE_INPUT"
 
 
 def section_inputs(
-    state: StackState, record: SliceState, *, deformation: bool = False, trace: bool = False,
+    state: Stack, record: Section, *, deformation: bool = False, trace: bool = False,
 ) -> str:
     """A digest of what a fit of *record* reads: its linear placement
     (position, plane, cutting angles, flip, rotation, transform), its made
@@ -39,11 +39,17 @@ def section_inputs(
         return registration_digest(state, record)
     held: dict[str, Any] = registration_parts(state, record)
     if deformation:
-        held["deformation"] = (record.deformation or {}).get("key")
+        held["deformation"] = record.deformation_key
     if trace:
-        correction = record.image_correction or {}
-        held["trace"] = {key: correction.get(key) for key in (
-            "status", "geometry_fingerprint", "artifact_dir", "attempt")}
+        correction = record.image_correction
+        held["trace"] = dict.fromkeys(
+            ("status", "geometry_fingerprint", "artifact_dir", "attempt"))
+        if correction is not None:
+            held["trace"] = {
+                "status": correction.status,
+                "geometry_fingerprint": correction.geometry_fingerprint,
+                "artifact_dir": correction.artifact_dir,
+                "attempt": correction.attempt}
     text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 

@@ -11,10 +11,16 @@ import pytest
 
 from langslice.core.fits import frame as handoff
 from langslice.core.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import (
+    affine_from_json,
+    affine_to_json,
+    trace_from_json,
+    trace_to_json,
+)
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
 from langslice.job.job import apply_host_inputs
+from langslice.job.state_file import stack_from_json, stack_to_json
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
@@ -22,10 +28,10 @@ from tests.linear_tool_helpers import tool_named as _tool
 
 def _placed(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, n=1, placed=True, tasks=["nonlinear"])
-    state.slices[0].transform = {
+    state.slices[0].transform = affine_from_json({
         "kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
         "calibration": {"section_um_per_px": 25, "source": "host"},
-    }
+    })
     return state, ctx, spec
 
 
@@ -56,7 +62,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     def fake_start(actual_state, actual_ctx, section_id, **kwargs):
         assert actual_state is state and actual_ctx is ctx
         calls.append((section_id, kwargs))
-        running = {"status": "running", "geometry_fingerprint": "geometry",
+        running = {"id": "s0.png", "status": "running", "geometry_fingerprint": "geometry",
                    "prompt_edited": bool(kwargs["prompt"])}
 
         def job():
@@ -85,19 +91,20 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved.slices[0].image_correction == state.slices[0].image_correction
-    restored = StackState.from_dict(json.loads(json.dumps(state.to_dict())))
+    restored = stack_from_json(json.loads(json.dumps(stack_to_json(state))))
     assert restored.slices[0].image_correction == state.slices[0].image_correction
     assert state.slices[0].transform == transform
     _tool(box, "undo")()
     assert state.slices[0].image_correction is None
     _tool(box, "redo")()
-    assert state.slices[0].image_correction["status"] == "running"
+    assert trace_to_json(state.slices[0].image_correction)["status"] == "running"
     release.set()
     # submit waits for the work; the stand-in's trace has no lines to fit.
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert box.job.background.running() == []
-    assert state.slices[0].image_correction["status"] == "ok"
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
+    assert trace_to_json(state.slices[0].image_correction)["status"] == "ok"
+    assert trace_to_json(
+        load_checkpoint(ctx.checkpoint_path).slices[0].image_correction)["status"] == "ok"
     assert state.slices[0].transform == transform
     assert _tool_target_ids(state, "trace_borders", {"section": "s0"}) == ["s0.png"]
     assert _tool_target_ids(state, "trace_borders", {"section": "0"}) == []
@@ -107,7 +114,7 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     from langslice.core.fits.trace import trace as registration_tool
 
     state, ctx, spec = _placed(tmp_path)
-    running = {"status": "running", "geometry_fingerprint": "geometry"}
+    running = {"id": "s0.png", "status": "running", "geometry_fingerprint": "geometry"}
     monkeypatch.setattr(registration_tool, "start_correction",
                         lambda *a, **k: (running, lambda: {**running, "status": "ok"}))
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "geometry")
@@ -120,14 +127,15 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     assert state.slices[0].deformation is None
 
 
-@pytest.mark.parametrize("result", [None, {"status": "error"}, {
-    "status": "ok", "geometry_fingerprint": "previous-placement",
+@pytest.mark.parametrize("result", [None, {
+    "id": "s0.png", "status": "error", "geometry_fingerprint": "previous-placement"}, {
+    "id": "s0.png", "status": "ok", "geometry_fingerprint": "previous-placement",
 }])
 def test_submit_needs_no_completed_correction(tmp_path, monkeypatch, result):
     """Tracing is the agent's choice: with or without a current trace, submit
     asks for no deformation either unless the host requires one."""
     state, ctx, spec = _placed(tmp_path)
-    state.slices[0].image_correction = result
+    state.slices[0].image_correction = None if result is None else trace_from_json(result)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
@@ -146,9 +154,10 @@ def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
         nonlinear=NonlinearSpec(provider="openai-api", image_model="test-model"))
     apply_host_inputs(state, spec)
     for record in state.slices:
-        record.transform = {"kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
-                            "calibration": {"section_um_per_px": 25, "source": "host"}}
-    state.slices[0].image_correction = {"status": "ok", "geometry_fingerprint": "current"}
+        record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
+                            "calibration": {"section_um_per_px": 25, "source": "host"}})
+    state.slices[0].image_correction = trace_from_json(
+        {"id": "s0.png", "status": "ok", "geometry_fingerprint": "current"})
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     assert _tool(box, "trace_borders")("s1.png")["error"] == code
@@ -178,9 +187,9 @@ def test_host_inputs_preserve_complete_transform_and_do_not_alias_it(tmp_path):
     supplied = {"params": [1, 0, 0, 0, 1, 0], "physical": {"scale_x": .1}}
     spec.inputs = {"transforms": {"s0.png": supplied}}
     apply_host_inputs(state, spec)
-    assert state.slices[0].transform == supplied
+    assert affine_to_json(state.slices[0].transform) == supplied
     supplied["physical"]["scale_x"] = .9
-    assert state.slices[0].transform["physical"]["scale_x"] == .1
+    assert affine_to_json(state.slices[0].transform)["physical"]["scale_x"] == .1
     spec.inputs = {"transforms": {"missing.png": supplied}}
     with pytest.raises(ValueError, match="unknown section"):
         apply_host_inputs(state, spec)

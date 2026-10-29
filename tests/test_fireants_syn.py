@@ -10,6 +10,7 @@ import pytest
 
 from langslice.core.fits import deformation
 from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.core.stack.codec import affine_from_json, deformation_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.tools import deformable as ops_deformable
@@ -19,6 +20,7 @@ from tests.deformable_synthetic import (
     SyntheticAtlas,
     render_section,
 )
+from tests.shapes import json_of
 
 pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
 
@@ -42,8 +44,9 @@ def _job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any]:
         before = job.snapshot()
         record = job.state.slices[0]
         record.position_mm = 0.1
-        record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                            "calibration": {"section_um_per_px": 25.0, "source": "host"}}
+        record.transform = affine_from_json(
+            {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            "calibration": {"section_um_per_px": 25.0, "source": "host"}})
         job.commit(before)
     return job, ctx
 
@@ -69,13 +72,13 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     assert row["inputs"]["mask"]["name"] == "none" and row["inputs"]["damage"]["side"] == "atlas"
     assert row["estimated"] is None
     assert len(job.undo_stack) == depth + 1
-    held = job.state.slices[0].deformation
+    held = json_of(job.state.slices[0].deformation)
     assert held is not None and [step["start"] for step in held["steps"]] == ["linear"]
 
     second = ops_deformable.fireants_syn(job, ctx, ["s0.png"], smoothness_um=50.0,
                                          restrict_to=["TH"])
     assert second.rows[0]["status"] == "ok", second.rows
-    held = job.state.slices[0].deformation
+    held = json_of(job.state.slices[0].deformation)
     assert held is not None
     assert [step["start"] for step in held["steps"]] == ["linear", "current"]
     assert held["steps"][1]["include"] == ["TH"]
@@ -83,7 +86,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     assert second.rows[0]["inputs"]["restrict_to"] == ["TH"]
     assert len(job.undo_stack) == depth + 2
     assert job.undo()  # undo is how to start over
-    assert len(job.state.slices[0].deformation["steps"]) == 1  # type: ignore[index]
+    assert len(deformation_to_json(job.state.slices[0].deformation)["steps"]) == 1  # type: ignore[index]
 
 
 def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
@@ -91,7 +94,7 @@ def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
     job.state.slices[0].damaged_regions = ["HY"]
     done = ops_deformable.fireants_syn(job, ctx, [ID])
     assert done.rows[0]["status"] == "ok"
-    step = job.state.slices[0].deformation["steps"][0]  # type: ignore[index]
+    step = deformation_to_json(job.state.slices[0].deformation)["steps"][0]  # type: ignore[index]
     assert step["exclude"] == ["HY"]
 
 

@@ -1,7 +1,7 @@
 """Damage marks: the atlas regions a section is missing, which every fit leaves out.
 
 A section is damaged exactly when it has marked regions
-(``SliceState.damaged_regions``). :func:`mark_damage` sets a section's regions
+(``Section.damaged_regions``). :func:`mark_damage` sets a section's regions
 and note; the fits and the image model's trace read them
 (:func:`langslice.core.sections.damage.exclusions`). A host's note
 (``inputs.damaged``, ``{filename: note}``) is the section's ``damage_note``
@@ -25,7 +25,7 @@ from langslice.tools.refusal import Refused, check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.pictures.options import DisplayOptions
-    from langslice.core.stack.section import SliceState
+    from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -60,7 +60,7 @@ class DamageRegions:
         return [self.id] if self.written else []
 
 
-def _user_note(job: Job, record: SliceState) -> str:
+def _user_note(job: Job, record: Section) -> str:
     """The note the host gave with its mark ("" for none, or no mark)."""
     marks = (job.spec.inputs or {}).get("damaged") or {}
     return str(marks.get(record.id) or "").strip() if record.id in job.host_damaged else ""
@@ -72,7 +72,7 @@ def _joined_note(user: str, agent: str) -> str:
     return "; ".join(dict.fromkeys(parts))
 
 
-def _check_sides(job: Job, workspace: Workspace, record: SliceState, names: Sequence[str]) -> None:
+def _check_sides(job: Job, workspace: Workspace, record: Section, names: Sequence[str]) -> None:
     """Refuse a one-sided entry whose side the section's current placement does
     not have (the picture's check, made before the write); a section without a
     usable placement is not checked."""

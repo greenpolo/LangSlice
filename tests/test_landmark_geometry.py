@@ -19,7 +19,8 @@ from langslice.core.geometry.triangulation import (
     PiecewiseAffine,
     visualign_mesh,
 )
-from langslice.core.stack.section import SliceState
+from langslice.core.stack.landmarks_json import landmarks_to_json
+from langslice.core.stack.section import Section
 
 
 def test_the_mesh_accepts_folds_and_keeps_its_forward_map():
@@ -110,7 +111,7 @@ def test_warped_view_endpoint_uses_the_actual_section_point_under_the_pixel():
     inverse = ((points - offset) @ np.linalg.inv(matrix).T - points) * mm
     record = SimpleNamespace(field_mm=field, inverse_field_mm=inverse,
                              section_size=(width, height), mm_per_px=mm)
-    section = SliceState("section.tif", 0, 0)
+    section = Section("section.tif", 0, 0)
     panel = section_panel(section, (width, height), pixel_to_render=np.eye(3),
                           bounds=[0, 0, width, height], warp_key="example")
     original = np.array([83., 59.])
@@ -136,7 +137,7 @@ def test_endpoint_pixels_follow_actual_image_rotation_flip_and_crop(rotation, fl
         image = image.transpose(turns[rotation])
     if flip:
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-    record = SliceState("section.tif", 0, 0, rotation_deg=rotation, flip=flip)
+    record = Section("section.tif", 0, 0, rotation_deg=rotation, flip=flip)
     # A displayed crop magnifies by four and offsets its picture by a gutter.
     pixel_to_render = np.array([[.25, 0., 2.], [0., .25, 1.], [0., 0., 1.]])
     panel = section_panel(record, image.size, pixel_to_render=pixel_to_render,
@@ -166,7 +167,7 @@ def test_applied_record_interpolates_correspondences_after_sequential_correction
             landmarks.landmark_triangulation(job, workspace, section.id)
             applied = job.deformations.current(job.state, section)
             assert applied is not None
-            for pair in section.landmarks["pairs"]:
+            for pair in landmarks_to_json(section.landmarks)["pairs"]:
                 section_xy = np.array(pair["section_fraction_xy"]) * applied.section_size - .5
                 shift = np.array([
                     map_coordinates(applied.field_mm[..., axis],

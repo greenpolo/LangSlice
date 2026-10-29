@@ -6,21 +6,26 @@ the opening and MCP briefing print as text (:func:`status_text`).
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.jsonable import JsonObject
+from langslice.core.stack.affine import StoredAffine
+from langslice.core.stack.codec import physical_to_json
+from langslice.core.stack.deformation import DeformationRef
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 
 #: What a status reply says under ``cutting_angles_deg`` when the sections'
 #: angles differ: each row carries its own.
 PER_SECTION = "per section"
 
 
-def mask_rows(state: StackState, record: SliceState) -> list[dict[str, Any]]:
-    """``[{name, kind, stale}]`` of *record*'s masks."""
+def mask_rows(state: Stack, section: Section) -> list[dict[str, Any]]:
+    """``[{name, kind, stale}]`` of *section*'s masks."""
     from langslice.core.sections.masks import mask_rows as rows
 
-    return rows(state, record)
+    return rows(state, section)
 
 
 #: Step fields that say how a step was made, not with which settings.
@@ -29,68 +34,78 @@ _STEP_FACTS = ("method", "start", "note", "trace", "settings", "include", "exclu
 _STEP_NAMES = {"fit_section": "section_image", "fit_atlas": "atlas_image"}
 
 
-def step_method(step: dict[str, Any]) -> str:
+def step_method(step: JsonObject) -> str:
     """The method a deformation step names (a step saved before steps named
     one: ``trace_borders`` for a traced fit, else ``fireants_syn``)."""
-    if step.get("method"):
-        return str(step["method"])
+    method = step.get("method")
+    if method:
+        return str(method)
     return "trace_borders" if step.get("trace") else "fireants_syn"
 
 
-def step_settings(step: dict[str, Any]) -> dict[str, Any]:
+def step_settings(step: JsonObject) -> dict[str, Any]:
     """The settings a deformation step was made with, by the tools' names: a
     plugin's or a script's ``settings`` as it gave them, a native fit's own
     (``section_image``, ``atlas_image``, ``mask``, ``smoothness_um``, ...,
     and ``restrict_to`` when it fitted by regions)."""
-    if isinstance(step.get("settings"), dict):
-        return dict(step["settings"])
-    out = {_STEP_NAMES.get(key, key): value for key, value in step.items()
-           if key not in _STEP_FACTS}
-    if step.get("include"):
-        out["restrict_to"] = list(step["include"])
+    given = step.get("settings")
+    if isinstance(given, Mapping):
+        return dict(given)
+    out: dict[str, Any] = {
+        _STEP_NAMES.get(key, key): value for key, value in step.items()
+        if key not in _STEP_FACTS}
+    include = step.get("include")
+    if include and isinstance(include, Sequence):
+        out["restrict_to"] = list(include)
     return out
 
 
-def deformation_entry(deformation: dict[str, Any] | None) -> dict[str, Any] | None:
+def deformation_entry(deformation: DeformationRef | None) -> dict[str, Any] | None:
     """What a status row and a registration listing say of a deformation:
     ``method`` (its last step's), ``steps`` (every step's method, first
     first) and ``settings`` (the last step's, :func:`step_settings`); None
     without one."""
-    if not deformation:
+    if deformation is None:
         return None
-    steps = [step for step in deformation.get("steps") or [] if isinstance(step, dict)]
+    steps = deformation.steps
     if not steps:
         return {"method": "unknown", "steps": [], "settings": {}}
     return {"method": step_method(steps[-1]), "steps": [step_method(s) for s in steps],
             "settings": step_settings(steps[-1])}
 
 
-def transform_entry(transform: dict[str, Any] | None) -> dict[str, Any] | None:
+def transform_entry(transform: StoredAffine | None) -> dict[str, Any] | None:
     """What a status row and a registration listing say of a transform: its
     ``kind``, the knobs ``interactive_transform`` takes (``rotation_deg``,
     ``scale_x``, ``scale_y``, ``shear``, ``translate_x_mm``, ``translate_y_mm``
     and their ``pivot``) and ``mirrored``; None without one."""
-    if not transform:
+    if transform is None:
         return None
-    knobs = transform.get("physical") or {}
-    return {"kind": transform.get("kind"), **knobs,
-            **({"mirrored": transform["mirrored"]} if "mirrored" in transform else {})}
+    entry: dict[str, Any] = {"kind": transform.kind}
+    if transform.physical is not None:
+        entry.update(physical_to_json(transform.physical))
+    if transform.mirrored is not None:
+        entry["mirrored"] = transform.mirrored
+    return entry
 
 
-def angles_dict(record: SliceState) -> dict[str, float]:
+def angles_dict(section: Section) -> dict[str, float]:
     """The section's ``{"pitch", "yaw"}`` in degrees, as floats."""
-    pitch, yaw = record.angles
+    pitch, yaw = section.angles
     return {"pitch": pitch, "yaw": yaw}
 
 
-def stack_angles_entry(state: StackState) -> dict[str, float] | str:
+def stack_angles_entry(state: Stack) -> dict[str, float] | str:
     """What a status reply says under ``cutting_angles_deg``: the stack's
-    ``{"pitch", "yaw"}`` (a copy of the stored angles), or
-    :data:`PER_SECTION` when the sections differ (their rows carry them)."""
-    return PER_SECTION if state.mixed_angles else dict(state.cutting_angles_deg)
+    ``{"pitch", "yaw"}``, or :data:`PER_SECTION` when the sections differ
+    (their rows carry them)."""
+    if state.mixed_angles:
+        return PER_SECTION
+    pitch, yaw = state.stack_angles
+    return {"pitch": pitch, "yaw": yaw}
 
 
-def status_rows(state: StackState) -> list[dict[str, Any]]:
+def status_rows(state: Stack) -> list[dict[str, Any]]:
     """One row per section in corrected order. The ``ls`` of the environment.
 
     ``delta_to_next_mm`` is the SIGNED distance to the next section in
@@ -116,8 +131,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     ordered = state.in_order()
     mixed = state.mixed_angles
     rows: list[dict[str, Any]] = []
-    for index, record in enumerate(ordered):
-        here = record.position_mm
+    for index, section in enumerate(ordered):
+        here = section.position_mm
         delta: float | None = None
         if here is not None:
             following = next(
@@ -132,24 +147,24 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 delta = round(following - here, 3)
         rows.append(
             {
-                "id": record.id,
+                "id": section.id,
                 "position_mm": round(here, 3) if here is not None else None,
                 "delta_to_next_mm": delta,
-                "flip": record.flip,
-                "rotation_deg": record.rotation_deg,
-                **({"cutting_angles_deg": angles_dict(record)} if mixed else {}),
-                "damaged": record.damaged,
-                "damaged_regions": list(record.damaged_regions),
-                "damage_note": record.damage_note,
-                "transform": transform_entry(record.transform),
-                **({"deformation": deformation_entry(record.deformation)}
-                   if record.deformation else {}),
-                **({"landmarks": counts} if (counts := landmark_counts(state, record)) else {}),
-                **({"layers": [{"name": ref["name"], "kind": ref["kind"],
-                                "frame": ref["frame"], "tool": ref["tool"]}
-                               for ref in record.layers]} if record.layers else {}),
-                **({"masks": mask_rows(state, record)} if record.masks else {}),
-                "caveats": list(record.caveats),
+                "flip": section.flip,
+                "rotation_deg": section.rotation_deg,
+                **({"cutting_angles_deg": angles_dict(section)} if mixed else {}),
+                "damaged": section.damaged,
+                "damaged_regions": list(section.damaged_regions),
+                "damage_note": section.damage_note,
+                "transform": transform_entry(section.transform),
+                **({"deformation": deformation_entry(section.deformation)}
+                   if section.deformation else {}),
+                **({"landmarks": counts} if (counts := landmark_counts(state, section)) else {}),
+                **({"layers": [{"name": ref.name, "kind": ref.kind,
+                                "frame": ref.frame, "tool": ref.tool}
+                               for ref in section.layers]} if section.layers else {}),
+                **({"masks": mask_rows(state, section)} if section.masks else {}),
+                "caveats": list(section.caveats),
             }
         )
     return rows
@@ -226,7 +241,7 @@ def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def status_text(state: StackState) -> str:
+def status_text(state: Stack) -> str:
     """The status rows as one line per section, for a text message."""
     lines = [
         "filename  position_mm  delta_to_next_mm  flags  "

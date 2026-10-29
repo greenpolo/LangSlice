@@ -1,6 +1,6 @@
 """The job: one stack's state and everything that keeps it consistent.
 
-A :class:`Job` owns the :class:`~langslice.core.stack.stack.StackState` and the
+A :class:`Job` owns the :class:`~langslice.core.stack.stack.Stack` and the
 :class:`~langslice.core.spec.JobSpec`, its job folder
 (:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
 sections' frozen properties and the host's damage notes, undo/redo (persisted
@@ -48,13 +48,14 @@ import os
 import threading
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from langslice.core import frozen as freeze
 from langslice.core.fits import deformation
 from langslice.core.frozen import FROZEN
-from langslice.core.jsonable import Json, to_jsonable
+from langslice.core.jsonable import Json, JsonObject, to_jsonable
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.spec import (
@@ -62,8 +63,10 @@ from langslice.core.spec import (
     JobSpec,
     supplied_angles,
 )
-from langslice.core.stack.section import IDENTITY_KNOBS, ROTATIONS, SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.affine import IDENTITY_PHYSICAL, StoredAffine
+from langslice.core.stack.codec import affine_from_json, trace_from_json
+from langslice.core.stack.section import ROTATIONS, Section
+from langslice.core.stack.stack import Stack
 from langslice.job import public_files as formats
 from langslice.job import recent
 from langslice.job import registrations as regs
@@ -83,6 +86,8 @@ from langslice.job.state_file import (
     Upgrade,
     read_checkpoint,
     relative_to,
+    stack_from_json,
+    stack_to_json,
     state_paths,
     write_checkpoint,
     write_json_atomic,
@@ -126,28 +131,25 @@ def host_damaged_ids(spec: JobSpec) -> set[str]:
     return _named(spec, "damaged")
 
 
-def host_transform() -> dict[str, Any]:
+def host_transform() -> StoredAffine:
     """The identity transform a section with a frozen affine and none supplied
     carries: the host's snapshot is already aligned in-plane."""
-    return {
-        "kind": HOST_TRANSFORM_KIND,
-        "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        "physical": {**IDENTITY_KNOBS, "shear": 0.0, "pivot": [0.5, 0.5]},
-        "mirrored": False,
-    }
+    return StoredAffine(
+        kind=HOST_TRANSFORM_KIND, params=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        physical=IDENTITY_PHYSICAL, mirrored=False)
 
 
 # --- open and close ----------------------------------------------------------
 
 
-def ingest(spec: JobSpec, workspace: Workspace) -> StackState:
+def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
     """Discover the folder and build the stack state. Plain code, no model."""
     paths = discover_slices(workspace.image_folder)
     if not paths:
         raise ValueError(f"No slice images found in {workspace.image_folder}")
 
     pos_lo, pos_hi = workspace.position_range
-    state = StackState(
+    state = Stack(
         image_folder=workspace.image_folder,
         atlas=spec.atlas,
         plane=spec.plane,
@@ -155,7 +157,7 @@ def ingest(spec: JobSpec, workspace: Workspace) -> StackState:
         thickness_mm=spec.thickness_mm,
         spec=spec.to_dict(),
         slices=[
-            SliceState(
+            Section(
                 id=os.path.basename(path), index_original=index, index_corrected=index
             )
             for index, path in enumerate(paths)
@@ -169,15 +171,20 @@ def ingest(spec: JobSpec, workspace: Workspace) -> StackState:
     return state
 
 
-def _section(state: StackState, key: str, name: Any) -> SliceState:
+def _section(state: Stack, key: str, name: object) -> Section:
     """The section *name* of ``inputs.<key>``; ``ValueError`` for one not here."""
-    record = state.by_id(str(name))
-    if record is None:
+    section = state.by_id(str(name))
+    if section is None:
         raise ValueError(f"inputs.{key} names an unknown section: {name!r}")
-    return record
+    return section
 
 
-def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
+def _host_affine(given: object) -> StoredAffine:
+    """Return a copy of a host's transform dictionary as the stored affine."""
+    return affine_from_json(copy.deepcopy(cast("JsonObject", given)))
+
+
+def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
     """Write the host's answers for the tasks that are switched off.
 
     Order arrives as a list of filenames, positions as a filename -> mm
@@ -217,7 +224,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     if positions:
         applied = 0
         for name, value in positions.items():
-            record = _section(state, "positions", name)
+            record = _section(state, "positions", cast("object", name))
             record.position_mm = float(value)
             applied += 1
         state.notes.append(f"inputs: {applied} position(s) set by the host")
@@ -225,7 +232,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     stack_angles, section_angles = supplied_angles(inputs.get("angles"))
     if stack_angles is not None:
         pitch, yaw = stack_angles
-        state.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
+        state.set_angles((pitch, yaw))
         state.notes.append(
             f"inputs: cutting angles set by the host "
             f"(pitch {pitch:.2f}, yaw {yaw:.2f})"
@@ -233,7 +240,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     if section_angles:
         for name, (pitch, yaw) in section_angles.items():
             record = _section(state, "angles", name)
-            record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
+            record.angles = (pitch, yaw)
         state.notes.append(
             f"inputs: cutting angles of {len(section_angles)} section(s) set by the host"
         )
@@ -244,7 +251,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             raise ValueError("inputs.orientation must map section filenames to "
                              "{flip, rotation_deg}")
         for name, value in orientation.items():
-            record = _section(state, "orientation", name)
+            record = _section(state, "orientation", cast("object", name))
             if not isinstance(value, dict) or set(value) - {"flip", "rotation_deg"}:
                 raise ValueError(f"inputs.orientation[{name!r}] must be "
                                  "{flip: bool, rotation_deg: 0|90|180|270}")
@@ -265,10 +272,10 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     transforms = inputs.get("transforms") or {}
     if transforms:
         for name, value in transforms.items():
-            record = _section(state, "transforms", name)
+            record = _section(state, "transforms", cast("object", name))
             if not isinstance(value, dict):
                 raise ValueError(f"inputs.transforms[{name!r}] must be a transform dictionary")
-            record.transform = copy.deepcopy(value)
+            record.transform = _host_affine(cast("object", value))
         state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
 
     damaged = inputs.get("damaged") or {}
@@ -276,7 +283,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         # A host's word on a section's damage (a note, no regions): the agent
         # reads it in status and marks the regions it names.
         for name, note in damaged.items():
-            record = _section(state, "damaged", name)
+            record = _section(state, "damaged", cast("object", name))
             record.damage_note = str(note or "")
         state.notes.append(f"inputs: {len(damaged)} damage note(s) from the host")
 
@@ -334,11 +341,11 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     return sorted(changed)
 
 
-def _state_from(data: dict[str, Any], path: str | os.PathLike[str]) -> StackState:
+def _state_from(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
     """The stack state *path* holds; ``ValueError`` naming the file and the
     unknown keys when it holds any."""
     try:
-        return StackState.from_dict(data)
+        return stack_from_json(data)
     except ValueError as exc:
         raise ValueError(f"{path}: {exc}") from exc
 
@@ -353,11 +360,11 @@ def inputs_changed(folder: str | os.PathLike[str], changed: list[str]) -> Inputs
 
 
 def emit_results(
-    state: StackState, results_path: str, progress: Callable[[str], None] | None = None,
-) -> StackState:
+    state: Stack, results_path: str, progress: Callable[[str], None] | None = None,
+) -> Stack:
     """Write the results JSON — the same shape as the checkpoint, unversioned
     (its paths relative to the job folder, as the checkpoint's)."""
-    write_json_atomic(results_path, state.to_dict())
+    write_json_atomic(results_path, stack_to_json(state))
     if progress is not None:
         progress(f"[emit] results -> {results_path}")
     return state
@@ -386,13 +393,13 @@ def _job_result(
                 "status": "error", "error": type(exc).__name__, "message": str(exc)}
 
 
-def _land(state: StackState, section_id: str, fingerprint: str, result: dict[str, Any]) -> bool:
+def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -> bool:
     """Record a finished correction on a section still waiting for it."""
-    record = state.by_id(section_id)
-    held = (record.image_correction or {}) if record is not None else {}
-    if (record is not None and held.get("status") == "running"
-            and held.get("geometry_fingerprint") == fingerprint):
-        record.image_correction = result
+    section = state.by_id(section_id)
+    held = None if section is None else section.image_correction
+    if (section is not None and held is not None and held.status == "running"
+            and held.geometry_fingerprint == fingerprint):
+        section.image_correction = trace_from_json(result)
         return True
     return False
 
@@ -413,7 +420,7 @@ class Job:
 
     def __init__(
         self,
-        state: StackState,
+        state: Stack,
         spec: JobSpec,
         *,
         layout: JobLayout,
@@ -449,7 +456,7 @@ class Job:
         #: (``build_tools``). The job's own ``transform.max_parallel`` is separate.
         self.picture_cap: int | None = None
         #: Called with the state after every checkpoint and every reload.
-        self.observers: list[Callable[[StackState], None]] = []
+        self.observers: list[Callable[[Stack], None]] = []
         #: Image corrections still running, per section id: the geometry they
         #: were started at and their future. Nothing waits on them but
         #: ``settle_image_corrections`` (submit, the end of a session) and a
@@ -654,7 +661,7 @@ class Job:
             data = read_checkpoint(self.checkpoint_path, migration)
             if data is not None:
                 migration.seed(data)
-                self.state.restore(_state_from(data, self.checkpoint_path).to_dict())
+                self.state.replace_with(_state_from(data, self.checkpoint_path))
             self.undo_stack, self.redo_stack = self.history.load()
             made = section_images.ensure_opening(self.workspace, self.layout, self.state)
             if data is None or migration.used or made or self.history.upgraded:
@@ -707,9 +714,12 @@ class Job:
         lock."""
         from langslice.core.fits.landmarks import stale
 
-        for record in self.state.slices:
-            for pair in record.landmarks.get("pairs", []):
-                pair["stale"] = stale(self.state, record, pair)
+        for section in self.state.slices:
+            if section.landmarks is not None:
+                pairs = tuple(
+                    replace(pair, stale=stale(self.state, section, pair))
+                    for pair in section.landmarks.pairs)
+                section.landmarks = replace(section.landmarks, pairs=pairs)
         if not self.persist:
             return
         with self.lock.held():
@@ -774,14 +784,14 @@ class Job:
             return
         if data is None:
             return
-        held = self.state.to_dict()
-        loaded = _state_from(data, self.checkpoint_path).to_dict()
+        held = stack_to_json(self.state)
+        loaded = stack_to_json(_state_from(data, self.checkpoint_path))
         self._peek_stamp = stamp
         if loaded == held:
             return
         if self._peeked is None:
             self._peeked = held
-        self.state.restore(loaded)
+        self.state.replace_with(stack_from_json(loaded))
         self._notify()
 
     # --- the registrations each section has held -------------------------------------
@@ -836,24 +846,25 @@ class Job:
         store = self.registrations
         by = getattr(self._acting, "tool", None) or regs.SCRIPT
         try:
-            old = StackState.from_dict(before)
-            for record in self.state.slices:
-                now = regs.value(self.state, record)
-                prior = old.by_id(record.id)
+            old = stack_from_json(before)
+            for section in self.state.slices:
+                now = regs.value(self.state, section)
+                prior = old.by_id(section.id)
                 then = regs.value(old, prior) if prior is not None else None
                 key = regs.digest(now) if now is not None else None
                 if key == (regs.digest(then) if then is not None else None):
                     continue
                 if then is not None and prior is not None and store.find(
-                        record.id, regs.digest(then)) is None:
-                    store.add(record.id, then, position_mm=prior.position_mm,
-                              angles=dict(prior.cutting_angles_deg), by=regs.made_by(then),
+                        section.id, regs.digest(then)) is None:
+                    store.add(section.id, then, position_mm=prior.position_mm,
+                              angles=prior.angles, by=regs.made_by(then),
                               at=None)
                 if now is not None:
-                    entry = store.add(record.id, now, position_mm=record.position_mm,
-                                      angles=dict(record.cutting_angles_deg), by=by,
+                    entry = store.add(section.id, now, position_mm=section.position_mm,
+                                      angles=section.angles, by=by,
                                       at=regs.now())
-                    self.registered.append((threading.get_ident(), record.id, int(entry["id"])))
+                    number = cast("int", entry["id"])  # an entry's number, from its file
+                    self.registered.append((threading.get_ident(), section.id, number))
         except Exception:  # noqa: BLE001 - the step is written: a listing failure never undoes it
             logger.warning("Could not list the registrations a step left", exc_info=True)
 
@@ -865,7 +876,7 @@ class Job:
                 logger.exception("Job observer raised; ignoring")
 
     @contextlib.contextmanager
-    def observe(self, fn: Callable[[StackState], None]) -> Iterator[None]:
+    def observe(self, fn: Callable[[Stack], None]) -> Iterator[None]:
         """Call *fn* with the state after every checkpoint and reload, while open."""
         self.observers.append(fn)
         try:
@@ -877,7 +888,7 @@ class Job:
 
     def snapshot(self) -> dict[str, Any]:
         """The state as it stands: take it before a write, hand it to :meth:`commit`."""
-        return self.state.to_dict()
+        return stack_to_json(self.state)
 
     def commit(self, before: dict[str, Any]) -> None:
         """Record one undo step (*before*), clear the redo side, checkpoint,
@@ -914,9 +925,9 @@ class Job:
         with self.writing():
             if not self.undo_stack:
                 return False
-            before = self.state.to_dict()
+            before = stack_to_json(self.state)
             self.redo_stack.append(before)
-            self.state.restore(self.undo_stack.pop())
+            self.state.replace_with(stack_from_json(self.undo_stack.pop()))
             self._save_history()
             self.checkpoint()
             self.list_registrations(before)
@@ -927,10 +938,10 @@ class Job:
         with self.writing():
             if not self.redo_stack:
                 return False
-            before = self.state.to_dict()
+            before = stack_to_json(self.state)
             self.undo_stack.append(before)
             del self.undo_stack[:-UNDO_DEPTH]
-            self.state.restore(self.redo_stack.pop())
+            self.state.replace_with(stack_from_json(self.redo_stack.pop()))
             self._save_history()
             self.checkpoint()
             self.list_registrations(before)
@@ -957,7 +968,7 @@ class Job:
         the next call; the job's own next write replaces it.
         """
         if self._peeked is not None:  # a read's view first gives way to the job's own state
-            self.state.restore(self._peeked)
+            self.state.replace_with(stack_from_json(self._peeked))
             self._peeked, self._peek_stamp = None, None
         state_stamp = _stamp(self.checkpoint_path)
         undo_stamp = _stamp(self.undo_path)
@@ -976,14 +987,14 @@ class Job:
         self._state_stamp = state_stamp
         if data is None:  # deleted: the next checkpoint writes it again
             return None
-        held = self.state.to_dict()
-        loaded = _state_from(data, self.checkpoint_path).to_dict()
+        held = stack_to_json(self.state)
+        loaded = stack_to_json(_state_from(data, self.checkpoint_path))
         if loaded == held:
             return None
         if not history_changed:
             self._push(held)
             self._save_history()
-        self.state.restore(loaded)
+        self.state.replace_with(stack_from_json(loaded))
         logger.info("Reloaded %s: it changed on disk", self.checkpoint_path)
         self._notify()
         return held
@@ -1138,7 +1149,7 @@ class Job:
 
     # --- results ----------------------------------------------------------------------
 
-    def emit_results(self, progress: Callable[[str], None] | None = None) -> StackState:
+    def emit_results(self, progress: Callable[[str], None] | None = None) -> Stack:
         """Write the results JSON (:func:`emit_results`); every picture saved."""
         self.views.flush()
         return emit_results(self.state, self.results_path, progress)

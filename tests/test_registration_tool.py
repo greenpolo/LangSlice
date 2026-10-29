@@ -19,8 +19,10 @@ from langslice.core.fits.trace.lines import (
 )
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
 from langslice.core.spec import JobSpec
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
+from langslice.job.state_file import stack_to_json
 from langslice.providers.connections import ImageModel, resolve_image_model
 
 
@@ -43,11 +45,11 @@ def case(tmp_path, monkeypatch):
     ctx = SimpleNamespace(
         spec=spec, atlas=object(), image_path=lambda _: str(tmp_path / "section.png"),
     )
-    record = SliceState(
+    record = Section(
         id="section.png", index_original=0, index_corrected=0, position_mm=4,
-        transform={"params": [1, 0, 0, 0, 1, 0]},
+        transform=affine_from_json({"params": [1, 0, 0, 0, 1, 0]}),
     )
-    state = StackState(atlas="test", slices=[record])
+    state = Stack(atlas="test", slices=[record])
     placement = np.array([[1., 0., 6.], [0., 1., 3.], [0., 0., 1.]])
     labels = np.zeros((40, 60), dtype=np.int64)
     labels[5:30, 5:25] = 100000001
@@ -72,7 +74,7 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
         return SimpleNamespace(image=raw, route="test")
 
     model = _model(generate)
-    before = state.to_dict()
+    before = stack_to_json(state)
     result = _correct(
         state, ctx, record.id, out=tmp_path / "out", image_model=model,
         prompt=border_correction_tool_prompt(
@@ -103,7 +105,7 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     np.testing.assert_array_equal(Image.open(paths["raw_reply"]), raw)
     overlay = np.asarray(Image.open(paths["lines_on_original"]))
     np.testing.assert_array_equal(overlay[~mask], np.asarray(original)[~mask])
-    assert state.to_dict() == before
+    assert stack_to_json(state) == before
     assert result["fit_performed"] is False
 
 

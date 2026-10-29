@@ -30,8 +30,9 @@ from langslice.core.fits.trace import trace as tool
 from langslice.core.fits.trace.canvas import upright
 from langslice.core.geometry.oblique import plane_index_affine
 from langslice.core.space import atlas_space_context
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json, trace_from_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.providers.connections import ImageModel, resolve_image_model
 from tests.deformable_synthetic import SyntheticAtlas
 
@@ -131,9 +132,10 @@ def test_lines_drawn_on_the_turned_canvas_read_back_onto_the_section_borders(
     monkeypatch.setattr(tool, "prepare_linear_registration", lambda *a, **k: prepared)
     monkeypatch.setattr(tool, "correction_fingerprint", lambda *a, **k: "geometry")
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *a, **k: "geometry")
-    record = SliceState(id="s.png", index_original=0, index_corrected=0,
-                        position_mm=POSITION_MM, transform={"params": [1, 0, 0, 0, 1, 0]})
-    state = StackState(atlas=atlas.atlas_name, slices=[record])
+    record = Section(id="s.png", index_original=0, index_corrected=0,
+                        position_mm=POSITION_MM, transform=affine_from_json(
+                            {"params": [1, 0, 0, 0, 1, 0]}))
+    state = Stack(atlas=atlas.atlas_name, slices=[record])
     ctx = SimpleNamespace(atlas=atlas)
 
     def hand_back(request):  # the GPT twin: Image 2 is the placed borders
@@ -145,7 +147,7 @@ def test_lines_drawn_on_the_turned_canvas_read_back_onto_the_section_borders(
     assert job is not None
     result = job()
     assert result["status"] == "ok" and result["model_border_pixels"] > 0
-    record.image_correction = result
+    record.image_correction = trace_from_json(result)
 
     grid = SimpleNamespace(record=record, image=render,
                            placement=SimpleNamespace(atlas_to_section=atlas_to_slice))

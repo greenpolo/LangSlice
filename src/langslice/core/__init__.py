@@ -2,7 +2,7 @@
 
 The lowest layer of the layered core (``CLAUDE.md`` in this package): plain
 inputs (a :class:`~langslice.core.workspace.Workspace`, the
-:class:`~langslice.core.stack.stack.StackState`, ids, numbers, the core's
+:class:`~langslice.core.stack.stack.Stack`, ids, numbers, the core's
 :class:`~langslice.core.pictures.options.DisplayOptions`) in, plain PIL
 pictures (captions burned in), numpy arrays and plain metadata out. A door
 turns the pictures into what its host reads (ADK message parts, MCP image

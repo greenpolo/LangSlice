@@ -53,7 +53,7 @@ from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.stack import Stack
     from langslice.providers.connections import ImageModel
 
 #: Width of the placed boundaries in Image 1, in canvas pixels at a 1536-px long edge.
@@ -265,7 +265,7 @@ MAX_CONCURRENT_IMAGE_CALLS = 8
 
 
 def start_correction(
-    state: StackState,
+    state: Stack,
     ctx: Workspace,
     section_id: str,
     *,
