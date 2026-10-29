@@ -1,15 +1,16 @@
 # Connect Antigravity (Gemini)
 
 Antigravity is Google's app for AI agents that work on your computer, with
-Gemini models. On this page you install Antigravity, make LangSlice findable by
-it, install LangSlice's plugin, and allow LangSlice's tools.
+Gemini models. On this page you install Antigravity, install LangSlice's
+plugin, and allow LangSlice's tools. A **plugin** is a package of add-ons
+that an app installs in one go.
 
-**Before you start:** [install LangSlice](install.md).
+**Before you start:** [install LangSlice](install.md), including
+[step 6, which lets your AI app find LangSlice](install.md#step-6-let-your-ai-app-find-langslice).
 
 ```{note}
-The steps on this page follow LangSlice's Antigravity connector, which is
-tested from Antigravity's command-line version on Linux. They are untested in
-the app on Windows and macOS.
+The pictures on this page are from the app on Linux. The steps are untested
+on Windows and macOS.
 ```
 
 ## Step 1: Install Antigravity
@@ -21,62 +22,53 @@ the app on Windows and macOS.
 Antigravity's first screen after signing in.
 :::
 
-## Step 2: Let Antigravity find LangSlice
+## Step 2: Install the LangSlice plugin
 
-Antigravity starts LangSlice by the name `langslice`, so that name has to work
-outside the LangSlice environment too.
+Antigravity installs plugins through a skill of its own, named `plugin`.
 
-### Windows
+1. Click **New Conversation**.
+2. In the message box, type `/plugin`. A list of skills opens above the box.
+   Click **plugin**.
 
-1. Take the line `where langslice` printed in
-   [step 6 of the install](install.md#step-6-note-where-langslice-is-installed),
-   and remove `\langslice.exe` from its end. For example,
-   `C:\Users\you\miniforge3\envs\langslice\Scripts`.
-2. Open the Start menu, type `environment variables`, and choose **Edit
-   environment variables for your account**.
-3. Under **User variables**, select **Path** and click **Edit**.
-4. Click **New**, paste the folder from item 1, and click **OK** twice.
+   ```{figure} img/antigravity-plugin-skill.png
+   :alt: The message box with /plugin typed and the list of matching skills above it; the plugin skill is marked.
+
+   Type `/plugin` and pick the **plugin** skill.
+   ```
+
+3. After **plugin** in the message box, type this message and send it:
+
+   ```text
+   Please install this plugin: https://github.com/greenpolo/LangSlice/tree/main/connectors/antigravity
+   ```
+
+   ```{figure} img/antigravity-install-message.png
+   :alt: The message box holding the plugin skill followed by the install request with LangSlice's GitHub address.
+
+   The message, ready to send.
+   ```
+
+4. Antigravity installs the plugin from GitHub and says so. Quit Antigravity
+   completely and open it again to load the plugin.
 
 :::{admonition} Screenshot to come
-The **Edit environment variable** window with the LangSlice `Scripts` folder
-added.
+Antigravity's reply after installing the plugin.
 :::
 
-### macOS
+The plugin brings LangSlice's skill, its two registration agents and its MCP
+server, named `langslice_mcp` in Antigravity.
 
-In Terminal, run:
+<details>
+<summary>The same install from a terminal</summary>
 
-```bash
-echo 'conda activate langslice' >> ~/.zshrc
-```
-
-### Linux
-
-In a terminal, run:
+Antigravity's command-line tool, `agy`, installs the plugin with one command.
+Run it in any terminal, then quit Antigravity and open it again:
 
 ```bash
-echo 'conda activate langslice' >> ~/.bashrc
+agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/antigravity
 ```
 
-On macOS and Linux, every new terminal now starts in the LangSlice
-environment, and apps started from your desktop find `langslice` too.
-
-On every system, quit Antigravity completely and open it again so it picks up
-the change.
-
-## Step 3: Install the LangSlice plugin
-
-Open a terminal in the `LangSlice-main` folder, as in
-[step 3 of the install](install.md#step-3-open-a-terminal-in-the-langslice-folder),
-and run:
-
-```bash
-agy plugin install connectors/antigravity
-```
-
-`agy` is Antigravity's command-line tool. The plugin brings LangSlice's skill,
-its two registration agents and its MCP server, named `langslice_mcp` in
-Antigravity. Quit Antigravity and open it again to load the plugin.
+</details>
 
 <details>
 <summary>What the plugin holds</summary>
@@ -96,7 +88,7 @@ Antigravity. Quit Antigravity and open it again to load the plugin.
 
 </details>
 
-## Step 4: Allow LangSlice's tools
+## Step 3: Allow LangSlice's tools
 
 Antigravity runs an agent's commands in a sandbox, a walled-off space that
 cannot read most of your files. It also asks before using a tool it has no
@@ -172,7 +164,7 @@ The rules live in one settings file for every session:
 
 </details>
 
-## Step 5: Test the connection
+## Step 4: Test the connection
 
 1. Start a new conversation in Antigravity.
 2. Send this message:

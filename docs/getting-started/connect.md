@@ -32,6 +32,10 @@ your app:
 - two **registration agents**, `register` and `register-scripting`: the
   helpers the main agent starts to register one brain each.
 
+In every app these come in LangSlice's **plugin**, a package of add-ons that
+you install from inside the app. In Codex, a short setup chat then finishes
+the job.
+
 You talk to the main agent. It asks you about your sections, prepares the
 registration, starts a registration agent, and checks the result with you.
 

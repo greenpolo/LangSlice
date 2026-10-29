@@ -1,20 +1,23 @@
 # Connect Claude Code (Claude)
 
 Claude Code is the coding agent in the **Code** tab of the Claude desktop app.
-On this page you install the app, make LangSlice findable by it, and install
-LangSlice's plugin.
+On this page you install the app and add LangSlice's plugin to it. A
+**plugin** is a package of add-ons that an app installs in one go.
 
 **Before you start:**
 
-- [Install LangSlice](install.md).
+- [Install LangSlice](install.md), including
+  [step 6, which lets your AI app find LangSlice](install.md#step-6-let-your-ai-app-find-langslice).
 - Have a paid Claude plan. Claude Code is not part of the free Claude plan.
   On the free plan, use [Codex](connect-codex.md) with a free ChatGPT account
   instead.
+- On Windows, install Git for Windows from <https://git-scm.com/downloads/win>,
+  accepting the default choices. The Claude app uses it to download
+  LangSlice's plugin.
 
 ```{note}
-The steps on this page follow LangSlice's Claude Code plugin, which is tested
-in Claude Code's command-line version on Linux. They are untested in the
-desktop app on Windows and macOS.
+The pictures on this page are from the app on Linux. The steps are untested
+on Windows and macOS.
 ```
 
 ## Step 1: Install the Claude desktop app
@@ -22,77 +25,56 @@ desktop app on Windows and macOS.
 1. Download the Claude desktop app from <https://claude.com/download> and
    install it.
 2. Open it and sign in with your Claude account.
-3. Click the **Code** tab.
-4. Start a session on your computer in a folder of your choice, such as the
-   folder that holds your section images.
+3. Click the **Code** tab, the `</>` button at the top of the left-hand
+   column.
+4. Under the message box, choose **Local**, then **Select folder…**, and pick
+   a folder to work in, such as the folder that holds your section images.
+
+```{figure} img/claude-code-tab.png
+:alt: The Claude app on the Code tab, with the Code button at the top left and the Local and Select folder buttons above the message box marked.
+:width: 80%
+
+The **Code** tab. **Local** and **Select folder…** sit above the message
+box.
+```
+
+## Step 2: Add LangSlice's plugin
+
+LangSlice's plugin comes from a **marketplace**: a list of plugins that
+someone publishes, here LangSlice's own, on GitHub.
+
+1. In the left-hand column, click **Customize**, then **Plugins** at the top
+   of the page.
+2. Click **Add**, then **Add marketplace**.
+
+   ```{figure} img/claude-plugins-add-menu.png
+   :alt: The Customize page with Customize, the Plugins tab, the Add button and the menu item Add marketplace marked.
+
+   **Customize**, **Plugins**, **Add** and **Add marketplace**.
+   ```
+
+3. Click **Add from a repository**.
+
+   ```{figure} img/claude-add-marketplace.png
+   :alt: The Add marketplace window with two choices; Add from a repository is marked.
+   :width: 70%
+
+   Choose **Add from a repository**.
+   ```
+
+4. In **URL**, type `greenpolo/LangSlice`, then click **Sync**.
+
+   ```{figure} img/claude-marketplace-url.png
+   :alt: The Add marketplace window with a warning to add only trusted marketplaces, and the URL field marked.
+   :width: 70%
+
+   The **URL** field, where `greenpolo/LangSlice` goes.
+   ```
+
+5. Find **LangSlice** in the list of plugins and install it.
 
 :::{admonition} Screenshot to come
-The Claude desktop app on the **Code** tab, with a local session open.
-:::
-
-## Step 2: Let Claude find LangSlice
-
-Claude Code starts LangSlice by the name `langslice`, so that name has to work
-outside the LangSlice environment too.
-
-### Windows
-
-1. Take the line `where langslice` printed in
-   [step 6 of the install](install.md#step-6-note-where-langslice-is-installed),
-   and remove `\langslice.exe` from its end. For example,
-   `C:\Users\you\miniforge3\envs\langslice\Scripts`.
-2. Open the Start menu, type `environment variables`, and choose **Edit
-   environment variables for your account**.
-3. Under **User variables**, select **Path** and click **Edit**.
-4. Click **New**, paste the folder from item 1, and click **OK** twice.
-
-:::{admonition} Screenshot to come
-The **Edit environment variable** window with the LangSlice `Scripts` folder
-added.
-:::
-
-### macOS
-
-In Terminal, run:
-
-```bash
-echo 'conda activate langslice' >> ~/.zshrc
-```
-
-### Linux
-
-In a terminal, run:
-
-```bash
-echo 'conda activate langslice' >> ~/.bashrc
-```
-
-On macOS and Linux, every new terminal now starts in the LangSlice
-environment, and the Claude app reads the same setting when it starts.
-
-On every system, quit the Claude app completely and open it again so it picks
-up the change.
-
-## Step 3: Install the LangSlice plugin
-
-In the **Code** tab, type these two commands into the message box, one at a
-time, and press **Enter** after each:
-
-```text
-/plugin marketplace add greenpolo/LangSlice
-```
-
-```text
-/plugin install langslice@langslice
-```
-
-The first adds LangSlice's plugin list from GitHub. The second installs the
-plugin. When Claude asks where to install it, choose **Install for you (user
-scope)**, so LangSlice is there in every folder.
-
-:::{admonition} Screenshot to come
-The plugin's details with the install choices, **Install for you (user scope)**
-marked.
+LangSlice in the plugin list, with its install button.
 :::
 
 <details>
@@ -114,7 +96,7 @@ marked.
 
 </details>
 
-## Step 4: Test the connection
+## Step 3: Test the connection
 
 1. Start a new session in the **Code** tab.
 2. Type `/` in the message box. The list includes

@@ -5,7 +5,7 @@ LangSlice. You do them once per computer.
 
 | Step | What you do |
 |---|---|
-| 1. [Install LangSlice](install.md) | Install Miniforge, then LangSlice itself. This downloads several gigabytes. |
+| 1. [Install LangSlice](install.md) | Install Miniforge, then LangSlice itself, and let your AI app find it. This downloads several gigabytes. |
 | 2. [Connect your AI app](connect.md) | Install the app for the AI you already use, then add LangSlice to it. |
 
 You need:
