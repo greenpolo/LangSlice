@@ -21,6 +21,7 @@ from langslice.core.pictures import drawn as pictures_drawn
 from langslice.core.pictures.options import default_options
 from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
+from langslice.core.stack.codec import physical_to_json
 from langslice.core.stack.stack import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.tools import damage as ops_damage
@@ -129,7 +130,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                    "orientation": entry.orientation,
                                    "written": entry.written}
             if entry.transform is not None:
-                row["transform"] = entry.transform.get("physical")
+                physical = entry.transform.physical
+                row["transform"] = None
+                if physical is not None:
+                    row["transform"] = physical_to_json(physical)
             if entry.message:
                 row["message"] = entry.message
             rows.append(row)

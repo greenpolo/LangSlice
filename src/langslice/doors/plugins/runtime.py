@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image
 
+from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import ToolResult, ToolSpec
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.doors.plugins.context import Caller, ToolContext
@@ -33,21 +34,6 @@ if TYPE_CHECKING:
     from langslice.tools.run import Door
 
 logger = logging.getLogger(__name__)
-
-
-def _plain(value: Any) -> Any:
-    """*value* as JSON values (numpy and tuples made plain); anything else as text."""
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, Mapping):
-        return {str(key): _plain(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [_plain(item) for item in value]
-    return str(value)
 
 
 def _picture(item: Any) -> Image.Image | str:
@@ -84,9 +70,7 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
         kind = type(result).__name__  # pyright: ignore[reportAny]  # a plugin's own reply
         raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
                       message=f"{tool.name}'s handler returned {kind}, not a ToolResult")
-    reply = _plain(dict(result.reply))
-    if not isinstance(reply, dict):
-        reply = {"result": reply}
+    reply = to_jsonable(dict(result.reply))
     out: dict[str, Any] = {"status": "ok", **reply}
     pictures = [_picture(item) for item in result.pictures]
     cap = tool.limits.get("pictures")

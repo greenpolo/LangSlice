@@ -8,6 +8,8 @@ from langslice.core.fits import deformation
 from langslice.core.fits.deformable import finish_fit, prepare_warp
 from langslice.core.fits.deformable.engines import EngineResult
 from langslice.core.fits.deformable.fit import WorkingGrid
+from langslice.core.stack.codec import deformation_from_json
+from langslice.core.stack.landmarks_json import landmarks_from_json
 from langslice.tools import landmarks
 from tests.test_landmarks import saved_pairs, setup
 
@@ -38,7 +40,7 @@ def test_a_large_landmark_move_is_not_outsized_and_fits_count_only_their_additio
         extent_mm = _added_step(job, ws, record, None, 0.0).diagnostics[
             "displacement"]["tissue_extent_mm"]
         # Replace the pairs by a 38 px move.
-        record.landmarks = {}
+        record.landmarks = landmarks_from_json({})
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(
             job, ws, record, delta=(38., 0.)))
         reply = landmarks.landmark_triangulation(job, ws, record.id)
@@ -56,10 +58,10 @@ def test_a_large_landmark_move_is_not_outsized_and_fits_count_only_their_additio
         # Landmarks applied over that fit make the combined field the base.
         folder = job.deformations.save(record.id, "large", large)
         job.deformations.put("large", large)
-        record.deformation = {
+        record.deformation = deformation_from_json({
             "key": "large", "record": job.layout.relative(folder),
-            "linear_key": deformation.linear_key(job.state, record), "steps": []}
-        record.landmarks = {}
+            "linear_key": deformation.linear_key(job.state, record), "steps": []})
+        record.landmarks = landmarks_from_json({})
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record, delta=(3., 0.)))
         landmarks.landmark_triangulation(job, ws, record.id)
         over = job.deformations.current(job.state, record)

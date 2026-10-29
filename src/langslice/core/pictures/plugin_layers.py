@@ -30,7 +30,7 @@ import json
 import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -38,8 +38,13 @@ from PIL import Image, ImageDraw
 from langslice.core.fits.landmarks import transform
 from langslice.core.plugins import Layer, ToolError
 from langslice.core.refusal import RefusalCode
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.images import LayerRef
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
+
+if TYPE_CHECKING:
+    from langslice.core.fits.deformable.record import DeformableRecord
+    from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +109,10 @@ def save_layer(layer: Layer, stem: Path) -> Path:
     return path
 
 
-def load_layer(path: Path, ref: Mapping[str, Any]) -> Layer:
+def load_layer(path: Path, ref: LayerRef) -> Layer:
     """The layer the file *path* holds; *ref* is its reference (``kind``,
     ``frame``, ``name``)."""
-    kind, frame, name = str(ref["kind"]), str(ref["frame"]), str(ref.get("name", ""))
+    kind, frame, name = ref.kind, ref.frame, ref.name
     if kind == "points":
         rows = list(csv.reader(path.open(encoding="utf-8")))
         body = rows[1:]
@@ -143,30 +148,30 @@ def load_layer(path: Path, ref: Mapping[str, Any]) -> Layer:
     return Layer("picture", frame, name=name, image=Image.open(path).copy())
 
 
-def layer_path(folder: Path | str, ref: Mapping[str, Any]) -> Path:
+def layer_path(folder: Path | str, ref: LayerRef) -> Path:
     """Where a layer reference's file is (``file`` is relative to the job folder)."""
-    return Path(folder) / str(ref["file"])
+    return Path(folder) / ref.file
 
 
-def visible(record: SliceState, wanted: Sequence[str]) -> list[dict[str, Any]]:
-    """The references of *record*'s layers named by *wanted* (``"all"``: every
+def visible(section: Section, wanted: Sequence[str]) -> list[LayerRef]:
+    """The references of *section*'s layers named by *wanted* (``"all"``: every
     one), in the order the section holds them."""
-    held = list(record.layers)
+    held = list(section.layers)
     if "all" in wanted:
         return held
     names = set(wanted)
-    return [ref for ref in held if ref.get("name") in names]
+    return [ref for ref in held if ref.name in names]
 
 
-def known_names(state: StackState, sections: Sequence[str] = ()) -> list[str]:
+def known_names(state: Stack, sections: Sequence[str] = ()) -> list[str]:
     """Every layer name on *sections* (all sections when empty), first seen first."""
     names: list[str] = []
-    for record in state.slices:
-        if sections and record.id not in sections:
+    for section in state.slices:
+        if sections and section.id not in sections:
             continue
-        for ref in record.layers:
-            if ref["name"] not in names:
-                names.append(str(ref["name"]))
+        for ref in section.layers:
+            if ref.name not in names:
+                names.append(ref.name)
     return names
 
 
@@ -226,7 +231,7 @@ class _Mapper:
     """Places one section's layers on one picture: file fractions and atlas
     micrometres to picture pixels."""
 
-    def __init__(self, state: StackState, record: SliceState, panels: Sequence[Mapping[str, Any]],
+    def __init__(self, state: Stack, record: Section, panels: Sequence[Mapping[str, Any]],
                  ws: Any, warp: Any) -> None:
         self.state, self.record, self.ws, self.warp = state, record, ws, warp
         self.section = next((p for p in panels if p["role"] == "section"), None)
@@ -404,25 +409,25 @@ def _draw_scalar(image: Image.Image, mapper: _Mapper, layer: Layer,
 
 
 def draw_layers(
-    image: Image.Image, panels: Sequence[Mapping[str, Any]], state: StackState,
-    record: SliceState, wanted: Sequence[str], *, ws: Any, warp: Any = None,
+    image: Image.Image, panels: Sequence[Mapping[str, Any]], state: Stack,
+    record: Section, wanted: Sequence[str], *, workspace: Workspace,
+    warp_record: DeformableRecord | None = None,
 ) -> list[dict[str, Any]]:
     """Draw the layers of *record* that *wanted* names (``"all"``: every one)
     on *image* in place, over the panels of the picture. Returns one note per
     layer asked for: ``{"name", "tool", "kind", "drawn"}`` and, for a layer
     that could not be drawn, ``"reason"``. A layer is never drawn
     translucently: points and lines with a dark halo, rasters as outlines."""
-    folder = getattr(ws, "job_folder", None)
+    folder = workspace.job_folder
     notes: list[dict[str, Any]] = []
     refs = visible(record, wanted)
     if not refs:
         return notes
-    mapper = _Mapper(state, record, panels, ws, warp)
+    mapper = _Mapper(state, record, panels, workspace, warp_record)
     for index, ref in enumerate(refs):
-        note: dict[str, Any] = {"name": ref["name"], "tool": ref.get("tool", ""),
-                                "kind": ref["kind"]}
+        note: dict[str, Any] = {"name": ref.name, "tool": ref.tool, "kind": ref.kind}
         notes.append(note)
-        if ref["kind"] == "picture":
+        if ref.kind == "picture":
             note.update(drawn=False, reason="a picture layer is a finished picture; it is "
                         "not drawn on other pictures")
             continue
@@ -444,7 +449,7 @@ def draw_layers(
         except ToolError as exc:
             note.update(drawn=False, reason=exc.message)
         except (OSError, ValueError, KeyError) as exc:
-            logger.warning("layer %s of %s could not be drawn", ref.get("name"), record.id,
+            logger.warning("layer %s of %s could not be drawn", ref.name, record.id,
                            exc_info=True)
             note.update(drawn=False, reason=f"the layer could not be read or placed ({exc})")
     return notes

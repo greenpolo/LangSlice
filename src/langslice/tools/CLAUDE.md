@@ -67,7 +67,7 @@ toolbox are still `doors/tools/`.
   in a per-section answer is `{"id": ..., **refusal.payload()}`. A code is
   always a `RefusalCode` member (a fit's flag a `core.fits.flags.FitFlag`),
   never a string written out.
-- A section is named by its filename (`StackState.resolve`: the filename,
+- A section is named by its filename (`Stack.resolve`: the filename,
   or its stem when no other section shares it; never a number). A name
   that is no section's is `refusal.unknown_sections(state, refs)`:
   `UNKNOWN_SLICE_IDS` with `unknown`, `filenames` and a `message` saying

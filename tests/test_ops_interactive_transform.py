@@ -11,6 +11,7 @@ import pytest
 from PIL import Image
 
 from langslice.core.refusal import Refused
+from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
@@ -53,7 +54,7 @@ def test_one_undo_step_for_orientation_and_knobs_on_several_sections(tmp_path: P
     assert done.written == ["s0.png", "s1.png"]
     assert [entry.error for entry in done.entries] == [None, None]
     assert (_record(job, "s0.png").flip, _record(job, "s1.png").rotation_deg) == (True, 90)
-    physical = _record(job, "s0.png").transform["physical"]
+    physical = affine_to_json(_record(job, "s0.png").transform)["physical"]
     assert physical["rotation_deg"] == 3.0 and physical["scale_x"] == 1.1
     assert physical["scale_y"] == 1.0 and physical["translate_x_mm"] == 0.0
     assert len(job.undo_stack) == 1
@@ -70,7 +71,7 @@ def test_a_knob_left_out_keeps_its_value_and_the_same_numbers_write_nothing(tmp_
     done = transforms.interactive_transform(job, ctx, [
         {"id": "s0.png", "translate_x_mm": 0.2}])
     assert done.written == ["s0.png"]
-    physical = _record(job, "s0.png").transform["physical"]
+    physical = affine_to_json(_record(job, "s0.png").transform)["physical"]
     assert physical["translate_x_mm"] == 0.2
     assert physical["rotation_deg"] == 3.0 and physical["scale_x"] == 1.1
     assert physical["shear"] == 0.02 and physical["pivot"] == [0.5, 0.5]
@@ -85,12 +86,12 @@ def test_an_orientation_change_keeps_the_knob_values_and_says_so(tmp_path: Path)
     job, ctx = _open(tmp_path)
     transforms.interactive_transform(job, ctx, [
         {"id": "s0.png", "rotation_deg": 2.0, "scale_y": 0.9, "translate_y_mm": -0.1}])
-    held = dict(_record(job, "s0.png").transform["physical"])
+    held = dict(affine_to_json(_record(job, "s0.png").transform)["physical"])
     done = transforms.interactive_transform(job, ctx, [{"id": "s0.png", "rotate_quarter": 90}])
     entry = done.entries[0]
     record = _record(job, "s0.png")
     assert record.rotation_deg == 90 and record.transform is not None
-    assert record.transform["physical"] == held
+    assert affine_to_json(record.transform)["physical"] == held
     assert entry.orientation == {"flip": False, "rotate_quarter": 90, "changed": True}
     assert entry.kept is not None and entry.kept["scale_y"] == 0.9
     assert "knob values were kept" in entry.message
@@ -138,7 +139,8 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
                 "physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
                              "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
                              "pivot": [0.5, 0.5]},
-                "calibration": {}, "mirrored": False}
+                "calibration": {"section_um_per_px": 1.0, "source": "host"},
+                "mirrored": False}
 
     monkeypatch.setattr("langslice.core.fits.affine.fit_elastix", fake)
     return seen
@@ -156,8 +158,9 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
                       "atlas_image": "nissl"}]
     assert done.fitted == ["s0.png"] and len(job.undo_stack) == 1
     record = _record(job, "s0.png")
-    assert record.transform["kind"] == "elastix" and record.transform["fit_atlas"] == "nissl"
-    assert record.transform["regions"] == {"include": ["L"], "exclude": []}
+    stored = affine_to_json(record.transform)
+    assert stored["kind"] == "elastix" and stored["fit_atlas"] == "nissl"
+    assert affine_to_json(record.transform)["regions"] == {"include": ["L"], "exclude": []}
     x0, y0, x1, y1 = done.rows[0]["restrict_box"]
     assert 0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0
     # The left half of the brain: the box leaves the right side of the canvas out.

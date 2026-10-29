@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.job.gates import (
     INTERVAL_BREAK_MIN_RATIO,
     STRICT_INTERVAL_TOLERANCE,
@@ -74,7 +74,7 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 }
 
 def display_facts(
-    ctx: Workspace, state: StackState,
+    ctx: Workspace, state: Stack,
 ) -> dict[str, Any]:
     """The job statement's display facts: the raw channels, the atlas layers
     here, and the atlas image the fits' default ``nissl`` is.
@@ -211,7 +211,7 @@ def engine_fact(tool_names: list[str]) -> str | None:
 
 def build_job_statement(
     spec: JobSpec,
-    state: StackState,
+    state: Stack,
     *,
     tool_names: list[str],
     species: str,
@@ -483,7 +483,7 @@ def _bullet(text: str, off: Collection[str]) -> list[str]:
     return [line] if line.strip(" -") else []
 
 
-def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
+def stack_angles_fact(state: Stack, off: Collection[str] = ()) -> str:
     """The job statement's line on the cutting angles: the stack's one
     angle, or, when the sections differ (a registration supplied per
     section), that each status row carries its own. *off*: the job's
@@ -496,7 +496,7 @@ def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
     return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
 
 
-def cutting_protocol_fact(state: StackState) -> str:
+def cutting_protocol_fact(state: Stack) -> str:
     """Supplied protocol values, with unknowns explicit."""
     interval = state.interval_mm
     thickness = state.thickness_mm
@@ -514,7 +514,7 @@ def cutting_protocol_fact(state: StackState) -> str:
 
 
 def run_facts(
-    spec: JobSpec, state: StackState, *, species: str, pos_lo: float,
+    spec: JobSpec, state: Stack, *, species: str, pos_lo: float,
     pos_hi: float, axis_ends: tuple[str, str],
 ) -> list[str]:
     """Shared factual briefing, without any model-specific method advice."""

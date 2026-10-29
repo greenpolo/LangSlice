@@ -195,7 +195,7 @@ class JobHandle:
     @property
     def state(self) -> Any:
         """The stack as it stands
-        (:class:`langslice.core.stack.stack.StackState`);
+        (:class:`langslice.core.stack.stack.Stack`);
         read it, write through the verbs."""
         return self._opened.job.state
 

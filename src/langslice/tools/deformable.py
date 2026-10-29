@@ -28,7 +28,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
@@ -47,7 +47,8 @@ from langslice.core.pictures import deformation as pictures_deformation
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
-from langslice.core.stack.section import SliceState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.tools import masks as ops_masks
 from langslice.tools.images import check_image
 from langslice.tools.refusal import frozen_row, unknown_sections
@@ -110,7 +111,7 @@ def damage_margin_mm(workspace: Workspace) -> float:
 
 
 def inputs_block(
-    state: Any, workspace: Workspace, record: SliceState, *, section_image: str,
+    state: Stack, workspace: Workspace, record: Section, *, section_image: str,
     atlas_image: str, mask: str, damage: Sequence[str], restrict_to: Sequence[str] = (),
     brightness: str = NATIVE_BRIGHTNESS, resolved: str | None = None,
 ) -> InputsBlock:
@@ -120,11 +121,11 @@ def inputs_block(
     the regions the fit was restricted to."""
     from langslice.core.atlas.images import nissl_note, resolve_image
 
-    entry = (record.masks or {}).get(mask) if mask != ops_masks.NO_MASK else None
+    entry = record.masks.get(mask) if mask != ops_masks.NO_MASK else None
+    kind = None if entry is None else entry.kind
     held = mask_block()
     if mask != ops_masks.NO_MASK:
-        held = mask_block(mask, (entry or {}).get("kind"), False,
-                          ops_masks.made_earlier(state, record, mask))
+        held = mask_block(mask, kind, False, ops_masks.made_earlier(state, record, mask))
     return InputsBlock(
         section_image=images_.read_image(workspace, record, section_image).payload(),
         atlas_image=atlas_image,
@@ -167,7 +168,7 @@ def default_settings(workspace: Workspace) -> Any:
 
 
 def traced_regions(
-    record: SliceState, include: tuple[str, ...], exclude: tuple[str, ...],
+    record: Section, include: tuple[str, ...], exclude: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The regions a traced fit uses: the call's own, completed by the trace's.
 
@@ -175,9 +176,12 @@ def traced_regions(
     exclude), so the atlas side drops the same ones: the call's *exclude*
     plus the trace's, and the call's *include*, else the trace's.
     """
-    held = record.image_correction or {}
-    traced_in = tuple(str(name) for name in held.get("include") or ())
-    traced_out = tuple(str(name) for name in held.get("exclude") or ())
+    held = record.image_correction
+    traced_in: tuple[str, ...] = ()
+    traced_out: tuple[str, ...] = ()
+    if held is not None:
+        traced_in = held.include or ()
+        traced_out = held.exclude or ()
     return include or traced_in, tuple(dict.fromkeys((*exclude, *traced_out)))
 
 
@@ -212,7 +216,7 @@ def gpu_rows(engine: Mapping[str, Any]) -> dict[str, Any]:
 def fit_deformable(
     job: Job,
     workspace: Workspace,
-    records: list[SliceState],
+    records: list[Section],
     choice: deformation.Choice,
     *,
     restrict_to: tuple[str, ...] = (),
@@ -270,19 +274,20 @@ def fit_deformable(
             # result lands under the job's lock, which may reload the state.
             running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
             record = state.by_id(record.id) or record
-        held = record.deformation or {}
+        held = record.deformation
         try:
             current = store.current(state, record)
             unreadable = False
         except ValueError:  # its record.json does not load (the error names it)
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current, unreadable = None, True
-        if unreadable or (current is None and held
-                          and held.get("linear_key") == deformation.linear_key(state, record)):
+        if unreadable or (current is None and held is not None
+                          and held.linear_key == deformation.linear_key(state, record)):
+            folder = None if held is None else held.record
             rows.append({"id": record.id, **Refused(
                 RefusalCode.DEFORMATION_UNREADABLE,
                 "The section's applied deformation record cannot be read "
-                f"({held.get('record')}); it is not replaced by a fit from the "
+                f"({folder}); it is not replaced by a fit from the "
                 "linear placement.").payload()})
             continue
         own_start = "current" if current is not None else "linear"
@@ -296,7 +301,9 @@ def fit_deformable(
                                 message=str(exc)).payload()})
             continue
         previous = current
-        previous_key = None if current is None else str((record.deformation or {}).get("key"))
+        previous_key = None
+        if current is not None and record.deformation is not None:
+            previous_key = record.deformation.key
         own = exclusions(record, tuple(restrict_to))
         failure = {"id": record.id, "status": ReplyStatus.ERROR,
                    "settings": choice.tool_settings()}
@@ -327,11 +334,11 @@ def fit_deformable(
             refusal = Refused(RefusalCode.BAD_SETTINGS, message=str(exc))
             rows.append({**failure, **refusal.payload()})
             continue
-        held_mask = (record.masks or {}).get(choice.mask)
+        held_mask = record.masks.get(choice.mask)
         key = deformation.cache_key(
             state, grid, settings, identity, previous_key, workspace.brain_scale,
             mask_identity=None if held_mask is None else {
-                "file": held_mask.get("file"), "kind": held_mask.get("kind")})
+                "file": held_mask.file, "kind": held_mask.kind})
         cached = store.get(record.id, key)
         jobs.append(deformation.Job(
             grid=grid, choice=choice, settings=settings, key=key,
@@ -381,9 +388,10 @@ def _apply(
         index = row.pop("job", None)
         if index is None:
             continue
-        fit = jobs[index]
+        position = cast("int", index)  # the job index fit_deformable set on the row
+        fit = jobs[position]
         outcome = fit.result
-        block = blocks.get(index)
+        block = blocks.get(position)
         row["settings"] = fit.choice.tool_settings()
         if not isinstance(outcome, deformation.DeformableRecord):
             message = failure_message(
@@ -423,7 +431,7 @@ def _apply(
             outcome.provenance["fit"] = outcome.provenance.pop("inputs", None)
             outcome.provenance["inputs"] = row["inputs"]
             outcome.provenance["estimated"] = row["estimated"]
-        held = record.deformation or {}
+        held = record.deformation
         try:
             folder = store.save(record.id, fit.key, outcome)
         except OSError as exc:
@@ -432,27 +440,27 @@ def _apply(
             row.update(refusal.payload())
             continue
         traced_fit = fit.choice.fit_section == deformation.TRACED_BORDERS
-        record.deformation = deformation.reference(
-            folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
-            step={"method": "trace_borders" if traced_fit else "fireants_syn",
-                  "start": start, **fit.choice.echo(),
-                  # the tool's settings the choice does not hold (a step saved
-                  # before they were recorded has none)
-                  **({} if traced_fit else {"metric": fit.settings.stain_metric,
-                                            "edges": bool(fit.settings.stain_edges),
-                                            "detail": fit.settings.detail}),
-                  "include": list(include), "exclude": list(exclude)},
-            previous=held, numbers=numbers,
-        )
-        traced = (fit.image_identity or {}).get("trace") if isinstance(
-            fit.image_identity, dict) else None
+        step: dict[str, Any] = {
+            "method": "trace_borders" if traced_fit else "fireants_syn",
+            "start": start, **fit.choice.echo(),
+            # the tool's settings the choice does not hold (a step saved
+            # before they were recorded has none)
+            **({} if traced_fit else {"metric": fit.settings.stain_metric,
+                                      "edges": bool(fit.settings.stain_edges),
+                                      "detail": fit.settings.detail}),
+            "include": list(include), "exclude": list(exclude)}
+        traced = fit.image_identity.get("trace")
         if traced:
             # The trace this step fitted (its artifact directory):
             # a packaged trace called again on it reuses this step.
-            record.deformation["steps"][-1]["trace"] = traced
+            step["trace"] = traced
+        record.deformation = deformation.reference(
+            folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
+            step=step, previous=held, numbers=numbers,
+        )
         row["written"] = True
         written.append(record.id)
-        row["steps"] = len((record.deformation or {}).get("steps") or [])
+        row["steps"] = len(record.deformation.steps)
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
 
@@ -535,8 +543,9 @@ def warp_from_map(
             raise Refused(RefusalCode.BAD_ARGS,
                           message=f"{record.id} holds no deformation to build on: "
                           "start is 'linear'.")
-    parent_key = (str((record.deformation or {}).get("key")) if previous is not None
-                  else None)
+    parent_key = None
+    if previous is not None:
+        parent_key = record.deformation_key
     width, height = grid.image.size
     array = np.asarray(native_xy)
     if not np.issubdtype(array.dtype, np.floating):
@@ -621,9 +630,10 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
             if frozen is not None:
                 rows.append(frozen)
                 continue
-            held = record.deformation or {}
+            held = record.deformation
             if deformation.linear_key(job.state, record) != warp.linear_key or (
-                    warp.parent_key is not None and held.get("key") != warp.parent_key):
+                    warp.parent_key is not None
+                    and record.deformation_key != warp.parent_key):
                 rows.append(stale_row(record.id))
                 continue
             store.put(warp.key, warp.record)
@@ -749,7 +759,7 @@ _FIT_SECTION_WORDS = {
 }
 
 
-def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
+def fit_caption(record: Section, fit: deformation.Job, row: dict[str, Any],
                 include: Sequence[str], exclude: Sequence[str],
                 border_word: str = "") -> str:
     """The index caption of a deformable fit's picture: the section, the
@@ -994,7 +1004,7 @@ def fireants_syn(
                       f"{low:g} to {high:g}.")
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
-    records: list[SliceState] = []
+    records: list[Section] = []
     unknown: list[str] = []
     for ref in refs:
         record = job.state.resolve(ref)
@@ -1019,13 +1029,13 @@ def fireants_syn(
         "metric": metric_name, "edges": bool(edges), "detail": level})
 
 
-def _mask_label(mask: Any) -> str:
+def _mask_label(mask: object) -> str:
     return str(mask or ops_masks.NO_MASK).strip()
 
 
 def refuse_unknown_inputs(
-    job: Job, workspace: Workspace, records: Sequence[SliceState], section_image: Any,
-    mask: Any,
+    job: Job, workspace: Workspace, records: Sequence[Section], section_image: object,
+    mask: object,
 ) -> str:
     """The section image a fit reads, after checking every one of *records* has
     it (``UNKNOWN_IMAGE``) and has the mask *mask* unless it is ``"none"``
@@ -1033,7 +1043,7 @@ def refuse_unknown_inputs(
     image = check_image(job, workspace, records, section_image)
     label = _mask_label(mask)
     if label != ops_masks.NO_MASK:
-        lacking = [record.id for record in records if label not in (record.masks or {})]
+        lacking = [record.id for record in records if label not in record.masks]
         if lacking:
             raise Refused(RefusalCode.UNKNOWN_MASK, sections=lacking,
                           message=f"No mask {label!r} on {', '.join(lacking)}; make it with "

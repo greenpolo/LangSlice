@@ -14,7 +14,11 @@ from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.job.state_file import STATE_FORMAT_VERSION, write_checkpoint
+from langslice.job.state_file import (
+    STATE_FORMAT_VERSION,
+    stack_to_json,
+    write_checkpoint,
+)
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
@@ -107,7 +111,8 @@ def test_an_unchanged_or_half_written_file_is_not_a_step(tmp_path: Path):
     Path(ctx.checkpoint_path).write_text('{"slices": [')  # a script mid-write
     assert job.sync() is None and job.undo_stack == []
     Path(ctx.checkpoint_path).write_text(json.dumps(
-        {"format_version": STATE_FORMAT_VERSION, **job.state.to_dict(), "notes": ["finished"]}))
+        {"format_version": STATE_FORMAT_VERSION, **stack_to_json(
+            job.state), "notes": ["finished"]}))
     assert job.sync() is not None
     assert job.state.notes == ["finished"] and len(job.undo_stack) == 1
 

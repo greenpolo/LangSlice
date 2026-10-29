@@ -42,8 +42,8 @@ from langslice.core.pictures.canvas import (
 from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.sections.channels import channel_colors, colour_words
 from langslice.core.sections.images import PREPROCESSED, Look
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
 #: The atlas channel that is lines; every other atlas channel is an image.
@@ -163,7 +163,7 @@ class DisplayOptions:
         """Whether any atlas line is drawn (the border style applies)."""
         return self.borders or bool(self.regions)
 
-    def look(self, state: StackState, record: SliceState) -> Look:
+    def look(self, state: Stack, record: Section) -> Look:
         """The look a picture of *record* is drawn in: ``preprocessed`` (None),
         another section image alone, or the raw channels together."""
         if self.channels:
@@ -172,7 +172,7 @@ class DisplayOptions:
             return {"image": self.image}
         return None
 
-    def section_tag(self, state: StackState | None = None) -> str:
+    def section_tag(self, state: Stack | None = None) -> str:
         """Caption fragment naming what of the section is shown: the section
         image, or the raw channels in their colours."""
         if self.channels:

@@ -22,6 +22,7 @@ from langslice.core.pictures.look import (
     snapshot,
 )
 from langslice.core.refusal import Refused
+from langslice.core.stack.codec import affine_from_json
 from tests.look_synthetic import SECTIONS, record, stack
 
 
@@ -116,7 +117,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     assert not changed_since(state, held)
     moved = record(state, "s1.png")
     moved.position_mm = 0.2
-    moved.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+    moved.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     assert changed_since(state, held)
     back = restored(state, held)
     assert record(back, "s1.png").position_mm == pytest.approx(0.15)

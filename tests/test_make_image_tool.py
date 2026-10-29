@@ -13,6 +13,7 @@ from PIL import Image
 
 from langslice.core.sections import images
 from langslice.core.sections.renders import render_slice
+from langslice.core.stack.codec import affine_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
@@ -43,8 +44,9 @@ def _box(tmp_path: Path, atlas: Any, n: int = 2) -> tuple[Any, Any, Any]:
     box = build_tools(job.state, ctx, spec, job=job)
     for record in job.state.slices:
         record.position_mm = 0.1
-        record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                            "calibration": {"section_um_per_px": UM, "source": "host"}}
+        record.transform = affine_from_json(
+            {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            "calibration": {"section_um_per_px": UM, "source": "host"}})
     return job, ctx, box
 
 
@@ -62,8 +64,8 @@ def test_make_image_writes_a_file_per_section_and_shows_it(tmp_path: Path, atlas
     assert {record.tool for record in job.views.records()} == {"make_image"}
     for record in job.state.slices:
         entry = record.images["reds"]
-        assert (job.folder / entry["file"]).is_file()
-        assert entry["source"]["recipe"]["weights"] == {"red": 1.0}
+        assert (job.folder / entry.file).is_file()
+        assert entry.source["recipe"]["weights"] == {"red": 1.0}
     assert len(job.undo_stack) == 1
     listed = _tool(box, "list_files")("sections/s0/images")
     assert "reds.png" in listed["text"] and "preprocessed.png" in listed["text"]
@@ -75,10 +77,10 @@ def test_remade_for_some_sections_and_deleted_and_undone(tmp_path: Path, atlas):
     job, ctx, box = _box(tmp_path, atlas)
     tool = _tool(box, "make_image")
     tool("blues", weights={"blue": 1}, view=False)
-    first = job.state.by_id("s1.png").images["blues"]["file"]
+    first = job.state.by_id("s1.png").images["blues"].file
     again = tool("blues", sections=["s1"], weights={"blue": 1}, invert=True, view=False)
     assert again["sections"] == ["s1.png"]
-    assert job.state.by_id("s1.png").images["blues"]["file"].endswith("blues.2.png")
+    assert job.state.by_id("s1.png").images["blues"].file.endswith("blues.2.png")
     assert (job.folder / first).is_file()  # files are never deleted
     held = _tool(box, "status")()["section_images"]["blues"]
     assert held["varies"]["s1.png"]["invert"] is True and "invert" not in held
@@ -111,11 +113,11 @@ def test_preprocessed_remade_then_made_with_the_defaults_is_the_opening_again(
         tmp_path: Path, atlas):
     job, ctx, box = _box(tmp_path, atlas)
     record = job.state.by_id("s0.png")
-    opening = dict(record.images["preprocessed"])
+    opening = record.images["preprocessed"]
     default = np.asarray(render_slice(ctx, record, long_edge=160)).copy()
     _tool(box, "make_image")("preprocessed", weights={"green": 1}, view=False)
     record = job.state.by_id("s0.png")
-    assert record.images["preprocessed"]["file"].endswith("preprocessed.2.png")
+    assert record.images["preprocessed"].file.endswith("preprocessed.2.png")
     changed = np.asarray(render_slice(ctx, record, long_edge=160))
     assert not np.array_equal(changed, default)
     # The look's default draws it, and the fits read it.
@@ -123,8 +125,8 @@ def test_preprocessed_remade_then_made_with_the_defaults_is_the_opening_again(
     assert "section image preprocessed (weights green 1" in looked["pictures"][0]["caption"]
     _tool(box, "make_image")("preprocessed", view=False)
     record = job.state.by_id("s0.png")
-    assert record.images["preprocessed"]["file"] == opening["file"]
-    assert record.images["preprocessed"]["source"] == {"opening": "adaptive"}
+    assert record.images["preprocessed"].file == opening.file
+    assert record.images["preprocessed"].source == {"opening": "adaptive"}
     assert np.array_equal(np.asarray(render_slice(ctx, record, long_edge=160)), default)
 
 
@@ -150,8 +152,8 @@ def test_a_fit_names_the_section_image_it_read(tmp_path: Path, atlas):
     assert fit["status"] == "ok", fit
     used = fit["results"][0]["inputs"]["section_image"]
     entry = job.state.by_id("s0.png").images["greens"]
-    assert used == {"name": "greens", "kind": "made", "file": entry["file"],
-                    "digest": entry["digest"]}
+    assert used == {"name": "greens", "kind": "made", "file": entry.file,
+                    "digest": entry.digest}
     raw = _tool(box, "elastix_affine")(["s1.png"], section_image="red", view=False)
     assert raw["results"][0]["inputs"]["section_image"] == {
         "name": "red", "kind": "raw", "file": "s1.png", "digest": None}

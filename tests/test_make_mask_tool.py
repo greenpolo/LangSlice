@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from langslice.core.sections.masks import registration_digest
+from langslice.core.stack.codec import affine_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
@@ -43,8 +44,9 @@ def _setup(folder: Path, atlas: SyntheticAtlas) -> tuple[Any, Any, Any]:
     state = ingest(spec, ctx)
     record = state.slices[0]
     record.position_mm = 0.1
-    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                        "calibration": {"section_um_per_px": 25.0, "source": "host"}}
+    record.transform = affine_from_json(
+        {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        "calibration": {"section_um_per_px": 25.0, "source": "host"}})
     return state, ctx, build_tools(state, ctx, spec)
 
 

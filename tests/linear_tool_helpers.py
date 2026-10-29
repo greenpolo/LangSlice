@@ -14,6 +14,7 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec
+from langslice.job.state_file import stack_from_json
 from tests.fakes import SlabAtlas
 
 #: The atlas of :func:`stack`: 20 slices, 1 mm each (positions 0-19 mm).
@@ -95,8 +96,7 @@ def single_transform(tool):
 
 def load_checkpoint(path):
     """The stack state saved at *path*, or None when there is none."""
-    from langslice.core.stack.stack import StackState
     from langslice.job.state_file import read_checkpoint
 
     data = read_checkpoint(str(path))
-    return None if data is None else StackState.from_dict(data)
+    return None if data is None else stack_from_json(data)

@@ -24,6 +24,7 @@ from langslice.core.geometry.affine import physical_affine_matrix
 from langslice.core.pictures.canvas import canvas_geometry, physical_views
 from langslice.core.sections.reading import read_pixel_size_um
 from langslice.core.sections.renders import canvas_um_per_px
+from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec
@@ -332,7 +333,7 @@ def test_a_value_left_out_keeps_the_stored_transforms_own(tmp_path: Path):
         "id": "s.tif", "rotation_deg": 7.0, "scale_x": 1.3, "scale_y": 0.8,
         "translate_x_mm": 0.0, "translate_y_mm": 0.05}], view=False)
     assert first["status"] == "ok", first
-    stored = dict(record.transform["physical"])
+    stored = dict(affine_to_json(record.transform)["physical"])
     assert stored["scale_x"] == pytest.approx(1.3)
 
     done = tools["interactive_transform"]([{"id": "s.tif", "translate_x_mm": 0.1}])

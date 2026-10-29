@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from PIL import Image
 
+from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.plugins import (
     SCRIPT_CALLER,
@@ -39,13 +40,19 @@ from langslice.core.plugins import (
     ToolSpec,
 )
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import (
+    affine_from_json,
+    deformation_to_json,
+    physical_to_json,
+)
+from langslice.core.stack.deformation import DeformationRef
+from langslice.core.stack.section import Section
 from langslice.job.settings import frozen as freeze
 from langslice.tools.refusal import frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
+    from langslice.tools.deformable import MappedWarp
     from langslice.tools.run import Door
 
 
@@ -226,10 +233,22 @@ class DeformationProposal:
     key: str
     summary: dict[str, Any]
     inverse_consistency_mm: dict[str, float]
-    _warp: Any = field(repr=False, compare=False)
+    _warp: MappedWarp = field(repr=False, compare=False)
 
     def row(self) -> dict[str, Any]:
         return {"id": self.id, "deformation": self}
+
+    def reference(self) -> DeformationRef:
+        """Return the deformation a section holds while the proposal is drawn.
+
+        Returns
+        -------
+        DeformationRef
+            Its key, the linear placement it sits on and its one step; no
+            record folder, since it is not saved.
+        """
+        return DeformationRef(key=self.key, linear_key=self._warp.linear_key,
+                              steps=(dict(self._warp.step),))
 
 
 @dataclass(frozen=True)
@@ -333,18 +352,6 @@ class WriteResult:
         if not self.ok:
             return Refused(str(self.error), message=self.message, **self.details).payload()
         return {"written": list(self.written), "rows": [dict(row) for row in self.rows]}
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, Mapping):
-        return {str(key): _plain(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
-    return value
 
 
 # --- who is calling ---------------------------------------------------------------------
@@ -473,7 +480,7 @@ class ToolContext:
         if not self._caller.in_tool_call:
             self._door.job.sync()
 
-    def _record(self, section: object) -> SliceState:
+    def _record(self, section: object) -> Section:
         self._fresh()
         state = self._door.state
         record = state.resolve(section)
@@ -481,23 +488,24 @@ class ToolContext:
             raise _as_tool_error(unknown_sections(state, [str(section)]))
         return record
 
-    def _view(self, record: SliceState) -> SectionView:
+    def _view(self, record: Section) -> SectionView:
         from langslice.core.maps.section_maps import render_sizes
 
         workspace = self._door.ctx
-        transform = record.transform or {}
+        transform = record.transform
         affine = None
-        if transform:
-            params = transform.get("params")
+        if transform is not None:
+            params = transform.params
+            knobs = None
+            if transform.physical is not None:
+                knobs = physical_to_json(transform.physical)
             affine = AffineView(
-                kind=transform.get("kind"),
+                kind=transform.kind,
                 matrix=tuple(float(v) for v in params) if params else None,
-                knobs=copy.deepcopy(transform.get("physical")) if transform.get("physical")
-                else None,
-                mirrored=transform.get("mirrored"))
+                knobs=knobs, mirrored=transform.mirrored)
         size = render_sizes(workspace, record.id).file_size
         pixel_size, source = workspace.calibration(record.id)
-        held = record.deformation
+        held = None if record.deformation is None else deformation_to_json(record.deformation)
         return SectionView(
             id=record.id, index=int(record.index_corrected), file_size=(size[0], size[1]),
             pixel_size_um=pixel_size, pixel_size_source=source,
@@ -507,7 +515,7 @@ class ToolContext:
                 key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps")
                 if key in held},
             damaged_regions=tuple(record.damaged_regions), damage_note=record.damage_note,
-            layers=tuple(str(ref["name"]) for ref in record.layers),
+            layers=tuple(ref.name for ref in record.layers),
             frozen=tuple(name for name in freeze.PROPERTIES
                          if name in self._door.spec.frozen_for(record.id)))
 
@@ -565,8 +573,10 @@ class ToolContext:
         try:
             with self.writing():
                 live = self._door.state.by_id(record.id) or record
+                # the script's array, checked by add_image
+                given = cast("object", array)
                 return ops_images.add_image(self._door.job, self._door.ctx, live, str(name),
-                                            array, note)
+                                            given, note)
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
 
@@ -702,7 +712,7 @@ class ToolContext:
             file_size=tuple(render_sizes(self._door.ctx, record.id).file_size),  # type: ignore[arg-type]
             rotation_deg=int(record.rotation_deg), flip=bool(record.flip))
 
-    def _grid(self, record: SliceState) -> Any:
+    def _grid(self, record: Section) -> Any:
         from langslice.core.fits import deformation
         from langslice.core.geometry.affine import IDENTITY_PARAMS
 
@@ -716,7 +726,7 @@ class ToolContext:
             try:
                 self._grids[key] = deformation.fit_grid(
                     self._door.state, self._door.ctx, record,
-                    transform={"params": list(IDENTITY_PARAMS)})
+                    params=list(IDENTITY_PARAMS))
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
                                 f"{record.id}: {exc}") from exc
@@ -949,7 +959,8 @@ class ToolContext:
         back = np.array([[1.0, 0.0, -ox], [0.0, 1.0, -oy], [0.0, 0.0, 1.0]])
         on_canvas = (shift @ np.vstack([in_section, [0.0, 0.0, 1.0]]) @ back)[:2]
         canvas_w, canvas_h = geometry.size
-        held_pivot = ((record.transform or {}).get("physical") or {}).get("pivot")
+        knobs_now = None if record.transform is None else record.transform.physical
+        held_pivot = None if knobs_now is None else knobs_now.pivot
         pivot = (float(held_pivot[0]), float(held_pivot[1])) if held_pivot else (0.5, 0.5)
         knobs = physical_params(on_canvas, pivot=(canvas_w * pivot[0], canvas_h * pivot[1]),
                                 um_per_px=um_per_px)
@@ -1006,23 +1017,25 @@ class ToolContext:
         from langslice.tools import deformable
 
         record = self._record(section)
-        plain_meta = _plain(dict(meta or {}))
         try:
+            plain_meta = to_jsonable(dict(meta or {}), strict=True)
             json.dumps(plain_meta)
         except (TypeError, ValueError) as exc:
             raise ToolError(RefusalCode.BAD_ARGS,
                             f"meta is JSON values: {exc}") from exc
         text = str(note or "").strip()
+        given = to_jsonable(dict(provenance or {}), strict=True)
+        fitted_with = to_jsonable(dict(settings or {}), strict=True)
+        engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
             warp = deformable.warp_from_map(
                 self._door.job, self._door.ctx, record.id, native_xy,
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
-                                     "pixels", **_plain(dict(provenance or {}))},
+                                     "pixels", **given},
                 weights=weights, start=str(start),
-                settings=_plain(dict(settings)) if settings else None,
-                engine_settings=_plain(dict(engine_settings or {})),
+                settings=fitted_with or None, engine_settings=engine,
                 engine_version=str(engine_version or ""))
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
@@ -1371,7 +1384,7 @@ class ToolContext:
             matrix = np.linalg.inv(self._placed(record)) @ matrix
         return self.transform_from_matrix(record.id, matrix[:2], note=note)
 
-    def _placed(self, record: SliceState) -> np.ndarray:
+    def _placed(self, record: Section) -> np.ndarray:
         """3x3: native atlas pixels -> fit-grid pixels under the section's
         current placement (its stored transform, else none)."""
         from langslice.core.fits import deformation
@@ -1533,14 +1546,13 @@ class ToolContext:
                 raise ToolError(RefusalCode.BAD_ARGS,
                                 f"the proposal is {warped.id}'s, not {record.id}'s")
             store = self._proposal_store(warped)
-            state = StackState.from_dict(copy.deepcopy(state.to_dict()))
+            state = copy.deepcopy(state)
             held = state.by_id(record.id)
             assert held is not None
-            held.deformation = {"key": warped.key, "linear_key": warped._warp.linear_key,
-                                "steps": [dict(warped._warp.step)]}
+            held.deformation = warped.reference()
             record = held
         elif proposal:
-            state = StackState.from_dict(copy.deepcopy(state.to_dict()))
+            state = copy.deepcopy(state)
             held = state.by_id(record.id)
             assert held is not None
             transform = proposal.get("transform")
@@ -1549,14 +1561,14 @@ class ToolContext:
             elif transform is not None and not isinstance(transform, Mapping):
                 transform = self.transform_from_params(record.id, transform).record
             if transform is not None:
-                held.transform = dict(transform)
+                held.transform = affine_from_json(cast("JsonObject", transform))
                 held.deformation = None
             if proposal.get("position_mm") is not None:
                 held.position_mm = float(proposal["position_mm"])
                 held.deformation = None
             if proposal.get("angles") is not None:
-                held.cutting_angles_deg = {"pitch": float(proposal["angles"][0]),
-                                           "yaw": float(proposal["angles"][1])}
+                angles = cast("Sequence[float]", proposal["angles"])  # (pitch, yaw) as given
+                held.angles = (float(angles[0]), float(angles[1]))
                 held.deformation = None
             record = held
         edge = int(resolution) if resolution else None
@@ -1595,7 +1607,7 @@ class ToolContext:
         names = [self._record(ref).id for ref in ids]
         state = self._door.state
         if proposal:
-            state = StackState.from_dict(copy.deepcopy(state.to_dict()))
+            state = copy.deepcopy(state)
             for ref, change in proposal.items():
                 held = state.by_id(self._record(ref).id)
                 assert held is not None
@@ -1607,8 +1619,8 @@ class ToolContext:
                 if change.get("position_mm") is not None:
                     held.position_mm = float(change["position_mm"])
                 if change.get("angles") is not None:
-                    held.cutting_angles_deg = {"pitch": float(change["angles"][0]),
-                                               "yaw": float(change["angles"][1])}
+                    angles = cast("Sequence[float]", change["angles"])  # (pitch, yaw) as given
+                    held.angles = (float(angles[0]), float(angles[1]))
                 held.deformation = None
         records = [state.by_id(name) for name in names]
         positions = _positions([float(r.position_mm) for r in records
@@ -1710,7 +1722,7 @@ class ToolContext:
                           pictures=[item if isinstance(item, Image.Image)
                                     else Image.fromarray(np.asarray(item))
                                     for item in result.pictures],
-                          result=_plain(reply))
+                          result=to_jsonable(reply))
 
         return job.background.start(caller.name, ids, landing, wait_for_images=False).id
 
@@ -1860,7 +1872,8 @@ class ToolContext:
                                             "{id, params}")
                         record = self.transform_from_params(
                             name, row["params"], note=str(row.get("note") or "")).record
-                    done = transforms.set_transforms(job, {name: dict(record)})
+                    stored = affine_from_json(record)
+                    done = transforms.set_transforms(job, {name: stored})
                 except ToolError as exc:
                     out[name] = {"id": name, **Refused(exc.code, message=exc.message).payload()}
                     continue
@@ -2000,8 +2013,8 @@ class ToolContext:
     def layers(self, section: object) -> list[LayerRef]:
         """The layers the section shows now."""
         record = self._record(section)
-        return [LayerRef(id=ref["id"], section=record.id, name=ref["name"], kind=ref["kind"],
-                         frame=ref["frame"], file=ref["file"]) for ref in record.layers]
+        return [LayerRef(id=ref.id, section=record.id, name=ref.name, kind=ref.kind,
+                         frame=ref.frame, file=ref.file) for ref in record.layers]
 
 
 def _mask_name(mask: Any) -> str:

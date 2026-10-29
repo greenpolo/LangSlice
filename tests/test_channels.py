@@ -20,8 +20,9 @@ from langslice.core.sections.reading import (
     working_intensity_ranges,
 )
 from langslice.core.sections.renders import render_slice
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
@@ -51,7 +52,7 @@ def _open(tmp_path: Path, atlas: SyntheticAtlas, n: int = 2) -> tuple[Job, Any]:
     return job, ctx
 
 
-def _remake(job: Job, ctx: Any, record: SliceState) -> None:
+def _remake(job: Job, ctx: Any, record: Section) -> None:
     """``preprocessed`` made again from :data:`RECIPE` (as ``make_image`` does)."""
     array, _ = images.make(ctx, record.id, record.images, RECIPE)
     images.write_image(job.layout, record, images.PREPROCESSED, array, {"recipe": RECIPE})
@@ -146,7 +147,7 @@ def test_the_elastix_affine_reads_the_section_image_named(tmp_path: Path, atlas,
     start = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     with pytest.raises(_Stop):
         tr.elastix_affine(state, ctx, record, start)
-    grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
+    grid = deformation.fit_grid(state, ctx, record, params=start)
     assert np.array_equal(seen[0], np.asarray(grid.image))  # the opening preprocessed
     _remake(job, ctx, record)
     with pytest.raises(_Stop):
@@ -169,8 +170,9 @@ def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, mon
     job, ctx = _open(tmp_path, atlas)
     state = job.state
     record = state.slices[0]
-    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                        "calibration": {"section_um_per_px": UM, "source": "host"}}
+    record.transform = affine_from_json(
+        {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        "calibration": {"section_um_per_px": UM, "source": "host"}})
     seen: list[Any] = []
     monkeypatch.setattr(deformation, "run_jobs", lambda _ws, jobs: seen.extend(jobs))
     monkeypatch.setattr(ops_deformable, "refuse_without_engine", lambda: None)
@@ -183,7 +185,7 @@ def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, mon
     assert np.array_equal(np.asarray(seen[1].image), np.asarray(wanted))
     assert not np.array_equal(np.asarray(seen[0].image), np.asarray(seen[1].image))
     assert seen[0].key != seen[1].key
-    assert seen[1].image_identity["digest"] == record.images["preprocessed"]["digest"]
+    assert seen[1].image_identity["digest"] == record.images["preprocessed"].digest
 
 
 def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatch):
@@ -197,9 +199,9 @@ def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatc
     spec = JobSpec(image_folder=str(tmp_path), atlas="test", preprocess="none")
     ctx = SimpleNamespace(settings=spec.image_settings(), atlas=object(),
                           image_path=lambda _: str(tmp_path / "section.png"))
-    record = SliceState(id="section.png", index_original=0, index_corrected=0,
-                        position_mm=4, transform={"params": [1, 0, 0, 0, 1, 0]})
-    state = StackState(atlas="test", slices=[record])
+    record = Section(id="section.png", index_original=0, index_corrected=0,
+                        position_mm=4, transform=affine_from_json({"params": [1, 0, 0, 0, 1, 0]}))
+    state = Stack(atlas="test", slices=[record])
     labels = np.zeros((40, 60), dtype=np.int64)
     labels[5:30, 5:25] = 100000001
     placement = np.array([[1.0, 0.0, 6.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]])

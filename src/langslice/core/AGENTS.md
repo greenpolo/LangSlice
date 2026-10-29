@@ -5,7 +5,8 @@ project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
 The lowest layer. Its sub-packages hold one topic each: `stack/` (the
-stack and section state, the status table), `geometry/` (affines, oblique
+stack and its sections as declared shapes, their JSON form, the status
+table), `geometry/` (affines, oblique
 planes, the thin-plate kernel, the triangulation, pixel frames), `atlas/`,
 `sections/` (the section files: discovery, reading, preprocessing, renders,
 made images, channels, masks, damage, native windows), `pictures/` (every
@@ -90,7 +91,7 @@ workspace carries. Every module's imports are core-only:
 ## The layer rule
 
 - A core module takes plain inputs: the `core.workspace.Workspace` (atlas,
-  section files, render caches, the `ImageSettings`), the `core.stack.stack.StackState` and its
+  section files, render caches, the `ImageSettings`), the `core.stack.stack.Stack` and its
   records, ids, numbers, the core's `core.pictures.options.DisplayOptions`. It
   returns plain outputs: PIL images (captions burned in: tool images reach a
   model as bare attachments), numpy arrays, dicts and frozen dataclasses.
@@ -117,7 +118,7 @@ workspace carries. Every module's imports are core-only:
 ## Cutting angles are per section
 
 Every atlas plane drawn, fitted or mapped for a section is at that
-section's own angles (`SliceState.angles`): the placement pictures
+section's own angles (`Section.angles`): the placement pictures
 (`pictures/placement.py`, `CanvasFrame`), the opening's atlas tiles, the fits
 (`fits/affine.py`), the handoff and every deformable fit and trace
 (`fits/frame.py`), the deformation's `linear_key`, the maps and
@@ -125,9 +126,9 @@ section's own angles (`SliceState.angles`): the placement pictures
 angles) and so the QuickNII/VisuAlign anchorings, and `grep_atlas`'s
 in-section check. A picture without a section (`look`'s `atlas` and the
 positioning picture's atlas thumbnails, `grep_atlas_view`, the opening's
-atlas reference) is drawn at `StackState.view_angles` (the shared angle, or
+atlas reference) is drawn at `Stack.view_angles` (the shared angle, or
 the median of the sections' when they differ), and its caption says which:
-`StackState.drawn_at_median(angles)`, `pictures.captions.view_angles_label` ("at the
+`Stack.drawn_at_median(angles)`, `pictures.captions.view_angles_label` ("at the
 median of the sections' cutting angles, pitch .. yaw .."). The atlas-plane
 helpers (`atlas_fetch`, `display`) take `angles=`; None reads the stack's
 one angle (`stack.stack.plane_angles`), which raises `MixedAngles` on a stack
@@ -185,7 +186,7 @@ the angles in a caption (empty for the flat plane).
   "`make_image`"): one named grayscale picture of a section that `look`
   draws and every fit reads. **Raw**: a plane of the file
   (`Workspace.section_channels`, `raw_plane` at the working copy's size),
-  never edited. **Made**: `SliceState.images[name]` = `{"source": {"recipe":
+  never edited. **Made**: `Section.images[name]` = `{"source": {"recipe":
   ...} | {"script": note} | {"opening": "adaptive" | "host" | "plain"},
   "file", "digest", "made", "weights_used"?}`, the file
   `sections/<stem>/images/<name>.png` (8-bit gray, the working copy's size,
@@ -275,6 +276,29 @@ the angles in a caption (empty for the flat plane).
   section's working copy (`pair_um_per_px`, `finest_um_per_px`).
   `pair_scale` sizes a pair at one position. `section_at` / `atlas_at` (and
   `pictures.panels.framed_atlas(um_per_px=)`) draw at exactly that scale.
+- `stack/` — the stack and its sections as declared shapes. `Stack`
+  (`stack.py`) holds the sections (`slices`) and the run's bookkeeping;
+  `Section` (`section.py`) its order, orientation (`flip`, `rotation_deg`),
+  `position_mm`, `angles`, damage, and frozen parts: `transform` a
+  `StoredAffine` (`affine.py`: `params`, the knobs `PhysicalAffine`,
+  `Calibration`, `FitRegions`), `deformation` a `DeformationRef`
+  (`deformation.py`: the saved fit's folder and key, its `linear_key`,
+  steps, summary; `LandmarkWarp` for a landmark warp), `image_correction` a
+  `BorderTrace` (`trace.py`), `landmarks` (`landmarks.py`: `Landmarks`,
+  `Pair`, `Endpoint`; None before the first pair), and `images` / `masks` /
+  `layers` (`images.py`: `ImageRef`, `MaskRef`, `LayerRef`). Section and
+  Stack are mutable (the job's live state, refilled in place by undo,
+  `Stack.replace_with`); their parts are frozen and replaced whole. The
+  JSON form of each part is `codec.py` and `landmarks_json.py`, read
+  strictly through `json_reads.py` (a key of the wrong type is a
+  `ValueError` naming it; keys a shape does not declare are kept in its
+  `extra` and written back after the declared ones), and a section's row
+  is `rows.py` (`section_to_json`, `section_from_json`, `fields_to_json`,
+  `with_fields`). The core shares that form with the state file
+  (`job/state_file.py`) because a picture's recipe records the section
+  fields it was drawn from (`pictures/look.snapshot`, `restored`) and a
+  placement's digests hash them (`fits.deformation.linear_key`,
+  `fits.frame.correction_fingerprint`), and the core cannot import `job`.
 - `stack/status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
   `status_rows` (each row's `transform` is `transform_entry`: the stored
@@ -295,7 +319,7 @@ the angles in a caption (empty for the flat plane).
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
 - `sections/masks.py` — a section's masks, saved per section
-  (`SliceState.masks`: kind `em` | `fit`, section image, resolved atlas image,
+  (`Section.masks`: kind `em` | `fit`, section image, resolved atlas image,
   params, the registration digest it was made at, file, left-out fraction;
   absent from the serialized state while empty). A mask is a float16 weight
   image `(H, W)` in [0, 1] on the fit grid, in
@@ -334,8 +358,8 @@ the angles in a caption (empty for the flat plane).
   augmented atlas's template; an additional reference whose name contains
   `nissl`; else `template`); `resolve_image` checks a name and resolves the
   alias, and `atlas_volume` resolves it too.
-- `sections/damage.py` — damage by atlas region (`SliceState.damaged_regions`;
-  `SliceState.damaged` is read-only: the section has marked regions;
+- `sections/damage.py` — damage by atlas region (`Section.damaged_regions`;
+  `Section.damaged` is read-only: the section has marked regions;
   `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the
   `(restrict_to, exclude)` every fit and the image model's trace run with,
   the marked regions added to *exclude* except an entry *restrict_to* names

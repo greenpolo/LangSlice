@@ -6,7 +6,7 @@ from typing import Any
 
 from langslice.core.fits import deformation
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.job.settings.spec import JobSpec
 
 #: A reported interval break must exceed this multiple of the median spacing.
@@ -18,7 +18,7 @@ STRICT_INTERVAL_TOLERANCE = 0.10
 # --- the submit gates ------------------------------------------------------------
 
 
-def missing_positions(state: StackState) -> Refused | None:
+def missing_positions(state: Stack) -> Refused | None:
     """``None`` when every section has a position, else the refusal
     naming the sections without one."""
     missing = [
@@ -36,9 +36,7 @@ def missing_positions(state: StackState) -> Refused | None:
     )
 
 
-def strict_interval_error(
-    state: StackState, breaks: list[int]
-) -> Refused | None:
+def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
     """Every consecutive spacing within 10% of the interval, no breaks."""
     if breaks:
         return Refused(
@@ -83,7 +81,7 @@ def strict_interval_error(
     )
 
 
-def unsupported_breaks(state: StackState, breaks: list[int]) -> Refused | None:
+def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
     """Check reported interval breaks against the spacing that was WRITTEN.
 
     A break at the section of corrected index *i* (``submit`` names it by
@@ -155,7 +153,7 @@ def unsupported_breaks(state: StackState, breaks: list[int]) -> Refused | None:
     )
 
 
-def missing_transforms(state: StackState) -> Refused | None:
+def missing_transforms(state: Stack) -> Refused | None:
     """``None`` when every section carries a transform, else the refusal."""
     missing = [
         record.id for record in state.in_order() if record.transform is None
@@ -173,23 +171,23 @@ def missing_transforms(state: StackState) -> Refused | None:
 
 
 def missing_deformations(
-    state: StackState,
+    state: Stack,
     exempt: frozenset[str] | set[str] = frozenset(),
 ) -> Refused | None:
     """``None`` when every section carries a deformation at its current linear
     placement, or else the refusal. The sections in *exempt* (their
     deformation frozen) need none."""
     missing: list[dict[str, str]] = []
-    for record in state.in_order():
-        if record.id in exempt:
+    for section in state.in_order():
+        if section.id in exempt:
             continue
-        held = record.deformation or {}
-        if not held:
-            missing.append({"id": record.id, "reason": "no deformation"})
-        elif held.get("linear_key") != deformation.linear_key(state, record):
+        held = section.deformation
+        if held is None:
+            missing.append({"id": section.id, "reason": "no deformation"})
+        elif held.linear_key != deformation.linear_key(state, section):
             missing.append(
                 {
-                    "id": record.id,
+                    "id": section.id,
                     "reason": "made at a different linear placement",
                 }
             )
@@ -206,7 +204,7 @@ def missing_deformations(
 
 
 def submit_errors(
-    state: StackState,
+    state: Stack,
     spec: JobSpec,
     breaks: list[int],
 ) -> Refused | None:

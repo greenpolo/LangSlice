@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from langslice.core.stack.codec import affine_to_json
+from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context, run
 from langslice.job.job import apply_host_inputs, ingest
 from langslice.job.settings.spec import JobSpec, PositionSpec
@@ -74,7 +76,7 @@ def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
 
     assert [s.id for s in state.in_order()] == list(reversed(names))
     assert state.by_id(names[0]).position_mm == 3.0
-    assert state.cutting_angles_deg == {"pitch": 2.5, "yaw": -1.0}
+    assert stack_angles_entry(state) == {"pitch": 2.5, "yaw": -1.0}
 
 
 def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
@@ -97,7 +99,7 @@ def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
     apply_host_inputs(state, spec)
 
     record = state.by_id(names[0])
-    assert record.transform == mirrored and record.transform is not mirrored
+    assert affine_to_json(record.transform) == mirrored
     assert record.flip is False  # the mirror stays inside the transform
     assert submit_errors(state, spec, []) is None
 

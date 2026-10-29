@@ -15,6 +15,7 @@ from PIL import Image
 from langslice.core.fits.deformable import engines
 from langslice.core.geometry.affine import decompose_affine, normalized_affine
 from langslice.core.pictures.canvas import canvas_geometry
+from langslice.core.stack.codec import affine_from_json, affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
@@ -107,7 +108,7 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
     assert result["status"] == "ok", result
     row = result["results"][0]
     assert row["status"] == "ok"
-    error = _error_vs(truth, state.slices[0].transform["params"])
+    error = _error_vs(truth, affine_to_json(state.slices[0].transform)["params"])
     assert error["rotation"] < 0.3 and error["scale"] < 0.01 and error["corner_px"] < 1.5, error
     # The same reply and record shape as a silhouette fit.
     assert set(row["transform"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
@@ -119,7 +120,7 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
     assert "params" not in row  # the six raw numbers stay host-side
     # The section under its new transform, saved with a number.
     assert len(result["pictures"]) == 1 and len(result[TOOL_MEDIA_PARTS_KEY]) == 1
-    stored = state.slices[0].transform
+    stored = affine_to_json(state.slices[0].transform)
     assert stored["kind"] == "elastix" and len(stored["params"]) == 6
     assert "regions" not in stored and "regions" not in row
     # One undo step back to no transform; the checkpoint holds the fit.
@@ -136,10 +137,11 @@ def test_starts_from_the_current_placement(tmp_path: Path, atlas):
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
     record = state.slices[0]
     near = _step(-1.0, 1.0, -2.0, 1.0)
-    record.transform = {"kind": "interactive", "params": normalized_affine(near[:2], SECTION_SIZE),
-                        "calibration": {"section_um_per_px": UM, "source": "host"}}
+    record.transform = affine_from_json(
+        {"kind": "interactive", "params": normalized_affine(near[:2], SECTION_SIZE),
+                        "calibration": {"section_um_per_px": UM, "source": "host"}})
     _tool(box, "elastix_affine")([ID], view=False)
-    error = _error_vs(truth, record.transform["params"])
+    error = _error_vs(truth, affine_to_json(record.transform)["params"])
     assert error["rotation"] < 0.3 and error["corner_px"] < 1.5, error
 
 
@@ -154,8 +156,9 @@ def test_marked_damage_and_restrict_to_are_honoured(tmp_path: Path, atlas):
     assert row["status"] == "ok", row
     assert row["regions"]["exclude"] == ["TH"] and row["regions"]["include"] == []
     assert 0.8 < row["regions"]["atlas_kept_fraction"] < 1.0
-    assert state.slices[0].transform["regions"] == {"include": [], "exclude": ["TH"]}
-    with_exclusion = _error_vs(truth, state.slices[0].transform["params"])
+    assert affine_to_json(
+        state.slices[0].transform)["regions"] == {"include": [], "exclude": ["TH"]}
+    with_exclusion = _error_vs(truth, affine_to_json(state.slices[0].transform)["params"])
     assert with_exclusion["corner_px"] < 2.5, with_exclusion
 
     _tool(box, "undo")()
@@ -166,7 +169,7 @@ def test_marked_damage_and_restrict_to_are_honoured(tmp_path: Path, atlas):
     assert row["status"] == "ok", row
     assert row["regions"]["include"] == ["STR"]
     assert len(row["restrict_box"]) == 4  # where a picture zooms on the regions
-    near_striatum = _error_vs(truth, state.slices[0].transform["params"])
+    near_striatum = _error_vs(truth, affine_to_json(state.slices[0].transform)["params"])
     assert near_striatum["rotation"] < 1.5 and near_striatum["corner_px"] < 6.0, near_striatum
 
     _tool(box, "undo")()
@@ -210,7 +213,7 @@ def test_a_manual_tweak_keeps_the_fits_shear(tmp_path: Path, atlas):
     truth = _step(3.0, 1.02, 4.0, -2.0) @ slant
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
     row = _tool(box, "elastix_affine")([ID], view=False)["results"][0]
-    fit = dict(state.slices[0].transform)
+    fit = affine_to_json(state.slices[0].transform)
     fitted = list(fit["params"])
     knobs = {key: value for key, value in row["transform"].items() if key != "pivot"}
     assert abs(knobs["shear"]) > 0.03, knobs
@@ -222,17 +225,18 @@ def test_a_manual_tweak_keeps_the_fits_shear(tmp_path: Path, atlas):
 
     # The fit's knobs given back (shear included) redraw the fit's own map.
     assert tweak(**knobs)["shear"] == knobs["shear"]
-    kept = _error_vs(_px(fitted), list(state.slices[0].transform["params"]))
+    kept = _error_vs(_px(fitted), list(affine_to_json(state.slices[0].transform)["params"]))
     assert kept["corner_px"] < 0.2, kept
     assert tweak(**{**knobs, "shear": 0.0})["shear"] == 0.0
-    dropped = _error_vs(_px(fitted), list(state.slices[0].transform["params"]))
+    dropped = _error_vs(_px(fitted), list(affine_to_json(state.slices[0].transform)["params"]))
     assert dropped["corner_px"] > 2.0, dropped
 
     # Only the five knobs changed: the fit's shear stays.
-    state.slices[0].transform = fit
+    state.slices[0].transform = affine_from_json(fit)
     five = {key: knobs[key] for key in ("rotation_deg", "scale_x", "scale_y",
                                         "translate_x_mm", "translate_y_mm")}
     reply = tweak(**{**five, "rotation_deg": five["rotation_deg"] + 0.5})
     assert reply["shear"] == knobs["shear"]
-    assert decompose_affine(state.slices[0].transform["params"], SECTION_SIZE)["shear"] == \
+    assert decompose_affine(affine_to_json(
+        state.slices[0].transform)["params"], SECTION_SIZE)["shear"] == \
         pytest.approx(knobs["shear"], abs=2e-3)

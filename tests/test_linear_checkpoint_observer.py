@@ -5,15 +5,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.job.job import Job
 from langslice.job.layout import JobLayout, job_folder_for
 from langslice.job.settings.spec import JobSpec
 
 
 def _job(tmp_path: Path) -> Job:
-    state = StackState(slices=[SliceState(id="a.png", index_original=0, index_corrected=0)])
+    state = Stack(slices=[Section(id="a.png", index_original=0, index_corrected=0)])
     spec = JobSpec(image_folder=str(tmp_path), preprocess="none")
     return Job(state, spec, layout=JobLayout(job_folder_for(tmp_path), tmp_path))
 
@@ -27,7 +27,7 @@ def _write(job: Job, note: str) -> None:
 def test_observers_fire_per_write_and_are_removed_on_exit(tmp_path: Path):
     job = _job(tmp_path)
     seen: list[list[str]] = []
-    other: list[StackState] = []
+    other: list[Stack] = []
     with job.observe(lambda state: seen.append(list(state.notes))), job.observe(other.append):
         _write(job, "first")
         _write(job, "second")
@@ -39,7 +39,7 @@ def test_observers_fire_per_write_and_are_removed_on_exit(tmp_path: Path):
 def test_an_observer_exception_does_not_break_the_write(tmp_path: Path):
     job = _job(tmp_path)
 
-    def flaky(_state: StackState) -> None:
+    def flaky(_state: Stack) -> None:
         raise RuntimeError("display failed")
 
     with job.observe(flaky):

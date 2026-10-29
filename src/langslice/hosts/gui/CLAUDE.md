@@ -69,7 +69,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   from `view.json`; a path outside the folder is refused), `agent` and
   `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
   script writes, session start and end, a trace error). The sections table:
-  `core.stack.status.status_rows` of `StackState.from_dict(current_state(...))` with
+  `core.stack.status.status_rows` of `stack_from_json(current_state(...))` with
   each section's registration number (`job.registrations`); a state this
   version does not read (another format) shows its raw `slices` fields with a
   note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo

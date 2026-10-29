@@ -8,7 +8,7 @@ without an id. Inside::
     job.lock             the write lock (:mod:`langslice.job.lock`)
     job.json             settings (the JobSpec) + format_version; a saved
                          host job's own fields under "host"
-    state.json           the state checkpoint (StackState, versioned)
+    state.json           the state checkpoint (Stack, versioned)
     registration.json    its public rendering
     (:mod:`langslice.job.public_files`) history/             undo/redo:
     index.json + one file per step sections/<name>/     per section (<name>:

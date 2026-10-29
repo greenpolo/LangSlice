@@ -31,20 +31,24 @@ import io
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
 
 from langslice.core.geometry.pixel_frames import source_frame
+from langslice.core.jsonable import Json
 from langslice.core.pictures import look as looks
 from langslice.core.pictures.captions import caption
 from langslice.core.pictures.drawn import annotate, note
 from langslice.core.pictures.grid import draw_grid
 from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+
+if TYPE_CHECKING:
+    from langslice.core.fits.deformation import RecordStore
 
 #: The recipe renderer of a picture cropped from a saved image.
 CROP_RENDERER = "crop"
@@ -124,9 +128,15 @@ def _image(picture: Image.Image | bytes | str | Path | None) -> Image.Image | No
     return Image.open(picture).convert("RGB")
 
 
-#: Redrawers by recipe renderer: ``(recipe, window, workspace, state,
-#: store, long_edge) -> look.LookPicture``.
-RENDERERS: dict[str, Callable[..., looks.LookPicture]] = {
+#: A recipe's redrawer: ``(recipe, window, workspace, state, store,
+#: long_edge) -> look.LookPicture``.
+Redrawer = Callable[
+    [dict[str, Json], Sequence[float], Workspace, Stack, "RecordStore | None",
+     int | None],
+    looks.LookPicture,
+]
+#: Redrawers by recipe renderer.
+RENDERERS: dict[str, Redrawer] = {
     looks.RENDERER: lambda recipe, window, ws, state, store, edge: looks.redraw(
         recipe, window, ws, state, store=store, zoom_edge=edge),
 }
@@ -139,8 +149,8 @@ def redraw(
     box: Sequence[float],
     workspace: Workspace,
     *,
-    state: StackState | None = None,
-    store: Any = None,
+    state: Stack | None = None,
+    store: RecordStore | None = None,
     picture: Image.Image | bytes | str | Path | None = None,
     long_edge: int | None = None,
     region: str = "",

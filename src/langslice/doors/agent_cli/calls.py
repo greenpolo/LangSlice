@@ -42,6 +42,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from langslice.core.refusal import FAILED_STATUSES, RefusalCode, ReplyStatus
+from langslice.core.stack.codec import trace_to_json
+from langslice.core.stack.stack import Stack
 from langslice.doors.agent_cli import background
 from langslice.doors.agent_cli.catalog import canonical_verb
 from langslice.doors.agent_cli.envelope import (
@@ -56,6 +58,7 @@ from langslice.doors.agent_cli.envelope import (
     stdout_to_stderr,
 )
 from langslice.job.lock import JobBusy
+from langslice.job.state_file import stack_to_json
 from langslice.tools.refusal import unknown_sections as unknown_refusal
 
 logger = logging.getLogger(__name__)
@@ -680,8 +683,10 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     if dry_run and isinstance(result, dict):
         result["dry_run"] = True
         if verbs[verb].kind == "write":
-            result["would_change"] = changes(before or {}, job.state.to_dict(),
-                                             verbose=verbose)
+            # the open job's stack
+            after = stack_to_json(cast("Stack", job.state))
+            result["would_change"] = changes(
+                before or {}, after, verbose=verbose)
         elif verbs[verb].scripting:
             warnings.append(f"{verb} wrote nothing under --dry-run; `files` lists what it "
                             "would write.")
@@ -714,8 +719,11 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
 def _landed(job: Any, section: Any) -> dict[str, Any]:
     """A section's image-model call as it landed (status, error, message,
     cached, attempt); empty for an unknown section or none."""
-    record = job.state.resolve(str(section)) if section not in (None, "") else None
-    held = (record.image_correction or {}) if record is not None else {}
+    state = cast("Stack", job.state)  # the open job's stack
+    name = cast("object", section)  # the section the reply named
+    record = state.resolve(name) if name not in (None, "") else None
+    trace = None if record is None else record.image_correction
+    held = {} if trace is None else trace_to_json(trace)
     return {key: held[key] for key in ("status", "error", "message", "cached", "attempt")
             if key in held}
 

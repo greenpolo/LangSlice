@@ -18,14 +18,18 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.fits import deformation
 from langslice.core.fits import frame as handoff
 from langslice.core.fits.trace import trace as registration_tool
+from langslice.core.jsonable import JsonValue
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
+from langslice.core.stack.codec import trace_from_json, trace_to_json
+from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.tools.refusal import frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs
 
 if TYPE_CHECKING:
     from langslice.core.pictures.options import DisplayOptions
+    from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
     from langslice.providers.connections import ImageModel
@@ -57,8 +61,15 @@ _STALE_MESSAGE = ("The section's placement changed while the image call was prep
                   "nothing was started or written for it.")
 
 
-def _without_cached(record: dict[str, Any] | None) -> dict[str, Any] | None:
-    return None if record is None else {k: v for k, v in record.items() if k != "cached"}
+def _trace_json(section: Section) -> dict[str, JsonValue]:
+    """Return the section's border trace in its JSON form (empty: none)."""
+    if section.image_correction is None:
+        return {}
+    return trace_to_json(section.image_correction)
+
+
+def _without_cached(trace: BorderTrace | None) -> BorderTrace | None:
+    return None if trace is None else replace(trace, cached=None)
 
 
 def _start_trace(
@@ -86,7 +97,7 @@ def _start_trace(
         current = handoff.correction_fingerprint(job.state, workspace, section_id)
         if job.image_job_running(section_id, current):
             return TraceStarted(id=section_id, running=True,
-                                record=dict(record.image_correction or {}))
+                                record=_trace_json(record))
         kept, dropped = exclusions(record, chosen)
         result, call = registration_tool.start_correction(
             job.state, workspace, section_id, prompt=prompt, image_model=image_model,
@@ -108,10 +119,11 @@ def _start_trace(
         if call is not None:
             job.start_image_job(section_id, fingerprint, call, workers=workers)
         portable = job.portable(result)
+        trace = trace_from_json(portable)
         # A saved reply reused as it stands differs only by its ``cached`` flag:
         # nothing to write, so no undo step.
-        if _without_cached(portable) != _without_cached(now.image_correction):
-            now.image_correction = portable
+        if _without_cached(trace) != _without_cached(now.image_correction):
+            now.image_correction = trace
             job.commit(before)
     return TraceStarted(id=section_id, record=portable, started=call is not None)
 
@@ -191,7 +203,7 @@ def trace_borders(
     held = job.background.running_for(record.id, TRACE_WORK)
     if held is not None:
         return TraceStarted(id=record.id, running=True, work=held.id,
-                            record=dict(record.image_correction or {}))
+                            record=_trace_json(record))
     started = _start_trace(job, workspace, record.id, image_model=image_model, prompt=prompt,
                            chosen=regions, workers=workers)
     now = job.state.by_id(record.id) or record
@@ -233,17 +245,19 @@ def land_trace(
         return Landed(status=FAILED, text=f"{section_id} is no longer in the stack; nothing "
                       "was applied.",
                       result={"error": RefusalCode.UNKNOWN_SLICE_IDS})
-    held = record.image_correction or {}
-    trace = {key: held[key] for key in ("status", "attempt", "cached", "prompt_edited",
+    held = record.image_correction
+    form = _trace_json(record)
+    trace = {key: form[key] for key in ("status", "attempt", "cached", "prompt_edited",
                                         "include", "exclude", "error", "message")
-             if key in held}
-    if held.get("status") == "error":
-        reason = str(held.get("message") or held.get("error") or "no image")
+             if key in form}
+    if held is not None and held.status == "error":
+        reason = held.message or held.error or "no image"
         return Landed(status=FAILED, text=f"the image model's call failed ({reason}); "
                       "nothing was applied.",
                       result={"error": RefusalCode.TRACE_FAILED,
                               "trace": trace})
-    if section_inputs(state, record, deformation=True) != expected or held.get("status") != "ok":
+    if (section_inputs(state, record, deformation=True) != expected
+            or held is None or held.status != "ok"):
         return _stale(trace)
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
                           options=options)
@@ -273,20 +287,22 @@ def land_trace(
                   result={"row": row, "trace": trace})
 
 
-def _landed(job: Job, record: Any) -> bool:
-    """Whether *record*'s saved trace has landed: its image correction is a
+def _landed(job: Job, section: Section) -> bool:
+    """Whether *section*'s saved trace has landed: its image correction is a
     completed reply and a step of its applied deformation, at its current
     linear placement, fitted that very trace
     (:func:`~langslice.tools.deformable.fit_deformable`
     records the trace a traced step read)."""
-    held = record.image_correction or {}
-    applied = record.deformation or {}
-    if held.get("status") != "ok" or not applied.get("steps"):
+    held = section.image_correction
+    applied = section.deformation
+    if held is None or held.status != "ok":
         return False
-    if applied.get("linear_key") != deformation.linear_key(job.state, record):
+    if applied is None or not applied.steps:
         return False
-    trace = str(held.get("artifact_dir") or "")
-    return bool(trace) and any(step.get("trace") == trace for step in applied["steps"])
+    if applied.linear_key != deformation.linear_key(job.state, section):
+        return False
+    trace = held.artifact_dir or ""
+    return bool(trace) and any(step.get("trace") == trace for step in applied.steps)
 
 
 def _stale(trace: dict[str, Any]) -> Landed:

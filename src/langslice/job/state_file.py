@@ -1,7 +1,11 @@
 """The state checkpoint, ``state.json``: the job's record of truth.
 
-Every write saves the full :class:`StackState` there, atomically (temp file
-+ rename) so a crash mid-write cannot leave a truncated file. Resume = load
+This module is the one place a :class:`~langslice.core.stack.stack.Stack`
+and its sections become JSON and come back (:func:`stack_to_json`,
+:func:`stack_from_json`); each section is one row, its parts in their JSON
+form (:mod:`langslice.core.stack.rows`). Every write saves the full stack
+there, atomically (temp file + rename) so a crash mid-write cannot leave a
+truncated file. Resume = load
 the checkpoint and re-seed the agent with the state it had. Several writers
 may share one job folder; they take turns under its write lock
 (:meth:`langslice.job.job.Job.writing`).
@@ -19,10 +23,27 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from langslice.core.stack.stack import StackState
+from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
+from langslice.core.stack.json_reads import (
+    flag_at,
+    integer_at,
+    list_at,
+    object_at,
+    objects_at,
+    text_at,
+    texts_at,
+)
+from langslice.core.stack.rows import (
+    ANGLES_KEY,
+    ROW_KEYS,
+    section_from_json,
+    section_to_json,
+)
+from langslice.core.stack.section import FLAT, Section
+from langslice.core.stack.stack import Stack
 
 #: A reader of a format-3 state's fields that returns them as format 4.
 Upgrade = Callable[[dict[str, Any]], dict[str, Any]]
@@ -32,11 +53,11 @@ FORMAT_KEY = "format_version"
 #: The checkpoint's format. Every path on a section record (a deformation's
 #: ``record``, an image correction's ``artifact_dir`` and ``artifact_paths``)
 #: is relative to the job folder (:func:`state_paths`), and every section
-#: carries its own cutting angles (``SliceState.cutting_angles_deg``). A
+#: carries its own cutting angles (``Section.angles``). A
 #: state whose sections share one angle also writes it as the stack's
 #: ``cutting_angles_deg``; one whose sections differ (a registration
 #: supplied per section) writes the stack's as null. Every section's made
-#: images are entries (``SliceState.images``) naming files under the job
+#: images are entries (``Section.images``) naming files under the job
 #: folder; the stack has no ``appearance``.
 STATE_FORMAT_VERSION = 4
 #: The older format a job's upgrade reads (``Job``'s; the stack's
@@ -64,9 +85,179 @@ def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
         raise
 
 
-def write_checkpoint(state: StackState, path: str) -> None:
+#: The stack's own keys, in the order the state file writes them.
+STACK_KEYS = (
+    "image_folder", "atlas", "plane", "interval_mm", "thickness_mm", "spec",
+    "interval_breaks", "notes", "slices", "submitted", "debrief",
+)  # fmt: skip
+#: The row keys a row leaves out while they are empty: most jobs have
+#: none, so their state reads as it always has.
+OPTIONAL_ROW_KEYS = ("layers", "masks", "images")
+
+
+def stack_to_json(state: Stack) -> dict[str, JsonValue]:
+    """Return a stack in its JSON form: the checkpoint's and the result's.
+
+    The cutting angles are written once, on the stack
+    (``"cutting_angles_deg": {"pitch", "yaw"}``), when every section shares
+    them, so a single-angle state reads as it always has; when they differ
+    (state format 3), the stack's is null and each section row carries its
+    own.
+
+    Parameters
+    ----------
+    state
+        The stack written.
+
+    Returns
+    -------
+    dict
+        :data:`STACK_KEYS` in order, then ``cutting_angles_deg``.
+    """
+    rows = [section_to_json(section) for section in state.slices]
+    angles: JsonValue = None
+    if not state.mixed_angles:
+        angles = {"pitch": FLAT[0], "yaw": FLAT[1]}
+        if rows:
+            angles = rows[0][ANGLES_KEY]
+        for row in rows:
+            del row[ANGLES_KEY]
+    for row in rows:
+        for key in OPTIONAL_ROW_KEYS:
+            if not row[key]:
+                del row[key]
+    data: dict[str, JsonValue] = {
+        "image_folder": state.image_folder,
+        "atlas": state.atlas,
+        "plane": state.plane,
+        "interval_mm": state.interval_mm,
+        "thickness_mm": state.thickness_mm,
+        "spec": to_jsonable(state.spec),
+        "interval_breaks": list[JsonValue](state.interval_breaks),
+        "notes": list[JsonValue](state.notes),
+        "slices": list[JsonValue](rows),
+        "submitted": state.submitted,
+        "debrief": state.debrief,
+        ANGLES_KEY: angles,
+    }
+    return data
+
+
+def _rows(data: JsonObject) -> tuple[JsonObject, ...]:
+    """Return a state's section rows; an absent or null list is none."""
+    if data.get("slices") is None:
+        return ()
+    return objects_at(data, "slices")
+
+
+def _unknown_keys(data: JsonObject) -> list[str]:
+    """Return the keys of a state, and of its rows, that it cannot hold."""
+    unknown = {key for key in data if key not in (*STACK_KEYS, ANGLES_KEY)}
+    for row in _rows(data):
+        unknown |= {f"slices.{key}" for key in row if key not in ROW_KEYS}
+    return sorted(unknown)
+
+
+def _optional_number(data: JsonObject, key: str) -> float | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{key} must be a number or null, not {value!r}")
+    return value
+
+
+def stack_from_json(data: JsonObject) -> Stack:
+    """Return the stack a state's JSON form holds.
+
+    A section row without its own angles carries the stack's
+    (``cutting_angles_deg`` on the stack, flat without), which is how a
+    single-angle state is written.
+
+    Parameters
+    ----------
+    data
+        A form :func:`stack_to_json` writes, without its format version.
+
+    Returns
+    -------
+    Stack
+        The stack.
+
+    Raises
+    ------
+    ValueError
+        Naming any unknown key (a section row's as ``slices.key``), or a
+        key that holds a value of the wrong type.
+    """
+    unknown = _unknown_keys(data)
+    if unknown:
+        raise ValueError(f"Unknown stack state key(s) {unknown}")
+    shared = data.get(ANGLES_KEY)
+    sections: list[Section] = []
+    for row in _rows(data):
+        if not isinstance(row.get(ANGLES_KEY), Mapping) and isinstance(
+            shared, Mapping
+        ):
+            row = {**row, ANGLES_KEY: shared}
+        sections.append(section_from_json(row))
+    defaults = Stack()
+    spec: JsonObject = object_at(data, "spec") if "spec" in data else {}
+    notes = list(texts_at(data, "notes")) if "notes" in data else []
+    submitted = flag_at(data, "submitted") if "submitted" in data else False
+    return Stack(
+        image_folder=_text_or(data, "image_folder", defaults.image_folder),
+        atlas=_text_or(data, "atlas", defaults.atlas),
+        plane=_text_or(data, "plane", defaults.plane),
+        interval_mm=_optional_number(data, "interval_mm"),
+        thickness_mm=_optional_number(data, "thickness_mm"),
+        spec=spec,
+        interval_breaks=[
+            integer_at({"interval_breaks": value}, "interval_breaks")
+            for value in _items(data, "interval_breaks")
+        ],
+        notes=notes,
+        slices=sections,
+        submitted=submitted,
+        debrief=_text_or(data, "debrief", defaults.debrief),
+    )
+
+
+def _text_or(data: JsonObject, key: str, default: str) -> str:
+    """Return a state's text under *key*, or *default* without it."""
+    if key not in data:
+        return default
+    return text_at(data, key)
+
+
+def _items(data: JsonObject, key: str) -> Sequence[Json]:
+    """Return a state's list under *key*; an absent one is empty."""
+    if key not in data:
+        return ()
+    return list_at(data, key)
+
+
+def serialized_mixed_angles(data: JsonObject) -> bool:
+    """Return whether a state's JSON form has sections of differing angles.
+
+    Parameters
+    ----------
+    data
+        A form :func:`stack_to_json` writes (a checkpoint's fields at
+        format 3 or 4).
+
+    Returns
+    -------
+    bool
+        True when the stack's ``cutting_angles_deg`` is written null, as
+        it is exactly then.
+    """
+    return ANGLES_KEY in data and data[ANGLES_KEY] is None
+
+
+def write_checkpoint(state: Stack, path: str) -> None:
     """Write *state* to *path* atomically, versioned."""
-    write_json_atomic(path, {FORMAT_KEY: STATE_FORMAT_VERSION, **state.to_dict()})
+    write_json_atomic(path, {FORMAT_KEY: STATE_FORMAT_VERSION, **stack_to_json(state)})
 
 
 def state_paths(

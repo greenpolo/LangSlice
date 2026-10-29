@@ -12,7 +12,7 @@ from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.stack import Stack
 from langslice.core.stack.stack import (
     unknown_sections as state_unknown_sections,
 )
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
 
 
-def unknown_sections(state: StackState, refs: object) -> Refused:
+def unknown_sections(state: Stack, refs: object) -> Refused:
     """``UNKNOWN_SLICE_IDS`` for *refs* that name no section: the refs, the
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.stack.stack.unknown_sections`)."""

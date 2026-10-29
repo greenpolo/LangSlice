@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Any
 from PIL import Image
 
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import compact_rows
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
@@ -48,7 +48,7 @@ class Door:
     image_model: ImageModel | None
 
     @property
-    def state(self) -> StackState:
+    def state(self) -> Stack:
         return self.job.state
 
     # --- the status rows -------------------------------------------------------
@@ -76,9 +76,9 @@ class Door:
 
     # --- sections ---------------------------------------------------------------
 
-    def resolve_many(self, refs: Sequence[Any]) -> tuple[list[SliceState], list[str]]:
+    def resolve_many(self, refs: Sequence[Any]) -> tuple[list[Section], list[str]]:
         """The sections *refs* name (each once, in order) and the refs that name none."""
-        known: list[SliceState] = []
+        known: list[Section] = []
         unknown: list[str] = []
         for ref in refs:
             record = self.state.resolve(ref)

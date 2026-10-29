@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from langslice.job.settings.spec import JobSpec
 
 from langslice.doors.abba.checkpoints import checkpoint_callback
+from langslice.job.state_file import stack_to_json
 
 Emit = Callable[[dict[str, Any]], None]
 #: The keys of a ``linear.run`` request (``mcp.prepare`` adds ``host_channel``);
@@ -258,7 +259,7 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     # Observers are deliberately isolated by the engine. A final explicit
     # conversion ensures a failed native geometry export cannot report success.
     checkpoint(state)
-    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(output_dir)}
+    result: dict[str, Any] = {"state": stack_to_json(state), "output_dir": str(output_dir)}
     return result
 
 

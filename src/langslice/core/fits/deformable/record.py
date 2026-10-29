@@ -49,6 +49,7 @@ from langslice.core.fits.deformable.ome_warp import (
 )
 from langslice.core.fits.deformable.settings import FitSettings
 from langslice.core.fits.flags import FitFlag
+from langslice.core.jsonable import to_jsonable
 
 #: Area ratio (warped / placed) limits for solid tissue regions.
 TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
@@ -328,8 +329,8 @@ class DeformableRecord:
         (out / "record.json").unlink(missing_ok=True)
         self.round_to_storage()
         ome_warp.write(out, self)
-        (out / "record.json").write_text(json.dumps(self.metadata(), indent=2,
-                                                    default=_json_default) + "\n")
+        metadata = to_jsonable(self.metadata(), strict=True)
+        (out / "record.json").write_text(json.dumps(metadata, indent=2) + "\n")
         self.saved_as = out.name
         return out
 
@@ -388,9 +389,3 @@ def _present(array: np.ndarray | None) -> np.ndarray:
     return array
 
 
-def _json_default(value: Any) -> Any:
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    raise TypeError(f"Not JSON serializable: {type(value).__name__}")

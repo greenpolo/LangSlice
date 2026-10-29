@@ -22,13 +22,17 @@ import pytest
 from PIL import Image
 
 from langslice.core.plugins import Layer, PluginError
+from langslice.core.stack.codec import affine_to_json, deformation_to_json
+from langslice.core.stack.images import LayerRef
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job import plugins as core_plugins
 from langslice.job.settings.spec import JobSpec, TransformSpec
 from langslice.job.settings.tool_table import tools_for, valid_names
+from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.render import FULL, Variant, declaration
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
+from tests.shapes import json_of
 
 EXAMPLE = "tests.fixtures.example_plugin:tools"
 
@@ -224,7 +228,7 @@ def test_a_context_write_is_one_undo_step_that_undo_reverts(images: Path):
     registration = json.loads((job.layout.folder / "registration.json").read_text())
     shifts = [item["parameters"]["affine"]["params"][2] for item in registration["sections"]]
     assert shifts == [0.05, 0.05, 0.05]
-    assert all(state.by_id(f"s{i}.png").transform["kind"] == "plugin:nudge_sections"
+    assert all(affine_to_json(state.by_id(f"s{i}.png").transform)["kind"] == "plugin:nudge_sections"
                for i in range(3))
     assert call(box, "undo")["status"] == "ok"
     assert all(state.by_id(f"s{i}.png").transform is None for i in range(3))
@@ -540,8 +544,8 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
     assert call(box, "mark", sections=["s0.png"])["status"] == "ok"
     assert len(box.job.undo_stack) == depth + 1  # the call, not each layer
     record = state.by_id("s0.png")
-    assert [item["name"] for item in record.layers] == ["marks", "box", "regions", "map", "shot"]
-    assert record.layers[0]["file"].startswith("plugins/mark/layers/s0_")
+    assert [item.name for item in record.layers] == ["marks", "box", "regions", "map", "shot"]
+    assert record.layers[0].file.startswith("plugins/mark/layers/s0_")
     manifest = json.loads((box.job.layout.folder / "plugins/mark/layers.json").read_text())
     assert [item["name"] for item in manifest["layers"]][:2] == ["marks", "box"]
     assert {item["tool"] for item in manifest["layers"]} == {"mark"}
@@ -566,9 +570,9 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
     assert call(box, "look", mode="section", layers=["marks"])["error"] == "UNKNOWN_PLUGIN_LAYER"
     assert call(box, "redo")["status"] == "ok"
     assert len(state.by_id("s0.png").layers) == 5
-    first = [item["id"] for item in state.by_id("s0.png").layers]
+    first = [item.id for item in state.by_id("s0.png").layers]
     call(box, "mark", sections=["s0.png"])  # a layer of the same name replaces the earlier one
-    second = [item["id"] for item in state.by_id("s0.png").layers]
+    second = [item.id for item in state.by_id("s0.png").layers]
     assert len(second) == 5 and not set(first) & set(second)
     assert call(box, "look", mode="positioning", layers=["marks"])["error"] == "BAD_ARGS"
     refused = call(box, "look", mode="section", layers=["nope"])
@@ -591,7 +595,9 @@ def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
     ]
     for layer in cases:
         path = save_layer(layer, tmp_path / layer.name)
-        back = load_layer(path, {"kind": layer.kind, "frame": layer.frame, "name": layer.name})
+        ref = LayerRef(id="t/1", name=layer.name, kind=layer.kind, frame=layer.frame,
+                       file="", tool="t", call="1", created="")
+        back = load_layer(path, ref)
         assert back.kind == layer.kind and back.frame == layer.frame
         if layer.kind == "points":
             np.testing.assert_allclose(back.xy, layer.xy)
@@ -677,7 +683,7 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
     assert reply["written"] == ["s0.png"] and reply["rows"][0]["status"] == "ok", reply
     assert reply["rows"][0]["displacement_mm"]["max"] > 0.5
     record = state.by_id("s0.png")
-    held = record.deformation
+    held = json_of(record.deformation)
     assert held["steps"] == [{"method": "plugin:ripple_sections", "start": "linear",
                               "note": "ripple 1.5 px"}]
     warp = job.deformations.current(state, record)
@@ -694,7 +700,7 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
     expected = ripple_map(SimpleNamespace(
         image=np.asarray(grid.image), atlas_to_section=None,
         placed_atlas_to_section=grid.placement.atlas_to_section), 1.5)
-    assert record.transform["params"][2] == 0.05
+    assert affine_to_json(record.transform)["params"][2] == 0.05
     # The ripple alone: 1.5 fit-grid pixels at most, nothing of the placement.
     assert reply["rows"][0]["displacement_mm"]["max"] <= 1.5 * warp.mm_per_px + 1e-3
     frame = section_frame(state, ctx, record)
@@ -730,13 +736,13 @@ def test_a_deformation_write_is_one_undo_step_and_the_overlay_shows_it(images: P
     assert "deformation drawn" in reply["pictures"][0]["caption"]
     rows = {row["id"]: row for row in call(box, "status")["rows"]}
     assert rows["s0.png"]["deformation"]["steps"] == ["plugin:ripple_sections"]
-    key = state.by_id("s0.png").deformation["key"]
+    key = deformation_to_json(state.by_id("s0.png").deformation)["key"]
     assert call(box, "undo")["status"] == "ok"
     assert state.by_id("s0.png").deformation is None and state.by_id("s1.png").deformation is None
     registration = json.loads((job.layout.folder / "registration.json").read_text())
     assert all(item["parameters"]["deformation"] is None for item in registration["sections"])
     assert call(box, "redo")["status"] == "ok"
-    assert state.by_id("s0.png").deformation["key"] == key
+    assert deformation_to_json(state.by_id("s0.png").deformation)["key"] == key
 
 
 def test_a_frozen_deformation_is_that_sections_row_and_the_others_are_written(images: Path):
@@ -758,12 +764,12 @@ def test_a_section_without_a_transform_is_refused_as_a_native_fit_refuses_it(ima
 def test_a_placement_change_clears_the_deformation_and_undo_brings_both_back(images: Path):
     state, _c, box = warp_box(images)
     call(box, "ripple_sections", sections=["s0.png"])
-    key = state.by_id("s0.png").deformation["key"]
+    key = deformation_to_json(state.by_id("s0.png").deformation)["key"]
     reply = call(box, "nudge_sections", sections=["s0.png"], dx=0.08)
     assert reply["deformation_cleared"] == ["s0.png"]
     assert state.by_id("s0.png").deformation is None
     call(box, "undo")
-    assert state.by_id("s0.png").deformation["key"] == key
+    assert deformation_to_json(state.by_id("s0.png").deformation)["key"] == key
 
 
 FIELDS = '''
@@ -885,11 +891,11 @@ def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path
     job = box.job
     first = call(box, "ripple_chain", sections=["s0.png"], amplitude_px=1.0)
     assert first["written"] == ["s0.png"], first
-    held = state.by_id("s0.png").deformation
+    held = json_of(state.by_id("s0.png").deformation)
     assert [step["start"] for step in held["steps"]] == ["linear"]
     second = call(box, "ripple_chain", sections=["s0.png"], amplitude_px=0.5)
     assert second["written"] == ["s0.png"], second
-    chained = state.by_id("s0.png").deformation
+    chained = json_of(state.by_id("s0.png").deformation)
     assert [(step["method"], step["start"]) for step in chained["steps"]] == [
         ("plugin:ripple_chain", "linear"), ("plugin:ripple_chain", "current")]
     assert chained["steps"][1]["settings"] == {"amplitude_px": 0.5}
@@ -909,7 +915,7 @@ def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path
         "settings": {"amplitude_px": 0.5}}
     # Undo takes the second step back to the first.
     call(box, "undo")
-    assert state.by_id("s0.png").deformation["key"] == held["key"]
+    assert deformation_to_json(state.by_id("s0.png").deformation)["key"] == held["key"]
 
 
 PICTURED = '''
@@ -1002,7 +1008,7 @@ def test_the_library_gets_the_tools_as_methods_and_reopens_them(images: Path):
     core_plugins.forget(EXAMPLE)  # a new process starts without it
     again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
     assert again.verbs[-2:] == ["section_brightness", "nudge_sections"]
-    assert again.state.by_id("s0.png").transform["params"][2] == 0.03
+    assert affine_to_json(again.state.by_id("s0.png").transform)["params"][2] == 0.03
     again.close()
 
 
@@ -1194,7 +1200,7 @@ def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
     state, ctx, spec = stack(images, 2, placed=True)
     box = build_tools(state, ctx, spec)
     assert box.plugins == [] and "plugins" not in (read_job_file(box.job.layout) or {})
-    assert "layers" not in state.to_dict()["slices"][0] and "plugins" not in spec.to_dict()
+    assert "layers" not in stack_to_json(state)["slices"][0] and "plugins" not in spec.to_dict()
     assert "layers" not in call(box, "status")["rows"][0]
     # look's layers draws what plugins and scripts leave: on every job.
     assert "layers" in inspect.signature(tool_named(box, "look")).parameters
@@ -1690,12 +1696,12 @@ def tools():
 def test_positioning_picture_draws_the_stack_and_a_proposal_without_writing(make, images: Path):
     ref = make("pictures", PICTURES)
     state, _c, box = box_of(images, ref)
-    before = state.to_dict()
+    before = stack_to_json(state)
     depth = len(box.job.undo_stack)
     plain = call(box, "draw")
     drawn = call(box, "draw", proposed=True)
     assert plain["status"] == drawn["status"] == "ok" and plain["count"] == drawn["count"] == 1
-    assert state.to_dict() == before and len(box.job.undo_stack) == depth
+    assert stack_to_json(state) == before and len(box.job.undo_stack) == depth
     # the proposal's picture carries one more caption band
     assert drawn["sizes"][0][0] == plain["sizes"][0][0]
     assert drawn["sizes"][0][1] > plain["sizes"][0][1]
@@ -1869,7 +1875,7 @@ def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_st
     assert len(box.job.undo_stack) == depth + 1  # positions + transforms: one undo step
     held = state.by_id("s1.png")
     assert held.position_mm == pytest.approx(1.0, abs=1e-4)
-    assert held.transform is not None and held.transform["note"] == "from file"
+    assert held.transform is not None and affine_to_json(held.transform)["note"] == "from file"
     assert call(box, "undo")["status"] == "ok"
     assert state.by_id("s1.png").transform is None and state.by_id("s1.png").position_mm == 2.5
 
@@ -1970,7 +1976,8 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
     assert all(r["out_of_plane_um"] < 500 for r in rows)
     assert len(box.job.undo_stack) == depth + 1
     assert state.by_id("s0.png").pitch_deg == pytest.approx(4.0)
-    assert state.by_id("s0.png").transform["params"] == pytest.approx(rows[0]["params"])
+    assert affine_to_json(
+        state.by_id("s0.png").transform)["params"] == pytest.approx(rows[0]["params"])
 
 
 def test_a_registration_read_without_a_pixel_size_gives_no_numbers(

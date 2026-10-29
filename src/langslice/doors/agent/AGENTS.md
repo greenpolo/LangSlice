@@ -12,7 +12,7 @@ The method spans the layers; each package has its own guide:
 
 | Layer | What | Guide |
 |---|---|---|
-| `core/` | `JobSpec`, `StackState`, `Workspace`, renders, pictures, fits, the deformable engine | `core/CLAUDE.md` |
+| `core/` | `JobSpec`, `Stack`, `Workspace`, renders, pictures, fits, the deformable engine | `core/CLAUDE.md` |
 | `job/` | `Job` (undo, checkpoint, submit gates, image corrections, background work), the job folder | `job/CLAUDE.md` |
 | `tools/` | one operation per verb, `tools/catalog.py` (`VERBS`, `enabled(spec)`) | `tools/CLAUDE.md` |
 | `tools/descriptions/` | the declarations (`render.py`), the job statement (`statement.py`) | `tools/CLAUDE.md` |
@@ -22,7 +22,7 @@ The method spans the layers; each package has its own guide:
 ## One environment, not a pipeline
 
 `langslice linear run FOLDER` is ONE agent environment over a stack of
-sections: one `StackState`, one toolbox, one job statement, one ADK session
+sections: one `Stack`, one toolbox, one job statement, one ADK session
 that ends at `submit`. A single section
 is a stack of one.
 There is no node graph, no per-step agent, no single-section agent and no
@@ -203,7 +203,7 @@ never dropped). Tools return plain PIL pictures under
 `TOOL_MEDIA_PARTS_KEY`; the ADK driver packages them as JPEG parts
 (`doors.agent.media.packaged`), the MCP door as image blocks.
 
-Conventions: sections are named by filename only (`StackState.resolve`:
+Conventions: sections are named by filename only (`Stack.resolve`:
 the filename, or its stem when no other section shares it; a number is
 refused with the filenames listed, `core.stack.stack.unknown_sections`), in every
 argument, label, caption and status line; ordinary writes answer with the

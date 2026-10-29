@@ -20,12 +20,22 @@ from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.grid import draw_grid
 from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.refusal import Refused
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.codec import (
+    affine_from_json,
+    deformation_from_json,
+    deformation_to_json,
+)
+from langslice.core.stack.landmarks_json import (
+    landmarks_from_json,
+    landmarks_to_json,
+)
 from langslice.job.job import Job
 from langslice.job.pictures import DiscardedViews
 from langslice.job.settings.spec import NonlinearSpec
+from langslice.job.state_file import stack_from_json
 from langslice.tools import atlas, damage, landmarks, look
 from langslice.tools import zoom as tools_zoom
+from tests.shapes import json_of
 from tests.test_ops_look import _job
 
 
@@ -35,7 +45,8 @@ def setup(tmp_path: Path):
     job.spec = replace(job.spec, tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"))
     record = job.state.by_id("s0.png")
     assert record is not None
-    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
+    record.transform = affine_from_json(
+        {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]})
     job.checkpoint()
     return job, ws, record
 
@@ -71,29 +82,30 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         assert reply["changed"] == ["L1", "L2", "L3"]
         assert len(job.undo_stack) == depth + 1 and record.deformation is None
         derived = job.layout.section_dir(record.id) / "landmarks.json"
-        assert json.loads(derived.read_text())["pairs"] == record.landmarks["pairs"]
+        assert json.loads(derived.read_text())["pairs"] == landmarks_to_json(
+            record.landmarks)["pairs"]
         from langslice.job.state_file import read_checkpoint
 
-        restored = StackState.from_dict(read_checkpoint(job.checkpoint_path))
+        restored = stack_from_json(read_checkpoint(job.checkpoint_path))
         assert restored.by_id(record.id).landmarks == record.landmarks
         landmarks.set_landmarks(job, ws, record.id, delete=["L2"])
         assert job.undo()
         record = job.state.by_id(record.id)
-        assert [p["id"] for p in record.landmarks["pairs"]] == ["L1", "L2", "L3"]
+        assert [p["id"] for p in landmarks_to_json(record.landmarks)["pairs"]] == ["L1", "L2", "L3"]
         before = job.snapshot()
         record.position_mm += 0.01
         job.commit(before)
-        assert all(p["stale"] for p in record.landmarks["pairs"])
+        assert all(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
         assert all(p["stale"] for p in json.loads(derived.read_text())["pairs"])
         with pytest.raises(Refused, match="re-place their atlas endpoints"):
             landmarks.landmark_triangulation(job, ws, record.id)
         assert job.undo()
         record = job.state.by_id(record.id)
-        assert not any(p["stale"] for p in record.landmarks["pairs"])
+        assert not any(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
         before = job.snapshot()
         job.state.notes.append("a note")
         job.commit(before)
-        assert not any(p["stale"] for p in record.landmarks["pairs"])
+        assert not any(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
         assert job.undo()  # the note
         assert job.undo()  # first landmark batch
         empty = json.loads(derived.read_text())
@@ -136,13 +148,13 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
     job, ws, record = setup(tmp_path)
     try:
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
-        pair = record.landmarks["pairs"][0]
+        pair = record.landmarks.pairs[0]
         with collecting() as notes:
             picture = pair_picture(ws, job.state, record, pair, store=job.deformations)
         entry = look.save_pictures(job, ws, "set_landmarks", [picture], notes, {})[0]
         job.views.flush()
         panels = picture.recipe["endpoint_panels"]
-        b = geometry.section_picture_point(panels[1], pair["section_fraction_xy"])
+        b = geometry.section_picture_point(panels[1], pair.section_fraction_xy)
         assert b[0] > panels[0]["bounds"][2]
         landmarks.set_landmarks(
             job,
@@ -176,7 +188,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         # On a zoom, endpoints (and further boxes) are the grid's numbers: the
         # pixels of the picture the zoom was cut from.
         point = source_frame(zoom_record.recipe).to_source(
-            geometry.section_picture_point(zp, pair["section_fraction_xy"]))
+            geometry.section_picture_point(zp, pair.section_fraction_xy))
         landmarks.set_landmarks(
             job,
             ws,
@@ -188,8 +200,9 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
                 }
             ],
         )
-        assert record.landmarks["pairs"][0]["section_fraction_xy"] == pytest.approx(
-            pair["section_fraction_xy"]
+        assert landmarks_to_json(
+            record.landmarks)["pairs"][0]["section_fraction_xy"] == pytest.approx(
+            pair.section_fraction_xy
         )
         again = tools_zoom.zoom(
             job,
@@ -200,7 +213,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         job.views.flush()
         again_panel = job.views.lookup(again.entries[0]["id"]).recipe["endpoint_panels"][0]
         again_point = source_frame(job.views.lookup(again.entries[0]["id"]).recipe).to_source(
-            geometry.section_picture_point(again_panel, pair["section_fraction_xy"]))
+            geometry.section_picture_point(again_panel, pair.section_fraction_xy))
         landmarks.set_landmarks(
             job,
             ws,
@@ -216,8 +229,9 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
                 }
             ],
         )
-        assert record.landmarks["pairs"][0]["section_fraction_xy"] == pytest.approx(
-            pair["section_fraction_xy"]
+        assert landmarks_to_json(
+            record.landmarks)["pairs"][0]["section_fraction_xy"] == pytest.approx(
+            pair.section_fraction_xy
         )
     finally:
         job.close()
@@ -278,9 +292,9 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
                         "linear_key": deformation.linear_key(job.state, record),
                         "steps": [{"method": "fireants_syn"}]}
         before = job.snapshot()
-        record.deformation = copy.deepcopy(baseline_ref)
+        record.deformation = deformation_from_json(copy.deepcopy(baseline_ref))
         job.commit(before)
-        record.landmarks = {}
+        record.landmarks = landmarks_from_json({})
         edits = saved_pairs(job, ws, record, delta=(2., 1.))
         extra = copy.deepcopy(edits[0])
         grid = deformation.fit_grid(job.state, ws, record)
@@ -301,13 +315,13 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         assert replaced["composed"] and replaced["replaced"]
         reduced = job.deformations.current(job.state, record)
         np.testing.assert_array_equal(reduced.parent.field_mm, baseline.field_mm)
-        assert record.deformation["landmark_baseline_key"] == baseline_key
-        assert [step["method"] for step in record.deformation["steps"]] == [
+        assert deformation_to_json(record.deformation)["landmark_baseline_key"] == baseline_key
+        assert [step["method"] for step in deformation_to_json(record.deformation)["steps"]] == [
             "fireants_syn", "landmark_triangulation"]
         # The remaining complete set applied fresh to the same original baseline
         # must produce exactly the same field, without influence from L4.
         before = job.snapshot()
-        record.deformation = copy.deepcopy(baseline_ref)
+        record.deformation = deformation_from_json(copy.deepcopy(baseline_ref))
         job.commit(before)
         landmarks.landmark_triangulation(job, ws, record.id)
         np.testing.assert_array_equal(
@@ -318,15 +332,17 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         job.deformations.put("intervening-method", intervening)
         folder = job.deformations.save(record.id, "intervening-method", intervening)
         before = job.snapshot()
-        record.deformation = {"key": "intervening-method", "record": job.layout.relative(folder),
+        record.deformation = deformation_from_json(
+            {"key": "intervening-method", "record": job.layout.relative(folder),
                               "linear_key": deformation.linear_key(job.state, record),
-                              "steps": [{"method": "trace_borders"}]}
+                              "steps": [{"method": "trace_borders"}]})
         job.commit(before)
         latest = landmarks.landmark_triangulation(job, ws, record.id)
         assert latest["composed"] and not latest["replaced"]
         result = job.deformations.current(job.state, record)
         np.testing.assert_array_equal(result.parent.field_mm, intervening.field_mm)
-        assert record.deformation["landmark_baseline_key"] == "intervening-method"
+        assert deformation_to_json(
+            record.deformation)["landmark_baseline_key"] == "intervening-method"
     finally:
         job.close()
 
@@ -383,7 +399,7 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
         old = job.views.lookup(point["picture"])
         job.views.flush()
         original = Image.open(job.folder / old.path / "view.jpg").convert("RGB")
-        expected = landmarks._endpoint(job, record, point, "section")["canonical_xy"]
+        expected = list(landmarks._endpoint(job, record, point, "section").canonical_xy)
         # A deliberately tiny transport budget guarantees multiple resizes.
         monkeypatch.setattr(pages, "fit_reply", lambda items: fit_reply(items, budget=12000))
         blocks = pages.result_blocks(
@@ -404,7 +420,7 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
         x = (point["x"] + .5) * delivered.width / original.width - .5
         y = (point["y"] + .5) * delivered.height / original.height - .5
         actual = landmarks._endpoint(job, record, {"picture": new_id, "x": x, "y": y}, "section")
-        np.testing.assert_allclose(actual["canonical_xy"], expected, atol=1e-12)
+        np.testing.assert_allclose(actual.canonical_xy, expected, atol=1e-12)
         new = job.views.lookup(new_id)
         job.views.flush()
         assert (job.folder / new.path / "view.jpg").read_bytes() == jpeg
@@ -451,14 +467,15 @@ def test_a_fold_is_applied_and_reported_and_a_sound_warp_reports_none(tmp_path, 
         landmarks.set_landmarks(job, ws, record.id, edits)
         done = landmarks.landmark_triangulation(job, ws, record.id)
         if not folded:
-            assert "folds" not in done and not record.deformation["landmark_folds"]
+            assert "folds" not in done and not deformation_to_json(
+                record.deformation)["landmark_folds"]
             return
         assert done["written"]
         folds = done["folds"]
         assert 0 < folds["area_fraction"] <= 1
         assert folds["pairs"] and set(folds["pairs"]) <= {"L1", "L2", "L3"}
         assert folds["triangle_count"] >= 1 and folds["triangles"]
-        stored = record.deformation["landmark_folds"]
+        stored = deformation_to_json(record.deformation)["landmark_folds"]
         assert stored["triangles"] and stored["area_fraction"] == folds["area_fraction"]
         assert landmarks.landmark_triangulation(job, ws, record.id)["folds"] == folds
     finally:
@@ -510,13 +527,14 @@ def test_delete_all_clears_the_section_in_one_step_and_ids_are_not_reused(tmp_pa
         depth = len(job.undo_stack)
         reply = landmarks.set_landmarks(job, ws, record.id, delete=["all"])
         assert reply["deleted"] == ["L1", "L2", "L3"] and reply["landmarks"] == []
-        assert len(job.undo_stack) == depth + 1 and not record.landmarks["pairs"]
+        assert len(job.undo_stack) == depth + 1 and not landmarks_to_json(record.landmarks)["pairs"]
         again = landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record)[:1])
         assert again["changed"] == ["L4"]
         with pytest.raises(Refused, match="stands alone"):
             landmarks.set_landmarks(job, ws, record.id, delete=["all", "L4"])
         assert job.undo() and job.undo()
-        assert [p["id"] for p in job.state.by_id(record.id).landmarks["pairs"]] == [
+        assert [p["id"] for p in landmarks_to_json(
+            job.state.by_id(record.id).landmarks)["pairs"]] == [
             "L1", "L2", "L3"]
     finally:
         job.close()
@@ -601,7 +619,7 @@ def test_the_reply_names_the_region_at_each_atlas_endpoint_and_refuses_one_outsi
         moved = saved_pairs(job, ws, record)[0]["section"]
         reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L1", "section": moved}])
         assert "atlas_endpoint_regions" not in reply  # a section-only edit places no atlas end
-        seq = record.landmarks["pairs"][0]["atlas"]["picture"]
+        seq = landmarks_to_json(record.landmarks)["pairs"][0]["atlas"]["picture"]
         panel = next(p for p in job.views.lookup(seq).recipe["endpoint_panels"]
                      if p["role"] == "atlas")
         x0, y0 = panel["bounds"][:2]
@@ -653,7 +671,7 @@ def test_the_warp_is_built_from_the_pairs_and_the_corners_alone(tmp_path):
         assert params["pair_count"] == 3 and len(params["source_xy"]) == 4 + 3
         assert set(params) == {"source_xy", "target_xy", "simplices", "margin", "pair_count"}
         assert not any("hold" in key for key in current.provenance)
-        assert not any("hold" in key for key in record.deformation)
+        assert not any("hold" in key for key in json_of(record.deformation))
         # with no pair beside it, a moved pair moves tissue far from it too
         moved = np.hypot(*np.moveaxis(np.asarray(current.field_mm), -1, 0))
         size = np.asarray(deformation.fit_grid(job.state, ws, record).image.size)
@@ -689,21 +707,26 @@ def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_pa
         landmarks.landmark_triangulation(job, ws, record.id)
         # what an earlier version saved: automatic holds and a fold through one
         before = job.snapshot()
-        record.deformation["landmark_holds"] = [[0.5, 0.5], [0.25, 0.75]]
-        record.deformation["landmark_folds"] = {"area_fraction": 0.01,
-                                                "triangles": [["L1", "L2", "~0"], ["~1"]]}
-        record.deformation["landmark_revision"] = "an-earlier-revision"
+        record.deformation = deformation_from_json(
+            {**deformation_to_json(record.deformation), "landmark_holds": [[0.5, 0.5], [0.25,
+            0.75]]})
+        record.deformation = deformation_from_json(
+            {**deformation_to_json(record.deformation), "landmark_folds": {"area_fraction": 0.01,
+                                                "triangles": [["L1", "L2", "~0"], ["~1"]]}})
+        record.deformation = deformation_from_json(
+            {**deformation_to_json(record.deformation), "landmark_revision": "an-earlier-revision"})
         job.commit(before)
         reloaded = Job.load(job.spec, ws, folder=job.layout.folder)
         try:
             again = reloaded.state.by_id(record.id)
-            assert again.deformation["landmark_holds"] == [[0.5, 0.5], [0.25, 0.75]]
+            assert deformation_to_json(
+                again.deformation)["landmark_holds"] == [[0.5, 0.5], [0.25, 0.75]]
             assert look.look(reloaded, ws, "overlay", sections=[record.id]).pictures
             listing = landmarks.set_landmarks(reloaded, ws, record.id)
             assert {row["state"] for row in listing["landmarks"]} == {"applied"}
             rebuilt = landmarks.landmark_triangulation(reloaded, ws, record.id)
             assert rebuilt["written"]
-            assert "landmark_holds" not in again.deformation
+            assert "landmark_holds" not in json_of(again.deformation)
             assert all(not i.startswith("~") for tri in rebuilt["folds"]["triangles"]
                        for i in tri)
         finally:
@@ -745,7 +768,7 @@ def test_a_number_read_off_a_zoom_grid_lands_where_it_does_on_the_source_picture
             {"atlas": edits[0]["atlas"], "section": {"picture": whole_number, "x": x, "y": y}}])
         b = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": edits[0]["atlas"], "section": {"picture": zoom_number, "x": x, "y": y}}])
-        pairs = {p["id"]: p for p in record.landmarks["pairs"]}
+        pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert a["changed"] == ["L1"] and b["changed"] == ["L2"]
         assert np.allclose(pairs["L1"]["section_fraction_xy"],
                            pairs["L2"]["section_fraction_xy"], atol=2e-3)
@@ -754,7 +777,7 @@ def test_a_number_read_off_a_zoom_grid_lands_where_it_does_on_the_source_picture
         c = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": edits[0]["atlas"],
              "section": {"picture": deeper.entries[0]["id"], "x": x, "y": y}}])
-        pairs = {p["id"]: p for p in record.landmarks["pairs"]}
+        pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert np.allclose(pairs[c["changed"][0]]["section_fraction_xy"],
                            pairs["L1"]["section_fraction_xy"], atol=2e-3)
         with pytest.raises(Refused) as caught:
@@ -779,7 +802,7 @@ def test_an_atlas_zoom_and_an_overlay_zoom_read_the_same_numbers(tmp_path):
         on_zoom = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": {"picture": zoom.entries[0]["id"], "x": x, "y": y},
              "section": edits[1]["section"]}])
-        pairs = {p["id"]: p for p in record.landmarks["pairs"]}
+        pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert np.allclose(pairs[on_source["changed"][0]]["atlas_native_xy"],
                            pairs[on_zoom["changed"][0]]["atlas_native_xy"], atol=0.6)
 
@@ -796,7 +819,7 @@ def test_an_atlas_zoom_and_an_overlay_zoom_read_the_same_numbers(tmp_path):
             {"atlas": atlas_end,
              "section": {"picture": near.entries[0]["id"], "x": float(point[0]),
                          "y": float(point[1])}}])
-        pairs = {p["id"]: p for p in record.landmarks["pairs"]}
+        pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert np.allclose(pairs[first["changed"][0]]["section_fraction_xy"],
                            pairs[second["changed"][0]]["section_fraction_xy"], atol=3e-3)
     finally:

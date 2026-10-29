@@ -4,7 +4,7 @@ A section image (:mod:`langslice.core.sections.images`) is a raw channel of the
 file, never edited, or a made image: a recipe over the section's other images
 (:func:`make_image`) or an array a script computed (:func:`add_image`), saved
 as ``sections/<stem>/images/<name>.png`` with its entry in
-``SliceState.images``. Every write is one undo step; files are never deleted
+``Section.images``. Every write is one undo step; files are never deleted
 (undo hides the entry). :func:`image_names`, :func:`read` and
 :func:`check_image` are what the fits and the pictures read through.
 """
@@ -20,12 +20,14 @@ import numpy as np
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
 from langslice.core.sections.images import NAME_PATTERN, PREPROCESSED
+from langslice.core.stack.codec import image_to_json
+from langslice.core.stack.images import ImageRef
 from langslice.tools.refusal import unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.sections.images import ImageView
-    from langslice.core.stack.section import SliceState
-    from langslice.core.stack.stack import StackState
+    from langslice.core.stack.section import Section
+    from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -50,7 +52,7 @@ class ImagesMade:
     images: list[str] = field(default_factory=list)
 
 
-def stack_images(workspace: Workspace, state: StackState) -> list[str]:
+def stack_images(workspace: Workspace, state: Stack) -> list[str]:
     """Every section image name of the stack: the raw channels (in file order,
     the union over the sections), then ``preprocessed`` and the made ones."""
     out: list[str] = []
@@ -65,13 +67,13 @@ def stack_images(workspace: Workspace, state: StackState) -> list[str]:
     return out
 
 
-def image_names(workspace: Workspace, record: SliceState) -> list[str]:
+def image_names(workspace: Workspace, record: Section) -> list[str]:
     """The section's images (``core.sections.images.image_names``)."""
     return images.image_names(workspace, record)
 
 
 def check_image(
-    job: Job, workspace: Workspace, records: Sequence[SliceState], name: Any,
+    job: Job, workspace: Workspace, records: Sequence[Section], name: object,
 ) -> str:
     """*name* as a fit reads it (empty: ``preprocessed``), once every one of
     *records* has that image; ``UNKNOWN_IMAGE`` otherwise."""
@@ -85,13 +87,13 @@ def check_image(
     return label
 
 
-def read(job: Job, workspace: Workspace, record: SliceState, name: str) -> ImageView:
+def read(job: Job, workspace: Workspace, record: Section, name: str) -> ImageView:
     """Section image *name* of *record* (``UNKNOWN_IMAGE`` when it has none)."""
     check_image(job, workspace, [record], name)
     return images.read_image(workspace, record, str(name))
 
 
-def _check_name(workspace: Workspace, state: StackState, name: Any) -> str:
+def _check_name(workspace: Workspace, state: Stack, name: object) -> str:
     label = str(name or "").strip()
     if label.lower() in RESERVED or not NAME_PATTERN.match(label):
         raise Refused(RefusalCode.BAD_ARGS,
@@ -106,11 +108,11 @@ def _check_name(workspace: Workspace, state: StackState, name: Any) -> str:
     return label
 
 
-def _records(job: Job, sections: Sequence[str] | None) -> list[SliceState]:
+def _records(job: Job, sections: Sequence[str] | None) -> list[Section]:
     state = job.state
     if not sections:
         return state.in_order()
-    found: list[SliceState] = []
+    found: list[Section] = []
     unknown: list[str] = []
     for ref in sections:
         record = state.resolve(ref)
@@ -201,7 +203,7 @@ def make_image(
                 raise Refused(RefusalCode.UNKNOWN_IMAGE, message=str(exc),
                               images=images.image_names(workspace, record)) from exc
     reset = label == PREPROCESSED and recipe == images.OPENING_RECIPE
-    entries: dict[str, dict[str, Any]] = {}
+    entries: dict[str, ImageRef] = {}
     for record in records:
         try:
             if reset:
@@ -209,8 +211,8 @@ def make_image(
                 continue
             array, used = images.make(workspace, record.id, record.images, recipe)
             extra = {} if isinstance(held, Mapping) else {"weights_used": used}
-            entries[record.id] = images.write_file(job.layout, record.id, label, array,
-                                                   {"recipe": recipe}, **extra)
+            entries[record.id] = images.write_file(
+                job.layout, record.id, label, array, {"recipe": recipe}, extra=extra)
         except (OSError, ValueError, RuntimeError) as exc:
             raise Refused(RefusalCode.RENDER_FAILED,
                           message=f"{record.id}: {exc}") from exc
@@ -224,7 +226,7 @@ def make_image(
 
 
 def add_image(
-    job: Job, workspace: Workspace, record: SliceState, name: str, array: Any, note: str = "",
+    job: Job, workspace: Workspace, record: Section, name: str, array: object, note: str = "",
 ) -> dict[str, Any]:
     """Register *array* as made image *name* of *record*, made by a script (its
     *note* recorded as the source). *array* is ``(H, W)`` on the section's
@@ -252,4 +254,4 @@ def add_image(
     assert live is not None
     live.images[label] = entry
     job.commit(before)
-    return entry
+    return image_to_json(entry)

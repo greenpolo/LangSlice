@@ -17,6 +17,7 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec
+from langslice.job.state_file import stack_to_json
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,
@@ -81,7 +82,7 @@ def _numbers(result: dict[str, Any]) -> list[int]:
 
 def test_look_numbers_each_picture_and_saves_it_once(tmp_path: Path, atlas):
     state, _, box = _synthetic(tmp_path, atlas, n=5)
-    before = state.to_dict()
+    before = stack_to_json(state)
     result = _tool(box, "look")("section")
     assert result["status"] == "ok"
     # Four pictures at most; the rest is named.
@@ -95,7 +96,7 @@ def test_look_numbers_each_picture_and_saves_it_once(tmp_path: Path, atlas):
     records = box.job.views.records()
     assert [(r.seq, r.tool) for r in records] == [(i, "look") for i in (1, 2, 3, 4)]
     # A look writes nothing.
-    assert state.to_dict() == before and box.job.undo_stack == []
+    assert stack_to_json(state) == before and box.job.undo_stack == []
 
 
 def test_look_modes_draw_their_pictures(tmp_path: Path, atlas):
@@ -135,7 +136,7 @@ def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
 
 def test_atlas_mode_draws_each_section_at_its_own_plane(tmp_path: Path, atlas):
     state, _, box = _synthetic(tmp_path, atlas)
-    state.by_id("s1.png").cutting_angles_deg = {"pitch": 2.0, "yaw": 0.0}
+    state.by_id("s1.png").angles = (2.0, 0.0)
     look = _tool(box, "look")
     pictures = look("atlas", sections=["s0.png", "s1.png"])["pictures"]
     assert [entry["caption"].split(";")[0] for entry in pictures] == [

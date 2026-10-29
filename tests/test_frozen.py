@@ -11,6 +11,11 @@ import pytest
 
 import langslice
 from langslice.core.refusal import Refused
+from langslice.core.stack.codec import (
+    affine_from_json,
+    affine_to_json,
+    angles_to_json,
+)
 from langslice.doors import jobs
 from langslice.job.gates import submit_errors
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
@@ -76,12 +81,12 @@ def test_the_none_values_are_what_a_section_starts_with(tmp_path: Path):
         tmp_path, n=2, placed=False, frozen={"*": ["angles", "orientation", "deformation"]})
     record = state.by_id("s0.png")
     assert record is not None
-    assert (record.flip, record.rotation_deg, record.cutting_angles_deg) == (
+    assert (record.flip, record.rotation_deg, angles_to_json(record.angles)) == (
         False, 0, {"pitch": 0.0, "yaw": 0.0})
     assert record.deformation is None and record.transform is None
     # A frozen affine with none supplied is the host's identity.
     state, _spec_made, _tools = _stack(tmp_path, n=2, placed=False, frozen={"s1.png": ["affine"]})
-    assert state.by_id("s1.png").transform["kind"] == "host"
+    assert affine_to_json(state.by_id("s1.png").transform)["kind"] == "host"
     assert state.by_id("s0.png").transform is None
 
 
@@ -139,7 +144,8 @@ def test_interactive_transform_refuses_per_entry_what_is_frozen(tmp_path: Path):
     assert sorted(done.written) == ["s0.png", "s1.png", "s2.png"]
     assert job.state.by_id("s0.png").flip is False
     assert job.state.by_id("s1.png").rotation_deg == 90
-    assert job.state.by_id("s1.png").transform["kind"] == "host"  # the frozen numbers stand
+    assert affine_to_json(
+        job.state.by_id("s1.png").transform)["kind"] == "host"  # the frozen numbers stand
 
 
 def test_a_frozen_affine_can_still_be_looked_at_with_its_own_numbers(tmp_path: Path):
@@ -169,7 +175,7 @@ def test_the_deformation_tools_refuse_a_frozen_deformation(
     job, ctx = _open(tmp_path, tasks=["nonlinear"], frozen={"s0.png": ["deformation"]},
                      nonlinear=NonlinearSpec(provider="none"))
     for record in job.state.slices:
-        record.transform = {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]}
+        record.transform = affine_from_json({"kind": "imported", "params": [1, 0, 0, 0, 1, 0]})
     fit = ops_deformable.fireants_syn(job, ctx, ["s0.png"])
     assert fit.rows[0]["error"] == "FROZEN" and fit.rows[0]["properties"] == ["deformation"]
     # Even where the host requires a deformation on every section, the gate
@@ -189,7 +195,8 @@ def _ok_fit(determinant: float) -> dict[str, Any]:
             "physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
                          "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
                          "pivot": [0.5, 0.5]},
-            "calibration": {}, "mirrored": determinant < 0}
+            "calibration": {"section_um_per_px": 1.0, "source": "host"},
+            "mirrored": determinant < 0}
 
 
 @pytest.mark.parametrize("determinant, kept", [(1.0, True), (-1.0, False)])
@@ -208,7 +215,7 @@ def test_a_fit_under_a_frozen_orientation_keeps_the_handedness(
         assert row["error"] == "FROZEN" and row["properties"] == ["orientation"]
         assert "mirror" in row["message"] and "s0.png" not in done.fitted
         assert job.state.by_id("s0.png").transform is None
-        assert job.state.by_id("s1.png").transform["mirrored"] is True
+        assert affine_to_json(job.state.by_id("s1.png").transform)["mirrored"] is True
 
 
 def test_handedness_is_the_one_the_supplied_transform_carries(tmp_path: Path):
@@ -217,9 +224,10 @@ def test_handedness_is_the_one_the_supplied_transform_carries(tmp_path: Path):
                      inputs={"transforms": {"s0.png": mirrored}})
     # The host's transform already mirrors: a fit that mirrors the same way is kept,
     # one that turns it back is the orientation changing.
-    assert transforms.set_transforms(job, {"s0.png": {**mirrored, "params": [-1, 0, 2, 0, 1, 0]}})
+    assert transforms.set_transforms(
+        job, {"s0.png": affine_from_json({**mirrored, "params": [-1, 0, 2, 0, 1, 0]})})
     with pytest.raises(Refused) as refused:
-        transforms.set_transforms(job, {"s0.png": {"params": [1, 0, 0, 0, 1, 0]}})
+        transforms.set_transforms(job, {"s0.png": affine_from_json({"params": [1, 0, 0, 0, 1, 0]})})
     assert refused.value.code == "FROZEN" and refused.value.facts["properties"] == [
         "orientation"]
 
@@ -230,7 +238,7 @@ def test_a_manual_transform_under_a_frozen_orientation_cannot_mirror(tmp_path: P
         {"id": "s0.png", "scale_x": -1.0}, {"id": "s0.png", "scale_x": 1.2}])
     assert [(entry.error or {}).get("error") for entry in done.entries] == ["FROZEN", None]
     assert done.entries[0].error["properties"] == ["orientation"]
-    assert job.state.by_id("s0.png").transform["physical"]["scale_x"] == 1.2
+    assert affine_to_json(job.state.by_id("s0.png").transform)["physical"]["scale_x"] == 1.2
 
 
 def test_a_frozen_affine_leaves_the_deformation_free_and_a_deformation_fit_writes_no_affine(
@@ -240,13 +248,13 @@ def test_a_frozen_affine_leaves_the_deformation_free_and_a_deformation_fit_write
     assert job.frozen_refusal(["s0.png"], "deformation") is None
     refusal = job.frozen_refusal(["s0.png"], "affine")
     assert refusal is not None and refusal.code == "FROZEN"
-    held = dict(job.state.by_id("s0.png").transform)
+    held = affine_to_json(job.state.by_id("s0.png").transform)
     assert held["kind"] == "host"
     # the deformation tools are on, and they only ever write the deformation
     names = set(enabled(job.spec))
     assert {"fireants_syn", "elastix_affine", "interactive_transform"} <= names
     assert TOOLS["fireants_syn"].writes == ("deformation",)
-    assert job.state.by_id("s0.png").transform == held
+    assert affine_to_json(job.state.by_id("s0.png").transform) == held
 
 
 # --- the Carey configuration ------------------------------------------------------------

@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.layout import (
@@ -450,12 +450,15 @@ class JobWatcher:
         if not isinstance(data, dict):
             return
         try:
-            from langslice.core.stack.stack import StackState
-            from langslice.core.stack.status import status_rows
+            from langslice.core.stack.status import (
+                stack_angles_entry,
+                status_rows,
+            )
             from langslice.job.registrations import Registrations
-            from langslice.job.state_file import current_state
+            from langslice.job.state_file import current_state, stack_from_json
 
-            state = StackState.from_dict(current_state(data))
+            fields = current_state(cast("dict[str, Any]", data))
+            state = stack_from_json(fields)
             if self._registrations is None:
                 self._registrations = Registrations(JobLayout(self.folder))
             records = {r.id: r for r in state.slices}
@@ -468,7 +471,7 @@ class JobWatcher:
                     except Exception:  # a listing that cannot be read is no number
                         number = None
                 angles = row.get("cutting_angles_deg") or (
-                    state.cutting_angles_deg if not state.mixed_angles else None)
+                    stack_angles_entry(state) if not state.mixed_angles else None)
                 self.rows.append({
                     "order": order, "id": row["id"], "position_mm": row.get("position_mm"),
                     "angles": angles, "flip": row.get("flip"),

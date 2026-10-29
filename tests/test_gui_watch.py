@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core.stack.section import SliceState
-from langslice.core.stack.stack import StackState
+from langslice.core.stack.section import Section
+from langslice.core.stack.stack import Stack
 from langslice.hosts.gui import watch
 from langslice.hosts.gui.watch import JobList, JobWatcher
 from langslice.job.state_file import write_checkpoint, write_json_atomic
@@ -35,9 +35,9 @@ def _job(tmp_path: Path) -> Path:
 
 
 def _state(folder: Path, positions: list[float | None], *, submitted: bool = False) -> None:
-    slices = [SliceState(id=f"s{i:03d}.png", index_original=i, index_corrected=i,
+    slices = [Section(id=f"s{i:03d}.png", index_original=i, index_corrected=i,
                          position_mm=p) for i, p in enumerate(positions)]
-    write_checkpoint(StackState(atlas="allen_mouse_25um", slices=slices,
+    write_checkpoint(Stack(atlas="allen_mouse_25um", slices=slices,
                                 submitted=submitted), str(folder / "state.json"))
 
 
