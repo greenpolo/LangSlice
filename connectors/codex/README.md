@@ -19,7 +19,10 @@ LangSlice itself must be installed first (the conda environment of
    `codex plugin add langslice@langslice`).
 3. In a Codex chat, ask Codex to set up LangSlice. The `setup` skill finds
    `langslice` (on PATH, else in a conda environment named `langslice`),
-   copies `agents/*.toml` into `~/.codex/agents/` and `rules/langslice.rules`
+   appends its folder to PATH (a guarded line in `~/.zprofile` and
+   `~/.zshrc` for zsh; in `~/.bashrc` and the bash login file for bash; the
+   user `Path` on Windows), because `register_scripting` and the rules run
+   `langslice-job` by name, copies `agents/*.toml` into `~/.codex/agents/` and `rules/langslice.rules`
    into `~/.codex/rules/` from the installed plugin, and adds this to
    `~/.codex/config.toml`, with the full path of `langslice`:
 
@@ -70,7 +73,7 @@ plugin cannot set.
 | --- | --- | --- |
 | `.codex-plugin/plugin.json` | Codex | the plugin manifest: name, version, the `skills/` folder, the listing's logos |
 | `assets/` | Codex | LangSlice's logo, copies of `assets/logo/` files: `logo.svg` (light theme), `logo-dark.svg` (dark theme), `icon.svg` (the composer) |
-| `skills/setup` (`langslice:setup`) | main session, once | finds `langslice`, copies the agents and the rules into `~/.codex/`, adds the MCP server to `config.toml` |
+| `skills/setup` (`langslice:setup`) | main session, once | finds `langslice`, puts its folder on PATH, copies the agents and the rules into `~/.codex/`, adds the MCP server to `config.toml` |
 | `skills/register-brain` (`langslice:register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
 | `skills/abba` (`langslice:abba`) | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
 | `agents/register.toml` | registers one brain | LangSlice's MCP tools only; no shell |

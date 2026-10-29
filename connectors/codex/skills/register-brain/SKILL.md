@@ -38,8 +38,8 @@ it leaves out, and which subagent to use.
 `init` takes the job flags `langslice-job schema init` lists (each with its
 help, default and choices), among them `--notes TEXT` (the user's notes,
 saved in the job). Check that `langslice-job`
-runs (`langslice-job ops`); if it does not, tell the user how
-`connectors/codex/README.md` says to install it, and stop.
+runs (`langslice-job ops`); if it does not, follow the `setup` skill and
+stop.
 
 ## 2. Create the job
 

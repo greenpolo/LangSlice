@@ -60,39 +60,37 @@ conda run -n langslice langslice-job ops
 Expected: the first prints `langslice 0.1.0` (or a later version). The
 second prints one JSON object with `"ok": true` and the list of verbs.
 
-## 5. Put `langslice` on the user's PATH
-
-Every app starts `langslice` by name (Codex's setup skill looks it up on the
-`PATH` first), so `langslice` and `langslice-job` must be on the `PATH` the
-app starts with. Claude Desktop reads the login shell's `PATH` on macOS and
-Linux, and the user and system environment variables on Windows. Find the
-executables:
-
-```bash
-conda run -n langslice python -c "import shutil; print(shutil.which('langslice')); print(shutil.which('langslice-job'))"
-```
-
-On Linux and macOS this is `<env>/bin/langslice`; on Windows,
-`<env>\Scripts\langslice.exe`. Then:
-
-- macOS: `echo 'conda activate langslice' >> ~/.zshrc`
-- Linux: `echo 'conda activate langslice' >> ~/.bashrc`
-- Windows: add `<env>\Scripts` to the user `Path` (in the GUI: **Edit
-  environment variables for your account** ‣ **User variables** ‣ **Path**
-  ‣ **Edit** ‣ **New**).
-
-Ask the user before editing a shell startup file or `Path` that already
-names another LangSlice environment. Check from a new shell, without
-activating the environment: `langslice version` prints the version. The user
-quits and reopens the app after this change.
-
-## 6. Connect the user's app
+## 5. Connect the user's app
 
 Install the plugin for the app the user uses. Each gives the main session
-two skills (`register-brain`, `abba`) and two registration agents
+three skills (`setup`, `register-brain`, `abba`) and two registration agents
 (`register`, which uses only LangSlice's MCP tools, and `register-scripting`,
 which uses a shell and `langslice-job`). The user-facing steps for each app's
 GUI, with screenshots, are in [Connect your AI app](../getting-started/connect.md).
+
+Then run the plugin's `setup` skill (`skills/setup/SKILL.md` in the plugin,
+or ask the app "Set up LangSlice."). In every app it first finds `langslice`
+(on `PATH`, else in a conda environment named `langslice`) and puts its
+folder on the user's `PATH`, because the apps and LangSlice's agents run
+`langslice` and `langslice-job` by name. Claude Desktop and Antigravity read
+`PATH` from `$SHELL -ilc` on macOS and Linux and from the user and system
+environment variables on Windows. The skill appends the folder (the
+environment's `bin`, or `Scripts` on Windows), without activating the
+environment:
+
+- zsh: a guarded `export PATH="$PATH:<folder>"` line in `~/.zprofile` and
+  `~/.zshrc`.
+- bash: the same line in `~/.bashrc` and in the login file bash reads
+  (`~/.bash_profile`, else `~/.bash_login`, else `~/.profile`).
+- Windows: the folder appended to the user `Path` with
+  `[Environment]::SetEnvironmentVariable('Path', …, 'User')`.
+
+A login, interactive shell (the apps), a login shell that is not interactive
+(`-lc`, as agents' commands may run) and a new Linux terminal (interactive,
+not login) each read a different file, hence two. The skill skips a file that
+already holds its line, and the whole step when a new login shell already
+finds `langslice`. The rest of each skill is per app, below. The user quits
+and reopens the app after setup.
 
 ### Codex (ChatGPT)
 
@@ -107,8 +105,8 @@ plugin list.
 
 A Codex plugin cannot carry custom agents or command rules, and the
 `register` agent does not see a plugin's MCP server. The plugin's `setup`
-skill (Codex only) puts them in Codex's own folder. In a Codex session, ask
-"Set up LangSlice." The skill finds `langslice` and copies
+skill puts them in Codex's own folder. In a Codex session, ask
+"Set up LangSlice." After the `PATH` step, the skill copies
 `agents/register.toml`, `agents/register_scripting.toml` and
 `rules/langslice.rules` into `~/.codex/agents/` and `~/.codex/rules/`. On
 Windows the folder is `%USERPROFILE%\.codex`, and `$CODEX_HOME` replaces it
@@ -142,8 +140,8 @@ In the app, the same is the `plugin` skill: type `/plugin`, pick **plugin**,
 and send "Please install this plugin:" followed by the address above.
 
 Restart Antigravity, then follow the plugin's `setup` skill
-(`skills/setup/SKILL.md`, or ask the app "Set up LangSlice."). It adds these
-rules to `permissions.allow` in `~/.gemini/antigravity-cli/settings.json`,
+(`skills/setup/SKILL.md`, or ask the app "Set up LangSlice."). After the
+`PATH` step, it adds these rules to `permissions.allow` in `~/.gemini/antigravity-cli/settings.json`,
 merging with what is there:
 
 ```json
@@ -174,16 +172,23 @@ In Claude Desktop's **Code** tab the same is **Customize** ‣ **Plugins** ‣
 `greenpolo/LangSlice`, **Sync**, then install LangSlice from the list. On
 Windows, Claude Desktop needs Git for Windows for marketplace actions.
 
-To let every LangSlice MCP tool run without a prompt, add to the user's
-Claude Code settings:
+The plugin starts its MCP server as `langslice mcp`, so the server fails to
+start until `langslice` is on `PATH`. Then follow the plugin's `setup` skill
+(`skills/setup/SKILL.md`, or ask the app "Set up LangSlice."; it shows as
+`langslice:setup`). After the `PATH` step, it adds this rule to
+`permissions.allow` in `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR`
+replaces `~/.claude` when set), merging with what is there, so every
+LangSlice MCP tool runs without a prompt:
 
 ```json
 {"permissions": {"allow": ["mcp__plugin_langslice_langslice"]}}
 ```
 
+Restart the app afterwards.
+
 Full notes: `connectors/claude-code/README.md`.
 
-## 7. Check the connection
+## 6. Check the connection
 
 1. Start a new session in the app.
 2. List the MCP tools available to the main session. `start_job` must be
@@ -191,10 +196,10 @@ Full notes: `connectors/claude-code/README.md`.
 3. Run `langslice-job ops` from the app's shell. It must print
    `"ok": true`.
 
-If either check fails, the app cannot find the executables: redo step 5,
-restart the app and check again. For Codex, run the `setup` skill again.
+If either check fails, the app cannot find the executables: run the
+plugin's `setup` skill again, restart the app and check again.
 
-## 8. After an update
+## 7. After an update
 
 In the LangSlice folder:
 
@@ -210,6 +215,6 @@ installed from GitHub, so update them too:
   `claude plugin update langslice@langslice`.
 - Codex: `codex plugin marketplace upgrade`, then the `setup` skill again,
   which copies the agents and rules.
-- Antigravity: the `agy plugin install` command of step 6 again.
+- Antigravity: the `agy plugin install` command of step 5 again.
 
 Restart the app, and run step 4 to verify.
