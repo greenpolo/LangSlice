@@ -19,12 +19,12 @@ from langslice.core.atlas.borders import region_boundaries
 from langslice.core.fits import deformation
 from langslice.core.fits.deformable import DeformableRecord
 from langslice.core.pictures.options import default_options
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.stack.stack import StackState
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools import deformable as ops_deformable
 from tests.deformable_synthetic import (
     HY,

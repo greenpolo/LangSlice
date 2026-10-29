@@ -22,7 +22,6 @@ from typing import Any
 from google.genai import types
 
 from langslice.core.atlas.load import load_atlas
-from langslice.core.spec import JobSpec
 from langslice.core.stack.stack import StackState
 from langslice.core.workspace import log_progress
 from langslice.doors.agent.live import LiveCallback
@@ -40,6 +39,7 @@ from langslice.doors.statement import (
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
 from langslice.job.layout import JobLayout, locate_job_folder
+from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import write_json_atomic
 from langslice.tools.descriptions.statement import (
     build_job_statement,
@@ -108,6 +108,7 @@ def build_context(
         job_folder, _fallback = locate_job_folder(folder, spec.job_dir, emit=emit or log_progress)
     job_folder = Path(job_folder)
     return EngineContext(
+        settings=spec.image_settings(),
         spec=spec,
         image_folder=folder,
         job_folder=str(job_folder),

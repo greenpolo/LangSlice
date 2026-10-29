@@ -784,23 +784,12 @@ def init_parser() -> argparse.ArgumentParser:
     """``init``'s flags: the job flags of ``langslice linear run``, plus
     ``--notes`` and ``--viewer`` (``langslice-job schema init`` lists them)."""
     from langslice.core.pictures.opening import VIEWER_LIMITS
-    from langslice.doors.commands.linear import add_linear_arguments
+    from langslice.doors.commands.flags import add_flags
 
     parser = _Parser(prog="langslice-job FOLDER init", add_help=False)
-    add_linear_arguments(parser)
-    parser.add_argument(
-        "--fresh",
-        dest="resume",
-        action="store_false",
-        default=True,
-        help="Ignore any existing checkpoint and start over",
-    )
-    parser.add_argument("--notes", default=None, metavar="TEXT",
-                        help="The user's notes for this job (job.json), which every door "
-                        "gives the registration agent")
-    parser.add_argument("--viewer", default=None, choices=sorted(VIEWER_LIMITS),
-                        help="Which model reads the pictures (job.json; default claude): "
-                        "it sets their largest size")
+    add_flags(parser, "job")
+    add_flags(parser, "fresh")
+    add_flags(parser, "init", choices={"--viewer": sorted(VIEWER_LIMITS)})
     return parser
 
 

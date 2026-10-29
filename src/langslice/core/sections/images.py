@@ -63,7 +63,7 @@ from langslice.core.sections.reading import (
 )
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
-from langslice.core.workspace import Workspace
+from langslice.core.workspace import ImageSettings, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -221,11 +221,15 @@ def compact_recipe(recipe: Mapping[str, Any]) -> dict[str, Any]:
 # --- the opening image -----------------------------------------------------------------
 
 
-def opening_source(spec: Any) -> dict[str, Any]:
-    """How *spec*'s jobs make ``preprocessed`` when they open (an entry's ``source``)."""
-    if spec.host_preprocessing is not None:
-        return {"opening": "host", "settings": dict(spec.host_preprocessing)}
-    if spec.preprocess == "auto":
+def opening_source(settings: ImageSettings) -> dict[str, Any]:
+    """How a job of *settings* makes ``preprocessed`` when it opens.
+
+    The value is the opening image entry's ``source``.
+    """
+    host = settings.host_preprocessing
+    if host is not None:
+        return {"opening": "host", "settings": dict(host)}
+    if settings.preprocess == "auto":
         return {"opening": "adaptive"}
     return {"opening": "plain"}
 
@@ -255,7 +259,8 @@ def opening_render(ws: Workspace, section_id: str) -> Image.Image:
     preprocesses nothing has the copy in gray)."""
     source, _factor = ws.working_source(section_id)
     image = source
-    if ws.spec.preprocess == "auto" and ws.spec.host_preprocessing is None:
+    settings = ws.settings
+    if settings.preprocess == "auto" and settings.host_preprocessing is None:
         image = adaptive_preprocess(source)
     return image.convert("L")
 
@@ -474,7 +479,7 @@ def read_image(ws: Workspace, record: SliceState, name: str) -> ImageView:
     entry = entry_of(record, name)
     if entry is None:  # the opening image, implied
         return ImageView(name=name, kind=MADE, array=array, digest=digest_of(array), file=None,
-                         source=opening_source(ws.spec))
+                         source=opening_source(ws.settings))
     return ImageView(name=name, kind=MADE, array=array, digest=str(entry.get("digest")),
                      file=str(entry.get("file")), source=dict(entry.get("source") or {}))
 
@@ -557,7 +562,8 @@ def make(
 def opening_entry(ws: Workspace, layout: _Layout, section_id: str) -> dict[str, Any]:
     """The opening ``preprocessed`` image of one section, written: its entry."""
     array = np.asarray(opening_render(ws, section_id), dtype=np.uint8)
-    return write_file(layout, section_id, PREPROCESSED, array, opening_source(ws.spec))
+    source = opening_source(ws.settings)
+    return write_file(layout, section_id, PREPROCESSED, array, source)
 
 
 def ensure_opening(ws: Workspace, layout: _Layout, state: StackState) -> list[str]:
@@ -589,10 +595,12 @@ def ensure_opening(ws: Workspace, layout: _Layout, state: StackState) -> list[st
 # --- status --------------------------------------------------------------------------------
 
 
-def describe_source(entry: Mapping[str, Any] | None, spec: Any = None) -> dict[str, Any]:
+def describe_source(entry: Mapping[str, Any] | None,
+                    settings: ImageSettings | None = None) -> dict[str, Any]:
     """An entry's source as ``status`` gives it: a recipe (its steps), a
     script's note, or the opening image's recipe with when it was made."""
-    source = dict((entry or {}).get("source") or ({} if spec is None else opening_source(spec)))
+    source = dict((entry or {}).get("source")
+                  or ({} if settings is None else opening_source(settings)))
     if "recipe" in source:
         return compact_recipe(source["recipe"])
     if "script" in source:
@@ -602,7 +610,7 @@ def describe_source(entry: Mapping[str, Any] | None, spec: Any = None) -> dict[s
     return {"opening": opening_words(source), "made": "when the job opened"}
 
 
-def summary(state: StackState, spec: Any) -> dict[str, Any]:
+def summary(state: StackState, settings: ImageSettings) -> dict[str, Any]:
     """The made images of the stack for ``status``: each name with its source
     when every section holding it shares one (else the most common one and
     ``varies``: the sections that differ, with theirs), and ``only`` (the
@@ -613,7 +621,7 @@ def summary(state: StackState, spec: Any) -> dict[str, Any]:
         [PREPROCESSED, *(name for record in records for name in record.images)]))
     out: dict[str, Any] = {}
     for name in names:
-        held = {record.id: describe_source(record.images.get(name), spec)
+        held = {record.id: describe_source(record.images.get(name), settings)
                 for record in records if name in record.images or name == PREPROCESSED}
         if not held:
             continue
@@ -697,7 +705,7 @@ class Migration:
                 if old is None:
                     if name != PREPROCESSED:
                         continue
-                    source = opening_source(self.ws.spec)
+                    source = opening_source(self.ws.settings)
                     entry = self._entry(section_id, name, source, lambda sid=section_id: (
                         np.asarray(opening_render(self.ws, sid), dtype=np.uint8), {}))
                 else:

@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from PIL import Image
 
-from langslice.core import frozen as freeze
 from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.plugins import (
     SCRIPT_CALLER,
@@ -42,6 +41,7 @@ from langslice.core.plugins import (
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
+from langslice.job.settings import frozen as freeze
 from langslice.tools.refusal import frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs, stale_row
 
@@ -94,7 +94,8 @@ class SectionView:
     damage_note: str
     #: Names of the layers it shows.
     layers: tuple[str, ...]
-    #: The properties frozen on it (``langslice.core.frozen.PROPERTIES``).
+    #: The properties frozen on it
+    #: (``langslice.job.settings.frozen.PROPERTIES``).
     frozen: tuple[str, ...]
 
 

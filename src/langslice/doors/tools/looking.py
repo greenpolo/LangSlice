@@ -17,9 +17,9 @@ from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.pictures.sizes import AUTO_RESOLUTION
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
-from langslice.core.toolset import TOOLS, tools_for
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.view_options import clamp_resolution
+from langslice.job.settings.tool_table import TOOLS, tools_for
 from langslice.tools import atlas as ops_atlas
 from langslice.tools import files as ops_files
 from langslice.tools import images as ops_images
@@ -202,7 +202,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         state = job.state
         result: dict[str, Any] = {"status": "ok", **door.rows()}
         result["raw_channels"] = raw_channels(door)
-        result["section_images"] = section_images.summary(state, door.spec)
+        settings = door.ctx.settings
+        result["section_images"] = section_images.summary(state, settings)
         running = [work.summary() for work in job.background.running()]
         if running:
             result["background_running"] = running

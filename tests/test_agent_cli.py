@@ -957,10 +957,14 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
 
 
 def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images):
-    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec
     from langslice.doors.jobs import context
     from langslice.doors.tools.toolbox import build_tools
     from langslice.job.job import Job
+    from langslice.job.settings.spec import (
+        JobSpec,
+        NonlinearSpec,
+        PositionSpec,
+    )
 
     job_folder = init(capsys, images)
     code, envelope = cli(capsys, str(images), "status")

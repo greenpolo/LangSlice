@@ -1,7 +1,7 @@
 """The job: one stack's state and everything that keeps it consistent.
 
 A :class:`Job` owns the :class:`~langslice.core.stack.stack.StackState` and the
-:class:`~langslice.core.spec.JobSpec`, its job folder
+:class:`~langslice.job.settings.spec.JobSpec`, its job folder
 (:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
 sections' frozen properties and the host's damage notes, undo/redo (persisted
 in the job folder), the checkpoint and its observers (:meth:`Job.observe`), the
@@ -52,16 +52,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core import frozen as freeze
 from langslice.core.fits import deformation
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
-from langslice.core.spec import (
-    MAX_PARALLEL_TRANSFORMS,
-    JobSpec,
-    supplied_angles,
-)
 from langslice.core.stack.section import IDENTITY_KNOBS, ROTATIONS, SliceState
 from langslice.core.stack.stack import StackState
 from langslice.job import public_files as formats
@@ -79,6 +73,12 @@ from langslice.job.layout import (
 from langslice.job.lock import FolderLock
 from langslice.job.pictures import DiscardedViews, ViewStore
 from langslice.job.registrations import Registrations
+from langslice.job.settings import frozen as freeze
+from langslice.job.settings.spec import (
+    MAX_PARALLEL_TRANSFORMS,
+    JobSpec,
+    supplied_angles,
+)
 from langslice.job.state_file import (
     Upgrade,
     read_checkpoint,
@@ -183,8 +183,9 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     Order arrives as a list of filenames, positions as a filename -> mm
     mapping, angles as ``{"pitch": deg, "yaw": deg}`` for the whole stack or
     a filename -> ``{"pitch": deg, "yaw": deg}`` mapping, each section's own
-    plane kept as supplied (:func:`langslice.core.spec.supplied_angles`; a
-    section it does not name keeps the flat plane), orientation as a
+    plane kept as supplied
+    (:func:`langslice.job.settings.spec.supplied_angles`; a section it does
+    not name keeps the flat plane), orientation as a
     filename -> ``{"flip": bool, "rotation_deg": 0|90|180|270}`` mapping (a
     missing key leaves that part as it is), damage as a filename -> note
     mapping, and transforms as filename -> stored transform dictionaries.
@@ -193,12 +194,12 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     section's ``damage_note`` (shown in status, so the agent can mark the
     regions it names); it does not make the section damaged, and it stays
     first in the note whatever the agent marks. ``spec.frozen`` is the
-    constraint (:mod:`langslice.core.frozen`): it must name sections that are
-    here, a frozen position must have been supplied, and a section with a
-    frozen affine and no supplied transform carries the ``"host"`` identity
-    (:func:`host_transform`), because its snapshot is already aligned. The
-    other "none" values (the flat plane, no flip and no turn, no
-    deformation) are what a section starts with.
+    constraint (:mod:`langslice.job.settings.frozen`): it must name sections
+    that are here, a frozen position must have been supplied, and a section
+    with a frozen affine and no supplied transform carries the ``"host"``
+    identity (:func:`host_transform`), because its snapshot is already
+    aligned. The other "none" values (the flat plane, no flip and no turn,
+    no deformation) are what a section starts with.
     """
     inputs = spec.inputs or {}
 

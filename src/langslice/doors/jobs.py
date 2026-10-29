@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.spec import JobSpec
 from langslice.core.workspace import Workspace, log_progress
 from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
 from langslice.doors.reference_card import write_card
@@ -32,6 +31,7 @@ from langslice.job.layout import (
     locate_job_folder,
     read_job_file,
 )
+from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
     from langslice.doors.tools.toolbox import ToolBox
@@ -107,6 +107,9 @@ class JobContext(Workspace):
     and the results path the job is opened at). The agent driver's
     ``EngineContext`` adds the model."""
 
+    #: The job's form; the workspace's settings were made from it
+    #: (:meth:`JobSpec.image_settings`).
+    spec: JobSpec
     #: The job folder is :attr:`Workspace.job_folder`, always set here.
     results_path: str
 
@@ -132,7 +135,9 @@ def context(
     if atlas_loader is not None:
         kwargs["atlas_loader"] = atlas_loader
     return JobContext(
-        spec=spec, image_folder=os.path.abspath(spec.image_folder), job_folder=str(folder),
+        settings=spec.image_settings(), spec=spec,
+        image_folder=os.path.abspath(spec.image_folder),
+        job_folder=str(folder),
         results_path=spec.out or str(JobLayout(folder).results_file),
         emit=emit or log_progress, **kwargs,
     )

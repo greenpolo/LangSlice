@@ -12,12 +12,12 @@ import pytest
 
 from langslice.core.refusal import Refused
 from langslice.core.sections.damage import exclusions, normalized_entries
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.status import status_rows, status_text, uniform_rows
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools import damage, deformable, traces, transforms
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,

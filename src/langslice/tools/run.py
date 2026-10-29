@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING, Any
 from PIL import Image
 
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.core.stack.status import compact_rows
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from langslice.tools import status as ops_views
 from langslice.tools.look import Looked
 

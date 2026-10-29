@@ -48,7 +48,7 @@ class StackState:
     #: Optional protocol values; None means not supplied.
     interval_mm: float | None = None
     thickness_mm: float | None = None
-    #: The JobSpec as run (:meth:`langslice.core.spec.JobSpec.to_dict`).
+    #: The job's settings as run, as a plain mapping.
     spec: dict[str, Any] = field(default_factory=dict)
     #: Corrected indices of the sections AFTER a gap the agent concluded is real.
     interval_breaks: list[int] = field(default_factory=list)

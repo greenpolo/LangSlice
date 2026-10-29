@@ -12,10 +12,10 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.refusal import RefusalCode
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from langslice.tools import submit as ops_submit
 from langslice.tools.stale import section_inputs
 from langslice.tools.traces import land_trace

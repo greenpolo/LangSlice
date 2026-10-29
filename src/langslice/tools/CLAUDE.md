@@ -53,7 +53,7 @@ toolbox are still `doors/tools/`.
   takes the image model (`providers.connections.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
   (`core.fits.frame.correction_fingerprint`).
-- A write to a property the job froze (`JobSpec.frozen`, `core/frozen.py`) is
+- A write to a property the job froze (`JobSpec.frozen`, `job/settings/frozen.py`) is
   refused with the one code `FROZEN` (`ids`, `properties`, `message`):
   `refusal.check_frozen(job, ids, *properties)` raises it for a whole call,
   `refusal.frozen_row(job, id, *properties)` is a section's row in a
@@ -156,7 +156,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
   `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`), never
-  pixels, and a line written with its needs (`core.needs.render`): the number to
+  pixels, and a line written with its needs (`job.settings.needs.render`): the number to
   give `zoom`; where the job disables `zoom`, for a picture whose recipe is
   `look`'s, the `look` call that draws its view again (`_look_arguments`: mode,
   sections, positions, images, masks, atlas layers, warp, registrations, from the
@@ -496,7 +496,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
 - `catalog.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
   "Nonlinear", tool, limits)`, in the order every door lists them; `tool` is
-  the verb's `core.toolset.ToolDef` (`when`, `long`, `scripting`,
+  the verb's `job.settings.tool_table.ToolDef` (`when`, `long`, `scripting`,
   `image_model`, `options`, `essential`, `needs`: the core's list of
   what a spec can switch, which the registry binds to the operations);
   `enabled(spec, scripting=, image_model=)`: the verbs a run of the
@@ -590,7 +590,7 @@ picture's pixels a zoom shows). Every zoom carries a coordinate grid
 (`core.geometry.pixel_frames.source_frame`), so they are the same on the zoom and on
 its source picture. Both verbs belong to
 Nonlinear. Both refuse a section whose `deformation` is frozen (`FROZEN`,
-the whole call; `core/toolset.py` offers neither tool when it is frozen on every
+the whole call; `job/settings/tool_table.py` offers neither tool when it is frozen on every
 section, and they need each other). Pair edits leave the current registration applied until another
 explicit application or undo. An unchanged application is a no-op.
 

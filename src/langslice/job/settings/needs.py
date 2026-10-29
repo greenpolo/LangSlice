@@ -4,7 +4,7 @@ Every sentence or passage a model reads that names a tool (``zoom``) or an
 option (``look:positioning``) is written once, for the run that has them,
 with what it needs marked in it, and rendered for the job: dropped, or
 swapped for another wording, when a name it needs is in the job's disabled
-list (:attr:`langslice.core.spec.JobSpec.disabled`). The marks:
+list (:attr:`langslice.job.settings.spec.JobSpec.disabled`). The marks:
 
 - ``[[?NEEDS text]]``: *text* when NEEDS is met, else nothing. NEEDS is
   terms separated by commas, all of which must be met; a term is a name, or
@@ -17,9 +17,10 @@ list (:attr:`langslice.core.spec.JobSpec.disabled`). The marks:
 
 Marks nest. A line of marked text that would be too long in the source ends
 in ``~``, which joins it to the next line (the newline and the next line's
-indentation go). A name is off when it is in the list, or, for ``tool:option``,
-when its tool is (:func:`langslice.core.toolset.is_off`). With nothing off a
-text renders to itself without its marks, byte for byte; only a text that
+indentation go). A name is off when it is in the list, or, for
+``tool:option``, when its tool is
+(:func:`langslice.job.settings.tool_table.is_off`). With nothing off a text
+renders to itself without its marks, byte for byte; only a text that
 lost something is tidied (a line left empty goes, trailing spaces go, a mark
 left alone on a line joins the line before, blank lines do not pile up). A
 text that is not written with marks (the user's own words, a filename) is
@@ -31,7 +32,7 @@ from __future__ import annotations
 import re
 from collections.abc import Collection
 
-from langslice.core.toolset import is_off
+from langslice.job.settings.tool_table import is_off
 
 _TOKEN = re.compile(r"(\[\[[?#%]|\]\]|\|\|)")
 _OPENERS = ("[[?", "[[#", "[[%")

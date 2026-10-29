@@ -7,8 +7,9 @@ it that can be switched off on their own (``options``), whether it can be
 switched off at all (``essential``) and what it needs while it is on
 (``needs``). Every door is built from this list.
 
-A job's ``disabled`` list (:attr:`langslice.core.spec.JobSpec.disabled`) takes
-tools and options off on top of what its tasks and switches give:
+A job's ``disabled`` list
+(:attr:`langslice.job.settings.spec.JobSpec.disabled`) takes tools and
+options off on top of what its tasks and switches give:
 
 - ``"zoom"``: the tool, whole;
 - ``"look:positioning"``: one option of a tool (``tool:option``): here a
@@ -20,10 +21,10 @@ tools and options off on top of what its tasks and switches give:
 The valid names are derived from this table (:func:`valid_names`).
 :func:`refusal` says, in one line, why a list cannot work; the spec refuses
 it when it is made. The text a tool or option appears in is written with
-what it needs and rendered for the job (:mod:`langslice.core.needs`).
+what it needs and rendered for the job (:mod:`langslice.job.settings.needs`).
 
 A job that loads tool plugins (``JobSpec.plugins``,
-:mod:`langslice.core.plugins`) has their tools beside these: :func:`tools_for`
+:mod:`langslice.job.plugins`) has their tools beside these: :func:`tools_for`
 is the per-spec view (:data:`TOOLS` plus the plugin tools), and the functions
 below that take a *spec* or *tools* read it. With no plugins every answer is
 the one :data:`TOOLS` gives.
@@ -33,14 +34,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
-Kind = Literal["read", "write"]
-Group = Literal["Common", "Positioning", "Linear", "Nonlinear"]
-GROUPS: tuple[Group, ...] = ("Common", "Positioning", "Linear", "Nonlinear")
-
-#: The ``look`` modes, in the order everything lists them.
-LOOK_MODES: tuple[str, ...] = ("section", "atlas", "overlay", "positioning")
+from langslice.core.pictures.modes import LOOK_MODES
+from langslice.core.tool_kinds import GROUPS as GROUPS
+from langslice.core.tool_kinds import Group, Kind
 
 #: A tool-and-option name is ``tool:option``.
 OPTION_SEPARATOR = ":"
@@ -86,9 +84,10 @@ class ToolDef:
     #: What the tool needs while it is on: groups of names, one of each group
     #: on (a tool, or a ``tool:option``). The reason is the tool's picture.
     needs: tuple[tuple[str, ...], ...] = ()
-    #: The section properties the tool writes (:data:`langslice.core.frozen.PROPERTIES`):
-    #: with every one of them frozen on every section the tool can change
-    #: nothing and is off (:func:`off_names`).
+    #: The section properties the tool writes
+    #: (:data:`langslice.job.settings.frozen.PROPERTIES`): with every one of
+    #: them frozen on every section the tool can change nothing and is off
+    #: (:func:`off_names`).
     writes: tuple[str, ...] = ()
 
     def is_on(self, spec: Any) -> bool:
@@ -174,12 +173,12 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
 
 def tools_for(spec: Any = None) -> Mapping[str, ToolDef]:
     """The tools a job of *spec* can have: :data:`TOOLS`, then the tools of the
-    plugins its ``plugins`` name (:mod:`langslice.core.plugins`; loaded when not
+    plugins its ``plugins`` name (:mod:`langslice.job.plugins`; loaded when not
     yet, ``PluginError`` -- a ``ValueError`` -- when one cannot be). Without
     plugins, :data:`TOOLS` itself."""
     if not getattr(spec, "plugins", None):
         return TOOLS
-    from langslice.core import plugins
+    from langslice.job import plugins
 
     return {**TOOLS, **plugins.tool_defs(spec)}
 
@@ -217,14 +216,15 @@ def off_names(spec: Any) -> list[str]:
     """Every name that is off for *spec*: its ``disabled`` list, then the tools
     the run has that can change nothing because everything they write
     (:attr:`ToolDef.writes`) is frozen on every section
-    (:attr:`~langslice.core.spec.JobSpec.frozen_everywhere`), and the mirror and
-    the quarter turn (``interactive_transform:flip``, ``:rotate``) when the
-    orientation is, and the plugin tools the job's atlas or plane does not
-    fit (:func:`langslice.core.plugins.not_offered`), so no text names them.
+    (:attr:`~langslice.job.settings.spec.JobSpec.frozen_everywhere`), and the
+    mirror and the quarter turn (``interactive_transform:flip``,
+    ``:rotate``) when the orientation is, and the plugin tools the job's
+    atlas or plane does not fit (:func:`langslice.job.plugins.not_offered`),
+    so no text names them.
     A tool a task switched off is not listed: it is not in the run at all."""
     names = list(spec.disabled)
     if getattr(spec, "plugins", None):
-        from langslice.core import plugins
+        from langslice.job import plugins
 
         names.extend(plugins.not_offered(spec))
     if not spec.frozen:

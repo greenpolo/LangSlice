@@ -124,7 +124,7 @@ def _records(job: Job, sections: Sequence[str] | None) -> list[SliceState]:
 
 
 def _in_force(workspace: Workspace, job: Job, name: str) -> dict[str, Any]:
-    return dict(images.summary(job.state, workspace.spec).get(name) or {})
+    return dict(images.summary(job.state, workspace.settings).get(name) or {})
 
 
 def make_image(

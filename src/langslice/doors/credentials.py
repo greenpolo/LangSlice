@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from langslice import __version__
-from langslice.core import toolset
+from langslice.job.settings import tool_table
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ def setup_status() -> dict[str, Any]:
         "environment_prefix": sys.prefix,
         "providers": providers,
         "image_models": image_model_choices(),
-        "tools": toolset.catalog(),
+        "tools": tool_table.catalog(),
         "spec_defaults": spec_defaults(),
         "credentials_error": error,
     }
@@ -192,7 +192,7 @@ def spec_defaults() -> dict[str, Any]:
     """The job settings a host dialog starts from: ``JobSpec``'s own defaults
     (the ones ``langslice linear run``, the MCP door and the library use),
     without the per-job fields (folders, inputs, resume)."""
-    from langslice.core.spec import JobSpec
+    from langslice.job.settings.spec import JobSpec
 
     defaults = JobSpec(image_folder=".").to_dict()
     for key in ("image_folder", "out", "job_dir", "inputs", "resume", "facts"):

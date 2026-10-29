@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from langslice.core.spec import JobSpec, PositionSpec
 from langslice.doors.agent.engine import build_context, run
 from langslice.job.job import apply_host_inputs, ingest
+from langslice.job.settings.spec import JobSpec, PositionSpec
 from tests import fakes
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack
 from tests.linear_tool_helpers import load_checkpoint

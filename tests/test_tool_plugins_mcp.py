@@ -17,10 +17,10 @@ from typing import Any
 
 import pytest
 
-from langslice.core import plugins as core_plugins
 from langslice.core.plugins import PluginError
 from langslice.doors.plugins import mcp_adapter as adapter
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job import plugins as core_plugins
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 
 REF = "langslice.doors.plugins.mcp_adapter:tools"

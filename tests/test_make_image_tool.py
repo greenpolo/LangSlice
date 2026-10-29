@@ -13,11 +13,11 @@ from PIL import Image
 
 from langslice.core.sections import images
 from langslice.core.sections.renders import render_slice
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
 from tests.test_section_images import _rgb_section

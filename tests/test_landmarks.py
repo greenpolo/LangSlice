@@ -20,10 +20,10 @@ from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.grid import draw_grid
 from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.refusal import Refused
-from langslice.core.spec import NonlinearSpec
 from langslice.core.stack.stack import StackState
 from langslice.job.job import Job
 from langslice.job.pictures import DiscardedViews
+from langslice.job.settings.spec import NonlinearSpec
 from langslice.tools import atlas, damage, landmarks, look
 from langslice.tools import zoom as tools_zoom
 from tests.test_ops_look import _job

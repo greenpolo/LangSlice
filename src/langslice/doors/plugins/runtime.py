@@ -22,11 +22,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image
 
-from langslice.core import plugins as core
 from langslice.core.plugins import ToolResult, ToolSpec
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.doors.plugins.context import Caller, ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.job import plugins as core
 from langslice.tools.descriptions.render import Variant, declaration
 
 if TYPE_CHECKING:

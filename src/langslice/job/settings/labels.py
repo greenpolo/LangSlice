@@ -4,14 +4,15 @@ The LangSlice window's prompt generator (``hosts/gui/generator.py``) shows
 these beside each tool's own name. They are never model-facing: nothing a
 model reads is made from this table (``tests/test_gui_generator.py`` checks
 that no label appears in the pinned model-facing text and that only the
-window imports it). A tool or option added to :data:`langslice.core.toolset.TOOLS`
-needs a row here; the same test refuses a table that names one the toolset
-does not have, so a renamed or removed tool cannot linger.
+window imports it). A tool or option added to
+:data:`langslice.job.settings.tool_table.TOOLS` needs a row here; the same
+test refuses a table that names one the tool table does not have, so a
+renamed or removed tool cannot linger.
 """
 
 from __future__ import annotations
 
-#: One label per tool and per ``tool:option`` name, in toolset order.
+#: One label per tool and per ``tool:option`` name, in tool-table order.
 TOOL_LABELS: dict[str, str] = {
     "look": "See sections and the atlas",
     "look:section": "pictures of a section alone",
@@ -49,7 +50,7 @@ TOOL_LABELS: dict[str, str] = {
     "export_maps": "Write the per-section coordinate maps",
 }
 
-#: One label per task (:data:`langslice.core.spec.ALL_TASKS`).
+#: One label per task (:data:`langslice.job.settings.spec.ALL_TASKS`).
 TASK_LABELS: dict[str, str] = {
     "position": "Place along the atlas",
     "transform": "Align in the plane",
@@ -63,8 +64,8 @@ TASK_ABOUT: dict[str, str] = {
     "nonlinear": "Bend the atlas onto each aligned section, region by region.",
 }
 
-#: The tool groups of :data:`langslice.core.toolset.GROUPS`, for people, and
-#: the task each belongs to (None: every run).
+#: The tool groups of :data:`langslice.job.settings.tool_table.GROUPS`, for
+#: people, and the task each belongs to (None: every run).
 GROUP_LABELS: dict[str, tuple[str, str | None]] = {
     "Common": ("Every run: looking, notes and undo", None),
     "Positioning": ("Place along the atlas", "position"),

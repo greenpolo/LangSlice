@@ -6,8 +6,8 @@ from typing import Any
 
 from langslice.core.fits import deformation
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.spec import JobSpec
 from langslice.core.stack.stack import StackState
+from langslice.job.settings.spec import JobSpec
 
 #: A reported interval break must exceed this multiple of the median spacing.
 INTERVAL_BREAK_MIN_RATIO = 1.5

@@ -34,7 +34,6 @@ from langslice.core.geometry.affine import (
     denormalized_affine,
     normalized_affine,
 )
-from langslice.core.needs import render
 from langslice.core.pictures.canvas import canvas_geometry
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.renders import (
@@ -338,8 +337,9 @@ def fit_elastix(
                              section_image=section_image, edges=edges,
                              section_weights=section_weights)
     except Refused as refusal:  # regions too small, or a side it lacks
-        message = render(refusal.message, ctx.spec.switched_off)
-        return Refused(refusal.code, id=record.id, message=message).payload()
+        return Refused(
+            refusal.code, id=record.id, message=refusal.message
+        ).payload()
     except Exception as exc:
         logger.warning("elastix_affine failed for %s: %s", record.id, exc)
         return Refused(

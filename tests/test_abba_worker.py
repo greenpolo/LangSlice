@@ -270,10 +270,10 @@ def warped(tmp_path_factory):
     import dataclasses
 
     import langslice
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.abba.checkpoints import checkpoint_callback
     from langslice.doors.abba.worker import PreparedLinear
     from langslice.doors.jobs import create
+    from langslice.job.settings.spec import NonlinearSpec
     from tests.synthetic_stack import (
         ID0,
         ID1,
@@ -421,8 +421,8 @@ def test_a_section_keeping_the_users_warp_is_refused_by_fireants_syn(tmp_path, m
     import dataclasses
 
     import langslice
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
+    from langslice.job.settings.spec import NonlinearSpec
     from tests.synthetic_stack import (
         ID0,
         PIXEL_SIZE_UM,
@@ -457,9 +457,9 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     import dataclasses
 
     import langslice
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.abba.worker import prepare_linear
     from langslice.doors.jobs import create
+    from langslice.job.settings.spec import NonlinearSpec
     from tests.synthetic_stack import (
         ID0,
         PIXEL_SIZE_UM,

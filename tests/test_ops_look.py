@@ -13,11 +13,11 @@ from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote
 from langslice.core.refusal import Refused
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE, PictureRecord
+from langslice.job.settings.spec import JobSpec
 from langslice.tools import atlas as ops_atlas
 from langslice.tools import look as ops_look
 from langslice.tools import zoom as tools_zoom

@@ -20,11 +20,11 @@ from langslice.core.sections.reading import (
     working_intensity_ranges,
 )
 from langslice.core.sections.renders import render_slice
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.test_section_images import _rgb_section
 
@@ -195,7 +195,7 @@ def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatc
     original = Image.new("RGB", (60, 40), (40, 70, 90))
     original.save(tmp_path / "section.png")
     spec = JobSpec(image_folder=str(tmp_path), atlas="test", preprocess="none")
-    ctx = SimpleNamespace(spec=spec, atlas=object(),
+    ctx = SimpleNamespace(settings=spec.image_settings(), atlas=object(),
                           image_path=lambda _: str(tmp_path / "section.png"))
     record = SliceState(id="section.png", index_original=0, index_corrected=0,
                         position_mm=4, transform={"params": [1, 0, 0, 0, 1, 0]})

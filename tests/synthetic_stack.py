@@ -201,7 +201,7 @@ def canonical(value: Any) -> str:
 
 
 def full_spec(folder: Path) -> Any:
-    from langslice.core.spec import (
+    from langslice.job.settings.spec import (
         JobSpec,
         NonlinearSpec,
         PositionSpec,

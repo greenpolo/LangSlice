@@ -24,9 +24,9 @@ from langslice.core.geometry.affine import physical_affine_matrix
 from langslice.core.pictures.canvas import canvas_geometry, physical_views
 from langslice.core.sections.reading import read_pixel_size_um
 from langslice.core.sections.renders import canvas_um_per_px
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec
 
 #: The atlas fake below is 25 um per voxel, like allen_mouse_25um.
 ATLAS_UM = 25.0

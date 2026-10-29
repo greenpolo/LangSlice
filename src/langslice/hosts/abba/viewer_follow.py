@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from langslice.core.toolset import TOOLS
+from langslice.job.settings.tool_table import TOOLS
 
 logger = logging.getLogger(__name__)
 

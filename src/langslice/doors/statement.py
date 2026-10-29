@@ -28,17 +28,17 @@ from collections.abc import Collection
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from langslice.core.needs import render
-from langslice.core.spec import JobSpec
 from langslice.core.stack.stack import StackState
 from langslice.core.stack.status import status_text
+from langslice.job.settings.needs import render
+from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.layout import JobLayout
 
 #: Said when the job's image model is not connected to LangSlice here,
-#: written with what it needs (:mod:`langslice.core.needs`).
+#: written with what it needs (:mod:`langslice.job.settings.needs`).
 #: The registration agent's system prompt: true of every job, naming no tool a
 #: job can switch off; the job itself comes in the first message.
 SYSTEM_PROMPT = (
@@ -163,7 +163,7 @@ def long_verbs(disabled: Collection[str] = (), spec: Any = None) -> list[str]:
     """The verbs that compute outside the job lock and may take long
     (:attr:`langslice.tools.catalog.Verb.long`), in registry order, less the
     ones *disabled* names and, given *spec*, the ones its run does not have."""
-    from langslice.core.toolset import is_off
+    from langslice.job.settings.tool_table import is_off
     from langslice.tools.catalog import verbs_for
 
     return [name for name, verb in verbs_for(spec).items()

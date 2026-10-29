@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core import plugins as core_plugins
-from langslice.core.spec import JobSpec
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job import plugins as core_plugins
+from langslice.job.settings.spec import JobSpec
 from langslice.tools.catalog import VERBS, verbs_for
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 
@@ -113,7 +113,7 @@ ARGUMENTS = {
 
 
 def test_the_declared_arguments_follow_the_interface_note(tmp_path: Path):
-    from langslice.core import plugins
+    from langslice.job import plugins
 
     specs = plugins.tool_specs(JobSpec(image_folder=str(tmp_path), plugins=REFS))
     for name, wanted in ARGUMENTS.items():

@@ -21,11 +21,11 @@ from PIL import Image
 from langslice.core.fits import deformation
 from langslice.core.fits.trace.request import GeneratedSegmentation
 from langslice.core.pictures.sizes import picture_edge
-from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.providers.connections import resolve_image_model
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,

@@ -153,24 +153,26 @@ const Generator = (() => {
     return new Set(kept(data, form).flatMap(prop => data.frozen_off[prop] || []));
   }
 
+  // The command, each flag spelled as the settings table spells it (`data.flags`,
+  // setting name -> flag).
   function command(data, form) {
     const args = [[shellQuote(cleanPath(form.folder)), 'init']];
-    const flag = (name, value) => args.push([name, shellQuote(value)]);
+    const flag = (setting, value) => args.push([data.flags[setting], shellQuote(value)]);
     const tasks = chosenTasks(data, form);
-    if (tasks.length) flag('--tasks', tasks.join(','));
-    if (!blank(form.atlas)) flag('--atlas', form.atlas.trim());
-    if (!blank(form.plane)) flag('--plane', form.plane.trim());
-    if (!blank(form.thickness)) flag('--thickness', String(form.thickness).trim());
-    if (!blank(form.interval)) flag('--interval', String(form.interval).trim());
-    if (!blank(form.pixelSize)) flag('--pixel-size-um', String(form.pixelSize).trim());
+    if (tasks.length) flag('tasks', tasks.join(','));
+    if (!blank(form.atlas)) flag('atlas', form.atlas.trim());
+    if (!blank(form.plane)) flag('plane', form.plane.trim());
+    if (!blank(form.thickness)) flag('position.thickness_um', String(form.thickness).trim());
+    if (!blank(form.interval)) flag('position.interval_um', String(form.interval).trim());
+    if (!blank(form.pixelSize)) flag('inputs.pixel_size_um', String(form.pixelSize).trim());
     const off = offNames(data, form);
-    if (off.length) flag('--disable', off.join(','));
+    if (off.length) flag('disabled', off.join(','));
     const keep = kept(data, form);
-    if (keep.length) flag('--frozen', JSON.stringify({ '*': keep }));
+    if (keep.length) flag('frozen', JSON.stringify({ '*': keep }));
     const damaged = damagedMap(form.damaged);
-    if (Object.keys(damaged).length) flag('--damaged', JSON.stringify(damaged));
-    if (form.ordered) flag('--fact', 'The file names sort in the order the sections were cut.');
-    if (!blank(form.notes)) flag('--notes', String(form.notes).trim());
+    if (Object.keys(damaged).length) flag('inputs.damaged', JSON.stringify(damaged));
+    if (form.ordered) flag('facts', 'The file names sort in the order the sections were cut.');
+    if (!blank(form.notes)) flag('notes', String(form.notes).trim());
     return { text: 'langslice-job ' + args.map(words => words.join(' ')).join(' \\\n  '),
              quoted: args.some(words => words.some(word => /^['"]/.test(word))) };
   }

@@ -223,7 +223,7 @@ final class RegistrationSettings {
         }
     }
 
-    /** The tool catalog from setup.status ("tools", from langslice.core.toolset.catalog()). */
+    /** The tool catalog from setup.status ("tools", from langslice.job.settings.tool_table.catalog()). */
     static List<Tool> toolCatalog(JsonObject status) {
         List<Tool> tools = new ArrayList<>();
         for (JsonElement item : status.getAsJsonArray("tools")) {

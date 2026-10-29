@@ -15,7 +15,6 @@ from PIL import Image
 
 from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.layers import coordinate_map
-from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.history import UNDO_DEPTH
@@ -27,6 +26,7 @@ from langslice.job.layout import (
     section_dirname,
 )
 from langslice.job.pictures import flush_all
+from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import STATE_FORMAT_VERSION, read_checkpoint
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import tool_named as _tool

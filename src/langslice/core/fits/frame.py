@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -24,7 +23,6 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.geometry.affine import denormalized_affine
-from langslice.core.needs import render
 from langslice.core.pictures.canvas import CanvasGeometry, canvas_geometry
 from langslice.core.sections.images import PREPROCESSED, entry_of, is_opening
 from langslice.core.sections.renders import (
@@ -38,36 +36,6 @@ from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import StackState
-
-
-#: Said when a section has no written in-plane transform and the job cannot
-#: write one (Linear off): what the caller does instead. A missing transform is
-#: the identity to the maps (``core.maps.section_maps``), never to the
-#: nonlinear step.
-_NO_TRANSFORM_LINEAR_OFF = (
-    "A written affine transform is required, and Linear is off for this job, so "
-    "nothing here writes one. Supply the in-plane transforms with the job "
-    "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or switch "
-    "Linear on (task transform)[[?elastix_affine  and run elastix_affine on the section "
-    "first]]."
-)
-NO_TRANSFORM_LINEAR_OFF = render(_NO_TRANSFORM_LINEAR_OFF)
-
-
-def no_transform_linear_off(disabled: Collection[str] = ()) -> str:
-    """:data:`NO_TRANSFORM_LINEAR_OFF` for a job with *disabled* tools."""
-    return render(_NO_TRANSFORM_LINEAR_OFF, disabled)
-
-
-def missing_transform_message(spec: Any) -> str:
-    """The refusal for a section with no written in-plane transform: with
-    Linear (task ``transform``) off, :data:`NO_TRANSFORM_LINEAR_OFF`, what to
-    do instead; with it on, the plain requirement (``elastix_affine`` and
-    ``interactive_transform`` are the job's own tools)."""
-    has = getattr(spec, "has", None)
-    if callable(has) and not has("transform"):
-        return no_transform_linear_off(getattr(spec, "disabled", ()))
-    return "A written affine transform is required"
 
 
 @dataclass(frozen=True)
@@ -164,7 +132,7 @@ def prepare_linear_registration(
     if transform is None:
         transform = record.transform
     if not transform:
-        raise ValueError(missing_transform_message(getattr(ctx, "spec", None)))
+        raise ValueError(ctx.settings.missing_transform)
     if transform.get("stale"):
         raise ValueError("The written affine is marked stale")
     orientation = transform.get("orientation")
@@ -174,7 +142,7 @@ def prepare_linear_registration(
             key in orientation and orientation[key] != value for key, value in expected.items()
         ):
             raise ValueError("The written affine has a different section orientation")
-    if state.atlas != ctx.spec.atlas or state.plane != ctx.spec.plane:
+    if state.atlas != ctx.settings.atlas or state.plane != ctx.settings.plane:
         raise ValueError("State and rendering context disagree about the atlas or plane")
     if state.plane not in ("coronal", "sagittal", "horizontal"):
         raise ValueError("Unsupported section plane")
@@ -218,7 +186,7 @@ def prepare_linear_registration(
             "source": "linear_state", "section_id": record.id,
             "orientation": {"rotation_deg": record.rotation_deg, "flip": record.flip},
             "orientation_snapshot_checked": orientation is not None,
-            "preprocess": ctx.spec.preprocess,
+            "preprocess": ctx.settings.preprocess,
             **({"section_image": remade} if remade is not None else {}),
             "image_size": list(image.size),
             "image_frame": "oriented rendered section; not acquisition image pixels",
@@ -246,7 +214,7 @@ def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -
     source = Path(ctx.image_path(record.id)).resolve()
     stat = source.stat()
     transform = record.transform or {}
-    nonlinear = dict(ctx.spec.to_dict().get("nonlinear") or {})
+    nonlinear = dict(ctx.settings.trace_settings)
     return digest({
         "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
         "section_id": record.id, "atlas": state.atlas, "plane": state.plane,
@@ -255,7 +223,7 @@ def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -
         "transform": {key: transform.get(key) for key in (
             "params", "calibration", "orientation", "stale",
         )},
-        "preprocess": ctx.spec.preprocess,
-        "pixel_size_um": ctx.spec.inputs.get("pixel_size_um"),
+        "preprocess": ctx.settings.preprocess,
+        "pixel_size_um": ctx.settings.supplied_pixel_size,
         "nonlinear": nonlinear,
     })

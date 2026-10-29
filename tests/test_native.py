@@ -19,10 +19,10 @@ from langslice.core.sections.native import (
     unoriented_fractions,
     unoriented_points,
 )
-from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
+from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import SyntheticAtlas
 
 _TURNS = {90: Image.Transpose.ROTATE_90, 180: Image.Transpose.ROTATE_180,
@@ -129,7 +129,7 @@ def _stack(folder: Path, *, rotation: int = 0, flip: bool = False
     atlas = SyntheticAtlas()
     spec = JobSpec(image_folder=str(folder), model="m", preprocess="none",
                    inputs={"pixel_size_um": 2.0})
-    ws = Workspace(spec=spec, image_folder=str(folder), emit=lambda _m: None,
+    ws = Workspace(settings=spec.image_settings(), image_folder=str(folder), emit=lambda _m: None,
                    atlas_loader=lambda _n: atlas)
     record = SliceState(id="big.tif", index_original=0, index_corrected=0, position_mm=0.15,
                         rotation_deg=rotation, flip=flip,

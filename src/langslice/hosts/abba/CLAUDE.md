@@ -63,7 +63,7 @@ them inside its lock, with corrected-index references resolved to stable
 filenames). Model `tool_call` announcements may be batched ahead of
 execution and never drive the viewer. `_FOLLOWED` names the tools whose
 targets are shown; every one in `_WRITES` (the catalog's write tools,
-`core.toolset.TOOLS` kind `write`; `_FOLLOWED` adds `look` and `zoom`)
+`job.settings.tool_table.TOOLS` kind `write`; `_FOLLOWED` adds `look` and `zoom`)
 refreshes its targets on its end event, after the connector has applied
 the checkpoint's rows. Every followed event goes to the
 comparison window its `comparison_factory` builds on first use; the main
