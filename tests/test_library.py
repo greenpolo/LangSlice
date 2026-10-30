@@ -201,9 +201,9 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=profile) as job:
         assert job.trace_borders(section=ID1, prompt=edited)["status"] == "started"
-        job.job.settle_image_corrections()
+        job.job.settle_border_traces()
         job.job.background.wait_all()
-        record = trace_to_json(job.state.by_id(ID1).image_correction)
+        record = trace_to_json(job.state.by_id(ID1).border_trace)
     sent = PROFILE_PROMPT.replace("{plane}", "coronal")
     assert [request.prompt for request in stub.requests] == [edited]
     # photograph_first: Image 1 is the clean photograph, Image 2 the placed borders.

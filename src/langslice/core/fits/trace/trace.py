@@ -47,7 +47,7 @@ from langslice.core.fits.trace.prompts import (
     border_correction_tool_prompt,
     supplied_prompt_is_gpt_twin,
 )
-from langslice.core.fits.trace.request import SegmentationGenerationRequest
+from langslice.core.fits.trace.request import BorderTraceRequest
 from langslice.core.geometry.affine import pixel_center_map
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.space import Plane
@@ -296,7 +296,7 @@ def start_correction(
     is part of the call key; an untested profile's request and result say
     so (``profile``, ``untested`` True: :func:`profile_marks`). The calls
     are saved in *calls_dir* (the section's own folder, one subfolder per
-    call key; the job's ``sections/<name>/image_correction``)
+    call key; the job's ``sections/<name>/border_trace``)
     or, without it, in ``<out>/<section filename>``. There is no
     atlas search, model veto, or selection step. Repeated calls at the same
     geometry return the first image reply. Failed transports that returned no
@@ -397,7 +397,7 @@ def start_correction(
     def job() -> dict[str, Any]:
         try:
             first, second = (canvas, rough) if gpt_twin else (rough, canvas)
-            generated = image_model.call(SegmentationGenerationRequest(
+            generated = image_model.call(BorderTraceRequest(
                 slice_image=first, reference_images=[second], prompt=sent,
                 provider=provider, model=model,
             ))

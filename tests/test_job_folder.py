@@ -204,8 +204,9 @@ def test_a_checkpoint_of_an_older_format_is_refused(tmp_path: Path, version: int
 
 
 def test_saved_settings_with_an_unknown_key_are_refused_naming_it_and_the_file(tmp_path: Path):
-    """``state.json`` and ``job.json`` refuse a key this version does not
-    write; the error names the key and the file."""
+    """``state.json`` and ``job.json`` refuse a key no LangSlice wrote (a
+    removed one is dropped: ``test_migrations.py``); the error names the key
+    and the file."""
     from langslice.doors.jobs import read_spec
 
     folder = _folder(tmp_path / "stack")
@@ -219,11 +220,11 @@ def test_saved_settings_with_an_unknown_key_are_refused_naming_it_and_the_file(t
         _open(folder)
     job_file = folder / "langslice" / "job.json"
     held = json.loads(job_file.read_text())
-    held["spec"]["position"]["gated"] = False
-    held["spec"]["agent_damage"] = True
+    held["spec"]["position"]["retired"] = False
+    held["spec"]["never_a_setting"] = True
     job_file.write_text(json.dumps(held))
     with pytest.raises(ValueError, match=r"job\.json: Unknown job setting\(s\) "
-                                         r"\['agent_damage', 'position\.gated'\]"):
+                                         r"\['never_a_setting', 'position\.retired'\]"):
         read_spec(folder / "langslice")
 
 

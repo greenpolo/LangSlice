@@ -106,9 +106,9 @@ def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(im
         sent = JOB_PROMPT.replace("{plane}", "coronal")
         assert DescriptionFacts.from_spec(job.job.spec, auto=False).prompt == sent
         assert job.trace_borders(section=ID1)["status"] == "started"
-        job.job.settle_image_corrections()
+        job.job.settle_border_traces()
         job.job.background.wait_all()
-        record = trace_to_json(job.state.by_id(ID1).image_correction)
+        record = trace_to_json(job.state.by_id(ID1).border_trace)
     assert [request.prompt for request in stub.requests] == [sent]
     attempt = images / "langslice" / record["artifact_dir"]
     assert (attempt / "base_prompt.txt").read_text() == sent
@@ -148,7 +148,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
                               orientation=supplied, pixel_size_um=PIXEL_SIZE_UM,
                               preprocess="none", image_model=Stub()) as job:
         job.trace_borders(section=SECTION)
-        job.job.settle_image_corrections()
+        job.job.settle_border_traces()
         job.job.background.wait_all()
         reply = job.export_maps()
         folder = Path(job.folder)
@@ -177,7 +177,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         assert np.percentile(distance[borders], 90) <= 1.5
 
         # A section with no completed trace now loses the reply an earlier export left.
-        while job.state.by_id(SECTION).image_correction is not None:  # its fit, then the trace
+        while job.state.by_id(SECTION).border_trace is not None:  # its fit, then the trace
             job.undo()
         again = job.export_maps(sections=[SECTION])
         assert again.get("status") != "error", again

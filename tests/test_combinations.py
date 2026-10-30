@@ -437,9 +437,9 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
         assert job.export_maps()["status"] == "ok"
-        assert all(trace_to_json(job.state.by_id(name).image_correction).get("status") == "ok"
+        assert all(trace_to_json(job.state.by_id(name).border_trace).get("status") == "ok"
                    for name in (ID0, ID1))
-        assert job.state.by_id(ID2).image_correction is None
+        assert job.state.by_id(ID2).border_trace is None
     assert_exported(images / "langslice", residual=IDS, maps_exported=True)
 
 

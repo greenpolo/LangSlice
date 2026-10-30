@@ -63,9 +63,9 @@ _STALE_MESSAGE = ("The section's placement changed while the image call was prep
 
 def _trace_json(section: Section) -> dict[str, JsonValue]:
     """Return the section's border trace in its JSON form (empty: none)."""
-    if section.image_correction is None:
+    if section.border_trace is None:
         return {}
-    return trace_to_json(section.image_correction)
+    return trace_to_json(section.border_trace)
 
 
 def _without_cached(trace: BorderTrace | None) -> BorderTrace | None:
@@ -82,7 +82,7 @@ def _start_trace(
     chosen: tuple[str, ...],
     workers: int,
 ) -> TraceStarted:
-    """Start one section's image correction in the background, or reuse it
+    """Start one section's border trace in the background, or reuse it
     (the trace alone; :func:`trace_borders` adds the fit). The call is
     prepared outside the job's write lock and started under it."""
     record = job.state.resolve(ref)
@@ -101,7 +101,7 @@ def _start_trace(
         kept, dropped = exclusions(record, chosen)
         result, call = registration_tool.start_correction(
             job.state, workspace, section_id, prompt=prompt, image_model=image_model,
-            calls_dir=job.layout.image_correction_dir(section_id), include=kept, exclude=dropped)
+            calls_dir=job.layout.border_trace_dir(section_id), include=kept, exclude=dropped)
     except ValueError as exc:
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
                       id=section_id, message=str(exc)) from exc
@@ -122,8 +122,8 @@ def _start_trace(
         trace = trace_from_json(portable)
         # A saved reply reused as it stands differs only by its ``cached`` flag:
         # nothing to write, so no undo step.
-        if _without_cached(trace) != _without_cached(now.image_correction):
-            now.image_correction = trace
+        if _without_cached(trace) != _without_cached(now.border_trace):
+            now.border_trace = trace
             job.commit(before)
     return TraceStarted(id=section_id, record=portable, started=call is not None)
 
@@ -159,9 +159,9 @@ def trace_borders(
     drew and the deformation is applied. Returns at once (``work``: the id
     of the background work, :mod:`langslice.job.background`).
 
-    Now: the section's image correction is started in the background, or a
+    Now: the section's border trace is started in the background, or a
     saved reply at its geometry reused (``cached``), the section's
-    ``image_correction`` record written as ONE undo step when it changed, and a
+    ``border_trace`` record written as ONE undo step when it changed, and a
     piece of background work started. The model is shown the section's
     ``preprocessed`` image and the same picture with the placed atlas borders
     (``registration_tool.start_correction``): with *restrict_to*, only those
@@ -169,7 +169,7 @@ def trace_borders(
     the section's marked regions left out
     (:func:`langslice.core.sections.damage.exclusions`). *prompt* replaces the
     base prompt (blank sends it unchanged); the prompt sent is saved with each
-    attempt in the job folder (``sections/<name>/image_correction/``).
+    attempt in the job folder (``sections/<name>/border_trace/``).
 
     When the reply lands (:func:`land_trace`): the trace is recorded on the
     section, then a fit of the traced borders runs (:data:`TRACE_FIT`, on
@@ -245,7 +245,7 @@ def land_trace(
         return Landed(status=FAILED, text=f"{section_id} is no longer in the stack; nothing "
                       "was applied.",
                       result={"error": RefusalCode.UNKNOWN_SLICE_IDS})
-    held = record.image_correction
+    held = record.border_trace
     form = _trace_json(record)
     trace = {key: form[key] for key in ("status", "attempt", "cached", "prompt_edited",
                                         "include", "exclude", "error", "message")
@@ -288,12 +288,12 @@ def land_trace(
 
 
 def _landed(job: Job, section: Section) -> bool:
-    """Whether *section*'s saved trace has landed: its image correction is a
+    """Whether *section*'s saved trace has landed: its border trace is a
     completed reply and a step of its applied deformation, at its current
     linear placement, fitted that very trace
     (:func:`~langslice.tools.deformable.fit_deformable`
     records the trace a traced step read)."""
-    held = section.image_correction
+    held = section.border_trace
     applied = section.deformation
     if held is None or held.status != "ok":
         return False

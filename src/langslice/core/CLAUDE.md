@@ -211,12 +211,9 @@ the angles in a caption (empty for the flat plane).
   is the working copy itself; `preprocess="none"` the copy in gray), written
   once as the file every reader reads, like any made image; `opening_entry`, `ensure_opening` (every section without one,
   on threads, outside undo: `Job.open` and `Job.load`). `summary(state, settings)`:
-  `status`'s `section_images`. `Migration(ws, layout)`: a format-3 state's fields as
-  format 4 (each `appearance` recipe, a section's override honoured, made into
-  a file and an entry; `preprocessed` without a recipe the opening image;
-  display properties dropped; a mask's `channel` named `section_image`), one
-  memo across the checkpoint and its history steps (`seed` takes a format-4
-  state's entries). `Look` is the render's look type.
+  `status`'s `section_images`. `Look` is the render's look type. A format-3
+  state's `appearance` recipes are made into files by the job's migration
+  (`job/migrations.py`, `state_3_to_4`) through `make` and `write_file`.
 - `sections/channels.py` — raw channels drawn together: `composite` (each channel
   stretched between its automatic limits, `auto_limits`, per section: on a
   dark background black at its background median and full colour at its
@@ -285,7 +282,7 @@ the angles in a caption (empty for the flat plane).
   (`deformation.py`: the saved fit's folder and key, its `linear_key`,
   steps, summary; `LandmarkWarp` for a landmark warp; `kept_linear` and no
   key or steps for a format-3 folder's `keep_linear` marker, which names no
-  saved fit), `image_correction` a
+  saved fit), `border_trace` a
   `BorderTrace` (`trace.py`), `landmarks` (`landmarks.py`: `Landmarks`,
   `Pair`, `Endpoint`; None before the first pair), and `images` / `masks` /
   `layers` (`images.py`: `ImageRef`, `MaskRef`, `LayerRef`). Section and

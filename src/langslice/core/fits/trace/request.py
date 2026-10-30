@@ -9,8 +9,8 @@ from PIL import Image
 
 
 @dataclass
-class SegmentationGenerationRequest:
-    """One image-model edit: the section to edit, its references and the prompt."""
+class BorderTraceRequest:
+    """Hold one image-model edit: the section, its references, the prompt."""
 
     #: The references, in prompt order: they follow the slice image as
     #: Image 2..N. The prompt describes what each one is; providers just
@@ -31,7 +31,7 @@ class SegmentationGenerationRequest:
 
 @dataclass
 class GeneratedSegmentation:
-    """The image model's reply to one :class:`SegmentationGenerationRequest`."""
+    """The image model's reply to one :class:`BorderTraceRequest`."""
 
     image: Image.Image
     provider: str

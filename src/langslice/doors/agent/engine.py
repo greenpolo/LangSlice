@@ -278,7 +278,7 @@ async def run(
         try:
             tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
         finally:
-            # Background image corrections finish and are recorded even when
+            # Background border traces finish and are recorded even when
             # the session ends without a submit; the pictures are written
             # (close_job, as every door ends a job).
             close_job(job)

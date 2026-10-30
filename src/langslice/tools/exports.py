@@ -262,7 +262,7 @@ def section_maps(
 
 def _completed_trace(section: Section) -> BorderTrace | None:
     """The section's trace record when its last ``trace_borders`` call holds a reply."""
-    held = section.image_correction
+    held = section.border_trace
     if held is None or held.status != "ok" or not held.artifact_dir:
         return None
     return held
@@ -317,7 +317,7 @@ def _export_trace(
     }
     with job.writing():
         now = job.state.by_id(record.id)
-        trace_now = None if now is None else now.image_correction
+        trace_now = None if now is None else now.border_trace
         if trace_now is None or trace_now.artifact_dir != artifact_dir:
             return []  # traced again meanwhile: the next export writes the new reply
         try:

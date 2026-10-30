@@ -472,7 +472,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   nothing and fits nothing again (`TraceStarted.landed`). A call already
   running at that geometry is not started again (`running`); otherwise the
   call runs on the job's image executor and the section's
-  `image_correction` record is written as one undo step when it changed.
+  `border_trace` record is written as one undo step when it changed.
   Prepared outside the lock, started and written under it. Refused:
   `UNKNOWN_SLICE_IDS`, `FROZEN` (the section's deformation is frozen),
   `INVALID_LINEAR_PLACEMENT`,

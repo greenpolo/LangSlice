@@ -166,9 +166,12 @@ command leaves running. The agent then runs long fits with
 
 ### "Unknown job setting(s) […]"
 
-The job folder was made by an earlier LangSlice whose settings this version no
-longer has. Open it with the LangSlice version that made it, or start a new
-job on the same images.
+The job folder's `job.json` holds a setting no LangSlice version has (a
+typing mistake, or a setting from a newer LangSlice). Remove it from
+`job.json`, open the folder with the LangSlice version that made it, or start
+a new job on the same images. Settings that earlier LangSlice versions had
+and this one no longer has are not refused: the job opens without them, with
+a warning naming each ([old job folders](reference/file_formats.md#old-job-folders)).
 
 ### The agent says it cannot change a section because you froze it
 

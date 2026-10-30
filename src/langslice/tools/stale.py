@@ -32,14 +32,14 @@ def section_inputs(
     images (``{name: digest}``: remaking one makes the section stale), its
     damage (the marked regions, which every fit leaves out), and with
     *deformation* its applied deformation
-    (a fit on top of it), with *trace* its image correction."""
+    (a fit on top of it), with *trace* its border trace."""
     if deformation and not trace:  # a section mask stores this one (one source of truth)
         return registration_digest(state, record)
     held: dict[str, Any] = registration_parts(state, record)
     if deformation:
         held["deformation"] = record.deformation_key
     if trace:
-        correction = record.image_correction
+        correction = record.border_trace
         held["trace"] = dict.fromkeys(
             ("status", "geometry_fingerprint", "artifact_dir", "attempt"))
         if correction is not None:

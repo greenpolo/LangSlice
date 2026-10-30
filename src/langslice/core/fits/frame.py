@@ -1,4 +1,4 @@
-"""The geometry an image correction or a deformable fit starts from.
+"""The geometry a border trace or a deformable fit starts from.
 
 The core half of the bridge between a written linear placement and the
 nonlinear work on top of it:

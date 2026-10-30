@@ -244,7 +244,7 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
-        assert trace_to_json(job.state.by_id(ID1).image_correction)["status"] == "ok"
+        assert trace_to_json(job.state.by_id(ID1).border_trace)["status"] == "ok"
         assert {name: angles_to_json(job.state.by_id(name).angles) for name in IDS} == (
             SECTION_ANGLES)
         folder = Path(job.folder)
@@ -311,7 +311,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     assert state is not None
     assert {name: angles_to_json(state.by_id(name).angles) for name in IDS} == SECTION_ANGLES
     saved = json.loads((job / "state.json").read_text())
-    assert saved["format_version"] == 4 and saved["cutting_angles_deg"] is None
+    assert saved["format_version"] == 5 and saved["cutting_angles_deg"] is None
     # --section-angles and --pitch exclude each other.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--image-provider", "none", "--pitch", "1",

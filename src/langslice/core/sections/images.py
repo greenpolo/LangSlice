@@ -63,7 +63,6 @@ from langslice.core.sections.reading import (
     coverage_weights,
     custom_appearance,
 )
-from langslice.core.stack.codec import image_from_json, image_to_json
 from langslice.core.stack.images import ImageRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -652,131 +651,9 @@ def summary(state: Stack, settings: ImageSettings) -> dict[str, Any]:
     return out
 
 
-# --- migration from state format 3 ---------------------------------------------------------
-
-
-class Migration:
-    """State format 3 to 4, for one job: every recipe the old ``appearance``
-    held (stack-wide, or a section's override) made into a file and an entry
-    per section; the opening ``preprocessed`` where the old one had no recipe;
-    the raw channels' display properties dropped. A memo keeps one file per
-    (section, name, source) across the checkpoint and its history steps."""
-
-    def __init__(self, ws: Workspace, layout: _Layout) -> None:
-        self.ws = ws
-        self.layout = layout
-        self.memo: dict[tuple[str, str, str], dict[str, Any] | None] = {}
-        #: Whether a state of the older format has been read through it.
-        self.used = False
-
-    def seed(self, data: Mapping[str, Any]) -> None:
-        """Remember the entries a format-4 state already holds (made by an
-        earlier migration), so the history's steps reuse their files."""
-        for row in data.get("slices") or []:
-            for name, entry in (row.get("images") or {}).items():
-                key = (str(row.get("id")), str(name),
-                       json.dumps(entry.get("source"), sort_keys=True))
-                self.memo.setdefault(key, dict(entry))
-
-    def _entry(self, section_id: str, name: str, source: dict[str, Any],
-               make_array: Callable[[], tuple[np.ndarray, dict[str, Any]]],
-               ) -> dict[str, Any] | None:
-        key = (section_id, name, json.dumps(source, sort_keys=True))
-        if key not in self.memo:
-            try:
-                array, extra = make_array()
-                self.memo[key] = image_to_json(write_file(
-                    self.layout, section_id, name, array, source, extra=extra))
-            except Exception:  # noqa: BLE001 - one section's recipe that cannot be made is skipped
-                logger.warning("section image %s of %s could not be made from its recipe",
-                               name, section_id, exc_info=True)
-                self.memo[key] = None
-        held = self.memo[key]
-        return None if held is None else dict(held)
-
-    def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
-        """*data* (a format-3 state's fields) as format 4 (a copy)."""
-        self.used = True
-        out = dict(data)
-        legacy = dict(out.pop("appearance", None) or {})  # format 3's recipes
-        derived = dict(legacy.get("derived") or {})
-        if legacy.get(PREPROCESSED) and PREPROCESSED not in derived:
-            derived[PREPROCESSED] = legacy[PREPROCESSED]
-        rows = []
-        for row in out.get("slices") or []:
-            row = dict(row)
-            section_id = str(row.get("id"))
-            images: dict[str, Any] = {}
-            names = [PREPROCESSED, *(name for name in derived if name != PREPROCESSED)]
-            for name in names:
-                held = dict(derived.get(name) or {})
-                old = (held.get("sections") or {}).get(section_id, held.get("stack"))
-                if old is None:
-                    if name != PREPROCESSED:
-                        continue
-                    source = opening_source(self.ws.settings)
-                    entry = self._entry(section_id, name, source, lambda sid=section_id: (
-                        np.asarray(opening_render(self.ws, sid), dtype=np.uint8), {}))
-                else:
-                    try:
-                        recipe = _old_recipe(old, raw_names(self.ws, section_id))
-                    except (ValueError, OSError):
-                        logger.warning("recipe %s of %s cannot be read; left out", name,
-                                       section_id, exc_info=True)
-                        continue
-                    source = {"recipe": recipe}
-                    made = dict(images)
-
-                    def drawn(sid: str = section_id, rec: dict[str, Any] = recipe,
-                              held_images: Mapping[str, JsonObject] = made,
-                              ) -> tuple[np.ndarray, dict[str, Any]]:
-                        made_refs = {key: image_from_json(entry)
-                                     for key, entry in held_images.items()}
-                        array, used = make(self.ws, sid, made_refs, rec)
-                        return array, ({"weights_used": used}
-                                       if not isinstance(rec["weights"], Mapping) else {})
-
-                    entry = self._entry(section_id, name, source, drawn)
-                if entry is not None:
-                    images[name] = entry
-            masks = row.get("masks")
-            if isinstance(masks, dict):
-                row["masks"] = {name: _mask_entry(entry) for name, entry in masks.items()}
-            if images:
-                row["images"] = images
-            rows.append(row)
-        if "slices" in out:
-            out["slices"] = rows
-        return out
-
-
-def _mask_entry(entry: Any) -> Any:
-    """A format-3 mask entry with its ``channel`` named ``section_image``."""
-    if not isinstance(entry, dict) or "channel" not in entry:
-        return entry
-    held = dict(entry)
-    held["section_image"] = held.pop("channel")
-    return held
-
-
-def _old_recipe(old: Mapping[str, Any], raw: list[str]) -> dict[str, Any]:
-    """A format-3 recipe (weights by raw name or None, or positional
-    ``channel_weights``; ``contrast_limits``) as a format-4 one."""
-    weights = old.get("weights")
-    if not weights and old.get("channel_weights"):
-        weights = {raw[index]: float(value)
-                   for index, value in enumerate(old["channel_weights"]) if index < len(raw)}
-    return validate_recipe(
-        weights=weights or None, clahe_clip=float(old.get("clahe_clip", DEFAULT_CLAHE_CLIP)),
-        clahe_tiles=int(old.get("clahe_tiles", DEFAULT_CLAHE_TILES)),
-        n4=bool(old.get("n4", False)), denoise=bool(old.get("denoise", False)),
-        contrast=old.get("contrast_limits") or None, gamma=old.get("gamma") or None,
-        invert=bool(old.get("invert", False)))
-
-
 __all__ = [
     "AUTO", "DEFAULT_CLAHE_CLIP", "DEFAULT_CLAHE_TILES", "ImageView", "Look", "MADE",
-    "Migration", "OPENING_RECIPE", "PREPROCESSED", "RAW", "compact_recipe", "describe_source",
+    "OPENING_RECIPE", "PREPROCESSED", "RAW", "compact_recipe", "describe_source",
     "digest_of", "ensure_opening", "entry_of", "identity", "image_names", "image_plane",
     "images_digest", "is_opening", "kind_of", "make", "opening_entry", "opening_render",
     "opening_source", "opening_words", "plane_of", "raw_names", "raw_plane", "read_image",

@@ -221,7 +221,7 @@ def traced_lines(
     from langslice.core.fits import frame as handoff
 
     section = grid.record
-    held = section.image_correction
+    held = section.border_trace
     status = None if held is None else held.status
     if running:
         raise Refused(RefusalCode.TRACE_TIMEOUT,

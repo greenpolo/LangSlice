@@ -244,7 +244,7 @@ def test_sections_with_a_frozen_deformation_are_refused(tmp_path: Path):
     assert traced["status"] == "error" and traced["error"] == code
     assert traced["id"] == "s0.png"
     assert state.by_id("s0.png").deformation is None
-    assert state.by_id("s0.png").image_correction is None
+    assert state.by_id("s0.png").border_trace is None
 
 
 # --- forced pictures and the picture size --------------------------------------------

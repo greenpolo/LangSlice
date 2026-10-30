@@ -71,9 +71,15 @@ from langslice.job.layout import (
     JobLayout,
     check_owner,
     locate_job_folder,
+    read_job_file,
     write_job_file,
 )
 from langslice.job.lock import FolderLock
+from langslice.job.migrations import (
+    FolderMigration,
+    warn_removed_settings,
+    without_removed_settings,
+)
 from langslice.job.pictures import DiscardedViews, ViewStore
 from langslice.job.registrations import Registrations
 from langslice.job.settings import frozen as freeze
@@ -92,6 +98,7 @@ from langslice.job.state_file import (
     write_checkpoint,
     write_json_atomic,
 )
+from langslice.job.trace_folders import move_trace_folders
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -342,6 +349,48 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     return sorted(changed)
 
 
+def _removed_settings(layout: JobLayout) -> tuple[str, ...]:
+    """Return the removed settings ``job.json`` holds, each logged."""
+    saved = _saved_settings(layout)
+    if saved is None:
+        return ()
+    _kept, removed = without_removed_settings(saved)
+    warn_removed_settings(removed)
+    return removed
+
+
+def _write_settings_without_removed(layout: JobLayout) -> tuple[str, ...]:
+    """Write ``job.json`` without its removed settings; return their names."""
+    saved = _saved_settings(layout)
+    if saved is None:
+        return ()
+    kept, removed = without_removed_settings(saved)
+    if removed:
+        write_job_file(layout, spec=kept)
+    return removed
+
+
+def _saved_settings(layout: JobLayout) -> JsonObject | None:
+    """Return the settings ``job.json`` holds; None without any."""
+    record = read_job_file(layout)
+    saved = None if record is None else record.get("spec")
+    if not isinstance(saved, dict):
+        return None
+    return cast("JsonObject", saved)
+
+
+def _log_migrated(
+    layout: JobLayout, migration: FolderMigration, removed: Sequence[str],
+    moved: Sequence[str],
+) -> None:
+    """Log a ``migrated`` event when a migration changed the job's files."""
+    if migration.applied or migration.dropped or removed or moved:
+        layout.log_event(
+            "migrated", migrations=list(migration.applied),
+            dropped=dict(migration.dropped), settings=list(removed),
+            trace_folders=list(moved))
+
+
 def _state_from(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
     """The stack state *path* holds; ``ValueError`` naming the file and the
     unknown keys when it holds any."""
@@ -371,7 +420,7 @@ def emit_results(
     return state
 
 
-# --- background image corrections ---------------------------------------------------
+# --- background border traces ------------------------------------------------------
 
 
 def _job_result(
@@ -397,10 +446,10 @@ def _job_result(
 def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -> bool:
     """Record a finished correction on a section still waiting for it."""
     section = state.by_id(section_id)
-    held = None if section is None else section.image_correction
+    held = None if section is None else section.border_trace
     if (section is not None and held is not None and held.status == "running"
             and held.geometry_fingerprint == fingerprint):
-        section.image_correction = trace_from_json(result)
+        section.border_trace = trace_from_json(result)
         return True
     return False
 
@@ -460,7 +509,7 @@ class Job:
         self.observers: list[Callable[[Stack], None]] = []
         #: Image corrections still running, per section id: the geometry they
         #: were started at and their future. Nothing waits on them but
-        #: ``settle_image_corrections`` (submit, the end of a session) and a
+        #: ``settle_border_traces`` (submit, the end of a session) and a
         #: fit that reads a trace (``wait_image_job``).
         self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
         self.image_executor: ThreadPoolExecutor | None = None
@@ -470,8 +519,8 @@ class Job:
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
         self.persist = True
         self._workspace: Workspace | None = None
-        #: How a format-3 state file and history step are read as the current
-        #: format (the section image migration, set by :meth:`open` and
+        #: How a state file and history step of an older format are read as
+        #: the current format (the job's migrations, set by :meth:`open` and
         #: :meth:`load`; None refuses them).
         self.upgrade: Upgrade | None = None
         self._state_stamp = _stamp(self.checkpoint_path)
@@ -558,8 +607,9 @@ class Job:
         lock = FolderLock(layout.folder)
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
-        migration = section_images.Migration(workspace, layout)
+        migration = FolderMigration(workspace, layout)
         with lock.held():  # read and first checkpoint as one write
+            moved = move_trace_folders(layout)
             state = None
             resumed = False
             if spec.resume:
@@ -570,6 +620,7 @@ class Job:
                 changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
                     raise inputs_changed(layout.folder, changed)
+            removed = _removed_settings(layout)  # this spec replaces them
             write_job_file(layout, spec=spec.to_dict())
             history = History(layout.history_dir, migration)
             undo: list[dict[str, Any]] = []
@@ -601,6 +652,7 @@ class Job:
                 # upgraded one is written again at the current format
                 job._save_history()
             job.checkpoint()
+        _log_migrated(layout, migration, removed, moved)
         layout.log_event("open", resumed=resumed)
         recent.remember(layout.folder, images, spec.atlas)
         return job
@@ -625,10 +677,11 @@ class Job:
         check_owner(layout)
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
-        migration = section_images.Migration(workspace, layout)
+        migration = FolderMigration(workspace, layout)
         data = read_checkpoint(str(layout.state_file), migration)
         if data is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
+        removed = _removed_settings(layout)
         migration.seed(data)
         history = History(layout.history_dir, migration)
         undo, redo = history.load()
@@ -641,23 +694,26 @@ class Job:
         if not persist:
             job.views = DiscardedViews(layout)
             job.wire_views()
-        upgraded = migration.used or history.upgraded
+        upgraded = migration.used or history.upgraded or bool(removed)
         if section_images.ensure_opening(workspace, layout, job.state) or upgraded:
-            # A job of the older state format, or one without its opening
-            # images: written once at the current format (a dry run keeps it
-            # in memory).
-            if persist:
+            # A job of an older format, or one without its opening images:
+            # written once at the current format (a dry run, or a folder this
+            # process cannot write, keeps it in memory).
+            if persist and os.access(layout.folder, os.W_OK):
                 job._write_upgrade(migration)
         return job
 
-    def _write_upgrade(self, migration: section_images.Migration) -> None:
+    def _write_upgrade(self, migration: FolderMigration) -> None:
         """Write the state and history at the current format, read again under
         the job's lock first: another process may have migrated (and written
-        to) the job since it was read, and its state is the one kept. Nothing
+        to) the job since it was read, and its state is the one kept; and
+        ``job.json`` without the settings LangSlice no longer has. Nothing
         is written when that read needs no upgrade and every section has its
         opening image."""
         assert self.workspace is not None
         with self.lock.held():
+            removed = _write_settings_without_removed(self.layout)
+            moved = move_trace_folders(self.layout)
             migration.used = False
             data = read_checkpoint(self.checkpoint_path, migration)
             if data is not None:
@@ -672,6 +728,7 @@ class Job:
             else:
                 self._state_stamp = _stamp(self.checkpoint_path)
                 self._undo_stamp = _stamp(self.undo_path)
+        _log_migrated(self.layout, migration, removed, moved)
 
     @property
     def folder(self) -> Path:
@@ -696,10 +753,10 @@ class Job:
         return str(self.layout.logs_dir / "engine.log") if self.persist else None
 
     def portable(self, correction: dict[str, Any]) -> dict[str, Any]:
-        """An image correction's record with its paths relative to the job folder."""
-        converted = state_paths({"slices": [{"image_correction": correction}]},
+        """A border trace's record with its paths relative to the job folder."""
+        converted = state_paths({"slices": [{"border_trace": correction}]},
                                 relative_to(self.folder))
-        return converted["slices"][0]["image_correction"]
+        return converted["slices"][0]["border_trace"]
 
     # --- checkpoint and observers ------------------------------------------------
 
@@ -1080,13 +1137,13 @@ class Job:
             self._background = BackgroundWork(self)
         return self._background
 
-    # --- image corrections ----------------------------------------------------------
+    # --- border traces -------------------------------------------------------------
 
     def start_image_job(
         self, section_id: str, fingerprint: str, job: Callable[[], dict[str, Any]], *,
         workers: int,
     ) -> None:
-        """Run one image correction in the background."""
+        """Run one border trace in the background."""
         if self.image_executor is None:
             self.image_executor = ThreadPoolExecutor(
                 max_workers=workers, thread_name_prefix="image-correction"
@@ -1097,18 +1154,24 @@ class Job:
         running = self.image_jobs.get(section_id)
         return running is not None and running[0] == fingerprint and not running[1].done()
 
-    def settle_image_corrections(self) -> bool:
-        """Wait for every running correction, record its result, checkpoint.
+    def settle_border_traces(self) -> bool:
+        """Wait for every running border trace, record its result, checkpoint.
 
         A result lands only on a section that still holds the running record
         for the same geometry; one undone or superseded meanwhile keeps what
         it has (the reply stays on disk and is reused at that geometry).
-        Returns whether any section changed (no undo step: a landing finishes
-        the step that started it).
+
+        Returns
+        -------
+        bool
+            Whether any section changed (no undo step: a landing finishes
+            the step that started it).
         """
-        results = [(section_id, fingerprint, self.portable(_job_result(
-            section_id, fingerprint, future, None)))
-            for section_id, (fingerprint, future) in list(self.image_jobs.items())]
+        running = list(self.image_jobs.items())
+        results = [
+            (section_id, fingerprint,
+             self.portable(_job_result(section_id, fingerprint, future, None)))
+            for section_id, (fingerprint, future) in running]
         self.image_jobs.clear()
         if self.image_executor is not None:
             self.image_executor.shutdown(wait=True)
@@ -1116,7 +1179,8 @@ class Job:
         if not results:
             return False
         changed = False
-        with self.writing():  # the calls ran outside the lock; they land under it
+        # the calls ran outside the lock; they land under it
+        with self.writing():
             for section_id, fingerprint, result in results:
                 changed |= _land(self.state, section_id, fingerprint, result)
             if changed:
@@ -1127,7 +1191,7 @@ class Job:
         """Wait up to *timeout* seconds (None: as long as it takes) for one
         section's running correction.
 
-        Records its result the way :meth:`settle_image_corrections` does
+        Records its result the way :meth:`settle_border_traces` does
         (under the write lock, checkpointed, no undo step) and returns True
         once nothing is running for the section; False when the call is
         still running at the timeout. The call is forgotten only once its

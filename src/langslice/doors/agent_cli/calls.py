@@ -651,7 +651,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         reply = tool(**arguments)
         waits = verbs[verb].image_model or bool(job.background.running())
         if verbs[verb].image_model:
-            job.settle_image_corrections()  # this process ends: the calls land now
+            job.settle_border_traces()  # this process ends: the calls land now
         if waits:
             job.background.wait_all()  # and the work started (its pictures saved)
     if waits and isinstance(reply, dict):
@@ -730,7 +730,7 @@ def _landed(job: Any, section: Any) -> dict[str, Any]:
     state = cast("Stack", job.state)  # the open job's stack
     name = cast("object", section)  # the section the reply named
     record = state.resolve(name) if name not in (None, "") else None
-    trace = None if record is None else record.image_correction
+    trace = None if record is None else record.border_trace
     held = {} if trace is None else trace_to_json(trace)
     return {key: held[key] for key in ("status", "error", "message", "cached", "attempt")
             if key in held}
