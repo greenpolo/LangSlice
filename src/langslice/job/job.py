@@ -74,6 +74,7 @@ from langslice.job.layout import (
     write_job_file,
 )
 from langslice.job.lock import FolderLock
+from langslice.job.migrations import FolderMigration
 from langslice.job.pictures import DiscardedViews, ViewStore
 from langslice.job.registrations import Registrations
 from langslice.job.settings import frozen as freeze
@@ -470,8 +471,8 @@ class Job:
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
         self.persist = True
         self._workspace: Workspace | None = None
-        #: How a format-3 state file and history step are read as the current
-        #: format (the section image migration, set by :meth:`open` and
+        #: How a state file and history step of an older format are read as
+        #: the current format (the job's migrations, set by :meth:`open` and
         #: :meth:`load`; None refuses them).
         self.upgrade: Upgrade | None = None
         self._state_stamp = _stamp(self.checkpoint_path)
@@ -558,7 +559,7 @@ class Job:
         lock = FolderLock(layout.folder)
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
-        migration = section_images.Migration(workspace, layout)
+        migration = FolderMigration(workspace, layout)
         with lock.held():  # read and first checkpoint as one write
             state = None
             resumed = False
@@ -625,7 +626,7 @@ class Job:
         check_owner(layout)
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
-        migration = section_images.Migration(workspace, layout)
+        migration = FolderMigration(workspace, layout)
         data = read_checkpoint(str(layout.state_file), migration)
         if data is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
@@ -650,7 +651,7 @@ class Job:
                 job._write_upgrade(migration)
         return job
 
-    def _write_upgrade(self, migration: section_images.Migration) -> None:
+    def _write_upgrade(self, migration: FolderMigration) -> None:
         """Write the state and history at the current format, read again under
         the job's lock first: another process may have migrated (and written
         to) the job since it was read, and its state is the one kept. Nothing

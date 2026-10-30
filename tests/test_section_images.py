@@ -311,7 +311,7 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     def stale(path: str, upgrade: Any = None) -> Any:  # the first read saw format 3
         calls.append(1)
         if len(calls) == 1:
-            return upgrade({key: value for key, value in old.items()})
+            return upgrade(3, {key: value for key, value in old.items()})
         return real(path, upgrade)
 
     monkeypatch.setattr(job_module, "read_checkpoint", stale)

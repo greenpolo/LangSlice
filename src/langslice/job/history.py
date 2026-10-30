@@ -12,8 +12,8 @@ steps the index no longer names are deleted after each index write.
 An unreadable index or step starts the job without a history (logged): the
 history is a convenience, the checkpoint is the record. A history from a
 newer LangSlice, or a step of another state format, is likewise ignored,
-never guessed at, except a format-3 step, read through the job's upgrade
-(:attr:`History.upgrade`) and written again at the current format by the next
+never guessed at, except an older step the job's migrations read
+(:attr:`History.upgrade`), written again at the current format by the next
 :meth:`History.save`. Either way the
 history on disk is left exactly as it is: :attr:`History.problem` is set and
 :meth:`History.save` writes and deletes nothing until a later
@@ -61,8 +61,8 @@ class History:
 
     def __init__(self, folder: Path, upgrade: Upgrade | None = None) -> None:
         self.folder = Path(folder)
-        #: Reads a format-3 step as the current format (the job's section
-        #: image migration); None refuses one like any other format.
+        #: Reads an older step as the current format (the job's
+        #: migrations); None refuses one like any other format.
         self.upgrade = upgrade
         #: Step files read through :attr:`upgrade`, written again by :meth:`save`.
         self._upgraded: set[str] = set()

@@ -550,7 +550,7 @@ like every made image, each reader reads the file, resized to its own size.
 
 State format 4 holds these entries; a job of format 3 (the stack's
 `appearance`: recipes and raw channels' display properties) is read through
-the migration when it opens (`core.sections.images.Migration`): each recipe is
+the migration when it opens (`state_3_to_4`, `job/migrations.py`): each recipe is
 made into a file and an entry per section (a section's own override
 honoured), `preprocessed` without a recipe becomes the opening image, the
 display properties are dropped, a mask's `channel` is named `section_image`,
