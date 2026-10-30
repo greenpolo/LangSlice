@@ -163,6 +163,15 @@ class LayerRef:
 class ContextReads:
     """Read the job's sections for one plugin call or script.
 
+    The classes stacked on this one (frames, proposals, pictures, writes,
+    fits) share its footing, which they read as their own: ``_run`` (the
+    run: job, workspace, spec), ``_caller``, ``call``, ``_record`` (a
+    section by filename, after ``_fresh``), ``_fresh`` (a script picks up
+    what another writer saved), ``_view``, the per-call caches ``_grids``,
+    and the write bookkeeping ``_depth`` and ``_step`` that ``writes.py``
+    keeps. ``frames.py``'s ``_grid`` is the fit grid the classes above it
+    read too. A private name not listed here is its own class's.
+
     Parameters
     ----------
     run
