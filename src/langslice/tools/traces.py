@@ -108,7 +108,7 @@ def _start_trace(
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
                       id=section_id, message=str(exc)) from exc
     except OSError as exc:
-        raise Refused(RefusalCode.IMAGE_CORRECTION_IO_ERROR,
+        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
                       id=section_id, message=str(exc)) from exc
     with job.writing():  # prepared outside the lock; written under it
         before = job.snapshot()
@@ -192,7 +192,7 @@ def trace_borders(
     ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` (other background work runs on
     the section); ``FROZEN`` (the section's deformation is frozen);
     ``INVALID_LINEAR_PLACEMENT`` (no position or no usable transform);
-    ``IMAGE_CORRECTION_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
+    ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
     while the call was prepared).
     """
     from langslice.tools.deformable import (

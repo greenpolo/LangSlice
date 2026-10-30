@@ -95,6 +95,8 @@ class RefusalCode(TextEnum):
     BAD_SETTINGS = "BAD_SETTINGS"
     #: ``look``'s ``warp`` is not one of its choices.
     BAD_WARP = "BAD_WARP"
+    #: A border trace's record could not be written or read in the job folder.
+    BORDER_TRACE_IO_ERROR = "BORDER_TRACE_IO_ERROR"
     #: A section's saved deformation cannot be read.
     DEFORMATION_UNREADABLE = "DEFORMATION_UNREADABLE"
     #: A call names the same section twice.
@@ -120,8 +122,6 @@ class RefusalCode(TextEnum):
     IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED = (
         "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED"
     )
-    #: A trace's record could not be written or read in the job folder.
-    IMAGE_CORRECTION_IO_ERROR = "IMAGE_CORRECTION_IO_ERROR"
     #: A verb that needs the job's image model, which is not connected.
     IMAGE_MODEL_OFF = "IMAGE_MODEL_OFF"
     #: The folder's job was made from other supplied inputs.

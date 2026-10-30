@@ -173,7 +173,7 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
     for name in ids[:-1]:
         envelope = ok(capsys, folder, "trace_borders", "--section", name)
         result = envelope["result"]
-        assert result["image_correction"]["status"] == "ok", envelope
+        assert result["border_trace"]["status"] == "ok", envelope
         assert result["work_status"] == "done", envelope
     envelope = ok(capsys, folder, "submit", *SUBMIT_FLAGS)
     document = json.loads((folder / "registration.json").read_text())

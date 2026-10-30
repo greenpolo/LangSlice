@@ -678,11 +678,12 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         cast("Job", job), cast(object, reply), start=len(pictures))
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
-        result["image_correction"] = _landed(job, result.get("id"))
-        work = job.background.get(str(result.get("work") or ""))
+        traced = cast("dict[str, object]", result)  # trace_borders' reply
+        traced["border_trace"] = _landed(job, traced.get("id"))
+        work = job.background.get(str(traced.get("work") or ""))
         if work is not None:  # the packaged trace, landed in this process
-            result["work_status"] = work.status
-            result["work_result"] = work.result
+            traced["work_status"] = work.status
+            traced["work_result"] = work.result
     if verb == "status" and isinstance(result, dict):
         result["verbs"] = opened.listed_verbs()
         state = image_model_state(opened.spec, connected=opened.image_model_connected)

@@ -479,7 +479,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `INVALID_LINEAR_PLACEMENT` (no position or no usable transform; a refusal
   raised while the trace is prepared, such as `NO_SIDES` or `BAD_ARGS` for
   regions that leave nothing on the plane, keeps its own code),
-  `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
+  `BORDER_TRACE_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
 - `stale.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
