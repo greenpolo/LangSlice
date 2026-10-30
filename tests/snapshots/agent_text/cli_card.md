@@ -15,8 +15,7 @@ A registering agent's job is the message that launched it, made by
 - `registration.json`: the same registrations in public units (read only,
   rewritten on every change): per section its parameters and `pixel_to_atlas_um`
   (image file pixel [row, col, 1] -> atlas um).
-- `job.json`: settings (tasks, atlas, plane); `history/undo.json`: the undo and redo
-  steps; `sections/<name>/history.jsonl`: every registration a section held.
+- `job.json`: settings (tasks, atlas, plane); `history/undo.json`: the undo and redo steps; `sections/<name>/history.jsonl`: every registration a section held.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
   records), `border_trace/<key>/` (image-model traces), `views/`, and the
   maps written by `export_maps` (on the image's working copy; submit does not write them):

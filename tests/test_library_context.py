@@ -321,7 +321,8 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
         frame = c.fit_frame(ID0)
         with pytest.raises(ToolError) as array_refused:  # a mask is a name, not an array
             c.fit_fireants(ID0, mask=np.ones(frame.image.shape[:2], dtype=bool))
-        assert array_refused.value.code == "BAD_ARGS" and "make_mask" in str(array_refused.value)
+        assert array_refused.value.code == "BAD_ARGS"
+        assert "an array is not taken" in str(array_refused.value)
         with pytest.raises(ToolError) as unknown:
             c.fit_fireants(ID0, mask="nope")
         assert unknown.value.code == "UNKNOWN_MASK"
