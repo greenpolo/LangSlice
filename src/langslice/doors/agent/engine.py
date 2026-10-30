@@ -30,20 +30,17 @@ from langslice.doors.agent.session import build_agent, run_agent_session
 from langslice.doors.agent.spend import SpendMonitor
 from langslice.doors.jobs import JobContext, close_job
 from langslice.doors.reference_card import write_card
-from langslice.doors.statement import (
-    SYSTEM_PROMPT,
-    read_notes,
-    status_and_notes,
-    user_notes_lines,
-)
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
 from langslice.job.layout import JobLayout, locate_job_folder
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import write_json_atomic
+from langslice.tools.descriptions.description import AGENT_DOOR
+from langslice.tools.descriptions.door_text import read_notes, status_and_notes
 from langslice.tools.descriptions.statement import (
-    build_job_statement,
-    display_facts,
+    SYSTEM_PROMPT,
+    StatementFacts,
+    job_statement,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,20 +186,12 @@ async def run_session(
     on_event: LiveCallback | None = None,
 ) -> tuple[int, int]:
     """Drive the one stack session; return ``(tool_calls, turns)``."""
-    pos_lo, pos_hi = ctx.position_range
-    statement = build_job_statement(
-        spec,
-        state,
-        tool_names=box.names,
-        species=ctx.species,
-        pos_lo=pos_lo,
-        pos_hi=pos_hi,
-        axis_ends=ctx.axis_ends,
-        max_resolution=box.max_view_edge,
-        **display_facts(ctx, state),
-    )
-    # The user's notes for the job (job.json), as every door says them.
-    notes = user_notes_lines(read_notes(box.job.layout))
+    facts = StatementFacts.from_run(
+        spec, state, ctx, tool_names=box.names,
+        max_resolution=box.max_view_edge)
+    # with the user's notes for the job (job.json), as every door says them
+    statement = job_statement(facts, door=AGENT_DOOR,
+                              notes=read_notes(box.job.layout))
     agent = build_agent(
         model=ctx.model,
         name="linear_stack",
@@ -212,7 +201,7 @@ async def run_session(
         reasoning=spec.reasoning,
     )
     sink: list[str] = []
-    seed = build_seed_message(state, ctx, "\n".join([statement, *notes]))
+    seed = build_seed_message(state, ctx, statement)
     on_event = with_seed_views(on_event, save_opening(box, seed))
     spend = SpendMonitor(agent.model)
 

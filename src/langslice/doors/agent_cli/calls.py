@@ -60,6 +60,7 @@ from langslice.doors.agent_cli.envelope import (
 from langslice.doors.jobs import Opened
 from langslice.job.lock import JobBusy
 from langslice.job.state_file import stack_to_json
+from langslice.tools.descriptions.door_text import NOTES_KEY, image_model_state
 from langslice.tools.descriptions.render import Declaration, declaration
 from langslice.tools.refusal import unknown_sections as unknown_refusal
 
@@ -679,8 +680,6 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
             result["work_status"] = work.status
             result["work_result"] = work.result
     if verb == "status" and isinstance(result, dict):
-        from langslice.doors.statement import image_model_state
-
         result["verbs"] = opened.listed_verbs()
         state = image_model_state(opened.spec, connected=opened.image_model_connected)
         if state is not None:
@@ -866,7 +865,6 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     try:
         from langslice.doors.agent_cli import launch as launches
         from langslice.doors.jobs import VIEWER_KEY, job_viewer
-        from langslice.doors.statement import NOTES_KEY
         from langslice.job.layout import write_job_file
 
         layout = opened.job.layout

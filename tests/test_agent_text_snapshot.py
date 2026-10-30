@@ -155,30 +155,25 @@ def _mcp_md(label: str, tasks: list[str], folder: Path) -> str:
 
 
 def _system_prompt_md() -> str:
-    from langslice.doors.statement import SYSTEM_PROMPT
+    from langslice.tools.descriptions.statement import SYSTEM_PROMPT
 
     return f"# System prompt: every job\n\n{SYSTEM_PROMPT}\n"
 
 
 def _statement_md(label: str, spec: Any, with_notes: bool = False) -> str:
-    from langslice.doors.statement import user_notes_lines
+    from langslice.job.job import ingest
     from langslice.tools.descriptions.statement import (
-        build_job_statement,
-        display_facts,
+        StatementFacts,
+        job_statement,
     )
 
     ctx = _context(spec)
-    from langslice.job.job import ingest
-
     state = ingest(spec, ctx)
     box = _toolbox(spec)
-    lo, hi = ctx.position_range
-    text = build_job_statement(spec, state, tool_names=box.names, species=ctx.species,
-                               pos_lo=lo, pos_hi=hi, axis_ends=ctx.axis_ends,
-                               max_resolution=box.max_view_edge, **display_facts(ctx, state))
-    if with_notes:
-        notes = user_notes_lines("Sections were cut on a cryostat; ignore the stain.")
-        text += "\n" + "\n".join(notes)
+    facts = StatementFacts.from_run(spec, state, ctx, tool_names=box.names,
+                                    max_resolution=box.max_view_edge)
+    notes = "Sections were cut on a cryostat; ignore the stain." if with_notes else ""
+    text = job_statement(facts, door="agent", notes=notes)
     return f"# Job statement: {label}\n\n{text}\n"
 
 

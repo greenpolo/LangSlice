@@ -201,15 +201,15 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
     the job statement on every door, the reference card, the status reply's
     list of what can change, the fixes and retired-tool answers."""
     from langslice.doors.reference_card import card_text
-    from langslice.doors.statement import (
+    from langslice.tools.descriptions.door_text import (
         image_model_off_text,
-        job_statement,
         opening_for_cli,
         opening_for_mcp,
     )
     from langslice.tools.descriptions.statement import (
+        StatementFacts,
         build_job_statement,
-        display_facts,
+        job_statement,
     )
 
     opened = jobs.create(spec, atlas_loader=lambda _name: SLAB)
@@ -224,18 +224,18 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
                 texts[f"declaration {tool} {door} auto={auto} traced={traced}"] = declared.doc
                 texts[f"schema {tool} {door} auto={auto} traced={traced}"] = json.dumps(
                     arguments_schema(tool, variant))
-        low, high = ctx.position_range
+        facts = StatementFacts.from_run(spec, state, ctx, tool_names=names)
         for door, connected in itertools.product(DOORS, (True, False)):
+            door_facts = StatementFacts.from_run(spec, state, ctx, tool_names=names,
+                                                 auto=door == "cli")
             opening = (opening_for_mcp(3) if door == "mcp"
                        else opening_for_cli(
                            "/job", ["Strip 1 of 1: s0.png", "- /job/views/1/view.jpg"],
                            spec.switched_off))
             texts[f"statement {door} connected={connected}"] = job_statement(
-                spec, state, ctx, door=door, tool_names=names, opening=opening,
-                image_model_off=not connected, auto=door == "cli")
-        texts["statement agent"] = build_job_statement(
-            spec, state, tool_names=names, species=ctx.species, pos_lo=low, pos_hi=high,
-            axis_ends=ctx.axis_ends, **display_facts(ctx, state))
+                door_facts, door=door, opening=opening,
+                image_model_off=not connected)
+        texts["statement agent"] = build_job_statement(facts)
         texts["image model off"] = image_model_off_text(spec.switched_off)
         texts["card"] = card_text(opened.job.layout)
         status = tool_named(opened.tools(), "status")()

@@ -52,8 +52,24 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   body takes it), `summary`, `arguments_schema` (pydantic, unknown keys
   refused), `DESCRIPTIONS`, `FULL` (a caller without a job: every argument,
   the coronal base prompt for the OpenAI models).
-- `statement.py` — the job statement; `fixes.py` — the agent CLI's fix
-  sentence per refusal code.
+- `statement.py` — the job statement and `SYSTEM_PROMPT`. `STATEMENT` is
+  the whole statement with its slots; the named templates under it are its
+  sentences (the job clause per task, the constraints, the method bullets,
+  `DEFORMABLE_METHODS`), chosen by the run's `StatementFacts`
+  (`from_run(spec, state, workspace, tool_names=, max_resolution=,
+  auto=)`). `job_statement(facts, door=, opening=, notes=,
+  image_model_off=)` is every door's text: the agent's is the statement and
+  the user's notes (the opening pictures and `status_and_notes` follow as
+  parts of the first message); MCP's and the CLI's add the door's opening
+  paragraph, the image-model line, the notes and the status table.
+- `run_facts.py` — the "Run facts:" bullets, one template each: the stack
+  and atlas, what the run changes, the raw channels and section images, the
+  atlas images, the picture size, the deformable engine.
+- `door_text.py` — what the doors add: `opening_for_mcp`,
+  `opening_for_cli` (the opening files and the commands, `long_verbs`),
+  `IMAGE_MODEL_OFF`, `status_and_notes`, `user_notes_lines`, `read_notes`,
+  `NOTES_KEY`, `image_model_state`.
+- `fixes.py` — the agent CLI's fix sentence per refusal code.
 
 ## The rule
 

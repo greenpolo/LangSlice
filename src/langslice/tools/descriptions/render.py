@@ -56,8 +56,14 @@ from langslice.tools.descriptions import (
     looking,
 )
 from langslice.tools.descriptions.description import (
+    CLI_DOOR,
     Argument,
     DescriptionFacts,
+    Distance,
+    Offered,
+    PerCap,
+    PerDoor,
+    Slot,
     ToolDescription,
 )
 
@@ -141,7 +147,9 @@ def _native(
         for argument, entry in description.arguments.items()
         if is_offered(entry, facts)
     }
-    slots = {key: slot.text(facts) for key, slot in description.slots.items()}
+    slots = {
+        key: _slot_text(slot, facts) for key, slot in description.slots.items()
+    }
     rendered = functools.partial(
         _rendered, slots=slots, switched_off=facts.switched_off
     )
@@ -212,9 +220,35 @@ def is_offered(argument: Argument, facts: DescriptionFacts) -> bool:
     bool
         True when the run has the argument's fact and every name it needs.
     """
-    return facts.offers(argument.offered) and is_met(
+    return _has(facts, argument.offered) and is_met(
         argument.needs, facts.switched_off
     )
+
+
+def _has(facts: DescriptionFacts, offered: Offered) -> bool:
+    match offered:
+        case Offered.ALWAYS:
+            return True
+        case Offered.SIZE_CHOSEN:
+            return facts.auto
+        case Offered.VIEW_CHOSEN:
+            return not facts.forced_view
+        case Offered.POSITIONING:
+            return facts.positions
+        case Offered.UNCAPPED:
+            return facts.uncapped
+
+
+def _slot_text(slot: Slot, facts: DescriptionFacts) -> str:
+    match slot:
+        case PerCap():
+            return slot.uncapped if facts.uncapped else slot.capped
+        case PerDoor():
+            return slot.cli if facts.door == CLI_DOOR else slot.agent
+        case Distance():
+            if slot.mouse_words and facts.brain_scale == 1.0:
+                return slot.mouse_words
+            return slot.words.format(f"{slot.um * facts.brain_scale:.0f}")
 
 
 def _arguments_block(texts: Mapping[str, str]) -> str:

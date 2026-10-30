@@ -41,12 +41,16 @@ from langslice.job.settings.tool_table import tools_for
 #: The default of an argument the call must give.
 REQUIRED = inspect.Parameter.empty
 
+#: LangSlice's own agent's door (and the library's), whose first message
+#: carries the opening pictures and the status table as parts of their own.
+AGENT_DOOR = "agent"
+
 #: The agent CLI's door, which words some passages its own way.
 CLI_DOOR = "cli"
 
-#: The doors a tool is declared for: ``agent`` (LangSlice's own agent, and
-#: the library), ``mcp`` (Claude Desktop) and ``cli`` (the agent CLI).
-DOORS = ("agent", "mcp", CLI_DOOR)
+#: The doors a tool is declared for: ``agent``, ``mcp`` (Claude Desktop) and
+#: ``cli`` (the agent CLI).
+DOORS = (AGENT_DOOR, "mcp", CLI_DOOR)
 
 
 class Offered(Enum):
@@ -72,7 +76,7 @@ class DescriptionFacts:
     auto: bool = False
     #: Who reads the declaration (:data:`DOORS`): how a background tool
     #: answers.
-    door: str = "agent"
+    door: str = AGENT_DOOR
     #: The host forces the change tools' pictures on: no ``view`` argument.
     forced_view: bool = False
     #: ``position_sections`` takes ``sections`` (the Positioning task is on).
@@ -104,7 +108,7 @@ class DescriptionFacts:
         *,
         auto: bool,
         image_model: bool = True,
-        door: str = "agent",
+        door: str = AGENT_DOOR,
         prompt: str | None = None,
         uncapped: bool | None = None,
         brain_scale: float = 1.0,
@@ -164,31 +168,6 @@ class DescriptionFacts:
             brain_scale=brain_scale,
         )
 
-    def offers(self, offered: Offered) -> bool:
-        """Return whether this run has an argument offered as ``offered``.
-
-        Parameters
-        ----------
-        offered
-            The fact of a run the argument exists in.
-
-        Returns
-        -------
-        bool
-            True when the run has that fact.
-        """
-        match offered:
-            case Offered.ALWAYS:
-                return True
-            case Offered.SIZE_CHOSEN:
-                return self.auto
-            case Offered.VIEW_CHOSEN:
-                return not self.forced_view
-            case Offered.POSITIONING:
-                return self.positions
-            case Offered.UNCAPPED:
-                return self.uncapped
-
 
 def _job_prompt(spec: JobSpec) -> str:
     own = spec.nonlinear.image_prompt
@@ -207,23 +186,6 @@ class PerCap:
     capped: str
     uncapped: str
 
-    def text(self, facts: DescriptionFacts) -> str:
-        """Return the passage for ``facts``' door.
-
-        Parameters
-        ----------
-        facts
-            The run the description is rendered for.
-
-        Returns
-        -------
-        str
-            The uncapped wording where the door caps nothing.
-        """
-        if facts.uncapped:
-            return self.uncapped
-        return self.capped
-
 
 @dataclass(frozen=True)
 class PerDoor:
@@ -231,23 +193,6 @@ class PerDoor:
 
     agent: str
     cli: str
-
-    def text(self, facts: DescriptionFacts) -> str:
-        """Return the passage for ``facts``' door.
-
-        Parameters
-        ----------
-        facts
-            The run the description is rendered for.
-
-        Returns
-        -------
-        str
-            The CLI's wording at the agent CLI, else the agent's.
-        """
-        if facts.door == CLI_DOOR:
-            return self.cli
-        return self.agent
 
 
 @dataclass(frozen=True)
@@ -262,23 +207,6 @@ class Distance:
     um: float
     words: str
     mouse_words: str = ""
-
-    def text(self, facts: DescriptionFacts) -> str:
-        """Return the passage at ``facts``' brain scale.
-
-        Parameters
-        ----------
-        facts
-            The run the description is rendered for.
-
-        Returns
-        -------
-        str
-            The passage with the distance in whole micrometres.
-        """
-        if self.mouse_words and facts.brain_scale == 1.0:
-            return self.mouse_words
-        return self.words.format(f"{self.um * facts.brain_scale:.0f}")
 
 
 #: A passage a fact of the run words.

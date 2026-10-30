@@ -58,17 +58,17 @@ from langslice.doors.mcp.pages import (
     save_page,
 )
 from langslice.doors.reference_card import write_card
-from langslice.doors.statement import (
-    job_statement,
-    opening_for_mcp,
-    read_notes,
-)
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
 from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import VERBS
+from langslice.tools.descriptions.door_text import opening_for_mcp, read_notes
+from langslice.tools.descriptions.statement import (
+    StatementFacts,
+    job_statement,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,10 +193,12 @@ def mcp_statement(session: Session) -> str:
     (:mod:`langslice.doors.agent_cli.launch`), so the two cannot drift."""
     if not session.pages:
         session.pages = opening_pages(session)
+    facts = StatementFacts.from_run(
+        session.spec, session.state, session.ctx, tool_names=session.box.names,
+        max_resolution=session.box.max_view_edge)
     return job_statement(
-        session.spec, session.state, session.ctx, door="mcp", tool_names=session.box.names,
-        opening=opening_for_mcp(len(session.pages)), notes=session.notes,
-        max_resolution=session.box.max_view_edge, image_model_off=session.image_model_off,
+        facts, door="mcp", opening=opening_for_mcp(len(session.pages)),
+        notes=session.notes, image_model_off=session.image_model_off,
     )
 
 

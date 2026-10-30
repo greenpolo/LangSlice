@@ -263,18 +263,16 @@ def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any
     from langslice.doors.jobs import open_folder
     from langslice.doors.tools.toolbox import build_tools
     from langslice.tools.descriptions.statement import (
+        StatementFacts,
         build_job_statement,
-        display_facts,
     )
 
     opened = open_folder(images, atlas_loader=atlas_loader(), persist=False)
     job, ctx = opened.job, opened.ctx
     box = build_tools(job.state, ctx, job.spec, job=job, max_view_edge=limit[0])
-    low, high = ctx.position_range
-    statement = build_job_statement(
-        job.spec, job.state, tool_names=box.names, species=ctx.species, pos_lo=low,
-        pos_hi=high, axis_ends=ctx.axis_ends, max_resolution=limit[0], auto=True,
-        **display_facts(ctx, job.state))
+    statement = build_job_statement(StatementFacts.from_run(
+        job.spec, job.state, ctx, tool_names=box.names, max_resolution=limit[0],
+        auto=True))
     parts = opening_parts(job.state, ctx, limit=limit)
     pictures = [part.inline_data.data for part in parts if part.inline_data is not None]
     return statement, pictures, opened
@@ -305,7 +303,7 @@ def test_launch_register_scripting_is_the_native_statement_and_opening(capsys, i
         assert "User notes:\nSection 2 is torn." in tail
         assert "Open every one of these pictures before any write." in tail
         assert "brief" not in tail and "BRIEF" not in tail
-        from langslice.doors.statement import status_and_notes
+        from langslice.tools.descriptions.door_text import status_and_notes
 
         assert tail.endswith(status_and_notes(opened.job.state))
     finally:
@@ -416,7 +414,7 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     assert code == 3 and refused["error"]["code"] == "IMAGE_MODEL_OFF"
     assert "langslice login" in refused["error"]["fix"]
     code, launch = cli(capsys, str(images), "launch", "--role", "register-scripting")
-    from langslice.doors.statement import IMAGE_MODEL_OFF
+    from langslice.tools.descriptions.door_text import IMAGE_MODEL_OFF
 
     assert IMAGE_MODEL_OFF in launch["result"]["prompt"]
     # Connected (a login present), the verb is offered, as the MCP door offers it.

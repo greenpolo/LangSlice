@@ -42,7 +42,7 @@ interpreter and runs `import langslice; langslice.open_job(...)` and
 `create_job` with a script's own image model. An operation (`tools/`) never imports a door.
 
 What every door shares beyond the verbs: the job statement
-(`statement.py`), the ending of a job (`jobs.close_job`), the host trace
+(`tools/descriptions/statement.py`), the ending of a job (`jobs.close_job`), the host trace
 (`call_log.py`), the reply byte budget and paging (`tools/reply.py`), the
 image-model check (`jobs.provider_connected`, `jobs.image_model_off`), and in
 the `ToolBox` the opening-read gate (`require_opening`, `opening_read`, `opening_refusal`;
@@ -150,21 +150,14 @@ bodies, and turned into an answer once per door:
   `DescriptionFacts.plugins` makes `declaration` read a plugin stub;
   `look` takes `layers` on every job (plugins and scripts leave them; dropped
   without the `section` and `overlay` modes).
-- `statement.py` — the job statement every door gives a registration agent:
-  `SYSTEM_PROMPT` (the ADK agent's system prompt, the same for every job and
-  naming no tool a job can switch off; the statement is its first message; the connectors' agent files carry the same text, `tests/test_connector_agents.py`),
-  `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
-  max_resolution=, image_model_off=, auto=)` (`langslice.tools.descriptions.statement.build_job_statement`
-  worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF`
-  (`image_model_off_text(disabled)`) when the image model is not connected,
-  the user's notes, `status_and_notes`).
-  `opening_for_mcp` (the `show_stack` pages), `opening_for_cli(folder, listing, ...)` (the
-  opening pictures' paths listed inline after each strip's text, `--dry-run`, `--background` for `long_verbs()`, parallel
-  calls). `status_and_notes(state)` (the status table and the newest
-  `RECENT_NOTES` run notes) is the ADK seed message's text too.
-  `read_notes(layout)`: the user's notes, `job.json` `notes` (written by
-  ABBA's Claude mode and `job FOLDER init --notes`), read by every door. `image_model_state(spec, connected=)`: the
-  image model as the CLI's `status` and `init` report it.
+- The job statement every door gives a registration agent is
+  `tools/descriptions/statement.py` (`tools/CLAUDE.md`): `SYSTEM_PROMPT` (the
+  connectors' agent files carry the same text,
+  `tests/test_connector_agents.py`), `StatementFacts.from_run` and
+  `job_statement(facts, door=, opening=, notes=, image_model_off=)`; what
+  each door adds after it (`opening_for_mcp`, `opening_for_cli`,
+  `status_and_notes`, `read_notes`, `image_model_state`) is
+  `tools/descriptions/door_text.py`.
 - `jobs.py` — opening a job without the agent: `JobContext` (the workspace,
   its `ImageSettings` made by `JobSpec.image_settings()`, plus the `JobSpec`,
   the job folder and results path; the driver's `EngineContext` adds the
