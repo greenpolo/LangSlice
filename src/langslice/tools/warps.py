@@ -1,31 +1,179 @@
-"""A deformation made elsewhere, written as a section's deformation.
+"""Deformations a script or a tool plugin makes, as records and as writes.
 
-A tool plugin's engine or a script makes the deformation;
-:func:`warp_from_map` builds its record from the full map (the residual over
-the section's linear placement, a fixed-point inverse, the usual
-diagnostics) without writing it, and :func:`apply_warps` writes each as its
-section's deformation: one undo step, under the job's write lock, as an
-applied fit is written (:func:`langslice.tools.deformable.fit_deformable`).
+:func:`fit_record` runs FireANTs once on a section with settings of the
+caller's own and writes nothing (a script's own FireANTs fit).
+A deformation made elsewhere (a plugin's engine, a script's) is a full map:
+:func:`warp_from_map` builds its record (the residual over the section's
+linear placement, a fixed-point inverse, the usual diagnostics) without
+writing it, and :func:`apply_warps` writes each as its section's
+deformation: one undo step, under the job's write lock, as an applied fit
+is written.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from langslice.core.fits import deformation
+from langslice.core.fits.deformable.settings import FitSettings
+from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.frame import digest
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.sections import images as images_
+from langslice.core.sections.damage import exclusions
+from langslice.tools import masks as ops_masks
+from langslice.tools.deformable import (
+    estimated_block,
+    inputs_block,
+    refuse_without_engine,
+    resolved_atlas_image,
+)
+from langslice.tools.images import check_image
 from langslice.tools.refusal import frozen_row, unknown_sections
 from langslice.tools.stale import stale_row
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+
+
+def default_settings(workspace: Workspace) -> FitSettings:
+    """``fireants_syn``'s own settings (a
+    :class:`~langslice.core.fits.deformable.settings.FitSettings`:
+    Nissl, 80 um smoothness, mutual information and edges, standard detail),
+    the base a script's ``fit_fireants`` changes."""
+    return deformation.Choice(
+        fit_section=images_.PREPROCESSED, fit_atlas="nissl"
+    ).settings((), (), brain_scale=workspace.brain_scale)
+
+
+def fit_record(
+    job: Job,
+    workspace: Workspace,
+    section: Any,
+    settings: Any,
+    *,
+    start: str = "linear",
+    mask: str = "none",
+    marked: bool = True,
+    section_image: str = images_.PREPROCESSED,
+) -> deformation.DeformableRecord:
+    """One FireANTs SyN fit of the section with *settings* (a
+    :class:`~langslice.core.fits.deformable.settings.FitSettings`: a stain fit,
+    any
+    smoothness, detail, atlas image, metric, edge channel, regions), written
+    nowhere: the record (``field_mm`` the residual over the section's linear
+    placement, composed onto its applied deformation with *start*
+    ``current``). Its ``provenance`` holds the fit's ``inputs`` and
+    ``estimated`` blocks (:mod:`langslice.core.fits.inputs`).
+
+    *mask* is ``"none"`` or the name of one of the section's masks
+    (:mod:`langslice.tools.masks`): its weights, thresholded at 0.5, narrow the
+    section mask (:func:`langslice.core.fits.deformable.fit.prepare_fit`);
+    *marked* adds the section's marked damage regions to the settings'
+    ``exclude``, as every native fit leaves them out.
+
+    Refused: ``UNKNOWN_SLICE_IDS``, ``ENGINE_MISSING``, ``BAD_ARGS`` (settings
+    that are not a FireANTs stain fit, a start that is neither, ``current``
+    without a deformation), ``INVALID_LINEAR_PLACEMENT``, ``UNKNOWN_MASK``,
+    ``STALE_MASK``, ``FIT_FAILED`` (the engine or the masks failed, the
+    message says how).
+    """
+    from langslice.core.fits.deformable.fit import prepare_fit, run_prepared
+
+    record = job.state.resolve(section)
+    if record is None:
+        raise unknown_sections(job.state, [str(section)])
+    if (
+        not isinstance(settings, FitSettings)
+        or settings.engine != "fireants"
+        or (settings.section_image != "stain" or settings.labels != "none")
+    ):
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message="settings are a FireANTs stain fit's FitSettings "
+            "(engine fireants, section_image stain, labels none).",
+        )
+    if start not in tuple(deformation.FitStart):
+        raise Refused(
+            RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'."
+        )
+    refuse_without_engine()
+    label = str(mask or ops_masks.NO_MASK).strip()
+    weights = ops_masks.section_weights(job, record, label)
+    try:
+        grid = deformation.fit_grid(job.state, workspace, record)
+    except (ValueError, OSError) as exc:
+        raise Refused(
+            RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}"
+        ) from exc
+    previous = None
+    if start == deformation.FitStart.CURRENT:
+        previous = job.deformations.current(job.state, record)
+        if previous is None:
+            raise Refused(
+                RefusalCode.BAD_ARGS,
+                message=f"{record.id} has no deformation to start from.",
+            )
+    image_name = check_image(job, workspace, [record], section_image)
+    _kept, dropped = exclusions(
+        record, tuple(str(name) for name in settings.structures)
+    )
+    if marked:
+        settings = replace(
+            settings,
+            exclude=tuple(dict.fromkeys((*settings.exclude, *dropped))),
+        )
+    try:
+        image, _look = deformation.section_image(
+            workspace, job.state, grid, image_name
+        )
+        prepared = prepare_fit(
+            image,
+            workspace.atlas,
+            grid.placement,
+            settings,
+            previous=previous,
+            section_weights=weights,
+        )
+        with (
+            deformation.engine_lock(),
+            engine_output(job.engine_log, f"FireANTs fit of {record.id}"),
+        ):
+            outcome = run_prepared(prepared)
+    except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
+        raise Refused(
+            RefusalCode.FIT_FAILED,
+            message=f"{record.id}: "
+            + failure_message(
+                f"{type(exc).__name__}: {exc}",
+                job.engine_log,
+                f"the FireANTs fit of {record.id} failed",
+            ),
+        ) from exc
+    block = inputs_block(
+        job.state,
+        workspace,
+        record,
+        section_image=image_name,
+        atlas_image=str(settings.atlas_image),
+        mask=label,
+        damage=[str(name) for name in dropped] if marked else [],
+        restrict_to=[str(name) for name in settings.structures],
+        resolved=resolved_atlas_image(workspace, str(settings.atlas_image)),
+    )
+    estimated = estimated_block(outcome)
+    outcome.provenance = {
+        **outcome.provenance,
+        "inputs": block.payload(),
+        "estimated": None if estimated is None else estimated.payload(),
+    }
+    return outcome
 
 
 @dataclass(frozen=True)

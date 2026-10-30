@@ -2267,6 +2267,9 @@
 {"path": "src/langslice/tools/landmarks.py", "symbol": "set_landmarks", "new_path": "src/langslice/tools/landmarks.py", "new_symbol": "LandmarksEdited.reply"},
 {"path": "src/langslice/tools/landmarks.py", "symbol": "_counts", "new_path": "src/langslice/tools/landmarks.py", "new_symbol": "LandmarksEdited.reply"},
 {"path": "src/langslice/tools/landmarks.py", "symbol": "landmark_triangulation", "new_path": "src/langslice/tools/landmark_warp.py", "new_symbol": "LandmarksApplied.reply"},
-{"path": "src/langslice/tools/landmarks.py", "symbol": "_unchanged_reply", "new_path": "src/langslice/tools/landmark_warp.py", "new_symbol": "_unchanged"}
+{"path": "src/langslice/tools/landmarks.py", "symbol": "_unchanged_reply", "new_path": "src/langslice/tools/landmark_warp.py", "new_symbol": "_unchanged"},
+{"path": "src/langslice/tools/deformable.py", "symbol": "default_settings", "new_path": "src/langslice/tools/warps.py", "new_symbol": "default_settings"},
+{"path": "src/langslice/tools/deformable.py", "symbol": "fit_record", "new_path": "src/langslice/tools/warps.py", "new_symbol": "fit_record"},
+{"path": "src/langslice/tools/deformable.py", "symbol": "_resolved", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "resolved_atlas_image"}
 ]
 }

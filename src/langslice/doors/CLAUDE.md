@@ -130,7 +130,7 @@ bodies, and turned into an answer once per door:
   `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`),
   `write_frame` / `map_from_itk` / `transform_from_itk` (`core.maps.itk`: an
   outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
-  (`tools.deformable.fit_record`, `tools.transforms.elastix_fit`: the native
+  (`tools.warps.fit_record`, `tools.transforms.elastix_fit`: the native
   engines with settings and a mask of the caller's own, by the tools' names
   and with their defaults (`restrict_to`, `section_image`, `atlas_image`,
   `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
