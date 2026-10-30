@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `langslice.tools.descriptions.render.declare`d | LangSlice's agent (`doors/agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `agent_cli/launch.py`) | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`agent_cli/warm.py`) | Claude Code, Antigravity, Codex |
+| agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`agent_cli/warm/`) | Claude Code, Antigravity, Codex |
 | library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
@@ -50,7 +50,7 @@ armed by the MCP door only). Deliberately different: the host owns the loop
 for MCP and the CLI (no turn budget, nudges, debrief, image working set or
 quota accounting there); pictures are files and artifacts in the CLI, inline elsewhere;
 each CLI call is a process of its own (cold, or the child the job's warm
-process forks for it, `agent_cli/warm.py`).
+process forks for it, `agent_cli/warm/`).
 
 A refusal is the core's `Refused` (`core/refusal.py`: a `RefusalCode`, a
 message, the facts), raised by the core, the job, the tools and the tool
@@ -405,14 +405,18 @@ bodies, and turned into an answer once per door:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.agent_cli.main:main`,
     also `python -m langslice.doors.agent_cli.main`): `main()` without argv
     (the process's own command line) asks the job's warm process first
-    (`warm.run`), importing nothing else until that is decided (the
+    (`warm.client.run`), importing nothing else until that is decided (the
     package's `__init__` imports its command groups where it builds its
     parser); `run(argv)`, the call in this process (a cold call, a warm
     child's): `ops` and `schema` first (run inside `stdout_to_stderr`,
     their envelope printed after), anything else `FOLDER VERB`; returns the
     exit code.
-  - `warm.py` — the warm process (`docs/agents/cli.md`, "The warm process"):
-    one fork server per job folder and Python environment (`identity`:
+  - `warm/` — the warm process (`docs/agents/cli.md`, "The warm process";
+    its `README.md` lists the private names it touches): `protocol.py`
+    (`identity`, `runtime_dir`, `Place`, `job_folder`, `send_message` /
+    `read_message`), `client.py`, `server.py`, `pools.py` (`quiet_pools`),
+    `child.py`, `script.py`.
+    One fork server per job folder and Python environment (`identity`:
     interpreter, flags, import path, LangSlice's folder), standard library
     only on the client's side. Client `run(argv)`: `job_folder` (not
     `init`, `ops`, `schema`), `request` (argv, cwd, environment, `envkey`,
@@ -426,7 +430,7 @@ bodies, and turned into an answer once per door:
     `serve_main`: the lock, `warm_up` (the CLI's modules,
     `core.fits.deformable.engines.preload`, the job opened read-only, its tools,
     atlas arrays, `core.maps.section_maps.share_frames`, the oblique template volumes when
-    its sections are tilted; `_quiet_pools` stops dask's, zarr's,
+    its sections are tilted; `quiet_pools` stops dask's, zarr's,
     fsspec's and the sampling threads; `gc.freeze`), `Server` (one thread,
     `selectors`; `refusal`: protocol, identity, `Sources.changed` (the
     loaded first-party modules, the import path's folders, the atlas
@@ -435,7 +439,7 @@ bodies, and turned into an answer once per door:
     killed when the client goes (`SIGKILL`) or signals; `reap`; idle
     `check` (stale code, a gone job, frames shared again when `state.json`
     changed, unless the job is now submitted, `_submitted`); `IDLE_S` (10
-    min), `SUBMITTED_IDLE_S` (60 s) once the job is submitted). Child `_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
+    min), `SUBMITTED_IDLE_S` (60 s) once the job is submitted). Child `run_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
     fds on 0-2, cwd, environment, `sys.argv` / `sys.path` / `sys.executable`,
     `_streams`, `_fresh_process` (tempdir, tz, logging, `formats.source`,
     numpy's seed), `jobcli.run`, `as_python` (exit codes, tracebacks,

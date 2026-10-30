@@ -247,7 +247,7 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
         return
     try:
         paths = [str(item.get("path")) for item in envelope.artifacts]
-        from langslice.doors.agent_cli.warm import in_child
+        from langslice.doors.agent_cli.warm.child import in_child
 
         kept = save_reply(layout.logs_dir, verb, dumps(envelope))
         log_call(layout.logs_dir, {
