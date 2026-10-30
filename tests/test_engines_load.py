@@ -1,5 +1,5 @@
 """The in-tree engines (``langslice.engines``): the three load together in one job, their tools
-do not clash, a missing environment is refused at call time with ``ENGINE_UNAVAILABLE``, and
+do not clash, a missing environment is refused at call time with ``ENGINE_MISSING``, and
 nothing of the engine environments is imported into LangSlice's process.
 
 The engines themselves run in their own conda environments; a test that runs one is marked
@@ -77,7 +77,7 @@ def test_each_tool_is_refused_when_its_environment_is_missing(tmp_path: Path):
             if "tool_context" in inspect.signature(tool).parameters:
                 arguments["tool_context"] = ToolContext()
             reply = tool(**arguments)
-            assert reply.get("code") == "ENGINE_UNAVAILABLE" or "ENGINE_UNAVAILABLE" in str(
+            assert reply.get("code") == "ENGINE_MISSING" or "ENGINE_MISSING" in str(
                 reply), (name, reply)
             assert gone in str(reply)
 

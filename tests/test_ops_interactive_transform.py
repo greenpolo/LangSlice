@@ -117,7 +117,7 @@ def test_refusals_write_nothing(tmp_path: Path):
         "s0.png",
     ])
     assert [entry.error["error"] for entry in done.entries if entry.error] == [
-        "FROZEN", "FLIP_DISABLED", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS", "NO_POSITION",
+        "FROZEN", "OPTION_OFF", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS", "NO_POSITION",
         "UNKNOWN_SLICE_IDS", "BAD_ARGS"]
     assert done.written == [] and job.undo_stack == []
     assert _record(job, "s0.png").transform is None

@@ -332,7 +332,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   orientation); a frozen orientation refuses a changed flip or quarter turn
   and a transform that would mirror the section. Per entry `FROZEN`
   (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
-  `BAD_ROTATION`, `FLIP_DISABLED`, `NO_POSITION`, the stager's codes
+  `BAD_ROTATION`, `OPTION_OFF`, `NO_POSITION`, the stager's codes
   (`core.pictures.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
   `error`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
@@ -578,8 +578,8 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `ToolDef.writes`, is off: `JobSpec.switched_off`). A
   tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
   `interactive_transform:flip` and `:rotate` are the options) is off in every
-  run: the operations refuse a disabled `look` mode and a changed quarter
-  turn (`OPTION_OFF`) and a changed flip (`FLIP_DISABLED`).
+  run: the operations refuse a disabled `look` mode, a changed quarter turn
+  and a changed flip (`OPTION_OFF`, its `option` naming which).
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the

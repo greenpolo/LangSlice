@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 CROP_RENDERER = "crop"
 #: The redraw refusals after which the saved picture is cropped instead: its
 #: section is gone, or another version of LangSlice saved its recipe.
-CROPPED_INSTEAD = (RefusalCode.UNKNOWN_SECTION, RefusalCode.UNREADABLE_RECIPE)
+CROPPED_INSTEAD = (RefusalCode.SECTION_GONE, RefusalCode.UNREADABLE_RECIPE)
 #: How much a crop (no redraw) is enlarged at most: it holds no more detail.
 MAX_CROP_ENLARGE = 4.0
 

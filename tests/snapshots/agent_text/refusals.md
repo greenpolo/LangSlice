@@ -272,6 +272,7 @@
    ],
    "error": "BAD_ROTATION",
    "id": "s0.png",
+   "message": "rotate_quarter is 0, 90, 180 or 270.",
    "status": "error"
   }
  ],
