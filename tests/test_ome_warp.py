@@ -18,6 +18,7 @@ from langslice.core.fits.deformable import (
     Placement,
     ome_warp,
 )
+from langslice.core.fits.deformable.record import RECORD_VERSION
 from langslice.core.fits.deformation import RecordStore
 
 SCHEMAS = Path(__file__).parent / "fixtures" / "ngff_0.6"
@@ -101,7 +102,8 @@ def test_a_record_names_its_parent_and_loads_it_from_the_sibling_folder(tmp_path
     second = _record(1, parent=first, inverse=False)
     second.save(tmp_path / "second")
     meta = json.loads((tmp_path / "second" / "record.json").read_text())
-    assert meta["parent"] == "first" and meta["version"] == 2
+    assert meta["parent"] == "first" and meta["version"] == RECORD_VERSION
+    assert meta["fields"] == "section_grid"  # no engine step: stored whole
     assert not (tmp_path / "second" / "parent").exists()
     loaded = DeformableRecord.load(tmp_path / "second")
     assert loaded.inverse_field_mm is None and loaded.left_out is None
@@ -142,8 +144,20 @@ def test_an_older_record_format_is_refused(tmp_path: Path):
     meta = json.loads((tmp_path / "a" / "record.json").read_text())
     meta["version"] = 1
     (tmp_path / "a" / "record.json").write_text(json.dumps(meta))
-    with pytest.raises(ValueError, match=r"record\.json: record format 1, not 2"):
+    with pytest.raises(ValueError, match=r"record\.json: record format 1, not 3"):
         DeformableRecord.load(tmp_path / "a")
+
+
+def test_a_format_2_record_is_read_as_it_was_saved(tmp_path: Path):
+    record = _record(left_out=True, weights=True)
+    record.save(tmp_path / "a")
+    meta = json.loads((tmp_path / "a" / "record.json").read_text())
+    del meta["fields"]  # format 2 stored every field whole and had no such key
+    (tmp_path / "a" / "record.json").write_text(json.dumps({**meta, "version": 2}))
+    loaded = DeformableRecord.load(tmp_path / "a")
+    assert loaded.stored_step is None
+    assert np.array_equal(loaded.field_mm, record.field_mm)
+    assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
 
 
 def _validator(schema_name: str):
@@ -234,3 +248,87 @@ def test_the_store_transformations_reproduce_the_records_mapping(tmp_path: Path)
     placed = np.array([17, 33], dtype=float) * MM
     back = _apply(warp["inverse"], placed, store)
     assert np.allclose(back - placed, record.inverse_field_mm[17, 33, ::-1], atol=1e-9)
+
+
+def _engine_record(seed: int, parent: DeformableRecord | None = None) -> DeformableRecord:
+    """A record made as finish_fit makes one from an engine's working-grid step."""
+    from langslice.core.fits.deformable.fields import (
+        EngineStep,
+        compose_forward,
+        compose_inverse,
+        section_step,
+    )
+    from langslice.core.fits.deformable.geometry import WorkingGrid
+
+    rng = np.random.default_rng(seed)
+    grid = WorkingGrid((W, H), MM, (20, 15))
+    step = EngineStep(grid, rng.normal(0.0, 0.05, (15, 20, 2)).astype(np.float32),
+                      rng.normal(0.0, 0.05, (15, 20, 2)).astype(np.float32))
+    field, inverse = section_step(step)
+    if parent is not None:
+        field = compose_forward(field, parent.field_mm, MM)
+        inverse = compose_inverse(inverse, parent.inverse_field_mm, MM)
+    record = _record(seed, parent)
+    record.field_mm, record.inverse_field_mm, record.stored_step = field, inverse, step
+    record.engine = {"name": "fireants", "working_grid": {"size": [20, 15]}}
+    return record
+
+
+def test_an_engine_step_is_stored_on_its_grid_and_rebuilt_bit_for_bit(tmp_path: Path):
+    import zarr
+
+    first = _engine_record(0)
+    first.save(tmp_path / "first")
+    second = _engine_record(1, parent=first)
+    second.save(tmp_path / "second")
+    meta = json.loads((tmp_path / "second" / "record.json").read_text())
+    assert meta["fields"] == "engine_grid"
+    root = zarr.open_group(str(tmp_path / "second" / ome_warp.WARP_STORE), mode="r")
+    members = {name for name, _ in root.members(max_depth=None)}
+    assert ome_warp.FIELD_GROUP not in members and ome_warp.INVERSE_GROUP not in members
+    stored = root[f"{ome_warp.STEP_GROUP}/s0"]
+    assert stored.dtype == np.float32 and stored.shape == (2, 15, 20)
+    for saved in (first, second):
+        loaded = DeformableRecord.load(tmp_path / str(saved.saved_as))
+        assert np.array_equal(loaded.field_mm, saved.field_mm)
+        assert np.array_equal(loaded.inverse_field_mm, saved.inverse_field_mm)
+    # The scene states the first record's step as its whole deformation (on the
+    # working grid: scale, then the first pixel's centre), the second's not.
+    for name in ("scene.schema", "ome_zarr.schema"):
+        _validator(name).validate(_attributes(tmp_path / "first" / ome_warp.WARP_STORE))
+        _validator(name).validate(_attributes(tmp_path / "second" / ome_warp.WARP_STORE))
+    for group in (ome_warp.STEP_GROUP, ome_warp.STEP_INVERSE_GROUP):
+        attributes = _attributes(tmp_path / "first" / ome_warp.WARP_STORE / group)
+        for name in ("image.schema", "strict_image.schema"):
+            _validator(name).validate(attributes)
+    kinds = [t["type"] for t in _attributes(
+        tmp_path / "second" / ome_warp.WARP_STORE)["ome"]["scene"]["coordinateTransformations"]]
+    assert kinds[0] == "sequence"
+
+
+def test_a_landmark_mesh_is_rebuilt_from_record_json(tmp_path: Path):
+    from langslice.core.fits.deformable.fields import MeshStep, mesh_fields
+    from langslice.core.geometry.triangulation import visualign_mesh
+
+    source = np.array([[20.0, 15.0], [60.0, 20.0], [40.0, 45.0]])
+    mesh = visualign_mesh(source, source + [[2.0, 1.0], [-1.0, 2.0], [1.5, -1.0]],
+                          size=(W, H))
+    step = MeshStep(mesh.source, mesh.target, mesh.simplices)
+    field, inverse = mesh_fields(step, (W, H), MM)
+    record = _record(0)
+    record.field_mm, record.inverse_field_mm = field.astype(np.float32), inverse.astype(np.float32)
+    record.stored_step = step
+    record.engine = {"name": "landmark_triangulation", "native_parameters": {
+        "source_xy": mesh.source.tolist(), "target_xy": mesh.target.tolist(),
+        "simplices": mesh.simplices.tolist()}}
+    record.save(tmp_path / "a")
+    assert json.loads((tmp_path / "a" / "record.json").read_text())["fields"] == "landmark_mesh"
+    loaded = DeformableRecord.load(tmp_path / "a")
+    assert np.array_equal(loaded.field_mm, record.field_mm)
+    assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
+    # A mesh that triangulates differently is not read as another warp.
+    meta = json.loads((tmp_path / "a" / "record.json").read_text())
+    meta["engine"]["native_parameters"]["simplices"][0].reverse()
+    (tmp_path / "a" / "record.json").write_text(json.dumps(meta))
+    with pytest.raises(ValueError, match="triangulates differently"):
+        DeformableRecord.load(tmp_path / "a")

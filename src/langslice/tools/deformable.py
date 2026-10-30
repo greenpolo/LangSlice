@@ -70,6 +70,8 @@ class Fitted:
     row: dict[str, Any]
     fit: deformation.Job
     outcome: deformation.DeformableRecord
+    #: The record's folder, relative to the job folder.
+    folder: str
 
 
 @dataclass(frozen=True)
@@ -461,7 +463,8 @@ def _apply(
         row["written"] = True
         written.append(record.id)
         row["steps"] = len(record.deformation.steps or ())
-        fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
+        fitted.append(Fitted(row=row, fit=fit, outcome=outcome,
+                             folder=job.layout.relative(folder)))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
 
 
@@ -722,6 +725,7 @@ def pictures(
                 workspace, fit.image, outcome, warped=True, style=fit_style,
                 atlas_images=shown_atlas, title=f"{heading}\n{detail_line}",
                 note={"sections": (record.id,), "mode": options.mode,
+                      "deformation": fitted.folder,
                       "caption": fit_caption(record, fit, row, include, exclude,
                                              border_words(core))}))
         except Exception as exc:

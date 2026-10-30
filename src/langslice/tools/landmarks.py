@@ -19,12 +19,14 @@ from langslice.core.fits import deformation
 from langslice.core.fits import landmarks as geometry
 from langslice.core.fits.deformable import finish_fit, prepare_warp
 from langslice.core.fits.deformable.engines import EngineResult
+from langslice.core.fits.deformable.fields import MeshStep, mesh_fields
 from langslice.core.fits.deformable.geometry import WorkingGrid
 from langslice.core.fits.deformable.record import DeformableRecord
 from langslice.core.fits.frame import digest
 from langslice.core.geometry.pixel_frames import source_frame
 from langslice.core.geometry.triangulation import (
     DegenerateMesh,
+    PiecewiseAffine,
     visualign_mesh,
 )
 from langslice.core.jsonable import JsonObject, to_jsonable
@@ -551,7 +553,7 @@ def _require_applicable(job: Job, record: Section) -> tuple[Pair, ...]:
 
 def _mesh(
     names: Sequence[str], source: np.ndarray, target: np.ndarray, size: tuple[int, int]
-) -> Any:
+) -> PiecewiseAffine:
     """The VisuAlign mesh of the pairs and the four fixed corners, as VisuAlign
     builds it; invalid geometry is refused naming the pairs."""
     try:
@@ -666,16 +668,20 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         yy, xx = np.indices((size[1], size[0]), dtype=float)
         points = np.stack([xx, yy], -1)
         mm = grid.placement.section_mm_per_px
-        forward, inverse = mesh.map(points), mesh.inverse(points)
+        # The fields as loading the record rebuilds them from its mesh.
+        step = MeshStep(mesh.source, mesh.target, mesh.simplices)
+        forward_mm, inverse_mm = mesh_fields(step, size, mm)
         folds = _folds(mesh, points, names)
-        if not np.isfinite(forward).all() or not np.isfinite(inverse).all():
+        finite = np.isfinite(forward_mm).all()
+        finite = finite and np.isfinite(inverse_mm).all()
+        if not finite:
             raise ValueError("The mesh does not cover the full section frame")
         prepared.grid = WorkingGrid(size, mm, size)
         result = finish_fit(
             prepared,
             EngineResult(
-                field_mm=(forward - points) * mm,
-                inverse_field_mm=(inverse - points) * mm,
+                field_mm=forward_mm,
+                inverse_field_mm=inverse_mm,
                 inverse_source="exact inverse on the same landmark triangles",
                 native_parameters={
                     "source_xy": mesh.source.tolist(),
@@ -691,6 +697,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             landmark_warp=True,
         )
         result.engine["name"] = "landmark_triangulation"
+        result.stored_step = step
     except Refused:
         raise
     except (ValueError, OSError) as exc:

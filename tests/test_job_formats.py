@@ -37,7 +37,7 @@ from tests.synthetic_stack import (
 
 def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
     """``tools.deformable.fit_deformable`` with one FireANTs setting, applied, its
-    pictures (a deformable-fit picture, with the residual layer) saved as a
+    pictures (a deformable-fit picture, its frame naming its record) saved as a
     door saves a tool's pictures (``Job.views.shown``), under the tool whose
     landing draws them: ``trace_borders``."""
     from langslice.core.fits import deformation
@@ -227,9 +227,9 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
 
 
 def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
-    """A deformable-fit picture's coordinate map (its residual layer
-    included) and the section's own composed map agree, up to resampling
-    the field at the picture's size."""
+    """A deformable-fit picture's coordinate map (its residual drawn again
+    from the record its frame names) and the section's own composed map
+    agree, up to resampling the field at the picture's size."""
     from langslice.core.geometry.affine import pixel_center_map
     from langslice.core.maps.section_maps import (
         native_points,
@@ -244,11 +244,13 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     current = job.job.deformations.current(job.state, record)
     frame = section_frame(job.state, job.workspace, record)
     folders = _views(root, "trace_borders")
-    assert folders and all((folder / "residual.tif").exists() for folder in folders)
+    # No copy of the field beside the picture: the frame names the record.
+    assert folders and not any((folder / "residual.tif").exists() for folder in folders)
     # The first picture shows the first fit, the second the step on top of it.
     assert len(folders) == 2 and current.parent is not None
     for folder, warp in zip(folders, (current.parent, current), strict=True):
         picture = json.loads((folder / "view.json").read_text())["frame"]
+        assert (root / picture["deformation"]).name == warp.saved_as
         x0, band, x1, y1 = picture["content_box"]
         rows, cols = _content_pixels(folder)
         grid = pixel_center_map((x1 - x0, y1 - band), tuple(warp.section_size))
