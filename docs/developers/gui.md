@@ -50,7 +50,8 @@ appear. For the chosen job:
   under **Details**.
 - **Sections.** Order, filename, position, cutting angles, flip, transform,
   deformation method, damage and registration number. A job saved by an older
-  LangSlice is shown from its raw fields.
+  LangSlice is read as every other way in opens it; one whose state this
+  LangSlice cannot read (a newer one's) is shown from its raw fields.
 - **Undo** and **Redo.** The steps that can be undone and redone, each named by
   the call that made it.
 - **Notes** (yours from the job's settings, and the run's) and **Spend**

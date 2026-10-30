@@ -8,6 +8,11 @@ call becomes a :class:`ToolCall` and runs through :data:`TOOL_STEPS`
 then the tool's body, then each step's part after the body in reverse
 order.
 
+``_answer_crashes``
+    After: a call that crashed (a step's or the body's exception that is
+    no refusal) is answered with the refusal its exception makes, its code
+    the exception's class name, where the box answers crashes (MCP's);
+    elsewhere it is raised to the door.
 ``_serialize``
     One call at a time, the job held as the tool needs it: a write runs
     whole under the job folder's write lock, the state first brought up to
@@ -131,6 +136,10 @@ class ToolBox:
     door: str = "agent"
     #: Who is sent each call's events: a host's display, the event log.
     observers: tuple[LiveCallback, ...] = ()
+    #: Whether a call that crashed is answered with the refusal its exception
+    #: makes (MCP's tools) instead of raising (the built-in agent, the agent
+    #: CLI and the library raise it).
+    answers_crashes: bool = False
     #: One call at a time: a model's several calls of one turn may arrive
     #: together, and every tool shares one state.
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -252,6 +261,18 @@ class ToolCall:
 
 
 # --- the steps, in the order a call enters them ------------------------------
+
+
+@contextlib.contextmanager
+def _answer_crashes(call: ToolCall) -> Generator[None]:
+    """Answer a crash with its exception's refusal, or raise it on."""
+    try:
+        yield
+    except Exception as error:
+        if not call.box.answers_crashes:
+            raise
+        logger.exception("Tool %s failed", call.name)
+        call.reply = Refused.from_exception(error).payload()
 
 
 @contextlib.contextmanager
@@ -412,6 +433,7 @@ class Step:
 #: The steps every tool call goes through, in the order it enters them; the
 #: module docstring says what each does.
 TOOL_STEPS: tuple[Step, ...] = (
+    Step(_answer_crashes),
     Step(_serialize),
     Step(_log_events),
     Step(_announce_work),

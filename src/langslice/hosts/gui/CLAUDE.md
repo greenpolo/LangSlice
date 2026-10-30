@@ -16,7 +16,7 @@ server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
 imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`)
 and the job layer (`job.settings.tool_table`, `job.settings.spec`,
-`job.settings.schema`, `job.settings.labels`, `job.layout` names, `job.state_file.current_state`, `job.history`,
+`job.settings.schema`, `job.settings.labels`, `job.layout` names, `job.migrations.viewer_stack`, `job.history`,
 `job.registrations`), and for the Settings tab the doors' setup
 (`doors.credentials`: key presence, `save_api_key`, `login_oauth`) and the
 user's settings file (`doors.user_settings`). Nothing imports it but
@@ -69,10 +69,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   from `view.json`; a path outside the folder is refused), `agent` and
   `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
   script writes, session start and end, a trace error). The sections table:
-  `core.stack.status.status_rows` of `stack_from_json(current_state(...))` with
+  `core.stack.status.status_rows` of `job.migrations.viewer_stack` (an older
+  format migrated in memory as every door opens it, nothing written) with
   each section's registration number (`job.registrations`); a state this
-  version does not read (another format) shows its raw `slices` fields with a
-  note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
+  version does not read (a newer or a pre-release format) shows its raw
+  `slices` fields with a note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
   depth after the call, capped at `UNDO_DEPTH`): a call that deepens it names
   the new depth; at the cap a call of any tool but a read (`job.settings.tool_table` kind
   `read`; a plugin's or an older version's tool counts as a write) drops the

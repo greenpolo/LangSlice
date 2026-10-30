@@ -75,7 +75,8 @@ bodies, and turned into an answer once per door:
   `calls._Refusal`, so the fix is read while the job's disabled list applies;
 - MCP: the reply as the first text block (`mcp/pages.result_blocks`);
   `start_job` without a job answers `NO_FOLDER`; an exception a tool raises
-  is answered with its type's name as the code (`Refused.from_exception`);
+  is answered by the pipeline's `_answer_crashes` step (the toolbox's
+  `answers_crashes`), its type's name as the code (`Refused.from_exception`);
 - the built-in agent: the reply is the function response;
   `agent/adk_plugins.StrictArgumentsPlugin` answers an argument refusal with
   its payload before the tool runs;
