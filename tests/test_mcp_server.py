@@ -129,6 +129,28 @@ def test_every_mcp_tool_call_is_an_event_in_the_job_folder(tmp_path: Path):
     assert "response" not in end
 
 
+def test_a_tool_that_crashes_is_answered_with_its_exceptions_name(tmp_path: Path, monkeypatch):
+    """The pipeline answers an MCP tool's crash (the box answers crashes); the
+    event log's ``tool_end`` carries the same reply."""
+    from langslice.tools import status
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(status, "raw_channels", broken)
+    folder = _folder(tmp_path)
+    server = build_server(_spec_for, str(folder), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return await client.call_tool("status", {})
+
+    reply = _text(_session(server, body))
+    assert reply == {"status": "error", "error": "OSError", "message": "disk gone"}
+    lines = [json.loads(line) for line in
+             (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
+    (end,) = [line for line in lines if line["kind"] == "tool_end"]
+    assert end["failed"] is True
+
 def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 

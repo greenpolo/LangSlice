@@ -23,19 +23,21 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.atlas.images import resolve_image
 from langslice.core.fits import affine as core_affine
+from langslice.core.fits.affine import FittedAffine
 from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.flags import FitFlag
+from langslice.core.fits.inputs import InputsBlock
 from langslice.core.geometry.affine import IDENTITY_PARAMS
-from langslice.core.jsonable import JsonObject
-from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
+from langslice.core.jsonable import JsonObject, to_jsonable
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack import codec
 from langslice.core.stack.affine import FitRegions, StoredAffine
-from langslice.core.stack.json_reads import flag_at, numbers_at, object_at
+from langslice.core.stack.codec import Written
 from langslice.job.settings.needs import marked, render
 from langslice.tools import masks as ops_masks
 from langslice.tools.deformable import (
@@ -53,11 +55,13 @@ from langslice.tools.images import check_image
 from langslice.tools.look import show_result
 from langslice.tools.refusal import (
     check_section_count,
-    frozen_row,
+    refused_row,
+    reworded,
+    section_refusal,
     unknown_sections,
 )
 from langslice.tools.run import Run, as_list, drawn_image, pictured
-from langslice.tools.stale import section_inputs, stale_row
+from langslice.tools.stale import section_inputs, stale_refusal
 from langslice.tools.transforms import (
     NO_POSITION,
     mirror_message,
@@ -75,7 +79,7 @@ logger = logging.getLogger(__name__)
 
 
 def fit_transform(
-    fit: Mapping[str, Any],
+    fit: FittedAffine,
     *,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
@@ -83,7 +87,7 @@ def fit_transform(
 ) -> StoredAffine:
     """The stored record of one Elastix affine fit (kind ``elastix``).
 
-    *fit* is :func:`langslice.core.fits.affine.fit_elastix`'s ok payload.
+    *fit* is :func:`langslice.core.fits.affine.fit_elastix`'s fitted affine.
     Regions and a non-default atlas image are recorded only when they were
     used.
     """
@@ -91,15 +95,12 @@ def fit_transform(
     if include or exclude:
         regions = FitRegions(include=tuple(include), exclude=tuple(exclude))
     atlas = None if fit_atlas == "template" else fit_atlas
-    payload = cast("JsonObject", fit)  # reportAny: the fit's plain dict
-    knobs = codec.physical_from_json(object_at(payload, "physical"))
-    scale = codec.calibration_from_json(object_at(payload, "calibration"))
     return StoredAffine(
         kind="elastix",
-        params=numbers_at(payload, "params"),
-        physical=knobs,
-        calibration=scale,
-        mirrored=flag_at(payload, "mirrored"),
+        params=fit.params,
+        physical=fit.physical,
+        calibration=fit.calibration,
+        mirrored=fit.mirrored,
         regions=regions,
         fit_atlas=atlas,
     )
@@ -110,12 +111,10 @@ def fit_transform(
 LARGE_TURN_DEG = 45.0
 
 
-def _turn_deg(
-    previous: StoredAffine | None, outcome: Mapping[str, Any]
-) -> float:
+def _turn_deg(previous: StoredAffine | None, fit: FittedAffine) -> float:
     """How far a fit turns the section from its previous transform, in degrees (0-180)."""
     before = float(physical_knobs(previous).rotation_deg or 0.0)
-    after = float((outcome.get("physical") or {}).get("rotation_deg") or 0.0)
+    after = float(fit.physical.rotation_deg or 0.0)
     return abs((after - before + 180.0) % 360.0 - 180.0)
 
 
@@ -128,15 +127,15 @@ SHEAR_CHANGE_LIMIT = 0.15
 
 
 def plausibility_flags(
-    previous: StoredAffine | None, outcome: Mapping[str, Any]
+    previous: StoredAffine | None, fit: FittedAffine
 ) -> list[dict[str, Any]]:
     """An affine fit's implausible changes from the section's *previous*
     transform (none: the identity), as the deformable fits' flags are given:
     ``SCALE_CHANGED`` (``scale``, ``previous``, ``limits`` per axis ratio) and
     ``SHEAR`` (``shear``, ``previous``, ``limit`` on the change)."""
     before = physical_knobs(previous)
-    after = outcome.get("physical") or {}
-    scale = [float(after.get(key) or 1.0) for key in ("scale_x", "scale_y")]
+    after = fit.physical
+    scale = [float(value or 1.0) for value in (after.scale_x, after.scale_y)]
     held = [float(value or 1.0) for value in (before.scale_x, before.scale_y)]
     low, high = SCALE_CHANGE_LIMITS
     flags: list[dict[str, Any]] = []
@@ -153,7 +152,7 @@ def plausibility_flags(
                 "limits": [low, high],
             }
         )
-    shear, was = float(after.get("shear") or 0.0), float(before.shear or 0.0)
+    shear, was = float(after.shear or 0.0), float(before.shear or 0.0)
     if abs(shear - was) > SHEAR_CHANGE_LIMIT:
         flags.append(
             {
@@ -170,17 +169,39 @@ def plausibility_flags(
 
 
 @dataclass(frozen=True)
-class AffineFit:
-    """What :func:`elastix_affine` did.
+class AffineRow:
+    """One section's answer from :func:`elastix_affine`: its fit, or why not.
 
-    ``rows``: one per section asked, in order: the fit's payload (``id``,
-    ``status: ok``, ``physical``, ``params`` (the six stored
-    numbers), ``calibration``, ``mirrored``, ``regions`` when restricted)
-    or ``{"id", "status": "error", "error", ...}`` (``FROZEN``, the fitter's
-    code, ``STALE_INPUT``). ``fitted``: the sections written.
+    A row without a refusal holds the fit that was written.
     """
 
-    rows: list[dict[str, Any]] = field(default_factory=list)
+    id: str
+    #: Why the section was not fitted or not written (``FROZEN``,
+    #: ``HAS_DEFORMATION``, the fitter's code, ``STALE_INPUT``); None for a
+    #: fit written.
+    refusal: Refused | None = None
+    fitted: FittedAffine | None = None
+    #: What the fit read.
+    inputs: InputsBlock | None = None
+    #: How far the fit turns the section, when more than
+    #: :data:`LARGE_TURN_DEG`.
+    turn_deg: float | None = None
+    #: The fit's implausible changes (:func:`plausibility_flags`).
+    flags: tuple[JsonObject, ...] = ()
+    #: The regions' box on the section's canvas, for a restricted fit
+    #: (:func:`langslice.tools.fit_regions.region_box`).
+    restrict_box: tuple[float, ...] | None = None
+
+
+@dataclass(frozen=True)
+class AffineFit:
+    """Hold what :func:`elastix_affine` did, per section and written.
+
+    ``rows``: one :class:`AffineRow` per section asked, in order;
+    ``fitted``: the sections written.
+    """
+
+    rows: list[AffineRow] = field(default_factory=list[AffineRow])
     fitted: list[str] = field(default_factory=list)
 
 
@@ -242,25 +263,25 @@ def _fit_elastix(
     the others.
     """
     state = job.state
-    rows: list[dict[str, Any]] = []
+    rows: list[AffineRow] = []
     fits: list[
-        tuple[Section, dict[str, Any], tuple[str, ...], tuple[str, ...]]
+        tuple[int, Section, FittedAffine, tuple[str, ...], tuple[str, ...]]
     ] = []
     expected: dict[str, str] = {}
     for record in records:
         expected[record.id] = section_inputs(state, record)
-        frozen = frozen_row(job, record.id, "affine")
+        frozen = section_refusal(job, record.id, "affine")
         if frozen is not None:
-            rows.append(frozen)
+            rows.append(AffineRow(record.id, refusal=frozen))
             continue
         if record.deformation:
-            rows.append(refit_refusal(record).payload(section_id=record.id))
+            rows.append(AffineRow(record.id, refusal=refit_refusal(record)))
             continue
         kept, dropped = exclusions(record, restrict_to)
         try:
             weights = ops_masks.section_weights(job, record, mask)
         except Refused as refusal:
-            rows.append(refusal.payload(section_id=record.id))
+            rows.append(AffineRow(record.id, refusal=refusal))
             continue
         try:
             with engine_output(
@@ -280,50 +301,44 @@ def _fit_elastix(
         except Exception as exc:  # nothing is written for this section
             logger.warning("elastix_affine failed for %s: %s", record.id, exc)
             failure = _fit_failure(job, record.id, exc)
-            rows.append(failure.payload(section_id=record.id))
+            rows.append(AffineRow(record.id, refusal=failure))
             continue
-        if outcome.get("error") == RefusalCode.FIT_FAILED:
-            outcome["message"] = failure_message(
-                str(outcome.get("message", "")),
-                job.engine_log,
-                f"the Elastix affine of {record.id} failed",
+        if isinstance(outcome, Refused):
+            rows.append(
+                AffineRow(record.id, refusal=_told(job, record.id, outcome))
             )
-        else:
-            text = str(cast(object, outcome.get("message", "")))  # plain dict
-            if marked(text):  # the message names another tool
-                outcome["message"] = render(text, job.spec.switched_off)
-        rows.append(outcome)
-        if outcome["status"] != ReplyStatus.OK:
             continue
-        outcome["inputs"] = inputs_block(
-            state,
-            workspace,
-            record,
-            section_image=section_image,
-            atlas_image=asked_atlas or fit_atlas,
-            mask=mask,
-            damage=dropped,
-            restrict_to=restrict_to,
-            resolved=fit_atlas,
-        ).payload()
-        outcome["estimated"] = None
-        turn = _turn_deg(record.transform, outcome)
-        if turn > LARGE_TURN_DEG:
-            outcome["turn_deg"] = round(turn, 1)
-        flags = plausibility_flags(record.transform, outcome)
-        if flags:
-            outcome["flags"] = flags
-        fits.append((record, outcome, kept, dropped))
+        turn_deg = _turn_deg(record.transform, outcome)
+        turn = round(turn_deg, 1) if turn_deg > LARGE_TURN_DEG else None
+        rows.append(
+            AffineRow(
+                record.id,
+                fitted=outcome,
+                inputs=inputs_block(
+                    state,
+                    workspace,
+                    record,
+                    section_image=section_image,
+                    atlas_image=asked_atlas or fit_atlas,
+                    mask=mask,
+                    damage=dropped,
+                    restrict_to=restrict_to,
+                    resolved=fit_atlas,
+                ),
+                turn_deg=turn,
+                flags=tuple(plausibility_flags(record.transform, outcome)),
+            )
+        )
+        fits.append((len(rows) - 1, record, outcome, kept, dropped))
     with job.writing():
         records_out: dict[str, StoredAffine] = {}
-        for record, outcome, kept, dropped in fits:
+        for index, record, outcome, kept, dropped in fits:
             now = state.by_id(record.id)
             if (
                 now is None
                 or section_inputs(state, now) != expected[record.id]
             ):
-                outcome.clear()
-                outcome.update(stale_row(record.id))
+                rows[index] = AffineRow(record.id, refusal=stale_refusal())
                 continue
             made = fit_transform(
                 outcome, include=kept, exclude=dropped, fit_atlas=fit_atlas
@@ -331,15 +346,36 @@ def _fit_elastix(
             if "orientation" in job.frozen_for(
                 record.id
             ) and reverses_orientation(now, made):
-                outcome.clear()
-                outcome.update(
-                    frozen_row(job, record.id, "orientation") or {},
-                    message=mirror_message(record.id),
-                )
+                frozen = section_refusal(job, record.id, "orientation")
+                assert frozen is not None  # the orientation is frozen
+                told = reworded(frozen, mirror_message(record.id))
+                rows[index] = AffineRow(record.id, refusal=told)
                 continue
             records_out[record.id] = made
         written = set_transforms(job, records_out)
     return AffineFit(rows=rows, fitted=written)
+
+
+def _told(job: Job, section_id: str, refusal: Refused) -> Refused:
+    """Return the fitter's refusal as the row says it.
+
+    A failed fit gets the engine's last words; a message naming another
+    tool is rendered for the job's tools.
+    """
+    if refusal.code == RefusalCode.FIT_FAILED:
+        return reworded(
+            refusal,
+            failure_message(
+                refusal.message,
+                job.engine_log,
+                f"the Elastix affine of {section_id} failed",
+            ),
+        )
+    if marked(refusal.message):  # the message names another tool
+        return reworded(
+            refusal, render(refusal.message, job.spec.switched_off)
+        )
+    return refusal
 
 
 def _fit_failure(job: Job, section_id: str, exc: Exception) -> Refused:
@@ -369,7 +405,7 @@ def elastix_fit(
     marked: bool = True,
     section_image: str = "preprocessed",
     edges: bool = True,
-) -> Any:
+) -> core_affine.ElastixFit:
     """One Elastix affine of the section from its current placement, written
     nowhere (a script's ``job.context.fit_elastix``):
     :class:`langslice.core.fits.affine.ElastixFit` (``params``, the six
@@ -428,8 +464,9 @@ def elastix_fit(
             )
     except Refused as refusal:  # its own code, as the tool's row carries it
         told = render(refusal.message, job.spec.switched_off)
-        facts = {**refusal.facts, "message": told} if told else refusal.facts
-        raise Refused(refusal.code, **facts) from refusal
+        if not told:
+            raise
+        raise reworded(refusal, told) from refusal
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
         raise Refused(
             RefusalCode.FIT_FAILED,
@@ -451,7 +488,7 @@ def elastix_fit(
         restrict_to=include,
         resolved=resolved,
     )
-    return replace(fit, inputs=block.payload())
+    return replace(fit, inputs=block)
 
 
 # --- the tool's operation ----------------------------------------------------
@@ -522,14 +559,19 @@ def elastix_affine(
         mask=label,
         edges=bool(edges),
     )
-    if restrict_to:
-        for row in result.rows:
-            record = job.state.by_id(str(row.get("id")))
-            if row.get("status") == ReplyStatus.OK and record is not None:
-                box = region_box(workspace, job.state, record, restrict_to)
-                if box is not None:
-                    row["restrict_box"] = box
-    return result
+    if not restrict_to:
+        return result
+    rows: list[AffineRow] = []
+    for row in result.rows:
+        record = job.state.by_id(row.id)
+        box = None
+        if row.refusal is None and record is not None:
+            box = region_box(workspace, job.state, record, restrict_to)
+        if box is None:
+            rows.append(row)
+        else:
+            rows.append(replace(row, restrict_box=tuple(box)))
+    return replace(result, rows=rows)
 
 
 # --- the tool ----------------------------------------------------------------
@@ -614,32 +656,8 @@ def elastix_affine_tool(
         str(mask or "none"),
         bool(edges),
     )
-    # A fit's row as every reply gives a fit: the six raw numbers stay
-    # host-side, the knobs are its transform, the turn and flags its warning.
-    rows: list[dict[str, Any]] = []
-    fits: list[dict[str, Any]] = []
-    for row in done.rows:
-        if row.get("status") != ReplyStatus.OK:
-            rows.append(row)
-            continue
-        worded = {
-            key: value
-            for key, value in row.items()
-            if key not in ("params", "physical", "turn_deg")
-        }
-        worded["transform"] = row.get("physical")
-        words = [affine_flag_text(flag) for flag in row.get("flags") or []]
-        turn = row.get("turn_deg")
-        if turn is not None:
-            words.insert(
-                0,
-                f"This fit turns the section {turn:.0f} degrees "
-                "from its previous transform.",
-            )
-        if words:
-            worded["warning"] = " ".join(words)
-        rows.append(worded)
-        fits.append(worded)
+    rows = [affine_row_to_json(row) for row in done.rows]
+    fits = [row for row in done.rows if row.refusal is None]
     status = "ok" if fits else "error"
     result: dict[str, Any] = {"status": status}
     if not fits:
@@ -661,17 +679,72 @@ def elastix_affine_tool(
         result["deformation_cleared"] = cleared
     zooms: dict[str, list[float]] = {}
     for row in fits:
-        window = zoom_window(row.get("restrict_box"))
+        window = zoom_window(row.restrict_box)
         if window:
-            zooms[str(row["id"])] = window
+            zooms[row.id] = window
     shown = show_result(
         job,
         workspace,
         "elastix_affine",
         "overlay",
-        [str(row["id"]) for row in fits],
+        [row.id for row in fits],
         zooms=zooms,
         highlight=regions,
         images=drawn_image(section_image),
     )
     return pictured(result, shown)
+
+
+def affine_row_to_json(row: AffineRow) -> Written:
+    """Return one section's row of the ``elastix_affine`` reply.
+
+    Parameters
+    ----------
+    row
+        The section's answer.
+
+    Returns
+    -------
+    dict
+        Its refusal (:func:`langslice.tools.refusal.refused_row`), or the
+        fit as every reply gives a fit: ``status``, ``id``,
+        ``position_mm``, ``mirrored``, ``calibration``, ``regions`` (a
+        restricted fit), ``inputs``, ``estimated`` (null: Elastix estimates
+        no weighting), ``flags``, ``restrict_box``, the knobs as its
+        ``transform`` (the six raw numbers stay host-side) and the turn
+        and flags in words as its ``warning``.
+    """
+    fitted = row.fitted
+    if row.refusal is not None or fitted is None:
+        assert row.refusal is not None  # a row holds a fit or a refusal
+        return refused_row(row.id, row.refusal)
+    out: Written = {
+        "status": "ok",
+        "id": row.id,
+        "position_mm": fitted.position_mm,
+        "mirrored": fitted.mirrored,
+        "calibration": {
+            "section_um_per_px": fitted.calibration.section_um_per_px,
+            "source": fitted.calibration.source,
+        },
+    }
+    if fitted.regions is not None:
+        out["regions"] = to_jsonable(fitted.regions)
+    if row.inputs is not None:
+        out["inputs"] = to_jsonable(row.inputs.payload())
+    out["estimated"] = None
+    if row.flags:
+        out["flags"] = to_jsonable(list(row.flags))
+    if row.restrict_box is not None:
+        out["restrict_box"] = list(row.restrict_box)
+    out["transform"] = codec.physical_to_json(fitted.physical)
+    words = [affine_flag_text(flag) for flag in row.flags]
+    if row.turn_deg is not None:
+        words.insert(
+            0,
+            f"This fit turns the section {row.turn_deg:.0f} degrees "
+            "from its previous transform.",
+        )
+    if words:
+        out["warning"] = " ".join(words)
+    return out

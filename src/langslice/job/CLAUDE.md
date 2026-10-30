@@ -421,7 +421,9 @@ longer exist be taken over by the images it is opened with.
   warning per key the first time (`dropped`, with the sections that held
   it). It keeps one memo of the images it made across the checkpoint and
   its history steps (`seed` takes a current state's entries); `used` says
-  it changed what it read, `applied` the rows it ran.
+  it changed what it read, `applied` the rows it ran. Without a workspace
+  (`viewer_stack`, the GUI's read of `state.json`) it makes no image and
+  writes nothing: a format-3 section is read without its images.
   `without_removed_settings(spec)` leaves out of saved settings what
   LangSlice no longer has (`REMOVED_SETTINGS`, the `REMOVED_TASKS` task
   `reorder`) and names them; the doors read `job.json` through it

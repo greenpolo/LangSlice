@@ -80,9 +80,15 @@ from langslice.core.stack.json_reads import (
     numbers_at,
     object_at,
 )
+from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.job.layout import JobLayout
-from langslice.job.state_file import STATE_FORMAT_VERSION, older_format
+from langslice.job.state_file import (
+    STATE_FORMAT_VERSION,
+    current_state,
+    older_format,
+    stack_from_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +133,14 @@ class FolderMigration:
     Parameters
     ----------
     workspace
-        The workspace the job's sections are read through.
+        The workspace the job's sections are read through; None for a
+        viewer's read (the GUI's), which makes no section image: a format-3
+        section is read without its images.
     layout
         The job folder the made images are written to.
     """
 
-    def __init__(self, workspace: Workspace, layout: JobLayout) -> None:
+    def __init__(self, workspace: Workspace | None, layout: JobLayout) -> None:
         self.workspace = workspace
         self.layout = layout
         #: The entry of each section image made, by (section, name,
@@ -273,6 +281,35 @@ class FolderMigration:
         return image_to_json(image)
 
 
+def viewer_stack(data: JsonObject, layout: JobLayout) -> Stack:
+    """Return the stack a ``state.json`` holds, read as a viewer reads it.
+
+    An older format is migrated as the job reads it, in memory: nothing is
+    written and no section image made (a :class:`FolderMigration` without a
+    workspace), so the GUI shows an old folder's sections as every door
+    opens them.
+
+    Parameters
+    ----------
+    data
+        The file's JSON, with its format version.
+    layout
+        The job folder the file is in.
+
+    Returns
+    -------
+    Stack
+        The stack at the current format.
+
+    Raises
+    ------
+    ValueError
+        For a format no migration reads, or a state that does not load.
+    """
+    fields = current_state(dict(data), FolderMigration(None, layout))
+    return stack_from_json(fields)
+
+
 def state_3_to_4(data: Fields, folder: FolderMigration) -> Fields:
     """Return a format-3 state's fields as format 4 (the table's row).
 
@@ -317,9 +354,12 @@ def _section_3_to_4(
     section_id = str(row.get("id"))
     names = [PREPROCESSED, *(name for name in recipes if name != PREPROCESSED)]
     images: Fields = {}
+    workspace = folder.workspace
     for name in names:
+        if workspace is None:  # a viewer's read makes no image
+            break
         entry = _image_3_to_4(
-            section_id, name, recipes.get(name), images, folder
+            section_id, name, recipes.get(name), images, folder, workspace
         )
         if entry is not None:
             images[name] = entry
@@ -341,6 +381,7 @@ def _image_3_to_4(
     recipes: Json,
     made: Fields,
     folder: FolderMigration,
+    workspace: Workspace,
 ) -> Fields | None:
     """Return the entry a format-3 recipe of a section image becomes.
 
@@ -348,7 +389,6 @@ def _image_3_to_4(
     either is the opening image. None for a recipe that cannot be read
     (logged) or made, and for another image without a recipe.
     """
-    workspace = folder.workspace
     by_scope: JsonObject = {}
     if recipes:
         by_scope = as_object(name, recipes)

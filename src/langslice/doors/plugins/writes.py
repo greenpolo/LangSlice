@@ -11,14 +11,14 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 import numpy as np
 
-from langslice.core.jsonable import JsonObject
+from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.plugins import Layer, ToolError
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.codec import affine_from_json
+from langslice.core.stack.codec import Written, affine_from_json
 from langslice.doors.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
@@ -28,8 +28,15 @@ from langslice.doors.plugins.reads import (
     as_tool_error,
     unorient_raster,
 )
-from langslice.tools.refusal import frozen_row, unknown_sections
-from langslice.tools.stale import section_inputs, stale_row
+from langslice.tools.refusal import (
+    refused_row,
+    section_refusal,
+    unknown_sections,
+)
+from langslice.tools.stale import section_inputs, stale_refusal
+
+if TYPE_CHECKING:
+    from langslice.tools.warps import WarpApplied
 
 
 @dataclass
@@ -141,7 +148,7 @@ class ContextWrites(ContextProposals):
             now = {section_inputs(self._run.state, record, deformation=flag)
                    for flag in (False, True)}  # taken with or without the deformation
             if expect[name] not in now:
-                rows[name] = stale_row(name)
+                rows[name] = stale_refusal().payload(section_id=name)
         return rows
 
     def set_positions(self, rows: Sequence[Mapping[str, Any]], *,
@@ -167,8 +174,8 @@ class ContextWrites(ContextProposals):
                     out[ref] = self._unknown(ref).payload(section_id=ref)
                 elif name in stale:
                     out[name] = stale[name]
-                elif (frozen := frozen_row(job, name, "position")) is not None:
-                    out[name] = frozen
+                elif frozen := section_refusal(job, name, "position"):
+                    out[name] = frozen.payload(section_id=name)
                 else:
                     todo.append(row)
             try:
@@ -289,9 +296,9 @@ class ContextWrites(ContextProposals):
                 ref = str(row.get("id"))
                 out[ref] = self._unknown(ref).payload(section_id=ref)
                 continue
-            frozen = frozen_row(job, name, "deformation")
+            frozen = section_refusal(job, name, "deformation")
             if frozen is not None:
-                out[name] = frozen
+                out[name] = frozen.payload(section_id=name)
                 continue
             proposal = row.get("deformation")
             try:
@@ -319,7 +326,7 @@ class ContextWrites(ContextProposals):
             done = warps.apply_warps(
                 job, [proposal._warp for proposal in proposals if proposal.id not in stale])
             for applied in done.rows:
-                out[applied["id"]] = applied
+                out[applied.id] = _warp_row(applied)
             written = list(done.written)
         return WriteResult(written=written, rows=list(out.values()))
 
@@ -382,3 +389,12 @@ class ContextWrites(ContextProposals):
             job.commit(before)
         return LayerRef(id=ref["id"], section=record.id, name=ref["name"], kind=ref["kind"],
                         frame=ref["frame"], file=ref["file"])
+
+
+def _warp_row(applied: WarpApplied) -> Written:
+    """Return one warp's row: its refusal, or ``ok`` with its numbers."""
+    if applied.refusal is not None:
+        return refused_row(applied.id, applied.refusal)
+    row: Written = {"id": applied.id, "status": "ok"}
+    row.update(to_jsonable(applied.numbers or {}))
+    return row

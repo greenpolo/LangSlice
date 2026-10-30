@@ -15,6 +15,7 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.tools import deformable as ops_deformable
+from langslice.tools.deformable_rows import deformable_row_to_json
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -55,7 +56,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     job, ctx = _job(tmp_path, atlas)
     depth = len(job.undo_stack)
     first = ops_deformable.fireants_syn(job, ctx, [ID])
-    (row,) = first.rows
+    (row,) = [deformable_row_to_json(one) for one in first.rows]
     assert row["status"] == "ok" and row["written"]
     assert row["settings"] == {"smoothness_um": 80.0, "mask": "none",
                                "section_image": "preprocessed", "atlas_image": "nissl"}
@@ -77,13 +78,14 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
 
     second = ops_deformable.fireants_syn(job, ctx, ["s0.png"], smoothness_um=50.0,
                                          restrict_to=["TH"])
-    assert second.rows[0]["status"] == "ok", second.rows
+    again = deformable_row_to_json(second.rows[0])
+    assert again["status"] == "ok", second.rows
     held = json_of(job.state.slices[0].deformation)
     assert held is not None
     assert [step["start"] for step in held["steps"]] == ["linear", "current"]
     assert held["steps"][1]["include"] == ["TH"]
     assert held["steps"][1]["smoothness_um"] == 50.0
-    assert second.rows[0]["inputs"]["restrict_to"] == ["TH"]
+    assert again["inputs"]["restrict_to"] == ["TH"]
     assert len(job.undo_stack) == depth + 2
     assert job.undo()  # undo is how to start over
     assert len(deformation_to_json(job.state.slices[0].deformation)["steps"]) == 1  # type: ignore[index]
@@ -93,7 +95,7 @@ def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
     job, ctx = _job(tmp_path, atlas)
     job.state.slices[0].damaged_regions = ["HY"]
     done = ops_deformable.fireants_syn(job, ctx, [ID])
-    assert done.rows[0]["status"] == "ok"
+    assert done.rows[0].refusal is None
     step = deformation_to_json(job.state.slices[0].deformation)["steps"][0]  # type: ignore[index]
     assert step["exclude"] == ["HY"]
 

@@ -159,7 +159,7 @@ def test_missing_files_and_folder(tmp_path: Path) -> None:
 def test_a_state_this_version_does_not_read_shows_raw_fields(tmp_path: Path) -> None:
     folder = _job(tmp_path)
     write_json_atomic(str(folder / "state.json"), {
-        "format_version": 3, "appearance": {}, "cutting_angles_deg": None,
+        "format_version": 2, "appearance": {}, "cutting_angles_deg": None,
         "slices": [
             {"id": "b.png", "index_corrected": 1, "position_mm": 4.5, "flip": True,
              "transform": {"kind": "elastix"}, "deformation": {"steps": [{"trace": "x"}]},
@@ -174,6 +174,19 @@ def test_a_state_this_version_does_not_read_shows_raw_fields(tmp_path: Path) -> 
         True, "elastix", "trace_borders", True)
     assert b["angles"] == {"pitch": 2.0, "yaw": -0.5}
 
+
+def test_an_older_state_is_read_through_the_jobs_migrations(tmp_path: Path) -> None:
+    folder = _job(tmp_path)
+    _state(folder, [2.1, None])
+    data = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+    data["format_version"] = 4
+    data["slices"][0]["damaged"] = True  # a key LangSlice no longer has
+    write_json_atomic(str(folder / "state.json"), data)
+    snap = _snap(JobWatcher(folder))
+    assert snap["sections_note"] == ""
+    assert [(r["id"], r["position_mm"]) for r in snap["sections"]] == [
+        ("s000.png", 2.1), ("s001.png", None)]
+    assert json.loads((folder / "state.json").read_text(encoding="utf-8")) == data
 
 def _end(name: str, step: int, sections: tuple[str, ...] = (), failed: bool = False) -> dict:
     return {"kind": "tool_end", "name": name, "execution_id": f"{name}{step}", "door": "agent",

@@ -454,11 +454,11 @@ class JobWatcher:
                 stack_angles_entry,
                 status_rows,
             )
+            from langslice.job.migrations import viewer_stack
             from langslice.job.registrations import Registrations
-            from langslice.job.state_file import current_state, stack_from_json
 
-            fields = current_state(cast("dict[str, Any]", data))
-            state = stack_from_json(fields)
+            fields = cast("dict[str, Any]", data)
+            state = viewer_stack(fields, JobLayout(self.folder))
             if self._registrations is None:
                 self._registrations = Registrations(JobLayout(self.folder))
             records = {r.id: r for r in state.slices}

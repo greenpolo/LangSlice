@@ -129,7 +129,7 @@ class Session:
     prepared: PreparedLinear | None = None
     channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
-    lock: Any = field(default_factory=threading.RLock, repr=False)
+    lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     #: The job's nonlinear task names an image model this door cannot reach
     #: (:func:`langslice.doors.jobs.image_model_off`): its tools and statement
     #: are a run without one.
@@ -184,6 +184,7 @@ def open_job(
     events = EventRelay()
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
                       image_model_connected=not off, on_event=events, door="mcp")
+    box.answers_crashes = True  # a crash is the host's reply
     return Session(job, ctx, box, trace, image_model_off=off, events=events)
 
 
@@ -291,25 +292,21 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
     parameters = [p for name, p in signature.parameters.items() if name != "tool_context"]
 
     async def run(**kwargs: Any) -> list[ContentBlock]:
-        try:
-            def invoke() -> Any:
-                if session.host_update is None:
+        def invoke() -> object:
+            if session.host_update is None:
+                result: object = tool(**kwargs)
+            else:
+                with session.job.observe(session.host_update):
                     result = tool(**kwargs)
-                else:
-                    with session.job.observe(session.host_update):
-                        result = tool(**kwargs)
-                if tool.__name__ == "submit" and session.state.submitted:
-                    finish(session)
-                return result
+            if tool.__name__ == "submit" and session.state.submitted:
+                finish(session)
+            return result
 
-            def serialized() -> Any:
-                with session.lock:
-                    return invoke()
+        def serialized() -> object:
+            with session.lock:
+                return invoke()
 
-            result = await to_thread.run_sync(serialized)
-        except Exception as exc:
-            logger.exception("Tool %s failed", tool.__name__)
-            result = Refused.from_exception(exc).payload()
+        result = await to_thread.run_sync(serialized)
         blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
             session.trace.write("tool_result", name=tool.__name__, args=kwargs,

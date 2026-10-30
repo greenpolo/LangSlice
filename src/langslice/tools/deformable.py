@@ -24,6 +24,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -39,12 +40,18 @@ from langslice.core.fits.inputs import (
     damage_block,
     mask_block,
 )
-from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
+from langslice.core.jsonable import JsonObject
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.tools import masks as ops_masks
+from langslice.tools.deformable_rows import (
+    AppliedFit,
+    DeformableRow,
+    deformable_row_to_json,
+)
 from langslice.tools.fit_regions import (
     region_box,
     region_entries,
@@ -54,11 +61,11 @@ from langslice.tools.images import check_image
 from langslice.tools.look import show_result
 from langslice.tools.refusal import (
     check_section_count,
-    frozen_row,
+    section_refusal,
     unknown_sections,
 )
 from langslice.tools.run import Run, as_list, drawn_image, pictured
-from langslice.tools.stale import section_inputs, stale_row
+from langslice.tools.stale import section_inputs, stale_refusal
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -68,11 +75,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Fitted:
-    """One fit that produced a record, for the door to draw: its row (the
-    same dict as in :attr:`DeformableFit.rows`), the fit itself (the image
-    it read, the record it started from) and its record."""
+    """One fit that produced a record, for the door to draw: its row, the
+    fit itself (the image it read, the record it started from) and its
+    record."""
 
-    row: dict[str, Any]
+    row: DeformableRow
     fit: deformation.Job
     outcome: deformation.DeformableRecord
     #: The record's folder, relative to the job folder.
@@ -83,15 +90,14 @@ class Fitted:
 class DeformableFit:
     """What one :func:`fit_deformable` call did.
 
-    ``rows``: one per section, in call order: the settings, the engine
-    numbers, the displacement summary, ``cached``, ``written`` and
-    ``steps``; or ``status: error`` with the code. ``fitted``: the rows that
-    hold a fit to draw, in the same order. ``traced``: per section whose
-    settings read its trace, the image the fit read and the trace's lines on
-    the fit grid. ``written``: the sections whose deformation changed.
+    ``rows``: one :class:`DeformableRow` per section, in call order.
+    ``fitted``: the rows that hold a fit to draw, in the same order.
+    ``traced``: per section whose settings read its trace, the image the fit
+    read and the trace's lines on the fit grid. ``written``: the sections
+    whose deformation changed.
     """
 
-    rows: list[dict[str, Any]] = field(default_factory=list)
+    rows: list[DeformableRow] = field(default_factory=list[DeformableRow])
     fitted: list[Fitted] = field(default_factory=list)
     traced: dict[str, tuple[Image.Image, np.ndarray]] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
@@ -262,7 +268,9 @@ def fit_deformable(
     """
     state = job.state
     store = job.deformations
-    rows: list[dict[str, Any]] = []
+    rows: list[DeformableRow] = []
+    # the job index of each row whose fit was queued
+    queued: dict[int, int] = {}
     jobs: list[deformation.Job] = []
     traced: dict[str, tuple[Image.Image, Any]] = {}
     trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
@@ -271,9 +279,9 @@ def fit_deformable(
     starts: dict[str, str] = {}
     blocks: dict[int, InputsBlock] = {}
     for record in records:
-        frozen = frozen_row(job, record.id, "deformation")
+        frozen = section_refusal(job, record.id, "deformation")
         if frozen is not None:
-            rows.append(frozen)
+            rows.append(DeformableRow(record.id, refusal=frozen))
             continue
         running = False
         if traced_choice:
@@ -291,11 +299,11 @@ def fit_deformable(
         if unreadable or (current is None and held is not None
                           and held.linear_key == deformation.linear_key(state, record)):
             folder = None if held is None else held.record
-            rows.append(Refused(
+            rows.append(DeformableRow(record.id, refusal=Refused(
                 RefusalCode.DEFORMATION_UNREADABLE,
                 "The section's applied deformation record cannot be read "
                 f"({folder}); it is not replaced by a fit from the "
-                "linear placement.").payload(section_id=record.id))
+                "linear placement.")))
             continue
         own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
@@ -305,21 +313,20 @@ def fit_deformable(
         try:
             grid = deformation.fit_grid(state, workspace, record)
         except (ValueError, OSError) as exc:
-            rows.append(Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                                message=str(exc)).payload(section_id=record.id))
+            rows.append(DeformableRow(record.id, refusal=Refused(
+                RefusalCode.INVALID_LINEAR_PLACEMENT, message=str(exc))))
             continue
         previous = current
         previous_key = None
         if current is not None and record.deformation is not None:
             previous_key = record.deformation.key
         own = exclusions(record, tuple(restrict_to))
-        failure = {"id": record.id, "status": ReplyStatus.ERROR,
-                   "settings": choice.tool_settings()}
+        failure = partial(DeformableRow, record.id, choice.tool_settings())
         regions = traced_regions(record, *own) if traced_choice else own
         try:
             weights = ops_masks.section_weights(job, record, choice.mask)
         except Refused as refusal:
-            rows.append({**failure, **refusal.payload()})
+            rows.append(failure(refusal=refusal))
             continue
         try:
             image, identity = deformation.section_image(
@@ -336,11 +343,11 @@ def fit_deformable(
             if overrides:
                 settings = replace(settings, **dict(overrides))
         except Refused as refusal:  # the trace the fit reads
-            rows.append({**failure, **refusal.payload()})
+            rows.append(failure(refusal=refusal))
             continue
         except (ValueError, OSError) as exc:
             refusal = Refused(RefusalCode.BAD_SETTINGS, message=str(exc))
-            rows.append({**failure, **refusal.payload()})
+            rows.append(failure(refusal=refusal))
             continue
         held_mask = record.masks.get(choice.mask)
         key = deformation.cache_key(
@@ -360,50 +367,47 @@ def fit_deformable(
                 damage=[str(name) for name in own[1]],
                 restrict_to=[str(name) for name in restrict_to],
                 resolved=resolved_atlas_image(workspace, choice.fit_atlas))
-        inherited = regions != own
-        rows.append({"id": record.id, "job": len(jobs) - 1,
-                     **({"trace_regions": {"include": list(regions[0]),
-                                           "exclude": list(regions[1])}}
-                        if inherited else {})})
+        added = None
+        if regions != own:
+            added = {"include": list(regions[0]), "exclude": list(regions[1])}
+        queued[len(rows)] = len(jobs) - 1
+        rows.append(DeformableRow(record.id, trace_regions=added, queued=True))
     with engine_output(job.engine_log, f"deformable fits of {len(jobs)} section(s)"):
         deformation.run_jobs(workspace, jobs)
 
     with job.writing():
         before = job.snapshot()
-        done = _apply(job, rows, jobs, expected=expected, starts=starts, blocks=blocks,
-                      brain_scale=workspace.brain_scale)
+        done = _apply(job, rows, queued, jobs, expected=expected, starts=starts,
+                      blocks=blocks, brain_scale=workspace.brain_scale)
         if done.written:
             job.commit(before)
     return replace(done, traced=traced)
 
 
 def _apply(
-    job: Job, rows: list[dict[str, Any]], jobs: list[deformation.Job], *,
-    expected: dict[str, str], starts: dict[str, str], blocks: Mapping[int, InputsBlock],
-    brain_scale: float = 1.0,
+    job: Job, rows: list[DeformableRow], queued: Mapping[int, int],
+    jobs: list[deformation.Job], *, expected: dict[str, str], starts: dict[str, str],
+    blocks: Mapping[int, InputsBlock], brain_scale: float = 1.0,
 ) -> DeformableFit:
-    """Every fit's row (its engine numbers at the atlas's *brain_scale*) and,
-    under the job's lock, each section's result as its deformation when its
-    inputs are unchanged."""
+    """Every queued fit's row (its engine numbers at the atlas's
+    *brain_scale*; *queued* gives each row's job) and, under the job's lock,
+    each section's result as its deformation when its inputs are unchanged."""
     state = job.state
     store = job.deformations
+    rows = list(rows)
     written: list[str] = []
     fitted: list[Fitted] = []
-    for row in rows:
-        index = row.pop("job", None)
-        if index is None:
-            continue
-        position = cast("int", index)  # the job index fit_deformable set on the row
+    for at, position in queued.items():
         fit = jobs[position]
         outcome = fit.result
         block = blocks.get(position)
-        row["settings"] = fit.choice.tool_settings()
+        row = replace(rows[at], settings=fit.choice.tool_settings())
+        rows[at] = row
         if not isinstance(outcome, deformation.DeformableRecord):
             message = failure_message(
                 str(getattr(outcome, "error", "no result")), job.engine_log,
                 f"the fit of {fit.grid.record.id} failed")
-            row.update(Refused(RefusalCode.FIT_FAILED,
-                               message=message).payload())
+            rows[at] = replace(row, refusal=Refused(RefusalCode.FIT_FAILED, message=message))
             continue
         store.put(fit.key, outcome)
         numbers = deformation.summary(outcome, fit.previous)
@@ -414,35 +418,39 @@ def _apply(
         if now is None or section_inputs(
                 state, now, deformation=start == deformation.FitStart.CURRENT,
                 trace=fit.choice.fit_section == deformation.TRACED_BORDERS) != expected[record.id]:
-            row.update(stale_row(record.id))
+            rows[at] = replace(row, refusal=stale_refusal())
             continue
         record = now
-        row.update(status="ok",
-                   engine_settings=deformation.engine_settings(fit.settings, brain_scale),
-                   **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
-                   cached=fit.cached)
-        if not fit.cached:
-            row.update(gpu_rows(outcome.engine))
         linear = deformation.linear_key(state, record)
         include, exclude = fit_regions(fit)
         outcome.provenance = deformation.provenance(
             fit.grid, fit.choice, include, exclude, start, fit.image_identity, linear)
+        estimated = None
         if block is not None:
             estimated = estimated_block(outcome)
-            row["inputs"] = block.payload()
-            row["estimated"] = None if estimated is None else estimated.payload()
             # The record's provenance holds the same two blocks; what the
             # fit's choice and image were moves to ``fit``.
             outcome.provenance["fit"] = outcome.provenance.pop("inputs", None)
-            outcome.provenance["inputs"] = row["inputs"]
-            outcome.provenance["estimated"] = row["estimated"]
+            outcome.provenance["inputs"] = block.payload()
+            outcome.provenance["estimated"] = None
+            if estimated is not None:
+                outcome.provenance["estimated"] = estimated.payload()
+        queue: JsonObject = {}
+        if not fit.cached:
+            queue = gpu_rows(outcome.engine)
+        runtime_s = cast("float", outcome.engine.get("runtime_s", 0.0))
+        row = replace(row, applied=AppliedFit(
+            engine_settings=deformation.engine_settings(fit.settings, brain_scale),
+            numbers=numbers, runtime_s=round(float(runtime_s), 1),
+            cached=fit.cached, gpu=queue, inputs=block, estimated=estimated))
+        rows[at] = row
         held = record.deformation
         try:
             folder = store.save(record.id, fit.key, outcome)
         except OSError as exc:
             refusal = Refused(RefusalCode.RECORD_WRITE_FAILED,
                               message=str(exc))
-            row.update(refusal.payload())
+            rows[at] = replace(row, refusal=refusal)
             continue
         traced_fit = fit.choice.fit_section == deformation.TRACED_BORDERS
         step: dict[str, Any] = {
@@ -463,9 +471,9 @@ def _apply(
             folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
             step=step, previous=held, numbers=numbers,
         )
-        row["written"] = True
         written.append(record.id)
-        row["steps"] = len(record.deformation.steps or ())
+        row = replace(row, steps=len(record.deformation.steps or ()))
+        rows[at] = row
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome,
                              folder=job.layout.relative(folder)))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
@@ -719,13 +727,13 @@ def fireants_syn_tool(
         job, workspace, as_list(sections), restrict_to=as_list(restrict_to),
         section_image=section_image, atlas_image=atlas_image, mask=mask,
         smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
-    fitted = [str(row["id"]) for row in done.rows
-              if row.get("status") == ReplyStatus.OK]
+    fitted = [row.id for row in done.rows if row.refusal is None]
+    rows = [deformable_row_to_json(row) for row in done.rows]
     result: dict[str, Any] = {"status": "ok" if fitted else "error"}
     if not fitted:
-        result.update(nothing_fitted(done.rows))
+        result.update(nothing_fitted(rows))
     result["settings"] = done.settings
-    result["results"] = done.rows
+    result["results"] = rows
     if done.written:
         result["changed"] = run.changed(done.written)["changed"]
     if not fitted or not run.shows(view):

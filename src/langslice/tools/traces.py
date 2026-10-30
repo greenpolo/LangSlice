@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langslice.core.fits import deformation
 from langslice.core.fits import frame as handoff
@@ -29,6 +29,7 @@ from langslice.core.stack.codec import trace_from_json, trace_to_json
 from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.tools.deformable import fit_deformable, refuse_without_engine
+from langslice.tools.deformable_rows import deformable_row_to_json
 from langslice.tools.fit_pictures import draw_fits
 from langslice.tools.fit_regions import region_entries
 from langslice.tools.refusal import section_refusal, unknown_sections
@@ -268,29 +269,28 @@ def land_trace(
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions)
     if options is not None:
         done = draw_fits(workspace, done, options)
-    row: dict[str, Any] = (done.rows[0] if done.rows
-                           else Refused(RefusalCode.FIT_FAILED,
-                                        "The fit returned no row.").payload())
-    if row.get("status") == "error":
-        if row.get("error") in _STALE_CODES:
+    (fitted,) = done.rows  # one row per section asked
+    row = deformable_row_to_json(fitted)
+    refusal = fitted.refusal
+    if refusal is not None or fitted.applied is None:
+        assert refusal is not None  # a row holds a fit or a refusal
+        if refusal.code in _STALE_CODES:
             return _stale(trace)
         return Landed(status=FAILED, text=f"the fit of the traced borders failed "
-                      f"({row.get('error')}: {row.get('message', '')}); nothing was applied.",
-                      result={"error": row.get("error"), "row": row, "trace": trace})
-    numbers = row.get("displacement_mm") or {}
-    built_on = ("its previous deformation" if row.get("steps", 0) > 1
+                      f"({refusal.code}: {refusal.message}); nothing was applied.",
+                      result={"error": refusal.code, "row": row, "trace": trace})
+    summary = fitted.applied.numbers
+    moved = cast("dict[str, object]", summary.get("displacement_mm") or {})
+    built_on = ("its previous deformation" if fitted.steps > 1
                 else "its linear placement")
-    facts = (f"Displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
-             f"fold fraction {row.get('fold_fraction')}"
-             + (f"; flags {deformation.flag_words(row)}" if row.get("flags") else "") + ".")
-    if not row.get("written"):
-        text = ("the trace landed; its fit equals the deformation the section already holds, "
-                "so nothing changed. " + facts)
-    else:
-        text = ("the trace landed and FireANTs fitted the traced borders (80 um smoothness"
-                + (f", restricted to {', '.join(regions)}" if regions else "")
-                + f") on top of {built_on}. The deformation is applied as its own undo "
-                "step: undo removes it while it is the latest step. " + facts)
+    facts = (f"Displacement median {moved.get('median')} mm, max {moved.get('max')} mm; "
+             f"fold fraction {summary.get('fold_fraction')}"
+             + (f"; flags {deformation.flag_words(dict(summary))}"
+                if summary.get("flags") else "") + ".")
+    text = ("the trace landed and FireANTs fitted the traced borders (80 um smoothness"
+            + (f", restricted to {', '.join(regions)}" if regions else "")
+            + f") on top of {built_on}. The deformation is applied as its own undo "
+            "step: undo removes it while it is the latest step. " + facts)
     return Landed(status=DONE, text=text, pictures=list(done.pictures),
                   result={"row": row, "trace": trace})
 

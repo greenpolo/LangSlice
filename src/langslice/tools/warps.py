@@ -23,6 +23,7 @@ from langslice.core.fits import deformation
 from langslice.core.fits.deformable.settings import FitSettings
 from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.frame import digest
+from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
@@ -34,8 +35,8 @@ from langslice.tools.deformable import (
     resolved_atlas_image,
 )
 from langslice.tools.images import check_image
-from langslice.tools.refusal import frozen_row, unknown_sections
-from langslice.tools.stale import stale_row
+from langslice.tools.refusal import section_refusal, unknown_sections
+from langslice.tools.stale import stale_refusal
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -385,11 +386,23 @@ def _stored_weights(
 
 
 @dataclass(frozen=True)
-class WarpsApplied:
-    """What :func:`apply_warps` did: one row per warp (``status`` ``ok`` with
-    the record's numbers, or ``error`` with the code) and the sections written."""
+class WarpApplied:
+    """One warp's answer from :func:`apply_warps`: written, or why not."""
 
-    rows: list[dict[str, Any]] = field(default_factory=list)
+    id: str
+    #: Why it was not written; None for a warp written.
+    refusal: Refused | None = None
+    #: The record's numbers (:func:`langslice.core.fits.deformation.summary`)
+    #: of a warp written.
+    numbers: JsonObject | None = None
+
+
+@dataclass(frozen=True)
+class WarpsApplied:
+    """What :func:`apply_warps` did: one :class:`WarpApplied` per warp and
+    the sections written."""
+
+    rows: list[WarpApplied] = field(default_factory=list[WarpApplied])
     written: list[str] = field(default_factory=list)
 
 
@@ -408,22 +421,19 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
     clears it as it clears any deformation.
     """
     store = job.deformations
-    rows: list[dict[str, Any]] = []
+    rows: list[WarpApplied] = []
     written: list[str] = []
     with job.writing():
         before = job.snapshot()
         for warp in warps:
             record = job.state.by_id(warp.id)
             if record is None:
-                rows.append(
-                    unknown_sections(job.state, [warp.id]).payload(
-                        section_id=warp.id
-                    )
-                )
+                unknown = unknown_sections(job.state, [warp.id])
+                rows.append(WarpApplied(warp.id, refusal=unknown))
                 continue
-            frozen = frozen_row(job, record.id, "deformation")
+            frozen = section_refusal(job, record.id, "deformation")
             if frozen is not None:
-                rows.append(frozen)
+                rows.append(WarpApplied(record.id, refusal=frozen))
                 continue
             held = record.deformation
             if deformation.linear_key(
@@ -432,17 +442,16 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
                 warp.parent_key is not None
                 and record.deformation_key != warp.parent_key
             ):
-                rows.append(stale_row(record.id))
+                rows.append(WarpApplied(record.id, refusal=stale_refusal()))
                 continue
             store.put(warp.key, warp.record)
             try:
                 folder = store.save(record.id, warp.key, warp.record)
             except (OSError, ValueError) as exc:
-                rows.append(
-                    Refused(
-                        RefusalCode.RECORD_WRITE_FAILED, message=str(exc)
-                    ).payload(section_id=record.id)
+                failed = Refused(
+                    RefusalCode.RECORD_WRITE_FAILED, message=str(exc)
                 )
+                rows.append(WarpApplied(record.id, refusal=failed))
                 continue
             record.deformation = deformation.reference(
                 folder=job.layout.relative(folder),
@@ -454,7 +463,7 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
                 numbers=warp.numbers,
             )
             written.append(record.id)
-            rows.append({"id": record.id, "status": "ok", **warp.numbers})
+            rows.append(WarpApplied(record.id, numbers=warp.numbers))
         if written:
             job.commit(before)
     return WarpsApplied(rows=rows, written=written)
