@@ -445,24 +445,10 @@ def _read_fields(
 ) -> tuple[np.ndarray, np.ndarray | None, StoredStep | None]:
     """Read a record's fields: as stored whole, or rebuilt from its step.
 
-    Parameters
-    ----------
-    meta
-        The record's ``record.json``.
-    arrays
-        Its ``warp.ome.zarr`` arrays, as the store's reader returns them.
-    parent_record
-        The record its step was fitted on, loaded; None for none.
-
-    Returns
-    -------
-    field_mm : numpy.ndarray
-        The forward field on the section grid, at storage precision.
-    inverse_field_mm : numpy.ndarray or None
-        The inverse field likewise; None for a record saved without one.
-    stored_step : StoredStep or None
-        The step the fields were rebuilt from; None for fields saved
-        whole (format 2 has only those).
+    Returns the forward and inverse fields on the section grid at storage
+    precision (the inverse None for a record saved without one) and the
+    step they were rebuilt from (None for fields saved whole, as format 2
+    has only).
     """
     kind = optional_at(meta, "fields", text_at) or FIELDS_WHOLE
     if kind == FIELDS_WHOLE:
@@ -526,16 +512,7 @@ def _check_rebuilt(
 ) -> None:
     """Warn when rebuilt fields differ from the bits the record was made with.
 
-    Parameters
-    ----------
-    root
-        The record's folder.
-    meta
-        Its ``record.json``; one without ``fields_sha256`` is not checked.
-    field_mm
-        The forward field as read, at storage precision.
-    inverse_field_mm
-        The inverse field likewise.
+    A record whose ``record.json`` has no ``fields_sha256`` is not checked.
     """
     made = optional_at(meta, "fields_sha256", text_at)
     if made is None or inverse_field_mm is None:

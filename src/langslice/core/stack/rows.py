@@ -235,7 +235,6 @@ def section_from_json(row: JsonObject) -> Section:
     Returns
     -------
     Section
-        The section.
 
     Raises
     ------
@@ -280,6 +279,5 @@ def with_fields(section: Section, fields: JsonObject) -> Section:
     Returns
     -------
     Section
-        A new section.
     """
     return section_from_json({**section_to_json(section), **fields})

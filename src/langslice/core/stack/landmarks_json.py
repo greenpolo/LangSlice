@@ -114,7 +114,6 @@ def pair_from_json(data: JsonObject) -> Pair:
     Returns
     -------
     Pair
-        The pair.
     """
     return Pair(
         id=text_at(data, "id"),

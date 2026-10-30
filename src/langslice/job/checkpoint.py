@@ -85,7 +85,6 @@ def state_from_file(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
     Returns
     -------
     Stack
-        The stack the file holds.
 
     Raises
     ------

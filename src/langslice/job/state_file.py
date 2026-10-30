@@ -181,7 +181,6 @@ def stack_from_json(data: JsonObject) -> Stack:
     Returns
     -------
     Stack
-        The stack.
 
     Raises
     ------
