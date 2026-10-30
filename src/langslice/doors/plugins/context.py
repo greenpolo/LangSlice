@@ -1513,7 +1513,7 @@ class ToolContext:
         :meth:`fit_fireants`; an array is refused ``BAD_ARGS``), *edges*;
         *exclude* adds regions to leave out; *marked* False keeps the section's
         marked damage regions in the fit."""
-        from langslice.tools.transforms import elastix_fit
+        from langslice.tools.affine_fit import elastix_fit
 
         record = self._record(section)
         label = _mask_name(mask)
@@ -1619,7 +1619,7 @@ class ToolContext:
         written here; the pictures are the handler's to return. Refused
         (``POSITIONING_OFF``) where the job disables ``look:positioning``."""
         from langslice.core.pictures import look as looks
-        from langslice.doors.tools.changing import _positions
+        from langslice.tools.positions import distinct_positions
 
         if self._run.spec.off("look:positioning"):
             raise ToolError(RefusalCode.POSITIONING_OFF,
@@ -1644,7 +1644,7 @@ class ToolContext:
                     held.angles = (float(angles[0]), float(angles[1]))
                 held.deformation = None
         records = [state.by_id(name) for name in names]
-        positions = _positions([float(r.position_mm) for r in records
+        positions = distinct_positions([float(r.position_mm) for r in records
                                 if r is not None and r.position_mm is not None])
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="positioning", sections=tuple(names),

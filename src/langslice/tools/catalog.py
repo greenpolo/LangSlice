@@ -44,6 +44,7 @@ from langslice.job.settings.tool_table import (
     positions_on,
 )
 from langslice.tools import (
+    affine_fit,
     atlas,
     damage,
     deformable,
@@ -129,7 +130,7 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "interactive_transform": transforms.interactive_transform,
     "mark_damage": damage.mark_damage,
     "make_mask": masks.make_mask,
-    "elastix_affine": transforms.elastix_affine,
+    "elastix_affine": affine_fit.elastix_affine,
     "fireants_syn": deformable.fireants_syn,
     "set_landmarks": landmarks.set_landmarks,
     "landmark_triangulation": landmarks.landmark_triangulation,

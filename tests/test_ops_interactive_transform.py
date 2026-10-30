@@ -15,7 +15,7 @@ from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import transforms
+from langslice.tools import affine_fit, transforms
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,
     _left_half_section,
@@ -52,7 +52,7 @@ def test_one_undo_step_for_orientation_and_knobs_on_several_sections(tmp_path: P
         {"id": "s1.png", "rotate_quarter": 90, "translate_x_mm": 0.1},
     ])
     assert done.written == ["s0.png", "s1.png"]
-    assert [entry.error for entry in done.entries] == [None, None]
+    assert [entry.refusal for entry in done.entries] == [None, None]
     assert (_record(job, "s0.png").flip, _record(job, "s1.png").rotation_deg) == (True, 90)
     physical = affine_to_json(_record(job, "s0.png").transform)["physical"]
     assert physical["rotation_deg"] == 3.0 and physical["scale_x"] == 1.1
@@ -116,7 +116,7 @@ def test_refusals_write_nothing(tmp_path: Path):
         {"id": "nope.png", "rotation_deg": 1.0},
         "s0.png",
     ])
-    assert [entry.error["error"] for entry in done.entries if entry.error] == [
+    assert [entry.refusal.code for entry in done.entries if entry.refusal] == [
         "FROZEN", "OPTION_OFF", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS", "NO_POSITION",
         "UNKNOWN_SLICE_IDS", "BAD_ARGS"]
     assert done.written == [] and job.undo_stack == []
@@ -152,7 +152,7 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
     # The atlas's additional references are fit images too (BrainGlobe's names).
     monkeypatch.setattr(ctx.atlas, "additional_references",
                         {"nissl": np.asarray(ctx.atlas.template)}, raising=False)
-    done = transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"],
+    done = affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"],
                                      atlas_image="nissl")
     assert calls == [{"id": "s0.png", "include": ("L",), "exclude": (),
                       "atlas_image": "nissl"}]
@@ -167,7 +167,7 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
     assert x1 < 0.8 and (x0 + x1) / 2 < 0.5
     # No regions, no box.
     calls.clear()
-    everything = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"],
+    everything = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"],
                                            atlas_image="template")
     assert [call["id"] for call in calls] == ["s0.png", "s1.png"]
     assert {call["atlas_image"] for call in calls} == {"template"}
@@ -178,13 +178,13 @@ def test_elastix_affine_leaves_marked_damage_out_on_its_own(
         tmp_path: Path, calls: list[dict[str, Any]]):
     job, ctx = _open(tmp_path)
     _record(job, "s0.png").damaged_regions = ["R"]
-    transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
+    affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     assert {call["id"]: call["exclude"] for call in calls} == {"s0.png": ("R",),
                                                                "s1.png": ()}
     # restrict_to another region keeps the mark out; naming the marked region wins.
     calls.clear()
-    transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"])
-    transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=["R"])
+    affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"])
+    affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=["R"])
     assert [(call["include"], call["exclude"]) for call in calls] == [
         (("L",), ("R",)), (("R",), ())]
 
@@ -193,16 +193,16 @@ def test_elastix_affine_refuses_bad_arguments_and_unfittable_sections(
         tmp_path: Path, calls: list[dict[str, Any]]):
     job, ctx = _open(tmp_path)
     with pytest.raises(Refused) as unknown:
-        transforms.elastix_affine(job, ctx, ["nope.png"])
+        affine_fit.elastix_affine(job, ctx, ["nope.png"])
     assert unknown.value.code == "UNKNOWN_SLICE_IDS"
     with pytest.raises(Refused) as image:
-        transforms.elastix_affine(job, ctx, ["s0.png"], atlas_image="colour")
+        affine_fit.elastix_affine(job, ctx, ["s0.png"], atlas_image="colour")
     assert image.value.code == "BAD_ARGS"
     with pytest.raises(Refused) as none:
-        transforms.elastix_affine(job, ctx, [])
+        affine_fit.elastix_affine(job, ctx, [])
     assert none.value.code == "BAD_ARGS"
     with pytest.raises(Refused) as regions:
-        transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=[3])  # type: ignore[list-item]
+        affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=[3])  # type: ignore[list-item]
     assert regions.value.code == "BAD_ARGS"
     assert calls == [] and job.undo_stack == []
 
@@ -213,7 +213,7 @@ def test_elastix_affine_refuses_a_frozen_affine_and_fits_a_noted_one(
     regions) is no damage, so that section is fitted whole."""
     job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]}, inputs={
                                        "damaged": {"s0.png": "torn"}})
-    done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
+    done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     assert [row.get("error") for row in done.rows] == [None, "FROZEN"]
     assert done.fitted == ["s0.png"]
     assert calls == [{"id": "s0.png", "include": (), "exclude": (), "atlas_image": "template"}]

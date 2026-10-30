@@ -18,7 +18,7 @@ from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import damage, notes, positions, transforms
+from langslice.tools import affine_fit, damage, notes, positions, transforms
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -106,7 +106,7 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     assert not transforms.same_transform(None, record)
     assert transforms.same_transform(replace(record, note="other"), record)
 
-    fitted = transforms.fit_transform(
+    fitted = affine_fit.fit_transform(
         {"params": [1, 0, 0, 0, 1, 0], "physical": {},
                     "calibration": {"section_um_per_px": 1.0, "source": "host"},
                     "mirrored": False},

@@ -1,4 +1,8 @@
-"""Undo and redo: steps of the job's history, either way (one by default)."""
+"""Undo and redo: steps of the job's history, either way (one by default).
+
+:func:`undo` and :func:`redo` take the steps; the tools' functions
+(``undo_tool``, ``redo_tool``) answer with what the steps changed.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +10,22 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.refusal import RefusalCode, Refused
+
 if TYPE_CHECKING:
     from langslice.job.job import Job
+    from langslice.tools.run import Run
+
+
+@dataclass(frozen=True)
+class HistoryStep:
+    """Hold what history steps changed together (:func:`describe_step`)."""
+
+    #: The sections they touched.
+    sections: list[str] = field(default_factory=list[str])
+    #: The field groups they changed (``placement``, ``linear``, ``damage``,
+    #: ``landmarks``, ``deformation``, ``images``, ``masks``, ``notes``).
+    fields: list[str] = field(default_factory=list[str])
 
 
 @dataclass(frozen=True)
@@ -18,9 +36,8 @@ class Stepped:
     done: bool
     #: The steps left on that side afterwards (undo: undo steps; redo: redo).
     depth: int = 0
-    #: What the steps were together: ``{"sections": the sections they
-    #: touched, "fields": what changed}`` (:func:`describe_step`).
-    step: dict[str, Any] = field(default_factory=dict)
+    #: What the steps were together.
+    step: HistoryStep = field(default_factory=HistoryStep)
     #: How many steps were taken (fewer than asked when the history held fewer).
     steps: int = 0
 
@@ -30,13 +47,19 @@ class Stepped:
 _PLACEMENT = ("position_mm", "index_corrected")
 _LINEAR = ("flip", "rotation_deg", "transform")
 _FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("placement", _PLACEMENT), ("linear", _LINEAR),
-    ("damage", ("damaged_regions", "damage_note")), ("landmarks", ("landmarks",)),
-    ("deformation", ("deformation",)), ("images", ("images",)), ("masks", ("masks",)),
+    ("placement", _PLACEMENT),
+    ("linear", _LINEAR),
+    ("damage", ("damaged_regions", "damage_note")),
+    ("landmarks", ("landmarks",)),
+    ("deformation", ("deformation",)),
+    ("images", ("images",)),
+    ("masks", ("masks",)),
 )
 
 
-def describe_step(old: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, Any]:
+def describe_step(
+    old: Mapping[str, Any], new: Mapping[str, Any]
+) -> HistoryStep:
     """The step that took state *old* to state *new* (both ``to_dict``
     snapshots): the sections it touched and the field groups it changed. A
     deformation that a placement or transform change cleared is part of that
@@ -48,18 +71,27 @@ def describe_step(old: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, A
         before = held.get(row["id"])
         if before is None:
             continue
-        changed = [name for name, keys in _FIELDS if any(before.get(k) != row.get(k)
-                                                          for k in keys)]
+        changed = [
+            name
+            for name, keys in _FIELDS
+            if any(before.get(k) != row.get(k) for k in keys)
+        ]
         if changed:
             sections.append(row["id"])
             groups += [name for name in changed if name not in groups]
-    if old.get("interval_breaks") != new.get("interval_breaks") and "placement" not in groups:
+    if (
+        old.get("interval_breaks") != new.get("interval_breaks")
+        and "placement" not in groups
+    ):
         groups.append("placement")
-    if old.get("cutting_angles_deg") != new.get("cutting_angles_deg") and "placement" not in groups:
+    if (
+        old.get("cutting_angles_deg") != new.get("cutting_angles_deg")
+        and "placement" not in groups
+    ):
         groups.append("placement")
     if old.get("notes") != new.get("notes") and not groups:
         groups = ["notes"]
-    return {"sections": sections, "fields": groups}
+    return HistoryStep(sections=sections, fields=groups)
 
 
 def _steps(job: Job, step: Any, steps: int) -> tuple[dict[str, Any], int]:
@@ -80,8 +112,12 @@ def undo(job: Job, steps: int = 1) -> Stepped:
     before, taken = _steps(job, job.undo, steps)
     if not taken:
         return Stepped(done=False, depth=len(job.undo_stack))
-    return Stepped(done=True, depth=len(job.undo_stack),
-                   step=describe_step(job.snapshot(), before), steps=taken)
+    return Stepped(
+        done=True,
+        depth=len(job.undo_stack),
+        step=describe_step(job.snapshot(), before),
+        steps=taken,
+    )
 
 
 def redo(job: Job, steps: int = 1) -> Stepped:
@@ -89,5 +125,127 @@ def redo(job: Job, steps: int = 1) -> Stepped:
     before, taken = _steps(job, job.redo, steps)
     if not taken:
         return Stepped(done=False, depth=len(job.redo_stack))
-    return Stepped(done=True, depth=len(job.redo_stack),
-                   step=describe_step(before, job.snapshot()), steps=taken)
+    return Stepped(
+        done=True,
+        depth=len(job.redo_stack),
+        step=describe_step(before, job.snapshot()),
+        steps=taken,
+    )
+
+
+# --- the tools ---------------------------------------------------------------
+
+
+def undo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
+    """Run the ``undo`` tool: take *steps* steps back.
+
+    Parameters
+    ----------
+    run
+        The run the tool belongs to.
+    steps
+        How many steps, a whole number from 1.
+
+    Returns
+    -------
+    dict
+        The reply: what the steps undid and the rows they changed
+        (:func:`_stepped_reply`).
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` for *steps* that is not a whole number from 1;
+        ``NOTHING_TO_UNDO`` when the history holds no earlier step.
+    """
+    count = _step_count(steps)
+    step = undo(run.job, count)
+    if not step.done:
+        raise Refused(
+            RefusalCode.NOTHING_TO_UNDO,
+            "Nothing to undo: the job's history holds no earlier step.",
+        )
+    return _stepped_reply(run, "undone", "undo_depth", step, count)
+
+
+def redo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
+    """Run the ``redo`` tool: take *steps* undone steps forward again.
+
+    Parameters
+    ----------
+    run
+        The run the tool belongs to.
+    steps
+        How many steps, a whole number from 1.
+
+    Returns
+    -------
+    dict
+        The reply: what the steps redid and the rows they changed
+        (:func:`_stepped_reply`).
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` for *steps* that is not a whole number from 1;
+        ``NOTHING_TO_REDO`` when nothing undone is left to redo.
+    """
+    count = _step_count(steps)
+    step = redo(run.job, count)
+    if not step.done:
+        raise Refused(
+            RefusalCode.NOTHING_TO_REDO,
+            "Nothing to redo: redo follows an undo, and a "
+            "write after it clears what was undone.",
+        )
+    return _stepped_reply(run, "redone", "redo_depth", step, count)
+
+
+def _step_count(steps: object) -> int:
+    """Return the tools' *steps* as a count; ``BAD_ARGS`` for anything but a
+    whole number from 1.
+    """
+    try:
+        count = int(steps)  # pyright: ignore[reportArgumentType]  # a model's value
+    except (TypeError, ValueError):
+        count = 0
+    if count < 1 or count != steps:
+        raise Refused(
+            RefusalCode.BAD_ARGS, "steps is a whole number, 1 or more."
+        )
+    return count
+
+
+def _stepped_reply(
+    run: Run,
+    word: str,
+    depth_key: str,
+    step: Stepped,
+    count: int,
+) -> dict[str, Any]:
+    """Return the reply to an undo or redo: the steps' sections and field
+    groups under *word*, the depth under *depth_key*, past one step asked
+    how many were taken, the rows those sections changed and, after a
+    placement change, the cutting angles and the interval breaks.
+    """
+    info = step.step
+    what = {"sections": info.sections, "fields": info.fields}
+    result: dict[str, Any] = {
+        "status": "ok",
+        word: what,
+        depth_key: step.depth,
+    }
+    if count > 1:
+        result["steps"] = step.steps
+        if step.steps < count:
+            result["message"] = (
+                f"{count} steps were asked and the history held "
+                f"{step.steps}: all {step.steps} were taken."
+            )
+    if info.sections:
+        rows = run.changed(info.sections)
+        result["changed"] = rows["changed"]
+        if "placement" in info.fields:
+            result["cutting_angles_deg"] = rows["cutting_angles_deg"]
+            result["interval_breaks"] = rows["interval_breaks"]
+    return result

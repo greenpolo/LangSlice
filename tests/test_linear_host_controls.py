@@ -19,8 +19,8 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.gates import submit_errors
 from langslice.job.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.tools import transforms as ops_transforms
-from langslice.tools.transforms import AffineFit
+from langslice.tools import affine_fit as ops_transforms
+from langslice.tools.affine_fit import AffineFit
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.fakes import SlabAtlas
 

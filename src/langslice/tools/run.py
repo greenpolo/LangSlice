@@ -1,6 +1,6 @@
 """What every tool body of one run shares: the job, the workspace, the run's settings.
 
-The tool bodies are closures over one :class:`Run`: the job and the workspace
+Every tool body works over one :class:`Run`: the job and the workspace
 they work on, the toolbox, the run's picture size, the image model, and the
 small helpers every body words its reply with (the status rows a write
 changed, a section list resolved). A run sits behind one door (the way in:
@@ -51,6 +51,22 @@ class Run:
     @property
     def state(self) -> Stack:
         return self.job.state
+
+    def shows(self, view: bool) -> bool:
+        """Return whether a change tool answers with its picture.
+
+        Parameters
+        ----------
+        view
+            The call's ``view`` argument.
+
+        Returns
+        -------
+        bool
+            *view*, or True where the host forces the picture
+            (``JobSpec.force_view``).
+        """
+        return bool(view) or bool(self.spec.force_view)
 
     # --- the status rows -------------------------------------------------------
 

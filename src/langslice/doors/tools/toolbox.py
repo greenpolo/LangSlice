@@ -1,16 +1,18 @@
 """The toolbox of one run: the tools its spec switches on, built over its job.
 
-:func:`build_tools` gathers each tool's body (:mod:`.looking`,
-:mod:`.changing`, :mod:`.fitting`, and a plugin's through
-:mod:`langslice.doors.plugins.runtime`), each a closure over one
-:class:`~langslice.tools.run.Run`, and makes each one a tool of the pipeline
-every call goes through (:mod:`langslice.tools.pipeline`). It lives at the
+:func:`build_tools` gathers each tool's body over one
+:class:`~langslice.tools.run.Run` (a function of the tool's module that takes
+the run first, :data:`TOOL_BODIES`; the closures of :mod:`.looking` and
+:mod:`.fitting`; a plugin's through :mod:`langslice.doors.plugins.runtime`)
+and makes each one a tool of the pipeline every call goes through
+(:mod:`langslice.tools.pipeline`). It lives at the
 doors because the bodies do, and because it resolves the run's image model
 through the providers, which the tools do not import.
 """
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
@@ -23,11 +25,21 @@ from langslice.core.pictures.sizes import (
 from langslice.core.space import Plane
 from langslice.core.stack.stack import Stack
 from langslice.doors.plugins import provenance, runtime
-from langslice.doors.tools import changing, fitting, looking
+from langslice.doors.tools import fitting, looking
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
+from langslice.tools import (
+    damage,
+    history,
+    masks,
+    notes,
+    positions,
+    registrations,
+    submit,
+    transforms,
+)
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.events import EventLog, LiveCallback
@@ -36,6 +48,19 @@ from langslice.tools.run import Run
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.doors.agent.engine import EngineContext
+
+#: The tools whose body is a function of the tool's module, taking the run.
+TOOL_BODIES: dict[str, Callable[..., object]] = {
+    "position_sections": positions.position_sections_tool,
+    "interactive_transform": transforms.interactive_transform_tool,
+    "mark_damage": damage.mark_damage_tool,
+    "make_mask": masks.make_mask_tool,
+    "note": notes.note_tool,
+    "undo": history.undo_tool,
+    "redo": history.redo_tool,
+    "restore_registration": registrations.restore_registration_tool,
+    "submit": submit.submit_tool,
+}
 
 
 def with_job_prompt(spec: JobSpec, image_model: ImageModel) -> ImageModel:
@@ -73,9 +98,10 @@ def build_tools(
     (:func:`langslice.tools.catalog.enabled`); each tool's name, arguments and
     description are its declaration
     (:func:`langslice.tools.descriptions.render.declare`); each tool's body is
-    in :mod:`.looking`, :mod:`.changing` or :mod:`.fitting`. The tools sit on
-    *job*; without one, a job is made around *state* in the context's job
-    folder (an empty undo history, nothing written until the first write).
+    in its module (:data:`TOOL_BODIES`), :mod:`.looking` or :mod:`.fitting`.
+    The tools sit on *job*; without one, a job is made around *state* in the
+    context's job folder (an empty undo history, nothing written until the
+    first write).
     *max_view_edge* is the largest picture the driver model takes (None: the
     run model's lane,
     :func:`langslice.doors.tools.view_options.view_edge_limit`). *image_model*
@@ -133,7 +159,9 @@ def build_tools(
               traces_on=traces_on, image_model=image_model)
     box.run = run
     bodies: dict[str, Callable[..., Any]] = {
-        **looking.bodies(run), **changing.bodies(run), **fitting.bodies(run),
+        **looking.bodies(run), **fitting.bodies(run),
+        **{name: functools.partial(body, run)
+           for name, body in TOOL_BODIES.items()},
     }
     if spec.plugins:
         bodies.update(runtime.bodies(run, variant))

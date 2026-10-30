@@ -75,7 +75,7 @@ def exclusions(
     given. *exclude* is the section's marked regions, except a marked entry
     that *restrict_to* names exactly (same region, same side or none): an
     explicit request for that region wins. Repeats are dropped
-    (case-insensitive). Every fit (``tools.transforms.elastix_affine``,
+    (case-insensitive). Every fit (``tools.affine_fit.elastix_affine``,
     ``tools.deformable.fit_deformable``) and the image model's trace
     (``tools.traces.trace_borders``) take their regions through here.
     """
