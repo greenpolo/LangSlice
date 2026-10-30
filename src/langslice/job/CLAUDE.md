@@ -158,7 +158,7 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      params)
 state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
-history/undo.json    the undo and redo steps (history.py)
+history/undo.json    the undo and redo steps (undo_steps.py)
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                      filename when two images share a stem)
   history.jsonl              every write that changed the section, its row and
@@ -360,24 +360,31 @@ longer exist be taken over by the images it is opened with.
   changed it (`seq`, `step`, `by`, `at`, `registration`, `digest`,
   `format_version`, then the section's row of `state.json`); `rows` (cached
   by the file's stamp; a line cut short skipped; an older
-  `registrations.jsonl` read in its place), `head`, `row(seq)`,
-  `registrations` (the first line of each number), `registration(number)`,
+  `registrations.jsonl` read in its place), `row(seq)`, `number(id,
+  digest)`, `registrations` (the first line of each number),
   `registration_number(state, section)`, `append` (under the job's lock; the
   number the registration has, or the next one when `numbered`; writes an
-  older list's lines first and removes it), `collect_records` (deletes the
-  section's record folders no line or the section names, parents kept).
-  `registration_value` (orientation, transform and the deformation while its
-  `linear_key` holds; None with neither), `registration_digest`,
+  older list's lines first and removes it; after a line cut short it starts
+  a new line), `collect_records` (deletes the section's record folders no
+  line or the section names, parents kept; nothing while an older
+  LangSlice's undo steps are in `history/`, which may name records no line
+  does). `registration_value` (orientation, transform and the deformation
+  while its `linear_key` holds; None with neither), `registration_digest`,
   `guessed_maker` (what a `host` line's registration says made it), `HOST`,
   `SCRIPT`, `set_head(section, fields)` (puts row fields back in place: undo,
-  redo and `restore_registration`), `section_row`. `UndoFile(layout)`
-  (`Job.undo_file`): `history/undo.json` (format 1: `next_step`, `undo`,
-  `redo` lists of `UndoStep`: `step`, `by`, `at`, `sections` {id: seq
-  before}, `stack_before`); `load` (an unreadable or newer file: no steps,
-  `notice` says why and `writable` False, so `save` leaves it; an older
-  LangSlice's `index.json` / `step-*.json`: no steps, one warning per process, left on
-  disk), `save`; `combined_steps` (the earliest line per section and field
-  wins: `merge_steps`, `amend`). No cap on the steps.
+  redo and `restore_registration`), `section_row`.
+- `undo_steps.py` — `history/undo.json`. `UndoFile(layout)`
+  (`Job.undo_file`): format 1, `next_step`, `undo` and `redo` lists of
+  `UndoStep` (`step`, `by`, `at`, `sections` {id: seq before},
+  `stack_before` (the stack's fields but the notes), `notes_before`
+  (`NotesBefore`: `keep` the first notes, then `then`; the change only, so
+  the file grows with what each write changed)); `load` returns `UndoLists`
+  (an unreadable or newer file: no steps, its `notice` says why and
+  `writable` False, so `save` leaves it; an older LangSlice's `index.json` /
+  `step-*.json` (`older_undo_steps`): no steps, the notice once per
+  process, the files left on disk), `save`; `combined_steps` (the earliest
+  line per section and field wins, the notes' changes composed:
+  `merge_steps`, `amend`). No cap on the steps.
 - `recent.py` — the jobs opened on this computer,
   `~/.langslice/recent_jobs.jsonl` (`folder`, `image_folder`, `atlas`, `at`;
   one line per `Job.open`), for the GUI's job list: `remember`, `read`,
@@ -402,7 +409,8 @@ longer exist be taken over by the images it is opened with.
   and asks for an update, an older one no migration reads (`older_format`)
   for a new job, `--no-resume` or `resume=False`; without *upgrade* only the
   current format reads), `stack_fields` / `set_stack_fields` (the stack's
-  own fields without its sections, an undo step's `stack_before`),
+  own fields without its sections; an undo step's `stack_before` is them
+  but the notes),
   `json_object` (a JSON text's object, or None), `write_json_atomic` (every
   job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to

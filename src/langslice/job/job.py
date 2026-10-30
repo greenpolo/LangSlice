@@ -257,8 +257,8 @@ class Job(JobBorderTraces):
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
                 lists.undo, lists.redo = [], []
-            if undo_file.notice is not None:
-                workspace.progress(f"[job] {undo_file.notice}")
+            if lists.notice is not None:
+                workspace.progress(f"[job] {lists.notice}")
             # The opening ``preprocessed`` image of every section without one,
             # outside undo: part of the job as it opens.
             section_images.ensure_opening(workspace, layout, state)

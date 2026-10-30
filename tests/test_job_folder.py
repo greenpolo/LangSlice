@@ -209,6 +209,74 @@ def test_a_record_no_line_names_is_deleted_and_an_applied_one_stays(tmp_path: Pa
     assert sorted(path.name for path in deformable.iterdir()) == ["a" * 24, "c" * 24]
 
 
+def test_records_stay_while_an_older_langslice_s_undo_steps_are_beside(tmp_path: Path):
+    """A record only an older LangSlice's undo step reached is not deleted:
+    the section histories cannot know what those steps named."""
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    (folder / "langslice" / "history" / "index.json").write_text(
+        '{"format_version": 1, "undo": ["step-000001.json"]}')
+    old = folder / "langslice" / "sections" / "s0" / "deformable" / ("d" * 24)
+    old.mkdir(parents=True)
+    (old / "record.json").write_text(json.dumps({"parent": None}))
+    record = job.state.by_id("s0.png")
+    before = job.snapshot()
+    record.position_mm = 4.0
+    job.commit(before)
+    assert old.is_dir()
+
+
+def test_a_line_cut_short_is_skipped_and_the_next_starts_on_its_own(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    path = folder / "langslice" / "sections" / "s0" / "history.jsonl"
+    whole = path.read_text()
+    path.write_text(whole + '{"seq": 2, "step": 1, "by": "pos')  # a write that died
+    record = job.state.by_id("s0.png")
+    before = job.snapshot()
+    record.position_mm = 4.0
+    job.commit(before)
+    lines = path.read_text().splitlines()
+    assert lines[1] == '{"seq": 2, "step": 1, "by": "pos'
+    assert [json.loads(line)["seq"] for line in (lines[0], *lines[2:])] == [1, 2]
+    assert [row.seq for row in job.histories.rows("s0.png")] == [1, 2]
+    assert job.histories.rows("s0.png")[-1].section["position_mm"] == 4.0
+
+
+def test_an_undo_step_keeps_the_notes_change_not_the_notes(tmp_path: Path):
+    """Each write that adds a note adds a step of one size to undo.json;
+    undo and redo, one step or merged ones, put the notes back."""
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    undo_file = folder / "langslice" / "history" / "undo.json"
+    sizes, opening = [], len(job.state.notes)
+    for index in range(6):
+        before = job.snapshot()
+        job.state.notes.append(f"note {index} " + "x" * 200)
+        job.commit(before)
+        sizes.append(len(undo_file.read_text()))
+    steps = [b - a for a, b in zip(sizes, sizes[1:], strict=False)]
+    assert max(steps) - min(steps) <= 2  # digits of the step numbers
+    assert json.loads(undo_file.read_text())["undo"][-1]["notes_before"] == {
+        "keep": opening + 5, "then": []}
+    held = list(job.state.notes)
+    assert job.undo() and job.undo()
+    assert job.state.notes == held[:opening + 4]
+    assert job.redo()
+    assert job.state.notes == held[:opening + 5]
+    # one call's writes merged: a note replaced, then one added
+    mark = job.pushed
+    before = job.snapshot()
+    job.state.notes[opening + 1] = "changed"
+    job.commit(before)
+    before = job.snapshot()
+    job.state.notes.append("added")
+    job.commit(before)
+    job.merge_steps(mark)
+    assert job.undo()
+    assert job.state.notes == held[:opening + 5]
+
+
 # --- older formats ---------------------------------------------------------------------------
 
 

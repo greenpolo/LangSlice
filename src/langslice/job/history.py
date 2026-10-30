@@ -35,7 +35,12 @@ the section's next write, which writes ``history.jsonl`` from it.
 
 **Record folders.** After each write, a folder under a changed section's
 ``deformable/`` that neither the section nor a line of its history names,
-directly or as a parent, is deleted: a fit saved and never applied.
+directly or as a parent, is deleted: a fit saved and never applied. While
+an older LangSlice's undo steps are in ``history/`` nothing is deleted:
+those steps may name records no line does.
+
+A line cut short (a write that died mid-line) is skipped when read, and the
+next line written starts on a line of its own.
 """
 
 from __future__ import annotations
@@ -75,6 +80,7 @@ from langslice.job.state_file import (
     STATE_FORMAT_VERSION,
     json_object,
 )
+from langslice.job.undo_steps import older_undo_steps
 
 logger = logging.getLogger(__name__)
 
@@ -561,7 +567,10 @@ class SectionHistories:
         path.parent.mkdir(parents=True, exist_ok=True)
         old = path.with_name(OLD_REGISTRATION_LIST)
         carried = rows if not path.exists() and old.exists() else ()
+        torn = _ends_mid_line(path)
         with path.open("a", encoding="utf-8") as stream:
+            if torn:
+                stream.write("\n")  # the cut line stays on its own
             for line in (*carried, row):
                 stream.write(json.dumps(line.to_json()) + "\n")
         if carried:
@@ -574,7 +583,8 @@ class SectionHistories:
         A folder of the section's ``deformable/`` stays while the section
         or a line of its history names it, directly or as the parent of
         one named. Nothing is deleted while the section has no
-        ``history.jsonl``.
+        ``history.jsonl``, nor while an older LangSlice's undo steps are in
+        ``history/`` (they may name records no line does).
 
         Parameters
         ----------
@@ -590,6 +600,7 @@ class SectionHistories:
         if (
             not folder.is_dir()
             or not self.layout.section_history(section.id).is_file()
+            or older_undo_steps(self.layout)
         ):
             return []
         named = {_record_folder(row.section) for row in self.rows(section.id)}
@@ -608,6 +619,18 @@ class SectionHistories:
                 ", ".join(removed),
             )
         return removed
+
+
+def _ends_mid_line(path: Path) -> bool:
+    """Return whether a file's last line has no end (a write cut short)."""
+    try:
+        with path.open("rb") as stream:
+            if stream.seek(0, 2) == 0:
+                return False
+            stream.seek(-1, 2)
+            return stream.read(1) != b"\n"
+    except FileNotFoundError:
+        return False
 
 
 def _parsed_lines(text: str) -> list[JsonObject]:

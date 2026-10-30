@@ -87,7 +87,8 @@ older than format 3 (a pre-release LangSlice's) is refused: start a new job.
 The undo steps of a LangSlice before the section histories
 (`history/index.json` and `history/step-*.json`) are not read: the job opens
 with one warning (said once per process), undo starts with the session, and
-the files stay on disk.
+the files stay on disk. While they are there no deformation record folder is
+deleted, since those steps may name records no line of a history does.
 A section's `registrations.jsonl` of that LangSlice is read as its history,
 so the registration numbers stay as they were; the section's next write
 writes `history.jsonl` from it and removes it.
@@ -325,8 +326,11 @@ The undo and redo steps, oldest first, rewritten after each write:
 `format_version` (1), `next_step` (the number the job's next write gets),
 `undo` and `redo`. A step is `step`, `by`, `at` (the write's number, tool
 and time), `sections` (for each section the write changed, the `seq` of the
-line it held before) and `stack_before` (the stack's own fields the write
-changed, such as `notes` or `interval_breaks`, as they were). Undo puts each
+line it held before), `stack_before` (the stack's own fields the write
+changed, such as `interval_breaks`, as they were) and `notes_before` (null
+when the write left the notes alone, else `keep`, how many of the notes
+from the first it left as they were, and `then`, the notes that followed
+them before it). Undo puts each
 section back to its line and the stack fields back, appends a line per
 section, and moves the step to `redo` as the step that takes it back; a
 write clears `redo`. Steps are not capped. A file that does not read, or a
