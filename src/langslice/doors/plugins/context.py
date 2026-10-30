@@ -58,8 +58,8 @@ from langslice.tools.refusal import frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
-    from langslice.tools.deformable import MappedWarp
     from langslice.tools.run import Run
+    from langslice.tools.warps import MappedWarp
 
 
 # --- what a handler reads ---------------------------------------------------------------
@@ -1032,7 +1032,7 @@ class ToolContext:
         transform."""
         import json
 
-        from langslice.tools import deformable
+        from langslice.tools import warps
 
         record = self._record(section)
         try:
@@ -1046,7 +1046,7 @@ class ToolContext:
         fitted_with = to_jsonable(dict(settings or {}), strict=True)
         engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
-            warp = deformable.warp_from_map(
+            warp = warps.warp_from_map(
                 self._run.job, self._run.ctx, record.id, native_xy,
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
@@ -1936,7 +1936,7 @@ class ToolContext:
         job's write lock is taken, so a long tool holds it only to write.
         The ok rows carry the numbers ``DeformationProposal.summary`` has.
         Needs ``deformation`` in the tool's ``writes``."""
-        from langslice.tools import deformable
+        from langslice.tools import warps
 
         self._require("deformation")
         job = self._run.job
@@ -1975,7 +1975,7 @@ class ToolContext:
         with self.writing():
             stale = self._stale([proposal.id for proposal in proposals], expect)
             out.update(stale)
-            done = deformable.apply_warps(
+            done = warps.apply_warps(
                 job, [proposal._warp for proposal in proposals if proposal.id not in stale])
             for applied in done.rows:
                 out[applied["id"]] = applied

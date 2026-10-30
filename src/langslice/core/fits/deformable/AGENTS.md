@@ -407,7 +407,7 @@ mm_per_px` over *placement*, its inverse by `_invert_step`'s fixed point
 (guess: minus the forward field), `prepare_warp` and `finish_fit` as for the
 landmark warp below, `engine["name"]` *engine*. A tool plugin's
 deformations go through it (`core.fits.deformation.record_from_map`,
-`tools.deformable.warp_from_map`).
+`tools.warps.warp_from_map`).
 
 ## Landmark record adapter
 

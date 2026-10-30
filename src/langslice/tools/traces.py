@@ -24,6 +24,12 @@ from langslice.core.sections.damage import exclusions
 from langslice.core.stack.codec import trace_from_json, trace_to_json
 from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
+from langslice.tools.deformable import (
+    fit_deformable,
+    refuse_without_engine,
+    region_entries,
+)
+from langslice.tools.fit_pictures import draw_fits
 from langslice.tools.refusal import section_refusal, unknown_sections
 from langslice.tools.stale import section_inputs
 
@@ -195,11 +201,6 @@ def trace_borders(
     ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
     while the call was prepared).
     """
-    from langslice.tools.deformable import (
-        refuse_without_engine,
-        region_entries,
-    )
-
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
     record = job.state.resolve(ref)
@@ -242,8 +243,6 @@ def land_trace(
     since gets nothing (``STALE_INPUT``), as does one whose trace was undone or
     made at another placement. A failed image call is a failed work.
     """
-    from langslice.tools.deformable import fit_deformable
-
     state = job.state
     record = state.by_id(section_id)
     if record is None:
@@ -264,8 +263,9 @@ def land_trace(
     if (section_inputs(state, record, deformation=True) != expected
             or held is None or held.status != "ok"):
         return _stale(trace)
-    done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
-                          options=options)
+    done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions)
+    if options is not None:
+        done = draw_fits(workspace, done, options)
     row: dict[str, Any] = (done.rows[0] if done.rows
                            else Refused(RefusalCode.FIT_FAILED,
                                         "The fit returned no row.").payload())

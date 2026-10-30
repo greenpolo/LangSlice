@@ -116,11 +116,11 @@ bodies, and turned into an answer once per door:
   render); `section_raster(images=, raw=)`;
   conversions `transform_from_matrix` / `transform_from_params`, and
   `deformation_from_map` (a full fit-grid-to-native map as a
-  `DeformationProposal`, `tools.deformable.warp_from_map`; `start="current"`
+  `DeformationProposal`, `tools.warps.warp_from_map`; `start="current"`
   for a map made on top of the held deformation, its chain kept; `settings`,
   `engine_settings`, `engine_version` kept as a native fit's); writes
   `set_positions`, `set_transforms`, `set_deformations`
-  (`tools.deformable.apply_warps`, maps converted before the lock),
+  (`tools.warps.apply_warps`, maps converted before the lock),
   `mark_damage` through `tools/`, `add_image` (a made section image,
   `tools.images.add_image`), `add_layer`
   through `job/plugin_store` (a script's under `plugins/script/`), `expect=` fingerprints refusing `STALE_INPUT`

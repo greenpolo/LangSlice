@@ -34,6 +34,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +144,15 @@ def clear_stale(state: Stack) -> list[str]:
             section.deformation = None
             cleared.append(section.id)
     return cleared
+
+
+class FitStart(StrEnum):
+    """Name what a deformation is built on (a step's ``start``)."""
+
+    #: The section's linear placement alone.
+    LINEAR = "linear"
+    #: The deformation the section holds, composed under the new one.
+    CURRENT = "current"
 
 
 # --- the grid and the images a fit reads ----------------------------------

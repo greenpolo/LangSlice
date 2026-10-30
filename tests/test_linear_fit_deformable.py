@@ -33,6 +33,7 @@ from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
 from langslice.tools import deformable as ops_deformable
+from langslice.tools.fit_pictures import draw_fits
 from tests.deformable_synthetic import (
     HY,
     SMOOTH_FIELD,
@@ -373,7 +374,7 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
         return _trace_artifacts(state, ctx, folder, fingerprint="now")
 
     box.job.start_image_job(ID, "now", job, workers=1)
-    done = _fit(box, ctx, TRACED, options=default_options("overlay"))
+    done = draw_fits(ctx, _fit(box, ctx, TRACED), default_options("overlay"))
     assert done.rows[0]["status"] == "ok", done.rows
     assert trace_to_json(state.slices[0].border_trace)["status"] == "ok"
     assert trace_to_json(
