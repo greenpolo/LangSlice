@@ -1,6 +1,6 @@
 """What every tool body of one run shares: the job, the workspace, the run's settings.
 
-The tool bodies are closures over one :class:`Run`: the job and the workspace
+Every tool body works over one :class:`Run`: the job and the workspace
 they work on, the toolbox, the run's picture size, the image model, and the
 small helpers every body words its reply with (the status rows a write
 changed, a section list resolved). A run sits behind one door (the way in:
@@ -21,12 +21,12 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import compact_rows
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import status as ops_views
-from langslice.tools.look import Looked
+from langslice.tools.status import stack_status
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.doors.agent.engine import EngineContext
     from langslice.providers.connections import ImageModel
+    from langslice.tools.look import Looked
     from langslice.tools.pipeline import ToolBox
 
 #: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a
@@ -56,7 +56,7 @@ class Run:
 
     def rows(self) -> dict[str, Any]:
         """The whole status table, the cutting angles and the interval breaks."""
-        table = ops_views.status(self.job)
+        table = stack_status(self.job)
         return {"rows": compact_rows(table.rows),
                 "cutting_angles_deg": table.cutting_angles_deg,
                 "interval_breaks": table.interval_breaks}
@@ -65,7 +65,7 @@ class Run:
         """The status rows of the sections a write touched, and nothing else
         (``status`` is the whole table, one call away)."""
         wanted = set(touched)
-        table = ops_views.status(self.job)
+        table = stack_status(self.job)
         return {"changed": compact_rows([row for row in table.rows if row["id"] in wanted]),
                 "n_sections": len(self.state.slices),
                 "cutting_angles_deg": table.cutting_angles_deg,
