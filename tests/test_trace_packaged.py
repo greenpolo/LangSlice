@@ -273,5 +273,5 @@ def test_a_restrict_to_that_leaves_no_region_keeps_its_own_code(tmp_path, atlas)
             traces.trace_borders(job, ctx, ID, image_model=stub.model,
                                  restrict_to=[f"STR:{side}"])
             job.background.wait_all()
-    assert caught.value.code == RefusalCode.BAD_ARGS
+    assert caught.value.code == RefusalCode.BAD_ARGS and caught.value.facts["id"] == ID
     assert "leave no atlas region" in caught.value.message

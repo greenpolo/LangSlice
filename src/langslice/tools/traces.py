@@ -101,8 +101,9 @@ def _start_trace(
         result, call = registration_tool.start_correction(
             job.state, workspace, section_id, prompt=prompt, image_model=image_model,
             calls_dir=job.layout.border_trace_dir(section_id), include=kept, exclude=dropped)
-    except Refused:  # a refusal of its own (a side the plane lacks, regions that leave nothing)
-        raise
+    except Refused as refusal:  # its own code: a side, regions that leave nothing
+        facts = {"id": section_id, **refusal.facts}
+        raise Refused(refusal.code, **facts) from refusal
     except ValueError as exc:  # the placement the trace starts from
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
                       id=section_id, message=str(exc)) from exc
