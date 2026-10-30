@@ -130,7 +130,7 @@ bodies, and turned into an answer once per door:
   `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`),
   `write_frame` / `map_from_itk` / `transform_from_itk` (`core.maps.itk`: an
   outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
-  (`tools.deformable.fit_record`, `tools.transforms.elastix_fit`: the native
+  (`tools.deformable.fit_record`, `tools.affine_fit.elastix_fit`: the native
   engines with settings and a mask of the caller's own, by the tools' names
   and with their defaults (`restrict_to`, `section_image`, `atlas_image`,
   `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
@@ -277,7 +277,8 @@ bodies, and turned into an answer once per door:
   the image model with the job's own base prompt, `nonlinear.image_prompt`,
   as an untested `custom` profile), `tools/run.py` (`Run`, what every tool
   body of a run shares: the job, the workspace, the picture level, the
-  image model, `rows`, `changed`, `answered`, `resolve_many`; `pictured`,
+  image model, `rows`, `changed`, `answered`, `resolve_many`, `shows` (the
+  call's `view`, or the host's `force_view`); `pictured`,
   `as_list`, `spread`: the sections a change tool pictures when the call
   names none), the
   tool bodies (`looking.py`: `look` (`images`: one section image alone, or
@@ -291,12 +292,13 @@ bodies, and turned into an answer once per door:
   `look:section` is off, which also drops its `view`), `grep_atlas`,
   `grep_atlas_view`, `status` (`raw_channels`, `section_images`:
   `core.sections.images.summary`), the job-folder tools;
-  `changing.py`: `position_sections`, `interactive_transform`,
+  the changing tools' bodies are in their `tools/` modules
+  (`toolbox.TOOL_BODIES`: `position_sections`, `interactive_transform`,
   `mark_damage`, `make_mask` (per-section `rows`), `note`, `undo`, `redo` (`steps`, default 1: that many in
-  one call, `tools.history`), `restore_registration` (`section` lists,
+  one call), `restore_registration` (`section` lists,
   `tools.registrations.listing`; `sections` `[{id, registration}]` puts them
   back, per-section `results`, one undo step, and shows their overlays;
-  both or neither `BAD_ARGS`), `submit`; `fitting.py`:
+  both or neither `BAD_ARGS`), `submit`); `fitting.py`:
   `elastix_affine` (its `turn_deg` and plausibility `flags` worded in the
   row's `warning`, `affine_flag_words`; the knobs under `transform`),
   `fireants_syn`, `trace_borders`,
@@ -307,7 +309,7 @@ bodies, and turned into an answer once per door:
   deformations their write made stale before drawing it, so the picture
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past
-  `tools.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
+  `tools.affine_fit.MIN_ZOOM_GAIN`; `with_notices` lists each background
   picture with its caption; `work_pictures` is the saved files of those pictures, for the CLI and `JobHandle.wait`), `arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
   `argument_refusal`, the one strictness rule every door

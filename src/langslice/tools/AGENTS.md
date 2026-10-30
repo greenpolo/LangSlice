@@ -18,8 +18,13 @@ carry, `declared_tool` and the `ToolBox`), `events.py` (each call's
 argument shapes and the strictness check), `reply.py` (the reply byte
 budget and paging) and `descriptions/` (every model-facing text: the
 tools' descriptions, the job statement, the agent CLI's fixes; below).
-The bodies themselves and `build_tools` (which resolves the image model
-through the providers) are still `doors/tools/`.
+A tool's body sits beside its operation as `<tool>_tool(run, **arguments)`,
+taking the declared arguments as the model sent them (`run.shows(view)`
+decides the picture): `positions.py`, `transforms.py`, `damage.py`,
+`masks.py`, `notes.py`, `history.py` (`undo_tool`, `redo_tool`),
+`registrations.py`, `submit.py`; `doors.tools.toolbox.TOOL_BODIES` wires
+their names. The looking and fitting tools' bodies and `build_tools` (which
+resolves the image model through the providers) are still `doors/tools/`.
 
 ## `descriptions/`: the model-facing text
 
@@ -199,7 +204,8 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_SORTING`, `FIT_FAILED`);
   when none can, the first row's refusal. Refused: `UNKNOWN_SLICE_IDS`,
   `SECTION_BUSY`, `UNKNOWN_IMAGE`, `UNKNOWN_MASK` (delete), `BAD_ARGS`.
-  Returns `MasksMade` (`rows`, `made`). `read` / `section_weights(job,
+  Returns `MasksMade` (`rows`, one `MaskMade` per section: `id`, the
+  state's `entry` or the section's `refusal`; `made`). `read` / `section_weights(job,
   record, name)` are what a fit reads: `"none"` gives None, a name gives the
   weights (`UNKNOWN_MASK`, `STALE_MASK` when the section's orientation, the
   grid digest `core.sections.masks.grid_digest`, differs from the one it was
@@ -226,8 +232,9 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   or read: `BAD_PATH`.
 - `history.py` — `undo(job, steps=1)` / `redo(job, steps=1)`: that many
   steps under one hold of the job's lock (fewer when the history holds
-  fewer); `Stepped` (`done`, `depth`, `step`: the sections and field groups
-  the steps changed together, `describe_step`, `steps`: how many were taken).
+  fewer); `Stepped` (`done`, `depth`, `step`: a `HistoryStep`, the sections
+  and field groups the steps changed together, `describe_step`, `steps`: how
+  many were taken).
 - `registrations.py` — `restore_registration`'s operations over the job's
   registration store (`job/registrations.py`): `listing(job, section)` ->
   `Listed` (`held`, the number the section holds; `rows`: per registration
@@ -238,9 +245,9 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   that number), `held`, and `not_here` for one whose deformation was fitted at
   another position or cutting angles; the registration the section holds is
   listed first when it never was; no state written); `restore(job,
-  [{"id", "registration"}])` -> `RestoredMany` (`rows` per section in call
-  order: ok with `registration`, `replaced`, `written` (False when the section
-  holds it already), or that section's refusal; `written`): each section's
+  [{"id", "registration"}])` -> `RestoredMany` (`rows`, one `Restored` per
+  section in call order: `registration`, `replaced`, `written` (False when
+  the section holds it already), or that section's `refusal`; `written`): each section's
   orientation, transform and deformation set as its entry holds them, ONE undo
   step for the call, the other sections untouched. Refused per section:
   `UNKNOWN_REGISTRATION` (with `registrations`, the section's numbers),
@@ -313,8 +320,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `core.maps.section_maps.file_points`). Refused: `UNKNOWN_SLICE_IDS`,
   `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`, `BAD_ARGS`.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
-  `shear` optional (0), to the record), `same_transform`, `fit_transform`
-  (an Elastix affine fit's record, kind `elastix`), `set_transforms(job,
+  `shear` optional (0), to the record), `same_transform`, `set_transforms(job,
   {id: record})` (one undo step for the batch; a frozen affine, or a transform that turns
   over a section whose orientation is frozen, refused whole, `FROZEN`;
   `reverses_orientation`: the determinant's sign differs from the sign of
@@ -334,9 +340,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
   `BAD_ROTATION`, `OPTION_OFF`, `NO_POSITION`, the stager's codes
   (`core.pictures.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
-  `error`, `staged`, `previous`, `transform`, `written`, `id`,
+  `refusal`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
-  `elastix_affine(job, workspace, sections, restrict_to=(),
+- `affine_fit.py` — the Elastix affine: `fit_transform` (a fit's record,
+  kind `elastix`), `elastix_affine(job, workspace, sections, restrict_to=(),
   atlas_image="template")` (any of the atlas's images; `BAD_ARGS` for no
   sections; the tool door refuses more than `Job.picture_cap` or `Job.transform_cap`, `TOO_MANY_SECTIONS`): per section `core.fits.affine.fit_elastix`
   refining its current placement against the atlas image, by the *restrict_to* regions only, its marked damage regions
