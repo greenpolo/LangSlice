@@ -115,10 +115,19 @@ FIXES: dict[str, str] = {
         "of the others the message lists."
     ),
     RefusalCode.INVALID_LINEAR_PLACEMENT: (
-        "Give the section a position and a transform"
+        "Give the section a usable transform"
         "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
         "elastix_affine||interactive_transform=interactive_transform"
-        "]])]] first."
+        "]])]] first; the message says what is wrong with the one it has."
+    ),
+    RefusalCode.DEFORMATION_UNREADABLE: (
+        "The section's saved deformation cannot be read: put the section "
+        "back on another registration[[?restore_registration  "
+        "(restore_registration)]], or undo the step that applied it."
+    ),
+    RefusalCode.IMAGE_CALL_IN_PROGRESS: (
+        "Another process is making this image call; call again once its "
+        "reply has landed."
     ),
     RefusalCode.ENGINE_MISSING: (
         "The engine is not installed on this host (the message names what is "

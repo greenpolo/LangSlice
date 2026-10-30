@@ -186,6 +186,8 @@ class ContextFits(ContextProposals):
                 return np.asarray(deformation.fit_grid(
                     self._run.state, self._run.workspace, record).placement.atlas_to_section,
                     dtype=np.float64)
+            except Refused as refusal:  # no position
+                raise as_tool_error(refusal) from refusal
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
                                 f"{record.id}: {exc}") from exc
@@ -313,5 +315,6 @@ def _mask_name(mask: Any) -> str:
     if isinstance(mask, str):
         return mask.strip() or "none"
     raise ToolError(RefusalCode.BAD_ARGS,
-                    "mask is 'none' or the NAME of a mask of the section made "
-                    "with make_mask; an array is not taken (make the mask with make_mask first)")
+                    "mask is 'none' or the NAME of one of the section's "
+                    "masks; an array is not taken (a fit reads only a mask "
+                    "the job holds).")

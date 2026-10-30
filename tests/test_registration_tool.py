@@ -175,6 +175,28 @@ def test_transport_can_retry_without_discarding_any_image_reply(case, tmp_path, 
     assert cached["cached"] and len(calls) == 2
 
 
+def test_a_running_call_refuses_another_and_an_interrupted_one_is_made_again(
+        case, tmp_path):
+    """While an attempt's call runs, the same call is refused (another process
+    holds it); a call whose process died, its claim released and no reply
+    saved, is made again as the next attempt."""
+    state, ctx, record, original, *_ = case
+    calls = []
+    model = _model(lambda request: calls.append(request) or SimpleNamespace(
+        image=original, route="test"))
+    submitted, job = tool.start_correction(state, ctx, record.id, out=tmp_path / "out",
+                                           image_model=model)
+    assert submitted["status"] == "running" and job is not None
+    refused, none = tool.start_correction(state, ctx, record.id, out=tmp_path / "out",
+                                          image_model=model)
+    assert none is None and refused["error"] == "IMAGE_CALL_IN_PROGRESS"
+    assert refused["artifact_dir"] == str(Path(submitted["artifact_dir"]).parent)
+    del job  # the process ends mid-call: its claim goes with it, no reply saved
+    again = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    assert again["status"] == "ok" and again["attempt"] == 2 and len(calls) == 1
+    assert Path(submitted["artifact_dir"]).name == "attempt-01"
+
+
 def test_another_image_provider_makes_a_trace_stale(case):
     state, ctx, record, *_ = case
     first = tool.correction_fingerprint(state, ctx, record.id)

@@ -386,11 +386,11 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     (folder / "log.txt").write_text(done.stdout + done.stderr)
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError(RefusalCode.ENGINE_FAILED,
+        raise ToolError(RefusalCode.FIT_FAILED,
                         f"STalign did not run: {tail[0]}")
     out = dict(np.load(dst, allow_pickle=False))
     if "error" in out:
-        raise ToolError(RefusalCode.ENGINE_FAILED,
+        raise ToolError(RefusalCode.FIT_FAILED,
                         f"STalign failed: {out['error']}")
     return out
 

@@ -309,7 +309,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
                           "--section-angles"),
                          (("--transform-angles",), "--transform-angles")):
         code, envelope = cli(capsys, *base, *flags)
-        assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
+        assert code == 2 and envelope["error"]["code"] == "BAD_ARGS", envelope
         assert named in envelope["error"]["message"]
     # Two entries naming one section: ambiguous, refused.
     rows = export_rows(workspace, PER_SECTION)

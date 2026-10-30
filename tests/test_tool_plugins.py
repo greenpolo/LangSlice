@@ -1538,6 +1538,7 @@ def test_the_library_waits_for_work_a_plugin_verb_started_and_returns_its_landin
     job = _library_job(images, plugins=[ref])
     started = job.mark_later(section="s0.png")
     assert started["work"] == "w1"
+    assert "background" not in started  # however soon it lands: its notice comes later
     landed = job.wait()
     assert landed["status"] == "ok" and landed["running"] == []
     assert landed["background"][0].endswith("mark_later of s0.png finished: moved.")

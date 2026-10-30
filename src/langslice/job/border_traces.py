@@ -109,19 +109,23 @@ class JobBorderTraces(JobUndo):
             (section_id, fingerprint,
              self.portable(_job_result(section_id, fingerprint, future, None)))
             for section_id, (fingerprint, future) in running]
-        self.image_jobs.clear()
+        changed = False
+        if results:
+            # The calls ran outside the lock; they land under it, and only
+            # then are forgotten: background work waiting for a call finds it
+            # until its result is recorded (wait_image_job).
+            with self.writing():
+                for section_id, fingerprint, result in results:
+                    changed |= _land(self.state, section_id, fingerprint,
+                                     result)
+                if changed:
+                    self.checkpoint()
+                for section_id, call in running:
+                    if self.image_jobs.get(section_id) is call:
+                        del self.image_jobs[section_id]
         if self.image_executor is not None:
             self.image_executor.shutdown(wait=True)
             self.image_executor = None
-        if not results:
-            return False
-        changed = False
-        # the calls ran outside the lock; they land under it
-        with self.writing():
-            for section_id, fingerprint, result in results:
-                changed |= _land(self.state, section_id, fingerprint, result)
-            if changed:
-                self.checkpoint()
         return changed
 
     def wait_image_job(self, section_id: str, timeout: float | None) -> bool:

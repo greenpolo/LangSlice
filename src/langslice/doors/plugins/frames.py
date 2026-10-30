@@ -102,7 +102,8 @@ class ContextFrames(ContextReads):
 
         if record.position_mm is None:
             raise ToolError(RefusalCode.NO_POSITION,
-                            f"{record.id} has no position yet")
+                            f"{record.id} has no position yet; write its "
+                            "position first.")
         # Keyed by what the grid is drawn from: a script's context outlives a
         # placement change.
         key = (record.id, section_inputs(self._run.state, record))

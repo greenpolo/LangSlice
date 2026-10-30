@@ -351,7 +351,7 @@ def test_launch_register_is_the_mcp_statement(capsys, images):
 def test_launch_needs_a_role_and_a_job(capsys, images, tmp_path):
     init(capsys, images)
     code, envelope = cli(capsys, str(images), "launch")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     code, envelope = cli(capsys, str(images), "launch", "--role", "other")
     assert code == 2
     code, envelope = cli(capsys, str(tmp_path), "launch", "--role", "register")
@@ -712,7 +712,7 @@ def test_folder_ops_lists_the_job_s_own_verbs(capsys, images):
     assert "fireants_syn" not in names and "elastix_affine" not in names
     assert envelope["next"][0] == f"langslice-job {job} schema VERB [VERB ...]"
     code, envelope = cli(capsys, str(images), "ops", "--bogus")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
 
 
 def test_a_failed_fit_says_the_first_line_and_keeps_the_rest_in_the_log(tmp_path):
@@ -763,7 +763,7 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     # A dry run never starts a background run (that child would run the verb).
     code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
                          "--dry-run", "--background")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     assert not (job / "logs" / "runs").exists()
     assert (job / "state.json").read_bytes() == state_before
 
@@ -859,7 +859,7 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_RUN"
     # `status` is only the verb.
     code, status = cli(capsys, str(images), "status", run)
-    assert code == 2 and status["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and status["error"]["code"] == "BAD_ARGS"
 
 
 def test_wait_answers_still_running_within_its_default_wait(capsys, images, monkeypatch):
@@ -1219,7 +1219,7 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
 
 def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
     code, envelope = cli(capsys, str(images), "init", "--disabled", "zoomm")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     assert "unknown name 'zoomm'" in envelope["error"]["message"]
     assert "look:positioning" in envelope["error"]["message"]
     code, envelope = cli(capsys, str(images), "init", "--tasks", "transform",

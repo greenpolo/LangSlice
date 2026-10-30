@@ -142,7 +142,8 @@ class ContextProposals(ContextFrames):
                             "a transform is six finite numbers [a, b, tx, c, d, ty]")
         if record.position_mm is None:
             raise ToolError(RefusalCode.NO_POSITION,
-                            f"{record.id} has no position yet")
+                            f"{record.id} has no position yet; write its "
+                            "position first.")
         workspace, state = self._run.workspace, self._run.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, workspace, record, rendered)

@@ -227,8 +227,9 @@ section's folder (`sections/<name>/deformable/<key>/`, its engine
 `{"method": "plugin:<tool>", "start": "linear" | "current", "note"?,
 "settings"?}` (after the held deformation's steps for `current`), and `look`,
 `export_maps`, `registration.json`, the VisuAlign markers and the ABBA
-connector read it like any other. A section without a position or transform is
-that section's row `INVALID_LINEAR_PLACEMENT`, as a native fit refuses it; a
+connector read it like any other. A section without a position is that
+section's row `NO_POSITION`, one whose transform cannot be used
+`INVALID_LINEAR_PLACEMENT`, as a native fit refuses them; a
 map of another shape, not float or not finite is `BAD_FIELD`. Maps are
 converted before the job's write lock is taken.
 
@@ -545,11 +546,11 @@ between calls.
 | `TOO_MANY_SECTIONS` | More sections than `limits["sections"]` (the message says so, and that it is the plugin's limit) |
 | `READ_TOOL_WRITES`, `WRITE_NOT_DECLARED` | A write by a read tool, or of a property not in `writes` |
 | `FROZEN`, `STALE_INPUT`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS` | Rows of a write, as for native tools |
-| `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (a read or conversion that needs one), or without a usable linear placement (a deformation needs a position and a transform) |
+| `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (any call that needs one), or whose transform is missing or cannot be used (marked stale, made on another orientation) |
 | `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
 | `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
 | `PLUGIN_FAILED` | The handler raised something other than `ToolError` (or a refusal of the context's) |
 | `NOT_FOR_SCRIPTS` | `work_dir` or `start_work` from a script's `job.context` |
-| `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`: the engine does not import, failed, or the regions given cannot be fitted |
-| `DEFORMATION_UNREADABLE` | A point conversion through a deformation whose record or inverse cannot be read |
+| `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`, and the in-tree engines: the engine does not import (or its interpreter, source or weights are missing), failed, or the regions given cannot be fitted |
+| `DEFORMATION_UNREADABLE` | A section's deformation whose record cannot be read (a format this version no longer reads, its files gone), or whose inverse a point conversion cannot read |
 | `MCP_TOOL_ERROR`, `MCP_TIMEOUT`, `MCP_UNAVAILABLE` | The adapter's server answered with an error, did not answer, or is not running |

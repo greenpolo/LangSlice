@@ -3,6 +3,7 @@ removes, and the model-facing text, which names none of what it disables."""
 
 from __future__ import annotations
 
+import ast
 import inspect
 import itertools
 import json
@@ -378,6 +379,54 @@ def test_broken_marks_are_errors_and_plain_text_is_left_alone():
             render(text, ["zoom"])
     plain = "no marks || here ]] at all\n\n\n  "
     assert render(plain, ["zoom"]) == plain
+
+
+# --- refusals ------------------------------------------------------------------------------
+
+#: The modules whose refusals may name a tool unmarked: that tool's own
+#: refusals, which no job that disables it can reach.
+_OWN_REFUSALS = {"tools/history.py": "redo"}
+
+
+def _literal(node: ast.expr) -> str | None:
+    """The text a message argument writes, its values as ``{}``; None for a
+    message made elsewhere (a constant, a call other than ``render``)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(part.value if isinstance(part, ast.Constant) else "{}"
+                       for part in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _literal(node.left), _literal(node.right)
+        return None if left is right is None else f"{left or '{}'}{right or '{}'}"
+    if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "render" and node.args:
+        return _literal(node.args[0])
+    return None
+
+
+def test_no_refusal_names_a_tool_without_what_it_needs():
+    """Every refusal message written in the package that names a tool marks
+    what the sentence needs, so a job that disables the tool never reads its
+    name in a refusal (the message is rendered for the job where it is made)."""
+    import langslice
+
+    root = Path(langslice.__file__).parent
+    tools = [name for name in valid_names() if ":" not in name]
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        where = str(path.relative_to(root))
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not (isinstance(node, ast.Call) and getattr(
+                    node.func, "id", getattr(node.func, "attr", "")) in ("Refused", "ToolError")):
+                continue
+            given = node.args[1] if len(node.args) > 1 else next(
+                (keyword.value for keyword in node.keywords if keyword.arg == "message"), None)
+            text = None if given is None else _literal(given)
+            for name in tools if text else ():
+                if name != _OWN_REFUSALS.get(where) and _pattern(name).search(
+                        render(text or "", [name])):
+                    problems.append(f"{where}:{node.lineno} names {name}: {text!r}")
+    assert problems == []
 
 
 # --- the landmark tools --------------------------------------------------------------------

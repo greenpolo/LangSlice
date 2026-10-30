@@ -430,7 +430,9 @@ class DeformableRecord:
             if unknown:
                 raise ValueError(f"Unknown record key(s) {unknown}")
             if meta.get("version") not in READ_VERSIONS:
-                raise ValueError(f"record format {meta.get('version')!r}, not {RECORD_VERSION}")
+                raise ValueError(f"record format {meta.get('version')!r}, which "
+                                 "this LangSlice does not read (it reads "
+                                 f"{' or '.join(map(str, READ_VERSIONS))})")
             if "parent" not in meta:
                 raise KeyError("parent")
             return meta

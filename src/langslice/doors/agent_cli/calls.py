@@ -104,7 +104,7 @@ class _Parser(argparse.ArgumentParser):
     """argparse that raises instead of exiting (the envelope reports it)."""
 
     def error(self, message: str) -> typing.NoReturn:
-        raise _Refusal(Envelope.failure(RefusalCode.BAD_ARGUMENTS, message))
+        raise _Refusal(Envelope.failure(RefusalCode.BAD_ARGS, message))
 
 
 # --- the command ------------------------------------------------------------------
@@ -180,7 +180,7 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
 
         if rest:
             raise _Refusal(Envelope.failure(
-                RefusalCode.BAD_ARGUMENTS, "ops takes no arguments.",
+                RefusalCode.BAD_ARGS, "ops takes no arguments.",
                 verb=name))
         try:
             return ops(argparse.Namespace(job=str(find(folder))))
@@ -214,7 +214,7 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         return jobenv.command(layout, positional)
     if positional:
         raise _Refusal(Envelope.failure(
-            RefusalCode.BAD_ARGUMENTS,
+            RefusalCode.BAD_ARGS,
             f"Unexpected value(s) {positional}: give arguments as "
             "--name value or --args JSON.", verb=name))
     return call(folder, name, arguments, options, atlas_loader=atlas_loader)
@@ -336,7 +336,7 @@ def parse(rest: list[str]) -> tuple[dict[str, Any], dict[str, list[str]], list[s
                 options["timeout"] = float(value)
             except ValueError as exc:
                 raise _Refusal(Envelope.failure(
-                    RefusalCode.BAD_ARGUMENTS,
+                    RefusalCode.BAD_ARGS,
                     "--timeout takes seconds")) from exc
         elif key == "run_id":
             options["run_id"] = value
@@ -528,7 +528,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     if dry_run and options.get("background"):
         # A background child runs the verb for real; a dry run answers at once.
         raise _Refusal(Envelope.failure(
-            RefusalCode.BAD_ARGUMENTS, "--dry-run and --background do not go together: a dry run "
+            RefusalCode.BAD_ARGS, "--dry-run and --background do not go together: a dry run "
             "answers at once.", verb=verb))
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
@@ -646,12 +646,11 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     before = job.snapshot() if dry_run else None
     with captured() as saved:
         reply = tool(**arguments)
-        waits = verbs[verb].image_model or bool(job.background.running())
         if verbs[verb].image_model:
             job.settle_border_traces()  # this process ends: the calls land now
-        if waits:
-            job.background.wait_all()  # and the work started (its pictures saved)
-    if waits and isinstance(reply, dict):
+        work = cast("Job", job).background
+        work.wait_all()  # and the work started (its pictures saved)
+    if isinstance(reply, dict):
         from langslice.tools.pipeline import with_notices
 
         reply = with_notices(job, reply)
@@ -835,7 +834,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     try:
         spec = spec_from_args(args, str(images))
     except ValueError as exc:
-        return Envelope.failure(RefusalCode.BAD_ARGUMENTS, str(exc))
+        return Envelope.failure(RefusalCode.BAD_ARGS, str(exc))
     imported: dict[str, Any] | None = None
     if args.registration:
         try:
@@ -960,7 +959,7 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
         return Envelope.failure(RefusalCode.NO_JOB, str(exc))
     job_folder = str(layout.folder)
     if len(positional) > 1:
-        return Envelope.failure(RefusalCode.BAD_ARGUMENTS,
+        return Envelope.failure(RefusalCode.BAD_ARGS,
                                 "Give one run id.", job=job_folder)
     if verb == "runs" and not positional:
         listed = background.listing(layout)

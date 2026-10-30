@@ -409,7 +409,7 @@ the angles in a caption (empty for the flat plane).
   another version of LangSlice saved is `UNREADABLE_RECIPE`, one showing a
   section the stack no longer holds `SECTION_GONE` (the zoom crops the saved
   picture for either). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_IMAGE`,
-  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `BAD_ARGS`,
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
   `atlas.borders.HIGHLIGHT_WIDTH` times as thick, the other borders faint,

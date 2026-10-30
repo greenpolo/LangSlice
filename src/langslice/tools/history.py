@@ -185,8 +185,8 @@ def redo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
     if not step.done:
         raise Refused(
             RefusalCode.NOTHING_TO_REDO,
-            "Nothing to redo: redo follows an undo, and a "
-            "write after it clears what was undone.",
+            "Nothing to redo: no step is undone since the last write "
+            "(a write clears what was undone).",
         )
     return _stepped_reply(run, "redone", "redo_depth", step, count)
 

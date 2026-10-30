@@ -180,3 +180,46 @@ def test_close_waits_for_the_work(tmp_path: Path):
                          Landed(status=FAILED, text="timeout"))
     job.close()
     assert job.background.running() == []
+
+
+def test_work_waiting_for_a_trace_sees_it_landed_when_the_process_settles_it(
+        tmp_path: Path, monkeypatch):
+    """A work thread that only starts waiting once ``settle_border_traces`` has
+    the trace's reply in hand (a busy machine) still waits for that reply to
+    be recorded: the call is forgotten only once it has landed."""
+    from langslice.job import background as background_module
+    from langslice.job import border_traces
+
+    job, _ = _open(tmp_path, tasks=["nonlinear"])
+    record = job.state.slices[0]
+    record.border_trace = trace_from_json(
+        {"id": "s0.png", "status": "running", "geometry_fingerprint": "g"})
+    landing = threading.Event()
+    record_landing = border_traces._land
+
+    def slow_land(*args: Any) -> bool:  # the settling thread, about to record
+        landing.set()
+        threading.Event().wait(0.3)
+        return record_landing(*args)
+
+    monkeypatch.setattr(border_traces, "_land", slow_land)
+    start_thread = background_module.BackgroundWork._thread
+
+    def late_thread(self: Any, entry: Any) -> None:  # starts waiting late
+        assert landing.wait(5)
+        start_thread(self, entry)
+
+    monkeypatch.setattr(background_module.BackgroundWork, "_thread", late_thread)
+    job.start_image_job("s0.png", "g", lambda: {
+        "id": "s0.png", "status": "ok", "geometry_fingerprint": "g"}, workers=1)
+    seen: list[str | None] = []
+
+    def land() -> Landed:
+        held = job.state.slices[0].border_trace
+        seen.append(None if held is None else held.status)
+        return Landed(status=DONE, text="ok")
+
+    job.background.start("trace_borders", ["s0.png"], land)
+    assert job.settle_border_traces()
+    job.background.wait_all()
+    assert seen == ["ok"]

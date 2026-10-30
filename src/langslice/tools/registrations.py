@@ -31,6 +31,7 @@ from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import deformation_entry, transform_entry
 from langslice.job import registrations as regs
+from langslice.job.settings.needs import render
 from langslice.job.state_file import stack_from_json
 from langslice.tools.look import show_result
 from langslice.tools.refusal import check_frozen, unknown_sections
@@ -216,8 +217,12 @@ def _unknown(job: Job, record: Section, number: object) -> Refused:
         id=record.id,
         registration=number,
         registrations=numbers,
-        message=f"{record.id} has no registration {number}; {listed}. "
-        "Call restore_registration with the section alone to list them.",
+        message=render(
+            f"{record.id} has no registration {number}; {listed}.[[?"
+            "restore_registration  Call restore_registration with the section "
+            "alone to list them.]]",
+            job.spec.switched_off,
+        ),
     )
 
 

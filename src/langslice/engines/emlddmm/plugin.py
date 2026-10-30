@@ -516,9 +516,9 @@ def _stack(
     ):
         what = "a position and a transform" if need_transform else "a position"
         try:
-            if view.position_mm is None or (
-                need_transform and view.affine is None
-            ):
+            if view.position_mm is None:
+                raise ToolError(RefusalCode.NO_POSITION, f"needs {what} first")
+            if need_transform and view.affine is None:
                 raise ToolError(
                     RefusalCode.INVALID_LINEAR_PLACEMENT, f"needs {what} first"
                 )
@@ -780,11 +780,11 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     (folder / "log.txt").write_text(done.stdout + done.stderr)
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError(RefusalCode.ENGINE_FAILED,
+        raise ToolError(RefusalCode.FIT_FAILED,
                         f"emlddmm did not run: {tail[0]}")
     out = dict(np.load(dst, allow_pickle=False))
     if "error" in out:
-        raise ToolError(RefusalCode.ENGINE_FAILED,
+        raise ToolError(RefusalCode.FIT_FAILED,
                         f"emlddmm failed: {out['error']}")
     return out
 

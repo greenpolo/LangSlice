@@ -19,10 +19,11 @@ import json
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import cv2
 import numpy as np
+from filelock import FileLock, Timeout
 from PIL import Image
 
 from langslice.core.atlas.borders import annotation_slice
@@ -133,50 +134,68 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
     """The result saved under one call key, if any."""
     if not result_path.exists():
         return None
-    saved = json.loads(result_path.read_text())
+    try:
+        saved = cast(object, json.loads(result_path.read_text()))
+        problem = f"a JSON {type(saved).__name__}"
+    except (OSError, ValueError) as exc:
+        saved, problem = None, str(exc)
     if not isinstance(saved, dict):
-        raise ValueError("Saved image correction result must be an object")
-    return saved
+        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
+                      f"The saved image reply {result_path} cannot be read "
+                      f"({problem}); nothing was started. The file is "
+                      "damaged: tell the user.")
+    return cast("dict[str, Any]", saved)  # a saved result: by key
+
+
+#: The file a call key's running attempt holds a lock on (``filelock``)
+#: until its outcome is saved.
+_CLAIM = ".call.lock"
 
 
 def _open_attempt(
-    call_directory: Path, previous: dict[str, Any] | None, section_id: str, fingerprint: str,
-) -> tuple[Path, Path, int] | dict[str, Any]:
-    """``(in_progress, attempt directory, attempt)`` for a new attempt under a
-    call key, or the error record when one is in progress or was interrupted.
+    call_directory: Path, section_id: str, fingerprint: str,
+) -> tuple[FileLock, Path, int] | dict[str, Any]:
+    """``(claim, attempt directory, attempt)`` for a new attempt under a call
+    key, or the refusal while another attempt under it is running.
 
-    Exclusive creation detects interrupted requests with no known outcome. A
-    recorded transport failure may start another attempt under the same key.
+    The claim is a lock on the key's :data:`_CLAIM`, held until the
+    attempt's outcome is saved. A process that dies mid-call releases it,
+    so an interrupted call is made again as the next attempt, as is a
+    recorded transport failure.
     """
-    in_progress = call_directory / ".in_progress"
+    call_directory.mkdir(parents=True, exist_ok=True)
+    claim = FileLock(str(call_directory / _CLAIM), timeout=0,
+                     thread_local=False)
     try:
-        call_directory.mkdir(parents=True, exist_ok=previous is not None)
-        with in_progress.open("x") as handle:
-            handle.write("Request in progress; no completed outcome recorded yet.\n")
-    except FileExistsError:
+        claim.acquire()
+    except Timeout:
         return Refused(
-            RefusalCode.IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED,
+            RefusalCode.IMAGE_CALL_IN_PROGRESS,
             "An image call for this section at this placement and region "
-            "choice is still running, or was interrupted before its reply "
-            "was recorded (its folder is artifact_dir); no new call was "
-            "made. A call at another placement or region choice starts "
-            "afresh.",
+            "choice is still running in another process (its folder is "
+            "artifact_dir); no new call was made. Its reply is saved there "
+            "when it lands: trace the section again then.",
             id=section_id, geometry_fingerprint=fingerprint,
             artifact_dir=str(call_directory),
         ).payload()
-    attempt = int((previous or {}).get("attempt", 0)) + 1
+    attempt = 1
+    for path in call_directory.iterdir():
+        made = re.fullmatch(r"attempt-(\d+)", path.name)
+        if made:
+            attempt = max(attempt, int(made.group(1)) + 1)
     directory = call_directory / f"attempt-{attempt:02d}"
     directory.mkdir()
-    return in_progress, directory, attempt
+    return claim, directory, attempt
 
 
 def _finish_attempt(
-    directory: Path, result_path: Path, in_progress: Path, result: dict[str, Any],
+    directory: Path, result_path: Path, claim: FileLock,
+    result: dict[str, Any],
 ) -> dict[str, Any]:
     """Save an attempt's outcome (its own and the call key's) and release the key."""
     _write_json(directory / "result.json", result)
     _write_json(result_path, result)
-    in_progress.unlink()
+    claim.release()
     return dict(result)
 
 
@@ -303,7 +322,8 @@ def start_correction(
     here, so ``job`` (the image call and its artifacts) may run in another
     thread while the agent keeps working. ``job`` is ``None`` when there is
     nothing to run: a saved reply at this geometry (returned with
-    ``cached``), or an attempt already in progress or interrupted.
+    ``cached``), or an attempt another process is running
+    (``IMAGE_CALL_IN_PROGRESS``; an interrupted one is made again).
 
     *prompt* is the agent's edited copy of the base prompt (blank sends the
     base); the base, the prompt sent and their word diff are saved with the
@@ -372,10 +392,10 @@ def start_correction(
     sent = prompt.strip() or base_prompt
     marks = profile_marks(image_model)
 
-    opened = _open_attempt(call_directory, previous, section_id, fingerprint)
+    opened = _open_attempt(call_directory, section_id, fingerprint)
     if isinstance(opened, dict):
         return opened, None
-    in_progress, directory, attempt = opened
+    claim, directory, attempt = opened
     paths = {key: str(directory / filename) for key, filename in {
         "raw_reply": "raw_reply.png", "prompt": "prompt.txt",
         "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
@@ -429,7 +449,7 @@ def start_correction(
             )
         except Exception as exc:
             result.update(Refused.from_exception(exc).payload())
-        return _finish_attempt(directory, result_path, in_progress, result)
+        return _finish_attempt(directory, result_path, claim, result)
 
     return submitted, job
 

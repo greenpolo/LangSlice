@@ -99,7 +99,7 @@ def test_look_refusals(tmp_path: Path):
     cases = [
         (dict(mode="section", sections=["nope.png"]), "UNKNOWN_SLICE_IDS"),
         (dict(mode="sideways"), "UNKNOWN_MODE"),
-        (dict(mode="atlas"), "NO_POSITIONS"),
+        (dict(mode="atlas"), "BAD_ARGS"),
         (dict(mode="section", warp="wavy"), "BAD_WARP"),
         (dict(mode="section", images=["nope"]), "UNKNOWN_IMAGE"),
         (dict(mode="atlas", positions_mm=[0.1], atlas_opacity=3), "BAD_ARGS"),

@@ -323,9 +323,8 @@ class ContextReads:
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         if view.stale:
-            raise ToolError(RefusalCode.STALE_MASK,
-                            f"{record.id}'s mask {name!r} was made before the "
-                            "section changed; make it again with make_mask.")
+            raise ToolError(RefusalCode.STALE_MASK, ops_masks.stale_mask(
+                self._run.job, record.id, str(name)))
         return view
 
     def section_inputs(self, section: object, *, deformation: bool = False) -> str:

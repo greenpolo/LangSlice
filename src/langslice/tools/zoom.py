@@ -259,8 +259,8 @@ def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequ
     if region:
         raise Refused(RefusalCode.BAD_REGION_PICTURE,
                       picture=target.seq, message=(
-            f"Picture {target.seq} is a sheet; zoom a region on one of its tiles' "
-            f"pictures ({listed}) by number."))
+            f"Picture {target.seq} is a sheet; a region is found on one of its tiles' "
+            f"pictures ({listed}): give that picture's number."))
     try:
         asked = [float(v) for v in box]
     except (TypeError, ValueError):
