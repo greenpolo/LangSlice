@@ -1,7 +1,7 @@
 """The ``status`` tool: the stack as it stands, as data.
 
 Writes nothing and takes no undo step. :func:`stack_status` is the table
-every write's reply quotes rows of; :func:`status` is the tool, which adds
+every write's reply quotes rows of; :func:`status_tool` is the tool, which adds
 what the run holds besides the rows: the raw channels, the made section
 images, the background work still running and what this run lets the agent
 change. The pictures are ``look``'s (:mod:`langslice.tools.look`).
@@ -38,7 +38,7 @@ class StackStatus:
     interval_breaks: list[str]
 
 
-def status(run: Run) -> dict[str, object]:
+def status_tool(run: Run) -> dict[str, object]:
     """Describe the stack and the run; return the ``status`` reply.
 
     Parameters

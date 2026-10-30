@@ -6,7 +6,7 @@ caption, so it gets a picture number at once, and the reply lists
 ``[{"id", "caption"}]`` per picture. The tool door sends the returned PIL
 pictures with those numbers beside them and must not save them again.
 
-- :func:`look` is the tool: the door builds its
+- :func:`look_tool` is the tool: it builds the call's
   :class:`~langslice.core.pictures.look.LookRequest` from the model's
   arguments and :func:`look_pictures` checks it and draws one of the four
   modes (:mod:`langslice.core.pictures.look`). A call shows every picture
@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.pictures import look as looks
 from langslice.core.pictures import sheet as sheets
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
@@ -40,7 +41,7 @@ from langslice.core.refusal import RefusalCode, Refused
 from langslice.job import registrations as regs
 from langslice.job.pictures import has_frame
 from langslice.tools.refusal import unknown_sections
-from langslice.tools.run import pictured
+from langslice.tools.run import as_list, pictured
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -51,7 +52,7 @@ LOOK_TOOL = "look"
 
 @dataclass(frozen=True)
 class Looked:
-    """What :func:`look` (and ``grep_atlas_view``) showed."""
+    """What :func:`look_pictures` (and ``grep_atlas_view``) showed."""
 
     #: The pictures, in order, each saved with a number.
     pictures: list[Image.Image] = field(default_factory=list)
@@ -156,11 +157,21 @@ def _strings(value: Any, name: str) -> list[Any]:
     return list(value)
 
 
-def look(
+def look_tool(
     run: Run,
-    request: LookRequest,
+    mode: str,
+    sections: list[str],
+    images: list[str],
     *,
-    registrations: Mapping[str, int] | None = None,
+    positions_mm: list[float] | None = None,
+    atlas_layers: list[str] | None = None,
+    atlas_opacity: float = 0.5,
+    warp: str = "applied",
+    resolution: int = 0,
+    layers: list[str] | None = None,
+    depth: int = OVERLAY_DEPTH,
+    masks: list[str] | None = None,
+    registrations: dict[str, int] | None = None,
     sheet: bool = False,
 ) -> dict[str, object]:
     """Draw and save the pictures of one ``look`` call; return its reply.
@@ -169,9 +180,17 @@ def look(
     ----------
     run
         The run the tool is called in: its job, workspace and picture size.
-    request
-        The call as the door built it from the model's arguments: section
-        filenames as named, ``long_edge`` the ``resolution`` asked for.
+    mode, sections, images, positions_mm, atlas_layers, atlas_opacity
+        The call's arguments as the model sent them (the description says
+        what each does); a list argument may come as one item. Section
+        filenames are checked by :func:`look_pictures`.
+    warp
+        ``applied`` draws the applied deformation, ``none`` the linear
+        placement alone.
+    resolution
+        The long edge asked for, clamped to the driver model's limits.
+    layers, depth, masks
+        The same as the first, for the drawing's options.
     registrations
         ``{filename: number}``: the earlier registrations to draw sections
         under (``look_pictures``).
@@ -187,6 +206,19 @@ def look(
         their numbers (``sheet``: the sheets, the tiled pictures under
         ``tiled``) and the pictures left out.
     """
+    request = LookRequest(
+        mode=str(mode or "").strip().lower(),
+        sections=tuple(as_list(sections)),
+        positions_mm=tuple(as_list(positions_mm)),
+        images=tuple(as_list(images)),
+        atlas_layers=tuple(as_list(atlas_layers)) or None,
+        atlas_opacity=atlas_opacity,
+        warp=str(warp or "applied").strip().lower(),
+        long_edge=resolution,
+        layers=tuple(as_list(layers)),
+        depth=depth,
+        masks=tuple(as_list(masks)),
+    )
     edge, note = requested_edge(run, request.long_edge)
     sheet_edge = int(run.box.max_view_edge) if sheet else None
     looked = look_pictures(
@@ -604,7 +636,8 @@ __all__ = [
     "LOOK_TOOL",
     "SHEET_MODE",
     "Looked",
-    "look",
+    "look_pictures",
+    "look_tool",
     "not_shown",
     "save_pictures",
     "show_result",

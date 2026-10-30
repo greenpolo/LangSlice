@@ -1,8 +1,9 @@
 """Read-only access to the job folder, for an agent with no shell of its own.
 
-Three tools modelled on a coding agent's file tools: :func:`list_files`,
-:func:`search_files` and :func:`read_file`, each over its operation on the
-job (:func:`list_folder`, :func:`search_folder`, :func:`read_job_file`).
+Three tools modelled on a coding agent's file tools:
+:func:`list_files_tool`, :func:`search_files_tool` and
+:func:`read_file_tool`, each over its operation on the job
+(:func:`list_folder`, :func:`search_folder`, :func:`read_job_file`).
 Every picture shown so far is written and indexed before each runs. Every
 path is relative to the job folder and kept inside it
 (:mod:`langslice.job.browse`); a path that leaves it is refused
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Listing:
-    """The items of :func:`list_files`; ``text`` is the reply."""
+    """The items of :func:`list_folder`; ``text`` is the reply."""
 
     path: str
     entries: tuple[browse.Entry, ...]
@@ -57,7 +58,7 @@ class Listing:
 
 @dataclass(frozen=True)
 class Found:
-    """The matches of :func:`search_files`; ``text`` is the reply."""
+    """The matches of :func:`search_folder`; ``text`` is the reply."""
 
     matches: tuple[str, ...]
     hidden: int
@@ -67,7 +68,7 @@ class Found:
 
 @dataclass(frozen=True)
 class FileText:
-    """What :func:`read_file` answers; ``text`` is the reply.
+    """What :func:`read_job_file` answers; ``text`` is the reply.
 
     ``kind`` is ``text``, ``picture`` or ``binary``; ``picture`` is the number
     of the indexed picture a picture file belongs to (None when it has none).
@@ -82,7 +83,7 @@ class FileText:
     picture: int | None = None
 
 
-def list_files(run: Run, path: str, glob: str) -> dict[str, object]:
+def list_files_tool(run: Run, path: str, glob: str) -> dict[str, object]:
     """List a folder of the job; return the ``list_files`` reply.
 
     Parameters
@@ -105,7 +106,7 @@ def list_files(run: Run, path: str, glob: str) -> dict[str, object]:
     return {"status": "ok", "text": done.text}
 
 
-def search_files(
+def search_files_tool(
     run: Run, query: str, path: str, glob: str
 ) -> dict[str, object]:
     """Search the job's text files; return the ``search_files`` reply.
@@ -133,7 +134,7 @@ def search_files(
     return {"status": "ok", "text": done.text}
 
 
-def read_file(
+def read_file_tool(
     run: Run, path: str, offset: int, limit: int
 ) -> dict[str, object]:
     """Read a file of the job; return the ``read_file`` reply.

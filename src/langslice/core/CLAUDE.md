@@ -313,7 +313,7 @@ the angles in a caption (empty for the flat plane).
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
   status rows (`frozen`, `damage_by_user` and `registration`, the number of
-  the registration the section holds, are set by `tools.status.status`): rows
+  the registration the section holds, are set by `tools.status.stack_status`): rows
   with a field outside `ROW_FIELDS`, such as
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
@@ -465,7 +465,7 @@ the angles in a caption (empty for the flat plane).
   naming its number, nothing drawn over it, the sheet captioned; `recipe`
   (renderer `sheet`: each tile's `picture`, `box` on the sheet and the
   picture's `size`), `tile_under` (the tile holding most of a box) and
-  `to_tile` (a sheet box in the tile picture's pixels), which `tools.zoom.zoom`
+  `to_tile` (a sheet box in the tile picture's pixels), which `tools.zoom.zoom_picture`
   reads; `MAX_TILES` (16) per sheet.
 - `pictures/grid.py` and `geometry.pixel_frames.source_frame` — the coordinate grid every
   zoom carries. `source_frame(recipe)` is where a zoom's pixels lie in the

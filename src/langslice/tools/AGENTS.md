@@ -24,10 +24,11 @@ decides the picture): argument checks, the one operation call, the reply
 and its picture (`positions.py`, `transforms.py`, `damage.py`, `masks.py`,
 `notes.py`, `history.py` (`undo_tool`, `redo_tool`), `registrations.py`,
 `submit.py`, `affine_fit.py`, `deformable.py`, `traces.py`, `exports.py`,
-`landmarks.py`, `landmark_warp.py`); `doors.tools.toolbox.TOOL_BODIES`
-wires their names. The looking tools' bodies are functions in their modules
-here too (below), wired by `doors/tools/looking.py`; `build_tools` (which
-resolves the image model through the providers) is still `doors/tools/`.
+`landmarks.py`, `landmark_warp.py`, and the looking tools' `look.py`,
+`zoom.py`, `images.py`, `atlas.py`, `status.py`, `files.py`);
+`doors.tools.toolbox.TOOL_BODIES` wires their names, and `build_tools`
+(which resolves the image model through the providers) stays in
+`doors/tools/`.
 
 ## `descriptions/`: the model-facing text
 
@@ -188,7 +189,7 @@ scripts call those.
 - `images.py` — `make_section_image(job, workspace, name, sections,
   given, delete=)`, `given` an `ImageRecipe` (`weights`, `clahe_clip`,
   `clahe_tiles`, `n4`, `denoise`, `contrast`, `gamma`, `invert`; the
-  `make_image` tool normalizes the model's values first): a made section image (`core/sections/images.py`) for the
+  `make_image` tool, `make_image_tool`, normalizes the model's values first): a made section image (`core/sections/images.py`) for the
   sections named (empty: every section), each computed from its own images
   and saved as a file before ONE undo step sets the entries;
   `preprocessed` with every argument at its default writes the opening
@@ -233,7 +234,7 @@ scripts call those.
   `browse.resolve`):
   `list_folder(job, path=".", glob="")` -> `Listing`, `search_folder(job, query,
   path=".", glob="")` -> `Found`, `read_job_file(job, path, offset=0, limit=400)` ->
-  `FileText` (the tools `list_files`, `search_files`, `read_file` flush the
+  `FileText` (the tools `list_files_tool`, `search_files_tool`, `read_file_tool` flush the
   picture store first and reply with the `text`); each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`), never
   pixels, and a line written with its needs (`job.settings.needs.render`): the number to
@@ -525,13 +526,13 @@ scripts call those.
   (`pictures`, `entries`, `not_shown`, `regions`, `regions_not_in_plane`,
   `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
   `NO_SIDES`.
-- `look.py` — `look(run, request, registrations=, sheet=)`, the tool: the
-  door builds the `core.pictures.look.LookRequest` from the model's
+- `look.py` — `look_tool(run, mode, sections, images, ...)`, the tool:
+  it builds the `core.pictures.look.LookRequest` from the model's
   arguments (section filenames as named, `long_edge` the `resolution` asked
   for, held by `requested_edge`: read only at image resolution `auto`), and
   `look_pictures(job, workspace, request, registrations=, sheet_edge=)`
-  checks it and draws; `zoom.py` — `zoom(run, box, picture, region=)`, the
-  tool, over `zoom_picture(job, workspace, box=(), picture=None,
+  checks it and draws; `zoom.py` — `zoom_tool(run, box, picture, region=)`,
+  the tool, over `zoom_picture(job, workspace, box=(), picture=None,
   region="")`. Both save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
   (`Looked`, `Zoomed`) carries `pictures` (PIL) and `entries`
@@ -577,7 +578,7 @@ scripts call those.
   name (numbered, captioned, zoomable); at most `Job.picture_cap` shown (None:
   all), the rest `not_shown` with the `look` call that draws them, a failed picture
   `failed` (the write stands).
-- `status.py` — `status(run)`, the tool (the rows, `raw_channels`,
+- `status.py` — `status_tool(run)`, the tool (the rows, `raw_channels`,
   `section_images`, `background_running`, `can_change`), and
   `stack_status(job)` (`StackStatus`: the status rows (each with its
   `transform`, kind and knobs, and `deformation`, method, steps and settings:
@@ -680,7 +681,7 @@ and with no pairs and no delete writes nothing; the apply reply lists
 `built_from` and says which displacement figure is the whole deformation; `delete=["all"]` clears the section.
 `history.undo/redo` report `step` (`describe_step`: the sections touched
 and the changed field groups). `look.show_result` takes
-`resolution`; `zoom.zoom`'s entries carry `content_box` and `covers` (the whole
+`resolution`; `zoom.zoom_picture`'s entries carry `content_box` and `covers` (the whole
 picture's pixels a zoom shows). Every zoom carries a coordinate grid
 (`core/pictures/grid.py`) labelled in the whole picture's pixels; on a zoom,
 `zoom`'s box and `set_landmarks` endpoints are read in those numbers

@@ -2,9 +2,10 @@
 
 A section image (:mod:`langslice.core.sections.images`) is a raw channel of the
 file, never edited, or a made image: a recipe over the section's other images
-(:func:`make_section_image`, which the ``make_image`` tool, :func:`make_image`,
-calls) or an array a script computed (:func:`add_image`), saved
-as ``sections/<stem>/images/<name>.png`` with its entry in
+(:func:`make_section_image`, which the ``make_image`` tool,
+:func:`make_image_tool`, calls) or an array a script computed
+(:func:`add_image`), saved as ``sections/<stem>/images/<name>.png`` with
+its entry in
 ``Section.images``. Every write is one undo step; files are never deleted
 (undo hides the entry). :func:`image_names`, :func:`read` and
 :func:`check_image` are what the fits and the pictures read through.
@@ -13,7 +14,7 @@ as ``sections/<stem>/images/<name>.png`` with its entry in
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -44,8 +45,8 @@ RESERVED = ("none", "all")
 class ImageRecipe:
     """How a made image is computed from the section's other images.
 
-    The door builds it from ``make_image``'s arguments as the model gives
-    them; :func:`make_image` checks the values.
+    :func:`make_image_tool` builds it from ``make_image``'s arguments as the
+    model gives them and checks the values.
     """
 
     #: ``{image name: weight}``; empty: each raw channel by its tissue
@@ -64,7 +65,7 @@ class ImageRecipe:
 
 @dataclass(frozen=True)
 class ImagesMade:
-    """What :func:`make_image` did."""
+    """What :func:`make_section_image` did."""
 
     name: str
     #: The sections the image was made for (or removed from).
@@ -155,13 +156,20 @@ def _in_force(workspace: Workspace, job: Job, name: str) -> dict[str, Any]:
     return dict(images.summary(job.state, workspace.settings).get(name) or {})
 
 
-def make_image(
+def make_image_tool(
     run: Run,
     name: str,
     sections: list[str],
-    recipe: ImageRecipe,
+    weights: dict[str, float],
+    clahe_clip: float,
+    clahe_tiles: int,
+    n4: bool,
+    denoise: bool,
+    contrast: list[float],
+    gamma: float,
+    invert: bool,
+    delete: bool,
     *,
-    delete: bool = False,
     view: bool = True,
 ) -> dict[str, object]:
     """Make, replace or delete a made image; return the ``make_image`` reply.
@@ -174,8 +182,9 @@ def make_image(
         The made image's name.
     sections
         The sections' filenames; empty is every section.
-    recipe
-        The recipe as the model gave it; its values are checked here.
+    weights, clahe_clip, clahe_tiles, n4, denoise, contrast, gamma, invert
+        The recipe as the model gave it (:class:`ImageRecipe`); its values
+        are checked here.
     delete
         Whether the image is removed from the sections instead.
     view
@@ -198,14 +207,15 @@ def make_image(
     job = run.job
     ids = _section_ids(run, as_list(sections))
     try:
-        given = replace(
-            recipe,
-            weights=dict(recipe.weights or {}),
-            n4=bool(recipe.n4),
-            denoise=bool(recipe.denoise),
-            contrast=as_list(recipe.contrast),
-            gamma=_exponent(recipe.gamma),
-            invert=bool(recipe.invert),
+        given = ImageRecipe(
+            weights=dict(weights or {}),
+            clahe_clip=clahe_clip,
+            clahe_tiles=clahe_tiles,
+            n4=bool(n4),
+            denoise=bool(denoise),
+            contrast=as_list(contrast),
+            gamma=_exponent(gamma),
+            invert=bool(invert),
         )
         done = make_section_image(
             job, run.ctx, str(name), ids, given, delete=bool(delete)
@@ -224,8 +234,7 @@ def make_image(
     else:
         reply["recipe"] = done.in_force
     reply["section_images"] = done.images
-    hidden = not (view or run.spec.force_view)
-    if done.deleted or run.spec.off("look:section") or hidden:
+    if done.deleted or run.spec.off("look:section") or not run.shows(view):
         return reply
     made = [job.state.by_id(section) for section in done.sections]
     existing = [section for section in made if section is not None]

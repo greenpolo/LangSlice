@@ -286,24 +286,21 @@ bodies, and turned into an answer once per door:
   image model, `rows`, `changed`, `answered`, `resolve_many`, `shows` (the
   call's `view`, or the host's `force_view`); `pictured`,
   `as_list`, `spread`: the sections a change tool pictures when the call
-  names none), the
-  tool bodies (`looking.py` wires each looking tool to its function under
-  `langslice/tools/` (`look.look`, `zoom.zoom`, `images.make_image`,
-  `atlas.grep_atlas`, `atlas.grep_atlas_view`, `status.status`, the
-  job-folder tools in `files`), building `look`'s `LookRequest` (`_look`)
-  and `make_image`'s `ImageRecipe` (`_make_image`) from the model's
-  arguments; `look`'s `sheet`, declared where pictures are uncapped, tiles
-  the pictures into sheets at the box's `max_view_edge`: the reply's
-  `pictures` are the sheets, `tiled` the pictures they tile;
-  the changing tools' bodies are in their `tools/` modules
-  (`toolbox.TOOL_BODIES`: `position_sections`, `interactive_transform`,
-  `mark_damage`, `make_mask` (per-section `rows`), `note`, `undo`, `redo` (`steps`, default 1: that many in
-  one call), `restore_registration` (`section` lists,
-  `tools.registrations.listing`; `sections` `[{id, registration}]` puts them
-  back, per-section `results`, one undo step, and shows their overlays;
-  both or neither `BAD_ARGS`), `submit`; the fit tools' bodies are
-  functions of their `tools/` modules, wired by name in `toolbox.TOOL_BODIES`
-  and called with the run first (`tools.affine_fit.elastix_affine_tool`, its
+  names none). Every tool body is a function `<tool>_tool(run, ...)` of
+  its `tools/` module, beside its operation, wired by name in
+  `toolbox.TOOL_BODIES` and called with the run first: the looking tools
+  (`look.look_tool` builds the call's `LookRequest`, `images.make_image_tool`
+  its `ImageRecipe`, from the model's arguments; `look`'s `sheet`, declared
+  where pictures are uncapped, tiles the pictures into sheets at the box's
+  `max_view_edge`: the reply's `pictures` are the sheets, `tiled` the
+  pictures they tile; `zoom`, `grep_atlas`, `grep_atlas_view`, `status`,
+  the job-folder tools in `files`), the changing tools (`position_sections`,
+  `interactive_transform`, `mark_damage`, `make_mask` (per-section `rows`),
+  `note`, `undo`, `redo` (`steps`, default 1: that many in one call),
+  `restore_registration` (`section` lists, `tools.registrations.listing`;
+  `sections` `[{id, registration}]` puts them back, per-section `results`,
+  one undo step, and shows their overlays; both or neither `BAD_ARGS`),
+  `submit`) and the fit tools (`tools.affine_fit.elastix_affine_tool`, its
   `turn_deg` and plausibility `flags` worded in the row's `warning`,
   `affine_flag_text`, the knobs under `transform`;
   `tools.deformable.fireants_syn_tool`, `tools.traces.trace_borders_tool`,
@@ -322,7 +319,7 @@ bodies, and turned into an answer once per door:
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
   `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host;
-  `look`'s `resolution` is clamped by `core.pictures.sizes.clamp_resolution`), `media.py` (the ADK message parts: `packaged`,
+  a tool's `resolution` is clamped by `tools.look.requested_edge`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys

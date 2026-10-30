@@ -188,9 +188,8 @@ The tools are the toolbox `doors.tools.toolbox.build_tools(state, ctx, spec,
 job=, image_model=, level=, max_view_edge=)` builds: the verbs
 `tools.catalog.enabled(spec)` names, each declared once in
 `langslice/tools/descriptions/render.py` (name, arguments, description) and each body
-(a function in its module under `langslice/tools/`, wired by
-`doors/tools/looking.py` for the looking tools and by
-`doors.tools.toolbox.TOOL_BODIES` for the others)
+(`<tool>_tool(run, ...)`, a function of its module under
+`langslice/tools/`, wired by `doors.tools.toolbox.TOOL_BODIES`)
 argument checking, one call into `langslice/tools/` and the wording. Every
 call runs through
 the tool pipeline's steps (`langslice/tools/pipeline.py`, `TOOL_STEPS`):

@@ -1,8 +1,8 @@
 """The atlas tools: ``grep_atlas`` and ``grep_atlas_view``. Reads, never writes.
 
-:func:`grep_atlas` searches the region hierarchy like text and names the
+:func:`grep_atlas_tool` searches the region hierarchy like text and names the
 region drawn at points of saved pictures (:func:`search_regions`);
-:func:`grep_atlas_view` draws the atlas with only named regions' borders
+:func:`grep_atlas_view_tool` draws the atlas with only named regions' borders
 (:func:`draw_regions`). Each tool function takes the run and the model's
 arguments and returns the reply.
 """
@@ -65,7 +65,7 @@ MAX_POINTS = GREP_ATLAS_LIMIT
 MAX_CHAIN = 6
 
 
-def grep_atlas(
+def grep_atlas_tool(
     run: Run, query: str, section: str, points: list[PicturePoint]
 ) -> dict[str, object]:
     """Search the region hierarchy; return the ``grep_atlas`` reply.
@@ -459,7 +459,7 @@ def _redraw_regions(
 zooms.RENDERERS[REGIONS_RENDERER] = _redraw_regions
 
 
-def grep_atlas_view(
+def grep_atlas_view_tool(
     run: Run, regions: list[str], positions_mm: list[float]
 ) -> dict[str, object]:
     """Draw the atlas with only named regions' borders; return the reply.

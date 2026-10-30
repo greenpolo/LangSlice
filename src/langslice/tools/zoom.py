@@ -1,6 +1,6 @@
 """The ``zoom`` tool: a box of an earlier picture drawn again.
 
-:func:`zoom` is the tool; :func:`zoom_picture` draws the box on a job (a
+:func:`zoom_tool` is the tool; :func:`zoom_picture` draws the box on a job (a
 sheet's box on the tile under it) and saves it as a picture of its own.
 """
 
@@ -38,7 +38,7 @@ BOX_CODES = (RefusalCode.EMPTY_BOX, RefusalCode.BAD_BOX)
 
 @dataclass(frozen=True)
 class Zoomed:
-    """What :func:`zoom` drew."""
+    """What :func:`zoom_picture` drew."""
 
     pictures: list[Image.Image] = field(default_factory=list)
     entries: list[dict[str, Any]] = field(default_factory=list)
@@ -58,7 +58,7 @@ class Zoomed:
 # --- zoom --------------------------------------------------------------------------------
 
 
-def zoom(
+def zoom_tool(
     run: Run, box: Sequence[float], picture: int, *, region: str = ""
 ) -> dict[str, object]:
     """Draw a box of an earlier picture again; return the ``zoom`` reply.
@@ -297,5 +297,6 @@ def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequ
 __all__ = [
     "ZOOM_TOOL",
     "Zoomed",
-    "zoom",
+    "zoom_picture",
+    "zoom_tool",
 ]

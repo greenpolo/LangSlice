@@ -94,7 +94,6 @@ PLAIN_DOORS = (
     "langslice.tools.pipeline",
     "langslice.tools.events",
     "langslice.tools.run",
-    "langslice.doors.tools.looking",
     "langslice.doors.tools.view_options",
     "langslice.tools.descriptions.render",
     "langslice.doors.jobs",

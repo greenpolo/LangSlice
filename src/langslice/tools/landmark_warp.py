@@ -34,13 +34,12 @@ from langslice.core.geometry.triangulation import (
     visualign_mesh,
 )
 from langslice.core.jsonable import JsonObject, to_jsonable
-from langslice.core.pictures.sizes import AUTO_RESOLUTION, clamp_resolution
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.deformation import DeformationRef, LandmarkWarp
 from langslice.core.stack.landmarks import Pair
 from langslice.core.stack.landmarks_json import pair_to_json
 from langslice.tools.landmarks import landmark_section
-from langslice.tools.look import show_result
+from langslice.tools.look import requested_edge, show_result
 from langslice.tools.run import Run, pictured
 
 if TYPE_CHECKING:
@@ -482,15 +481,7 @@ def landmark_triangulation_tool(
     Refused
         ``BAD_ARGS`` for a resolution that is not a number of pixels.
     """
-    edge: int | None = None
-    note = ""
-    if resolution and run.level == AUTO_RESOLUTION:
-        try:
-            edge, note = clamp_resolution(resolution, run.box.max_view_edge)
-        except (TypeError, ValueError):
-            raise Refused(
-                RefusalCode.BAD_ARGS, "resolution is a whole number of pixels."
-            ) from None
+    edge, note = requested_edge(run, resolution)
     applied = landmark_triangulation(run.job, run.ctx, section)
     result = applied.reply()
     if note:
