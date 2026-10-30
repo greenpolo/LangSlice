@@ -97,51 +97,57 @@ bodies, and turned into an answer once per door:
   SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
   at import); `as_refs` (the library's objects: factory functions by
   `module:qualname`, ToolSpecs as `inline:<digest>`).
-  `context.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
+  `caller.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
   plugin tool, labels `plugin:<tool>`; `Caller.script()` a script's
   `job.context`, label `script`, every property writable the job leaves free,
   no `work_dir` / `start_work` (`NOT_FOR_SCRIPTS`), `in_tool_call` False: its
   reads sync the job first and its placement writes drop the deformations
   they made stale, `merge_calls` False: each outermost write one undo step;
   `provenance`: a deformation record's `plugin` or `script` entry, the latter
-  with `argv0`); `ToolContext(door, caller, call)` (reads `sections`, `section_image`, `atlas`,
-  `fit_frame` (`placed_atlas_to_section`: the current placement; `image=` a
-  section image as `section_image` with `section_image_ref`), `atlas_slice`,
-  `section_inputs`, `channels` (a section's raw channel names), `image_names`
-  (its section images), `working_grid`, `raw_plane` / `working_rgb` (a raw
-  channel and the working copy in the file's orientation, the frame
-  `add_image` takes),
-  `read_registration` (each section in its current orientation, `params`, `at=` a
-  fixed plane, `registered_on="oriented"` for a file made on the oriented
-  render); `section_raster(images=, raw=)`;
-  conversions `transform_from_matrix` / `transform_from_params`, and
-  `deformation_from_map` (a full fit-grid-to-native map as a
-  `DeformationProposal`, `tools.deformable.warp_from_map`; `start="current"`
-  for a map made on top of the held deformation, its chain kept; `settings`,
-  `engine_settings`, `engine_version` kept as a native fit's); writes
-  `set_positions`, `set_transforms`, `set_deformations`
+  with `argv0`). `ToolContext(run, caller, call)` (`context.py`: the job,
+  `work_dir`, `start_work`) is assembled from one class per family of
+  methods, each built on the one below, so the plugin API stays flat:
+  `reads.py` `ContextReads` (the run, the caller, a section by filename;
+  `sections`, `section`, `atlas`, `channels` (a section's raw channel
+  names), `image_names` (its section images), `working_grid`, `raw_plane` /
+  `working_rgb` (a raw channel and the working copy in the file's
+  orientation, the frame `add_image` takes), `mask`, `section_inputs`,
+  `section_image`, `section_raster(images=, raw=)`, `layers`); `frames.py`
+  `ContextFrames` (`fit_frame` (`placed_atlas_to_section`: the current
+  placement; `image=` a section image as `section_image` with
+  `section_image_ref`), `atlas_slice`, `angles_from_plane`, `atlas_plane` /
+  `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
+  `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`));
+  `proposals.py` `ContextProposals` (conversions `transform_from_matrix` /
+  `transform_from_params`, and `deformation_from_map` (a full
+  fit-grid-to-native map as a `DeformationProposal`,
+  `tools.deformable.warp_from_map`; `start="current"` for a map made on top
+  of the held deformation, its chain kept; `settings`, `engine_settings`,
+  `engine_version` kept as a native fit's), `read_registration` (each
+  section in its current orientation, `params`, `at=` a fixed plane,
+  `registered_on="oriented"` for a file made on the oriented render));
+  `fits.py` `ContextFits` (`write_frame` / `map_from_itk` /
+  `transform_from_itk` (`core.maps.itk`: an outside engine's inputs and
+  answer), `fit_fireants` / `fit_elastix` (`tools.deformable.fit_record`,
+  `tools.transforms.elastix_fit`: the native engines with settings and a
+  mask of the caller's own, by the tools' names and with their defaults
+  (`restrict_to`, `section_image`, `atlas_image`, `mask`, `smoothness_um`,
+  `metric`, `edges`, `detail`), a proposal not written, the settings as its
+  step's `settings` / the record's `fit`)); `writes.py` `ContextWrites`
+  (`set_positions`, `set_transforms`, `set_deformations`
   (`tools.deformable.apply_warps`, maps converted before the lock),
   `mark_damage` through `tools/`, `add_image` (a made section image,
-  `tools.images.add_image`), `add_layer`
-  through `job/plugin_store` (a script's under `plugins/script/`), `expect=` fingerprints refusing `STALE_INPUT`
-  rows; `writing()` holds the lock around several writes; a plugin call's writes are
-  one undo step unless another write came between; `atlas_plane` /
-  `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
-  `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`),
-  `write_frame` / `map_from_itk` / `transform_from_itk` (`core.maps.itk`: an
-  outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
-  (`tools.deformable.fit_record`, `tools.transforms.elastix_fit`: the native
-  engines with settings and a mask of the caller's own, by the tools' names
-  and with their defaults (`restrict_to`, `section_image`, `atlas_image`,
-  `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
-  written, the settings as its step's `settings` / the record's `fit`); `overlay_picture` and
+  `tools.images.add_image`), `add_layer` through `job/plugin_store` (a
+  script's under `plugins/script/`), `expect=` fingerprints refusing
+  `STALE_INPUT` rows; `writing()` holds the lock around several writes; a
+  plugin call's writes are one undo step unless another write came
+  between); `pictures.py` `ContextPictures` (`overlay_picture` and
   `positioning_picture` (a proposal drawn on a copy of the state), with a
-  deformation proposal drawn through an in-memory record store; a proposal's
-  note records no registration, `extra["registrations"]` empty), `caption`
-  (keeps the drawn picture's sections on the captioned copy, or takes
-  `sections=` for a picture of the handler's own, so the saved picture
-  records each section's registration) and
-  its views. `runtime.py`: the body of a plugin tool (limits, the context, a
+  deformation proposal drawn through an in-memory record store; a
+  proposal's note records no registration, `extra["registrations"]` empty),
+  `caption` (keeps the drawn picture's sections on the captioned copy, or
+  takes `sections=` for a picture of the handler's own, so the saved
+  picture records each section's registration)). `runtime.py`: the body of a plugin tool (limits, the context, a
   write tool's call as one undo step, a `ToolError` / `Refused` left to the
   tool door, any other exception `PLUGIN_FAILED`, the reply and pictures from
   the `ToolResult`). `provenance.py`:

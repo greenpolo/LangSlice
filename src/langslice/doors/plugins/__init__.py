@@ -21,20 +21,21 @@ from langslice.core.plugins import (
 )
 from langslice.core.refusal import RefusalCode
 from langslice.doors.plugins import loader as _loader
-from langslice.doors.plugins.context import (
-    AffineView,
-    AtlasPlane,
-    AtlasView,
+from langslice.doors.plugins.context import ToolContext
+from langslice.doors.plugins.frames import AtlasPlane, FitFrame
+from langslice.doors.plugins.loader import as_refs, load
+from langslice.doors.plugins.proposals import (
     DeformationProposal,
-    FitFrame,
+    TransformProposal,
+)
+from langslice.doors.plugins.reads import (
+    AffineView,
+    AtlasView,
     LayerRef,
     SectionRaster,
     SectionView,
-    ToolContext,
-    TransformProposal,
-    WriteResult,
 )
-from langslice.doors.plugins.loader import as_refs, load
+from langslice.doors.plugins.writes import WriteResult
 
 _loader.install()
 
