@@ -146,12 +146,12 @@ def test_frozen_properties_and_tasks_that_are_off_refuse_a_scripts_write(images:
         assert moved.rows[0]["error"] == "FROZEN" and not moved.written
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
-                              tasks=["transform"], fresh=True) as job:
+                              tasks=["transform"], resume=False) as job:
         c = job.context
         done = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
         assert done.rows[0]["error"] == "FROZEN"
     # Switching a tool off does not gate a script's write of what it writes.
-    with make(images, disabled=["fireants_syn"], fresh=True) as job:
+    with make(images, disabled=["fireants_syn"], resume=False) as job:
         c = job.context
         done = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
         assert done.written == [ID0]

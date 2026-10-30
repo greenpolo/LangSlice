@@ -1108,13 +1108,13 @@ def test_the_cli_flag_names_plugins_and_their_options(make, images: Path):
     assert spec.plugins == [configurable] and spec.plugin_config == {configurable: {"a": 1}}
     bare = parser.parse_args(["linear", "run", str(images)])
     assert with_tool_plugins(build_linear_spec(bare, str(images)), bare).plugins == []
-    stray = parser.parse_args(["linear", "run", str(images), "--tool-plugin-config", "x=1"])
+    stray = parser.parse_args(["linear", "run", str(images), "--plugin-config", "x=1"])
     with pytest.raises(ValueError, match="needs the --plugins"):
         with_tool_plugins(build_linear_spec(stray, str(images)), stray)
-    broken = parser.parse_args(["linear", "run", str(images), "--tool-plugin", "no_module:x"])
+    broken = parser.parse_args(["linear", "run", str(images), "--plugins", "no_module:x"])
     with pytest.raises(ValueError, match="cannot import"):
         with_tool_plugins(build_linear_spec(broken, str(images)), broken)
-    assert "--tool-plugin" not in parser.parse_args(["mcp"]).__dict__
+    assert "plugins" not in parser.parse_args(["mcp"]).__dict__
 
 
 def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(

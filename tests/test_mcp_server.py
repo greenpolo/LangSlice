@@ -456,7 +456,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     ``start_job(image_folder=...)`` as it stands: its saved settings and
     notes, never the server's job flags, resuming its checkpoint."""
     folder = _folder(tmp_path)
-    _init(folder, "--tasks", "position", "--interval", "150", "--preprocess", "none",
+    _init(folder, "--tasks", "position", "--position-interval-um", "150", "--preprocess", "none",
           "--notes", "Section 2 is torn.")
 
     def server() -> Any:

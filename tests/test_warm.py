@@ -97,7 +97,7 @@ def place(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     install(atlas_loader(), mp.setattr)
     try:
         assert main([str(images), "init", "--tasks", "position,transform,nonlinear",
-                     "--image-provider", "none", "--preprocess", "none",
+                     "--nonlinear-provider", "none", "--preprocess", "none",
                      "--pixel-size-um", str(PIXEL_SIZE_UM)]) == 0
         assert main([str(images), "position_sections", "--sections", json.dumps(
             [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},

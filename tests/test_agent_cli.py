@@ -62,7 +62,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 
 def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
     code, envelope = cli(capsys, str(images), "init", "--tasks",
-                         "position,transform,nonlinear", "--image-provider", "none",
+                         "position,transform,nonlinear", "--nonlinear-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          *flags)
     assert code == 0, envelope
@@ -177,8 +177,8 @@ def test_load_atlas_keeps_brainglobe_notices_off_stdout(capsys, monkeypatch):
 
 def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     # The positions are the host's; the agent sets only the cutting angles.
-    code, envelope = cli(capsys, str(images), "init", "--tasks", "transform", "--angles",
-                         "--image-provider", "none", "--preprocess", "none",
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "transform", "--transform-angles",
+                         "--nonlinear-provider", "none", "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM), "--viewer", "codex")
     assert code == 0, envelope
     code, everything = cli(capsys, "schema", "position_sections")
@@ -404,7 +404,7 @@ def test_pictures_are_capped_at_the_viewers_largest(capsys, images):
 
 def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
         capsys, images, monkeypatch):
-    init(capsys, images, "--image-provider", "openai-oauth")  # HOME is private: no login
+    init(capsys, images, "--nonlinear-provider", "openai-oauth")  # HOME is private: no login
     code, status = cli(capsys, str(images), "status")
     assert code == 0
     assert status["result"]["image_model"] == {
@@ -802,7 +802,7 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
     monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
     monkeypatch.setattr(toolbox, "resolve_image_model", lambda provider, model: stub_image_model(
         SimpleNamespace(nonlinear=SimpleNamespace(provider=provider, image_model=model))))
-    job = init(capsys, images, "--image-provider", "openai-oauth")
+    job = init(capsys, images, "--nonlinear-provider", "openai-oauth")
     code, placed = cli(capsys, str(images), "position_sections", "--sections",
                        json.dumps([{"id": ID0, "position_mm": 0.05}]), "--view", "false")
     assert code == 0, placed
@@ -1184,9 +1184,9 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
     """``--disable``: the verb is not offered, an option is not in the schema,
     a call of it is refused, and nothing the agent reads names either."""
     code, envelope = cli(capsys, str(images), "init", "--tasks", "position,transform",
-                         "--image-provider", "none", "--preprocess", "none",
-                         "--pixel-size-um", str(PIXEL_SIZE_UM), "--disable", "zoom",
-                         "--disable", "look:positioning,interactive_transform:flip")
+                         "--nonlinear-provider", "none", "--preprocess", "none",
+                         "--pixel-size-um", str(PIXEL_SIZE_UM), "--disabled", "zoom",
+                         "--disabled", "look:positioning,interactive_transform:flip")
     assert code == 0, envelope
     folder = Path(envelope["result"]["job_folder"])
     assert "zoom" not in envelope["result"]["verbs"] and "look" in envelope["result"]["verbs"]
@@ -1218,10 +1218,10 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
 
 
 def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
-    code, envelope = cli(capsys, str(images), "init", "--disable", "zoomm")
+    code, envelope = cli(capsys, str(images), "init", "--disabled", "zoomm")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
     assert "unknown name 'zoomm'" in envelope["error"]["message"]
     assert "look:positioning" in envelope["error"]["message"]
     code, envelope = cli(capsys, str(images), "init", "--tasks", "transform",
-                         "--disable", "elastix_affine,interactive_transform")
+                         "--disabled", "elastix_affine,interactive_transform")
     assert code == 2 and "every tool that writes its answer" in envelope["error"]["message"]

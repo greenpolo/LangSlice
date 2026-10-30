@@ -149,7 +149,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 def init(capsys: pytest.CaptureFixture[str], images: Path, tasks: str, *flags: str,
          provider: str = "none") -> Path:
     code, envelope = cli(capsys, str(images), "init", "--tasks", tasks,
-                         "--image-provider", provider, "--preprocess", "none",
+                         "--nonlinear-provider", provider, "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM), *flags)
     assert code == 0, envelope
     return Path(envelope["result"]["job_folder"])
@@ -565,7 +565,7 @@ def test_6_an_unknown_input_is_refused(images):
 def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images):
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS))
     moved = {name: round(mm + 0.02, 6) for name, mm in POSITIONS.items()}
-    flags = ("--tasks", "nonlinear", "--image-provider", "none", "--preprocess", "none",
+    flags = ("--tasks", "nonlinear", "--nonlinear-provider", "none", "--preprocess", "none",
              "--pixel-size-um", str(PIXEL_SIZE_UM))
 
     def positions() -> dict[str, float]:
@@ -586,8 +586,8 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(POSITIONS))
     assert code == 0, envelope
-    # --fresh (--no-resume's old spelling): a new job from the new inputs.
-    code, envelope = cli(capsys, str(images), "init", *flags, "--fresh",
+    # --no-resume: a new job from the new inputs.
+    code, envelope = cli(capsys, str(images), "init", *flags, "--no-resume",
                          "--positions", json.dumps(moved))
     assert code == 0, envelope
     assert positions() == moved
@@ -626,7 +626,7 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     quicknii = tmp_path / "quicknii.json"
     shutil.copy(source / "exports" / "quicknii.json", quicknii)
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
-                         "--image-provider", "none", "--job-dir", str(tmp_path / "again"),
+                         "--nonlinear-provider", "none", "--job-dir", str(tmp_path / "again"),
                          "--registration", str(quicknii))
     assert code == 0, envelope
     result = envelope["result"]

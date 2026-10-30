@@ -39,7 +39,7 @@ def job(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
     code, envelope = cli(capsys, str(folder), "init", "--tasks", "position,transform",
-                         "--image-provider", "none", "--preprocess", "none",
+                         "--nonlinear-provider", "none", "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
     return Path(envelope["result"]["job_folder"])

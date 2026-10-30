@@ -63,7 +63,7 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
     code, envelope = cli(capsys, str(folder), "init", "--tasks",
-                         "position,transform,nonlinear", "--image-provider", "none",
+                         "position,transform,nonlinear", "--nonlinear-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
     code, envelope = cli(capsys, str(folder), "position_sections", "--sections", json.dumps(

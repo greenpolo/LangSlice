@@ -43,7 +43,7 @@ def test_cli_protocol_is_optional_and_explicit_values_survive():
     unknown = parser.parse_args(["linear", "run", "/tmp/sections"])
     assert unknown.position_thickness_um is None and unknown.position_interval_um is None
     known = parser.parse_args(["linear", "run", "/tmp/sections", "--position-thickness-um",
-                               "50", "--interval", "200"])  # --interval: the old spelling
+                               "50", "--position-interval-um", "200"])
     assert known.position_thickness_um == 50 and known.position_interval_um == 200
 
 

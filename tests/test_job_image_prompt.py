@@ -64,7 +64,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     prompt_file.write_text(JOB_PROMPT + "\n", encoding="utf-8")
     args = build_parser().parse_args([
         "linear", "run", str(tmp_path), "--tasks", "position,transform,nonlinear",
-        "--image-prompt", str(prompt_file), "--position-notes", "Olfactory bulb first",
+        "--nonlinear-image-prompt", str(prompt_file), "--position-notes", "Olfactory bulb first",
         "--transform-notes", "Ventral side down", "--nonlinear-notes", "Ignore the tear"])
     spec = spec_from_args(args, str(tmp_path))
     assert spec.nonlinear.image_prompt == JOB_PROMPT  # stripped
@@ -78,7 +78,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     assert "image_prompt" not in plain.to_dict()["nonlinear"]  # saved specs unchanged
 
     missing = build_parser().parse_args(
-        ["linear", "run", str(tmp_path), "--image-prompt", str(tmp_path / "none.txt")])
+        ["linear", "run", str(tmp_path), "--nonlinear-image-prompt", str(tmp_path / "none.txt")])
     with pytest.raises(ValueError, match="--nonlinear-image-prompt"):
         spec_from_args(missing, str(tmp_path))
 

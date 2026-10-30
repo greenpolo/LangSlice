@@ -155,7 +155,7 @@ def source_job(capsys: pytest.CaptureFixture[str], images: Path, atlas: DeepAtla
                tmp_path: Path) -> Path:
     """The source job: PER_SECTION's placements, exported."""
     workspace = make_workspace(images, atlas)
-    envelope = init(capsys, images, "--tasks", "nonlinear", "--image-provider", "none",
+    envelope = init(capsys, images, "--tasks", "nonlinear", "--nonlinear-provider", "none",
                     "--pixel-size-um", str(PIXEL_SIZE_UM), "--job-dir",
                     str(tmp_path / "source"), *supplied(workspace, PER_SECTION))
     folder = Path(envelope["result"]["job_folder"])
@@ -198,7 +198,7 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
             else source / "registration.json")
     copy = tmp_path / f"{export}.json"
     shutil.copy(file, copy)
-    envelope = init(capsys, images, "--image-provider", "openai-oauth", "--pixel-size-um",
+    envelope = init(capsys, images, "--nonlinear-provider", "openai-oauth", "--pixel-size-um",
                     str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
                     "--registration", str(copy))
     result = envelope["result"]
@@ -225,7 +225,7 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
     # The same init again continues the job (the same inputs).
     code, envelope = cli(capsys, str(images), "init", "--atlas",
                          "synthetic_deep_50um", "--preprocess", "none",
-                         "--image-provider", "openai-oauth", "--pixel-size-um",
+                         "--nonlinear-provider", "openai-oauth", "--pixel-size-um",
                          str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
                          "--registration", str(copy))
     assert code == 0, envelope
@@ -234,7 +234,7 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
 @pytest.mark.slow
 def test_the_nonlinear_step_runs_on_an_imported_placement(capsys, images, atlas, tmp_path):
     source = source_job(capsys, images, atlas, tmp_path)
-    envelope = init(capsys, images, "--image-provider", "openai-oauth", "--pixel-size-um",
+    envelope = init(capsys, images, "--nonlinear-provider", "openai-oauth", "--pixel-size-um",
                     str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
                     "--registration", str(source / "exports" / "quicknii.json"))
     nonlinear_on_top(capsys, Path(envelope["result"]["job_folder"]), (ID0, ID1, ID2))
@@ -251,7 +251,7 @@ def test_a_new_job_from_deepslice(capsys, stack, tmp_path, monkeypatch, name):
     images.mkdir()
     for old, new in DEEPSLICE_NAMES.items():
         shutil.copy2(stack / old, images / new)
-    envelope = init(capsys, images, "--image-provider", "openai-oauth", "--pixel-size-um",
+    envelope = init(capsys, images, "--nonlinear-provider", "openai-oauth", "--pixel-size-um",
                     str(PIXEL_SIZE_UM), "--registration", str(FIXTURES / name),
                     atlas_name="allen_mouse_50um")
     imported = envelope["result"]["registration"]
@@ -280,7 +280,7 @@ def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_p
     path = tmp_path / "visualign.json"
     path.write_text(json.dumps(document))
     envelope = init(capsys, images, "--pixel-size-um", str(PIXEL_SIZE_UM),
-                    "--image-provider", "none", "--registration", str(path))
+                    "--nonlinear-provider", "none", "--registration", str(path))
     imported = envelope["result"]["registration"]
     assert imported["format"] == "visualign-json"
     assert imported["unmatched"] == ["elsewhere.png"] and imported["missing"] == [ID2]
@@ -302,12 +302,12 @@ def test_refusals(capsys, images, atlas, tmp_path):
     path.write_text(json.dumps(job_export(export_rows(workspace, PER_SECTION),
                                           atlas_facts(atlas))))
     base = (str(images), "init", "--atlas", "synthetic_deep_50um",
-            "--image-provider", "none", "--registration", str(path))
+            "--nonlinear-provider", "none", "--registration", str(path))
     for flags, named in ((("--positions", json.dumps({ID0: 1.0})), "--positions"),
                          (("--pitch", "1"), "--pitch"),
                          (("--section-angles", json.dumps({ID0: {"pitch": 1}})),
                           "--section-angles"),
-                         (("--angles",), "--transform-angles")):
+                         (("--transform-angles",), "--transform-angles")):
         code, envelope = cli(capsys, *base, *flags)
         assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
         assert named in envelope["error"]["message"]
@@ -318,7 +318,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
         [*rows, dict(rows[0], filename=rows[0]["filename"].replace(".png", ".PNG"))],
         atlas_facts(atlas))))
     code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
-                         "--image-provider", "none", "--registration", str(twice))
+                         "--nonlinear-provider", "none", "--registration", str(twice))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
     assert "several entries" in envelope["error"]["message"]
     # Nothing placed: refused, naming why.
@@ -327,7 +327,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
                                               for i, row in enumerate(rows)],
                                              atlas_facts(atlas))))
     code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
-                         "--image-provider", "none", "--registration", str(nothing))
+                         "--nonlinear-provider", "none", "--registration", str(nothing))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
     assert "No section could be placed" in envelope["error"]["message"]
     code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",

@@ -314,7 +314,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     assert saved["format_version"] == 5 and saved["cutting_angles_deg"] is None
     # --section-angles and --pitch exclude each other.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
-                         "--image-provider", "none", "--pitch", "1",
+                         "--nonlinear-provider", "none", "--pitch", "1",
                          "--section-angles", json.dumps(SECTION_ANGLES))
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
     assert "--pitch/--yaw" in envelope["error"]["message"]
