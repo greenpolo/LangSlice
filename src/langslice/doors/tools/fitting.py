@@ -19,9 +19,12 @@ from typing import Any
 from langslice.core.atlas.images import resolve_image
 from langslice.core.fits.flags import FitFlag
 from langslice.core.pictures.options import default_options
-from langslice.core.pictures.sizes import AUTO_RESOLUTION, picture_edge
+from langslice.core.pictures.sizes import (
+    AUTO_RESOLUTION,
+    clamp_resolution,
+    picture_edge,
+)
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
-from langslice.doors.tools.view_options import clamp_resolution
 from langslice.tools import deformable as ops_deformable
 from langslice.tools import exports as ops_exports
 from langslice.tools import landmarks as ops_landmarks

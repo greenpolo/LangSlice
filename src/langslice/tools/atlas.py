@@ -1,8 +1,15 @@
-"""Atlas lookups: the region hierarchy, searched like text. Reads, never writes."""
+"""The atlas tools: ``grep_atlas`` and ``grep_atlas_view``. Reads, never writes.
+
+:func:`grep_atlas` searches the region hierarchy like text and names the
+region drawn at points of saved pictures (:func:`search_regions`);
+:func:`grep_atlas_view` draws the atlas with only named regions' borders
+(:func:`draw_regions`). Each tool function takes the run and the model's
+arguments and returns the reply.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -25,6 +32,7 @@ from langslice.core.pictures.captions import (
     view_angles_label,
 )
 from langslice.core.pictures.drawn import collecting, note
+from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.pictures.options import default_options
 from langslice.core.pictures.panels import (
     atlas_caption,
@@ -36,15 +44,18 @@ from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack
+from langslice.tools.arguments import PicturePoint
 from langslice.tools.look import not_shown, save_pictures, split_shown
 from langslice.tools.refusal import unknown_sections
+from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import RecordStore
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+    from langslice.tools.run import Run
 
-#: The recipe renderer of :func:`grep_atlas_view`'s pictures.
+#: The recipe renderer of :func:`draw_regions`'s pictures.
 REGIONS_RENDERER = "grep_atlas_view"
 
 
@@ -54,8 +65,39 @@ MAX_POINTS = GREP_ATLAS_LIMIT
 MAX_CHAIN = 6
 
 
-def grep_atlas(job: Job, workspace: Workspace, query: str = "", section: object = "",
-               points: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:
+def grep_atlas(
+    run: Run, query: str, section: str, points: list[PicturePoint]
+) -> dict[str, object]:
+    """Search the region hierarchy; return the ``grep_atlas`` reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    query
+        Text matched against the regions' acronyms and names.
+    section
+        A section's filename: each row then says whether the region shows
+        in its atlas plane.
+    points
+        ``{picture, x, y}`` points of saved pictures, each answered with the
+        region drawn there.
+
+    Returns
+    -------
+    dict
+        ``status`` and what :func:`search_regions` finds.
+    """
+    matches = search_regions(
+        run.job, run.ctx, query, section, as_list(points)
+    )
+    return {"status": "ok", **matches}
+
+
+def search_regions(
+    job: Job, workspace: Workspace, query: str = "", section: object = "",
+    points: Sequence[Mapping[str, float]] = (),
+) -> dict[str, Any]:
     """Regions whose acronym or name matches *query*
     (:func:`langslice.core.atlas.search.grep_structures`).
 
@@ -164,7 +206,7 @@ def _chain(table: dict[int, Any], region_id: int) -> list[str]:
     return out[:MAX_CHAIN]
 
 
-def region_at_points(job: Job, workspace: Workspace, points: Sequence[dict[str, Any]]
+def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[str, float]]
                      ) -> list[dict[str, Any]]:
     """The atlas region drawn at each of *points* (``{picture, x, y}``) of saved
     pictures, one row each: ``region`` (acronym, name, id) and ``within`` (the
@@ -282,7 +324,7 @@ def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: fl
 
 @dataclass(frozen=True)
 class RegionsView:
-    """What :func:`grep_atlas_view` showed (the shape of
+    """What :func:`draw_regions` showed (the shape of
     :class:`langslice.tools.look.Looked`, with the regions)."""
 
     pictures: list[Image.Image] = field(default_factory=list)
@@ -418,6 +460,44 @@ zooms.RENDERERS[REGIONS_RENDERER] = _redraw_regions
 
 
 def grep_atlas_view(
+    run: Run, regions: list[str], positions_mm: list[float]
+) -> dict[str, object]:
+    """Draw the atlas with only named regions' borders; return the reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    regions
+        Atlas regions (acronyms, names or ids; ``"CTX:left"`` for one side).
+    positions_mm
+        Atlas positions along the slicing axis, one picture each.
+
+    Returns
+    -------
+    dict
+        The regions drawn, the ones absent from each plane, the positions
+        moved into the atlas range, and the pictures with their numbers.
+    """
+    done = draw_regions(
+        run.job, run.ctx, as_list(regions), as_list(positions_mm)
+    )
+    reply: dict[str, object] = {"status": "ok", "regions": done.regions}
+    if done.regions_not_in_plane:
+        reply["regions_not_in_plane"] = done.regions_not_in_plane
+    if done.clamped:
+        reply["clamped"] = [
+            {"asked_mm": round(given, 3), "used_mm": round(used, 3)}
+            for given, used in done.clamped
+        ]
+    reply["pictures"] = list(done.entries)
+    if done.not_shown:
+        reply["not_shown"] = list(done.not_shown)
+    reply[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
+    return reply
+
+
+def draw_regions(
     job: Job, workspace: Workspace, regions: Sequence[str], positions_mm: Sequence[float],
 ) -> RegionsView:
     """The atlas template at each of *positions_mm* (clamped into the atlas

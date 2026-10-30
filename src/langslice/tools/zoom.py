@@ -1,4 +1,8 @@
-"""The zoom tool: a box of an earlier picture drawn again."""
+"""The ``zoom`` tool: a box of an earlier picture drawn again.
+
+:func:`zoom` is the tool; :func:`zoom_picture` draws the box on a job (a
+sheet's box on the tile under it) and saves it as a picture of its own.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,7 @@ import io
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image
 
@@ -14,14 +18,16 @@ from langslice.core.geometry.pixel_frames import source_frame
 from langslice.core.pictures import sheet as sheets
 from langslice.core.pictures import zoom as zooms
 from langslice.core.pictures.drawn import collecting
+from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.pictures import PICTURE_FILE, PictureRecord
+from langslice.tools.look import save_pictures
+from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
-
-from langslice.tools.look import save_pictures
+    from langslice.tools.run import Run
 
 #: The tool name zoomed pictures are saved under (the picture index skips it
 #: when it picks the default picture to zoom).
@@ -50,6 +56,62 @@ class Zoomed:
 
 
 # --- zoom --------------------------------------------------------------------------------
+
+
+def zoom(
+    run: Run, box: Sequence[float], picture: int, *, region: str = ""
+) -> dict[str, object]:
+    """Draw a box of an earlier picture again; return the ``zoom`` reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    box
+        ``[x0, y0, x1, y1]`` in pixels of the picture (on a zoom, the
+        numbers its grid prints).
+    picture
+        The picture's number; 0 is the newest picture that is not a zoom.
+    region
+        An atlas region whose whole bounds replace the box (an overlay).
+
+    Returns
+    -------
+    dict
+        The reply: the picture the box was read on, whether it was redrawn,
+        the sheet and the box on its tile for a box given on a sheet,
+        ``stale`` when the stack changed since, and the new picture.
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` when ``picture`` is not a number; the refusals of
+        :func:`zoom_picture`.
+    """
+    try:
+        number = int(picture or 0) or None
+        done = zoom_picture(
+            run.job, run.ctx, as_list(box), picture=number, region=region
+        )
+    except Refused:
+        raise
+    except (TypeError, ValueError):
+        raise Refused(
+            RefusalCode.BAD_ARGS, "picture is a picture number."
+        ) from None
+    reply: dict[str, object] = {
+        "status": "ok",
+        "picture": done.picture,
+        "redrawn": done.redrawn,
+    }
+    if done.sheet is not None:
+        reply["sheet"] = done.sheet
+        reply["box"] = done.box
+    if done.stale:
+        reply["stale"] = True
+    reply["pictures"] = list(done.entries)
+    reply[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
+    return reply
 
 
 def _saved_image(job: Job, record: PictureRecord) -> Image.Image | None:
@@ -115,7 +177,7 @@ def _covers_words(covers: Sequence[float]) -> str:
     return f"x {round(covers[0])}-{round(covers[2])}, y {round(covers[1])}-{round(covers[3])}"
 
 
-def zoom(
+def zoom_picture(
     job: Job, workspace: Workspace, box: Sequence[float] = (), picture: int | None = None,
     region: str = "") -> Zoomed:
     """*box* (``[x0, y0, x1, y1]``, pixels of picture *picture* above its
@@ -199,8 +261,8 @@ def zoom(
 
 def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequence[float],
                 region: str) -> Zoomed:
-    """A zoom on a sheet: the box on the tile that holds most of it, drawn as
-    a zoom of that tile's picture (:func:`zoom`); the reply names the sheet."""
+    """A zoom on a sheet: the box on the tile that holds most of it, drawn
+    as a zoom of that tile's picture; the reply names the sheet."""
     recipe = target.recipe or {}
     numbers = [int(tile["picture"]) for tile in recipe.get("tiles") or []]
     listed = ", ".join(str(n) for n in numbers)
@@ -226,7 +288,9 @@ def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequ
                       + "; ".join(f"{t['picture']} at {t['box']}"
                                   for t in recipe.get("tiles") or []) + ".")
     inner = sheets.to_tile(held, asked)
-    done = zoom(job, workspace, inner, picture=int(held["picture"]))
+    tile_picture = cast("int", held["picture"])  # a sheet recipe's number
+    number = int(tile_picture)
+    done = zoom_picture(job, workspace, inner, picture=number)
     return replace(done, sheet=target.seq, box=inner)
 
 

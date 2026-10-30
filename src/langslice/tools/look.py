@@ -1,47 +1,51 @@
-"""``look`` and ``zoom``: the two ways to see a stack, as functions on a job.
+"""The ``look`` tool, and the pictures change tools show of what they wrote.
 
-Unlike the older viewing verbs, these save their own pictures: each picture
-goes through the job's picture store
-(:class:`langslice.job.pictures.ViewStore`) with its recipe and caption, so it
-gets a picture number at once, and the reply lists ``[{"id", "caption"}]`` per
-picture. The tool door sends the returned PIL pictures with those numbers
-beside them and must not save them again.
+These save their own pictures: each picture goes through the job's picture
+store (:class:`langslice.job.pictures.ViewStore`) with its recipe and
+caption, so it gets a picture number at once, and the reply lists
+``[{"id", "caption"}]`` per picture. The tool door sends the returned PIL
+pictures with those numbers beside them and must not save them again.
 
-- :func:`look` draws one of the four modes
-  (:mod:`langslice.core.pictures.look`). A call shows every picture drawn, or
-  at most ``Job.picture_cap`` of them (the agent tools and MCP); the rest are
-  named in ``not_shown`` with the arguments that get them. With
-  ``registrations`` a section is drawn under an earlier registration of its
-  own, writing nothing; with ``sheet`` the pictures are saved as usual and
-  shown tiled into sheets (:mod:`langslice.core.pictures.sheet`).
-- :func:`zoom` draws a box of an earlier picture again at more detail
-  (:mod:`langslice.core.pictures.zoom`), from the picture's recipe; a picture
-  with no recipe, or whose sections are gone, is cropped from its saved image.
-  The picture defaults to the newest one that is not itself a zoom.
+- :func:`look` is the tool: the door builds its
+  :class:`~langslice.core.pictures.look.LookRequest` from the model's
+  arguments and :func:`look_pictures` checks it and draws one of the four
+  modes (:mod:`langslice.core.pictures.look`). A call shows every picture
+  drawn, or at most ``Job.picture_cap`` of them (the agent tools and MCP);
+  the rest are named in ``not_shown`` with the arguments that get them.
+  With ``registrations`` a section is drawn under an earlier registration
+  of its own, writing nothing; with ``sheet`` the pictures are saved as
+  usual and shown tiled into sheets (:mod:`langslice.core.pictures.sheet`).
+- :func:`show_result` draws the picture a change tool shows of what it wrote.
 """
 
 from __future__ import annotations
 
 import copy
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.pictures import look as looks
 from langslice.core.pictures import sheet as sheets
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
-from langslice.core.pictures.sizes import MIN_RESOLUTION
+from langslice.core.pictures.look import LookRequest
+from langslice.core.pictures.sizes import (
+    AUTO_RESOLUTION,
+    MIN_RESOLUTION,
+    clamp_resolution,
+)
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job import registrations as regs
 from langslice.job.pictures import has_frame
 from langslice.tools.refusal import unknown_sections
+from langslice.tools.run import pictured
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+    from langslice.tools.run import Run
 LOOK_TOOL = "look"
 
 
@@ -153,68 +157,165 @@ def _strings(value: Any, name: str) -> list[Any]:
 
 
 def look(
+    run: Run,
+    request: LookRequest,
+    *,
+    registrations: Mapping[str, int] | None = None,
+    sheet: bool = False,
+) -> dict[str, object]:
+    """Draw and save the pictures of one ``look`` call; return its reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in: its job, workspace and picture size.
+    request
+        The call as the door built it from the model's arguments: section
+        filenames as named, ``long_edge`` the ``resolution`` asked for.
+    registrations
+        ``{filename: number}``: the earlier registrations to draw sections
+        under (``look_pictures``).
+    sheet
+        Whether the pictures are also tiled into sheets no larger than the
+        largest picture the driver model takes.
+
+    Returns
+    -------
+    dict
+        The reply: ``status``, a ``resolution_note`` when the size was
+        clamped, the ``layers`` and ``masks`` drawn, the pictures with
+        their numbers (``sheet``: the sheets, the tiled pictures under
+        ``tiled``) and the pictures left out.
+    """
+    edge, note = requested_edge(run, request.long_edge)
+    sheet_edge = int(run.box.max_view_edge) if sheet else None
+    looked = look_pictures(
+        run.job,
+        run.ctx,
+        replace(request, long_edge=edge),
+        registrations=dict(registrations or {}),
+        sheet_edge=sheet_edge,
+    )
+    reply: dict[str, object] = {"status": "ok"}
+    if note:
+        reply["resolution_note"] = note
+    if looked.layers:
+        reply["layers"] = looked.layers
+    if looked.masks:
+        reply["masks"] = looked.masks
+    reply = pictured(reply, looked)
+
+    # the sheets are attached; the pictures they tile are saved
+    if looked.sheets:
+        reply["tiled"] = reply["pictures"]
+        reply["pictures"] = [
+            {
+                "id": made["id"],
+                "caption": made["caption"],
+                "tiles": made["tiles"],
+            }
+            for made in looked.sheets
+        ]
+    return reply
+
+
+def requested_edge(
+    run: Run, resolution: float | None
+) -> tuple[int | None, str]:
+    """Return the long edge a tool's ``resolution`` asks for, and its note.
+
+    Only a run whose caller sizes the pictures (image resolution ``auto``)
+    reads it; every other run draws at its level.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    resolution
+        The model's ``resolution``; 0 or None is the default size.
+
+    Returns
+    -------
+    edge : int or None
+        The long edge, held between the smallest picture and the largest
+        the driver model takes; None for the run's default.
+    note : str
+        What the reply says when the edge was clamped; empty otherwise.
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` when ``resolution`` is not a number.
+    """
+    if not resolution or run.level != AUTO_RESOLUTION:
+        return None, ""
+    try:
+        return clamp_resolution(resolution, run.box.max_view_edge)
+    except (TypeError, ValueError):
+        raise Refused(
+            RefusalCode.BAD_ARGS, "resolution is a whole number of pixels."
+        ) from None
+
+
+def look_pictures(
     job: Job,
     workspace: Workspace,
-    mode: str,
-    sections: Sequence[Any] = (),
-    positions_mm: Sequence[float] = (),
-    images: Sequence[str] = (),
-    atlas_layers: Sequence[str] | None = None,
-    atlas_opacity: float | None = None,
-    warp: str = "applied",
-    resolution: int | None = None,
-    plugin_layers: Sequence[str] = (),
-    depth: int = OVERLAY_DEPTH,
-    masks: Sequence[str] = (),
-    registrations: Mapping[str, Any] | None = None,
+    request: LookRequest,
+    *,
+    registrations: Mapping[str, int] | None = None,
     sheet_edge: int | None = None,
 ) -> Looked:
-    """Draw *mode* (``section``, ``atlas``, ``overlay`` or ``positioning``;
-    :func:`langslice.core.pictures.look.look`) and save every picture with its
-    recipe
-    and caption.
+    """Draw *request*'s pictures and save each with its recipe and caption.
 
-    No argument reads the job's state: no *sections* is every section, no
-    *images* the ``preprocessed`` image (one section image is drawn alone, in
-    gray; several raw channels together in their colours), no *atlas_layers*
-    the mode's default. *sections* are filenames (``Stack.resolve``).
-    *resolution* is a picture's long edge (clamped up to
-    :data:`~langslice.core.pictures.sizes.MIN_RESOLUTION`); a door passes one
-    only where its caller sizes the pictures (image_resolution ``auto``, or the
-    agent CLI and the library, whose toolbox works at ``auto`` whatever the
-    job's level). At most ``Job.picture_cap`` pictures (None: all) are saved
-    and returned; the rest are ``not_shown``. Refused: ``BAD_ARGS``,
-    ``UNKNOWN_SLICE_IDS``, ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``,
-    ``MIXED_IMAGES``, ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``,
-    ``NO_POSITIONS``, ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job
-    disables the mode: ``look:<mode>`` in its ``disabled`` list).
+    The mode is ``section``, ``atlas``, ``overlay`` or ``positioning``
+    (:func:`langslice.core.pictures.look.look`).
 
-    *plugin_layers* names the layers tool plugins and scripts left on the
-    sections (``"all"``: every one) to draw on the pictures of mode ``section``
-    or ``overlay`` (:mod:`langslice.core.pictures.plugin_layers`); the reply's
+    The request comes as the door built it and is checked here: its
+    ``sections`` are filenames (``Stack.resolve``) and its other fields the
+    model's values. No field reads the job's state: no ``sections`` is every
+    section, no ``images`` the ``preprocessed`` image (one section image is
+    drawn alone, in gray; several raw channels together in their colours), no
+    ``atlas_layers`` the mode's default. ``long_edge`` is a picture's long
+    edge (clamped up to :data:`~langslice.core.pictures.sizes.MIN_RESOLUTION`);
+    a door passes one only where its caller sizes the pictures. At most
+    ``Job.picture_cap`` pictures (None: all) are saved and returned; the rest
+    are ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
+    ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
+    ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS``,
+    ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the mode:
+    ``look:<mode>`` in its ``disabled`` list).
+
+    ``layers`` names the layers tool plugins and scripts left on the sections
+    (``"all"``: every one) to draw on the pictures of mode ``section`` or
+    ``overlay`` (:mod:`langslice.core.pictures.plugin_layers`); the reply's
     ``layers`` says which were drawn. Refused: ``BAD_ARGS`` in another mode,
     ``UNKNOWN_PLUGIN_LAYER`` for a name no drawn section has.
 
-    *masks* names masks (:func:`langslice.tools.masks.make_mask`) of the drawn
-    sections, outlined where their weight is 0.5 on pictures of mode
-    ``section`` or ``overlay`` (:mod:`langslice.core.pictures.plugin_layers`,
-    as a scalar layer); the reply's ``masks`` says which were drawn. Refused:
-    ``BAD_ARGS`` in another mode, ``UNKNOWN_MASK`` for a name no drawn section
-    holds.
+    ``masks`` names masks of the drawn sections, outlined where their weight
+    is 0.5 on pictures of mode ``section`` or ``overlay`` (as a scalar layer);
+    the reply's ``masks`` says which were drawn. Refused: ``BAD_ARGS`` in
+    another mode, ``UNKNOWN_MASK`` for a name no drawn section holds.
 
     *registrations* (``{filename: number}``, mode ``section`` or ``overlay``)
     draws each section it names under that registration of its own
     (:func:`langslice.tools.registrations.entry_for`), writing nothing: the
-    caption says which, and whether the section holds it; with no *sections*
-    only those sections are drawn. Refused: ``BAD_ARGS`` (another mode, a
-    section not among *sections*), ``UNKNOWN_REGISTRATION``,
-    ``REGISTRATION_ELSEWHERE``, ``DEFORMATION_UNREADABLE``.
+    caption says which, and whether the section holds it; with no
+    ``sections`` only those sections are drawn. Refused: ``BAD_ARGS``
+    (another mode, a section not among ``sections``),
+    ``UNKNOWN_REGISTRATION``, ``REGISTRATION_ELSEWHERE``,
+    ``DEFORMATION_UNREADABLE``.
 
     *sheet_edge* (None: no sheet) shows the pictures tiled into sheets of at
-    most that long edge, :data:`langslice.core.pictures.sheet.MAX_TILES` each
-    (:func:`sheet_pictures`): every picture is saved and numbered as usual (its
-    JPEG an artifact of kind ``tile``), and ``pictures`` holds the sheets.
+    most that long edge, :data:`langslice.core.pictures.sheet.MAX_TILES` each:
+    every picture is saved and numbered as usual (its JPEG an artifact of kind
+    ``tile``), and ``pictures`` holds the sheets.
     """
+    # the request as the model gave it, checked below
+    mode, sections = request.mode, request.sections
+    positions_mm, images = request.positions_mm, request.images
+    atlas_layers, atlas_opacity = request.atlas_layers, request.atlas_opacity
+    warp, resolution, depth = request.warp, request.long_edge, request.depth
+    plugin_layers, masks = request.layers, request.masks
     state = job.state
     if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
         on = [name for name in looks.MODES if not job.spec.off(f"look:{name}")]
@@ -276,6 +377,7 @@ def look(
         return _sheet_reply(job, workspace, drawn, notes, request.mode, arguments,
                             int(sheet_edge))
     return _reply(job, workspace, LOOK_TOOL, drawn, notes, request.mode, arguments)
+
 
 
 def _under_registrations(

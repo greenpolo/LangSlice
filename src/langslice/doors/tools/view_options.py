@@ -1,14 +1,13 @@
 """The picture-size limits of the model a run talks to.
 
 :func:`image_limit` (one image's long edge and patch budget for the run's
-model lane), :func:`view_edge_limit` (the largest picture the agent may ask
-``look`` for) and :func:`clamp_resolution` (a requested ``resolution`` held
-inside those limits).
+model lane) and :func:`view_edge_limit` (the largest picture the agent may ask
+``look`` for). They read the run's model through the providers, so they live
+at the doors.
 """
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from langslice.core.pictures.opening import (
@@ -16,7 +15,6 @@ from langslice.core.pictures.opening import (
     IMAGE_LIMITS,
     VIEW_EDGES,
 )
-from langslice.core.pictures.sizes import MIN_RESOLUTION
 from langslice.providers.connections import canonical_provider
 
 
@@ -40,23 +38,3 @@ def view_edge_limit(ctx: Any) -> int:
     which shrinks it. A Claude lane takes Claude's (:data:`VIEW_EDGES`), as
     the MCP host does."""
     return VIEW_EDGES.get(_provider(ctx), image_limit(ctx)[0])
-
-
-def clamp_resolution(value: Any, max_edge: int) -> tuple[int | None, str]:
-    """``(long edge, note)`` for a requested ``resolution``; None for "default".
-
-    0, None and "" are the default. A number outside :data:`MIN_RESOLUTION`
-    .. *max_edge* (the driver model's largest image) is clamped into it and
-    *note* says so; a value that is not a number raises ``ValueError``.
-    """
-    if value in (None, "", 0):
-        return None, ""
-    number = float(value)
-    if not math.isfinite(number):
-        raise ValueError("resolution must be a number of pixels")
-    low, high = MIN_RESOLUTION, int(max_edge)
-    edge = int(round(number))
-    if edge < low or edge > high:
-        clamped = min(high, max(low, edge))
-        return clamped, f"resolution {edge} is outside {low}..{high}; used {clamped}"
-    return edge, ""

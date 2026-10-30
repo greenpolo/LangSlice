@@ -19,6 +19,7 @@ from langslice.core.geometry.pixel_frames import SourceFrame, source_frame
 from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.grid import draw_grid
 from langslice.core.pictures.landmarks import pair_picture
+from langslice.core.pictures.look import LookRequest
 from langslice.core.refusal import Refused
 from langslice.core.stack.codec import (
     affine_from_json,
@@ -52,8 +53,8 @@ def setup(tmp_path: Path):
 
 
 def saved_pairs(job, ws, record, *, delta=(0.0, 0.0)):
-    a = look.look(job, ws, "atlas", sections=[record.id])
-    b = look.look(job, ws, "section", sections=[record.id])
+    a = look.look_pictures(job, ws, LookRequest("atlas", sections=[record.id]))
+    b = look.look_pictures(job, ws, LookRequest("section", sections=[record.id]))
     job.views.flush()
     grid = deformation.fit_grid(job.state, ws, record)
     ap = job.views.lookup(a.entries[0]["id"]).recipe["endpoint_panels"][0]
@@ -124,7 +125,8 @@ def test_bad_batch_is_atomic_and_caption_points_are_refused(tmp_path):
             landmarks.set_landmarks(job, ws, record.id, edits)
         assert caught.value.code == "BAD_LANDMARK_POINT"
         assert job.snapshot() == before
-        generic = look.look(job, ws, "atlas", positions_mm=[record.position_mm])
+        generic = look.look_pictures(
+            job, ws, LookRequest("atlas", positions_mm=[record.position_mm]))
         edits[0]["atlas"]["picture"] = generic.entries[0]["id"]
         with pytest.raises(Refused) as caught:
             landmarks.set_landmarks(job, ws, record.id, edits[:1])
@@ -180,7 +182,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
             )
         assert caught.value.code == "BAD_LANDMARK_POINT"
         box = [b[0] - 30, b[1] - 25, b[0] + 30, b[1] + 25]
-        zoom = tools_zoom.zoom(job, ws, box=box, picture=entry["id"])
+        zoom = tools_zoom.zoom_picture(job, ws, box=box, picture=entry["id"])
         job.views.flush()
         zoom_record = job.views.lookup(zoom.entries[0]["id"])
         assert zoom_record.recipe["args"]["box"] == [round(v, 2) for v in box]
@@ -204,7 +206,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
             record.landmarks)["pairs"][0]["section_fraction_xy"] == pytest.approx(
             pair.section_fraction_xy
         )
-        again = tools_zoom.zoom(
+        again = tools_zoom.zoom_picture(
             job,
             ws,
             picture=zoom.entries[0]["id"],
@@ -428,7 +430,7 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
         with pytest.raises(Refused, match="caption/gutter"):
             landmarks._endpoint(job, record,
                                 {"picture": new_id, "x": x, "y": delivered.height-1}, "section")
-        zoomed = tools_zoom.zoom(job, ws, picture=new_id, box=[x-10, y-10, x+10, y+10])
+        zoomed = tools_zoom.zoom_picture(job, ws, picture=new_id, box=[x-10, y-10, x+10, y+10])
         assert zoomed.redrawn
         assert pages.result_blocks({TOOL_MEDIA_PARTS_KEY: [original]}, job=job)
     finally:
@@ -511,7 +513,8 @@ def test_a_stale_plane_refuses_a_picture_from_the_old_plane(tmp_path):
             landmarks.set_landmarks(job, ws, record.id, [{"id": "L1", "atlas": edits[0]["atlas"]}])
         assert caught.value.code == "STALE_LANDMARK_PLANE"
         # a picture drawn for no section carries no atlas geometry for a pair
-        generic = look.look(job, ws, "atlas", positions_mm=[record.position_mm])
+        generic = look.look_pictures(
+            job, ws, LookRequest("atlas", positions_mm=[record.position_mm]))
         wrong = {**edits[0], "atlas": {**edits[0]["atlas"], "picture": generic.entries[0]["id"]}}
         with pytest.raises(Refused) as caught:
             landmarks.set_landmarks(job, ws, record.id, [wrong])
@@ -563,20 +566,20 @@ def test_a_landmark_edit_alone_leaves_old_pictures_unstale(tmp_path):
     job, ws, record = setup(tmp_path)
     try:
         edits = saved_pairs(job, ws, record)
-        first = look.look(job, ws, "section", sections=[record.id])
+        first = look.look_pictures(job, ws, LookRequest("section", sections=[record.id]))
         job.views.flush()
         number = first.entries[0]["id"]
         landmarks.set_landmarks(job, ws, record.id, edits)
-        assert not tools_zoom.zoom(job, ws, box=[0, 0, 40, 40], picture=number).stale
-        newer = look.look(job, ws, "section", sections=[record.id])
+        assert not tools_zoom.zoom_picture(job, ws, box=[0, 0, 40, 40], picture=number).stale
+        newer = look.look_pictures(job, ws, LookRequest("section", sections=[record.id]))
         job.views.flush()
         landmarks.set_landmarks(job, ws, record.id, delete=["L2"])
-        assert not tools_zoom.zoom(job, ws, box=[0, 0, 400, 400],
+        assert not tools_zoom.zoom_picture(job, ws, box=[0, 0, 400, 400],
         picture=newer.entries[0]["id"]).stale
         before = job.snapshot()
         record.position_mm += 0.01
         job.commit(before)
-        assert tools_zoom.zoom(job, ws, box=[0, 0, 40, 40], picture=number).stale
+        assert tools_zoom.zoom_picture(job, ws, box=[0, 0, 40, 40], picture=number).stale
     finally:
         job.close()
 
@@ -721,7 +724,8 @@ def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_pa
             again = reloaded.state.by_id(record.id)
             assert deformation_to_json(
                 again.deformation)["landmark_holds"] == [[0.5, 0.5], [0.25, 0.75]]
-            assert look.look(reloaded, ws, "overlay", sections=[record.id]).pictures
+            assert look.look_pictures(
+                reloaded, ws, LookRequest("overlay", sections=[record.id])).pictures
             listing = landmarks.set_landmarks(reloaded, ws, record.id)
             assert {row["state"] for row in listing["landmarks"]} == {"applied"}
             rebuilt = landmarks.landmark_triangulation(reloaded, ws, record.id)
@@ -739,7 +743,7 @@ def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_pa
 
 
 def _zoom(job, ws, picture, box):
-    done = tools_zoom.zoom(job, ws, box=box, picture=picture)
+    done = tools_zoom.zoom_picture(job, ws, box=box, picture=picture)
     job.views.flush()
     return done
 
@@ -806,7 +810,7 @@ def test_an_atlas_zoom_and_an_overlay_zoom_read_the_same_numbers(tmp_path):
         assert np.allclose(pairs[on_source["changed"][0]]["atlas_native_xy"],
                            pairs[on_zoom["changed"][0]]["atlas_native_xy"], atol=0.6)
 
-        overlay = look.look(job, ws, "overlay", sections=[record.id])
+        overlay = look.look_pictures(job, ws, LookRequest("overlay", sections=[record.id]))
         job.views.flush()
         number = overlay.entries[0]["id"]
         panel = job.views.lookup(number).recipe["endpoint_panels"][0]
@@ -837,7 +841,7 @@ def test_a_dry_run_resolves_the_pictures_a_real_call_would(tmp_path):
         job.persist = False
         reply = landmarks.set_landmarks(job, ws, record.id, edits)
         assert reply["changed"] == ["L1", "L2", "L3"]
-        made = look.look(job, ws, "section", sections=[record.id])
+        made = look.look_pictures(job, ws, LookRequest("section", sections=[record.id]))
         assert made.entries[0]["id"] > number  # it numbers its own pictures after the saved ones
     finally:
         job.close()
@@ -847,7 +851,7 @@ def test_a_dry_run_resolves_the_pictures_a_real_call_would(tmp_path):
 
 
 def _overlay(job, ws, record):
-    shown = look.look(job, ws, "overlay", sections=[record.id])
+    shown = look.look_pictures(job, ws, LookRequest("overlay", sections=[record.id]))
     job.views.flush()
     return shown.entries[0]["id"]
 
@@ -871,7 +875,7 @@ def test_the_region_at_a_point_is_what_the_overlay_drew_and_the_same_on_a_zoom(t
                                      "id": region_id}
         outside = atlas.region_at_points(job, ws, [{"picture": seq, "x": 0.0, "y": 0.0}])
         assert outside[0]["region"] is None
-        reply = atlas.grep_atlas(job, ws, points=[{"picture": seq, "x": x, "y": y}])
+        reply = atlas.search_regions(job, ws, points=[{"picture": seq, "x": x, "y": y}])
         assert reply["points"][0]["region"]["id"] == region_id and "rows" not in reply
         zoom_seq = _zoom(job, ws, seq, [x - 40, y - 30, x + 40, y + 30]).entries[0]["id"]
         on_zoom = atlas.region_at_points(job, ws, [{"picture": zoom_seq, "x": x, "y": y}])
@@ -883,7 +887,7 @@ def test_the_region_at_a_point_is_what_the_overlay_drew_and_the_same_on_a_zoom(t
 def test_a_section_only_picture_is_refused_for_atlas_lookup(tmp_path):
     job, ws, record = setup(tmp_path)
     try:
-        shown = look.look(job, ws, "section", sections=[record.id])
+        shown = look.look_pictures(job, ws, LookRequest("section", sections=[record.id]))
         job.views.flush()
         seq = shown.entries[0]["id"]
         with pytest.raises(Refused) as caught:
@@ -896,7 +900,7 @@ def test_a_section_only_picture_is_refused_for_atlas_lookup(tmp_path):
             atlas.region_at_points(
                 job, ws, [{"picture": seq, "x": 1, "y": 1}] * (atlas.MAX_POINTS + 1))
         with pytest.raises(Refused):
-            atlas.grep_atlas(job, ws)
+            atlas.search_regions(job, ws)
     finally:
         job.close()
 
@@ -907,8 +911,8 @@ def test_marking_damage_does_not_make_a_zoom_stale(tmp_path):
         seq = _overlay(job, ws, record)
         regions = [str(v["acronym"]) for v in ws.atlas.structures.values()][1:2]
         damage.mark_damage(job, ws, record.id, regions)
-        assert tools_zoom.zoom(job, ws, box=[10, 10, 100, 100], picture=seq).stale is False
+        assert tools_zoom.zoom_picture(job, ws, box=[10, 10, 100, 100], picture=seq).stale is False
         job.state.by_id(record.id).position_mm += 0.05  # a placement change does
-        assert tools_zoom.zoom(job, ws, box=[10, 10, 100, 100], picture=seq).stale is True
+        assert tools_zoom.zoom_picture(job, ws, box=[10, 10, 100, 100], picture=seq).stale is True
     finally:
         job.close()

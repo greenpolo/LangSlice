@@ -18,8 +18,9 @@ carry, `declared_tool` and the `ToolBox`), `events.py` (each call's
 argument shapes and the strictness check), `reply.py` (the reply byte
 budget and paging) and `descriptions/` (every model-facing text: the
 tools' descriptions, the job statement, the agent CLI's fixes; below).
-The bodies themselves and `build_tools` (which resolves the image model
-through the providers) are still `doors/tools/`.
+The looking tools' bodies are functions in their modules here (below);
+the other bodies and `build_tools` (which resolves the image model through
+the providers) are still `doors/tools/`.
 
 ## `descriptions/`: the model-facing text
 
@@ -141,7 +142,15 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
 
 ## Files
 
-The operations of `look` and `zoom` are `look.py` and `zoom.py`.
+A looking tool's body is a module-level function named for the tool that
+takes the run first (`tools.run.Run`) and returns the reply: `look(run,
+request)`, `zoom(run, box, picture, region=)`, `make_image(run, name,
+sections, recipe, delete=, view=)`, `grep_atlas`, `grep_atlas_view`,
+`status(run)`, `list_files`, `search_files`, `read_file`. Its operation on
+the job sits beside it in the same module (`look_pictures`,
+`zoom_picture`, `make_section_image`, `search_regions`, `draw_regions`,
+`stack_status`, `list_folder`, `search_folder`, `read_job_file`); tests and
+scripts call those.
 
 - `positions.py` — `position_sections(job, workspace, [{id, position_mm}],
   cutting_angles={pitch_deg, yaw_deg})`: both writes in ONE undo step
@@ -169,9 +178,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   agent's note after it. With *options*, `core.sections.damage.damage_picture` (a
   picture that fails is `render_failed`, the write standing). Returns
   `DamageRegions`.
-- `images.py` — `make_image(job, workspace, name, sections, weights=,
-  clahe_clip=, clahe_tiles=, n4=, denoise=, contrast=, gamma=, invert=,
-  delete=)`: a made section image (`core/sections/images.py`) for the
+- `images.py` — `make_section_image(job, workspace, name, sections,
+  given, delete=)`, `given` an `ImageRecipe` (`weights`, `clahe_clip`,
+  `clahe_tiles`, `n4`, `denoise`, `contrast`, `gamma`, `invert`; the
+  `make_image` tool normalizes the model's values first): a made section image (`core/sections/images.py`) for the
   sections named (empty: every section), each computed from its own images
   and saved as a file before ONE undo step sets the entries;
   `preprocessed` with every argument at its default writes the opening
@@ -181,12 +191,14 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `UNKNOWN_IMAGE` (a weighted image a section lacks; delete of a name no
   named section holds), `RENDER_FAILED`. Returns `ImagesMade` (`name`,
   `sections`, `deleted`, `in_force`: the image as `status` lists it,
-  `images`: every name of the stack). `add_image(job, workspace, record,
+  `images`: every name of the stack). The tool `make_image` adds a
+  `section` picture of a spread of the sections (`look.show_result`; none
+  where `look:section` is off, which also drops its `view`).
+  `add_image(job, workspace, record,
   name, array, note)`: a script's image (`(H, W)` on the working grid in the
   file's orientation, `uint8` or 0-1 floats), source `{"script": note}`, one
   undo step; `BAD_ARGS`. `check_image(job, workspace, records, name)` (what a
-  fit reads, `UNKNOWN_IMAGE`), `read`, `image_names`, `stack_images`. The verb
-  `make_image`.
+  fit reads, `UNKNOWN_IMAGE`), `read`, `image_names`, `stack_images`.
 - `masks.py` — `make_mask(job, workspace, name, sections, source=,
   section_image=, atlas_image=, sorting=, delete=)`: a section-side mask by
   name (`core/sections/masks.py`) for each section named (empty: every
@@ -211,9 +223,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `NOT_FOUND` for a path that does not exist, with `nearest`, the nearest
   folder above it that does, and `holds`, its names; both raised by
   `browse.resolve`):
-  `list_files(job, path=".", glob="")` -> `Listing`, `search_files(job, query,
-  path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
-  `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
+  `list_folder(job, path=".", glob="")` -> `Listing`, `search_folder(job, query,
+  path=".", glob="")` -> `Found`, `read_job_file(job, path, offset=0, limit=400)` ->
+  `FileText` (the tools `list_files`, `search_files`, `read_file` flush the
+  picture store first and reply with the `text`); each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`), never
   pixels, and a line written with its needs (`job.settings.needs.render`): the number to
   give `zoom`; where the job disables `zoom`, for a picture whose recipe is
@@ -487,10 +500,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   digests, so an image made again while a long verb runs makes it stale;
   damage: marked regions and a mark naming none; with `deformation` the applied deformation's key, with `trace`
   its image correction), `STALE_INPUT`, `stale_row`.
-- `atlas.py` — `grep_atlas(job, workspace, query="", section="", points=())`: with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
+- `atlas.py` — `search_regions(job, workspace, query="", section="", points=())` (the tool `grep_atlas`): with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
   hierarchy searched like text (`core/atlas/search.py`), with `in_section`
-  per row for a placed section. `grep_atlas_view(job, workspace, regions,
-  positions_mm)`: the atlas template at each position (clamped into the
+  per row for a placed section. `draw_regions(job, workspace, regions,
+  positions_mm)` (the tool `grep_atlas_view`): the atlas template at each position (clamped into the
   range) at the stack's view angles with the named regions' borders
   highlighted (`"CTX:left"` allowed; no other borders), saved like a
   `look` picture (so it can be zoomed: it registers its recipe renderer
@@ -498,11 +511,14 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   (`pictures`, `entries`, `not_shown`, `regions`, `regions_not_in_plane`,
   `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
   `NO_SIDES`.
-- `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
-  images=, atlas_layers=, atlas_opacity=, warp="applied", resolution=,
-  plugin_layers=, depth=6, masks=, registrations=, sheet_edge=)` and
-  `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
-  save their own pictures (`save_pictures`: `job.views.save` with the note's
+- `look.py` — `look(run, request, registrations=, sheet=)`, the tool: the
+  door builds the `core.pictures.look.LookRequest` from the model's
+  arguments (section filenames as named, `long_edge` the `resolution` asked
+  for, held by `requested_edge`: read only at image resolution `auto`), and
+  `look_pictures(job, workspace, request, registrations=, sheet_edge=)`
+  checks it and draws; `zoom.py` — `zoom(run, box, picture, region=)`, the
+  tool, over `zoom_picture(job, workspace, box=(), picture=None,
+  region="")`. Both save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
   (`Looked`, `Zoomed`) carries `pictures` (PIL) and `entries`
   `[{"id", "caption"}]`, and the door must not save them again. `look` shows
@@ -538,7 +554,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_IMAGE`,
   `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
-  `plugin_layers` names the layers tool plugins left (`"all"`: every one) to
+  `layers` names the layers tool plugins left (`"all"`: every one) to
   draw on `section` and `overlay` pictures (`BAD_ARGS` in another mode);
   `Looked.layers` says per picture which were drawn. `show_result(job, workspace, tool,
   mode, sections, positions_mm=, zooms=, masks=, images=)`: the picture a change tool shows
@@ -547,7 +563,9 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   name (numbered, captioned, zoomable); at most `Job.picture_cap` shown (None:
   all), the rest `not_shown` with the `look` call that draws them, a failed picture
   `failed` (the write stands).
-- `status.py` — `status(job)` (`StackStatus`: the status rows (each with its
+- `status.py` — `status(run)`, the tool (the rows, `raw_channels`,
+  `section_images`, `background_running`, `can_change`), and
+  `stack_status(job)` (`StackStatus`: the status rows (each with its
   `transform`, kind and knobs, and `deformation`, method, steps and settings:
   `core.stack.status`), angles,
   breaks as the filenames of the sections after each gap,
