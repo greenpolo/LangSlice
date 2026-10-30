@@ -152,7 +152,10 @@ def trace_picture(
 def _unwarped(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 
-    return replace(record, field_mm=np.zeros_like(record.field_mm))
+    # Zero fields are no step's: the copy keeps none to rebuild from.
+    return replace(
+        record, field_mm=np.zeros_like(record.field_mm), stored_step=None
+    )
 
 
 def _blend_atlas(
