@@ -23,13 +23,9 @@ from langslice.job.settings.spec import (
 )
 from langslice.job.settings.tool_table import TOOLS, is_off, valid_names
 from langslice.tools.catalog import VERBS, enabled
+from langslice.tools.descriptions.description import DOORS, DescriptionFacts
 from langslice.tools.descriptions.fixes import FIXES
-from langslice.tools.descriptions.render import (
-    DOORS,
-    Variant,
-    arguments_schema,
-    declaration,
-)
+from langslice.tools.descriptions.render import arguments_schema, declaration
 from tests.linear_tool_helpers import SLAB, tool_named
 
 # --- the names ------------------------------------------------------------------------
@@ -129,15 +125,17 @@ def test_a_list_that_cannot_work_is_refused_with_one_line(fields: dict[str, Any]
 
 def test_the_look_schema_offers_only_the_modes_on():
     spec = _spec(tasks=["position"], disabled=["look:positioning"])
-    schema = arguments_schema("look", Variant.of(spec, auto=True))
+    schema = arguments_schema("look", DescriptionFacts.from_spec(spec, auto=True))
     assert schema["properties"]["mode"]["enum"] == ["section", "atlas", "overlay"]
-    default = arguments_schema("look", Variant.of(_spec(tasks=["position"]), auto=True))
+    plain = DescriptionFacts.from_spec(_spec(tasks=["position"]), auto=True)
+    default = arguments_schema("look", plain)
     assert default["properties"]["mode"]["enum"] == list(TOOLS["look"].options)
 
 
 def test_flip_is_not_in_the_sections_schema_when_it_is_off():
     def keys(spec: JobSpec) -> set[str]:
-        schema = arguments_schema("interactive_transform", Variant.of(spec, auto=True))
+        facts = DescriptionFacts.from_spec(spec, auto=True)
+        schema = arguments_schema("interactive_transform", facts)
         item = schema["properties"]["sections"]["items"]
         ref = item["$ref"].split("/")[-1]
         return set(schema["$defs"][ref]["properties"])
@@ -203,15 +201,15 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
     the job statement on every door, the reference card, the status reply's
     list of what can change, the fixes and retired-tool answers."""
     from langslice.doors.reference_card import card_text
-    from langslice.doors.statement import (
+    from langslice.tools.descriptions.door_text import (
         image_model_off_text,
-        job_statement,
         opening_for_cli,
         opening_for_mcp,
     )
     from langslice.tools.descriptions.statement import (
+        StatementFacts,
         build_job_statement,
-        display_facts,
+        job_statement,
     )
 
     opened = jobs.create(spec, atlas_loader=lambda _name: SLAB)
@@ -220,24 +218,24 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         ctx, state = opened.ctx, opened.job.state
         names = enabled(spec, scripting=True)
         for door, auto, traced in itertools.product(DOORS, (False, True), (True, False)):
-            variant = Variant.of(spec, auto=auto, door=door, image_model=traced)
+            variant = DescriptionFacts.from_spec(spec, auto=auto, door=door, image_model=traced)
             for tool in names:
                 declared = declaration(tool, variant)
                 texts[f"declaration {tool} {door} auto={auto} traced={traced}"] = declared.doc
                 texts[f"schema {tool} {door} auto={auto} traced={traced}"] = json.dumps(
                     arguments_schema(tool, variant))
-        low, high = ctx.position_range
+        facts = StatementFacts.from_run(spec, state, ctx, tool_names=names)
         for door, connected in itertools.product(DOORS, (True, False)):
+            door_facts = StatementFacts.from_run(spec, state, ctx, tool_names=names,
+                                                 auto=door == "cli")
             opening = (opening_for_mcp(3) if door == "mcp"
                        else opening_for_cli(
                            "/job", ["Strip 1 of 1: s0.png", "- /job/views/1/view.jpg"],
                            spec.switched_off))
             texts[f"statement {door} connected={connected}"] = job_statement(
-                spec, state, ctx, door=door, tool_names=names, opening=opening,
-                image_model_off=not connected, auto=door == "cli")
-        texts["statement agent"] = build_job_statement(
-            spec, state, tool_names=names, species=ctx.species, pos_lo=low, pos_hi=high,
-            axis_ends=ctx.axis_ends, **display_facts(ctx, state))
+                door_facts, door=door, opening=opening,
+                image_model_off=not connected)
+        texts["statement agent"] = build_job_statement(facts)
         texts["image model off"] = image_model_off_text(spec.switched_off)
         texts["card"] = card_text(opened.job.layout)
         status = tool_named(opened.tools(), "status")()

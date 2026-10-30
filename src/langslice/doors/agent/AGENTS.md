@@ -74,12 +74,12 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   `spec.job_dir`, next to the images, or `~/.langslice/jobs/<id>/` for a
   read-only image folder), `build_seed_message` (the first message: the job
   statement and the user's notes, the opening strips,
-  `doors.agent.media.opening_parts`, and `langslice.doors.statement.status_and_notes`),
+  `doors.agent.media.opening_parts`, and `langslice.tools.descriptions.door_text.status_and_notes`),
   `save_opening` / `with_seed_views` (the opening saved as the job's views,
   their paths on the live seed event), `run_session` (the system instruction
-  is `langslice.doors.statement.SYSTEM_PROMPT`, the same for every job; the first
+  is `langslice.tools.descriptions.statement.SYSTEM_PROMPT`, the same for every job; the first
   message carries `langslice.tools.descriptions.statement.build_job_statement` plus the user's notes from
-  `job.json`, `langslice.doors.statement.read_notes`; the tools are
+  `job.json`, `langslice.tools.descriptions.door_text.read_notes`; the tools are
   `doors.agent.media.packaged_tools(box.tools)`; the post-submit
   `DEBRIEF_PROMPT` when `spec.debrief`, its answer on `state.debrief`;
   `background_message`: when the model ends its turn while background work
@@ -339,7 +339,7 @@ deformation gate.
 - Provider `none` (`NonlinearSpec.uses_image_model` False) builds
   `fireants_syn` but no `trace_borders`. A door that cannot reach the job's
   image model builds the same toolbox (`image_model_connected=False`) and
-  says so (`langslice.doors.statement.IMAGE_MODEL_OFF`).
+  says so (`langslice.tools.descriptions.door_text.IMAGE_MODEL_OFF`).
 - `look` in mode overlay draws each section with its applied deformation
   unless `warp` is `none`.
 
@@ -424,7 +424,7 @@ run can still undo the steps before it.
 ## The Claude host (MCP)
 
 The MCP door gives Claude the same toolbox and the same statement, worded
-for door `mcp` (`langslice.doors.statement.job_statement`), with the opening as
+for door `mcp` (`langslice.tools.descriptions.statement.job_statement`), with the opening as
 `show_stack` pages within the host's reply budget, an opening-read gate
 armed by `start_job`, and no turn budget, nudges, debrief or working set:
 the host owns the loop. `doors/CLAUDE.md` holds the details.

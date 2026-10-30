@@ -1,14 +1,12 @@
 """Find the docstrings a model reads, so the docstring rules leave them alone.
 
-A tool's description is the docstring of its stub: each function the
-module that renders tool descriptions (the setting
-``docs_renderer_module``) lists in its table of stubs, the module-level
-``STUBS`` assignment, and every function a plugin passes as the stub of a
-``ToolSpec(name, stub, body, ...)``. The renderer's other functions are
-ordinary code and are checked like any other. That text is pinned by the text
-snapshot and changed only on purpose, so the rules about docstring form and
-line length do not ask an agent to rewrite it. Everything else about a
-stub, such as its complexity or its names, is still checked.
+A plugin tool's description is the docstring of its stub: every function
+a plugin passes as the stub of a ``ToolSpec(name, stub, body, ...)``. (The
+native tools' descriptions are data, in ``langslice.tools.descriptions``.)
+That text is pinned by the text snapshot and changed only on purpose, so
+the rules about docstring form and line length do not ask an agent to
+rewrite it. Everything else about a stub, such as its complexity or its
+names, is still checked.
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
-from tools.stylecheck.core import Config, Module, Project, Violation
+from tools.stylecheck.core import Module, Project, Violation
 
 #: The checks and tool codes that judge a docstring's form and wording.
 DOCSTRING_RULES = frozenset(
@@ -33,10 +31,6 @@ DOCSTRING_RULES = frozenset(
 #: The rule prefixes that judge docstrings as a family.
 DOCSTRING_PREFIXES = ("numpydoc:", "ruff:D")
 
-#: The renderer module's table of tool stubs; a function named in its
-#: value is a stub, and no other function of the module is.
-STUB_TABLE = "STUBS"
-
 
 @dataclass(frozen=True)
 class Stub:
@@ -48,15 +42,13 @@ class Stub:
     last_line: int
 
 
-def find_stubs(project: Project, config: Config) -> list[Stub]:
+def find_stubs(project: Project) -> list[Stub]:
     """Return every tool stub in the package.
 
     Parameters
     ----------
     project
         The parsed package.
-    config
-        The settings; ``docs_renderer_module`` names the declarations.
 
     Returns
     -------
@@ -65,10 +57,7 @@ def find_stubs(project: Project, config: Config) -> list[Stub]:
     """
     stubs: list[Stub] = []
     for module in project.modules.values():
-        if module.dotted == config.docs_renderer_module:
-            names = _table_stub_names(module)
-        else:
-            names = _toolspec_stub_names(module)
+        names = _toolspec_stub_names(module)
         stubs.extend(_stubs_named(module, names))
     return stubs
 
@@ -113,41 +102,6 @@ def _covers(stub: Stub, violation: Violation) -> bool:
         return True
     is_line_rule = violation.rule in {"ruff:E501", "history-comment"}
     return violation.symbol == stub.symbol and not is_line_rule
-
-
-def _table_stub_names(module: Module) -> set[str]:
-    """Return the module's functions named in its table of stubs."""
-    functions = {
-        node.name
-        for node in module.tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    names: set[str] = set()
-    for value in _stub_table_values(module.tree):
-        for node in ast.walk(value):
-            if isinstance(node, ast.Name) and node.id in functions:
-                names.add(node.id)
-    return names
-
-
-def _stub_table_values(tree: ast.Module) -> list[ast.expr]:
-    """Return the values assigned to the table of stubs at module level."""
-    values: list[ast.expr] = []
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            targets, value = node.targets, node.value
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            targets, value = [node.target], node.value
-        else:
-            continue
-        if any(_is_name(target, STUB_TABLE) for target in targets):
-            values.append(value)
-    return values
-
-
-def _is_name(node: ast.expr, name: str) -> bool:
-    """Return whether an assignment target is a plain name."""
-    return isinstance(node, ast.Name) and node.id == name
 
 
 def _toolspec_stub_names(module: Module) -> set[str]:

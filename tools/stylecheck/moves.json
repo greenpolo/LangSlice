@@ -2223,6 +2223,9 @@
 {"path": "src/langslice/tools/run.py", "symbol": "Door.answered", "new_path": "src/langslice/tools/run.py", "new_symbol": "Run.answered"},
 {"path": "src/langslice/tools/run.py", "symbol": "Door.resolve_many", "new_path": "src/langslice/tools/run.py", "new_symbol": "Run.resolve_many"},
 {"path": "src/langslice/doors/plugins/runtime.py", "symbol": "body.run", "new_path": "src/langslice/doors/plugins/runtime.py", "new_symbol": "body.answer"},
-{"path": "src/langslice/doors/tools/toolbox.py", "symbol": "_serialized", "new_path": "src/langslice/tools/pipeline.py", "new_symbol": "ToolBox"}
+{"path": "src/langslice/doors/tools/toolbox.py", "symbol": "_serialized", "new_path": "src/langslice/tools/pipeline.py", "new_symbol": "ToolBox"},
+{"path": "src/langslice/tools/descriptions/render.py", "symbol": "Variant.of", "new_path": "src/langslice/tools/descriptions/description.py", "new_symbol": "DescriptionFacts.from_spec"},
+{"path": "src/langslice/doors/statement.py", "symbol": "image_model_state", "new_path": "src/langslice/tools/descriptions/door_text.py", "new_symbol": "image_model_state"},
+{"path": "src/langslice/tools/descriptions/statement.py", "symbol": "display_facts", "new_path": "src/langslice/tools/descriptions/run_facts.py", "new_symbol": "_channel_names"}
 ]
 }

@@ -42,7 +42,7 @@ interpreter and runs `import langslice; langslice.open_job(...)` and
 `create_job` with a script's own image model. An operation (`tools/`) never imports a door.
 
 What every door shares beyond the verbs: the job statement
-(`statement.py`), the ending of a job (`jobs.close_job`), the host trace
+(`tools/descriptions/statement.py`), the ending of a job (`jobs.close_job`), the host trace
 (`call_log.py`), the reply byte budget and paging (`tools/reply.py`), the
 image-model check (`jobs.provider_connected`, `jobs.image_model_off`), and in
 the `ToolBox` the opening-read gate (`require_opening`, `opening_read`, `opening_refusal`;
@@ -86,47 +86,10 @@ bodies, and turned into an answer once per door:
 
 ## Files
 
-- `langslice/tools/descriptions/render.py` — each verb's declaration: a stub function per verb
-  (signature = the arguments, docstring = the description a model reads,
-  re-indented by `model_doc`). The description is the tool's only
-  description: the job statement names the tools and describes none.
-  `Variant` (`auto`, `door`, `uncapped`, `forced_view`, `positions`,
-  `prompt`, `brain_scale`, `absent` (the tools a task that is off leaves out: plugin
-  stubs render by it, native text does not); `Variant.of(spec, auto=, image_model=, door=, prompt=,
-  uncapped=, brain_scale=)`) is
-  what of a run changes a declaration (`dropped_arguments`, each dropped
-  argument's `Args` entry cut from the description): `off` (the job's
-  disabled list): the modes it disables are out of `look`'s `mode` enum
-  (`narrowed`), the arguments only those modes served (`atlas_opacity`,
-  `warp`, `positions_mm`, `atlas_layers`, `zoom`'s `region`) are dropped,
-  `interactive_transform`'s sections lose `flip` and `rotate_quarter`
-  (`SectionTransformNoFlip`, `NoRotate`, `NoOrientation`),
-  and every passage of a description written with `[[?needs ...]]` marks
-  (`job/settings/needs.py`) is dropped or swapped; `look`'s `resolution`
-  only where the caller sizes pictures; the change tools' `view`
-  (`VIEW_TOOLS`) not offered where the host forces their pictures on
-  (`JobSpec.force_view`); `position_sections`' `sections` only with the
-  Positioning task; `trace_borders` carries the run's base image prompt
-  (the image model's profile prompt, else the job's own
-  `nonlinear.image_prompt`, else `base_prompt`; none without an
-  image model) in place of `BASE_PROMPT`; and the door that reads it
-  (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: the CLI's background
-  verbs answer once their work has landed); `uncapped` (the CLI and the
-  library, `build_tools(scripting=True)`): `_UNCAPPED_DOCS` words the
-  picture and section counts of `look`, `grep_atlas_view`,
-  `make_image`, `make_mask`, `interactive_transform` and
-  `elastix_affine` without the ADK and MCP cap; `brain_scale` (the job's
-  atlas brain's, `core.atlas.brain_size`, passed by the toolbox and the CLI's
-  `schema` for a job): `_SCALED_DOCS` states the distances a description
-  gives (`elastix_affine`'s 300 um neighbourhood) at that scale, unchanged at 1. `declaration(name, variant)`
-  (cached), `summary(name)`, `declare(name, body, variant)` (a function with
-  the declared name, doc and signature that binds the call, fills the
-  declared defaults and hands every argument to the body by name; ADK's
-  `tool_context` is added when the body takes it; a body lacking a declared
-  argument is a `TypeError`), `arguments_schema(name, variant)` (pydantic
-  JSON schema, unknown keys refused), `argument_texts(doc)` (each argument's
-  `Args` entry on one line). `FULL` is the variant of a caller
-  without a job (LangSlice's coronal base prompt for the OpenAI models).
+- Every verb's declaration comes from `langslice/tools/descriptions/`
+  (`tools/CLAUDE.md`): its description, the tool's only description (the
+  job statement names the tools and describes none), and its signature,
+  for the run's `DescriptionFacts`.
 - `plugins/` — tool plugins (`docs/developers/plugins.md`); `langslice/plugin_api.py`
   re-exports its names. `loader.py`: `load(ref, config)` imports
   `module:factory`, calls it, checks every tool (`job.plugins.check_tool`),
@@ -186,24 +149,17 @@ bodies, and turned into an answer once per door:
   `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
   adapter plugin (LangSlice as a client of a configured server, allow-list,
   `server__tool` names, `inputs` / `results` mapping through the context).
-  `langslice.tools.descriptions.render.Variant.plugins` makes `declaration` read a plugin stub;
+  `DescriptionFacts.plugins` makes `declaration` read a plugin stub;
   `look` takes `layers` on every job (plugins and scripts leave them; dropped
   without the `section` and `overlay` modes).
-- `statement.py` — the job statement every door gives a registration agent:
-  `SYSTEM_PROMPT` (the ADK agent's system prompt, the same for every job and
-  naming no tool a job can switch off; the statement is its first message; the connectors' agent files carry the same text, `tests/test_connector_agents.py`),
-  `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
-  max_resolution=, image_model_off=, auto=)` (`langslice.tools.descriptions.statement.build_job_statement`
-  worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF`
-  (`image_model_off_text(disabled)`) when the image model is not connected,
-  the user's notes, `status_and_notes`).
-  `opening_for_mcp` (the `show_stack` pages), `opening_for_cli(folder, listing, ...)` (the
-  opening pictures' paths listed inline after each strip's text, `--dry-run`, `--background` for `long_verbs()`, parallel
-  calls). `status_and_notes(state)` (the status table and the newest
-  `RECENT_NOTES` run notes) is the ADK seed message's text too.
-  `read_notes(layout)`: the user's notes, `job.json` `notes` (written by
-  ABBA's Claude mode and `job FOLDER init --notes`), read by every door. `image_model_state(spec, connected=)`: the
-  image model as the CLI's `status` and `init` report it.
+- The job statement every door gives a registration agent is
+  `tools/descriptions/statement.py` (`tools/CLAUDE.md`): `SYSTEM_PROMPT` (the
+  connectors' agent files carry the same text,
+  `tests/test_connector_agents.py`), `StatementFacts.from_run` and
+  `job_statement(facts, door=, opening=, notes=, image_model_off=)`; what
+  each door adds after it (`opening_for_mcp`, `opening_for_cli`,
+  `status_and_notes`, `read_notes`, `image_model_state`) is
+  `tools/descriptions/door_text.py`.
 - `jobs.py` — opening a job without the agent: `JobContext` (the workspace,
   its `ImageSettings` made by `JobSpec.image_settings()`, plus the `JobSpec`,
   the job folder and results path; the driver's `EngineContext` adds the
@@ -538,7 +494,7 @@ bodies, and turned into an answer once per door:
     `corrected_call` as the fix: every argument with the first sentence of its
     `Args` entry (`_first_sentence`: not cut at an abbreviation's full stop,
     `ABBREVIATIONS`, or inside brackets),
-    `langslice.tools.descriptions.render.argument_texts`, and its default, then the
+    the declaration's `arguments`, and its default, then the
     call without the unknown ones, a short signature's others at their
     defaults), `FOLDER schema [VERB ...]` (catalog's `schema` for that job),
     `call` (open, `VERB_OFF` /
@@ -637,7 +593,7 @@ keys are checked recursively. `set_landmarks` defaults to one contextual
 side-by-side template/preprocessed crop for each edited pair (at most four
 with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`
-where `look` does: `dropped_arguments` drops both together; `TOO_MANY_LANDMARK_VIEWS`
+where `look` does: both are `Offered.SIZE_CHOSEN`; `TOO_MANY_LANDMARK_VIEWS`
 says how many pairs were sent and what to resend; the landmark codes' `FIXES`
 are specific, written with needs marks; `ATLAS_ENDPOINT_OUTSIDE`, an argument
 code (exit 2), resends the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is

@@ -55,7 +55,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/tools/descriptions/render.py`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |

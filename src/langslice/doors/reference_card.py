@@ -23,6 +23,7 @@ from typing import Any
 import langslice
 from langslice.job.layout import JobLayout, read_job_file
 from langslice.job.settings.needs import render
+from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import TOOLS
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.render import summary
@@ -49,11 +50,9 @@ def limits_note(limits: Mapping[str, int]) -> str:
                                     for what, most in limits.items()) + " per call"
 
 
-def job_spec(layout: JobLayout) -> Any:
+def job_spec(layout: JobLayout) -> JobSpec:
     """The job's settings as ``job.json`` holds them (the tool plugins it
     names loaded)."""
-    from langslice.job.settings.spec import JobSpec
-
     return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {})
 
 
@@ -92,9 +91,9 @@ def card_text(layout: JobLayout) -> str:
     run = set(enabled(spec, scripting=True))
     variant = None
     if spec.plugins:  # the tools plugins add are declared in its run
-        from langslice.tools.descriptions.render import Variant
+        from langslice.tools.descriptions.description import DescriptionFacts
 
-        variant = Variant.of(spec, auto=True, door="cli")
+        variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): "

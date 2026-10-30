@@ -29,7 +29,7 @@ from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
 from langslice.tools.catalog import enabled, verbs_for
-from langslice.tools.descriptions.render import Variant
+from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.events import EventLog, LiveCallback
 from langslice.tools.pipeline import ToolBox, declared_tool
 from langslice.tools.run import Run
@@ -90,7 +90,7 @@ def build_tools(
     connected), so the tools are those of a run without one: no
     ``trace_borders``, ``submit`` not waiting for traces. The spec itself is
     left as it is. *door* is who reads the declarations (``agent``, ``mcp``,
-    ``cli``: :data:`langslice.tools.descriptions.render.DOORS`). *event_door*
+    ``cli``: ``tools.descriptions.description.DOORS``). *event_door*
     is the door the job folder's ``logs/events.jsonl`` names for every call
     (None: *door*; the library's is ``library``).
 
@@ -121,9 +121,10 @@ def build_tools(
     prompt: str | None = None
     if traces_on and image_model is not None:
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
-    variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
-                         door=door, prompt=prompt, uncapped=scripting,
-                         brain_scale=ctx.brain_scale)
+    variant = DescriptionFacts.from_spec(
+        spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
+        door=door, prompt=prompt, uncapped=scripting,
+        brain_scale=ctx.brain_scale)
     box = ToolBox(job, variant, max_view_edge=int(max_view_edge or view_edge_limit(ctx)),
                   verbs=verbs_for(spec), door=event_door or door,
                   observers=tuple(observer for observer in (on_event, EventLog(

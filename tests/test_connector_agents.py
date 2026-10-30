@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from langslice.doors.statement import SYSTEM_PROMPT
+from langslice.tools.descriptions.statement import SYSTEM_PROMPT
 
 CONNECTORS = Path(__file__).resolve().parents[1] / "connectors"
 

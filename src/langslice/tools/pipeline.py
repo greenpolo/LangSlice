@@ -64,7 +64,8 @@ from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE, captured
 from langslice.tools.arguments import argument_refusal
 from langslice.tools.catalog import Verb
-from langslice.tools.descriptions.render import Variant, declare
+from langslice.tools.descriptions.description import DescriptionFacts
+from langslice.tools.descriptions.render import declare
 from langslice.tools.events import (
     LiveCallback,
     call_id,
@@ -90,9 +91,9 @@ class ToolBox:
     """
 
     job: Job
-    #: The declarations' variant the tools are declared in: what
-    #: ``TOOLS.md`` is written from.
-    variant: Variant
+    #: The facts of the run the tools are declared in: what ``TOOLS.md``
+    #: is written from.
+    variant: DescriptionFacts
     tools: list[Callable[..., object]] = field(default_factory=list)
     submission: dict[str, Any] = field(default_factory=dict)
     #: The largest picture the driver model takes: the cap of ``look``'s

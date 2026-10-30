@@ -38,9 +38,26 @@ _TOKEN = re.compile(r"(\[\[[?#%]|\]\]|\|\|)")
 _OPENERS = ("[[?", "[[#", "[[%")
 
 
-def _needs_on(needs: str, off: Collection[str]) -> bool:
-    return all(any(not is_off(off, name) for name in term.split("|"))
-               for term in needs.split(",") if term)
+def is_met(needs: str, off: Collection[str]) -> bool:
+    """Return whether every term of ``needs`` has a name that is on.
+
+    Parameters
+    ----------
+    needs
+        Terms separated by commas, each a name or names separated by
+        ``|`` (see the module text); empty needs nothing.
+    off
+        The job's disabled list.
+
+    Returns
+    -------
+    bool
+        True when no term has all its names off.
+    """
+    for term in needs.split(","):
+        if term and all(is_off(off, name) for name in term.split("|")):
+            return False
+    return True
 
 
 def _group(tokens: list[str], index: int, kind: str, off: Collection[str],
@@ -69,7 +86,7 @@ def _render_group(kind: str, branches: list[str], off: Collection[str], source: 
         head = re.match(r"(\S+)\s(.*)\Z", branches[0], re.DOTALL)
         if head is None:
             raise ValueError(f"[[? needs names, then a space, in the text {source[:60]!r}")
-        if _needs_on(head.group(1), off):
+        if is_met(head.group(1), off):
             return head.group(2)
         return branches[1] if len(branches) > 1 else ""
     items: list[str] = []
@@ -77,7 +94,7 @@ def _render_group(kind: str, branches: list[str], off: Collection[str], source: 
         needs, equals, item = branch.partition("=")
         if not equals:
             raise ValueError(f"[[# item {branch!r} lacks NEEDS= in the text {source[:60]!r}")
-        if _needs_on(needs.strip(), off):
+        if is_met(needs.strip(), off):
             items.append(item.strip())
     if len(items) > 1:
         return ", ".join(items[:-1]) + (" and " if kind == "#" else " or ") + items[-1]

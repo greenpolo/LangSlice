@@ -16,11 +16,65 @@ carry, `declared_tool` and the `ToolBox`), `events.py` (each call's
 `tool_start` / `tool_end` events and the job folder's event log),
 `arguments.py` (the typed
 argument shapes and the strictness check), `reply.py` (the reply byte
-budget and paging) and `descriptions/` (`render.py`: every tool's
-declaration; `statement.py`: the job statement; `fixes.py`: the agent
-CLI's fix sentence per refusal code). The bodies themselves and
-`build_tools` (which resolves the image model through the providers) are
-still `doors/tools/`.
+budget and paging) and `descriptions/` (every model-facing text: the
+tools' descriptions, the job statement, the agent CLI's fixes; below).
+The bodies themselves and `build_tools` (which resolves the image model
+through the providers) are still `doors/tools/`.
+
+## `descriptions/`: the model-facing text
+
+To change what a tool's description says, open its family's module
+(`looking.py`, `changing.py`, `fitting.py`, `landmarks.py`,
+`bookkeeping.py`), edit that tool's `ToolDescription` and regenerate the
+text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
+
+- `description.py` — the shapes. A `ToolDescription` is a `summary`, the
+  `body` paragraphs (one that renders empty goes), one `Argument` per
+  argument (its type, default and text; `needs`: the names it needs on, in
+  needs syntax; `offered`: the run fact it exists in), `returns`,
+  `prompt_heading` (`trace_borders`: the paragraph before the run's base
+  image prompt) and `slots`: `${name}` passages a fact of the run words
+  (`PerCap`: a door with or without a picture cap; `PerDoor`: the agent
+  CLI's own wording; `Distance`: a distance at the job's brain scale).
+  Texts are prose at no indentation with the model's line breaks; a
+  trailing backslash joins a line too long for the source. A passage that
+  names a tool or an option carries needs marks (`job/settings/needs.py`).
+  `DescriptionFacts` is what of a run changes the text: `door` (`DOORS`),
+  `auto` (the caller sizes pictures), `forced_view`, `positions`,
+  `uncapped`, `prompt` (the base image prompt; empty without an image
+  model), `switched_off`, `absent` and `plugins` (a plugin's text renders
+  by both), `brain_scale`; `from_spec(spec, auto=, image_model=, door=,
+  prompt=, uncapped=, brain_scale=)`.
+- `render.py` — `declaration(name, facts)` (cached): a native tool's
+  description rendered for the run (slots filled, marks rendered, the
+  arguments it does not offer left out, `narrowed` dropping the enum values
+  and section keys the job switches off) as `doc` (the docstring layout ADK
+  and FastMCP read), `text` (below the summary, unindented: `TOOLS.md`),
+  `arguments` (each argument's text on one line: the agent CLI's fix of an
+  unknown argument) and the signature; a plugin tool from its stub's
+  docstring and signature (`argument_texts` reads its `Args`). `declare`
+  binds a tool body to its declaration (ADK's `tool_context` added when the
+  body takes it), `summary`, `arguments_schema` (pydantic, unknown keys
+  refused), `DESCRIPTIONS`, `FULL` (a caller without a job: every argument,
+  the coronal base prompt for the OpenAI models).
+- `statement.py` — the job statement and `SYSTEM_PROMPT`. `STATEMENT` is
+  the whole statement with its slots; the named templates under it are its
+  sentences (the job clause per task, the constraints, the method bullets,
+  `DEFORMABLE_METHODS`), chosen by the run's `StatementFacts`
+  (`from_run(spec, state, workspace, tool_names=, max_resolution=,
+  auto=)`). `job_statement(facts, door=, opening=, notes=,
+  image_model_off=)` is every door's text: the agent's is the statement and
+  the user's notes (the opening pictures and `status_and_notes` follow as
+  parts of the first message); MCP's and the CLI's add the door's opening
+  paragraph, the image-model line, the notes and the status table.
+- `run_facts.py` — the "Run facts:" bullets, one template each: the stack
+  and atlas, what the run changes, the raw channels and section images, the
+  atlas images, the picture size, the deformable engine.
+- `door_text.py` — what the doors add: `opening_for_mcp`,
+  `opening_for_cli` (the opening files and the commands, `long_verbs`),
+  `IMAGE_MODEL_OFF`, `status_and_notes`, `user_notes_lines`, `read_notes`,
+  `NOTES_KEY`, `image_model_state`.
+- `fixes.py` — the agent CLI's fix sentence per refusal code.
 
 ## The rule
 
