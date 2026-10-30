@@ -47,7 +47,7 @@ and discards its work.
 | [`transform.*`](#transform-settings) | | Hemisphere cue, cutting angles, sections per call, notes |
 | [`nonlinear.*`](#nonlinear-settings) | | Image model, base prompt, required deformation, notes |
 | [`facts`](#facts) | none | Free-text facts for the agent |
-| [`image_resolution`, `preprocess`, `force_view`](#pictures) | `low`, `auto`, off | The pictures the agent is shown |
+| [`image_resolution`, `preprocess`, `force_view`](#pictures) | `low`, `auto`, off | The pictures the agent is shown, and the image the fits read |
 | [`model`, `reasoning`, `debrief`](#built-in-agent) | | The built-in agent only |
 | [`image_folder`, `job_dir`, `out`, `resume`](#folders) | | Where things are |
 | [`notes`, `viewer`](#notes-and-viewer) | none, `claude` | Saved in `job.json` beside the spec |
@@ -282,14 +282,15 @@ placement.
 | Key | Default | Flag | What it does |
 |---|---|---|---|
 | `image_resolution` | `low` | `--image-resolution` | Long edge of the pictures the agent is shown: `low` 256 px opening tiles and 512 px later pictures; `medium` 384 and 768; `high` 512 and 1024; `auto` lets the agent choose each picture's size (`resolution`), from 128 px up to its model's largest image. |
-| `preprocess` | `auto` | `--preprocess auto|none` | How the opening `preprocessed` image is made: `auto` blends the channels with local contrast enhancement; `none` shows the file as read, in gray. |
+| `preprocess` | `auto` | `--preprocess auto|none` | How each section's `preprocessed` image is made: `auto` blends the channels with local contrast enhancement; `none` takes the file as read, in gray. |
 | `force_view` | off | `--force-view` | The tools that change the registration always return their picture: their `view` argument is not offered. |
 | `host_preprocessing` | none | (hosts only) | A host's channel blend for snapshots sent one page per channel (the ABBA connector). |
 
-Picture size and preprocessing change what the agent sees, never your image
-files. `preprocessed` is also the image every fit reads by default, so
-`preprocess` changes what the fits read unless the agent makes another
-section image.
+None of these changes your image files. Picture size changes only what the
+agent sees. `preprocessed` is the image the agent sees first, the one the
+image model is shown, and the one every fit reads unless the agent names
+another section image, so `preprocess` changes what the image model and the
+fits read too.
 
 ## Built-in agent
 

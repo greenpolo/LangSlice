@@ -45,7 +45,9 @@ PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 #: stores depends on it, and the image model's inputs do not change.
 IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")
 
-#: How the sections are shown: the adaptive preprocess, or the file as is.
+#: How each section's ``preprocessed`` image is made, the one the agent sees
+#: first, the image model is shown and every fit reads by default: the
+#: adaptive preprocess, or the file as is.
 PREPROCESSING: tuple[str, ...] = ("auto", "none")
 
 #: The reasoning efforts a model may be run at.

@@ -110,8 +110,11 @@ FLAGS: dict[str, Flag] = {
     ),
     "--preprocess": Flag(
         checked=True,
-        help="Image preprocessing for everything the agent looks at. Display "
-        "only - the image files are never modified",
+        help="How each section's preprocessed image is made: auto blends the "
+        "channels with local contrast enhancement, none takes the file as "
+        "read, in gray. It is the image the agent sees first, the one the "
+        "image model is shown, and the one every fit reads unless the agent "
+        "names another section image. The image files are never modified",
     ),
     "--image-resolution": Flag(
         checked=True,
