@@ -25,7 +25,8 @@ can be given spells it from that name:
   (`position={"thickness_um": 40}`).
 
 The flags of earlier versions (such as `--thickness`, `--image-provider`,
-`--disable`, `--fresh`) and `create_job`'s `fresh=` are still read.
+`--disable`, `--fresh`) and `create_job`'s `fresh=` are still read;
+`create_job` refuses `fresh=` together with `resume=`.
 
 A job already in the folder is continued with its saved settings. `init` with
 other settings is refused with `SETTINGS_CHANGED`, and other supplied

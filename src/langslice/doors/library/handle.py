@@ -393,7 +393,7 @@ def create_job(
     pixel_size_um: float | Mapping[str, float] | None = None,
     inputs: Mapping[str, Any] | None = None,
     registration: str | os.PathLike[str] | None = None,
-    resume: bool = True,
+    resume: bool | None = None,
     plugins: Any = None,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
@@ -450,7 +450,11 @@ def create_job(
     from langslice.job.layout import write_job_file
 
     if "fresh" in settings:  # resume='s old spelling, still read
+        if resume is not None:
+            raise TypeError("create_job takes resume= or its old spelling "
+                            "fresh=, not both")
         resume = not settings.pop("fresh")
+    resume = True if resume is None else resume
     load_credentials()  # the image model's keys, as open_job loads them
     model = as_image_model(image_model)
     if plugins is not None:

@@ -125,6 +125,13 @@ def test_image_model_custom_profiles(tmp_path):
 # --- create_job ---------------------------------------------------------------------------
 
 
+def test_create_job_takes_resume_or_fresh_not_both(tmp_path):
+    import langslice
+
+    with pytest.raises(TypeError, match="not both"):
+        langslice.create_job(tmp_path, resume=True, fresh=True)
+
+
 def test_create_job_from_a_folder(images):
     import langslice
 
