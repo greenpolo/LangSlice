@@ -118,7 +118,7 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
                                   "top of its linear placement.")
     assert "undo removes it while it is the latest step" in work.notice
     record = job.state.by_id(ID)
-    assert record is not None and trace_to_json(record.image_correction)["status"] == "ok"
+    assert record is not None and trace_to_json(record.border_trace)["status"] == "ok"
     held = json_of(record.deformation)
     assert held is not None and len(held["steps"]) == 1
     assert held["steps"][0]["fit_section"] == deformation.TRACED_BORDERS
@@ -127,10 +127,10 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     assert job.undo()
     record = job.state.by_id(ID)
     assert record is not None and record.deformation is None
-    assert trace_to_json(record.image_correction)["status"] == "ok"  # the trace stays
+    assert trace_to_json(record.border_trace)["status"] == "ok"  # the trace stays
 
     # The prompt sent is saved with the attempt in the job folder.
-    folder = Path(job.folder) / str(trace_to_json(record.image_correction)["artifact_dir"])
+    folder = Path(job.folder) / str(trace_to_json(record.border_trace)["artifact_dir"])
     assert (folder / "prompt.txt").read_text() == "Move each yellow line onto its edge."
     assert len(stub.calls) == 1
 
@@ -146,7 +146,7 @@ def _landed_job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubMode
     assert record is not None and record.deformation is not None
     # The traced step records the trace it fitted.
     assert [step.get("trace") for step in deformation_to_json(record.deformation)["steps"]] == [
-        trace_to_json(record.image_correction)["artifact_dir"]]
+        trace_to_json(record.border_trace)["artifact_dir"]]
     return job, ctx, stub
 
 
@@ -176,7 +176,7 @@ def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_pa
 
     job, ctx, stub = _job(tmp_path, atlas)
     fitted = ops_deformable.fireants_syn(job, ctx, [ID])
-    assert fitted.rows[0]["status"] == "ok", fitted.rows
+    assert fitted.rows[0].refusal is None, fitted.rows
     options = default_options("overlay")
     traces.trace_borders(job, ctx, ID, image_model=stub.model, options=options)
     job.background.wait_all()
@@ -233,8 +233,45 @@ def test_without_engine_nothing_is_asked_of_the_image_model(tmp_path, atlas, mon
     assert refused.value.code == "ENGINE_MISSING"
     assert "fireants" in refused.value.payload()["message"]
     assert stub.calls == [] and len(job.undo_stack) == depth
-    assert job.state.slices[0].image_correction is None
+    assert job.state.slices[0].border_trace is None
     with pytest.raises(Refused) as unknown:
         monkeypatch.setattr(ops_deformable, "engine_ready", lambda: True)
         traces.trace_borders(job, ctx, ID, image_model=stub.model, restrict_to=["NOPE"])
     assert unknown.value.code == "UNKNOWN_REGIONS" and stub.calls == []
+
+
+def test_a_section_with_other_background_work_is_refused_busy(tmp_path, atlas):
+    """Other background work running on the section: ``SECTION_BUSY`` naming
+    that work, nothing asked of the image model."""
+    from langslice.job.background import DONE, Landed
+
+    job, ctx, stub = _job(tmp_path, atlas)
+    gate = threading.Event()
+
+    def hold() -> Landed:
+        assert gate.wait(10)
+        return Landed(status=DONE, text="held")
+
+    other = job.background.start("other_work", (ID,), hold, wait_for_images=False)
+    try:
+        with pytest.raises(Refused) as caught:
+            traces.trace_borders(job, ctx, ID, image_model=stub.model)
+    finally:
+        gate.set()
+        job.background.wait_all()
+    assert caught.value.code == RefusalCode.SECTION_BUSY
+    assert caught.value.facts["id"] == ID and caught.value.facts["work"] == [other.id]
+    assert not stub.calls
+
+
+def test_a_restrict_to_that_leaves_no_region_keeps_its_own_code(tmp_path, atlas):
+    """A refusal of the trace's own (regions that leave nothing on the plane)
+    is answered with its code, not as a bad linear placement."""
+    job, ctx, stub = _job(tmp_path, atlas)
+    with pytest.raises(Refused) as caught:  # STR lies on one side of the midline only
+        for side in ("left", "right"):
+            traces.trace_borders(job, ctx, ID, image_model=stub.model,
+                                 restrict_to=[f"STR:{side}"])
+            job.background.wait_all()
+    assert caught.value.code == RefusalCode.BAD_ARGS and caught.value.facts["id"] == ID
+    assert "leave no atlas region" in caught.value.message

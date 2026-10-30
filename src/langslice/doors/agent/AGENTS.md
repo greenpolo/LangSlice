@@ -41,7 +41,7 @@ tool per registration method (`position_sections`,
 borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
 (zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
 previews; everything is undoable. Each registration a section holds is
-numbered (`job/registrations.py`): `look` draws a section under an earlier
+numbered (`job/history.py`): `look` draws a section under an earlier
 one without writing it, which is how two fits of a section are compared, and
 `restore_registration` puts earlier ones back on the sections named, whatever
 was written since; undo takes back only the job's last write.
@@ -74,12 +74,12 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   `spec.job_dir`, next to the images, or `~/.langslice/jobs/<id>/` for a
   read-only image folder), `build_seed_message` (the first message: the job
   statement and the user's notes, the opening strips,
-  `doors.agent.media.opening_parts`, and `langslice.doors.statement.status_and_notes`),
+  `doors.agent.media.opening_parts`, and `langslice.tools.descriptions.door_text.status_and_notes`),
   `save_opening` / `with_seed_views` (the opening saved as the job's views,
   their paths on the live seed event), `run_session` (the system instruction
-  is `langslice.doors.statement.SYSTEM_PROMPT`, the same for every job; the first
+  is `langslice.tools.descriptions.statement.SYSTEM_PROMPT`, the same for every job; the first
   message carries `langslice.tools.descriptions.statement.build_job_statement` plus the user's notes from
-  `job.json`, `langslice.doors.statement.read_notes`; the tools are
+  `job.json`, `langslice.tools.descriptions.door_text.read_notes`; the tools are
   `doors.agent.media.packaged_tools(box.tools)`; the post-submit
   `DEBRIEF_PROMPT` when `spec.debrief`, its answer on `state.debrief`;
   `background_message`: when the model ends its turn while background work
@@ -172,7 +172,7 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   unique execution id and, on `tool_end`, `views` (the pictures the call
   saved); these events never enter model context. The same events are
   lines of the job's `logs/events.jsonl` on every door, observer or not
-  (`toolbox._job_events`). `plain` copies JSON
+  (`tools.events.EventLog`). `plain` (`tools/events.py`) copies JSON
   content without media bytes.
 - `cost.py` — `estimate(spec, n_slices)` (the sections whose orientation and
   affine are frozen cost no transform work): the pre-run usage-window
@@ -188,18 +188,21 @@ The tools are the toolbox `doors.tools.toolbox.build_tools(state, ctx, spec,
 job=, image_model=, level=, max_view_edge=)` builds: the verbs
 `tools.catalog.enabled(spec)` names, each declared once in
 `langslice/tools/descriptions/render.py` (name, arguments, description) and each body
-(`doors/tools/looking.py`, `changing.py`, `fitting.py`) argument checking,
-one call into `langslice/tools/` and the wording. Every tool is wrapped: `_serialized` (one
-lock: ADK runs a turn's calls concurrently, the state has one writer, and
-the host events), `_announces_work` (the notices of background work that
-finished since the last reply, first, under `background`, its pictures
-after the reply's own), `_saves_views` (every picture saved in the job
-folder with its layers and a number, the exact JPEG bytes the door sent;
-the reply's `pictures` lists the numbers in attachment order),
-`_clears_stale_deformations` (a deformation whose `linear_key` no longer
-matches is cleared in the same undo step; the reply says
-`deformation_cleared`) and `_strict` (unknown or misplaced keys refused,
-never dropped). Tools return plain PIL pictures under
+(`<tool>_tool(run, ...)`, a function of its module under
+`langslice/tools/`, wired by `doors.tools.toolbox.TOOL_BODIES`)
+argument checking, one call into `langslice/tools/` and the wording. Every
+call runs through
+the tool pipeline's steps (`langslice/tools/pipeline.py`, `TOOL_STEPS`):
+`_serialize` (one lock: ADK runs a turn's calls concurrently, the state has
+one writer), `_log_events` (the host events), `_announce_work` (the notices
+of background work that finished since the last reply, first, under
+`background`, its pictures after the reply's own), `_save_pictures` (every
+picture saved in the job folder with its layers and a number, the exact
+JPEG bytes the door sent; the reply's `pictures` lists the numbers in
+attachment order), `_clear_stale_deformations` (a deformation whose
+`linear_key` no longer matches is cleared in the same undo step; the reply
+says `deformation_cleared`) and `_strict_arguments` (unknown or misplaced
+keys refused, never dropped). Tools return plain PIL pictures under
 `TOOL_MEDIA_PARTS_KEY`; the ADK driver packages them as JPEG parts
 (`doors.agent.media.packaged`), the MCP door as image blocks.
 
@@ -207,7 +210,7 @@ Conventions: sections are named by filename only (`Stack.resolve`:
 the filename, or its stem when no other section shares it; a number is
 refused with the filenames listed, `core.stack.stack.unknown_sections`), in every
 argument, label, caption and status line; ordinary writes answer with the
-rows they changed (`Door.answered`) plus `n_sections`; `status`, `undo`,
+rows they changed (`Run.answered`) plus `n_sections`; `status`, `undo`,
 `redo` and `submit` return the whole table, and `status` also the raw
 channels, the made section images (`section_images`), the background work
 still running and what this run lets the agent change.
@@ -222,10 +225,10 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   `facts` stay in the run facts.
 - **`transform.max_parallel`** (1..4, default 4): below 4,
   `interactive_transform` and `elastix_affine` (each takes one to four
-  sections) refuse a call naming more sections (`catalog.check_section_count`)
+  sections) refuse a call naming more sections (`tools.refusal.check_section_count`)
   and the statement states the cap.
 - **`disabled`** (default empty): tools and tool options the job does
-  without, `--disable NAME[,NAME...]`. A host's `inputs["damaged"]` note is
+  without, `--disabled NAME[,NAME...]`. A host's `inputs["damaged"]` note is
   the section's `damage_note` (shown in status and the statement) whether or
   not `mark_damage` is disabled; it does not make the section damaged, and it
   stays first in the note whatever the agent marks.
@@ -242,7 +245,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   everywhere; a tool that writes only frozen properties is not built
   (`JobSpec.switched_off`). The statement's frozen line and each status row's
   `frozen` tell the agent.
-- **`nonlinear.require_deformation`** (`--require-deformation`, default off):
+- **`nonlinear.require_deformation`** (`--nonlinear-require-deformation`, default off):
   every section needs a deformation, and `submit` is refused
   (`MISSING_DEFORMATIONS`) until it has one; off, a deformation is the
   agent's choice and the job line says so.
@@ -338,7 +341,7 @@ deformation gate.
 - Provider `none` (`NonlinearSpec.uses_image_model` False) builds
   `fireants_syn` but no `trace_borders`. A door that cannot reach the job's
   image model builds the same toolbox (`image_model_connected=False`) and
-  says so (`langslice.doors.statement.IMAGE_MODEL_OFF`).
+  says so (`langslice.tools.descriptions.door_text.IMAGE_MODEL_OFF`).
 - `look` in mode overlay draws each section with its applied deformation
   unless `warp` is `none`.
 
@@ -373,7 +376,7 @@ statement (the same text runs against every BrainGlobe atlas, species and
 plane). Each tool's description is the only place it is described, apart from
 the one-line summaries of the deformable methods above.
 
-`--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
+`--position-playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
 method in the statement: compare candidate planes and distinguishing regions,
 write supported placements, revisit uncertain sections and review the stack.
 This is guidance, not enforcement.
@@ -382,7 +385,7 @@ This is guidance, not enforcement.
 caused it; a failed `submit` neither writes nor ends the run. `submit`
 waits for the background work, then refuses `MISSING_POSITIONS`,
 `STRICT_INTERVAL` (spacing within 10% of the interval and no breaks, with
-`--strict-interval`), `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must
+`--position-strict-interval`), `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must
 exceed 1.5x the median written spacing), `MISSING_TRANSFORMS` (every
 section, damaged included) and, with `nonlinear`, `MISSING_DEFORMATIONS`.
 Gates run only for tasks that are on.
@@ -406,7 +409,7 @@ keeps the transform's knob values, rebuilt on the new orientation.
 
 **Every write checkpoints and is undoable.** One tool call is one undo step,
 so a batch undoes as one; a landed piece of background work is a step of
-its own. The history (depth 50) is saved in the job folder, so a resumed
+its own. The undo steps (no cap) are saved in the job folder, so a resumed
 run can still undo the steps before it.
 
 ## Ceilings worth knowing
@@ -423,7 +426,7 @@ run can still undo the steps before it.
 ## The Claude host (MCP)
 
 The MCP door gives Claude the same toolbox and the same statement, worded
-for door `mcp` (`langslice.doors.statement.job_statement`), with the opening as
+for door `mcp` (`langslice.tools.descriptions.statement.job_statement`), with the opening as
 `show_stack` pages within the host's reply budget, an opening-read gate
 armed by `start_job`, and no turn budget, nudges, debrief or working set:
 the host owns the loop. `doors/CLAUDE.md` holds the details.

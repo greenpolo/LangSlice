@@ -45,7 +45,7 @@ from langslice.job.lock import LockYielded
 if TYPE_CHECKING:
     from PIL import Image
 
-    from langslice.job.job import Job
+    from langslice.job.border_traces import JobBorderTraces
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class Work:
     captions: list[str] = field(default_factory=list)
     result: dict[str, Any] = field(default_factory=dict)
     #: The registration each section holds after its landing, by section
-    #: (:mod:`langslice.job.registrations`).
+    #: (:mod:`langslice.job.history`).
     registrations: dict[str, int] = field(default_factory=dict)
     #: Whether :meth:`BackgroundWork.notices` handed the notice out.
     delivered: bool = False
@@ -143,7 +143,7 @@ class _Entry:
 class BackgroundWork:
     """The background work of one job (see the module text)."""
 
-    def __init__(self, job: Job) -> None:
+    def __init__(self, job: JobBorderTraces) -> None:
         self._job = job
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
@@ -214,11 +214,37 @@ class BackgroundWork:
                     break
         return found
 
-    def notices(self) -> list[Work]:
-        """The work finished since the last call, each handed out once."""
+    def started(self) -> int:
+        """Return how many pieces of work this job started.
+
+        Returns
+        -------
+        int
+            The count, the number of the last work started.
+        """
         with self._lock:
-            ready = [entry.work for entry in self._entries.values()
-                     if entry.work.status != RUNNING and not entry.work.delivered]
+            return self._count
+
+    def notices(self, *, among: int | None = None) -> list[Work]:
+        """Return the work finished since the last call, each handed out once.
+
+        Parameters
+        ----------
+        among
+            Only the first *among* pieces started: a reply leaves out the
+            work its own call started (:meth:`started` before the call).
+            None: every piece.
+
+        Returns
+        -------
+        list of Work
+            The finished work not handed out yet, oldest first.
+        """
+        with self._lock:
+            entries = list(self._entries.values())[:among]
+            ready = [entry.work for entry in entries
+                     if entry.work.status != RUNNING
+                     and not entry.work.delivered]
             for work in ready:
                 work.delivered = True
         return ready

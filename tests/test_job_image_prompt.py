@@ -64,7 +64,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     prompt_file.write_text(JOB_PROMPT + "\n", encoding="utf-8")
     args = build_parser().parse_args([
         "linear", "run", str(tmp_path), "--tasks", "position,transform,nonlinear",
-        "--image-prompt", str(prompt_file), "--position-notes", "Olfactory bulb first",
+        "--nonlinear-image-prompt", str(prompt_file), "--position-notes", "Olfactory bulb first",
         "--transform-notes", "Ventral side down", "--nonlinear-notes", "Ignore the tear"])
     spec = spec_from_args(args, str(tmp_path))
     assert spec.nonlinear.image_prompt == JOB_PROMPT  # stripped
@@ -78,8 +78,8 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     assert "image_prompt" not in plain.to_dict()["nonlinear"]  # saved specs unchanged
 
     missing = build_parser().parse_args(
-        ["linear", "run", str(tmp_path), "--image-prompt", str(tmp_path / "none.txt")])
-    with pytest.raises(ValueError, match="--image-prompt"):
+        ["linear", "run", str(tmp_path), "--nonlinear-image-prompt", str(tmp_path / "none.txt")])
+    with pytest.raises(ValueError, match="--nonlinear-image-prompt"):
         spec_from_args(missing, str(tmp_path))
 
 
@@ -97,18 +97,18 @@ def test_a_bad_image_prompt_is_refused(settings, message):
 
 def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(images):
     import langslice
-    from langslice.tools.descriptions.render import Variant
+    from langslice.tools.descriptions.description import DescriptionFacts
 
     stub = Stub()
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=stub, nonlinear={"image_prompt": JOB_PROMPT}) as job:
         sent = JOB_PROMPT.replace("{plane}", "coronal")
-        assert Variant.of(job.job.spec, auto=False).prompt == sent
+        assert DescriptionFacts.from_spec(job.job.spec, auto=False).prompt == sent
         assert job.trace_borders(section=ID1)["status"] == "started"
-        job.job.settle_image_corrections()
+        job.job.settle_border_traces()
         job.job.background.wait_all()
-        record = trace_to_json(job.state.by_id(ID1).image_correction)
+        record = trace_to_json(job.state.by_id(ID1).border_trace)
     assert [request.prompt for request in stub.requests] == [sent]
     attempt = images / "langslice" / record["artifact_dir"]
     assert (attempt / "base_prompt.txt").read_text() == sent
@@ -148,7 +148,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
                               orientation=supplied, pixel_size_um=PIXEL_SIZE_UM,
                               preprocess="none", image_model=Stub()) as job:
         job.trace_borders(section=SECTION)
-        job.job.settle_image_corrections()
+        job.job.settle_border_traces()
         job.job.background.wait_all()
         reply = job.export_maps()
         folder = Path(job.folder)
@@ -177,7 +177,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         assert np.percentile(distance[borders], 90) <= 1.5
 
         # A section with no completed trace now loses the reply an earlier export left.
-        while job.state.by_id(SECTION).image_correction is not None:  # its fit, then the trace
+        while job.state.by_id(SECTION).border_trace is not None:  # its fit, then the trace
             job.undo()
         again = job.export_maps(sections=[SECTION])
         assert again.get("status") != "error", again

@@ -226,13 +226,6 @@ def scale_problem(frame: SectionFrame) -> str | None:
 FRAME_CACHE_SECTIONS = 512
 
 
-#: Frames this process was handed before it forked (:func:`share_frames`):
-#: section image path -> (the workspace's scope, the frame's key, its atlas,
-#: the frame). A workspace made later (a forked child's) takes a frame from
-#: here only at the same scope, key and atlas object.
-_SHARED_FRAMES: dict[str, tuple[tuple[str, str], tuple[Any, ...], Any, SectionFrame]] = {}
-
-
 def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any, ...]:
     """Everything a section's frame depends on within one workspace."""
     path = workspace.image_path(record.id)
@@ -247,50 +240,11 @@ def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any
     )
 
 
-def _scope(workspace: Workspace) -> tuple[str, str]:
-    """What a frame depends on beyond its key: the image folder and the
-    whole of the job's settings."""
-    folder = os.path.abspath(workspace.image_folder)
-    return (folder, workspace.settings.settings_text)
-
-
-def share_frames(state: Stack, workspace: Workspace) -> int:
-    """Compute the frame of every placed section of *state* and keep it for
-    the workspaces this process makes after it forks (the agent CLI's warm
-    process, :mod:`langslice.doors.agent_cli.warm`, calls it before it
-    serves), so
-    a call that writes one section maps only that one. A frame that cannot
-    be computed is left out. Returns how many are kept."""
-    scope = _scope(workspace)
-    kept = 0
-    for record in state.slices:
-        if placement_problem(state, record) is not None:
-            continue
-        try:
-            frame = section_frame(state, workspace, record)
-        except Exception:  # noqa: BLE001 - registration.json says why, at its own write
-            continue
-        _SHARED_FRAMES[workspace.image_path(record.id)] = (
-            scope, _frame_key(state, workspace, record), workspace.atlas, frame)
-        kept += 1
-    return kept
-
-
-def _shared_frame(workspace: Workspace, record: Section,
-                  key: tuple[Any, ...]) -> SectionFrame | None:
-    held = _SHARED_FRAMES.get(workspace.image_path(record.id))
-    if held is None or held[1] != key or held[2] is not workspace.atlas:
-        return None
-    return held[3] if held[0] == _scope(workspace) else None
-
-
 def section_frame(state: Stack, workspace: Workspace, record: Section) -> SectionFrame:
     """The section's linear frame (``ValueError`` when it has none:
     :func:`placement_problem`). Memoized on the workspace
     (``Workspace.frame_cache``: one frame per section, at the key of
-    everything it depends on; bounded, ``FRAME_CACHE_SECTIONS``), and taken
-    from the frames shared before a fork (:func:`share_frames`) when one is
-    there at the same key."""
+    everything it depends on; bounded, ``FRAME_CACHE_SECTIONS``)."""
     problem = placement_problem(state, record)
     if problem is not None:
         raise ValueError(f"{record.id}: {problem}")
@@ -303,8 +257,7 @@ def section_frame(state: Stack, workspace: Workspace, record: Section) -> Sectio
     if held is not None and held[0] == key:
         cache.move_to_end(record.id)
         return cast(SectionFrame, held[1])
-    frame = (_shared_frame(workspace, record, key) if _SHARED_FRAMES else None) \
-        or _section_frame(state, workspace, record)
+    frame = _section_frame(state, workspace, record)
     # One frame per section (the one at its current key); the least recently
     # used section is dropped past FRAME_CACHE_SECTIONS.
     cache[record.id] = (key, frame)

@@ -9,13 +9,81 @@ here. The agent tools, the MCP server, the agent CLI and scripts call the
 same functions, so a tool and a script do exactly the same write and get the same
 picture. Each agent tool's body is argument checking, ONE call here and the
 wording; `catalog.py` lists which. The package also holds what every tool
-body of a run shares: `run.py` (`Door`, the run behind a door: the job, the
-workspace, the picture level, the image call), `arguments.py` (the typed
+body of a run shares: `run.py` (`Run`, the run behind a door: the job, the
+workspace, the picture level, the image call), `pipeline.py` (`TOOL_STEPS`,
+the steps every tool call goes through in order, the `ToolCall` they
+carry, `declared_tool` and the `ToolBox`), `events.py` (each call's
+`tool_start` / `tool_end` events and the job folder's event log),
+`arguments.py` (the typed
 argument shapes and the strictness check), `reply.py` (the reply byte
-budget and paging) and `descriptions/` (`render.py`: every tool's
-declaration; `statement.py`: the job statement; `fixes.py`: the agent
-CLI's fix sentence per refusal code). The bodies themselves and the
-toolbox are still `doors/tools/`.
+budget and paging) and `descriptions/` (every model-facing text: the
+tools' descriptions, the job statement, the agent CLI's fixes; below).
+A tool's body sits beside its operation as `<tool>_tool(run, **arguments)`,
+taking the declared arguments as the model sent them (`run.shows(view)`
+decides the picture): argument checks, the one operation call, the reply
+and its picture (`positions.py`, `transforms.py`, `damage.py`, `masks.py`,
+`notes.py`, `history.py` (`undo_tool`, `redo_tool`), `registrations.py`,
+`submit.py`, `affine_fit.py`, `deformable.py`, `traces.py`, `exports.py`,
+`landmarks.py`, `landmark_warp.py`, and the looking tools' `look.py`,
+`zoom.py`, `images.py`, `atlas.py`, `status.py`, `files.py`);
+`doors.tools.toolbox.TOOL_BODIES` wires their names, and `build_tools`
+(which resolves the image model through the providers) stays in
+`doors/tools/`.
+
+## `descriptions/`: the model-facing text
+
+To change what a tool's description says, open its family's module
+(`looking.py`, `changing.py`, `fitting.py`, `landmarks.py`,
+`bookkeeping.py`), edit that tool's `ToolDescription` and regenerate the
+text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
+
+- `description.py` — the shapes. A `ToolDescription` is a `summary`, the
+  `body` paragraphs (one that renders empty goes), one `Argument` per
+  argument (its type, default and text; `needs`: the names it needs on, in
+  needs syntax; `offered`: the run fact it exists in), `returns`,
+  `prompt_heading` (`trace_borders`: the paragraph before the run's base
+  image prompt) and `slots`: `${name}` passages a fact of the run words
+  (`PerCap`: a door with or without a picture cap; `PerDoor`: the agent
+  CLI's own wording; `Distance`: a distance at the job's brain scale).
+  Texts are prose at no indentation with the model's line breaks; a
+  trailing backslash joins a line too long for the source. A passage that
+  names a tool or an option carries needs marks (`job/settings/needs.py`).
+  `DescriptionFacts` is what of a run changes the text: `door` (`DOORS`),
+  `auto` (the caller sizes pictures), `forced_view`, `positions`,
+  `uncapped`, `prompt` (the base image prompt; empty without an image
+  model), `switched_off`, `absent` and `plugins` (a plugin's text renders
+  by both), `brain_scale`; `from_spec(spec, auto=, image_model=, door=,
+  prompt=, uncapped=, brain_scale=)`.
+- `render.py` — `declaration(name, facts)` (cached): a native tool's
+  description rendered for the run (slots filled, marks rendered, the
+  arguments it does not offer left out, `narrowed` dropping the enum values
+  and section keys the job switches off) as `doc` (the docstring layout ADK
+  and FastMCP read), `text` (below the summary, unindented: `TOOLS.md`),
+  `arguments` (each argument's text on one line: the agent CLI's fix of an
+  unknown argument) and the signature; a plugin tool from its stub's
+  docstring and signature (`argument_texts` reads its `Args`). `declare`
+  binds a tool body to its declaration (ADK's `tool_context` added when the
+  body takes it), `summary`, `arguments_schema` (pydantic, unknown keys
+  refused), `DESCRIPTIONS`, `FULL` (a caller without a job: every argument,
+  the coronal base prompt for the OpenAI models).
+- `statement.py` — the job statement and `SYSTEM_PROMPT`. `STATEMENT` is
+  the whole statement with its slots; the named templates under it are its
+  sentences (the job clause per task, the constraints, the method bullets,
+  `DEFORMABLE_METHODS`), chosen by the run's `StatementFacts`
+  (`from_run(spec, state, workspace, tool_names=, max_resolution=,
+  auto=)`). `job_statement(facts, door=, opening=, notes=,
+  image_model_off=)` is every door's text: the agent's is the statement and
+  the user's notes (the opening pictures and `status_and_notes` follow as
+  parts of the first message); MCP's and the CLI's add the door's opening
+  paragraph, the image-model line, the notes and the status table.
+- `run_facts.py` — the "Run facts:" bullets, one template each: the stack
+  and atlas, what the run changes, the raw channels and section images, the
+  atlas images, the picture size, the deformable engine.
+- `door_text.py` — what the doors add: `opening_for_mcp`,
+  `opening_for_cli` (the opening files and the commands, `long_verbs`),
+  `IMAGE_MODEL_OFF`, `status_and_notes`, `user_notes_lines`, `read_notes`,
+  `NOTES_KEY`, `image_model_state`.
+- `fixes.py` — the agent CLI's fix sentence per refusal code.
 
 ## The rule
 
@@ -33,7 +101,7 @@ toolbox are still `doors/tools/`.
   it from the state they read and take it themselves to apply, comparing
   each section's `stale.section_inputs` with the value they computed from:
   a changed section is that section's row `STALE_INPUT`
-  (`stale.stale_row`; `trace_borders` raises it), the others apply.
+  (`stale.stale_refusal`; `trace_borders` raises it), the others apply.
   `set_transforms` takes it itself too. A read (`status.py`, `atlas.py`, `look.py`)
   writes nothing.
 - Pictures are the core's, never drawn here: a read verb, or a write that
@@ -45,26 +113,34 @@ toolbox are still `doors/tools/`.
   tool door after the write.
 - It never words anything for a model. Job rules (frozen
   properties, host damage marks, the spec's flip switch, the submit gates)
-  are the job's and are applied here; the per-call section caps (`catalog.check_section_count`:
-  `Verb.limits`, and for the transform tools `Job.picture_cap` and the job's
-  `transform.max_parallel`, each None for no cap; `TOO_MANY_SECTIONS`) are
-  checked by the tool door with its other arguments.
+  are the job's and are applied here; the per-call section caps (`refusal.check_section_count`:
+  the tool's own cap, its `Verb.limits`, and for the transform tools
+  `Job.picture_cap` and the job's `transform.max_parallel`, each None for no
+  cap; `TOO_MANY_SECTIONS`) are checked by each tool's body with its other
+  arguments.
 - A model is passed in, never chosen here: `traces.trace_borders`
-  takes the image model (`providers.connections.ImageModel`: provider, model, `call`)
+  takes the image model (`core.fits.trace.request.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
   (`core.fits.frame.correction_fingerprint`).
 - A write to a property the job froze (`JobSpec.frozen`, `job/settings/frozen.py`) is
   refused with the one code `FROZEN` (`ids`, `properties`, `message`):
   `refusal.check_frozen(job, ids, *properties)` raises it for a whole call,
-  `refusal.frozen_row(job, id, *properties)` is a section's row in a
-  per-section answer.
+  `refusal.section_refusal(job, id, *properties)` is one section's
+  refusal in a per-section answer (`SECTION_BUSY` first).
 - A refusal is the core's `Refused(RefusalCode.X, message, **facts)`
   (`core/refusal.py`), raised, nothing written; this package re-exports
   nothing of it. `Refused.payload()` is the `{"status": ..., "error": code,
-  ...}` the tool door answers with (`status` "refused" for a gate, as the
-  opening-read gate's; the job's submit gates return theirs as a `Refused`,
-  `Job.submit_errors`, which `submit` raises); a section's row
-  in a per-section answer is `{"id": ..., **refusal.payload()}`. A code is
+  ...}` the tool door answers with (`status` "refused" for a gate, the
+  opening-read gate's and the job's submit gates, which return theirs as a
+  `Refused`, `Job.submit_errors`, that `submit` raises). A per-section
+  answer is a list of typed rows, one per section (`affine_fit.AffineRow`,
+  `deformable_rows.DeformableRow`, `warps.WarpApplied`, `masks.MaskMade`,
+  `registrations.Restored`, `transforms` entries), each holding its
+  `Refused` or what was done; the tool's body converts each row to its
+  reply once (`affine_fit.affine_row_to_json`,
+  `deformable_rows.deformable_row_to_json`; a refused row is
+  `refusal.refused_row`: `{"id", "status", "error", ...facts}`), and a
+  plugin context converts the rows it hands a plugin. A code is
   always a `RefusalCode` member (a fit's flag a `core.fits.flags.FitFlag`),
   never a string written out.
 - A section is named by its filename (`Stack.resolve`: the filename,
@@ -81,8 +157,6 @@ toolbox are still `doors/tools/`.
   checks what it loads.
 
 ## Files
-
-The operations of `look` and `zoom` are `look.py` and `zoom.py`.
 
 - `positions.py` — `position_sections(job, workspace, [{id, position_mm}],
   cutting_angles={pitch_deg, yaw_deg})`: both writes in ONE undo step
@@ -110,9 +184,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   agent's note after it. With *options*, `core.sections.damage.damage_picture` (a
   picture that fails is `render_failed`, the write standing). Returns
   `DamageRegions`.
-- `images.py` — `make_image(job, workspace, name, sections, weights=,
-  clahe_clip=, clahe_tiles=, n4=, denoise=, contrast=, gamma=, invert=,
-  delete=)`: a made section image (`core/sections/images.py`) for the
+- `images.py` — `make_section_image(job, workspace, name, sections,
+  given, delete=)`, `given` an `ImageRecipe` (`weights`, `clahe_clip`,
+  `clahe_tiles`, `n4`, `denoise`, `contrast`, `gamma`, `invert`; the
+  `make_image` tool, `make_image_tool`, normalizes the model's values first): a made section image (`core/sections/images.py`) for the
   sections named (empty: every section), each computed from its own images
   and saved as a file before ONE undo step sets the entries;
   `preprocessed` with every argument at its default writes the opening
@@ -122,12 +197,14 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `UNKNOWN_IMAGE` (a weighted image a section lacks; delete of a name no
   named section holds), `RENDER_FAILED`. Returns `ImagesMade` (`name`,
   `sections`, `deleted`, `in_force`: the image as `status` lists it,
-  `images`: every name of the stack). `add_image(job, workspace, record,
+  `images`: every name of the stack). The tool `make_image` adds a
+  `section` picture of a spread of the sections (`look.show_result`; none
+  where `look:section` is off, which also drops its `view`).
+  `add_image(job, workspace, record,
   name, array, note)`: a script's image (`(H, W)` on the working grid in the
   file's orientation, `uint8` or 0-1 floats), source `{"script": note}`, one
   undo step; `BAD_ARGS`. `check_image(job, workspace, records, name)` (what a
-  fit reads, `UNKNOWN_IMAGE`), `read`, `image_names`, `stack_images`. The verb
-  `make_image`.
+  fit reads, `UNKNOWN_IMAGE`), `read`, `image_names`, `stack_images`.
 - `masks.py` — `make_mask(job, workspace, name, sections, source=,
   section_image=, atlas_image=, sorting=, delete=)`: a section-side mask by
   name (`core/sections/masks.py`) for each section named (empty: every
@@ -140,7 +217,8 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_SORTING`, `FIT_FAILED`);
   when none can, the first row's refusal. Refused: `UNKNOWN_SLICE_IDS`,
   `SECTION_BUSY`, `UNKNOWN_IMAGE`, `UNKNOWN_MASK` (delete), `BAD_ARGS`.
-  Returns `MasksMade` (`rows`, `made`). `read` / `section_weights(job,
+  Returns `MasksMade` (`rows`, one `MaskMade` per section: `id`, the
+  state's `entry` or the section's `refusal`; `made`). `read` / `section_weights(job,
   record, name)` are what a fit reads: `"none"` gives None, a name gives the
   weights (`UNKNOWN_MASK`, `STALE_MASK` when the section's orientation, the
   grid digest `core.sections.masks.grid_digest`, differs from the one it was
@@ -152,9 +230,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `NOT_FOUND` for a path that does not exist, with `nearest`, the nearest
   folder above it that does, and `holds`, its names; both raised by
   `browse.resolve`):
-  `list_files(job, path=".", glob="")` -> `Listing`, `search_files(job, query,
-  path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
-  `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
+  `list_folder(job, path=".", glob="")` -> `Listing`, `search_folder(job, query,
+  path=".", glob="")` -> `Found`, `read_folder_file(job, path, offset=0, limit=400)` ->
+  `FileText` (the tools `list_files_tool`, `search_files_tool`, `read_file_tool` flush the
+  picture store first and reply with the `text`); each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`), never
   pixels, and a line written with its needs (`job.settings.needs.render`): the number to
   give `zoom`; where the job disables `zoom`, for a picture whose recipe is
@@ -167,10 +246,11 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   or read: `BAD_PATH`.
 - `history.py` — `undo(job, steps=1)` / `redo(job, steps=1)`: that many
   steps under one hold of the job's lock (fewer when the history holds
-  fewer); `Stepped` (`done`, `depth`, `step`: the sections and field groups
-  the steps changed together, `describe_step`, `steps`: how many were taken).
-- `registrations.py` — `restore_registration`'s operations over the job's
-  registration store (`job/registrations.py`): `listing(job, section)` ->
+  fewer); `Stepped` (`done`, `depth`, `step`: a `HistoryStep`, the sections
+  and field groups the steps changed together, `describe_step`, `steps`: how
+  many were taken).
+- `registrations.py` — `restore_registration`'s operations over the
+  sections' histories (`job/history.py`): `listing(job, section)` ->
   `Listed` (`held`, the number the section holds; `rows`: per registration
   `registration`, `by`, `at`, `transform` (`core.stack.status.transform_entry`: kind
   and knobs), `deformation` (`core.stack.status.deformation_entry`: method, steps,
@@ -178,11 +258,12 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   pictures drawn by the tool in `by` whose `registrations` give the section
   that number), `held`, and `not_here` for one whose deformation was fitted at
   another position or cutting angles; the registration the section holds is
-  listed first when it never was; no state written); `restore(job,
-  [{"id", "registration"}])` -> `RestoredMany` (`rows` per section in call
-  order: ok with `registration`, `replaced`, `written` (False when the section
-  holds it already), or that section's refusal; `written`): each section's
-  orientation, transform and deformation set as its entry holds them, ONE undo
+  numbered first when it never was; no state written); `restore(job,
+  [{"id", "registration"}])` -> `RestoredMany` (`rows`, one `Restored` per
+  section in call order: `registration`, `replaced`, `written` (False when
+  the section holds it already), or that section's `refusal`; `written`): each section's
+  orientation, transform and deformation set as the registration's first
+  history line holds them (`job.history.set_head`), ONE undo
   step for the call, the other sections untouched. Refused per section:
   `UNKNOWN_REGISTRATION` (with `registrations`, the section's numbers),
   `SECTION_BUSY` / `FROZEN` (`check_frozen` with the properties it would
@@ -214,7 +295,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   is logged, the submit stands). Returns `Submitted` (`exported`, `interval_breaks`
   as filenames). Not a long verb: the door
   holds the job lock for the whole call, the exports included.
-- `exports.py` — `export_maps(job, workspace, ids=,
+- `exports.py` — (the verb's body: `export_maps_tool`) `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
   stands, no undo step (a long verb: the stack read under the job lock
   after a sync, each section's maps computed outside it and written under
@@ -252,10 +333,10 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `section_points(job, workspace, section, xyz_um, frame=)` -> `SectionPoints`
   (`xy`, `off_plane_um`: each point projected onto the plane, then
   `core.maps.section_maps.file_points`). Refused: `UNKNOWN_SLICE_IDS`,
-  `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`, `BAD_ARGS`.
+  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
+  `BAD_ARGS`.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
-  `shear` optional (0), to the record), `same_transform`, `fit_transform`
-  (an Elastix affine fit's record, kind `elastix`), `set_transforms(job,
+  `shear` optional (0), to the record), `same_transform`, `set_transforms(job,
   {id: record})` (one undo step for the batch; a frozen affine, or a transform that turns
   over a section whose orientation is frozen, refused whole, `FROZEN`;
   `reverses_orientation`: the determinant's sign differs from the sign of
@@ -273,11 +354,12 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   orientation); a frozen orientation refuses a changed flip or quarter turn
   and a transform that would mirror the section. Per entry `FROZEN`
   (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
-  `BAD_ROTATION`, `FLIP_DISABLED`, `NO_POSITION`, the stager's codes
+  `BAD_ROTATION`, `OPTION_OFF`, `NO_POSITION`, the stager's codes
   (`core.pictures.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
-  `error`, `staged`, `previous`, `transform`, `written`, `id`,
+  `refusal`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
-  `elastix_affine(job, workspace, sections, restrict_to=(),
+- `affine_fit.py` — the Elastix affine: `fit_transform` (a fit's record,
+  kind `elastix`), `elastix_affine(job, workspace, sections, restrict_to=(),
   atlas_image="template")` (any of the atlas's images; `BAD_ARGS` for no
   sections; the tool door refuses more than `Job.picture_cap` or `Job.transform_cap`, `TOO_MANY_SECTIONS`): per section `core.fits.affine.fit_elastix`
   refining its current placement against the atlas image, by the *restrict_to* regions only, its marked damage regions
@@ -292,9 +374,11 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   (`plausibility_flags`: `SCALE_CHANGED`, `SHEAR`); each fit runs inside
   `core.fits.engine_log.engine_output(job.engine_log)`. With `restrict_to`, each ok row carries
   `restrict_box`: the regions' bounding box on that section's canvas as
-  `[x0, y0, x1, y1]` fractions (`region_box`; `core.pictures.canvas.zoom_box`'s
+  `[x0, y0, x1, y1]` fractions (`fit_regions.region_box`; `core.pictures.canvas.zoom_box`'s
   zoom). Refused: `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. Returns `AffineFit`
-  (`rows`, `fitted`). `elastix_fit(job, workspace, section, restrict_to=,
+  (`rows`: an `AffineRow` per section, the core's `FittedAffine` or the
+  refusal; `fitted`). `affine_row_to_json` is a row's reply: the knobs as
+  `transform`, the turn and flags in words as `warning`. `elastix_fit(job, workspace, section, restrict_to=,
   exclude=, atlas_image=, mask=, marked=True)`: one Elastix affine from the
   section's current placement, written nowhere (`core.fits.affine.ElastixFit`;
   a script's `job.context.fit_elastix`): regions checked, the marked regions
@@ -302,7 +386,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   mask; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`, `UNKNOWN_REGIONS`,
   `NO_SIDES`, `REGION_TOO_SMALL`, `FIT_FAILED`.
 - `deformable.py` — `fit_deformable(job, workspace, records, choice,
-  restrict_to=, options=)`: one deformation (a resolved
+  restrict_to=, overrides=)`: one deformation (a resolved
   `deformation.Choice`) on top of each section's applied deformation, or its
   linear placement when it holds none (the step's `start`: `current` or
   `linear`), each section's marked regions excluded
@@ -311,15 +395,17 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   under one `TRACE_WAIT_S` deadline and adding the trace's regions to the
   call's (`traced_regions`; the row's `trace_regions`, and the record keeps
   the regions each fit ran with), the record cache, the engine). Per-section
-  problems (`INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
+  problems (`NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
   `NO_TRACE`/`TRACE_*`, `BAD_SETTINGS`, `FIT_FAILED`, `RECORD_WRITE_FAILED`,
   `STALE_INPUT`) are rows, not refusals. Returns `DeformableFit`: `rows`
-  (call order), `fitted` (each row with its fit and record), `traced` (per
+  (call order, `deformable_rows.DeformableRow`: the `AppliedFit` or the
+  refusal; `deformable_row_to_json` is its reply), `fitted` (each row with its fit and record), `traced` (per
   traced section, the image read and the trace's lines on the fit grid),
-  `written`; with `options=`, `pictures(...)` draws each fit (the final
-  borders on the image it read, titled with the settings) and each traced
-  section's trace (`pictures`, `traces`, `render_failed`, each drawn row's
-  `image_indexes`). Its callers: `fireants_syn` and `traces.land_trace`. The
+  `written`. `fit_pictures.draw_fits(workspace, done, options)` then draws
+  each fit (the final borders on the image it read, titled with the
+  settings) and each traced section's trace (`pictures`, `traces`,
+  `render_failed`, each drawn row's `image_indexes`). Its callers:
+  `fireants_syn` and `traces.land_trace`. The
   engine runs inside `core.fits.engine_log.engine_output(job.engine_log)` (what
   it prints goes to `logs/engine.log`); a fit's ok row (not a cached one)
   carries `gpu_rows(record.engine)`: `gpu_wait_s` from `GPU_WAIT_SHOWN_S` of
@@ -329,7 +415,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `sections/<stem>/deformable/<key>`) and the section's `deformation` holds
   its path relative to the job folder; each step names its `method`
   (`fireants_syn`, or `trace_borders` for a traced fit; a step saved before
-  steps named it has none, `job.registrations.made_by` reads it) and the
+  steps named it has none, `job.history.guessed_maker` reads it) and the
   choice's settings, a stain fit's `metric`, `edges` and `detail` too; a
   fit's `FIT_FAILED` row says the error's first line and appends the whole
   error to `logs/engine.log` (`core.fits.engine_log.failure_message`, as
@@ -344,15 +430,24 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   images (`core.atlas.images`; `nissl` resolves per atlas) with a named section
   mask, on top of the applied deformation
   (undo is how to start over); *restrict_to*
-  checked against the atlas (`region_entries`); refused, nothing done:
+  checked against the atlas (`fit_regions.region_entries`); refused, nothing done:
   `ENGINE_MISSING` (`refuse_without_engine`: FireANTs and torch must import, `engine_ready`),
   `BAD_ARGS` (no sections, an unknown
   atlas image, metric, detail or smoothness, a malformed region list;
   more than `MAX_FIREANTS_SYN_SECTIONS` (20, every fitted section held in
   memory until the call's one write, `SECTION_CAP_REASON`) is the tool door's
   `TOO_MANY_SECTIONS`),
-  `UNKNOWN_IMAGE`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
-  `warp_from_map(job, workspace, section, native_xy, method=, step=,
+  `UNKNOWN_IMAGE`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`;
+  its tool `fireants_syn_tool` (the section cap, the reply, the picture).
+  `nothing_fitted(rows)` is the top-level error of a fit tool that fitted
+  nothing; `check_atlas_image` the atlas-image check both fit tools make.
+- `deformable_rows.py` — `DeformableRow` (one section's answer from
+  `fit_deformable`: its `settings`, a traced fit's `trace_regions`, the
+  `AppliedFit` (engine numbers, summary, runtime, cache, GPU queue, the
+  `inputs` / `estimated` blocks) or the `Refused`, `steps`,
+  `image_indexes`) and `deformable_row_to_json`, its one conversion to a
+  reply row (`fireants_syn`'s `results`, a landed trace's `row`).
+- `warps.py` — `warp_from_map(job, workspace, section, native_xy, method=, step=,
   provenance=, weights=, start=, settings=, engine_settings=, engine_version=)`:
   a deformation made elsewhere (a tool plugin's), given as the
   full map from the fit grid's pixel centres to native atlas pixels, built as
@@ -363,14 +458,15 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   the section's applied deformation, which becomes the record's `parent` (its
   `step` one more) and whose key the section must still hold. The step carries
   *settings* (the call's, by the tool's names). Refused: `UNKNOWN_SLICE_IDS`,
-  `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
+  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
   deformation), `DEFORMATION_UNREADABLE`.
   `apply_warps(job, warps)`: writes them as ONE undo step under the job's
   lock, each replacing the section's deformation (step `start` `linear`) or,
   with a `parent_key`, keeping its steps before its own (`start` `current`);
   per row `FROZEN`, `STALE_INPUT` (the placement is not the one the warp was
   built on, or the section no longer holds its parent), `RECORD_WRITE_FAILED`.
-  Returns `WarpsApplied`.
+  Returns `WarpsApplied` (a `WarpApplied` per warp: its numbers or its
+  refusal).
   `fit_record(job, workspace, section, settings, start="linear"|"current",
   mask=, em=True, marked=True, section_image="preprocessed")`: one FireANTs
   stain fit with a `FitSettings` of the caller's own on that section image
@@ -378,10 +474,11 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   written nowhere (a script's `job.context.fit_fireants`): the record;
   `mask` through `core.fits.deformable.fit.with_section_mask`, `em` False runs
   once, `marked` adds the section's marked regions to `exclude`. Refused:
-  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `INVALID_LINEAR_PLACEMENT`,
-  `FIT_FAILED`.
+  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `NO_POSITION`,
+  `INVALID_LINEAR_PLACEMENT`, `FIT_FAILED`.
 
-- `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
+- `traces.py` — (the tool's body: `trace_borders_tool`, the run's image
+  model and picture size) `trace_borders(job, workspace, ref, image_model=, prompt=,
   restrict_to=, options=, workers=)`: LangSlice's own
   nonlinear method packaged. It starts the section's image correction (below)
   and a piece of background work (`Job.background`, kind `TRACE_WORK`
@@ -413,22 +510,31 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   nothing and fits nothing again (`TraceStarted.landed`). A call already
   running at that geometry is not started again (`running`); otherwise the
   call runs on the job's image executor and the section's
-  `image_correction` record is written as one undo step when it changed.
+  `border_trace` record is written as one undo step when it changed.
   Prepared outside the lock, started and written under it. Refused:
-  `UNKNOWN_SLICE_IDS`, `FROZEN` (the section's deformation is frozen),
-  `INVALID_LINEAR_PLACEMENT`,
-  `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
+  `UNKNOWN_SLICE_IDS`, `SECTION_BUSY` (other background work runs on the
+  section), `FROZEN` (the section's deformation is frozen),
+  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` (no usable transform; a refusal
+  raised while the trace is prepared, such as `NO_SIDES` or `BAD_ARGS` for
+  regions that leave nothing on the plane, keeps its own code),
+  `BORDER_TRACE_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
+- `fit_regions.py` — `region_entries(workspace, state, entries)`: a call's
+  `restrict_to` (or `exclude`) checked against the atlas and normalized
+  (`BAD_ARGS`, `UNKNOWN_REGIONS`, `NO_SIDES`), for every fit tool and a
+  script's fit; `region_box` (the regions' bounding box on a section's
+  canvas, with `BOX_MARGIN`) and `zoom_window` (that box as a restricted
+  fit's picture zoom, only past `MIN_ZOOM_GAIN`).
 - `stale.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
   position, plane, angles, flip, rotation, transform; its made images'
   digests, so an image made again while a long verb runs makes it stale;
   damage: marked regions and a mark naming none; with `deformation` the applied deformation's key, with `trace`
-  its image correction), `STALE_INPUT`, `stale_row`.
-- `atlas.py` — `grep_atlas(job, workspace, query="", section="", points=())`: with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
+  its image correction); `stale_refusal()`, `STALE_INPUT`.
+- `atlas.py` — `search_regions(job, workspace, query="", section="", points=())` (the tool `grep_atlas`): with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
   hierarchy searched like text (`core/atlas/search.py`), with `in_section`
-  per row for a placed section. `grep_atlas_view(job, workspace, regions,
-  positions_mm)`: the atlas template at each position (clamped into the
+  per row for a placed section. `draw_regions(job, workspace, regions,
+  positions_mm)` (the tool `grep_atlas_view`): the atlas template at each position (clamped into the
   range) at the stack's view angles with the named regions' borders
   highlighted (`"CTX:left"` allowed; no other borders), saved like a
   `look` picture (so it can be zoomed: it registers its recipe renderer
@@ -436,11 +542,14 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   (`pictures`, `entries`, `not_shown`, `regions`, `regions_not_in_plane`,
   `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
   `NO_SIDES`.
-- `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
-  images=, atlas_layers=, atlas_opacity=, warp="applied", resolution=,
-  plugin_layers=, depth=6, masks=, registrations=, sheet_edge=)` and
-  `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
-  save their own pictures (`save_pictures`: `job.views.save` with the note's
+- `look.py` — `look_tool(run, mode, sections, images, ...)`, the tool:
+  it builds the `core.pictures.look.LookRequest` from the model's
+  arguments (section filenames as named, `long_edge` the `resolution` asked
+  for, held by `requested_edge`: read only at image resolution `auto`), and
+  `look_pictures(job, workspace, request, registrations=, sheet_edge=)`
+  checks it and draws; `zoom.py` — `zoom_tool(run, box, picture, region=)`,
+  the tool, over `zoom_picture(job, workspace, box=(), picture=None,
+  region="")`. Both save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
   (`Looked`, `Zoomed`) carries `pictures` (PIL) and `entries`
   `[{"id", "caption"}]`, and the door must not save them again. `look` shows
@@ -474,9 +583,9 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `NO_PICTURE`, `UNKNOWN_PICTURE`, `PICTURE_NOT_SAVED` (no saved image to
   crop, or a dry run's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_IMAGE`,
-  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`,
   `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
-  `plugin_layers` names the layers tool plugins left (`"all"`: every one) to
+  `layers` names the layers tool plugins left (`"all"`: every one) to
   draw on `section` and `overlay` pictures (`BAD_ARGS` in another mode);
   `Looked.layers` says per picture which were drawn. `show_result(job, workspace, tool,
   mode, sections, positions_mm=, zooms=, masks=, images=)`: the picture a change tool shows
@@ -485,7 +594,9 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   name (numbered, captioned, zoomable); at most `Job.picture_cap` shown (None:
   all), the rest `not_shown` with the `look` call that draws them, a failed picture
   `failed` (the write stands).
-- `status.py` — `status(job)` (`StackStatus`: the status rows (each with its
+- `status.py` — `status_tool(run)`, the tool (the rows, `raw_channels`,
+  `section_images`, `background_running`, `can_change`), and
+  `stack_status(job)` (`StackStatus`: the status rows (each with its
   `transform`, kind and knobs, and `deformation`, method, steps and settings:
   `core.stack.status`), angles,
   breaks as the filenames of the sections after each gap,
@@ -519,8 +630,9 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `ToolDef.writes`, is off: `JobSpec.switched_off`). A
   tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
   `interactive_transform:flip` and `:rotate` are the options) is off in every
-  run: the operations refuse a disabled `look` mode and a changed quarter
-  turn (`OPTION_OFF`) and a changed flip (`FLIP_DISABLED`).
+  run: the operations refuse a disabled `look` mode, a changed quarter turn
+  and a changed flip (`OPTION_OFF`; `look`'s names the mode in `option`,
+  `interactive_transform`'s row names the argument in its `message`).
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the
@@ -543,7 +655,8 @@ the job folder through one hook (`Job.views.shown`, `src/langslice/job/`).
 
 ## Landmark verbs
 
-`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=)` atomically
+`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=)`
+(returns `LandmarksEdited`, whose `reply()` is the tool's answer) atomically
 adds/updates/deletes stable corresponding pairs, ONE undo step for the batch,
 and applies no deformation. It resolves the exact saved picture recipe and
 explicit atlas/section roles; it refuses captions, gutters, out-of-image
@@ -553,7 +666,8 @@ atlas endpoint outside the atlas (`_refuse_outside`: `ATLAS_ENDPOINT_OUTSIDE`,
 atlas at least `INSIDE_MARGIN_PX` from its outline, in the numbers the
 endpoint was given in). Section endpoints are
 original-image edge fractions; atlas endpoints are native plane pixels.
-`landmark_triangulation(job, workspace, section)` explicitly applies the full
+`landmark_warp.py`: `landmark_triangulation(job, workspace, section)` (returns
+`LandmarksApplied`, whose `reply()` is the tool's answer) explicitly applies the full
 set, at least three pairs, on its written linear placement. The first application
 composes onto the current deformation via its stored inverse. Consecutive
 landmark applications replace the landmark method against that original
@@ -583,7 +697,7 @@ and with no pairs and no delete writes nothing; the apply reply lists
 `built_from` and says which displacement figure is the whole deformation; `delete=["all"]` clears the section.
 `history.undo/redo` report `step` (`describe_step`: the sections touched
 and the changed field groups). `look.show_result` takes
-`resolution`; `zoom.zoom`'s entries carry `content_box` and `covers` (the whole
+`resolution`; `zoom.zoom_picture`'s entries carry `content_box` and `covers` (the whole
 picture's pixels a zoom shows). Every zoom carries a coordinate grid
 (`core/pictures/grid.py`) labelled in the whole picture's pixels; on a zoom,
 `zoom`'s box and `set_landmarks` endpoints are read in those numbers

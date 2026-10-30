@@ -37,12 +37,13 @@ from tests.synthetic_stack import (
 
 def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
     """``tools.deformable.fit_deformable`` with one FireANTs setting, applied, its
-    pictures (a deformable-fit picture, with the residual layer) saved as a
+    pictures (a deformable-fit picture, its frame naming its record) saved as a
     door saves a tool's pictures (``Job.views.shown``), under the tool whose
     landing draws them: ``trace_borders``."""
     from langslice.core.fits import deformation
     from langslice.core.pictures.options import default_options
     from langslice.tools.deformable import fit_deformable
+    from langslice.tools.fit_pictures import draw_fits
 
     choice = deformation.Choice(fit_section="preprocessed", fit_atlas="template",
                                 smoothness_um=80.0)
@@ -50,8 +51,8 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
                else default_options("overlay", long_edge=long_edge))
     job, workspace = handle.job, handle.workspace
     with job.views.shown("trace_borders", atlas_of=lambda: workspace.atlas) as shown:
-        done = fit_deformable(job, workspace, [job.state.by_id(name) for name in ids],
-                              choice, options=options)
+        done = draw_fits(workspace, fit_deformable(
+            job, workspace, [job.state.by_id(name) for name in ids], choice), options)
         shown.show(list(done.pictures), arguments={"slices": ids})
     job.views.flush()
     return done
@@ -89,7 +90,7 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     # A picture smaller than the fit grid, so the residual is resampled (the
     # fit is a second step on top of the first).
     again = _fit_and_draw(job, [ID0], long_edge=160)
-    assert again.rows[0]["status"] == "ok" and again.written == [ID0]
+    assert again.rows[0].refusal is None and again.written == [ID0]
     exported = job.export_maps()
     job.close()
     yield job, Path(job.folder), exported
@@ -227,9 +228,9 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
 
 
 def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
-    """A deformable-fit picture's coordinate map (its residual layer
-    included) and the section's own composed map agree, up to resampling
-    the field at the picture's size."""
+    """A deformable-fit picture's coordinate map (its residual drawn again
+    from the record its frame names) and the section's own composed map
+    agree, up to resampling the field at the picture's size."""
     from langslice.core.geometry.affine import pixel_center_map
     from langslice.core.maps.section_maps import (
         native_points,
@@ -244,11 +245,13 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     current = job.job.deformations.current(job.state, record)
     frame = section_frame(job.state, job.workspace, record)
     folders = _views(root, "trace_borders")
-    assert folders and all((folder / "residual.tif").exists() for folder in folders)
+    # No copy of the field beside the picture: the frame names the record.
+    assert folders and not any((folder / "residual.tif").exists() for folder in folders)
     # The first picture shows the first fit, the second the step on top of it.
     assert len(folders) == 2 and current.parent is not None
     for folder, warp in zip(folders, (current.parent, current), strict=True):
         picture = json.loads((folder / "view.json").read_text())["frame"]
+        assert (root / picture["deformation"]).name == warp.saved_as
         x0, band, x1, y1 = picture["content_box"]
         rows, cols = _content_pixels(folder)
         grid = pixel_center_map((x1 - x0, y1 - band), tuple(warp.section_size))

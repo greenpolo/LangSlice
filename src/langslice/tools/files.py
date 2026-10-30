@@ -1,11 +1,15 @@
-"""Read-only access to the job folder for an agent that has no shell of its own.
+"""Read-only access to the job folder, for an agent with no shell of its own.
 
-Three functions modelled on a coding agent's file tools: :func:`list_files`,
-:func:`search_files` and :func:`read_file`. Every path is relative to the job
-folder and kept inside it (:mod:`langslice.job.browse`); a path that leaves it
-is refused (``BAD_PATH``), and one that does not exist is ``NOT_FOUND``, whose
-message names the nearest folder above it that exists and what it holds.
-Each answers a small record whose ``text`` is the model-facing reply, capped
+Three tools modelled on a coding agent's file tools:
+:func:`list_files_tool`, :func:`search_files_tool` and
+:func:`read_file_tool`, each over its operation on the job
+(:func:`list_folder`, :func:`search_folder`, :func:`read_folder_file`).
+Every picture shown so far is written and indexed before each runs. Every
+path is relative to the job folder and kept inside it
+(:mod:`langslice.job.browse`); a path that leaves it is refused
+(``BAD_PATH``), and one that does not exist is ``NOT_FOUND``, whose message
+names the nearest folder above it that exists and what it holds. Each
+operation answers a small record whose ``text`` is the model-facing reply, capped
 (``browse.LIST_ENTRIES``, ``SEARCH_MATCHES``, ``READ_LINES``, ``TEXT_BYTES``)
 with a line saying what was left out.
 
@@ -39,11 +43,12 @@ from langslice.job.settings.needs import render
 if TYPE_CHECKING:
     from langslice.job.job import Job
     from langslice.job.pictures import PictureRecord
+    from langslice.tools.run import Run
 
 
 @dataclass(frozen=True)
 class Listing:
-    """The items of :func:`list_files`; ``text`` is the reply."""
+    """The items of :func:`list_folder`; ``text`` is the reply."""
 
     path: str
     entries: tuple[browse.Entry, ...]
@@ -53,7 +58,7 @@ class Listing:
 
 @dataclass(frozen=True)
 class Found:
-    """The matches of :func:`search_files`; ``text`` is the reply."""
+    """The matches of :func:`search_folder`; ``text`` is the reply."""
 
     matches: tuple[str, ...]
     hidden: int
@@ -63,7 +68,7 @@ class Found:
 
 @dataclass(frozen=True)
 class FileText:
-    """What :func:`read_file` answers; ``text`` is the reply.
+    """What :func:`read_folder_file` answers; ``text`` is the reply.
 
     ``kind`` is ``text``, ``picture`` or ``binary``; ``picture`` is the number
     of the indexed picture a picture file belongs to (None when it has none).
@@ -78,6 +83,88 @@ class FileText:
     picture: int | None = None
 
 
+def list_files_tool(run: Run, path: str, glob: str) -> dict[str, object]:
+    """List a folder of the job; return the ``list_files`` reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    path, glob
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
+
+    Returns
+    -------
+    dict
+        ``status`` and the listing's ``text``.
+    """
+    run.job.views.flush()  # every picture shown so far is on disk and indexed
+    done = list_folder(run.job, str(path or "."), str(glob or ""))
+    return {"status": "ok", "text": done.text}
+
+
+def search_files_tool(
+    run: Run, query: str, path: str, glob: str
+) -> dict[str, object]:
+    """Search the job's text files; return the ``search_files`` reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    query, path, glob
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
+
+    Returns
+    -------
+    dict
+        ``status`` and the matches' ``text``.
+    """
+    run.job.views.flush()
+    done = search_folder(
+        run.job, str(query or ""), str(path or "."), str(glob or "")
+    )
+    return {"status": "ok", "text": done.text}
+
+
+def read_file_tool(
+    run: Run, path: str, offset: int, limit: int
+) -> dict[str, object]:
+    """Read a file of the job; return the ``read_file`` reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    path, offset, limit
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
+
+    Returns
+    -------
+    dict
+        ``status``, the ``text`` and, for a picture file, its ``picture``
+        number.
+    """
+    run.job.views.flush()
+    try:
+        done = read_folder_file(
+            run.job, str(path or ""), int(offset or 0), int(limit or 400)
+        )
+    except Refused:
+        raise
+    except (TypeError, ValueError):
+        raise Refused(
+            RefusalCode.BAD_ARGS, "offset and limit are whole numbers."
+        ) from None
+    reply: dict[str, object] = {"status": "ok", "text": done.text}
+    if done.picture is not None:
+        reply["picture"] = done.picture
+    return reply
+
+
 def _folder(job: Job) -> Path:
     return job.layout.folder
 
@@ -90,7 +177,7 @@ def _size(size: int) -> str:
     return f"{size / 1_000_000:.1f} MB"
 
 
-def list_files(job: Job, path: str = ".", glob: str = "") -> Listing:
+def list_folder(job: Job, path: str = ".", glob: str = "") -> Listing:
     """The files and folders at *path* (folders first), each with its kind and size.
 
     With a *glob* (``*.json``, ``views/*``; ``*`` is every file), every file
@@ -110,7 +197,7 @@ def list_files(job: Job, path: str = ".", glob: str = "") -> Listing:
     return Listing(shown, tuple(entries), hidden, "\n".join([head, *rows]))
 
 
-def search_files(job: Job, query: str, path: str = ".", glob: str = "") -> Found:
+def search_folder(job: Job, query: str, path: str = ".", glob: str = "") -> Found:
     """Lines matching *query* (a regular expression, or plain text when it is not
     one; upper and lower case alike) in the text files under *path*.
 
@@ -211,7 +298,9 @@ def _dimensions(real: Path) -> str:
         return "an image"
 
 
-def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LINES) -> FileText:
+def read_folder_file(
+    job: Job, path: str, offset: int = 0, limit: int = browse.READ_LINES
+) -> FileText:
     """A text file with line numbers, *limit* lines from line *offset* + 1.
 
     The reply says which lines it shows, the file's line count and, when lines
@@ -259,4 +348,3 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
     if more:
         rows.append(f"... {total - last} more line(s); continue with offset={last}")
     return FileText(shown, kind, "\n".join(rows), first, last, total)
-

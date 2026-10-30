@@ -1,9 +1,31 @@
 """Checked reads of JSON values, for the stack's JSON form.
 
-Each function reads one value out of a JSON object and checks its type;
-a value of the wrong type is a ``ValueError`` naming its key. Numbers
-are returned as stored (an int stays an int), so a value read and
+Each reader takes a JSON object and a key and returns the value the object
+holds under that key, checked: a missing value, or one of another type, is
+a ``ValueError`` naming the key, the type wanted and the value found.
+Numbers come back as stored (an int stays an int), so a value read and
 written back is the same JSON.
+
+==================  =====================================================
+Reader              The value under the key
+==================  =====================================================
+``text_at``         text
+``flag_at``         true or false
+``integer_at``      a whole number (a boolean is not one)
+``number_at``       a number (a boolean is not one)
+``list_at``         a list (text is not one)
+``numbers_at``      a list of numbers
+``point_at``        two numbers, ``[x, y]``
+``texts_at``        a list of texts
+``object_at``       an object
+``objects_at``      a list of objects
+``text_map_at``     an object of texts
+==================  =====================================================
+
+``optional_at`` reads with any of them and gives None for an absent key;
+``as_number`` and ``as_object`` check a value already read. ``other_keys``
+and ``set_items`` serve the writing side: the keys a shape does not
+declare, kept to be written back, and the items whose value is set.
 """
 
 from __future__ import annotations
@@ -16,23 +38,7 @@ from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
 _T = TypeVar("_T")
 
 
-def wrong_type(key: str, expected: str, value: Json) -> ValueError:
-    """Return the error for a key that holds a value of the wrong type.
-
-    Parameters
-    ----------
-    key
-        The key that was read.
-    expected
-        What the key should hold, in words ("text", "a number").
-    value
-        What it holds.
-
-    Returns
-    -------
-    ValueError
-        The error, naming the key, the type and the value.
-    """
+def _wrong_type(key: str, expected: str, value: Json) -> ValueError:
     return ValueError(f"{key} must be {expected}, not {value!r}")
 
 
@@ -41,24 +47,16 @@ def text_at(data: JsonObject, key: str) -> str:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is text.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     str
-        The text.
-
-    Raises
-    ------
-    ValueError
-        When the value is missing or not text.
     """
     value = data.get(key)
     if not isinstance(value, str):
-        raise wrong_type(key, "text", value)
+        raise _wrong_type(key, "text", value)
     return value
 
 
@@ -69,17 +67,14 @@ def optional_at(
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key, which may be absent.
+    data, key
+        The JSON object and the key read from it, which may be absent.
     read
         One of this module's readers, such as :func:`text_at`.
 
     Returns
     -------
     object or None
-        What *read* returns, or None without the key.
     """
     if key not in data:
         return None
@@ -91,24 +86,16 @@ def flag_at(data: JsonObject, key: str) -> bool:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is true or false.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     bool
-        The value.
-
-    Raises
-    ------
-    ValueError
-        When the value is missing or not a boolean.
     """
     value = data.get(key)
     if not isinstance(value, bool):
-        raise wrong_type(key, "true or false", value)
+        raise _wrong_type(key, "true or false", value)
     return value
 
 
@@ -117,49 +104,35 @@ def integer_at(data: JsonObject, key: str) -> int:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is a whole number.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     int
-        The number.
-
-    Raises
-    ------
-    ValueError
-        When the value is missing or not a whole number.
     """
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise wrong_type(key, "a whole number", value)
+        raise _wrong_type(key, "a whole number", value)
     return value
 
 
 def as_number(key: str, value: Json) -> float:
-    """Return a value that must be a number, as stored.
+    """Return a value already read that must be a number, as stored.
 
     Parameters
     ----------
     key
-        The key the value was read under, for the error.
+        The key the value was read under, named in the error.
     value
         The value read, of any JSON type.
 
     Returns
     -------
     float
-        The number; an int stays an int.
-
-    Raises
-    ------
-    ValueError
-        When the value is not a number.
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise wrong_type(key, "a number", value)
+        raise _wrong_type(key, "a number", value)
     return value
 
 
@@ -168,15 +141,12 @@ def number_at(data: JsonObject, key: str) -> float:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is a number.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     float
-        The number; an int stays an int.
     """
     return as_number(key, data.get(key))
 
@@ -186,68 +156,49 @@ def list_at(data: JsonObject, key: str) -> Sequence[Json]:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is a list.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     sequence
-        The list's items.
-
-    Raises
-    ------
-    ValueError
-        When the value is missing or not a list.
     """
     value = data.get(key)
     if isinstance(value, str) or not isinstance(value, Sequence):
-        raise wrong_type(key, "a list", value)
+        raise _wrong_type(key, "a list", value)
     return value
 
 
 def numbers_at(data: JsonObject, key: str) -> tuple[float, ...]:
-    """Return the list of numbers an object holds under a key.
+    """Return the list of numbers an object holds under a key, as stored.
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is a list of numbers.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     tuple of float
-        The numbers, as stored.
     """
     return tuple(as_number(key, item) for item in list_at(data, key))
 
 
 def point_at(data: JsonObject, key: str) -> tuple[float, float]:
-    """Return the ``[x, y]`` an object holds under a key.
+    """Return the ``[x, y]`` an object holds under a key, as stored.
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is two numbers.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     tuple of float
-        ``(x, y)``, as stored.
-
-    Raises
-    ------
-    ValueError
-        When the value is not two numbers.
     """
     values = numbers_at(data, key)
     if len(values) != 2:
-        raise wrong_type(key, "two numbers", data.get(key))
+        raise _wrong_type(key, "two numbers", data.get(key))
     return values[0], values[1]
 
 
@@ -256,51 +207,37 @@ def texts_at(data: JsonObject, key: str) -> tuple[str, ...]:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is a list of texts.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     tuple of str
-        The texts.
-
-    Raises
-    ------
-    ValueError
-        When the value is not a list of texts.
     """
     texts: list[str] = []
     for item in list_at(data, key):
         if not isinstance(item, str):
-            raise wrong_type(key, "a list of texts", data.get(key))
+            raise _wrong_type(key, "a list of texts", data.get(key))
         texts.append(item)
     return tuple(texts)
 
 
 def as_object(key: str, value: Json) -> JsonObject:
-    """Return a value that must be a JSON object.
+    """Return a value already read that must be a JSON object.
 
     Parameters
     ----------
     key
-        The key the value was read under, for the error.
+        The key the value was read under, named in the error.
     value
         The value read, of any JSON type.
 
     Returns
     -------
     JsonObject
-        The object.
-
-    Raises
-    ------
-    ValueError
-        When the value is not an object.
     """
     if not isinstance(value, Mapping):
-        raise wrong_type(key, "an object", value)
+        raise _wrong_type(key, "an object", value)
     return value
 
 
@@ -309,15 +246,12 @@ def object_at(data: JsonObject, key: str) -> JsonObject:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is an object.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     JsonObject
-        The object.
     """
     return as_object(key, data.get(key))
 
@@ -327,15 +261,12 @@ def objects_at(data: JsonObject, key: str) -> tuple[JsonObject, ...]:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value is a list of objects.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     tuple of JsonObject
-        The objects.
     """
     return tuple(as_object(key, item) for item in list_at(data, key))
 
@@ -345,25 +276,18 @@ def text_map_at(data: JsonObject, key: str) -> dict[str, str]:
 
     Parameters
     ----------
-    data
-        The JSON object read.
-    key
-        The key whose value maps names to texts.
+    data, key
+        The JSON object and the key read from it.
 
     Returns
     -------
     dict
         Each name and its text.
-
-    Raises
-    ------
-    ValueError
-        When a value is not text.
     """
     texts: dict[str, str] = {}
     for name, value in object_at(data, key).items():
         if not isinstance(value, str):
-            raise wrong_type(key, "an object of texts", value)
+            raise _wrong_type(key, "an object of texts", value)
         texts[name] = value
     return texts
 

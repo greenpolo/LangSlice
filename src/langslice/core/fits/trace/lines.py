@@ -1,9 +1,9 @@
 """The yellow lines of a border trace: drawn onto a section, and read back off a reply.
 
 :func:`smooth_border_overlay` draws a placed atlas plane's region borders on
-the section (route "supplied"'s Image 1 or 2), :func:`border_overlay` draws a
-line mask on it, and :func:`extract_thinned_lines` reads the model's yellow
-lines off a raw reply onto the canvas. Nothing here calls a model or fits
+the section (route "supplied"'s Image 1 or 2), and
+:func:`extract_thinned_lines` reads the model's yellow lines off a raw reply
+onto the canvas. Nothing here calls a model or fits
 anything; the fit of the lines is ``fit_deformable``'s
 (:mod:`langslice.core.fits.deformation`).
 """
@@ -17,7 +17,6 @@ from PIL import Image
 from langslice.core.atlas.borders import placed_border_coverage
 
 __all__ = [
-    "border_overlay",
     "extract_thinned_lines",
     "smooth_border_overlay",
     "thin",
@@ -91,16 +90,6 @@ def smooth_border_overlay(
     alpha = coverage[..., None]
     blended = base * (1.0 - alpha) + np.array([255.0, 255.0, 0.0]) * alpha
     return Image.fromarray(np.rint(blended).astype(np.uint8))
-
-
-def border_overlay(image: Image.Image, mask: np.ndarray, width: int = 1) -> Image.Image:
-    """Replace only boundary pixels on the original photograph."""
-    pixels = np.array(image.convert("RGB"))
-    drawn = np.asarray(mask, dtype=bool)
-    if width > 1:
-        drawn = cv2.dilate(drawn.astype(np.uint8), np.ones((width, width), np.uint8)) > 0
-    pixels[drawn] = (255, 255, 0)
-    return Image.fromarray(pixels)
 
 
 def extract_thinned_lines(raw: Image.Image, canvas_size: tuple[int, int]) -> np.ndarray:

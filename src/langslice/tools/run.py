@@ -1,9 +1,10 @@
 """What every tool body of one run shares: the job, the workspace, the run's settings.
 
-The tool bodies are closures over one :class:`Door`: the job and the workspace
-they work on, the toolbox's door-side record, the run's picture size, the image
-model, and the small helpers every body words its reply with (the status rows a
-write changed, a section list resolved, a refusal as a payload).
+Every tool body works over one :class:`Run`: the job and the workspace
+they work on, the toolbox, the run's picture size, the image model, and the
+small helpers every body words its reply with (the status rows a write
+changed, a section list resolved). A run sits behind one door (the way in:
+the built-in agent, MCP, the agent CLI, the library).
 """
 
 from __future__ import annotations
@@ -20,13 +21,13 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import compact_rows
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import status as ops_views
-from langslice.tools.look import Looked
+from langslice.tools.status import stack_status
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
+    from langslice.core.fits.trace.request import ImageModel
     from langslice.doors.agent.engine import EngineContext
-    from langslice.doors.tools.toolbox import ToolBox
-    from langslice.providers.connections import ImageModel
+    from langslice.tools.look import Looked
+    from langslice.tools.pipeline import ToolBox
 
 #: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a
 #: picture (captioned PIL image) or a line of text, in reading order.
@@ -34,11 +35,11 @@ Media = Image.Image | str
 
 
 @dataclass
-class Door:
-    """One run's tool door, as every tool body sees it."""
+class Run:
+    """One run, as every tool body sees it."""
 
     job: Job
-    ctx: EngineContext
+    workspace: EngineContext
     spec: JobSpec
     box: ToolBox
     #: The picture-size level the tools work at (``core.pictures.sizes``).
@@ -51,11 +52,27 @@ class Door:
     def state(self) -> Stack:
         return self.job.state
 
+    def shows(self, view: bool) -> bool:
+        """Return whether a change tool answers with its picture.
+
+        Parameters
+        ----------
+        view
+            The call's ``view`` argument.
+
+        Returns
+        -------
+        bool
+            *view*, or True where the host forces the picture
+            (``JobSpec.force_view``).
+        """
+        return bool(view) or bool(self.spec.force_view)
+
     # --- the status rows -------------------------------------------------------
 
     def rows(self) -> dict[str, Any]:
         """The whole status table, the cutting angles and the interval breaks."""
-        table = ops_views.status(self.job)
+        table = stack_status(self.job)
         return {"rows": compact_rows(table.rows),
                 "cutting_angles_deg": table.cutting_angles_deg,
                 "interval_breaks": table.interval_breaks}
@@ -64,7 +81,7 @@ class Door:
         """The status rows of the sections a write touched, and nothing else
         (``status`` is the whole table, one call away)."""
         wanted = set(touched)
-        table = ops_views.status(self.job)
+        table = stack_status(self.job)
         return {"changed": compact_rows([row for row in table.rows if row["id"] in wanted]),
                 "n_sections": len(self.state.slices),
                 "cutting_angles_deg": table.cutting_angles_deg,
@@ -128,4 +145,4 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
-__all__ = ["Door", "Media", "as_list", "pictured"]
+__all__ = ["Media", "Run", "as_list", "drawn_image", "pictured", "spread"]

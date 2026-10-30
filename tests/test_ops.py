@@ -11,14 +11,16 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.fits.affine import FittedAffine
 from langslice.core.refusal import Refused
+from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.codec import affine_to_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import damage, notes, positions, transforms
+from langslice.tools import affine_fit, damage, notes, positions, transforms
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -106,10 +108,10 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     assert not transforms.same_transform(None, record)
     assert transforms.same_transform(replace(record, note="other"), record)
 
-    fitted = transforms.fit_transform(
-        {"params": [1, 0, 0, 0, 1, 0], "physical": {},
-                    "calibration": {"section_um_per_px": 1.0, "source": "host"},
-                    "mirrored": False},
+    fitted = affine_fit.fit_transform(
+        FittedAffine(position_mm=1.0, params=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+                     physical=PhysicalAffine(), mirrored=False,
+                     calibration=Calibration(section_um_per_px=1.0, source="host")),
         exclude=["HY"], fit_atlas="nissl")
     assert affine_to_json(fitted)["regions"] == {"include": [], "exclude": ["HY"]}
     assert fitted.fit_atlas == "nissl"

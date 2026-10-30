@@ -2,7 +2,7 @@
 
 Different image models need different prompts, so the trace's model and its
 prompt travel together as one
-:class:`~langslice.providers.connections.ImageModel` (its ``prompt``,
+:class:`~langslice.core.fits.trace.request.ImageModel` (its ``prompt``,
 ``photograph_first``, ``profile`` and ``tested`` fields).
 
 - A built-in profile is a provider's own model with LangSlice's prompt for it
@@ -28,16 +28,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.connections import CUSTOM_PROVIDER, canonical_provider
+from langslice.core.fits.trace.request import ImageModel
 from langslice.providers.connections import (
     CANONICAL_PROVIDERS,
-    ImageModel,
     resolve_image_model,
 )
 
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import (
+        BorderTraceRequest,
         GeneratedSegmentation,
-        SegmentationGenerationRequest,
     )
 
 #: The name a custom profile gets when the caller gives none.
@@ -72,12 +72,12 @@ def _read_prompt(prompt: str | None, prompt_file: str | os.PathLike[str] | None)
 
 
 def _wrapped_call(function: Callable[..., Any], provider: str, model: str | None,
-                  ) -> Callable[[SegmentationGenerationRequest], GeneratedSegmentation]:
+                  ) -> Callable[[BorderTraceRequest], GeneratedSegmentation]:
     """A caller's own edit function as an ``ImageCall``: it may answer with a
     ``GeneratedSegmentation`` or with the edited picture itself (a PIL image
     or an array)."""
 
-    def call(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
+    def call(request: BorderTraceRequest) -> GeneratedSegmentation:
         from PIL import Image
 
         from langslice.core.fits.trace.request import GeneratedSegmentation
@@ -117,11 +117,11 @@ def image_model(
       with *model* the image model (None: the
       provider's default). Without *prompt* or *prompt_file* this is the
       provider's built-in profile (LangSlice's prompt; ``tested``).
-    - an :class:`~langslice.providers.connections.ImageModel`, or any object
+    - an :class:`~langslice.core.fits.trace.request.ImageModel`, or any object
       with a ``call`` attribute (and optionally ``provider`` and ``model``), or
       a plain function: the model of the caller's own. ``call(request)`` takes
       a
-      :class:`~langslice.core.fits.trace.request.SegmentationGenerationRequest`
+      :class:`~langslice.core.fits.trace.request.BorderTraceRequest`
       (``prompt``, ``slice_image`` = Image 1, ``reference_images[0]`` = Image
       2) and returns the edited image (a PIL image, an array or a
       ``GeneratedSegmentation``).

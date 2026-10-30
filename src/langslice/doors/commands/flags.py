@@ -25,9 +25,9 @@ from langslice.job.settings.tool_table import valid_names
 
 #: Which commands add a flag: ``job`` every command that opens a stack
 #: (``linear run``, ``init``, ``mcp``), ``plugins`` and ``session`` only
-#: ``linear run``, ``fresh`` ``linear run`` and ``init``, ``init`` only
+#: ``linear run``, ``resume`` ``linear run`` and ``init``, ``init`` only
 #: ``init``.
-FlagGroup = Literal["job", "plugins", "session", "fresh", "init"]
+FlagGroup = Literal["job", "plugins", "session", "resume", "init"]
 
 #: The actions of a flag that takes no value: it switches the setting.
 SWITCHES = ("store_true", "store_false")
@@ -48,7 +48,7 @@ class Flag:
     #: Which commands add it.
     group: FlagGroup = "job"
     #: The attribute it is parsed into; None: the one argparse makes of the
-    #: spelling.
+    #: spelling (the setting's name, ``.`` written ``_``).
     dest: str | None = None
     #: argparse's action; None: the value is stored. An ``append`` flag
     #: starts from an empty list.
@@ -80,16 +80,18 @@ FLAGS: dict[str, Flag] = {
     ),
     "--atlas": Flag(help="BrainGlobe atlas name"),
     "--plane": Flag(checked=True, help=PLANE_HELP),
-    "--image-provider": Flag(
+    "--nonlinear-provider": Flag(
+        metavar="PROVIDER",
         help="Image provider for the nonlinear task's trace_borders "
         "(openai-oauth, openai-api, gemini-api), or none: the nonlinear task "
         "then fits deformations to the stain alone, with no image model",
     ),
-    "--image-model": Flag(
+    "--nonlinear-image-model": Flag(
+        metavar="MODEL",
         help="Image model for the nonlinear tool; default is the provider's "
         "image model",
     ),
-    "--image-prompt": Flag(
+    "--nonlinear-image-prompt": Flag(
         metavar="FILE",
         help="A UTF-8 text file holding the base prompt trace_borders sends "
         "the image model, in place of LangSlice's own "
@@ -108,16 +110,18 @@ FLAGS: dict[str, Flag] = {
     ),
     "--preprocess": Flag(
         checked=True,
-        help="Image preprocessing for everything the agent looks at. Display "
-        "only - the image files are never modified",
+        help="How each section's preprocessed image is made: auto blends the "
+        "channels with local contrast enhancement, none takes the file as "
+        "read, in gray. It is the image the agent sees first, the one the "
+        "image model is shown, and the one every fit reads unless the agent "
+        "names another section image. The image files are never modified",
     ),
     "--image-resolution": Flag(
         checked=True,
         help="Size of the pictures the agent is shown; auto lets it choose "
         "per call",
     ),
-    "--disable": Flag(
-        dest="disabled",
+    "--disabled": Flag(
         action="append",
         metavar="NAME[,NAME...]",
         help="Tools and tool options the agent does not get, on top of what "
@@ -126,23 +130,26 @@ FLAGS: dict[str, Flag] = {
         "agent from mirroring sections). Valid names: "
         + ", ".join(valid_names()),
     ),
-    "--hemisphere-cue": Flag(
+    "--transform-hemisphere-cue": Flag(
         metavar="TEXT",
         help="What marks a hemisphere in these sections (a notch, an "
         "injection...)",
     ),
-    "--thickness": Flag(
-        type=int, help="Known section thickness in microns; omit if unknown"
-    ),
-    "--interval": Flag(
+    "--position-thickness-um": Flag(
         type=int,
+        metavar="UM",
+        help="Known section thickness in microns; omit if unknown",
+    ),
+    "--position-interval-um": Flag(
+        type=int,
+        metavar="UM",
         help="Known section interval in microns; omit to infer spacing",
     ),
-    "--strict-interval": Flag(
+    "--position-strict-interval": Flag(
         action="store_true",
         help="Sections must sit exactly one interval apart",
     ),
-    "--angles": Flag(
+    "--transform-angles": Flag(
         action="store_true", help="Let the agent set the cutting angles"
     ),
     "--pitch": Flag(type=float, help="Host-given cutting pitch, degrees"),
@@ -153,8 +160,7 @@ FLAGS: dict[str, Flag] = {
         "elsewhere): JSON file or inline mapping of filenames to "
         '{"pitch": deg, "yaw": deg}; not with --pitch/--yaw',
     ),
-    "--fact": Flag(
-        dest="facts",
+    "--facts": Flag(
         action="append",
         metavar="TEXT",
         help="A fact about this stack, passed to the agent verbatim "
@@ -172,7 +178,7 @@ FLAGS: dict[str, Flag] = {
         "transform: QuickNII or VisuAlign JSON/XML, DeepSlice CSV/JSON/XML, "
         "or a LangSlice registration.json. Not with --positions, "
         "--transforms, --orientation, --pitch/--yaw, --section-angles or "
-        "--angles. VisuAlign markers are not imported",
+        "--transform-angles. VisuAlign markers are not imported",
     ),
     "--order": Flag(
         metavar="JSON",
@@ -213,33 +219,29 @@ FLAGS: dict[str, Flag] = {
         "results) here instead of <image_folder>/langslice. A folder holding "
         "the job of another image folder is refused",
     ),
-    "--playbook": Flag(
+    "--position-playbook": Flag(
         action="store_true",
         help="Add optional positioning guidance: compare candidate planes "
         "and regions, write supported placements, revisit uncertainty and "
         "review the stack",
     ),
     "--position-notes": Flag(
-        dest="position_notes",
         metavar="TEXT",
         help="The user's notes for the position task, shown to the agent "
         "with the task (one line each; PositionSpec.notes)",
     ),
     "--transform-notes": Flag(
-        dest="transform_notes",
         metavar="TEXT",
         help="The user's notes for the transform task, shown to the agent "
         "with the task (one line each; TransformSpec.notes)",
     ),
     "--nonlinear-notes": Flag(
-        dest="nonlinear_notes",
         metavar="TEXT",
         help="The user's notes for the nonlinear task, shown to the agent "
         "with the task (one line each; NonlinearSpec.notes)",
     ),
-    "--tool-plugin": Flag(
+    "--plugins": Flag(
         group="plugins",
-        dest="tool_plugins",
         action="append",
         metavar="MODULE:FACTORY",
         help="Add the tools of a tool plugin to the agent's toolbox "
@@ -247,9 +249,8 @@ FLAGS: dict[str, Flag] = {
         "the tools. Importing it runs its code; the job records which plugin "
         "ran (docs/developers/plugins.md)",
     ),
-    "--tool-plugin-config": Flag(
+    "--plugin-config": Flag(
         group="plugins",
-        dest="tool_plugin_configs",
         action="append",
         metavar="MODULE:FACTORY=JSON",
         help="Options for a plugin's factory (repeatable): the plugin's "
@@ -271,21 +272,19 @@ FLAGS: dict[str, Flag] = {
     ),
     "--force-view": Flag(
         group="session",
-        dest="force_view",
         action="store_true",
         help="The change and fitting tools always return their picture: "
         "their view argument is not offered (JobSpec.force_view)",
     ),
-    "--require-deformation": Flag(
+    "--nonlinear-require-deformation": Flag(
         group="session",
-        dest="require_deformation",
         action="store_true",
         help="Nonlinear task: submit is refused until every section carries "
         "a deformation (NonlinearSpec.require_deformation); otherwise a "
         "deformation is the agent's choice",
     ),
-    "--fresh": Flag(
-        group="fresh",
+    "--no-resume": Flag(
+        group="resume",
         dest="resume",
         action="store_false",
         help="Ignore any existing checkpoint and start over",
@@ -351,31 +350,49 @@ def add_flags(
         if listed is None and flag.checked:
             listed = row.choices
         values = None if listed is None else list(listed)
+        dest = flag.dest or spelling.removeprefix("--").replace("-", "_")
         default = row.default if flag.table_default else None
-        if flag.action in SWITCHES:
-            parser.add_argument(
-                spelling,
-                dest=flag.dest,
-                action=flag.action,
-                default=default,
-                help=flag.help,
-            )
-        elif flag.action == "append":  # each parse appends to its own list
-            parser.add_argument(
-                spelling,
-                dest=flag.dest,
-                action=flag.action,
-                default=[],
-                metavar=flag.metavar,
-                help=flag.help,
-            )
-        else:
-            parser.add_argument(
-                spelling,
-                dest=flag.dest,
-                default=default,
-                type=flag.type,
-                choices=values,
-                metavar=flag.metavar,
-                help=flag.help,
-            )
+        _add(parser, spelling, flag, dest, default, values)
+        if spelling == row.flags[0]:
+            for alias in row.aliases:  # read, never listed, never a default
+                _add(parser, alias, flag, dest, argparse.SUPPRESS, values)
+
+
+def _add(
+    parser: argparse.ArgumentParser,
+    spelling: str,
+    flag: Flag,
+    dest: str,
+    default: object,
+    values: list[str] | None,
+) -> None:
+    """Add one spelling of a flag to *parser*, as :func:`add_flags` does.
+
+    A spelling without a default (``argparse.SUPPRESS``) has no help either.
+    """
+    hidden = default is argparse.SUPPRESS
+    text = argparse.SUPPRESS if hidden else flag.help
+    if flag.action in SWITCHES:
+        parser.add_argument(
+            spelling, dest=dest, action=flag.action, default=default, help=text
+        )
+    elif flag.action == "append":  # each parse appends to its own list
+        empty: object = default if hidden else []
+        parser.add_argument(
+            spelling,
+            dest=dest,
+            action=flag.action,
+            default=empty,
+            metavar=flag.metavar,
+            help=text,
+        )
+    else:
+        parser.add_argument(
+            spelling,
+            dest=dest,
+            default=default,
+            type=flag.type,
+            choices=values,
+            metavar=flag.metavar,
+            help=text,
+        )

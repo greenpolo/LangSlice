@@ -18,11 +18,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import langslice
+from langslice.core.jsonable import JsonObject
 from langslice.job.layout import JobLayout, read_job_file
+from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.needs import render
+from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import TOOLS
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.render import summary
@@ -49,12 +52,14 @@ def limits_note(limits: Mapping[str, int]) -> str:
                                     for what, most in limits.items()) + " per call"
 
 
-def job_spec(layout: JobLayout) -> Any:
+def job_spec(layout: JobLayout) -> JobSpec:
     """The job's settings as ``job.json`` holds them (the tool plugins it
     names loaded)."""
-    from langslice.job.settings.spec import JobSpec
-
-    return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {})
+    record = read_job_file(layout) or {}
+    # reportUnknownVariableType: job.json's settings, a JSON object
+    saved = cast("JsonObject", record.get("spec") or {})
+    kept, _removed = without_removed_settings(saved)  # the open logs them
+    return JobSpec.from_dict(kept)
 
 
 def off_names(spec: Any) -> list[str]:
@@ -92,9 +97,9 @@ def card_text(layout: JobLayout) -> str:
     run = set(enabled(spec, scripting=True))
     variant = None
     if spec.plugins:  # the tools plugins add are declared in its run
-        from langslice.tools.descriptions.render import Variant
+        from langslice.tools.descriptions.description import DescriptionFacts
 
-        variant = Variant.of(spec, auto=True, door="cli")
+        variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): "
@@ -103,7 +108,9 @@ def card_text(layout: JobLayout) -> str:
     ) + transform_cap_line(layout)
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
                      'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)
-    history = render("[[?redo undo/redo||undo]]", disabled)
+    history = render("[[?redo undo and redo||undo]]", disabled)
+    histories = (f"`history/undo.json`: the {history} steps; "
+                 "`sections/<name>/history.jsonl`: every registration a section held.")
     exported = render("[[?export_maps  written by `export_maps`||, not written by this job's "
                       "verbs]]", disabled)
     background = render("[[?trace_borders `trace_borders` lands in the background: "
@@ -123,9 +130,9 @@ A registering agent's job is the message that launched it, made by
 - `registration.json`: the same registrations in public units (read only,
   rewritten on every change): per section its parameters and `pixel_to_atlas_um`
   (image file pixel [row, col, 1] -> atlas um).
-- `job.json`: settings (tasks, atlas, plane); `history/`: {history}, a file per step.
+- `job.json`: settings (tasks, atlas, plane); {histories}
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
-  records), `image_correction/<key>/` (image-model traces), `views/`, and the
+  records), `border_trace/<key>/` (image-model traces), `views/`, and the
   maps{exported} (on the image's working copy; submit does not write them):
   - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN outside the atlas.
   - `labels.tif`: uint32 atlas ids per pixel (0 outside the atlas); `labels_fiji.tif`
@@ -138,8 +145,8 @@ Maps and pictures are derived, never read back: editing one changes no registrat
 
 ## Pictures and coordinates
 Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame) and, for a section
-on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders); a
-deformable fit's adds `residual.tif`. `langslice.coordinate_map("<picture>/view.json")`: every
+on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders).
+`langslice.coordinate_map("<picture>/view.json")`: every
 pixel's atlas position, (rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in
 the atlas's own axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
 posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * resolution. Pixels

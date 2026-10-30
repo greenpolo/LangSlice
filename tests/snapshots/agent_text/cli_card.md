@@ -15,9 +15,9 @@ A registering agent's job is the message that launched it, made by
 - `registration.json`: the same registrations in public units (read only,
   rewritten on every change): per section its parameters and `pixel_to_atlas_um`
   (image file pixel [row, col, 1] -> atlas um).
-- `job.json`: settings (tasks, atlas, plane); `history/`: undo/redo, a file per step.
+- `job.json`: settings (tasks, atlas, plane); `history/undo.json`: the undo and redo steps; `sections/<name>/history.jsonl`: every registration a section held.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
-  records), `image_correction/<key>/` (image-model traces), `views/`, and the
+  records), `border_trace/<key>/` (image-model traces), `views/`, and the
   maps written by `export_maps` (on the image's working copy; submit does not write them):
   - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN outside the atlas.
   - `labels.tif`: uint32 atlas ids per pixel (0 outside the atlas); `labels_fiji.tif`
@@ -30,8 +30,8 @@ Maps and pictures are derived, never read back: editing one changes no registrat
 
 ## Pictures and coordinates
 Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame) and, for a section
-on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders); a
-deformable fit's adds `residual.tif`. `langslice.coordinate_map("<picture>/view.json")`: every
+on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders).
+`langslice.coordinate_map("<picture>/view.json")`: every
 pixel's atlas position, (rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in
 the atlas's own axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
 posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * resolution. Pixels

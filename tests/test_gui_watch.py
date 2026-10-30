@@ -12,7 +12,6 @@ import pytest
 
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.hosts.gui import watch
 from langslice.hosts.gui.watch import JobList, JobWatcher
 from langslice.job.state_file import write_checkpoint, write_json_atomic
 
@@ -159,7 +158,7 @@ def test_missing_files_and_folder(tmp_path: Path) -> None:
 def test_a_state_this_version_does_not_read_shows_raw_fields(tmp_path: Path) -> None:
     folder = _job(tmp_path)
     write_json_atomic(str(folder / "state.json"), {
-        "format_version": 3, "appearance": {}, "cutting_angles_deg": None,
+        "format_version": 2, "appearance": {}, "cutting_angles_deg": None,
         "slices": [
             {"id": "b.png", "index_corrected": 1, "position_mm": 4.5, "flip": True,
              "transform": {"kind": "elastix"}, "deformation": {"steps": [{"trace": "x"}]},
@@ -175,6 +174,19 @@ def test_a_state_this_version_does_not_read_shows_raw_fields(tmp_path: Path) -> 
     assert b["angles"] == {"pitch": 2.0, "yaw": -0.5}
 
 
+def test_an_older_state_is_read_through_the_jobs_migrations(tmp_path: Path) -> None:
+    folder = _job(tmp_path)
+    _state(folder, [2.1, None])
+    data = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+    data["format_version"] = 4
+    data["slices"][0]["damaged"] = True  # a key LangSlice no longer has
+    write_json_atomic(str(folder / "state.json"), data)
+    snap = _snap(JobWatcher(folder))
+    assert snap["sections_note"] == ""
+    assert [(r["id"], r["position_mm"]) for r in snap["sections"]] == [
+        ("s000.png", 2.1), ("s001.png", None)]
+    assert json.loads((folder / "state.json").read_text(encoding="utf-8")) == data
+
 def _end(name: str, step: int, sections: tuple[str, ...] = (), failed: bool = False) -> dict:
     return {"kind": "tool_end", "name": name, "execution_id": f"{name}{step}", "door": "agent",
             "target_ids": list(sections), "args": "{\"sections\": [", "args_truncated": True,
@@ -188,9 +200,7 @@ def test_undo_steps_are_labelled_by_the_call_that_made_each_depth(tmp_path: Path
     _append(events, _end("position_sections", 1, ("s000.png",)), _end("look", 1),
             _end("interactive_transform", 2, ("s001.png",)), _end("note", 3),
             _end("undo", 2), _end("elastix_affine", 2, ("s001.png",), failed=True))
-    write_json_atomic(str(folder / "history" / "index.json"), {
-        "format_version": 1, "undo": ["step-000001.json", "step-000002.json"],
-        "redo": ["step-000003.json"]})
+    _write_undo(folder, undo=2, redo=1)
     watcher = JobWatcher(folder)
     snap = _snap(watcher)
     assert snap["history"] == {
@@ -199,24 +209,18 @@ def test_undo_steps_are_labelled_by_the_call_that_made_each_depth(tmp_path: Path
     tool = next(i for i in snap["items"] if i["kind"] == "tool")
     assert tool["args"] == "{\"sections\": ["  # a truncated argument string passes through
     _append(events, _end("redo", 3), _end("mark_damage", 4, ("s002.png",)))
-    write_json_atomic(str(folder / "history" / "index.json"), {
-        "format_version": 1, "redo": [],
-        "undo": [f"step-00000{n}.json" for n in (1, 2, 3, 4)]})
+    _write_undo(folder, undo=4, redo=0)
     assert _snap(watcher)["history"]["undo"][2:] == ["Note", "Mark damage (s002.png)"]
 
 
-def test_at_the_history_cap_a_write_drops_the_oldest_label(tmp_path: Path) -> None:
-    folder = _job(tmp_path)
-    depth = watch.UNDO_DEPTH
-    _append(folder / "logs" / "events.jsonl",
-            *[_end("interactive_transform", d, (f"s{d:03d}.png",)) for d in range(1, depth + 1)],
-            _end("look", depth), _end("note", depth))
-    write_json_atomic(str(folder / "history" / "index.json"), {
-        "format_version": 1, "redo": [],
-        "undo": [f"step-{n:06d}.json" for n in range(2, depth + 2)]})
-    undo = _snap(JobWatcher(folder))["history"]["undo"]
-    assert len(undo) == depth
-    assert undo[0] == "Interactive transform (s002.png)" and undo[-1] == "Note"
+def _write_undo(folder: Path, *, undo: int, redo: int) -> None:
+    def step(number: int) -> dict[str, object]:
+        return {"step": number, "by": "note", "at": None, "sections": {}, "stack_before": {}}
+
+    write_json_atomic(str(folder / "history" / "undo.json"), {
+        "format_version": 1, "next_step": undo + redo + 1,
+        "undo": [step(n) for n in range(1, undo + 1)],
+        "redo": [step(n) for n in range(undo + 1, undo + redo + 1)]})
 
 
 def test_pictures_named_by_a_path_outside_the_folder_are_refused(tmp_path: Path) -> None:

@@ -44,6 +44,13 @@ from langslice.core.fits.deformable.engines import (
     fit_device,
     run_engine,
 )
+from langslice.core.fits.deformable.fields import (
+    EngineStep,
+    carry_to_section,
+    compose_forward,
+    compose_inverse,
+    sample_field,
+)
 from langslice.core.fits.deformable.geometry import (
     Placement,
     WorkingGrid,
@@ -55,6 +62,7 @@ from langslice.core.fits.deformable.masks import (
     dilate,
     footprint_masks,
 )
+from langslice.core.fits.deformable.ome_warp import at_storage_precision
 from langslice.core.fits.deformable.plane_images import (
     native_labels,
     placed_atlas_image,
@@ -185,15 +193,6 @@ def _remap(image: np.ndarray, offset_px: np.ndarray, *, nearest: bool = False) -
         cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_CONSTANT, borderValue=0,
     ).astype(image.dtype)
-
-
-def _sample_field(field_mm: np.ndarray, coordinates_px: np.ndarray) -> np.ndarray:
-    """Bilinear sample of an (H, W, 2) field at (H, W, 2) [x, y] pixel coordinates."""
-    rows, cols = coordinates_px[..., 1], coordinates_px[..., 0]
-    return np.stack([
-        ndi.map_coordinates(field_mm[..., k], [rows, cols], order=1, mode="nearest")
-        for k in range(2)
-    ], axis=-1).astype(np.float32)
 
 
 def _native_coords(matrix: np.ndarray, offset_px: np.ndarray | None,
@@ -566,26 +565,26 @@ def finish_fit(
     grid = prepared.grid
     mm = prepared.placement.section_mm_per_px
     width, height = grid.section_size
-    step_field = grid.field_to_section(result.field_mm)
-    step_inverse = grid.field_to_section(result.inverse_field_mm)
+    step = EngineStep(grid, result.field_mm, result.inverse_field_mm)
+    step_field, step_inverse = carry_to_section(step)
     if prepared.step_weight is not None:
         weight = prepared.step_weight[..., None]
         step_field = (step_field * weight).astype(np.float32)
-        step_inverse = (_invert_step(step_field / mm, step_inverse * weight / mm)
-                        * mm).astype(np.float32)
+        guess = step_inverse * weight / mm
+        inverse_px = _invert_step(step_field / mm, guess)
+        step_inverse = (inverse_px * mm).astype(np.float32)
     yy, xx = np.indices((height, width), dtype=np.float64)
     previous = prepared.previous
     if previous is None:
         total, inverse = step_field, step_inverse
     else:
-        # Section p -> p + w(p) in the previous frame -> + u_prev(p + w(p)).
-        moved = np.stack([xx + step_field[..., 0] / mm, yy + step_field[..., 1] / mm], axis=-1)
-        total = step_field + _sample_field(previous.field_mm, moved)
-        # Placed q -> q + v_prev(q) -> + v_w(q + v_prev(q)).
+        # The step composes onto its parent as the parent is saved, so the
+        # record rebuilt on loading (fields.rebuilt_fields) is this one.
         assert previous.inverse_field_mm is not None
-        back = np.stack([xx + previous.inverse_field_mm[..., 0] / mm,
-                         yy + previous.inverse_field_mm[..., 1] / mm], axis=-1)
-        inverse = previous.inverse_field_mm + _sample_field(step_inverse, back)
+        parent_mm = at_storage_precision(previous.field_mm)
+        parent_inverse_mm = at_storage_precision(previous.inverse_field_mm)
+        total = compose_forward(step_field, parent_mm, mm)
+        inverse = compose_inverse(step_inverse, parent_inverse_mm, mm)
     offset = np.stack([total[..., 0] / mm, total[..., 1] / mm], axis=-1)
     warped = sample_native(prepared.native,
                            _native_coords(prepared.placement.atlas_to_section, offset,
@@ -608,7 +607,8 @@ def finish_fit(
         excluded=prepared.excluded, acronyms=acronyms, brain_scale=prepared.brain_scale,
         base_field_mm=total if landmark_warp else landmark_base_field(previous),
     )
-    back = _sample_field(inverse, np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1))
+    moved = np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1)
+    back = sample_field(inverse, moved)
     error = np.linalg.norm(total + back, axis=-1)[prepared.footprint]
     diagnostics["inverse_consistency_mm"] = {
         "p99": float(np.percentile(error, 99)) if error.size else 0.0,
@@ -629,6 +629,12 @@ def finish_fit(
                          "origin_mm": list(grid.origin_mm)},
         "step_details": prepared.details,
     }
+    # The record rebuilds its fields from the engine's own when that grid is
+    # coarser than the section's. It stores them whole otherwise, and for a
+    # tapered step: its inverse is a fixed point that takes seconds.
+    stored_step = None
+    if grid.size != grid.section_size and prepared.step_weight is None:
+        stored_step = step
     left_out = None
     if result.left_out is not None:
         left_out = _on_section(result.left_out, (width, height))
@@ -642,7 +648,7 @@ def finish_fit(
         excluded_ids=sorted(prepared.excluded), engine=engine, diagnostics=diagnostics,
         atlas={k: v for k, v in prepared.atlas_meta.items() if k != "acronyms"},
         step=0 if previous is None else previous.step + 1, parent=previous,
-        left_out=left_out,
+        left_out=left_out, stored_step=stored_step,
     )
 
 

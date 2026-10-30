@@ -1,8 +1,8 @@
 """Every registration a section holds is numbered, and sections go back to one.
 
 A section's registration is its orientation, transform and deformation
-(``langslice.job.registrations``). Each write that leaves a new one lists it
-under the next number (replies and status rows name it); the list names each
+(``langslice.job.history``). Each write that leaves a new one numbers it
+with the next number (replies and status rows name it); the list names each
 one's transform, deformation method and settings and the pictures its write
 saved; ``look`` draws an earlier one without writing it; ``restore_registration``
 puts earlier ones back on the sections named, as one undo step, refusing (per
@@ -23,7 +23,6 @@ import pytest
 import langslice
 from langslice.core.stack.codec import affine_to_json, deformation_to_json
 from langslice.doors.agent_cli.main import main
-from langslice.job import registrations as regs
 from langslice.job.background import DONE, Work, notice_text
 from langslice.job.state_file import stack_to_json
 from tests.cli_child import install
@@ -35,6 +34,7 @@ from tests.synthetic_stack import (
     write_sections,
 )
 
+HISTORY = "history.jsonl"
 IDENTITY = {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0, "translate_x_mm": 0.0,
             "translate_y_mm": 0.0}
 
@@ -62,7 +62,7 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
     code, envelope = cli(capsys, str(folder), "init", "--tasks",
-                         "position,transform,nonlinear", "--image-provider", "none",
+                         "position,transform,nonlinear", "--nonlinear-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
     code, envelope = cli(capsys, str(folder), "position_sections", "--sections", json.dumps(
@@ -135,9 +135,11 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     assert again["results"][0]["written"] is False
     job.undo()
     assert rows(job)[ID0]["registration"] == 3
-    # The list on disk is the job's, one line per registration.
-    lines = (images / "langslice" / "sections" / Path(ID0).stem / regs.FILE).read_text()
-    assert len(lines.splitlines()) == 3
+    # The section's history on disk holds every line, each with its number.
+    text = (images / "langslice" / "sections" / Path(ID0).stem / HISTORY).read_text()
+    lines = [json.loads(line) for line in text.splitlines()]
+    assert [line["registration"] for line in lines] == [None, None, 1, 2, 3, 2, 3]
+    assert [line["by"] for line in lines][-2:] == ["restore_registration", "undo"]
     job.close()
 
 
@@ -273,23 +275,58 @@ def test_a_frozen_property_and_a_deformation_fitted_elsewhere_are_refused(capsys
     job.close()
 
 
-def test_a_registration_held_before_the_list_is_listed_when_it_is_replaced(capsys, images):
-    """A job folder older than the list: the registration a section holds is
-    listed, by what its content says made it, when a write replaces it."""
+def test_a_registration_held_before_the_history_is_numbered_when_it_is_replaced(
+        capsys, images):
+    """A job folder without a section history: the registration a section
+    holds is numbered, as made by what its content says made it, when a
+    write replaces it."""
     _needs_engine()
     job = langslice.open_job(images)
     job.fireants_syn(sections=[ID0], view=False)
-    store = images / "langslice" / "sections" / Path(ID0).stem / regs.FILE
+    store = images / "langslice" / "sections" / Path(ID0).stem / HISTORY
     store.unlink()
     job.close()
     job = langslice.open_job(images)
     assert rows(job)[ID0]["registration"] is None
     job.fireants_syn(sections=[ID0], smoothness_um=40.0, view=False)
-    entries = [json.loads(line) for line in store.read_text().splitlines()]
-    assert [(entry["id"], entry["by"], entry["at"] is None) for entry in entries] == [
-        (1, "fireants_syn", True), (2, "fireants_syn", False)]
+    listed = job.restore_registration(section=ID0)["registrations"]
+    assert [(entry["registration"], entry["by"], "at" in entry) for entry in listed] == [
+        (1, "fireants_syn", False), (2, "fireants_syn", True)]
     back = job.restore_registration(sections=[{"id": ID0, "registration": 1}])
     assert back["results"][0]["written"] is True
+    job.close()
+
+
+def test_an_older_registration_list_keeps_its_numbers(capsys, images):
+    """A section's ``registrations.jsonl`` of an older LangSlice is read as
+    its history; its next write writes ``history.jsonl`` from it."""
+    job = langslice.open_job(images)
+    job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1}], view=False)
+    job.close()
+    folder = images / "langslice" / "sections" / Path(ID0).stem
+    lines = [json.loads(line) for line in (folder / HISTORY).read_text().splitlines()]
+    old = []
+    for line in lines:
+        if line["registration"] is not None and line["registration"] not in [
+                entry["id"] for entry in old]:
+            old.append({"format": 1, "id": line["registration"], "by": line["by"],
+                        "at": line["at"], "digest": line["digest"],
+                        **{key: line[key] for key in ("position_mm", "cutting_angles_deg",
+                                                      "flip", "rotation_deg", "transform",
+                                                      "deformation")}})
+    (folder / HISTORY).unlink()
+    (folder / "registrations.jsonl").write_text(
+        "".join(json.dumps(entry) + "\n" for entry in old))
+    job = langslice.open_job(images)
+    assert rows(job)[ID0]["registration"] == 2
+    listed = job.restore_registration(section=ID0)["registrations"]
+    assert [entry["registration"] for entry in listed] == [1, 2]
+    back = job.restore_registration(sections=[{"id": ID0, "registration": 1}])
+    assert back["results"][0]["written"] is True
+    assert not (folder / "registrations.jsonl").exists()
+    numbers = [json.loads(line)["registration"]
+               for line in (folder / HISTORY).read_text().splitlines()]
+    assert numbers[:2] == [1, 2] and numbers[-1] == 1
     job.close()
 
 
@@ -298,7 +335,7 @@ def test_a_reply_without_the_section_s_row_names_its_registration():
     is named beside them; a section whose status row the reply shows is not."""
     from types import SimpleNamespace
 
-    from langslice.doors.tools.toolbox import registrations_named
+    from langslice.tools.pipeline import registrations_named
 
     job = SimpleNamespace(registered_since=lambda mark: {ID0: 3, ID1: 5})
     reply = registrations_named(job, {"rows": [{"id": ID0, "fitted": "x"}],  # pyright: ignore[reportArgumentType]

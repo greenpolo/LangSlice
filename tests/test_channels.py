@@ -192,7 +192,8 @@ def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatc
     from langslice.core.fits.frame import LinearRegistrationInput
     from langslice.core.fits.trace import trace as tool
     from langslice.core.fits.trace.canvas import Upright
-    from langslice.providers.connections import ImageModel, resolve_image_model
+    from langslice.core.fits.trace.request import ImageModel
+    from langslice.providers.connections import resolve_image_model
 
     original = Image.new("RGB", (60, 40), (40, 70, 90))
     original.save(tmp_path / "section.png")

@@ -14,11 +14,11 @@ A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers 
 ## Use
 
 ```bash
-langslice linear run ... --tool-plugin langslice.engines.spomialign.plugin:tools
+langslice linear run ... --plugins langslice.engines.spomialign.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["plugin:tools"])` with this folder on
-`PYTHONPATH`. Options (`--tool-plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `python` (the
+`PYTHONPATH`. Options (`--plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `python` (the
 `rigid_spomialign` interpreter; default
 `~/.claude-science/conda/envs/rigid_spomialign/bin/python`), `src`, `device`,
 `timeout_s`. RoMa's weights load from `~/.cache/torch/hub/checkpoints`.
@@ -120,4 +120,4 @@ SPOmiAlign code. In LangSlice, SPOmiAlign's code is to ship inside LangSlice's o
 
 One RGB image pair per call. No weighting in the matcher: a section mask can only drop matches whose section end has weight under 0.5 (the reply says "approximated by dropping matches"), and it estimates no mask of its own (`estimated` is null). Brightness: 8-bit, Nissl rendered dark on white. `smoothness_um` (a Gaussian sigma on the displacement field, as `fireants_syn`'s is) becomes `smoothing_px` per section from the canvas geometry.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.
+A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

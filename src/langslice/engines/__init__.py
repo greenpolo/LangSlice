@@ -11,7 +11,7 @@ under the engine's own interpreter; nothing of it is imported here). A job names
 
 The three load together in one job (the tool names do not clash) and re-import from a copy of
 this package with no ``PYTHONPATH``. The engines' environments and sources stay outside
-LangSlice's venv; a missing one is refused at tool-call time with ``ENGINE_UNAVAILABLE``, never
+LangSlice's venv; a missing one is refused at tool-call time with ``ENGINE_MISSING``, never
 at load time. The code was moved here from SliceBench ``comparators/plugins/<name>/`` (its
 history is in that repository).
 """

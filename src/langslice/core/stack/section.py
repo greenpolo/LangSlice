@@ -66,7 +66,7 @@ class Section:
         Its atlas position in millimetres; None until placed.
     transform
         Its in-plane affine; None until it has one.
-    image_correction
+    border_trace
         Its image-model border trace; it does not replace the affine.
     deformation
         The deformation it holds, on top of the linear placement it was
@@ -98,7 +98,7 @@ class Section:
     damage_note: str = ""
     position_mm: float | None = None
     transform: StoredAffine | None = None
-    image_correction: BorderTrace | None = None
+    border_trace: BorderTrace | None = None
     deformation: DeformationRef | None = None
     landmarks: Landmarks | None = None
     layers: list[LayerRef] = field(default_factory=list[LayerRef])

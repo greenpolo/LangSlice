@@ -3,7 +3,7 @@
 The core (:mod:`langslice.core`, :mod:`langslice.core.atlas.planes`,
 :mod:`langslice.core.pictures.opening`) draws plain PIL images, captions burned
 in, and the opening as a sequence of texts and strips. The tools
-(:mod:`langslice.doors.tools.toolbox`) return those plain pictures and texts
+(:mod:`langslice.tools.pipeline`) return those plain pictures and texts
 under ``TOOL_MEDIA_PARTS_KEY``. The doors turn them into what their host reads:
 the ADK agent through this module (:func:`packaged` wraps each tool; JPEG
 ``types.Part``), the MCP server through

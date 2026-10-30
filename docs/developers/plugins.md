@@ -55,7 +55,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/tools/descriptions/render.py`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -99,7 +99,9 @@ and `ctx.caption(image, text, sections=[id])` names the sections a picture of
 the handler's own shows: the saved picture then records the registration each
 section holds, so `restore_registration`'s list names it among the pictures the
 call's write saved; a picture of a proposal not written records none. Raising `ToolError(code, message, **details)` refuses the call with
-`{"status": "error", "error": code, "message": message, **details}`; any other
+`{"status": "error", "error": code, "message": message, **details}` (the
+message says what was attempted, what was found and what to do, as every
+refusal LangSlice raises does); any other
 exception is a reply `PLUGIN_FAILED` naming it, and the job carries on.
 `ToolError` is the plugin's name for LangSlice's own refusal (a `ValueError`,
 as every refusal the context raises is); `code` is a member of
@@ -225,8 +227,9 @@ section's folder (`sections/<name>/deformable/<key>/`, its engine
 `{"method": "plugin:<tool>", "start": "linear" | "current", "note"?,
 "settings"?}` (after the held deformation's steps for `current`), and `look`,
 `export_maps`, `registration.json`, the VisuAlign markers and the ABBA
-connector read it like any other. A section without a position or transform is
-that section's row `INVALID_LINEAR_PLACEMENT`, as a native fit refuses it; a
+connector read it like any other. A section without a position is that
+section's row `NO_POSITION`, one whose transform cannot be used
+`INVALID_LINEAR_PLACEMENT`, as a native fit refuses them; a
 map of another shape, not float or not finite is `BAD_FIELD`. Maps are
 converted before the job's write lock is taken.
 
@@ -353,7 +356,7 @@ already has some. The work's own landing is not refused.
 
 ## In-tree engines
 
-STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --tool-plugin REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm` under `~/.claude-science/conda/envs`; the SPOmiAlign and emlddmm sources from SliceBench's `comparators/src`). Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`). A missing interpreter or source is refused at call time with `ENGINE_UNAVAILABLE` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm` under `~/.claude-science/conda/envs`; the SPOmiAlign and emlddmm sources from SliceBench's `comparators/src`). Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`). A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
@@ -459,7 +462,7 @@ the layers the sections show to `exports/plugins/<tool>/` with a manifest.
 | Where | How |
 |---|---|
 | Job spec | `JobSpec.plugins`: `["module:factory", ...]`, saved in `job.json`; `JobSpec.plugin_config`: options for a factory, by reference (the factory is called with the options object when it has one) |
-| `langslice linear run` | `--tool-plugin MODULE:FACTORY` (repeatable); `--tool-plugin-config 'MODULE:FACTORY=JSON-or-file'` |
+| `langslice linear run` | `--plugins MODULE:FACTORY` (repeatable); `--plugin-config 'MODULE:FACTORY=JSON-or-file'` |
 | Python | `langslice.create_job(folder, plugins=[...], plugin_config={...})`: references, factory functions defined at module level, or `ToolSpec` objects |
 | Reopening | `open_job(folder)` and `langslice-job FOLDER VERB` read `plugins` from `job.json` and load them again |
 
@@ -468,7 +471,7 @@ when the spec is made. The plugin tools follow the native ones in every
 listing: the built-in agent's tools and job statement, `langslice-job ops` and
 `schema` (in a job folder), the job's `AGENTS.md` card, the library's `verbs`,
 and `status`' `can_change`. They are named in `disabled` like native tools
-(`--disable nudge_sections`), are absent while their task is off, and plugin
+(`--disabled nudge_sections`), are absent while their task is off, and plugin
 writers do not count toward a task's requirement that one of its own tools
 stays on. An agent CLI reply from a plugin tool is the plugin's reply as it is.
 
@@ -543,11 +546,11 @@ between calls.
 | `TOO_MANY_SECTIONS` | More sections than `limits["sections"]` (the message says so, and that it is the plugin's limit) |
 | `READ_TOOL_WRITES`, `WRITE_NOT_DECLARED` | A write by a read tool, or of a property not in `writes` |
 | `FROZEN`, `STALE_INPUT`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS` | Rows of a write, as for native tools |
-| `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (a read or conversion that needs one), or without a usable linear placement (a deformation needs a position and a transform) |
+| `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (any call that needs one), or whose transform is missing or cannot be used (marked stale, made on another orientation) |
 | `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
 | `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
 | `PLUGIN_FAILED` | The handler raised something other than `ToolError` (or a refusal of the context's) |
 | `NOT_FOR_SCRIPTS` | `work_dir` or `start_work` from a script's `job.context` |
-| `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`: the engine does not import, failed, or the regions given cannot be fitted |
-| `DEFORMATION_UNREADABLE` | A point conversion through a deformation whose record or inverse cannot be read |
+| `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`, and the in-tree engines: the engine does not import (or its interpreter, source or weights are missing), failed, or the regions given cannot be fitted |
+| `DEFORMATION_UNREADABLE` | A section's deformation whose record cannot be read (a format this version no longer reads, its files gone), or whose inverse a point conversion cannot read |
 | `MCP_TOOL_ERROR`, `MCP_TIMEOUT`, `MCP_UNAVAILABLE` | The adapter's server answered with an error, did not answer, or is not running |

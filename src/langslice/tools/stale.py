@@ -32,14 +32,14 @@ def section_inputs(
     images (``{name: digest}``: remaking one makes the section stale), its
     damage (the marked regions, which every fit leaves out), and with
     *deformation* its applied deformation
-    (a fit on top of it), with *trace* its image correction."""
+    (a fit on top of it), with *trace* its border trace."""
     if deformation and not trace:  # a section mask stores this one (one source of truth)
         return registration_digest(state, record)
     held: dict[str, Any] = registration_parts(state, record)
     if deformation:
         held["deformation"] = record.deformation_key
     if trace:
-        correction = record.image_correction
+        correction = record.border_trace
         held["trace"] = dict.fromkeys(
             ("status", "geometry_fingerprint", "artifact_dir", "attempt"))
         if correction is not None:
@@ -52,13 +52,15 @@ def section_inputs(
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def stale_row(section_id: str) -> dict[str, Any]:
-    """The row of a section refused because its inputs changed.
+def stale_refusal() -> Refused:
+    """Return the refusal of a section whose inputs changed meanwhile.
 
-    The refusal is ``STALE_INPUT``.
+    Returns
+    -------
+    Refused
+        ``STALE_INPUT``, saying to run the fit again.
     """
-    refusal = Refused(
+    return Refused(
         RefusalCode.STALE_INPUT,
         "This section's placement, images or deformation changed while the "
         "fit ran; nothing was written for it. Run the fit again.")
-    return {"id": section_id, **refusal.payload()}

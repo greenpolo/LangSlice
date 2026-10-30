@@ -35,6 +35,14 @@ from langslice.doors.agent_cli.envelope import (
     EXIT_REFUSED,
     Envelope,
 )
+from langslice.job.settings.spec import JobSpec
+from langslice.tools.descriptions.description import DescriptionFacts
+from langslice.tools.descriptions.render import (
+    FULL,
+    arguments_schema,
+    declaration,
+    summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +90,13 @@ def command_names() -> list[str]:
 def flags_table(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:
     """An argparse parser's options as data: per option its ``flag`` (the
     long form), ``aliases``, ``help``, ``default``, ``choices``,
-    ``takes_value`` and ``metavar``."""
+    ``takes_value`` and ``metavar``; a hidden option (an old spelling) is
+    left out."""
     formatter = parser._get_formatter()
     rows: list[dict[str, Any]] = []
     for action in parser._actions:
-        if not action.option_strings or isinstance(action, argparse._HelpAction):
+        if not action.option_strings or isinstance(action, argparse._HelpAction) or (
+                action.help == argparse.SUPPRESS):
             continue
         strings = sorted(action.option_strings, key=lambda text: (-len(text), text))
         try:
@@ -142,19 +152,18 @@ LONG_WORDS = ("A long verb computes outside the job lock and may take minutes; a
               "once.")
 
 
-def verbs_table(spec: Any = None) -> list[dict[str, Any]]:
+def verbs_table(spec: JobSpec | None = None) -> list[dict[str, Any]]:
     """Every verb: name, kind, group, one-line description, and
     ``long: true`` for a long verb. For the job *spec* of a folder that loads
     tool plugins, their tools follow the native ones."""
     from langslice.job.settings.tool_table import TOOLS
     from langslice.tools.catalog import verbs_for
-    from langslice.tools.descriptions.render import Variant, summary
 
-    variant = Variant.of(spec, auto=True, door="cli") if spec is not None and spec.plugins \
-        else None
+    facts = FULL
+    if spec is not None and spec.plugins:  # the plugin tools in its run
+        facts = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     return [{"name": name, "kind": verb.kind, "group": verb.group,
-             "summary": summary(name, variant) if variant is not None and name not in TOOLS
-             else summary(name),
+             "summary": summary(name, FULL if name in TOOLS else facts),
              **({"long": True} if verb.long else {})}
             for name, verb in verbs_for(spec).items()]
 
@@ -164,11 +173,10 @@ class Declared:
     open job: its settings, channels and viewer) or every argument."""
 
     def __init__(self, job: str | None) -> None:
-        from langslice.tools.descriptions.render import FULL, Variant
-
         self.folder: str | None = None
-        self.spec: Any = None
-        self.variant = Variant(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)
+        self.spec: JobSpec | None = None
+        self.variant = DescriptionFacts(auto=True, door="cli", uncapped=True,
+                                        prompt=FULL.prompt)
         self.disabled: tuple[str, ...] = ()
         #: The open job's verbs (``Opened.listed_verbs``); None without a job.
         self.verbs: tuple[str, ...] | None = None
@@ -178,15 +186,14 @@ class Declared:
 
     def _open(self, folder: str) -> None:
         from langslice.doors.jobs import open_folder
-        from langslice.tools.descriptions.render import Variant
-
         opened = open_folder(folder, persist=False, door="cli")
         try:
             self.folder = str(opened.job.folder)
             self.spec = opened.spec
-            self.variant = Variant.of(opened.spec, auto=True, door="cli",
-                                      image_model=opened.image_model_connected,
-                                      brain_scale=opened.ctx.brain_scale)
+            self.variant = DescriptionFacts.from_spec(
+                opened.spec, auto=True, door="cli",
+                image_model=opened.image_model_connected,
+                brain_scale=opened.ctx.brain_scale)
             self.disabled = tuple(opened.spec.switched_off)
             self.verbs = tuple(opened.listed_verbs())
         finally:
@@ -199,11 +206,6 @@ class Declared:
     def entry(self, name: str) -> dict[str, Any]:
         """One verb as this call declares it."""
         from langslice.tools.catalog import verbs_for
-        from langslice.tools.descriptions.render import (
-            arguments_schema,
-            declaration,
-        )
-
         declared = declaration(name, self.variant)
         verb = verbs_for(self.spec)[name]
         return {
@@ -220,7 +222,7 @@ class Declared:
                 "FOLDER (or run it in a job folder) for a job's own declarations."}
 
 
-def _spec_here() -> Any:
+def _spec_here() -> JobSpec | None:
     """The settings of the job in the current folder, if there is one and it
     reads (what ``ops`` lists the plugin tools of); None otherwise."""
     from langslice.doors.jobs import NoJob, find, read_spec
@@ -241,7 +243,8 @@ def _job_here() -> str | None:
         return None
 
 
-def add_parsers(subparsers: argparse._SubParsersAction) -> None:
+def add_parsers(parser: argparse.ArgumentParser) -> None:
+    subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("ops", help="List the verbs of the agent CLI (JSON)")
     schema = subparsers.add_parser(
         "schema", help="A verb's description and arguments (JSON)")
@@ -267,8 +270,6 @@ def ops(args: argparse.Namespace) -> Envelope:
         except (FileNotFoundError, ValueError) as exc:
             return Envelope.failure(RefusalCode.JOB_UNREADABLE,
                                     str(exc), exit=EXIT_REFUSED)
-        from langslice.tools.descriptions.render import summary
-
         table = [{**row, "summary": summary(row["name"], declared.variant)}
                  for row in verbs_table(declared.spec) if declared.has(row["name"])]
         job = declared.folder or folder
@@ -315,8 +316,6 @@ def _type_words(schema: dict[str, Any], defs: dict[str, Any]) -> str:
 def argument_lines(name: str, variant: Any) -> list[str]:
     """Verb *name*'s arguments as declared in *variant*, one line each: its
     name, type in words, and default (or ``required``)."""
-    from langslice.tools.descriptions.render import arguments_schema
-
     schema = arguments_schema(name, variant)
     defs = schema.get("$defs") or {}
     need = set(schema.get("required") or [])
@@ -334,8 +333,6 @@ def tools_text(folder: str, names: list[str], variant: Any, spec: Any) -> str:
     its description and its arguments, the same words ``langslice-job FOLDER
     schema`` gives as JSON."""
     from langslice.tools.catalog import verbs_for
-    from langslice.tools.descriptions.render import declaration
-
     verbs = verbs_for(spec)
     lines = [
         "# LangSlice tools",
@@ -350,15 +347,11 @@ def tools_text(folder: str, names: list[str], variant: Any, spec: Any) -> str:
             continue
         declared = declaration(name, variant)
         verb = verbs[name]
-        head = declared.doc.split("\n", 1)
-        body = head[1] if len(head) > 1 else ""
         lines += [f"## {name}", "",
                   f"{declared.summary} ({verb.kind}, {verb.group}"
                   + (", long" if verb.long else "") + ")", ""]
-        text = "\n".join(line[8:] if line.startswith(" " * 8) else line.strip()
-                         for line in body.split("\n")).strip()
-        if text:
-            lines += [text, ""]
+        if declared.text:
+            lines += [declared.text, ""]
         arguments = argument_lines(name, variant)
         if arguments:
             lines += ["Arguments:", *arguments, ""]

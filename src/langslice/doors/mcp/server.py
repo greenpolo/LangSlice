@@ -58,17 +58,18 @@ from langslice.doors.mcp.pages import (
     save_page,
 )
 from langslice.doors.reference_card import write_card
-from langslice.doors.statement import (
-    job_statement,
-    opening_for_mcp,
-    read_notes,
-)
-from langslice.doors.tools.toolbox import ToolBox, build_tools
+from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
 from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import VERBS
+from langslice.tools.descriptions.door_text import opening_for_mcp, read_notes
+from langslice.tools.descriptions.statement import (
+    StatementFacts,
+    job_statement,
+)
+from langslice.tools.pipeline import ToolBox
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,9 @@ class EventRelay:
     """The session's tool events (``tool_start`` / ``tool_end``, the
     ``show_stack`` pages as ``seed``), forwarded to ``target`` when a host
     listens (the ABBA channel of a saved ABBA job), dropped otherwise. The
-    toolbox emits them (:func:`langslice.doors.tools.toolbox.build_tools`'s
-    ``on_event``); they carry saved view paths, never image bytes."""
+    tool pipeline emits them (the ``on_event`` of
+    :func:`langslice.doors.tools.toolbox.build_tools`); they carry saved
+    view paths, never image bytes."""
 
     def __init__(self) -> None:
         self.target: Callable[[dict[str, Any]], None] | None = None
@@ -127,7 +129,7 @@ class Session:
     prepared: PreparedLinear | None = None
     channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
-    lock: Any = field(default_factory=threading.RLock, repr=False)
+    lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     #: The job's nonlinear task names an image model this door cannot reach
     #: (:func:`langslice.doors.jobs.image_model_off`): its tools and statement
     #: are a run without one.
@@ -182,6 +184,7 @@ def open_job(
     events = EventRelay()
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
                       image_model_connected=not off, on_event=events, door="mcp")
+    box.answers_crashes = True  # a crash is the host's reply
     return Session(job, ctx, box, trace, image_model_off=off, events=events)
 
 
@@ -193,16 +196,18 @@ def mcp_statement(session: Session) -> str:
     (:mod:`langslice.doors.agent_cli.launch`), so the two cannot drift."""
     if not session.pages:
         session.pages = opening_pages(session)
+    facts = StatementFacts.from_run(
+        session.spec, session.state, session.ctx, tool_names=session.box.names,
+        max_resolution=session.box.max_view_edge)
     return job_statement(
-        session.spec, session.state, session.ctx, door="mcp", tool_names=session.box.names,
-        opening=opening_for_mcp(len(session.pages)), notes=session.notes,
-        max_resolution=session.box.max_view_edge, image_model_off=session.image_model_off,
+        facts, door="mcp", opening=opening_for_mcp(len(session.pages)),
+        notes=session.notes, image_model_off=session.image_model_off,
     )
 
 
 def arm_opening(session: Session) -> int:
     """Require the opening pages to be read before any write (the toolbox's
-    opening-read gate, :meth:`langslice.doors.tools.toolbox.ToolBox.require_opening`);
+    opening-read gate, :meth:`langslice.tools.pipeline.ToolBox.require_opening`);
     the number of pages."""
     if not session.pages:
         session.pages = opening_pages(session)
@@ -287,25 +292,21 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
     parameters = [p for name, p in signature.parameters.items() if name != "tool_context"]
 
     async def run(**kwargs: Any) -> list[ContentBlock]:
-        try:
-            def invoke() -> Any:
-                if session.host_update is None:
+        def invoke() -> object:
+            if session.host_update is None:
+                result: object = tool(**kwargs)
+            else:
+                with session.job.observe(session.host_update):
                     result = tool(**kwargs)
-                else:
-                    with session.job.observe(session.host_update):
-                        result = tool(**kwargs)
-                if tool.__name__ == "submit" and session.state.submitted:
-                    finish(session)
-                return result
+            if tool.__name__ == "submit" and session.state.submitted:
+                finish(session)
+            return result
 
-            def serialized() -> Any:
-                with session.lock:
-                    return invoke()
+        def serialized() -> object:
+            with session.lock:
+                return invoke()
 
-            result = await to_thread.run_sync(serialized)
-        except Exception as exc:
-            logger.exception("Tool %s failed", tool.__name__)
-            result = Refused(type(exc).__name__, message=str(exc)).payload()
+        result = await to_thread.run_sync(serialized)
         blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
             session.trace.write("tool_result", name=tool.__name__, args=kwargs,

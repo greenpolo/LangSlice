@@ -48,8 +48,8 @@ host's pixel sizes and channel names, the picture level).
 
 `job/settings/tool_table.py` lists the tools, their options and what each
 needs, and `tools/catalog.py` binds them to the operations and decides tool
-availability; `tools/descriptions/render.py` supplies the common argument
-declarations. Tasks remove whole registration tools, a job's `disabled`
+availability; each tool's description is data in `tools/descriptions/`
+(one module per tool family), which `render.py` lays out for every door. Tasks remove whole registration tools, a job's `disabled`
 list removes single tools and options, and viewing and image tools remain
 available otherwise. Model-facing text that names a tool or an option is
 written with what it needs (`job/settings/needs.py`) and rendered for the
@@ -65,17 +65,16 @@ through the same operations, and builds their declarations, provenance and the
 MCP adapter. The native tables are unchanged, and a job without plugins has
 none of this in any declaration, reply or picture.
 
-`state.json` is the checkpoint; every write creates an undo step and rewrites
-the derived `registration.json` once, as the write's hold of the job folder's
-lock ends. Each undo step also lists the registration it leaves each section
-in `sections/<name>/registrations.jsonl`, which `restore_registration` reads
-back. Source images remain immutable. Processes
+`state.json` is the checkpoint; every write appends a line to the history of
+each section it changed (`sections/<name>/history.jsonl`, `job/history.py`),
+records one undo step in `history/undo.json` (the line each section held
+before it), and rewrites the derived `registration.json` once, as the write's
+hold of the job folder's lock ends. Undo, redo and `restore_registration` put
+lines of a section's history back on it; a deformation record no line names
+is deleted. Source images remain immutable. Processes
 share a file lock and reload changed state before calls; a read never waits
-for the lock and reads the state as last saved. The agent CLI's calls
-on one job folder are answered by that folder's warm process
-(`doors/agent_cli/warm.py`, [details](../agents/cli.md#the-warm-process)): it loads the
-libraries and the atlas once and forks a child per call, which runs the cold
-call's code as a process of its own. Long operations
+for the lock and reads the state as last saved. Each agent CLI
+call is a process of its own. Long operations
 compute outside the lock, then validate their inputs before applying;
 conflicting section results are refused as `STALE_INPUT`.
 

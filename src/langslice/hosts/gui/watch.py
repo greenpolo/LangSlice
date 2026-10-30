@@ -5,7 +5,7 @@ agent CLI's calls, a SliceBench subprocess), so it learns everything from the
 job folder. :class:`JobWatcher` tails the append-only files by byte offset
 (``logs/events.jsonl``, ``views.jsonl`` and the newest ``trace/*.jsonl``),
 keeping an unterminated last line for the next round, and rereads the files
-that are replaced whole (``state.json``, ``history/index.json``, ``job.json``,
+that are replaced whole (``state.json``, ``history/undo.json``, ``job.json``,
 ``exports/spend.json``) when their size or modification time changes.
 
 Everything a client needs comes back from :meth:`JobWatcher.snapshot` as plain
@@ -26,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-from langslice.job.history import UNDO_DEPTH
+from langslice.job.history import SectionHistories
 from langslice.job.layout import (
     EVENTS_FILE,
     EXPORTS_DIR,
@@ -37,6 +37,7 @@ from langslice.job.layout import (
     SPEND_FILE,
     STATE_FILE,
     TRACE_DIR,
+    UNDO_FILE,
     VIEWS_INDEX,
     JobLayout,
 )
@@ -237,7 +238,7 @@ class JobWatcher:
         self.views = _Tail(f / VIEWS_INDEX)
         self.trace: _Tail | None = None
         self.state = _Whole(f / STATE_FILE)
-        self.history = _Whole(f / HISTORY_DIR / "index.json")
+        self.history = _Whole(f / HISTORY_DIR / UNDO_FILE)
         self.job = _Whole(f / JOB_FILE)
         self.spend = _Whole(f / EXPORTS_DIR / SPEND_FILE)
         self.items: list[dict[str, Any]] = []
@@ -256,7 +257,7 @@ class JobWatcher:
         self.rows_note = ""
         self.rows_stale = False
         self.polled_at = 0.0
-        self._registrations: Any = None
+        self._histories: SectionHistories | None = None
 
     # --- reading ----------------------------------------------------------------
 
@@ -358,9 +359,8 @@ class JobWatcher:
 
     def _label_step(self, item: dict[str, Any], step: Any) -> None:
         """Follow the undo depth a ``tool_end`` reports (``step``: the undo
-        stack's length after the call, at most ``UNDO_DEPTH``): a write that
-        deepens it labels the new depth; at the cap a write drops the oldest
-        label; undo and redo move labels between the two sides."""
+        stack's length after the call): a write that deepens it labels the new
+        depth; undo and redo move labels between the two sides."""
         if not isinstance(step, int) or isinstance(step, bool):
             return
         before, self.depth = self.depth, step
@@ -380,10 +380,7 @@ class JobWatcher:
                     if self.redo_labels:
                         self.step_labels[depth] = self.redo_labels.pop()
             return
-        at_cap = step == before == UNDO_DEPTH and name not in _READS
-        if at_cap:
-            self.step_labels = {d - 1: text for d, text in self.step_labels.items() if d > 1}
-        if at_cap or (before is None and name not in _READS) or (
+        if (before is None and name not in _READS) or (
                 before is not None and step > before):
             self.step_labels[step] = label
             self.redo_labels.clear()
@@ -454,20 +451,20 @@ class JobWatcher:
                 stack_angles_entry,
                 status_rows,
             )
-            from langslice.job.registrations import Registrations
-            from langslice.job.state_file import current_state, stack_from_json
+            from langslice.job.migrations import viewer_stack
 
-            fields = current_state(cast("dict[str, Any]", data))
-            state = stack_from_json(fields)
-            if self._registrations is None:
-                self._registrations = Registrations(JobLayout(self.folder))
+            fields = cast("dict[str, Any]", data)
+            state = viewer_stack(fields, JobLayout(self.folder))
+            if self._histories is None:
+                self._histories = SectionHistories(JobLayout(self.folder))
             records = {r.id: r for r in state.slices}
             for order, row in enumerate(status_rows(state), 1):
                 record = records.get(row["id"])
                 number = None
                 if record is not None:
                     try:
-                        number = self._registrations.number_of(state, record)
+                        number = self._histories.registration_number(
+                            state, record)
                     except Exception:  # a listing that cannot be read is no number
                         number = None
                 angles = row.get("cutting_angles_deg") or (

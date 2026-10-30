@@ -2,7 +2,7 @@
 
 ``<images>/langslice/`` holds everything LangSlice writes for a stack
 (:mod:`langslice.job.layout`): ``job.json`` (settings and the folder's format
-version), the state checkpoint, the undo history
+version), the state checkpoint, the section histories and undo steps
 (:mod:`langslice.job.history`), the per-section folders, the pictures the model
 was shown with their layers (:mod:`langslice.job.pictures`), exports and logs.
 Saved host jobs are found by id through a small index

@@ -63,11 +63,7 @@ from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
 from langslice.core.pictures.jpeg import encode_jpeg
-from langslice.core.pictures.layers import (
-    RESIDUAL_LAYER,
-    picture_layers,
-    warp_layers,
-)
+from langslice.core.pictures.layers import picture_layers, warp_layers
 from langslice.job.layout import JobLayout
 
 #: Beside ``views.jsonl``: the numbers handed out so far (``seq``: the next
@@ -84,7 +80,6 @@ VIEW_FILE = "view.json"
 PICTURE_FILE = "view.jpg"
 LABELS_FILE = "labels.tif"
 BORDERS_FILE = "borders.png"
-RESIDUAL_FILE = RESIDUAL_LAYER
 
 _NAME_PART = re.compile(r"[^a-zA-Z0-9_]+")
 
@@ -102,8 +97,6 @@ class Saved:
     folder: Path
     name: str
     layers: bool
-    #: A deformable-fit picture with its residual drawn (``residual.tif``).
-    residual: bool = False
     #: What the picture shows, from its note: the sections and the mode.
     sections: tuple[str, ...] = ()
     mode: str | None = None
@@ -119,15 +112,12 @@ class Saved:
     def files(self) -> list[tuple[Path, str]]:
         """``(path, kind)`` of every file the picture's folder will hold:
         ``view`` (the JPEG; ``tile`` for a sheet's tile), ``view_json``, for a
-        placement or deformable-fit picture ``labels`` and ``borders``, and
-        ``residual`` for a deformable-fit picture showing its residual."""
+        placement or deformable-fit picture ``labels`` and ``borders``."""
         listed = [(self.folder / PICTURE_FILE, self.view_kind),
                   (self.folder / VIEW_FILE, "view_json")]
         if self.layers:
             listed += [(self.folder / LABELS_FILE, "labels"), (self.folder / BORDERS_FILE,
                                                                "borders")]
-        if self.residual:
-            listed.append((self.folder / RESIDUAL_FILE, "residual"))
         return listed
 
 
@@ -300,7 +290,8 @@ class _Call:
     call_id: str | None
     arguments: Any
     pictures: list[_Picture]
-    atlas: Any
+    #: The run's atlas object (a BrainGlobe atlas), None without one.
+    atlas: object
 
 
 @dataclass
@@ -440,8 +431,6 @@ class ViewStore:
                 capture.extend(
                     Saved(self._folder(item.note, item.name), item.name,
                           has_frame(item.note) and atlas is not None,
-                          item.note is not None and item.note.warp is not None
-                          and item.note.warp.warped and atlas is not None,
                           sections=tuple(item.note.sections) if item.note else (),
                           mode=item.note.mode if item.note else None, index=item.index,
                           seq=item.seq, view_kind="tile" if tiles else "view")
@@ -515,7 +504,7 @@ class ViewStore:
         """Save the pictures a door shows from this block, with their layers.
 
         The one hook every door uses (the agent tools and the MCP door through
-        the tool wrapper, ``toolbox._saves_views``; the CLI and scripts the
+        the tool pipeline; the CLI and scripts the
         same way): run the operation inside the block, then hand the pictures
         it shows to :meth:`Shown.show`. What the core noted about each while
         the block ran (:func:`langslice.core.pictures.drawn.collecting`)
@@ -613,21 +602,14 @@ class ViewStore:
             record["extra"] = note.extra
         if has_frame(note) and call.atlas is not None:
             assert note is not None
-            residual = None
             if note.warp is not None:
-                labels, borders, frame, residual = warp_layers(call.atlas, note,
-                                                                (size[0], size[1]))
+                labels, borders, frame = warp_layers(call.atlas, note, (size[0], size[1]))
             else:
                 labels, borders, frame = picture_layers(call.atlas, note)
             tifffile.imwrite(folder / LABELS_FILE, labels, compression="zlib")
             Image.fromarray(np.ascontiguousarray(borders)).save(
                 folder / BORDERS_FILE, format="PNG", optimize=True)
             record["layers"] = {"labels": LABELS_FILE, "borders": BORDERS_FILE}
-            if residual is not None:
-                tifffile.imwrite(folder / RESIDUAL_FILE,
-                                 np.ascontiguousarray(np.moveaxis(residual, -1, 0)),
-                                 compression="zlib")
-                record["layers"]["residual"] = RESIDUAL_FILE
             record["frame"] = frame
         (folder / VIEW_FILE).write_text(json.dumps(record, indent=1, default=str) + "\n",
                                         encoding="utf-8")

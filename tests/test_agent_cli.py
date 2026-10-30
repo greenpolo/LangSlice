@@ -62,7 +62,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 
 def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
     code, envelope = cli(capsys, str(images), "init", "--tasks",
-                         "position,transform,nonlinear", "--image-provider", "none",
+                         "position,transform,nonlinear", "--nonlinear-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          *flags)
     assert code == 0, envelope
@@ -74,7 +74,8 @@ def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
 
 def test_schema_of_one_verb_and_of_every_verb(capsys):
     from langslice.doors.agent_cli.catalog import SCHEMA_VERSION
-    from langslice.tools.descriptions.render import FULL, Variant, declaration
+    from langslice.tools.descriptions.description import DescriptionFacts
+    from langslice.tools.descriptions.render import FULL, declaration
 
     assert SCHEMA_VERSION == 3
     code, envelope = cli(capsys, "schema", "interactive-transform")
@@ -90,7 +91,7 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     # or not. The picture options are gone with the view modes.
     assert result["description"] == declaration(
         "interactive_transform",
-        Variant(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)).doc
+        DescriptionFacts(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)).doc
     assert "\n" in result["description"] and result["summary"] in result["description"]
     assert "picture_options" not in result
     assert result["long"] is False and result["job"] is None and "--job" in result["hint"]
@@ -176,8 +177,8 @@ def test_load_atlas_keeps_brainglobe_notices_off_stdout(capsys, monkeypatch):
 
 def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     # The positions are the host's; the agent sets only the cutting angles.
-    code, envelope = cli(capsys, str(images), "init", "--tasks", "transform", "--angles",
-                         "--image-provider", "none", "--preprocess", "none",
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "transform", "--transform-angles",
+                         "--nonlinear-provider", "none", "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM), "--viewer", "codex")
     assert code == 0, envelope
     code, everything = cli(capsys, "schema", "position_sections")
@@ -262,18 +263,16 @@ def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any
     from langslice.doors.jobs import open_folder
     from langslice.doors.tools.toolbox import build_tools
     from langslice.tools.descriptions.statement import (
+        StatementFacts,
         build_job_statement,
-        display_facts,
     )
 
     opened = open_folder(images, atlas_loader=atlas_loader(), persist=False)
     job, ctx = opened.job, opened.ctx
     box = build_tools(job.state, ctx, job.spec, job=job, max_view_edge=limit[0])
-    low, high = ctx.position_range
-    statement = build_job_statement(
-        job.spec, job.state, tool_names=box.names, species=ctx.species, pos_lo=low,
-        pos_hi=high, axis_ends=ctx.axis_ends, max_resolution=limit[0], auto=True,
-        **display_facts(ctx, job.state))
+    statement = build_job_statement(StatementFacts.from_run(
+        job.spec, job.state, ctx, tool_names=box.names, max_resolution=limit[0],
+        auto=True))
     parts = opening_parts(job.state, ctx, limit=limit)
     pictures = [part.inline_data.data for part in parts if part.inline_data is not None]
     return statement, pictures, opened
@@ -304,7 +303,7 @@ def test_launch_register_scripting_is_the_native_statement_and_opening(capsys, i
         assert "User notes:\nSection 2 is torn." in tail
         assert "Open every one of these pictures before any write." in tail
         assert "brief" not in tail and "BRIEF" not in tail
-        from langslice.doors.statement import status_and_notes
+        from langslice.tools.descriptions.door_text import status_and_notes
 
         assert tail.endswith(status_and_notes(opened.job.state))
     finally:
@@ -352,7 +351,7 @@ def test_launch_register_is_the_mcp_statement(capsys, images):
 def test_launch_needs_a_role_and_a_job(capsys, images, tmp_path):
     init(capsys, images)
     code, envelope = cli(capsys, str(images), "launch")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     code, envelope = cli(capsys, str(images), "launch", "--role", "other")
     assert code == 2
     code, envelope = cli(capsys, str(tmp_path), "launch", "--role", "register")
@@ -405,7 +404,7 @@ def test_pictures_are_capped_at_the_viewers_largest(capsys, images):
 
 def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
         capsys, images, monkeypatch):
-    init(capsys, images, "--image-provider", "openai-oauth")  # HOME is private: no login
+    init(capsys, images, "--nonlinear-provider", "openai-oauth")  # HOME is private: no login
     code, status = cli(capsys, str(images), "status")
     assert code == 0
     assert status["result"]["image_model"] == {
@@ -415,7 +414,7 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     assert code == 3 and refused["error"]["code"] == "IMAGE_MODEL_OFF"
     assert "langslice login" in refused["error"]["fix"]
     code, launch = cli(capsys, str(images), "launch", "--role", "register-scripting")
-    from langslice.doors.statement import IMAGE_MODEL_OFF
+    from langslice.tools.descriptions.door_text import IMAGE_MODEL_OFF
 
     assert IMAGE_MODEL_OFF in launch["result"]["prompt"]
     # Connected (a login present), the verb is offered, as the MCP door offers it.
@@ -713,7 +712,7 @@ def test_folder_ops_lists_the_job_s_own_verbs(capsys, images):
     assert "fireants_syn" not in names and "elastix_affine" not in names
     assert envelope["next"][0] == f"langslice-job {job} schema VERB [VERB ...]"
     code, envelope = cli(capsys, str(images), "ops", "--bogus")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
 
 
 def test_a_failed_fit_says_the_first_line_and_keeps_the_rest_in_the_log(tmp_path):
@@ -764,7 +763,7 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     # A dry run never starts a background run (that child would run the verb).
     code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
                          "--dry-run", "--background")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     assert not (job / "logs" / "runs").exists()
     assert (job / "state.json").read_bytes() == state_before
 
@@ -803,7 +802,7 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
     monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
     monkeypatch.setattr(toolbox, "resolve_image_model", lambda provider, model: stub_image_model(
         SimpleNamespace(nonlinear=SimpleNamespace(provider=provider, image_model=model))))
-    job = init(capsys, images, "--image-provider", "openai-oauth")
+    job = init(capsys, images, "--nonlinear-provider", "openai-oauth")
     code, placed = cli(capsys, str(images), "position_sections", "--sections",
                        json.dumps([{"id": ID0, "position_mm": 0.05}]), "--view", "false")
     assert code == 0, placed
@@ -860,7 +859,7 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_RUN"
     # `status` is only the verb.
     code, status = cli(capsys, str(images), "status", run)
-    assert code == 2 and status["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and status["error"]["code"] == "BAD_ARGS"
 
 
 def test_wait_answers_still_running_within_its_default_wait(capsys, images, monkeypatch):
@@ -1116,7 +1115,7 @@ def test_a_transform_cap_of_the_job_holds_without_a_picture_cap():
     from types import SimpleNamespace
 
     from langslice.core.refusal import Refused
-    from langslice.tools.catalog import check_section_count
+    from langslice.tools.refusal import check_section_count
 
     check_section_count(SimpleNamespace(picture_cap=None, transform_cap=None),
                         "elastix_affine", 50)
@@ -1185,9 +1184,9 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
     """``--disable``: the verb is not offered, an option is not in the schema,
     a call of it is refused, and nothing the agent reads names either."""
     code, envelope = cli(capsys, str(images), "init", "--tasks", "position,transform",
-                         "--image-provider", "none", "--preprocess", "none",
-                         "--pixel-size-um", str(PIXEL_SIZE_UM), "--disable", "zoom",
-                         "--disable", "look:positioning,interactive_transform:flip")
+                         "--nonlinear-provider", "none", "--preprocess", "none",
+                         "--pixel-size-um", str(PIXEL_SIZE_UM), "--disabled", "zoom",
+                         "--disabled", "look:positioning,interactive_transform:flip")
     assert code == 0, envelope
     folder = Path(envelope["result"]["job_folder"])
     assert "zoom" not in envelope["result"]["verbs"] and "look" in envelope["result"]["verbs"]
@@ -1219,10 +1218,10 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
 
 
 def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
-    code, envelope = cli(capsys, str(images), "init", "--disable", "zoomm")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    code, envelope = cli(capsys, str(images), "init", "--disabled", "zoomm")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     assert "unknown name 'zoomm'" in envelope["error"]["message"]
     assert "look:positioning" in envelope["error"]["message"]
     code, envelope = cli(capsys, str(images), "init", "--tasks", "transform",
-                         "--disable", "elastix_affine,interactive_transform")
+                         "--disabled", "elastix_affine,interactive_transform")
     assert code == 2 and "every tool that writes its answer" in envelope["error"]["message"]

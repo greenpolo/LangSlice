@@ -17,11 +17,11 @@ plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
 ## Use
 
 ```bash
-langslice linear run ... --tool-plugin langslice.engines.stalign.plugin:tools
+langslice linear run ... --plugins langslice.engines.stalign.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])`.
-Options (`--tool-plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python`, `device` (`auto`: the GPU at
+Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python`, `device` (`auto`: the GPU at
 float32 when there is one, else the CPU at float64 with STalign's C++ engine; the GPU result
 matched the CPU's to 0.001 atlas px on a test section), `threads` (4), `timeout_s`.
 
@@ -76,4 +76,4 @@ plane search (sigmas 2, muA 3, muB 0). Sorting defaults are STalign's own (`clas
 
 Takes no section mask (it sorts the section's pixels itself; a named mask is refused `MASK_UNSUPPORTED`). One image pair (channels are fitted jointly by STalign but the tool gives one). Its final sorting is saved with the deformation. Brightness: slide 0, tissue 1.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.
+A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

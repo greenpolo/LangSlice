@@ -27,8 +27,8 @@ def test_linear_run_rejects_unknown_plane(capsys):
 
 
 def test_force_view_and_require_deformation_flags_reach_the_spec(tmp_path):
-    args = _parse(["linear", "run", str(tmp_path), "--force-view", "--require-deformation",
-                   "--disable", "elastix_affine"])
+    args = _parse(["linear", "run", str(tmp_path), "--force-view",
+                   "--nonlinear-require-deformation", "--disabled", "elastix_affine"])
     spec = spec_from_args(args, str(tmp_path))
     assert spec.force_view is True
     assert spec.nonlinear.require_deformation is True

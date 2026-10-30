@@ -182,13 +182,13 @@ def test_a_filled_form_gives_every_setting_and_init_reads_it() -> None:
         "  --tasks position,transform,nonlinear \\\n"
         "  --atlas whs_sd_rat_39um \\\n"
         "  --plane coronal \\\n"
-        "  --thickness 40 \\\n"
-        "  --interval 120 \\\n"
+        "  --position-thickness-um 40 \\\n"
+        "  --position-interval-um 120 \\\n"
         "  --pixel-size-um 0.65 \\\n"
-        "  --disable look:atlas,zoom,trace_borders \\\n"
+        "  --disabled look:atlas,zoom,trace_borders \\\n"
         "  --frozen '{\"*\":[\"angles\",\"orientation\"]}' \\\n"
         "  --damaged '{\"s012.tif\":\"left cortex torn\",\"s013.tif\":\"damaged\"}' \\\n"
-        "  --fact 'The file names sort in the order the sections were cut.' \\\n"
+        "  --facts 'The file names sort in the order the sections were cut.' \\\n"
         "  --notes \"Injection in the right hemisphere; it's bright.\"\n"
         "```\n")
     spec = _spec(_command(made["text"]))
@@ -208,7 +208,7 @@ def test_a_switched_off_tool_of_a_task_not_chosen_is_left_out() -> None:
             "keep": {"orientation": True}}
     (made,) = _run([form])
     argv = _command(made["text"])
-    assert argv[argv.index("--disable") + 1] == "zoom"
+    assert argv[argv.index("--disabled") + 1] == "zoom"
     assert "--frozen" not in argv  # orientation is the transform task's, which is off
     assert "elastix_affine" not in made["text"] and "fireants_syn" not in made["text"]
 

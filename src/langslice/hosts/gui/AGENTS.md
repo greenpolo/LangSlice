@@ -16,8 +16,8 @@ server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
 imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`)
 and the job layer (`job.settings.tool_table`, `job.settings.spec`,
-`job.settings.schema`, `job.settings.labels`, `job.layout` names, `job.state_file.current_state`, `job.history`,
-`job.registrations`), and for the Settings tab the doors' setup
+`job.settings.schema`, `job.settings.labels`, `job.layout` names, `job.migrations.viewer_stack`,
+`job.history`), and for the Settings tab the doors' setup
 (`doors.credentials`: key presence, `save_api_key`, `login_oauth`) and the
 user's settings file (`doors.user_settings`). Nothing imports it but
 `hosts/cli.py` (`langslice gui`); `doors/commands/linear.py`'s `--gui` starts that
@@ -58,7 +58,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   unterminated last line kept for the next round, a file grown shorter starts
   the watch over: a new `generation`) on `logs/events.jsonl`, `views.jsonl` and
   the newest `trace/*.jsonl`; `_Whole`s (size and mtime, one retry on a file
-  caught mid-rename) on `state.json`, `history/index.json`, `job.json`,
+  caught mid-rename) on `state.json`, `history/undo.json`, `job.json`,
   `exports/spend.json`. `poll` at most every `POLL_S` (0.25 s), run by a
   page's snapshot request, so only watched jobs are read. One round's trace
   records and events are interleaved by time (`_in_time_order`: an event's
@@ -69,15 +69,15 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   from `view.json`; a path outside the folder is refused), `agent` and
   `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
   script writes, session start and end, a trace error). The sections table:
-  `core.stack.status.status_rows` of `stack_from_json(current_state(...))` with
-  each section's registration number (`job.registrations`); a state this
-  version does not read (another format) shows its raw `slices` fields with a
-  note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
-  depth after the call, capped at `UNDO_DEPTH`): a call that deepens it names
-  the new depth; at the cap a call of any tool but a read (`job.settings.tool_table` kind
-  `read`; a plugin's or an older version's tool counts as a write) drops the
-  oldest name; `undo` / `redo` move names between the sides; a depth no event
-  names is `Step n`. `status`:
+  `core.stack.status.status_rows` of `job.migrations.viewer_stack` (an older
+  format migrated in memory as every door opens it, nothing written) with
+  each section's registration number (`job.history.SectionHistories`); a state this
+  version does not read (a newer or a pre-release format) shows its raw
+  `slices` fields with a note. Undo labels: `_label_step` follows each `tool_end`'s `step` (the undo
+  depth after the call): a call that deepens it names the new depth (a first
+  event of any tool but a read, `job.settings.tool_table` kind `read`, names
+  it too; a plugin's or an older version's tool counts as a write); `undo` /
+  `redo` move names between the sides; a depth no event names is `Step n`. `status`:
   Submitted (`state.submitted`), Failed (a trace `error`, or a `summary`
   without a submit), Running (a `tool_start` without its end, or a file
   changed within `RECENT_S`), else Waiting, and a sentence. `snapshot(since,
@@ -141,11 +141,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   thickness, interval, pixel size, the tasks when none is chosen) and one on
   bash quoting when a word is quoted, then a fenced `bash` block: the
   `langslice-job FOLDER init` command, one flag per line, only the fields
-  set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--thickness`, `--interval`,
-  `--pixel-size-um`, `--disable` in table order: the tools of this run off
+  set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--position-thickness-um`, `--position-interval-um`,
+  `--pixel-size-um`, `--disabled` in table order: the tools of this run off
   whole, then the options off of tools still on, a name a kept property
   already switches off left out; `--frozen {"*": [...]}`, `--damaged`
-  `{file: note}` from `file: note` lines, `--fact` for the cutting order,
+  `{file: note}` from `file: note` lines, `--facts` for the cutting order,
   `--notes`). `problems` (no message while one stands) mirror
   `tool_table.refusal` on the form: the folder, whole micrometres, `look`
   keeps a mode, each chosen task keeps a writer, each tool on keeps what it
@@ -167,7 +167,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 
 `tests/test_gui_watch.py` (appended and half-written lines, a state replaced
 whole, a trace appearing mid-run, time order, missing files, the raw-state
-fallback, undo labels and the cap, a path outside the folder, the job list,
+fallback, undo labels, a path outside the folder, the job list,
 a truncated file; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
 `tests/test_gui_server.py` (token and Host, GET only, snapshot and pictures,
 refused paths), `tests/test_gui_generator.py` (the catalog-driven tools, a

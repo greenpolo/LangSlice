@@ -68,7 +68,7 @@
 ```json
 {
  "error": "UNKNOWN_PICTURE",
- "message": "There is no picture 999.",
+ "message": "There is no picture 999; use a number a reply gave.",
  "picture": 999,
  "status": "error"
 }
@@ -89,6 +89,7 @@
 ```json
 {
  "error": "NOTHING_TO_UNDO",
+ "message": "Nothing to undo: the job's history holds no earlier step.",
  "status": "error"
 }
 ```
@@ -104,7 +105,7 @@
   "s1.png",
   "s2.png"
  ],
- "status": "error"
+ "status": "refused"
 }
 ```
 
@@ -272,6 +273,7 @@
    ],
    "error": "BAD_ROTATION",
    "id": "s0.png",
+   "message": "rotate_quarter is 0, 90, 180 or 270.",
    "status": "error"
   }
  ],
@@ -289,7 +291,7 @@
   "s1.png",
   "s2.png"
  ],
- "status": "error"
+ "status": "refused"
 }
 ```
 

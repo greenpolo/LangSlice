@@ -21,11 +21,15 @@ A sequential fit is a chain: each record's field is the TOTAL residual
 so undoing a step is ``record.parent``.
 
 On disk (:meth:`DeformableRecord.save`) a record is a folder: its arrays in
-``warp.ome.zarr`` (:mod:`langslice.core.fits.deformable.ome_warp`, the fields
-as float16) and ``record.json`` (the metadata, written last), which names the
-parent by its folder, a sibling in the same parent folder (in a job, the
-section's ``deformable/``; the folder name is the record's key's first 24 hex
-digits).
+``warp.ome.zarr`` (:mod:`langslice.core.fits.deformable.ome_warp`) and
+``record.json`` (the metadata, written last), which names the parent by its
+folder, a sibling in the same parent folder (in a job, the section's
+``deformable/``; the folder name is the record's key's first 24 hex
+digits). A record keeps the step that made its fields where it has one
+(``stored_step``: the engine's own fields on its working grid, or a landmark
+mesh) and loading rebuilds the fields from it, composed with the parent's,
+as the fit made them (the ``fields`` module); a map made elsewhere and a
+restricted fit store their fields whole, as float16.
 
 Plausibility diagnostics are reported, never enforced: a flag says the warp
 compresses, expands or folds tissue more than a rough biological limit, and
@@ -34,7 +38,9 @@ a person or agent decides what that means.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,14 +48,30 @@ from typing import Any
 import numpy as np
 
 from langslice.core.fits.deformable import ome_warp
-from langslice.core.fits.deformable.geometry import Placement
+from langslice.core.fits.deformable.fields import (
+    EngineStep,
+    MeshStep,
+    StoredStep,
+    rebuilt_fields,
+)
+from langslice.core.fits.deformable.geometry import Placement, WorkingGrid
 from langslice.core.fits.deformable.ome_warp import (
     WARP_STORE,
     at_storage_precision,
 )
 from langslice.core.fits.deformable.settings import FitSettings
 from langslice.core.fits.flags import FitFlag
-from langslice.core.jsonable import to_jsonable
+from langslice.core.jsonable import JsonObject, to_jsonable
+from langslice.core.stack.json_reads import (
+    list_at,
+    number_at,
+    numbers_at,
+    object_at,
+    optional_at,
+    text_at,
+)
+
+logger = logging.getLogger(__name__)
 
 #: Area ratio (warped / placed) limits for solid tissue regions.
 TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
@@ -71,14 +93,23 @@ OUTSIZED_MAX_FRACTION = 0.1
 #: plausible. Adult mouse; times the brain scale.
 OUTSIZED_MEDIAN_MM = 0.6
 
-#: ``record.json``'s format: 2 (the arrays in ``warp.ome.zarr``, the parent by
-#: reference). Any other is refused on loading.
-RECORD_VERSION = 2
+#: ``record.json``'s format: 3 (the arrays in ``warp.ome.zarr``, the parent by
+#: reference, the fields as ``fields`` says). Format 2, every field stored
+#: whole on the section grid, is read too; any other is refused on loading.
+RECORD_VERSION = 3
+READ_VERSIONS = (2, 3)
 #: The keys ``record.json`` holds (:meth:`DeformableRecord.metadata`); any
 #: other is refused on loading.
 _RECORD_KEYS = ("version", "step", "parent", "placement", "section_size", "settings",
-                "field_convention", "inverse_source", "labels", "excluded_ids", "engine",
-                "diagnostics", "atlas", "provenance")
+                "field_convention", "fields", "inverse_source", "labels",
+                "excluded_ids", "engine", "diagnostics", "atlas", "provenance",
+                "fields_sha256")
+#: ``record.json``'s ``fields``: what ``warp.ome.zarr`` holds of them
+#: (:mod:`~langslice.core.fits.deformable.ome_warp`).
+FIELDS_WHOLE = "section_grid"
+FIELDS_ENGINE = "engine_grid"
+FIELDS_MESH = "landmark_mesh"
+FIELDS_KINDS = (FIELDS_WHOLE, FIELDS_ENGINE, FIELDS_MESH)
 
 
 def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
@@ -274,6 +305,11 @@ class DeformableRecord:
     #: ``record.json`` names its parent by it. Set only once the fields are at
     #: storage precision (:meth:`round_to_storage`).
     saved_as: str | None = field(default=None, repr=False, compare=False)
+    #: The step the fields are rebuilt from on loading
+    #: (:mod:`~langslice.core.fits.deformable.fields`); None: they are saved
+    #: whole.
+    stored_step: StoredStep | None = field(
+        default=None, repr=False, compare=False)
 
     @property
     def mm_per_px(self) -> float:
@@ -290,7 +326,7 @@ class DeformableRecord:
             self.weights = np.asarray(self.weights).astype(np.float16)
 
     def metadata(self) -> dict[str, Any]:
-        return {
+        meta: dict[str, Any] = {
             "version": RECORD_VERSION, "step": self.step,
             "parent": None if self.parent is None else self.parent.saved_as,
             "placement": self.placement.to_dict(),
@@ -300,14 +336,30 @@ class DeformableRecord:
                 "field_mm[y, x] = [dx, dy] mm: section pixel (x, y) at (x, y)*mm_per_px "
                 "corresponds to placed-atlas point (x, y)*mm_per_px + field; native = "
                 "inv(atlas_to_section) @ (pixel + field/mm_per_px); stored in "
-                f"{WARP_STORE} as (2, rows, cols) [dy, dx] float16"
+                f"{WARP_STORE} as `fields` says"
             ),
+            "fields": self.fields_kind,
             "inverse_source": self.inverse_source,
             "labels": "leaf atlas ids under the composed warp",
             "excluded_ids": list(self.excluded_ids),
             "engine": self.engine, "diagnostics": self.diagnostics, "atlas": self.atlas,
             "provenance": self.provenance,
         }
+
+        if self.stored_step is not None:
+            # Rebuilt fields are pinned to the bits they were made with.
+            meta["fields_sha256"] = fields_digest(
+                self.field_mm, _present(self.inverse_field_mm))
+        return meta
+
+    @property
+    def fields_kind(self) -> str:
+        """Name how the fields are saved (``record.json``'s ``fields``)."""
+        if isinstance(self.stored_step, EngineStep):
+            return FIELDS_ENGINE
+        if isinstance(self.stored_step, MeshStep):
+            return FIELDS_MESH
+        return FIELDS_WHOLE
 
     def save(self, directory: str | Path) -> Path:
         """Write the record in *directory*: its arrays (``warp.ome.zarr``), then
@@ -350,18 +402,21 @@ class DeformableRecord:
             root.parent / str(meta["parent"]), _children | {root.name})
         try:
             arrays = ome_warp.read(root)
+            field_mm, inverse_mm, stored_step = _read_fields(meta, arrays, parent)
+            _check_rebuilt(root, meta, field_mm, inverse_mm)
             return cls(
                 placement=Placement.from_dict(meta["placement"]),
                 section_size=(int(meta["section_size"][0]), int(meta["section_size"][1])),
                 settings=None if meta["settings"] is None else FitSettings.from_dict(
                     meta["settings"]),
-                field_mm=_present(arrays["field_mm"]), inverse_field_mm=arrays["inverse_field_mm"],
+                field_mm=field_mm, inverse_field_mm=inverse_mm,
                 inverse_source=str(meta["inverse_source"]), labels=_present(arrays["labels"]),
                 footprint=_present(arrays["footprint"]),
                 excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
                 diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
                 parent=parent, provenance=dict(meta["provenance"]),
                 left_out=arrays["left_out"], weights=arrays["weights"], saved_as=root.name,
+                stored_step=stored_step,
             )
         except (OSError, ValueError, KeyError) as exc:
             raise ValueError(f"{root / 'record.json'}: {exc}") from exc
@@ -374,13 +429,104 @@ class DeformableRecord:
             unknown = sorted(set(meta) - set(_RECORD_KEYS))
             if unknown:
                 raise ValueError(f"Unknown record key(s) {unknown}")
-            if meta.get("version") != RECORD_VERSION:
-                raise ValueError(f"record format {meta.get('version')!r}, not {RECORD_VERSION}")
+            if meta.get("version") not in READ_VERSIONS:
+                raise ValueError(f"record format {meta.get('version')!r}, which "
+                                 "this LangSlice does not read (it reads "
+                                 f"{' or '.join(map(str, READ_VERSIONS))})")
             if "parent" not in meta:
                 raise KeyError("parent")
             return meta
         except (OSError, ValueError, KeyError) as exc:
             raise ValueError(f"{root / 'record.json'}: {exc}") from exc
+
+
+def _read_fields(
+    meta: JsonObject,
+    arrays: dict[str, np.ndarray | None],
+    parent_record: DeformableRecord | None,
+) -> tuple[np.ndarray, np.ndarray | None, StoredStep | None]:
+    """Read a record's fields: as stored whole, or rebuilt from its step.
+
+    Returns the forward and inverse fields on the section grid at storage
+    precision (the inverse None for a record saved without one) and the
+    step they were rebuilt from (None for fields saved whole, as format 2
+    has only).
+    """
+    kind = optional_at(meta, "fields", text_at) or FIELDS_WHOLE
+    if kind == FIELDS_WHOLE:
+        return _present(arrays["field_mm"]), arrays["inverse_field_mm"], None
+    width, height = (int(v) for v in numbers_at(meta, "section_size"))
+    placement = object_at(meta, "placement")
+    mm_per_px = number_at(placement, "section_mm_per_px")
+    engine = object_at(meta, "engine")
+    step: StoredStep
+    if kind == FIELDS_ENGINE:
+        working = numbers_at(object_at(engine, "working_grid"), "size")
+        working_size = (int(working[0]), int(working[1]))
+        grid = WorkingGrid((width, height), mm_per_px, working_size)
+        step = EngineStep(grid, _present(arrays["step_field_mm"]),
+                          _present(arrays["step_inverse_field_mm"]))
+    elif kind == FIELDS_MESH:
+        mesh = object_at(engine, "native_parameters")
+        source = np.asarray(list_at(mesh, "source_xy"), dtype=np.float64)
+        target = np.asarray(list_at(mesh, "target_xy"), dtype=np.float64)
+        triangles = np.asarray(list_at(mesh, "simplices"), dtype=np.int32)
+        step = MeshStep(source, target, triangles)
+    else:
+        raise ValueError(f"fields {kind!r} is none of {FIELDS_KINDS}")
+    previous = None
+    if parent_record is not None:
+        parent_inverse_mm = _present(parent_record.inverse_field_mm)
+        previous = (parent_record.field_mm, parent_inverse_mm)
+    field_mm, inverse_mm = rebuilt_fields(
+        step, (width, height), mm_per_px, previous)
+    field_mm = at_storage_precision(field_mm)
+    return field_mm, at_storage_precision(inverse_mm), step
+
+
+def fields_digest(field_mm: np.ndarray, inverse_field_mm: np.ndarray) -> str:
+    """Hash a record's fields as stored: float16, forward then inverse.
+
+    Parameters
+    ----------
+    field_mm
+        The forward field, ``(height, width, 2)``, at storage precision.
+    inverse_field_mm
+        The inverse field, likewise.
+
+    Returns
+    -------
+    str
+        The SHA-256 of both fields' float16 bytes in C order, hex.
+    """
+    digest = hashlib.sha256()
+    for plane in (field_mm, inverse_field_mm):
+        stored = np.ascontiguousarray(plane, dtype=np.float16)
+        digest.update(stored.tobytes())
+    return digest.hexdigest()
+
+
+def _check_rebuilt(
+    root: Path,
+    meta: JsonObject,
+    field_mm: np.ndarray,
+    inverse_field_mm: np.ndarray | None,
+) -> None:
+    """Warn when rebuilt fields differ from the bits the record was made with.
+
+    A record whose ``record.json`` has no ``fields_sha256`` is not checked.
+    """
+    made = optional_at(meta, "fields_sha256", text_at)
+    if made is None or inverse_field_mm is None:
+        return
+    if fields_digest(field_mm, inverse_field_mm) == made:
+        return
+    logger.warning(
+        "%s: the fields were rebuilt with different bits on this machine "
+        "than the ones the record was made with; a fit started from this "
+        "record can differ from one started on the machine that made it",
+        root / "record.json",
+    )
 
 
 def _present(array: np.ndarray | None) -> np.ndarray:

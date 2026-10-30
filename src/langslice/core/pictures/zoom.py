@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 CROP_RENDERER = "crop"
 #: The redraw refusals after which the saved picture is cropped instead: its
 #: section is gone, or another version of LangSlice saved its recipe.
-CROPPED_INSTEAD = (RefusalCode.UNKNOWN_SECTION, RefusalCode.UNREADABLE_RECIPE)
+CROPPED_INSTEAD = (RefusalCode.SECTION_GONE, RefusalCode.UNREADABLE_RECIPE)
 #: How much a crop (no redraw) is enlarged at most: it holds no more detail.
 MAX_CROP_ENLARGE = 4.0
 
@@ -184,7 +184,8 @@ def redraw(
         if (recipe is None or renderer != looks.RENDERER or state is None
                 or (recipe.get("args") or {}).get("mode") != "overlay"):
             raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                          "Region zoom works only on overlay pictures.")
+                          "region needs an overlay picture; give an "
+                          "overlay's picture number.")
         recipe, window = looks.overlay_region_window(workspace, state, recipe, region,
                                                      store=store)
     source = _image(picture)

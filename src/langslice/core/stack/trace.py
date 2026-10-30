@@ -19,8 +19,23 @@ from langslice.core.jsonable import JsonObject, empty_object
 class BorderTrace:
     """Hold one section's image-model border trace.
 
-    A field that is None was not part of the record: a call still
-    running, refused or failed records fewer facts.
+    Which fields a record has follows its ``status``; a field it does not
+    have is None:
+
+    - every record: ``id``, ``geometry_fingerprint``, ``status``.
+    - ``running`` (the call made, no reply yet): the call's facts,
+      ``prompt_edited``, ``provider``, ``model``, ``output_kind``,
+      ``fit_performed``, ``artifact_dir``, ``artifact_paths``, ``cached``,
+      ``attempt`` and ``raw_received`` (False); ``include`` and
+      ``exclude`` when regions were chosen, ``profile`` and ``untested``
+      for an untested profile.
+    - ``ok``: the call's facts, ``raw_received`` True, and the reply's:
+      ``route``, ``raw_size``, ``model_border_pixels``. A saved reply
+      reused at the same geometry is the same record with ``cached`` True.
+    - ``error``: ``error`` and ``message``, with the call's facts when the
+      call was made and failed (``raw_received`` says whether the model had
+      answered), or only ``artifact_dir`` when no call was made (one at
+      this geometry was still running or was interrupted).
 
     Parameters
     ----------
@@ -32,26 +47,22 @@ class BorderTrace:
         ``running``, ``ok`` or ``error``.
     prompt_edited
         Whether the prompt sent differs from the base prompt.
-    provider
-        The image model's provider.
-    model
-        The image model.
+    provider, model
+        The image model's provider and the model called.
     profile
         An untested profile's name.
     untested
         True for an untested profile's call.
-    include
-        The regions whose borders the model was shown alone.
-    exclude
-        The regions left out of the borders shown.
+    include, exclude
+        The regions whose borders the model was shown alone, and those left
+        out of the borders shown.
     output_kind
         What the model was asked for (``border_annotation``).
     fit_performed
         Whether a fit was made inside the call (never, today).
-    artifact_dir
-        The attempt's folder, relative to the job folder.
-    artifact_paths
-        The attempt's files by role, relative to the job folder.
+    artifact_dir, artifact_paths
+        The attempt's folder and its files by role, relative to the job
+        folder.
     cached
         Whether the record is a saved reply at this geometry reused.
     attempt
@@ -64,10 +75,8 @@ class BorderTrace:
         The returned image's ``(width, height)``.
     model_border_pixels
         How many line pixels were read off the returned image.
-    error
-        A failed call's error code.
-    message
-        A failed call's message.
+    error, message
+        A failed call's error code and message.
     extra
         Other keys the record carried, kept as they came.
     """

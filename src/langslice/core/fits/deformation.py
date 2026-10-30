@@ -34,6 +34,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +146,15 @@ def clear_stale(state: Stack) -> list[str]:
     return cleared
 
 
+class FitStart(StrEnum):
+    """Name what a deformation is built on (a step's ``start``)."""
+
+    #: The section's linear placement alone.
+    LINEAR = "linear"
+    #: The deformation the section holds, composed under the new one.
+    CURRENT = "current"
+
+
 # --- the grid and the images a fit reads ----------------------------------
 
 
@@ -221,31 +231,33 @@ def traced_lines(
     from langslice.core.fits import frame as handoff
 
     section = grid.record
-    held = section.image_correction
+    held = section.border_trace
     status = None if held is None else held.status
     if running:
         raise Refused(RefusalCode.TRACE_TIMEOUT,
-                      f"{section.id}'s trace_borders call is still "
-                      f"running after {waited_s:g} s of waiting; call again later.",
+                      f"{section.id}'s border trace is still running "
+                      f"after {waited_s:g} s of waiting; call again later.",
                       id=section.id)
     if status == "running":
         raise Refused(RefusalCode.TRACE_RUNNING,
-                      f"{section.id}'s trace_borders result is recorded "
-                      "as running, but no call is running in this session; call "
-                      "trace_borders again.", id=section.id)
+                      f"{section.id}'s border trace is recorded as "
+                      "running, but no call is running in this session; "
+                      "trace the section again.", id=section.id)
     if held is not None and status == "error":
         raise Refused(RefusalCode.TRACE_FAILED,
-                      f"{section.id}'s trace_borders call failed: "
+                      f"{section.id}'s border trace failed: "
                       + (held.message or held.error or "no image"),
                       id=section.id)
     if held is None or status != "ok":
         raise Refused(RefusalCode.NO_TRACE,
-                      f"{section.id} has no completed trace_borders "
-                      "result; traced section images need one.", id=section.id)
+                      f"{section.id} has no completed border trace; a "
+                      "traced fit needs one: trace the section first.",
+                      id=section.id)
     if held.geometry_fingerprint != handoff.correction_fingerprint(state, ctx, section.id):
         raise Refused(RefusalCode.TRACE_STALE,
-                      f"{section.id}'s trace_borders result was made at "
-                      "a different placement; trace the current placement first.",
+                      f"{section.id}'s border trace was made at "
+                      "a different placement; trace the current placement "
+                      "first.",
                       id=section.id)
     stored = held.artifact_dir or ""
     directory = Path(stored)
@@ -255,8 +267,8 @@ def traced_lines(
     request_path = directory / "request.json"
     if not lines_path.exists() or not request_path.exists():
         raise Refused(RefusalCode.NO_TRACE,
-                      f"{section.id}'s trace_borders artifacts are missing "
-                      f"({stored}).", id=section.id)
+                      f"{section.id}'s border trace files are missing "
+                      f"({stored}); trace the section again.", id=section.id)
     atlas_to_canvas = np.asarray(json.loads(request_path.read_text())["atlas_to_canvas"],
                                  dtype=np.float64)
     with Image.open(lines_path) as opened:
@@ -390,11 +402,36 @@ class RecordStore:
         return self.root / name / folder_name(key)
 
     def get(self, section_id: str, key: str) -> DeformableRecord | None:
+        """Return the record saved under *key*.
+
+        Parameters
+        ----------
+        section_id
+            The section's filename.
+        key
+            The record's key.
+
+        Returns
+        -------
+        DeformableRecord or None
+            The record; None when none is saved. Refused
+            ``DEFORMATION_UNREADABLE`` when one is saved that cannot be read
+            (a format this version does not read, its files gone).
+        """
         record = self.cache.get(key)
         if record is None:
             folder = self.directory(section_id, key)
             if (folder / "record.json").exists():
-                record = DeformableRecord.load(folder)
+                try:
+                    record = DeformableRecord.load(folder)
+                except ValueError as exc:
+                    raise Refused(
+                        RefusalCode.DEFORMATION_UNREADABLE,
+                        f"{section_id}'s deformation cannot be read ({exc}); "
+                        "nothing was drawn or fitted from it. Put the section "
+                        "back on another registration, or undo the step that "
+                        "applied it.",
+                        id=section_id) from exc
         if record is not None:
             self.put(key, record)
         return record

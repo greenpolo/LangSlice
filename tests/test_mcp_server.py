@@ -129,6 +129,28 @@ def test_every_mcp_tool_call_is_an_event_in_the_job_folder(tmp_path: Path):
     assert "response" not in end
 
 
+def test_a_tool_that_crashes_is_answered_with_its_exceptions_name(tmp_path: Path, monkeypatch):
+    """The pipeline answers an MCP tool's crash (the box answers crashes); the
+    event log's ``tool_end`` carries the same reply."""
+    from langslice.tools import status
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(status, "raw_channels", broken)
+    folder = _folder(tmp_path)
+    server = build_server(_spec_for, str(folder), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return await client.call_tool("status", {})
+
+    reply = _text(_session(server, body))
+    assert reply == {"status": "error", "error": "OSError", "message": "disk gone"}
+    lines = [json.loads(line) for line in
+             (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
+    (end,) = [line for line in lines if line["kind"] == "tool_end"]
+    assert end["failed"] is True
+
 def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
@@ -456,7 +478,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     ``start_job(image_folder=...)`` as it stands: its saved settings and
     notes, never the server's job flags, resuming its checkpoint."""
     folder = _folder(tmp_path)
-    _init(folder, "--tasks", "position", "--interval", "150", "--preprocess", "none",
+    _init(folder, "--tasks", "position", "--position-interval-um", "150", "--preprocess", "none",
           "--notes", "Section 2 is torn.")
 
     def server() -> Any:
@@ -477,7 +499,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     assert not briefing.isError and not note.isError
     refused = json.loads(early.content[0].text)
     assert refused["error"] == "OPENING_NOT_READ" and refused["pages"] == [1]
-    assert "show_stack(page=1)" in refused["detail"]
+    assert "show_stack(page=1)" in refused["message"]
     # The job comes in the launching message, not in start_job's reply.
     assert briefing.content[0].text == (
         f"Job opened: {folder / 'langslice'}. 3 sections. The opening is show_stack "
@@ -586,7 +608,7 @@ def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, m
     done: Future[dict[str, Any]] = Future()
     done.set_result({})
     job.image_jobs["s0.png"] = ("fingerprint", done)
-    monkeypatch.setattr(job, "settle_image_corrections", lambda: settled.append("one") or True)
+    monkeypatch.setattr(job, "settle_border_traces", lambda: settled.append("one") or True)
 
     async def body(client: Any) -> Any:
         return await client.call_tool("start_job", {"image_folder": str(second)})

@@ -20,11 +20,6 @@ from typing import Any
 
 import langslice
 
-# The command groups are imported where the parser is built, not here: the
-# agent CLI's entry point (``jobcli``, a module of this package) decides
-# whether its warm process answers before anything heavy is loaded
-# (:mod:`langslice.doors.agent_cli.warm`).
-
 #: The commands that drive a host (the hosts layer), by module path: command
 #: -> (module, its add-parser function, its run function). The module is
 #: imported when the parser is built, never statically, so the doors never

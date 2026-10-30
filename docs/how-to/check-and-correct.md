@@ -119,7 +119,7 @@ Every change to the registration is one step. You can go back in two ways.
 
 - **Undo the last steps.** Ask for the last steps to be undone, for example
   "undo the last two steps". Steps are undone newest first, across the whole
-  job. The last 50 steps are kept, also after the job is closed. The window's **Undo** list
+  job. Every step is kept, also after the job is closed. The window's **Undo** list
   shows which call made each step.
 - **Put one section back.** Each registration a section has held is
   numbered and kept. Ask for a section to go back to an earlier number, for

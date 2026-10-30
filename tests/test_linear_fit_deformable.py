@@ -33,6 +33,8 @@ from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
 from langslice.tools import deformable as ops_deformable
+from langslice.tools.deformable_rows import deformable_row_to_json
+from langslice.tools.fit_pictures import draw_fits
 from tests.deformable_synthetic import (
     HY,
     SMOOTH_FIELD,
@@ -93,6 +95,11 @@ def _syn(box: Any, **kwargs: Any) -> dict[str, Any]:
     result = _tool(box, "fireants_syn")([ID], **kwargs)
     assert result["status"] == "ok", result
     return result
+
+
+def _row(done: ops_deformable.DeformableFit) -> dict[str, Any]:
+    """The first section's row, as a reply gives it."""
+    return deformable_row_to_json(done.rows[0])
 
 
 def _fit(box: Any, ctx: Any, choice: deformation.Choice | None = None,
@@ -169,7 +176,7 @@ def test_a_second_fit_builds_on_the_first_and_undo_goes_back(tmp_path: Path, atl
     _tool(box, "undo")()
     assert state.slices[0].deformation == first
     # The same chain fitted again after the undo reuses the saved result.
-    reused = _fit(box, ctx, _choice(), restrict_to=("STR",)).rows[0]
+    reused = _row(_fit(box, ctx, _choice(), restrict_to=("STR",)))
     assert reused["steps"] == 2 and reused["cached"] is True
 
 
@@ -210,7 +217,7 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
     monkeypatch.undo()
     shutil.rmtree(folder / "warp.ome.zarr")  # the record of the applied deformation is unreadable
     box.job.deformations.cache.clear()
-    row = _fit(box, ctx).rows[0]
+    row = _row(_fit(box, ctx))
     assert row["status"] == "error" and row["error"] == "DEFORMATION_UNREADABLE", row
     assert json_of(state.slices[0].deformation) == held
 
@@ -279,7 +286,7 @@ def test_look_overlay_draws_the_applied_warp_unless_warp_none(tmp_path: Path, at
 
 def _fake_trace(state: Stack, ctx: Any, folder: Path, *, fingerprint: str) -> None:
     """A completed trace_borders result whose lines are the placed atlas borders."""
-    state.slices[0].image_correction = trace_from_json(
+    state.slices[0].border_trace = trace_from_json(
         _trace_artifacts(state, ctx, folder, fingerprint=fingerprint))
 
 
@@ -306,13 +313,13 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     from langslice.core.fits import frame as handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
-    assert _fit(box, ctx, TRACED).rows[0]["error"] == "NO_TRACE"
+    assert _row(_fit(box, ctx, TRACED))["error"] == "NO_TRACE"
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="earlier")
-    assert _fit(box, ctx, TRACED).rows[0]["error"] == "TRACE_STALE"
-    state.slices[0].image_correction = trace_from_json(
-        {**trace_to_json(state.slices[0].image_correction), "geometry_fingerprint": "now"})
-    row = _fit(box, ctx, TRACED).rows[0]
+    assert _row(_fit(box, ctx, TRACED))["error"] == "TRACE_STALE"
+    state.slices[0].border_trace = trace_from_json(
+        {**trace_to_json(state.slices[0].border_trace), "geometry_fingerprint": "now"})
+    row = _row(_fit(box, ctx, TRACED))
     assert row["status"] == "ok", row
     assert row["settings"]["atlas_image"] == "borders"  # traced lines fit against borders
     assert row["engine_settings"]["metric"] == "mean_squares"
@@ -328,16 +335,16 @@ def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
-    state.slices[0].image_correction = trace_from_json(
-        {**trace_to_json(state.slices[0].image_correction), "exclude": ["HY"]})
+    state.slices[0].border_trace = trace_from_json(
+        {**trace_to_json(state.slices[0].border_trace), "exclude": ["HY"]})
     state.slices[0].damaged_regions = ["VS"]  # marked damage is left out too
-    row = _fit(box, ctx, TRACED).rows[0]
+    row = _row(_fit(box, ctx, TRACED))
     assert row["status"] == "ok", row
     assert row["trace_regions"] == {"include": [], "exclude": ["VS", "HY"]}
     steps = deformation_to_json(state.slices[0].deformation)["steps"]
     assert steps[-1]["exclude"] == ["VS", "HY"]
     # A stain fit ignores the trace's regions.
-    assert "trace_regions" not in _fit(box, ctx).rows[0]
+    assert "trace_regions" not in _row(_fit(box, ctx))
 
 
 def test_the_model_is_shown_only_the_kept_regions(tmp_path: Path, atlas):
@@ -366,18 +373,18 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     folder = tmp_path / "trace"
-    state.slices[0].image_correction = trace_from_json(
+    state.slices[0].border_trace = trace_from_json(
         {"id": "s0.png", "status": "running", "geometry_fingerprint": "now"})
 
     def job() -> dict[str, Any]:
         return _trace_artifacts(state, ctx, folder, fingerprint="now")
 
     box.job.start_image_job(ID, "now", job, workers=1)
-    done = _fit(box, ctx, TRACED, options=default_options("overlay"))
-    assert done.rows[0]["status"] == "ok", done.rows
-    assert trace_to_json(state.slices[0].image_correction)["status"] == "ok"
+    done = draw_fits(ctx, _fit(box, ctx, TRACED), default_options("overlay"))
+    assert _row(done)["status"] == "ok", done.rows
+    assert trace_to_json(state.slices[0].border_trace)["status"] == "ok"
     assert trace_to_json(
-        load_checkpoint(ctx.checkpoint_path).slices[0].image_correction)["status"] == "ok"
+        load_checkpoint(ctx.checkpoint_path).slices[0].border_trace)["status"] == "ok"
     assert ID not in box.job.image_jobs
     assert len(done.pictures) == 2 and done.traces == [{"id": ID, "image_indexes": [1]}]
     # The trace picture carries the lines in the border color on the section.
@@ -395,7 +402,7 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     state, ctx, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     monkeypatch.setattr(deformation, "TRACE_WAIT_S", 0.2)
-    state.slices[0].image_correction = trace_from_json(
+    state.slices[0].border_trace = trace_from_json(
         {"id": "s0.png", "status": "running", "geometry_fingerprint": "now"})
     release = threading.Event()
 
@@ -414,12 +421,12 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
 
     monkeypatch.setattr(box.job, "wait_image_job", wait)
     try:
-        late = _fit(box, ctx, TRACED).rows[0]
+        late = _row(_fit(box, ctx, TRACED))
         assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]
     finally:
         pending = False
         release.set()
-    failed = _fit(box, ctx, TRACED).rows[0]
+    failed = _row(_fit(box, ctx, TRACED))
     assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]
 
 

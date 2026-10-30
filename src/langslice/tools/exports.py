@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.refusal import RefusalCode
 from langslice.tools.refusal import unknown_sections
+from langslice.tools.run import Run, as_list
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
@@ -262,7 +263,7 @@ def section_maps(
 
 def _completed_trace(section: Section) -> BorderTrace | None:
     """The section's trace record when its last ``trace_borders`` call holds a reply."""
-    held = section.image_correction
+    held = section.border_trace
     if held is None or held.status != "ok" or not held.artifact_dir:
         return None
     return held
@@ -317,7 +318,7 @@ def _export_trace(
     }
     with job.writing():
         now = job.state.by_id(record.id)
-        trace_now = None if now is None else now.image_correction
+        trace_now = None if now is None else now.border_trace
         if trace_now is None or trace_now.artifact_dir != artifact_dir:
             return []  # traced again meanwhile: the next export writes the new reply
         try:
@@ -393,3 +394,38 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
         files += [(str(layout.resolve(relative)), "plugin_layer")
                   for relative in export_layers(layout, state)]
     return files
+
+
+def export_maps_tool(
+    run: Run, sections: Sequence[str], full_resolution: bool
+) -> dict[str, Any]:
+    """Run the ``export_maps`` verb: write the maps and exports, answer.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    sections, full_resolution
+        The declared arguments as the model sent them
+        (``tools/descriptions/bookkeeping.py``).
+
+    Returns
+    -------
+    dict
+        The reply: ``status`` (``error``, ``NOTHING_EXPORTED``, when every
+        section named was skipped), the sections written and skipped, the
+        files written, and the time it took.
+    """
+    done = export_maps(run.job, run.workspace, as_list(sections),
+                       full_resolution=bool(full_resolution))
+    exported = bool(done.sections or not done.skipped)
+    status = "ok" if exported else "error"
+    result: dict[str, Any] = {"status": status}
+    if not exported:
+        result["error"] = RefusalCode.NOTHING_EXPORTED
+    result.update(
+        written=done.sections, skipped=done.skipped,
+        full_resolution=done.full_resolution, files_written=done.written,
+        files=[{"path": path, "kind": kind} for path, kind in done.files],
+        seconds=round(done.seconds, 2))
+    return result
