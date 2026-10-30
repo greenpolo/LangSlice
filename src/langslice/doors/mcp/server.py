@@ -63,12 +63,13 @@ from langslice.doors.statement import (
     opening_for_mcp,
     read_notes,
 )
-from langslice.doors.tools.toolbox import ToolBox, build_tools
+from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
 from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import VERBS
+from langslice.tools.pipeline import ToolBox
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,9 @@ class EventRelay:
     """The session's tool events (``tool_start`` / ``tool_end``, the
     ``show_stack`` pages as ``seed``), forwarded to ``target`` when a host
     listens (the ABBA channel of a saved ABBA job), dropped otherwise. The
-    toolbox emits them (:func:`langslice.doors.tools.toolbox.build_tools`'s
-    ``on_event``); they carry saved view paths, never image bytes."""
+    tool pipeline emits them (the ``on_event`` of
+    :func:`langslice.doors.tools.toolbox.build_tools`); they carry saved
+    view paths, never image bytes."""
 
     def __init__(self) -> None:
         self.target: Callable[[dict[str, Any]], None] | None = None
@@ -202,7 +204,7 @@ def mcp_statement(session: Session) -> str:
 
 def arm_opening(session: Session) -> int:
     """Require the opening pages to be read before any write (the toolbox's
-    opening-read gate, :meth:`langslice.doors.tools.toolbox.ToolBox.require_opening`);
+    opening-read gate, :meth:`langslice.tools.pipeline.ToolBox.require_opening`);
     the number of pages."""
     if not session.pages:
         session.pages = opening_pages(session)

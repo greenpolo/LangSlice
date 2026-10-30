@@ -1,481 +1,41 @@
-"""The one toolbox: every tool the agent can be given, gated by the spec.
+"""The toolbox of one run: the tools its spec switches on, built over its job.
 
-Conventions, applied to every tool: sections are addressed by filename or
-index; ordinary writes return the rows they changed (``status`` is the whole
-table); every write is undoable and checkpoints. Every picture a tool sends
-is saved in the job folder with a number, and the reply lists the numbers
-under ``pictures``, in the order the pictures are attached.
-
-Tools report data: no advice, no interpretation, no strategy in any payload.
-A constraint that states a number is not coaching: refusals name the
-numbers that caused them and stop there.
-
-The tools are a door over the core and the job: they check arguments, call the
-operations (:mod:`langslice.tools`) and word the reply. The bodies are in
-:mod:`.looking`, :mod:`.changing` and :mod:`.fitting`, closures over one
-:class:`~langslice.tools.run.Door`; this module wraps each one
-(:func:`build_tools`). Their pictures are plain PIL images under
-``TOOL_MEDIA_PARTS_KEY``; the ADK driver packages them as message parts
-(:func:`langslice.doors.agent.media.packaged`), the MCP server as content
-blocks, so this module never imports ``google.genai``.
+:func:`build_tools` gathers each tool's body (:mod:`.looking`,
+:mod:`.changing`, :mod:`.fitting`, and a plugin's through
+:mod:`langslice.doors.plugins.runtime`), each a closure over one
+:class:`~langslice.tools.run.Run`, and makes each one a tool of the pipeline
+every call goes through (:mod:`langslice.tools.pipeline`). It lives at the
+doors because the bodies do, and because it resolves the run's image model
+through the providers, which the tools do not import.
 """
 
 from __future__ import annotations
 
-import contextlib
-import functools
-import inspect
-import json
-import logging
-import threading
-import uuid
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
-from PIL import Image
-
-from langslice.core.pictures.opening import DEFAULT_IMAGE_LIMIT
+from langslice.core.fits.trace.trace import profile_prompt
 from langslice.core.pictures.sizes import (
     AUTO_RESOLUTION,
     MAX_IMAGES_PER_CALL,
     resolution_level,
 )
-from langslice.core.refusal import (
-    FAILED_STATUSES,
-    RefusalCode,
-    Refused,
-    ReplyStatus,
-)
+from langslice.core.space import Plane
 from langslice.core.stack.stack import Stack
-from langslice.doors.agent.live import LiveCallback, plain
-from langslice.doors.tools import (
-    TOOL_MEDIA_PARTS_KEY,
-    changing,
-    fitting,
-    looking,
-)
+from langslice.doors.plugins import provenance, runtime
+from langslice.doors.tools import changing, fitting, looking
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
-from langslice.job.pictures import PICTURE_FILE as VIEW_PICTURE_FILE
-from langslice.job.pictures import captured as captured_views
 from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
-from langslice.tools.arguments import argument_refusal
 from langslice.tools.catalog import enabled, verbs_for
-from langslice.tools.descriptions.render import Variant, declare
-from langslice.tools.run import Door
+from langslice.tools.descriptions.render import Variant
+from langslice.tools.events import EventLog, LiveCallback
+from langslice.tools.pipeline import ToolBox, declared_tool
+from langslice.tools.run import Run
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.doors.agent.engine import EngineContext
-
-logger = logging.getLogger(__name__)
-
-#: Tools whose host display targets are the whole stack.
-_STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
-#: The most bytes of a call's arguments a ``logs/events.jsonl`` line keeps.
-EVENT_ARGS_BYTES = 2048
-
-
-def _tool_target_ids(state: Stack, name: str, args: dict[str, Any]) -> list[str]:
-    """Resolve host display targets before a tool can reorder the stack."""
-    every = [record.id for record in state.in_order()]
-    sections = args.get("sections")
-    if name in _STACK_TOOLS:
-        return every
-    if name == "position_sections" and not sections:
-        return every  # the cutting angles alone: every section
-    if name in ("make_image", "make_mask") and not sections:
-        return every
-    if name == "look" and not sections and args.get("mode") != "atlas":
-        return every
-    refs: list[Any] = []
-    for entry in sections if isinstance(sections, (list, tuple)) else []:
-        refs.append(entry.get("id", "") if isinstance(entry, dict) else entry)
-    for key in ("section", "id"):
-        if args.get(key) not in (None, ""):
-            refs.append(args[key])
-    for entry in args.get("slices") or []:
-        refs.append(entry)
-    targets: list[str] = []
-    for ref in refs:
-        record = state.resolve(ref)
-        if record is not None and record.id not in targets:
-            targets.append(record.id)
-    return targets
-
-
-def _event_args(arguments: Any) -> dict[str, Any]:
-    """A call's arguments as a ``logs/events.jsonl`` line keeps them: as
-    given when their JSON is within :data:`EVENT_ARGS_BYTES`, else that
-    JSON cut to it, as a string, with ``args_truncated``."""
-    data = json.dumps(arguments, default=str, ensure_ascii=False).encode("utf-8")
-    if len(data) <= EVENT_ARGS_BYTES:
-        return {"args": arguments}
-    return {"args": data[:EVENT_ARGS_BYTES].decode("utf-8", "ignore"), "args_truncated": True}
-
-
-def _job_events(job: Job, door: str) -> LiveCallback:
-    """The job folder's sink for the toolbox's ``tool_start`` / ``tool_end``
-    events: one line each in ``logs/events.jsonl`` (``JobLayout.log_event``),
-    on every door, so a viewer in another process follows any run. A line
-    holds ``name``, ``execution_id``, ``door``, ``target_ids`` and ``args``
-    (:func:`_event_args`); ``tool_end`` adds ``step`` (the undo history's
-    depth after the call, as a saved picture's ``step``), ``views`` (the
-    pictures the call saved, relative to the job folder), ``failed`` and
-    ``status`` (the reply's status word, ``ok`` when it has none). Never the
-    reply or picture bytes. A job that writes nothing (``persist`` False, a
-    dry run) logs nothing."""
-
-    def log(event: dict[str, Any]) -> None:
-        if not job.persist:
-            return
-        kind = str(event.get("kind"))
-        fields: dict[str, Any] = {
-            "name": event.get("name"), "execution_id": event.get("execution_id"),
-            "door": door, "target_ids": list(event.get("target_ids") or []),
-            **_event_args(event.get("args") or {}),
-        }
-        if kind == "tool_end":
-            response = event.get("response")
-            status = response.get("status") if isinstance(response, dict) else None
-            fields.update(
-                step=len(job.undo_stack),
-                views=[job.layout.relative(path) for path in event.get("views") or []],
-                failed=bool(event.get("failed")),
-                status=str(status) if status is not None else "ok",
-            )
-        job.layout.log_event(kind, **fields)
-
-    return log
-
-
-def _serialized(
-    tool: Any, lock: threading.Lock, *, state: Stack | None = None,
-    on_event: LiveCallback | None = None,
-    log: LiveCallback | None = None,
-    guard: Callable[[], contextlib.AbstractContextManager[Any]] | None = None,
-) -> Any:
-    """Serialize execution and its host notifications under the same lock.
-
-    Model tool-call announcements may arrive together. These optional events
-    identify the tool actually executing, including stable filenames resolved
-    before a reorder. They never enter model context or change its schema.
-    ``tool_end`` carries ``views``: the paths of the pictures the call saved in
-    the job folder (``job.pictures``), never their bytes. Each event goes to
-    *on_event* (a host's live observer) and to *log* (the job folder's
-    ``logs/events.jsonl``, :func:`_job_events`). *guard* is entered inside the
-    lock around the tool (the job's write lock and its reload of a state file
-    changed on disk).
-    """
-    signature = inspect.signature(tool)
-
-    def notify(event: dict[str, Any]) -> None:
-        for observer in (on_event, log):
-            if observer is not None:
-                try:
-                    observer(event)
-                except Exception:
-                    logger.warning("Tool execution observer failed", exc_info=True)
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        with lock, (guard() if guard is not None else contextlib.nullcontext()):
-            if on_event is None and log is None:
-                return tool(*args, **kwargs)
-            fields: dict[str, Any] = {"name": tool.__name__, "execution_id": uuid.uuid4().hex}
-            try:
-                bound = signature.bind(*args, **kwargs)
-                bound.apply_defaults()
-                arguments = dict(bound.arguments)
-                context = arguments.pop("tool_context", None)
-                fields.update(
-                    id=plain(getattr(context, "function_call_id", None)),
-                    args=plain(arguments),
-                    target_ids=_tool_target_ids(state, tool.__name__, arguments)
-                    if state is not None else [],
-                )
-            except Exception:
-                # Bad display metadata must never change the tool's behavior.
-                logger.warning("Tool execution metadata unavailable", exc_info=True)
-                fields.update(id=None, args={}, target_ids=[])
-            notify({"kind": "tool_start", **fields})
-            try:
-                with captured_views() as saved:
-                    result = tool(*args, **kwargs)
-            except Exception as exc:
-                failure = Refused.from_exception(exc)
-                notify({"kind": "tool_end", **fields, "failed": True,
-                        "response": failure.payload()})
-                raise
-            # The pictures as saved in the job folder (written in the
-            # background): hosts show them from there, never from bytes.
-            response = plain(result)
-            failed = isinstance(response, dict) and response.get("status") in FAILED_STATUSES
-            notify({"kind": "tool_end", **fields, "failed": failed, "response": response,
-                    "views": [str(item.folder / VIEW_PICTURE_FILE) for item in saved]})
-            return result
-
-    return run
-
-
-def _clears_stale_deformations(tool: Any, job: Job) -> Any:
-    """After any tool: drop deformations whose linear placement changed, and say so.
-
-    The rule is the job's (:meth:`~langslice.job.job.Job.clear_stale_deformations`):
-    cleared in the same undo step as the write that made them stale, so
-    `undo` restores the placement and the deformation together. The door
-    says so in the reply.
-    """
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        result = tool(*args, **kwargs)
-        cleared = job.clear_stale_deformations()
-        if cleared and isinstance(result, dict):
-            result["deformation_cleared"] = cleared
-        return result
-
-    return run
-
-
-def _names_registrations(tool: Any, job: Job) -> Any:
-    """After a write: the registration each section it changed now holds
-    (:mod:`langslice.job.registrations`), as ``registration``
-    ``{section: number}``, for the sections whose status row in the reply does
-    not show it already (:func:`registrations_named`)."""
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        mark = len(job.registered)
-        result = tool(*args, **kwargs)
-        return registrations_named(job, result, mark)
-
-    return run
-
-
-def registrations_named(job: Job, result: Any, mark: int) -> Any:
-    """*result* with ``registration`` ``{section: number}``: the registrations
-    this thread's writes left since ``len(job.registered)`` was *mark*, less
-    the ones its status rows (``changed``, ``rows``) show; a reply that has a
-    ``registration`` of its own keeps it."""
-    held = job.registered_since(mark)
-    if not held or not isinstance(result, dict) or "registration" in result:
-        return result
-    shown = {row.get("id"): row.get("registration") for key in ("changed", "rows")
-             for row in (result.get(key) or []) if isinstance(row, dict)}
-    named = {section: number for section, number in held.items()
-             if shown.get(section) != number}
-    if named:
-        result["registration"] = named
-    return result
-
-
-def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
-    """Save every picture *tool* returns in the job folder, with its layers,
-    and list their numbers under ``pictures``.
-
-    A reply that already lists ``pictures`` was saved by its operation
-    (``look``, ``zoom``, the change tools' pictures:
-    :mod:`langslice.tools.look`) and is left as it is. Otherwise the hook is
-    the job's (:meth:`langslice.job.pictures.ViewStore.shown`), the same for
-    every door: this wrapper says which pictures the tool returned and with
-    which arguments, and the store numbers them at once and writes them in the
-    background, in the doors' encoding, so the doors' bytes are untouched.
-    """
-    signature = inspect.signature(tool)
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        with job.views.shown(tool.__name__, atlas_of=lambda: ctx.atlas) as shown:
-            result = tool(*args, **kwargs)
-            media = result.get(TOOL_MEDIA_PARTS_KEY) if isinstance(result, dict) else None
-            pictures = ([item for item in media if isinstance(item, Image.Image)]
-                        if isinstance(media, list) else [])
-            if pictures and "pictures" not in result:
-                try:
-                    bound = signature.bind(*args, **kwargs)
-                    bound.apply_defaults()
-                    arguments = dict(bound.arguments)
-                except TypeError:
-                    arguments = dict(kwargs)
-                context = arguments.pop("tool_context", None)
-                shown.show(pictures, arguments=plain(arguments),
-                           call_id=plain(getattr(context, "function_call_id", None)))
-        if shown.numbers and isinstance(result, dict):
-            result["pictures"] = [
-                {"id": number, **({"caption": text} if text else {})}
-                for number, text in zip(shown.numbers, shown.captions or
-                                        [None] * len(shown.numbers), strict=False)]
-        return result
-
-    return run
-
-
-def _announces_work(tool: Any, job: Job) -> Any:
-    """Open every reply with the notices of the background work that
-    finished since the last reply (:meth:`langslice.job.background.BackgroundWork.notices`),
-    and attach that work's pictures after the reply's own: ``background``
-    holds the notices, ``pictures`` gains each work picture's number."""
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        result = tool(*args, **kwargs)
-        if not isinstance(result, dict):
-            return result
-        return with_notices(job, result)
-
-    return run
-
-
-def with_notices(job: Job, result: dict[str, Any]) -> dict[str, Any]:
-    """*result* opened with the notices of the background work finished
-    since they were last handed out, the work's pictures after its own."""
-    finished = job.background.notices()
-    if not finished:
-        return result
-    media = list(result.get(TOOL_MEDIA_PARTS_KEY) or [])
-    listed = list(result.get("pictures") or [])
-    for work in finished:
-        captions = list(work.captions) + [""] * len(work.pictures)
-        for number, image, text in zip(work.pictures, work.images, captions, strict=False):
-            media.append(image)
-            listed.append({"id": number, "work": work.id, **({"caption": text} if text else {})})
-    out = {"background": [work.notice for work in finished], **result}
-    if listed:
-        out["pictures"] = listed
-    if media:
-        out[TOOL_MEDIA_PARTS_KEY] = media
-    return out
-
-
-def work_pictures(job: Any, reply: Any, *, start: int) -> list[dict[str, Any]]:
-    """The saved pictures of background work the reply announces (its
-    ``pictures`` entries with a ``work``), as artifacts after the call's own."""
-    from pathlib import Path
-
-    from langslice.job.pictures import PICTURE_FILE
-
-    out: list[dict[str, Any]] = []
-    entries = reply.get("pictures") if isinstance(reply, dict) else None
-    for entry in entries or []:
-        if not isinstance(entry, dict) or not entry.get("work"):
-            continue
-        record = job.views.lookup(int(entry["id"]))
-        if record is None or not record.path:
-            continue
-        path = Path(job.layout.resolve(record.path)) / PICTURE_FILE
-        if path.exists():
-            out.append({"path": str(path), "kind": "view", "index": start + len(out),
-                        "label": f"{entry['work']} ({record.mode or record.tool})"})
-    return out
-
-
-def _opening_gate(tool: Any, box: ToolBox) -> Any:
-    """Refuse a write while the door's opening-read gate is armed and some
-    opening page is unread (:meth:`ToolBox.opening_refusal`)."""
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        refusal = box.opening_refusal()
-        if refusal is not None:
-            raise refusal
-        return tool(*args, **kwargs)
-
-    return run
-
-
-def _strict(tool: Any) -> Any:
-    """Refuse unknown or misplaced arguments before *tool* runs, and answer
-    every refusal of the call with its reply.
-
-    :func:`langslice.tools.arguments.argument_refusal` against the tool's
-    signature as the model sees it: stray top-level names (direct calls; ADK
-    and MCP check those at their own doors, since both drop them before a tool
-    runs) and stray keys inside every typed-dict argument (``sections``
-    entries, ``cutting_angles``; every caller). A
-    :class:`~langslice.core.refusal.Refused` the tool raises (the opening
-    gate's included) is answered here with :meth:`Refused.payload`, the tool
-    door's one conversion: the steps outside see a reply, as for any call.
-    """
-    names = list(inspect.signature(tool, eval_str=True).parameters)
-
-    @functools.wraps(tool)
-    def run(*args: Any, **kwargs: Any) -> Any:
-        given = dict(zip(names, args, strict=False))
-        given.update(kwargs)
-        refusal = argument_refusal(tool, given)
-        if refusal is not None:
-            return refusal.payload()
-        try:
-            return tool(*args, **kwargs)  # pyright: ignore[reportAny]  # the tool's own reply
-        except Refused as refused:
-            return refused.payload()
-
-    return run
-
-
-@dataclass
-class ToolBox:
-    """The tools of one run over its :class:`~langslice.job.job.Job`, plus
-    what only a tool door keeps (the submission, the opening-read gate).
-
-    The job holds the state, undo/redo, the checkpoint, the submit gates,
-    the image-correction jobs and the background work.
-    """
-
-    job: Job
-    tools: list[Any] = field(default_factory=list)
-    submission: dict[str, Any] = field(default_factory=dict)
-    #: The largest picture the driver model takes: the cap of ``look``'s
-    #: ``resolution`` at image resolution "auto".
-    max_view_edge: int = DEFAULT_IMAGE_LIMIT[0]
-    #: The opening-read gate of a door that delivers the opening pictures
-    #: on request (MCP's ``show_stack`` pages): the pages not read yet,
-    #: ``None`` while the door has not armed it (:meth:`require_opening`).
-    #: Every write is refused (``OPENING_NOT_READ``) until the set is empty.
-    opening_unread: set[int] | None = None
-    #: The provenance of the tool plugins the job loaded (module, factory,
-    #: versions, source digests, each tool's declaration as the model sees it;
-    #: :mod:`langslice.doors.plugins.provenance`); empty without plugins.
-    plugins: list[dict[str, Any]] = field(default_factory=list)
-    #: What every tool body of the box shares (the job, the workspace, the
-    #: picture level, the image model): a script's ``job.context`` sits on it.
-    door: Door | None = None
-    #: The declarations' variant the tools were declared in
-    #: (:class:`langslice.tools.descriptions.render.Variant`; None before
-    #: :func:`build_tools` sets it): what ``TOOLS.md`` is written from.
-    variant: Any = None
-
-    @property
-    def names(self) -> list[str]:
-        return [tool.__name__ for tool in self.tools]
-
-    def require_opening(self, pages: int) -> None:
-        """Arm the opening-read gate: every write is refused until each of
-        the *pages* opening pages was read (:meth:`opening_read`). Armed
-        once per toolbox; a host that already read them is not asked again."""
-        if self.opening_unread is None:
-            self.opening_unread = set(range(1, int(pages) + 1))
-
-    def opening_read(self, page: int) -> None:
-        """The host fetched opening page *page*."""
-        if self.opening_unread is not None:
-            self.opening_unread.discard(int(page))
-
-    def opening_refusal(self) -> Refused | None:
-        """The opening-read gate's refusal, or None when it is open."""
-        if not self.opening_unread:
-            return None
-        pages = sorted(self.opening_unread)
-        calls = ", ".join(f"show_stack(page={page})" for page in pages)
-        return Refused(
-            RefusalCode.OPENING_NOT_READ, status=ReplyStatus.REFUSED,
-            pages=pages,
-            detail=f"Read every opening page before the first write: {calls}"
-            " (the pictures of the stack the job statement asks for).")
-
-# --- the toolbox ---------------------------------------------------------
 
 
 def with_job_prompt(spec: JobSpec, image_model: ImageModel) -> ImageModel:
@@ -534,15 +94,13 @@ def build_tools(
     is the door the job folder's ``logs/events.jsonl`` names for every call
     (None: *door*; the library's is ``library``).
 
-    Every tool is wrapped, innermost first: the opening-read gate (writes),
-    the strict argument check, the stale-deformation sweep, the picture
-    saving (``pictures``), the background-work notices at the head of the
-    reply, and the serialization lock with the host events (to *on_event*
-    and to the job folder's ``logs/events.jsonl``).
+    Every call of every tool goes through the pipeline's steps
+    (:data:`langslice.tools.pipeline.TOOL_STEPS`); its events go to
+    *on_event* and to the job folder's ``logs/events.jsonl``.
 
     A job whose spec names tool plugins (``spec.plugins``) gets their tools
     after the native ones: declared from their own stubs, their bodies run
-    by :mod:`langslice.doors.plugins.runtime`, wrapped the same way; the
+    by :mod:`langslice.doors.plugins.runtime`, through the same steps; the
     plugins' provenance is recorded in ``job.json`` and kept on the box.
     """
     if job is None:
@@ -554,84 +112,32 @@ def build_tools(
     # The agent tools and MCP spend a model's context on pictures: capped. The
     # agent CLI and the library (scripting) leave that to the harness.
     job.picture_cap = None if scripting else MAX_IMAGES_PER_CALL
-    box = ToolBox(job, max_view_edge=int(max_view_edge or view_edge_limit(ctx)))
     level = level or resolution_level(ctx)
     traces_on = spec.nonlinear.uses_image_model and image_model_connected
     if traces_on and image_model is None:
         image_model = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
     if traces_on and image_model is not None:
         image_model = with_job_prompt(spec, image_model)
-    run = Door(job=job, ctx=ctx, spec=spec, box=box, level=level,
-               traces_on=traces_on,
-               image_model=image_model)
-    box.door = run
-
-    def sync_job() -> None:
-        """Before every call: pick up a state file changed on disk."""
-        job.sync()
-
-    @contextlib.contextmanager
-    def guarded(name: str) -> Iterator[None]:
-        """Around every call, named for the registrations it leaves
-        (:meth:`Job.acting`): a write runs whole under the job folder's write
-        lock, after the state is brought up to date (:meth:`Job.writing`); a
-        read never waits for another process's writer (:meth:`Job.reading`:
-        the state as it stands); a long verb (``VERBS[name].long``) only
-        syncs, computes outside the lock and takes it itself to apply,
-        re-checking its sections."""
-        with job.acting(name):
-            if verbs[name].long:
-                sync_job()
-                yield
-            elif verbs[name].kind == "read":
-                with job.reading():
-                    yield
-            else:
-                with job.writing():
-                    yield
-
-    verbs = verbs_for(spec)
-    bodies: dict[str, Callable[..., Any]] = {
-        **looking.bodies(run), **changing.bodies(run), **fitting.bodies(run),
-    }
     prompt: str | None = None
     if traces_on and image_model is not None:
-        from typing import cast
-
-        from langslice.core.fits.trace.trace import profile_prompt
-        from langslice.core.space import Plane
-
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
                          door=door, prompt=prompt, uncapped=scripting,
                          brain_scale=ctx.brain_scale)
-    box.variant = variant
+    box = ToolBox(job, variant, max_view_edge=int(max_view_edge or view_edge_limit(ctx)),
+                  verbs=verbs_for(spec), door=event_door or door,
+                  observers=tuple(observer for observer in (on_event, EventLog(
+                      job, event_door or door)) if observer is not None))
+    run = Run(job=job, ctx=ctx, spec=spec, box=box, level=level,
+              traces_on=traces_on, image_model=image_model)
+    box.run = run
+    bodies: dict[str, Callable[..., Any]] = {
+        **looking.bodies(run), **changing.bodies(run), **fitting.bodies(run),
+    }
     if spec.plugins:
-        from langslice.doors.plugins import provenance, runtime
-
         bodies.update(runtime.bodies(run, variant))
         box.plugins = provenance.records(variant)
         provenance.record(job, box.plugins)
-    lock = threading.Lock()
-    log = _job_events(job, event_door or door)
-
-    def behind_gate(name: str, tool: Any) -> Any:
-        """A write behind the door's opening-read gate (armed by MCP only)."""
-        return _opening_gate(tool, box) if verbs[name].kind == "write" else tool
-
-    def after_write(name: str, tool: Any) -> Any:
-        """A write's stale deformations cleared, and the registrations it left
-        named; a read changes neither."""
-        if verbs[name].kind != "write":
-            return tool
-        return _names_registrations(_clears_stale_deformations(tool, job), job)
-
-    box.tools = [
-        _serialized(
-            _announces_work(_saves_views(after_write(
-                name, _strict(behind_gate(name, declare(name, bodies[name], variant)))),
-                job, ctx), job),
-            lock, state=state, on_event=on_event, log=log, guard=functools.partial(guarded, name))
-        for name in enabled(spec, scripting=scripting, image_model=image_model_connected)
-    ]
+    box.tools = [declared_tool(name, bodies[name], box) for name in enabled(
+        spec, scripting=scripting, image_model=image_model_connected)]
     return box

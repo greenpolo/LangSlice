@@ -27,8 +27,8 @@ declare.
 ## The layer rule
 
 Doors translate; they hold no registration logic. They import the core, the
-job layer, the tools (`langslice/tools/`: the operations, `Door`, the
-arguments, the replies, the declarations and the job statement) and the
+job layer, the tools (`langslice/tools/`: the operations, `Run`, the
+tool pipeline, the arguments, the replies, the declarations and the job statement) and the
 providers (a door resolves a provider name); never a host (`hosts/`). The
 built-in agent is a door here (`agent/`: the CLI's `linear run` and the MCP
 server start its engine). Only the ADK packaging (`agent/media.py`) imports
@@ -56,8 +56,9 @@ A refusal is the core's `Refused` (`core/refusal.py`: a `RefusalCode`, a
 message, the facts), raised by the core, the job, the tools and the tool
 bodies, and turned into an answer once per door:
 
-- the tool door (every door's tools): `tools/toolbox._strict` answers a
-  `Refused` the body raises (its argument check and the opening-read
+- the tool door (every door's tools): the tool pipeline's
+  `_answer_refusals` step (`langslice/tools/pipeline.py`) answers a
+  `Refused` the body raises (the argument check's and the opening-read
   gate's included) with `Refused.payload()`, inside the steps that clear
   stale deformations, name registrations, save pictures and open the reply
   with background notices, so a refusal's reply passes through them as any
@@ -234,8 +235,8 @@ bodies, and turned into an answer once per door:
   arguments, run inside `job.pictures.captured()`, then the pictures flushed,
   so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
   `imported`, `wait(timeout=None)` (waits for background work and returns its landing as the CLI does:
-  `background` notices, `work`, `running`, pictures; uses `toolbox.work_pictures`), `context` (one `ScriptContext` per handle, on the toolbox's
-  `door`: the plugin `ToolContext` with `Caller.script()`; each outermost
+  `background` notices, `work`, `running`, pictures; uses `tools.pipeline.work_pictures`), `context` (one `ScriptContext` per handle, on the toolbox's
+  `run`: the plugin `ToolContext` with `Caller.script()`; each outermost
   write gets a call id `script-<pid>-<n>`, a conversion before it shares the
   write's, and a landed write a `script_write` line in `logs/events.jsonl`;
   `preview_overlay` / `preview_positioning` draw a proposal through
@@ -292,34 +293,37 @@ bodies, and turned into an answer once per door:
   file per job folder), `log_call` (`logs/calls.jsonl`) and `save_reply`
   (`logs/calls/<n>_<verb>.json`, `REPLIES_DIR`: a call's envelope as printed,
   the next free six-digit number).
-- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`, which
-  keeps the `Door` it built as `door`; sets
-  `Job.picture_cap` to `MAX_IMAGES_PER_CALL` (4), or to None with
-  `scripting=True` (the CLI and the library); every tool wrapped,
-  innermost first, by the opening gate (writes), `_strict`,
-  for a write `_clears_stale_deformations` and `_names_registrations`
-  (`registrations_named`: `registration` `{section: number}`, the registrations
-  the call's writes left in this thread, `Job.registered_since`, for the
-  sections whose status row in the reply does not show it; a reply with a
-  `registration` of its own keeps it), `_saves_views` (the pictures a body returns
-  saved and numbered, their numbers and captions under `pictures`; a reply
-  that already lists `pictures`, saved by its operation, is left as it is),
-  `_announces_work` (`with_notices`: the notices of background work
-  finished since the last reply first, under `background`, and its pictures
-  after the reply's own) and `_serialized` (one lock; the `tool_start` /
+- `tools/` — the tool door: `toolbox.py` (`build_tools`: the run's
+  `ToolBox` (`langslice/tools/pipeline.py`), which keeps the `Run` it built
+  as `run`; sets `Job.picture_cap` to `MAX_IMAGES_PER_CALL` (4), or to None
+  with `scripting=True` (the CLI and the library); every body made a tool
+  by `tools.pipeline.declared_tool`, so each call runs through
+  `tools.pipeline.TOOL_STEPS`: `_serialize` (one lock; the job held for a
+  write, a read or a long verb), `_log_events` (the `tool_start` /
   `tool_end` events to the host's `on_event` and, on every door, to the
-  job's `logs/events.jsonl` through `_job_events`: `name`,
+  job's `logs/events.jsonl` through `tools.events.EventLog`: `name`,
   `execution_id`, `door` (`build_tools(event_door=)`, else `door`;
   `Opened.tools` names the library's `library`), `target_ids`, `args`
-  (cut at `EVENT_ARGS_BYTES`, `_event_args`), and on `tool_end` `step`
-  (undo depth), `views` relative to the job folder, `failed`, `status`;
-  never the reply; nothing when `Job.persist` is False); `_tool_target_ids`;
-  `with_job_prompt`: the image model with the job's own base prompt,
-  `nonlinear.image_prompt`, as an untested `custom` profile), `door.py`
-  (`Door`, what every tool body of a run shares: the job, the workspace,
-  the picture level, the image model, `rows`, `changed`,
-  `answered`, `resolve_many`; `pictured`, `as_list`, `spread`: the sections
-  a change tool pictures when the call names none), the
+  (cut at `EVENT_ARGS_BYTES`, `tools.events.event_args`), and on
+  `tool_end` `step` (undo depth), `views` relative to the job folder,
+  `failed`, `status`; never the reply; nothing when `Job.persist` is
+  False), `_announce_work` (`with_notices`: the notices of background work
+  finished since the last reply first, under `background`, and its
+  pictures after the reply's own), `_save_pictures` (the pictures a body
+  returns saved and numbered, their numbers and captions under `pictures`;
+  a reply that already lists `pictures`, saved by its operation, is left as
+  it is), for a write `_name_registrations` (`registrations_named`:
+  `registration` `{section: number}`, the registrations the call's writes
+  left in this thread, `Job.registered_since`, for the sections whose
+  status row in the reply does not show it; a reply with a `registration`
+  of its own keeps it) and `_clear_stale_deformations`, `_answer_refusals`,
+  `_strict_arguments` and for a write `_opening_gate`; `with_job_prompt`:
+  the image model with the job's own base prompt, `nonlinear.image_prompt`,
+  as an untested `custom` profile), `tools/run.py` (`Run`, what every tool
+  body of a run shares: the job, the workspace, the picture level, the
+  image model, `rows`, `changed`, `answered`, `resolve_many`; `pictured`,
+  `as_list`, `spread`: the sections a change tool pictures when the call
+  names none), the
   tool bodies (`looking.py`: `look` (`images`: one section image alone, or
   raw channels together; empty draws `preprocessed`; `registrations`
   `{filename: number}`, a section under an earlier registration of its own,
@@ -343,7 +347,7 @@ bodies, and turned into an answer once per door:
   `export_maps`; a change tool's picture is drawn after its write by
   `tools.look.show_result` unless its `view` is false and the host does not
   force it (a fit's and an `em` mask's picture drawn on the section image
-  it read, `door.drawn_image`); `interactive_transform` and `elastix_affine` drop the
+  it read, `run.drawn_image`); `interactive_transform` and `elastix_affine` drop the
   deformations their write made stale before drawing it, so the picture
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past

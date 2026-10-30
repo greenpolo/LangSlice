@@ -17,7 +17,7 @@ on it; a script can drive it directly.
 
 What a Job never holds: the model-delivery bookkeeping (which pictures a
 model has received). That is the tool doors'
-(:class:`langslice.doors.tools.toolbox.ToolBox`).
+(:class:`langslice.tools.pipeline.ToolBox`).
 
 **Undo.** One pattern: ``before = job.snapshot()`` before a write, then
 ``job.commit(before)`` once it succeeded (one undo step, then the

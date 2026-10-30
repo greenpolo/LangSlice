@@ -9,13 +9,18 @@ here. The agent tools, the MCP server, the agent CLI and scripts call the
 same functions, so a tool and a script do exactly the same write and get the same
 picture. Each agent tool's body is argument checking, ONE call here and the
 wording; `catalog.py` lists which. The package also holds what every tool
-body of a run shares: `run.py` (`Door`, the run behind a door: the job, the
-workspace, the picture level, the image call), `arguments.py` (the typed
+body of a run shares: `run.py` (`Run`, the run behind a door: the job, the
+workspace, the picture level, the image call), `pipeline.py` (`TOOL_STEPS`,
+the steps every tool call goes through in order, the `ToolCall` they
+carry, `declared_tool` and the `ToolBox`), `events.py` (each call's
+`tool_start` / `tool_end` events and the job folder's event log),
+`arguments.py` (the typed
 argument shapes and the strictness check), `reply.py` (the reply byte
 budget and paging) and `descriptions/` (`render.py`: every tool's
 declaration; `statement.py`: the job statement; `fixes.py`: the agent
-CLI's fix sentence per refusal code). The bodies themselves and the
-toolbox are still `doors/tools/`.
+CLI's fix sentence per refusal code). The bodies themselves and
+`build_tools` (which resolves the image model through the providers) are
+still `doors/tools/`.
 
 ## The rule
 

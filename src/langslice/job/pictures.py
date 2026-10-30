@@ -515,7 +515,7 @@ class ViewStore:
         """Save the pictures a door shows from this block, with their layers.
 
         The one hook every door uses (the agent tools and the MCP door through
-        the tool wrapper, ``toolbox._saves_views``; the CLI and scripts the
+        the tool pipeline; the CLI and scripts the
         same way): run the operation inside the block, then hand the pictures
         it shows to :meth:`Shown.show`. What the core noted about each while
         the block ran (:func:`langslice.core.pictures.drawn.collecting`)

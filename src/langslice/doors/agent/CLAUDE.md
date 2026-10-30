@@ -172,7 +172,7 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   unique execution id and, on `tool_end`, `views` (the pictures the call
   saved); these events never enter model context. The same events are
   lines of the job's `logs/events.jsonl` on every door, observer or not
-  (`toolbox._job_events`). `plain` copies JSON
+  (`tools.events.EventLog`). `plain` (`tools/events.py`) copies JSON
   content without media bytes.
 - `cost.py` — `estimate(spec, n_slices)` (the sections whose orientation and
   affine are frozen cost no transform work): the pre-run usage-window
@@ -189,17 +189,18 @@ job=, image_model=, level=, max_view_edge=)` builds: the verbs
 `tools.catalog.enabled(spec)` names, each declared once in
 `langslice/tools/descriptions/render.py` (name, arguments, description) and each body
 (`doors/tools/looking.py`, `changing.py`, `fitting.py`) argument checking,
-one call into `langslice/tools/` and the wording. Every tool is wrapped: `_serialized` (one
-lock: ADK runs a turn's calls concurrently, the state has one writer, and
-the host events), `_announces_work` (the notices of background work that
-finished since the last reply, first, under `background`, its pictures
-after the reply's own), `_saves_views` (every picture saved in the job
-folder with its layers and a number, the exact JPEG bytes the door sent;
-the reply's `pictures` lists the numbers in attachment order),
-`_clears_stale_deformations` (a deformation whose `linear_key` no longer
-matches is cleared in the same undo step; the reply says
-`deformation_cleared`) and `_strict` (unknown or misplaced keys refused,
-never dropped). Tools return plain PIL pictures under
+one call into `langslice/tools/` and the wording. Every call runs through
+the tool pipeline's steps (`langslice/tools/pipeline.py`, `TOOL_STEPS`):
+`_serialize` (one lock: ADK runs a turn's calls concurrently, the state has
+one writer), `_log_events` (the host events), `_announce_work` (the notices
+of background work that finished since the last reply, first, under
+`background`, its pictures after the reply's own), `_save_pictures` (every
+picture saved in the job folder with its layers and a number, the exact
+JPEG bytes the door sent; the reply's `pictures` lists the numbers in
+attachment order), `_clear_stale_deformations` (a deformation whose
+`linear_key` no longer matches is cleared in the same undo step; the reply
+says `deformation_cleared`) and `_strict_arguments` (unknown or misplaced
+keys refused, never dropped). Tools return plain PIL pictures under
 `TOOL_MEDIA_PARTS_KEY`; the ADK driver packages them as JPEG parts
 (`doors.agent.media.packaged`), the MCP door as image blocks.
 
@@ -207,7 +208,7 @@ Conventions: sections are named by filename only (`Stack.resolve`:
 the filename, or its stem when no other section shares it; a number is
 refused with the filenames listed, `core.stack.stack.unknown_sections`), in every
 argument, label, caption and status line; ordinary writes answer with the
-rows they changed (`Door.answered`) plus `n_sections`; `status`, `undo`,
+rows they changed (`Run.answered`) plus `n_sections`; `status`, `undo`,
 `redo` and `submit` return the whole table, and `status` also the raw
 channels, the made section images (`section_images`), the background work
 still running and what this run lets the agent change.

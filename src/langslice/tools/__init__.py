@@ -32,5 +32,7 @@ the linear placement: fit, apply, or keep the linear placement),
 submit gates and the final write), :mod:`.exports` (the maps and exports),
 :mod:`.inputs` (what a long verb re-checks before it applies),
 :mod:`.refusal` (the refusals the job's rules decide: an unknown, frozen or
-busy section).
+busy section), :mod:`.pipeline` (the steps every tool call goes through, and
+the toolbox), :mod:`.events` (each call's ``tool_start`` and ``tool_end``),
+:mod:`.run` (what a run's tool bodies share).
 """

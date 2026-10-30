@@ -59,7 +59,7 @@ from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
     from langslice.tools.deformable import MappedWarp
-    from langslice.tools.run import Door
+    from langslice.tools.run import Run
 
 
 #: The row of a write row whose ``id`` names no section, after its ``id``.
@@ -437,8 +437,8 @@ class ToolContext:
     """What one plugin tool call, or a script, can read and write (see the
     module text)."""
 
-    def __init__(self, door: Door, caller: Caller, call: str) -> None:
-        self._door = door
+    def __init__(self, run: Run, caller: Caller, call: str) -> None:
+        self._run = run
         self._caller = caller
         #: The call's id, as the layers it makes record it.
         self.call = call
@@ -458,12 +458,12 @@ class ToolContext:
     @property
     def spec(self) -> Mapping[str, Any]:
         """The job's spec (``JobSpec.to_dict``), read-only."""
-        return types.MappingProxyType(copy.deepcopy(self._door.spec.to_dict()))
+        return types.MappingProxyType(copy.deepcopy(self._run.spec.to_dict()))
 
     @property
     def job_dir(self) -> Path:
         """The job folder."""
-        return Path(self._door.job.folder)
+        return Path(self._run.job.folder)
 
     def work_dir(self) -> Path:
         """``<job>/plugins/<tool>/``: the one place this tool writes files
@@ -473,13 +473,13 @@ class ToolContext:
         if not self._caller.work_dir:
             raise _not_for_scripts("a script keeps its files in the job folder's scripts/ "
                                    "and scratch/")
-        path = self._door.job.layout.plugin_dir(self._caller.name)
+        path = self._run.job.layout.plugin_dir(self._caller.name)
         path.mkdir(parents=True, exist_ok=True)
         return path
 
     def task_on(self, task: str) -> bool:
         """Whether the job's *task* (``position``, ``transform``, ``nonlinear``) is on."""
-        return bool(self._door.spec.has(task))
+        return bool(self._run.spec.has(task))
 
     # --- reading ------------------------------------------------------------------------
 
@@ -487,11 +487,11 @@ class ToolContext:
         """A script's read first picks up what another writer saved (a plugin
         call is inside a tool call that did)."""
         if not self._caller.in_tool_call:
-            self._door.job.sync()
+            self._run.job.sync()
 
     def _record(self, section: object) -> Section:
         self._fresh()
-        state = self._door.state
+        state = self._run.state
         record = state.resolve(section)
         if record is None:
             raise _as_tool_error(unknown_sections(state, [str(section)]))
@@ -500,7 +500,7 @@ class ToolContext:
     def _view(self, record: Section) -> SectionView:
         from langslice.core.maps.section_maps import render_sizes
 
-        workspace = self._door.ctx
+        workspace = self._run.ctx
         transform = record.transform
         affine = None
         if transform is not None:
@@ -526,12 +526,12 @@ class ToolContext:
             damaged_regions=tuple(record.damaged_regions), damage_note=record.damage_note,
             layers=tuple(ref.name for ref in record.layers),
             frozen=tuple(name for name in freeze.PROPERTIES
-                         if name in self._door.spec.frozen_for(record.id)))
+                         if name in self._run.spec.frozen_for(record.id)))
 
     def sections(self) -> list[SectionView]:
         """Every section, in stack order."""
         self._fresh()
-        return [self._view(record) for record in self._door.state.in_order()]
+        return [self._view(record) for record in self._run.state.in_order()]
 
     def section(self, section: object) -> SectionView:
         """One section by filename (the extension may be left off)."""
@@ -539,19 +539,19 @@ class ToolContext:
 
     def atlas(self) -> AtlasView:
         """The job's atlas."""
-        atlas = self._door.ctx.atlas
+        atlas = self._run.ctx.atlas
         return AtlasView(
-            name=str(self._door.state.atlas),
+            name=str(self._run.state.atlas),
             resolution_um=tuple(float(v) for v in np.asarray(atlas.resolution, dtype=float)),
             orientation=str(getattr(atlas, "orientation", "")),
-            species=self._door.ctx.species, plane=str(self._door.state.plane),
+            species=self._run.ctx.species, plane=str(self._run.state.plane),
             shape=tuple(int(v) for v in np.shape(atlas.annotation)))
 
     def channels(self, section: object) -> tuple[str, ...]:
         """The names of the section's raw channels, in file order (``red``,
         ``green``, ``blue``, or ``gray``, for a colour file; the host's names or
         ``ch1``, ``ch2``... for a multi-page file)."""
-        names, _planes = self._door.ctx.section_channels(self._record(section).id)
+        names, _planes = self._run.ctx.section_channels(self._record(section).id)
         return tuple(str(name) for name in names)
 
     def image_names(self, section: object) -> tuple[str, ...]:
@@ -560,7 +560,7 @@ class ToolContext:
         the images made since (``make_image``, :meth:`add_image`)."""
         from langslice.core.sections.images import image_names
 
-        return tuple(image_names(self._door.ctx, self._record(section)))
+        return tuple(image_names(self._run.ctx, self._record(section)))
 
     def add_image(self, section: object, name: str, array: Any, note: str = "") -> dict[str, Any]:
         """Register *array* as the section's made image *name*, made by this
@@ -581,10 +581,10 @@ class ToolContext:
         record = self._record(section)
         try:
             with self.writing():
-                live = self._door.state.by_id(record.id) or record
+                live = self._run.state.by_id(record.id) or record
                 # the script's array, checked by add_image
                 given = cast("object", array)
-                return ops_images.add_image(self._door.job, self._door.ctx, live, str(name),
+                return ops_images.add_image(self._run.job, self._run.ctx, live, str(name),
                                             given, note)
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
@@ -597,7 +597,7 @@ class ToolContext:
 
         record = self._record(section)
         try:
-            return np.array(raw_plane(self._door.ctx, record.id, str(name)))
+            return np.array(raw_plane(self._run.ctx, record.id, str(name)))
         except ValueError as exc:
             raise ToolError(RefusalCode.UNKNOWN_IMAGE, str(exc)) from exc
 
@@ -608,8 +608,8 @@ class ToolContext:
         from langslice.core.sections.reading import read_working_image
 
         record = self._record(section)
-        image, _factor = read_working_image(self._door.ctx.image_path(record.id))
-        width, height = self._door.ctx.working_source(record.id)[0].size
+        image, _factor = read_working_image(self._run.ctx.image_path(record.id))
+        width, height = self._run.ctx.working_source(record.id)[0].size
         if image.size != (width, height):
             image = image.resize((width, height))
         return np.asarray(image.convert("RGB")).copy()
@@ -617,7 +617,7 @@ class ToolContext:
     def working_grid(self, section: object) -> tuple[int, int]:
         """``(H, W)`` of the section's working grid: the shape :meth:`add_image`
         takes, the file's orientation."""
-        width, height = self._door.ctx.working_source(self._record(section).id)[0].size
+        width, height = self._run.ctx.working_source(self._record(section).id)[0].size
         return height, width
 
     def mask(self, section: object, name: str) -> Any:
@@ -631,7 +631,7 @@ class ToolContext:
 
         record = self._record(section)
         try:
-            view = ops_masks.read(self._door.job, record, str(name))
+            view = ops_masks.read(self._run.job, record, str(name))
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         if view.stale:
@@ -645,7 +645,7 @@ class ToolContext:
         appearance and damage marks; with *deformation* its deformation too).
         Take it before a long computation and hand it back as ``expect=`` to a
         write: a section that changed meanwhile comes back ``STALE_INPUT``."""
-        return section_inputs(self._door.state, self._record(section), deformation=deformation)
+        return section_inputs(self._run.state, self._record(section), deformation=deformation)
 
     def section_image(self, section: object, *, level: str | int = "auto",
                       images: Sequence[str] | None = None, raw: bool = False) -> np.ndarray:
@@ -683,7 +683,7 @@ class ToolContext:
         if isinstance(level, int):
             edge = int(level)
         elif level == "auto":
-            edge = picture_edge(self._door.ctx)
+            edge = picture_edge(self._run.ctx)
         elif level in PICTURE_EDGES:
             edge = PICTURE_EDGES[level][1]
         else:
@@ -699,7 +699,7 @@ class ToolContext:
                             f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
         look: Any = None
         if raw:
-            if len(names) > 1 or (names and kind_of(self._door.ctx, record, names[0]) != "raw"):
+            if len(names) > 1 or (names and kind_of(self._run.ctx, record, names[0]) != "raw"):
                 raise ToolError(RefusalCode.BAD_ARGS,
                                 "raw takes no image (the file as it is) or one "
                                 "raw channel name")
@@ -707,18 +707,18 @@ class ToolContext:
         elif len(names) == 1:
             look = {"image": names[0]}
         elif names:
-            if any(kind_of(self._door.ctx, record, name) != "raw" for name in names):
+            if any(kind_of(self._run.ctx, record, name) != "raw" for name in names):
                 raise ToolError(RefusalCode.BAD_ARGS,
                                 "several images are drawn together only when all "
                                 "are raw channels")
             look = {"overlay": names}
         try:
-            image = render_slice(self._door.ctx, record, long_edge=edge, look=look)
+            image = render_slice(self._run.ctx, record, long_edge=edge, look=look)
         except ValueError as exc:
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
-            file_size=tuple(render_sizes(self._door.ctx, record.id).file_size),  # type: ignore[arg-type]
+            file_size=tuple(render_sizes(self._run.ctx, record.id).file_size),  # type: ignore[arg-type]
             rotation_deg=int(record.rotation_deg), flip=bool(record.flip))
 
     def _grid(self, record: Section) -> Any:
@@ -730,11 +730,11 @@ class ToolContext:
                             f"{record.id} has no position yet")
         # Keyed by what the grid is drawn from: a script's context outlives a
         # placement change.
-        key = (record.id, section_inputs(self._door.state, record))
+        key = (record.id, section_inputs(self._run.state, record))
         if key not in self._grids:
             try:
                 self._grids[key] = deformation.fit_grid(
-                    self._door.state, self._door.ctx, record,
+                    self._run.state, self._run.ctx, record,
                     params=list(IDENTITY_PARAMS))
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -774,7 +774,7 @@ class ToolContext:
         grid = self._grid(record)
         oriented = grid.image.convert("RGB")
         placement = grid.placement
-        workspace = self._door.ctx
+        workspace = self._run.ctx
         planes: dict[str, np.ndarray] = {}
         if "annotation" in atlas:
             planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
@@ -798,7 +798,7 @@ class ToolContext:
         if record.transform:
             try:
                 placed = np.asarray(deformation.fit_grid(
-                    self._door.state, workspace, record).placement.atlas_to_section,
+                    self._run.state, workspace, record).placement.atlas_to_section,
                     dtype=np.float64)
             except ValueError:  # a stored transform no fit can use (stale, turned over)
                 placed = None
@@ -808,7 +808,7 @@ class ToolContext:
                 composed_native_grid,
             )
 
-            held = self._door.job.deformations.current(self._door.state, record)
+            held = self._run.job.deformations.current(self._run.state, record)
             if held is not None and tuple(held.section_size) == oriented.size:
                 applied = np.stack(composed_native_grid(held, 1), axis=-1)
         excluded = zone = None
@@ -835,11 +835,11 @@ class ToolContext:
                                 f"{wanted!r}; its images: {', '.join(known)}",
                                 images=list(known))
             picture = np.asarray(deformation.section_image(
-                workspace, self._door.state, grid, wanted)[0].convert("RGB"))
+                workspace, self._run.state, grid, wanted)[0].convert("RGB"))
             reference = read_image(workspace, record, wanted).payload()
         preprocessed = picture if wanted == "preprocessed" else (
             np.asarray(deformation.section_image(
-                workspace, self._door.state, grid, "preprocessed")[0].convert("RGB"))
+                workspace, self._run.state, grid, "preprocessed")[0].convert("RGB"))
             if stain else None)
         return FitFrame(
             id=record.id, image=np.asarray(oriented), atlas=planes,
@@ -870,8 +870,8 @@ class ToolContext:
         )
         from langslice.core.space import Plane
 
-        atlas = self._door.ctx.atlas
-        plane = cast(Plane, self._door.state.plane)
+        atlas = self._run.ctx.atlas
+        plane = cast(Plane, self._run.state.plane)
         normal = np.asarray(normal_um, dtype=np.float64)
         point = np.asarray(point_um, dtype=np.float64)
         if normal.shape != (3,) or point.shape != (3,) or not (
@@ -892,7 +892,7 @@ class ToolContext:
         ``annotation`` or one of the atlas's images."""
         from langslice.core.atlas.images import atlas_images
 
-        offered = ("annotation", *atlas_images(self._door.ctx.atlas))
+        offered = ("annotation", *atlas_images(self._run.ctx.atlas))
         if kind not in offered:
             raise ToolError(RefusalCode.BAD_ARGS,
                             f"kind is one of {', '.join(offered)}; got {kind!r}")
@@ -952,7 +952,7 @@ class ToolContext:
         if record.position_mm is None:
             raise ToolError(RefusalCode.NO_POSITION,
                             f"{record.id} has no position yet")
-        workspace, state = self._door.ctx, self._door.state
+        workspace, state = self._run.ctx, self._run.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, workspace, record, rendered)
         try:
@@ -1051,7 +1051,7 @@ class ToolContext:
         engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
             warp = deformable.warp_from_map(
-                self._door.job, self._door.ctx, record.id, native_xy,
+                self._run.job, self._run.ctx, record.id, native_xy,
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
@@ -1105,7 +1105,7 @@ class ToolContext:
         from langslice.job.imports.placements import import_placements
 
         self._fresh()
-        state = self._door.state
+        state = self._run.state
         names = [self._record(ref).id for ref in sections] or [r.id for r in state.slices]
         planes: dict[str, tuple[float, float, float]] = {}
         for ref, plane in (at or {}).items():
@@ -1119,7 +1119,7 @@ class ToolContext:
                                 f"{name} has no position to read the file at")
             planes[name] = (float(position), float(angles[0]), float(angles[1]))
         result = import_placements(
-            Path(path), self._door.ctx, section_ids=names,
+            Path(path), self._run.ctx, section_ids=names,
             orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
             planes=planes, registered_on=registered_on)
         rows = []
@@ -1160,13 +1160,13 @@ class ToolContext:
             native_labels,
         )
 
-        workspace = self._door.ctx
+        workspace = self._run.ctx
         values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
         if not np.isfinite(values).all():
             raise ToolError(RefusalCode.BAD_ARGS,
                             "position_mm, pitch_deg and yaw_deg are finite numbers")
-        placement = Placement(atlas_name=str(self._door.state.atlas), position_mm=values[0],
-                              plane=self._door.state.plane,  # type: ignore[arg-type]
+        placement = Placement(atlas_name=str(self._run.state.atlas), position_mm=values[0],
+                              plane=self._run.state.plane,  # type: ignore[arg-type]
                               pitch_deg=values[1], yaw_deg=values[2],
                               atlas_to_section=np.eye(3), section_mm_per_px=1.0)
         planes: dict[str, np.ndarray] = {}
@@ -1186,7 +1186,7 @@ class ToolContext:
         from langslice.core.atlas.images import atlas_images
         from langslice.core.atlas.images import atlas_volume as volume
 
-        atlas = self._door.ctx.atlas
+        atlas = self._run.ctx.atlas
         if kind == "annotation":
             return np.asarray(atlas.annotation)
         if kind not in atlas_images(atlas):
@@ -1238,7 +1238,7 @@ class ToolContext:
 
         record = self._record(section)
         found = self._points(atlas_points, record.id, xy, frame)
-        structures = self._door.ctx.atlas.structures
+        structures = self._run.ctx.atlas.structures
         out: list[dict[str, Any] | None] = []
         for value in found.ids.tolist():
             if not value:
@@ -1254,7 +1254,7 @@ class ToolContext:
 
     def _points(self, function: Callable[..., Any], name: str, values: Any, frame: str) -> Any:
         try:
-            return function(self._door.job, self._door.ctx, name, values, frame=frame)
+            return function(self._run.job, self._run.ctx, name, values, frame=frame)
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
 
@@ -1414,7 +1414,7 @@ class ToolContext:
         if record.transform:
             try:
                 return np.asarray(deformation.fit_grid(
-                    self._door.state, self._door.ctx, record).placement.atlas_to_section,
+                    self._run.state, self._run.ctx, record).placement.atlas_to_section,
                     dtype=np.float64)
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -1460,7 +1460,7 @@ class ToolContext:
         )
 
         record = self._record(section)
-        workspace = self._door.ctx
+        workspace = self._run.ctx
         label = _mask_name(mask)
         if str(metric) not in METRICS:
             raise ToolError(RefusalCode.BAD_ARGS,
@@ -1469,8 +1469,8 @@ class ToolContext:
             raise ToolError(RefusalCode.BAD_ARGS,
                             f"detail is one of {list(DETAILS)}; got {detail!r}")
         try:
-            regions = region_entries(workspace, self._door.job.state, list(restrict_to))
-            left_out = region_entries(workspace, self._door.job.state, list(exclude))
+            regions = region_entries(workspace, self._run.job.state, list(restrict_to))
+            left_out = region_entries(workspace, self._run.job.state, list(exclude))
             chosen = replace(default_settings(workspace), smoothness_um=float(smoothness_um),
                              atlas_image=str(atlas_image), stain_metric=str(metric),
                              stain_edges=bool(edges), detail=str(detail),
@@ -1481,7 +1481,7 @@ class ToolContext:
         except (TypeError, ValueError) as exc:  # checked as the settings are made
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         try:
-            fitted = fit_record(self._door.job, workspace, record.id, chosen, start=start,
+            fitted = fit_record(self._run.job, workspace, record.id, chosen, start=start,
                                 mask=label, marked=bool(marked),
                                 section_image=str(section_image))
         except Refused as refusal:
@@ -1522,7 +1522,7 @@ class ToolContext:
         record = self._record(section)
         label = _mask_name(mask)
         try:
-            fitted = elastix_fit(self._door.job, self._door.ctx, record.id,
+            fitted = elastix_fit(self._run.job, self._run.ctx, record.id,
                                  restrict_to=list(restrict_to), exclude=list(exclude),
                                  atlas_image=str(atlas_image), mask=label, marked=bool(marked),
                                  section_image=str(section_image), edges=bool(edges))
@@ -1554,8 +1554,8 @@ class ToolContext:
         from langslice.core.pictures import look as looks
 
         record = self._record(section)
-        state = self._door.state
-        store = self._door.job.deformations
+        state = self._run.state
+        store = self._run.job.deformations
         if proposal and proposal.get("deformation") is not None:
             if set(proposal) - {"deformation"}:
                 raise ToolError(RefusalCode.BAD_ARGS,
@@ -1599,7 +1599,7 @@ class ToolContext:
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="overlay", sections=(record.id,), long_edge=edge)
         try:
-            drawn = looks.look(self._door.ctx, state, request, store=store)
+            drawn = looks.look(self._run.ctx, state, request, store=store)
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         if proposal:  # a proposal not written shows no registration the section holds
@@ -1625,12 +1625,12 @@ class ToolContext:
         from langslice.core.pictures import look as looks
         from langslice.doors.tools.changing import _positions
 
-        if self._door.spec.off("look:positioning"):
+        if self._run.spec.off("look:positioning"):
             raise ToolError(RefusalCode.POSITIONING_OFF,
                             "the positioning picture is switched off for "
                             "this job")
         names = [self._record(ref).id for ref in ids]
-        state = self._door.state
+        state = self._run.state
         if proposal:
             state = copy.deepcopy(state)
             for ref, change in proposal.items():
@@ -1655,7 +1655,7 @@ class ToolContext:
                                     positions_mm=tuple(positions), long_edge=edge,
                                     part=part)
         try:
-            drawn = looks.look(self._door.ctx, state, request, store=self._door.job.deformations)
+            drawn = looks.look(self._run.ctx, state, request, store=self._run.job.deformations)
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         images = [picture.image for picture in drawn]
@@ -1671,7 +1671,7 @@ class ToolContext:
         reads every other from the job's."""
         from langslice.core.fits.deformation import RecordStore
 
-        held = self._door.job.deformations
+        held = self._run.job.deformations
         store = RecordStore(root=held.root, folder_of=held.folder_of)
         store.put(proposal.key, proposal._warp.record)
         return store
@@ -1729,12 +1729,12 @@ class ToolContext:
         if not self._caller.background:
             raise _not_for_scripts("a script runs its own computation: compute, then write "
                                    "with expect=")
-        job = self._door.job
+        job = self._run.job
         ids = [self._record(section).id for section in sections]
         busy = job.busy_refusal(ids)
         if busy is not None:
             raise busy
-        door, caller = self._door, self._caller
+        door, caller = self._run, self._caller
 
         def landing() -> Landed:
             context = ToolContext(door, caller, f"{self.call}-bg")
@@ -1774,7 +1774,7 @@ class ToolContext:
         someone else's write); a script's outermost writes are a step each.
         A long tool computes first and applies inside, passing ``expect=``
         to the writes so a section that changed meanwhile is refused."""
-        job = self._door.job
+        job = self._run.job
         with job.writing():
             outermost = self._depth == 0
             mark = job.pushed
@@ -1798,10 +1798,10 @@ class ToolContext:
         for name in ids:
             if expect is None or name not in expect:
                 continue
-            record = self._door.state.by_id(name)
+            record = self._run.state.by_id(name)
             if record is None:
                 continue
-            now = {section_inputs(self._door.state, record, deformation=flag)
+            now = {section_inputs(self._run.state, record, deformation=flag)
                    for flag in (False, True)}  # taken with or without the deformation
             if expect[name] not in now:
                 rows[name] = stale_row(name)
@@ -1818,7 +1818,7 @@ class ToolContext:
         from langslice.tools import positions
 
         self._require("position", *(["angles"] if cutting_angles is not None else []))
-        job, workspace = self._door.job, self._door.ctx
+        job, workspace = self._run.job, self._run.ctx
         with self.writing():
             out: dict[str, dict[str, Any]] = {}
             todo: list[Mapping[str, Any]] = []
@@ -1858,10 +1858,10 @@ class ToolContext:
         it after the call)."""
         if self._caller.in_tool_call:
             return []
-        return self._door.job.clear_stale_deformations()
+        return self._run.job.clear_stale_deformations()
 
     def _resolve_id(self, ref: object) -> str:
-        record = self._door.state.resolve(ref)
+        record = self._run.state.resolve(ref)
         return record.id if record is not None else ""
 
     def set_transforms(self, rows: Sequence[Mapping[str, Any]], *,
@@ -1875,7 +1875,7 @@ class ToolContext:
         from langslice.tools import transforms
 
         self._require("affine")
-        job = self._door.job
+        job = self._run.job
         with self.writing():
             out: dict[str, dict[str, Any]] = {}
             ids = [self._resolve_id(row.get("id")) for row in rows]
@@ -1937,7 +1937,7 @@ class ToolContext:
         from langslice.tools import deformable
 
         self._require("deformation")
-        job = self._door.job
+        job = self._run.job
         out: dict[str, dict[str, Any]] = {}
         proposals: list[DeformationProposal] = []
         for row in rows:
@@ -1986,7 +1986,7 @@ class ToolContext:
         from langslice.tools import damage
 
         self._require()
-        job, workspace = self._door.job, self._door.ctx
+        job, workspace = self._run.job, self._run.ctx
         with self.writing():
             out: list[dict[str, Any]] = []
             written: list[str] = []
@@ -2023,13 +2023,13 @@ class ToolContext:
         self._require()
         layer.check()
         record_id = self._record(section).id
-        job = self._door.job
+        job = self._run.job
         if layer.frame == "oriented":  # a raster computed on a section_image array
             held = self._record(section)
             layer = replace(layer, frame="section_px", raster=unorient_raster(
                 np.asarray(layer.raster), held.rotation_deg, held.flip))
         with self.writing():
-            record = self._door.state.by_id(record_id)
+            record = self._run.state.by_id(record_id)
             assert record is not None
             before = job.snapshot()
             ref = register_layer(job.layout, record, self._caller.name, self.call, layer,

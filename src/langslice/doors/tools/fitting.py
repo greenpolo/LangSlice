@@ -29,7 +29,7 @@ from langslice.tools import look as ops_look
 from langslice.tools import traces as ops_traces
 from langslice.tools import transforms as ops_transforms
 from langslice.tools.catalog import check_section_count
-from langslice.tools.run import Door, as_list, drawn_image, pictured
+from langslice.tools.run import Run, as_list, drawn_image, pictured
 
 
 def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -61,9 +61,9 @@ def affine_flag_words(flag: dict[str, Any]) -> str:
     return str(flag.get("code"))
 
 
-def bodies(door: Door) -> dict[str, Callable[..., Any]]:
-    """The fit tools' bodies over *door*."""
-    job, ctx, spec = door.job, door.ctx, door.spec
+def bodies(run: Run) -> dict[str, Callable[..., Any]]:
+    """The fit tools' bodies over *run*."""
+    job, ctx, spec = run.job, run.ctx, run.spec
 
     def shows(view: bool) -> bool:
         return bool(view) or bool(spec.force_view)
@@ -143,7 +143,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             **({} if ok else nothing_fitted(rows)),
             "settings": done.settings,
             "results": rows,
-            **({"changed": door.changed(done.written)["changed"]} if done.written else {}),
+            **({"changed": run.changed(done.written)["changed"]} if done.written else {}),
         }
         if not ok or not shows(view):
             return result
@@ -163,10 +163,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return pictured(result, shown)
 
     def trace_borders(section: str, prompt: str, restrict_to: list[str]) -> dict[str, Any]:
-        assert door.image_model is not None  # the tool exists only when traces are on
+        assert run.image_model is not None  # the tool exists only when traces are on
         options = default_options("borders", long_edge=picture_edge(ctx))
         done = ops_traces.trace_borders(
-            job, ctx, section, image_model=door.image_model, prompt=str(prompt or ""),
+            job, ctx, section, image_model=run.image_model, prompt=str(prompt or ""),
             restrict_to=as_list(restrict_to), options=options)
         trace = {key: done.record[key] for key in (
             "status", "error", "message", "cached", "prompt_edited", "attempt",
@@ -231,9 +231,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def landmark_triangulation(section: str, view: bool = True,
                                resolution: int = 0) -> dict[str, Any]:
         edge: int | None = None
-        if resolution and door.level == AUTO_RESOLUTION:
+        if resolution and run.level == AUTO_RESOLUTION:
             try:
-                edge, note = clamp_resolution(resolution, door.box.max_view_edge)
+                edge, note = clamp_resolution(resolution, run.box.max_view_edge)
             except (TypeError, ValueError):
                 raise Refused(
                     RefusalCode.BAD_ARGS,

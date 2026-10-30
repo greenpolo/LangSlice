@@ -34,8 +34,8 @@ from langslice.job.layout import (
 from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
-    from langslice.doors.tools.toolbox import ToolBox
     from langslice.providers.connections import ImageModel
+    from langslice.tools.pipeline import ToolBox
 
 #: The largest picture a script call may ask for (``view.resolution``): no
 #: model's limit applies, only the source's own pixels (nothing is upsampled

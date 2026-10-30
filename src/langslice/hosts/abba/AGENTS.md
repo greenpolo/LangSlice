@@ -58,7 +58,7 @@ cutting angles (`AbbaHostSession.anglesDeg`: pitch = -rotateX, yaw = -rotateY).
 ## The agent viewer
 
 `viewer_follow.py::AbbaFollower` consumes seed and executed
-`tool_start`/`tool_end` events (`doors.tools.toolbox._serialized` emits
+`tool_start`/`tool_end` events (the tool pipeline's `_log_events` step emits
 them inside its lock, with corrected-index references resolved to stable
 filenames). Model `tool_call` announcements may be batched ahead of
 execution and never drive the viewer. `_FOLLOWED` names the tools whose

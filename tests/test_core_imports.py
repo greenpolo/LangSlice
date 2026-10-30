@@ -85,6 +85,8 @@ FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 #: server package them): they load no agent framework or model client either.
 PLAIN_DOORS = (
     "langslice.doors.tools.toolbox",
+    "langslice.tools.pipeline",
+    "langslice.tools.events",
     "langslice.tools.run",
     "langslice.doors.tools.looking",
     "langslice.doors.tools.changing",
