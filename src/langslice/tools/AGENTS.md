@@ -150,16 +150,6 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
 
 ## Files
 
-A looking tool's body is a module-level function named for the tool that
-takes the run first (`tools.run.Run`) and returns the reply: `look(run,
-request)`, `zoom(run, box, picture, region=)`, `make_image(run, name,
-sections, recipe, delete=, view=)`, `grep_atlas`, `grep_atlas_view`,
-`status(run)`, `list_files`, `search_files`, `read_file`. Its operation on
-the job sits beside it in the same module (`look_pictures`,
-`zoom_picture`, `make_section_image`, `search_regions`, `draw_regions`,
-`stack_status`, `list_folder`, `search_folder`, `read_job_file`); tests and
-scripts call those.
-
 - `positions.py` — `position_sections(job, workspace, [{id, position_mm}],
   cutting_angles={pitch_deg, yaw_deg})`: both writes in ONE undo step
   (each value clamped into `workspace.position_range` and reported; new angles give every section the one plane, so a
