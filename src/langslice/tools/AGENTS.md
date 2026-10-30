@@ -582,7 +582,8 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
   `interactive_transform:flip` and `:rotate` are the options) is off in every
   run: the operations refuse a disabled `look` mode, a changed quarter turn
-  and a changed flip (`OPTION_OFF`, its `option` naming which).
+  and a changed flip (`OPTION_OFF`; `look`'s names the mode in `option`,
+  `interactive_transform`'s row names the argument in its `message`).
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the

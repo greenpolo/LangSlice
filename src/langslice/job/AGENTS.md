@@ -527,8 +527,7 @@ longer exist be taken over by the images it is opened with.
   number and id, arguments, `caption`, `step`, `recipe`, sections, mode, picture size and bytes, `frame`)
   and, for a placement picture or an `fireants_syn` picture (its note's
   `warp`, `core.pictures.layers.warp_layers`), `labels.tif` (uint32, zlib) and
-  `borders.png` (8-bit coverage), plus `residual.tif` for an `fireants_syn`
-  picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
+  `borders.png` (8-bit coverage). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`, and `caption`, `step`,
   `recipe` when set). `recipe` is `{"renderer": name, "args": {...}}`, enough to
