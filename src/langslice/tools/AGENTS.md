@@ -20,13 +20,14 @@ budget and paging) and `descriptions/` (every model-facing text: the
 tools' descriptions, the job statement, the agent CLI's fixes; below).
 A tool's body sits beside its operation as `<tool>_tool(run, **arguments)`,
 taking the declared arguments as the model sent them (`run.shows(view)`
-decides the picture): `positions.py`, `transforms.py`, `damage.py`,
-`masks.py`, `notes.py`, `history.py` (`undo_tool`, `redo_tool`),
-`registrations.py`, `submit.py`; `doors.tools.toolbox.TOOL_BODIES` wires
-their names. The looking tools' bodies are functions in their modules here too
-(below), wired by `doors/tools/looking.py`; the fitting tools' bodies and
-`build_tools` (which resolves the image model through the providers) are
-still `doors/tools/`.
+decides the picture): argument checks, the one operation call, the reply
+and its picture (`positions.py`, `transforms.py`, `damage.py`, `masks.py`,
+`notes.py`, `history.py` (`undo_tool`, `redo_tool`), `registrations.py`,
+`submit.py`, `affine_fit.py`, `deformable.py`, `traces.py`, `exports.py`,
+`landmarks.py`, `landmark_warp.py`); `doors.tools.toolbox.TOOL_BODIES`
+wires their names. The looking tools' bodies are functions in their modules
+here too (below), wired by `doors/tools/looking.py`; `build_tools` (which
+resolves the image model through the providers) is still `doors/tools/`.
 
 ## `descriptions/`: the model-facing text
 
@@ -294,7 +295,7 @@ scripts call those.
   is logged, the submit stands). Returns `Submitted` (`exported`, `interval_breaks`
   as filenames). Not a long verb: the door
   holds the job lock for the whole call, the exports included.
-- `exports.py` — `export_maps(job, workspace, ids=,
+- `exports.py` — (the verb's body: `export_maps_tool`) `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
   stands, no undo step (a long verb: the stack read under the job lock
   after a sync, each section's maps computed outside it and written under
@@ -382,7 +383,7 @@ scripts call those.
   mask; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`, `UNKNOWN_REGIONS`,
   `NO_SIDES`, `REGION_TOO_SMALL`, `FIT_FAILED`.
 - `deformable.py` — `fit_deformable(job, workspace, records, choice,
-  restrict_to=, options=)`: one deformation (a resolved
+  restrict_to=, overrides=)`: one deformation (a resolved
   `deformation.Choice`) on top of each section's applied deformation, or its
   linear placement when it holds none (the step's `start`: `current` or
   `linear`), each section's marked regions excluded
@@ -396,10 +397,11 @@ scripts call those.
   `STALE_INPUT`) are rows, not refusals. Returns `DeformableFit`: `rows`
   (call order), `fitted` (each row with its fit and record), `traced` (per
   traced section, the image read and the trace's lines on the fit grid),
-  `written`; with `options=`, `pictures(...)` draws each fit (the final
-  borders on the image it read, titled with the settings) and each traced
-  section's trace (`pictures`, `traces`, `render_failed`, each drawn row's
-  `image_indexes`). Its callers: `fireants_syn` and `traces.land_trace`. The
+  `written`. `fit_pictures.draw_fits(workspace, done, options)` then draws
+  each fit (the final borders on the image it read, titled with the
+  settings) and each traced section's trace (`pictures`, `traces`,
+  `render_failed`, each drawn row's `image_indexes`). Its callers:
+  `fireants_syn` and `traces.land_trace`. The
   engine runs inside `core.fits.engine_log.engine_output(job.engine_log)` (what
   it prints goes to `logs/engine.log`); a fit's ok row (not a cached one)
   carries `gpu_rows(record.engine)`: `gpu_wait_s` from `GPU_WAIT_SHOWN_S` of
@@ -431,8 +433,11 @@ scripts call those.
   more than `MAX_FIREANTS_SYN_SECTIONS` (20, every fitted section held in
   memory until the call's one write, `SECTION_CAP_REASON`) is the tool door's
   `TOO_MANY_SECTIONS`),
-  `UNKNOWN_IMAGE`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
-  `warp_from_map(job, workspace, section, native_xy, method=, step=,
+  `UNKNOWN_IMAGE`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`;
+  its tool `fireants_syn_tool` (the section cap, the reply, the picture).
+  `nothing_fitted(rows)` is the top-level error of a fit tool that fitted
+  nothing; `check_atlas_image` the atlas-image check both fit tools make.
+- `warps.py` — `warp_from_map(job, workspace, section, native_xy, method=, step=,
   provenance=, weights=, start=, settings=, engine_settings=, engine_version=)`:
   a deformation made elsewhere (a tool plugin's), given as the
   full map from the fit grid's pixel centres to native atlas pixels, built as
@@ -461,7 +466,8 @@ scripts call those.
   `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `INVALID_LINEAR_PLACEMENT`,
   `FIT_FAILED`.
 
-- `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
+- `traces.py` — (the tool's body: `trace_borders_tool`, the run's image
+  model and picture size) `trace_borders(job, workspace, ref, image_model=, prompt=,
   restrict_to=, options=, workers=)`: LangSlice's own
   nonlinear method packaged. It starts the section's image correction (below)
   and a piece of background work (`Job.background`, kind `TRACE_WORK`
@@ -632,7 +638,8 @@ the job folder through one hook (`Job.views.shown`, `src/langslice/job/`).
 
 ## Landmark verbs
 
-`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=)` atomically
+`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=)`
+(returns `LandmarksEdited`, whose `reply()` is the tool's answer) atomically
 adds/updates/deletes stable corresponding pairs, ONE undo step for the batch,
 and applies no deformation. It resolves the exact saved picture recipe and
 explicit atlas/section roles; it refuses captions, gutters, out-of-image
@@ -642,7 +649,8 @@ atlas endpoint outside the atlas (`_refuse_outside`: `ATLAS_ENDPOINT_OUTSIDE`,
 atlas at least `INSIDE_MARGIN_PX` from its outline, in the numbers the
 endpoint was given in). Section endpoints are
 original-image edge fractions; atlas endpoints are native plane pixels.
-`landmark_triangulation(job, workspace, section)` explicitly applies the full
+`landmark_warp.py`: `landmark_triangulation(job, workspace, section)` (returns
+`LandmarksApplied`, whose `reply()` is the tool's answer) explicitly applies the full
 set, at least three pairs, on its written linear placement. The first application
 composes onto the current deformation via its stored inverse. Consecutive
 landmark applications replace the landmark method against that original

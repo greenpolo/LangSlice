@@ -30,7 +30,7 @@ from langslice.doors.plugins.frames import ContextFrames
 from langslice.doors.plugins.reads import as_tool_error
 
 if TYPE_CHECKING:
-    from langslice.tools.deformable import MappedWarp
+    from langslice.tools.warps import MappedWarp
 
 
 @dataclass(frozen=True)
@@ -227,7 +227,7 @@ class ContextProposals(ContextFrames):
         transform."""
         import json
 
-        from langslice.tools import deformable
+        from langslice.tools import warps
 
         record = self._record(section)
         try:
@@ -241,7 +241,7 @@ class ContextProposals(ContextFrames):
         fitted_with = to_jsonable(dict(settings or {}), strict=True)
         engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
-            warp = deformable.warp_from_map(
+            warp = warps.warp_from_map(
                 self._run.job, self._run.ctx, record.id, native_xy,
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),

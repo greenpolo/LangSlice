@@ -657,7 +657,7 @@ tool call inside it) and
 extra=, recipe=, caption=)`; `note_for` finds a picture's note by
 identity; `annotate(image, recipe=, caption=)` sets fields on the note a
 renderer already made for that image (its frame and panel kept). `draw_canvas`
-and the `look` renderers note theirs; `tools.deformable.pictures` notes
+and the `look` renderers note theirs; `tools.fit_pictures.draw_fits` notes
 the deformation fits (`fireants_syn`, a landed trace; through `core.pictures.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door

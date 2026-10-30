@@ -121,21 +121,21 @@ bodies, and turned into an answer once per door:
   `proposals.py` `ContextProposals` (conversions `transform_from_matrix` /
   `transform_from_params`, and `deformation_from_map` (a full
   fit-grid-to-native map as a `DeformationProposal`,
-  `tools.deformable.warp_from_map`; `start="current"` for a map made on top
+  `tools.warps.warp_from_map`; `start="current"` for a map made on top
   of the held deformation, its chain kept; `settings`, `engine_settings`,
   `engine_version` kept as a native fit's), `read_registration` (each
   section in its current orientation, `params`, `at=` a fixed plane,
   `registered_on="oriented"` for a file made on the oriented render));
   `fits.py` `ContextFits` (`write_frame` / `map_from_itk` /
   `transform_from_itk` (`core.maps.itk`: an outside engine's inputs and
-  answer), `fit_fireants` / `fit_elastix` (`tools.deformable.fit_record`,
+  answer), `fit_fireants` / `fit_elastix` (`tools.warps.fit_record`,
   `tools.affine_fit.elastix_fit`: the native engines with settings and a
   mask of the caller's own, by the tools' names and with their defaults
   (`restrict_to`, `section_image`, `atlas_image`, `mask`, `smoothness_um`,
   `metric`, `edges`, `detail`), a proposal not written, the settings as its
   step's `settings` / the record's `fit`)); `writes.py` `ContextWrites`
   (`set_positions`, `set_transforms`, `set_deformations`
-  (`tools.deformable.apply_warps`, maps converted before the lock),
+  (`tools.warps.apply_warps`, maps converted before the lock),
   `mark_damage` through `tools/`, `add_image` (a made section image,
   `tools.images.add_image`), `add_layer` through `job/plugin_store` (a
   script's under `plugins/script/`), `expect=` fingerprints refusing
@@ -301,11 +301,14 @@ bodies, and turned into an answer once per door:
   one call), `restore_registration` (`section` lists,
   `tools.registrations.listing`; `sections` `[{id, registration}]` puts them
   back, per-section `results`, one undo step, and shows their overlays;
-  both or neither `BAD_ARGS`), `submit`); `fitting.py`:
-  `elastix_affine` (its `turn_deg` and plausibility `flags` worded in the
-  row's `warning`, `affine_flag_words`; the knobs under `transform`),
-  `fireants_syn`, `trace_borders`,
-  `export_maps`; a change tool's picture is drawn after its write by
+  both or neither `BAD_ARGS`), `submit`; the fit tools' bodies are
+  functions of their `tools/` modules, wired by name in `toolbox.TOOL_BODIES`
+  and called with the run first (`tools.affine_fit.elastix_affine_tool`, its
+  `turn_deg` and plausibility `flags` worded in the row's `warning`,
+  `affine_flag_text`, the knobs under `transform`;
+  `tools.deformable.fireants_syn_tool`, `tools.traces.trace_borders_tool`,
+  `tools.exports.export_maps_tool`, `tools.landmarks.set_landmarks_tool`,
+  `tools.landmark_warp.landmark_triangulation_tool`); a change tool's picture is drawn after its write by
   `tools.look.show_result` unless its `view` is false and the host does not
   force it (a fit's and an `em` mask's picture drawn on the section image
   it read, `run.drawn_image`); `interactive_transform` and `elastix_affine` drop the
@@ -318,8 +321,8 @@ bodies, and turned into an answer once per door:
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
-  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host),
-  `media.py` (the ADK message parts: `packaged`,
+  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host;
+  `look`'s `resolution` is clamped by `core.pictures.sizes.clamp_resolution`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys

@@ -13,6 +13,7 @@ prepared by ``registration_tool.start_correction``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
@@ -20,12 +21,21 @@ from langslice.core.fits import deformation
 from langslice.core.fits import frame as handoff
 from langslice.core.fits.trace import trace as registration_tool
 from langslice.core.jsonable import JsonValue
+from langslice.core.pictures.options import default_options
+from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.codec import trace_from_json, trace_to_json
 from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
+from langslice.tools.deformable import (
+    fit_deformable,
+    refuse_without_engine,
+    region_entries,
+)
+from langslice.tools.fit_pictures import draw_fits
 from langslice.tools.refusal import section_refusal, unknown_sections
+from langslice.tools.run import Run, as_list
 from langslice.tools.stale import section_inputs
 
 if TYPE_CHECKING:
@@ -196,11 +206,6 @@ def trace_borders(
     ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
     while the call was prepared).
     """
-    from langslice.tools.deformable import (
-        refuse_without_engine,
-        region_entries,
-    )
-
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
     record = job.state.resolve(ref)
@@ -243,8 +248,6 @@ def land_trace(
     since gets nothing (``STALE_INPUT``), as does one whose trace was undone or
     made at another placement. A failed image call is a failed work.
     """
-    from langslice.tools.deformable import fit_deformable
-
     state = job.state
     record = state.by_id(section_id)
     if record is None:
@@ -265,8 +268,9 @@ def land_trace(
     if (section_inputs(state, record, deformation=True) != expected
             or held is None or held.status != "ok"):
         return _stale(trace)
-    done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
-                          options=options)
+    done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions)
+    if options is not None:
+        done = draw_fits(workspace, done, options)
     row: dict[str, Any] = (done.rows[0] if done.rows
                            else Refused(RefusalCode.FIT_FAILED,
                                         "The fit returned no row.").payload())
@@ -318,3 +322,58 @@ def _stale(trace: dict[str, Any]) -> Landed:
                   "images, damage, deformation or trace changed before the trace landed; "
                   "nothing was applied. Run trace_borders again.",
                   result={"error": RefusalCode.STALE_INPUT, "trace": trace})
+
+
+# --- the tool ----------------------------------------------------------------
+
+#: The fields of a section's border trace the tool's reply repeats.
+_REPLY_TRACE_KEYS = ("status", "error", "message", "cached", "prompt_edited",
+                     "attempt", "include", "exclude")
+
+
+def trace_borders_tool(
+    run: Run, section: str, prompt: str, restrict_to: Sequence[str]
+) -> dict[str, Any]:
+    """Run the ``trace_borders`` tool: start the packaged trace, answer at once.
+
+    The trace and its fit are drawn when the work lands
+    (:func:`land_trace`), at the run's picture size; the tool door hands
+    the work's notice out at the head of a later reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool belongs to; it holds the image model.
+    section, prompt, restrict_to
+        The call's arguments, as :func:`trace_borders` takes them.
+
+    Returns
+    -------
+    dict
+        The reply: ``running`` (the section's trace already runs as work),
+        ``ok`` with ``landed`` (its fit is already applied) or ``started``
+        (the work id), the section's trace record and a ``message``.
+    """
+    assert run.image_model is not None  # the tool exists only when traces are on
+    options = default_options("borders", long_edge=picture_edge(run.ctx))
+    done = trace_borders(
+        run.job, run.ctx, section, image_model=run.image_model,
+        prompt=str(prompt or ""), restrict_to=as_list(restrict_to),
+        options=options)
+    trace = {key: done.record[key] for key in _REPLY_TRACE_KEYS
+             if key in done.record}
+    if done.running:
+        return {"status": "running", "id": done.id, "work": done.work,
+                "message": f"This section's trace is already running as work "
+                f"{done.work}; its notice comes when it finishes."}
+    if done.landed:
+        return {"status": "ok", "id": done.id, "landed": True, "trace": trace,
+                "message": "This trace has already been fitted: the section's "
+                "deformation holds its fit, so nothing was fitted again."}
+    reused = ""
+    if not done.started:
+        reused = " (the saved answer at this placement and region choice is reused)"
+    return {"status": "started", "id": done.id, "work": done.work, "trace": trace,
+            "message": f"Started in the background as work {done.work}{reused}. "
+            "Carry on; its notice comes at the head of a later reply, and "
+            "submit waits for it."}

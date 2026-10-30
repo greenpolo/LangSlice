@@ -277,7 +277,7 @@ class ContextWrites(ContextProposals):
         job's write lock is taken, so a long tool holds it only to write.
         The ok rows carry the numbers ``DeformationProposal.summary`` has.
         Needs ``deformation`` in the tool's ``writes``."""
-        from langslice.tools import deformable
+        from langslice.tools import warps
 
         self._require("deformation")
         job = self._run.job
@@ -316,7 +316,7 @@ class ContextWrites(ContextProposals):
         with self.writing():
             stale = self._stale([proposal.id for proposal in proposals], expect)
             out.update(stale)
-            done = deformable.apply_warps(
+            done = warps.apply_warps(
                 job, [proposal._warp for proposal in proposals if proposal.id not in stale])
             for applied in done.rows:
                 out[applied["id"]] = applied

@@ -219,27 +219,21 @@ class ContextFits(ContextProposals):
         marked damage regions in the fit."""
         from langslice.core.atlas.images import resolve_image
         from langslice.core.fits.deformable.render import composed_native_grid
-        from langslice.tools.deformable import (
-            DETAILS,
-            METRICS,
-            default_settings,
-            fit_record,
-            region_entries,
-        )
+        from langslice.tools import deformable, warps
 
         record = self._record(section)
         workspace = self._run.ctx
         label = _mask_name(mask)
-        if str(metric) not in METRICS:
+        if str(metric) not in deformable.METRICS:
             raise ToolError(RefusalCode.BAD_ARGS,
-                            f"metric is one of {list(METRICS)}; got {metric!r}")
-        if str(detail) not in DETAILS:
+                            f"metric is one of {list(deformable.METRICS)}; got {metric!r}")
+        if str(detail) not in deformable.DETAILS:
             raise ToolError(RefusalCode.BAD_ARGS,
-                            f"detail is one of {list(DETAILS)}; got {detail!r}")
+                            f"detail is one of {list(deformable.DETAILS)}; got {detail!r}")
         try:
-            regions = region_entries(workspace, self._run.job.state, list(restrict_to))
-            left_out = region_entries(workspace, self._run.job.state, list(exclude))
-            chosen = replace(default_settings(workspace), smoothness_um=float(smoothness_um),
+            regions = deformable.region_entries(workspace, self._run.job.state, list(restrict_to))
+            left_out = deformable.region_entries(workspace, self._run.job.state, list(exclude))
+            chosen = replace(warps.default_settings(workspace), smoothness_um=float(smoothness_um),
                              atlas_image=str(atlas_image), stain_metric=str(metric),
                              stain_edges=bool(edges), detail=str(detail),
                              structures=regions, exclude=left_out)
@@ -249,9 +243,9 @@ class ContextFits(ContextProposals):
         except (TypeError, ValueError) as exc:  # checked as the settings are made
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         try:
-            fitted = fit_record(self._run.job, workspace, record.id, chosen, start=start,
-                                mask=label, marked=bool(marked),
-                                section_image=str(section_image))
+            fitted = warps.fit_record(self._run.job, workspace, record.id, chosen, start=start,
+                                      mask=label, marked=bool(marked),
+                                      section_image=str(section_image))
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         native_xy = np.stack(composed_native_grid(fitted, 1), axis=-1).astype(np.float64)

@@ -10,7 +10,7 @@ from langslice.core.fits.deformable.engines import EngineResult
 from langslice.core.fits.deformable.fit import WorkingGrid
 from langslice.core.stack.codec import deformation_from_json
 from langslice.core.stack.landmarks_json import landmarks_from_json
-from langslice.tools import landmarks
+from langslice.tools import landmark_warp, landmarks
 from tests.test_landmarks import saved_pairs, setup
 
 
@@ -36,14 +36,14 @@ def test_a_large_landmark_move_is_not_outsized_and_fits_count_only_their_additio
     job, ws, record = setup(tmp_path)
     try:
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
-        landmarks.landmark_triangulation(job, ws, record.id)
+        landmark_warp.landmark_triangulation(job, ws, record.id)
         extent_mm = _added_step(job, ws, record, None, 0.0).diagnostics[
             "displacement"]["tissue_extent_mm"]
         # Replace the pairs by a 38 px move.
         record.landmarks = landmarks_from_json({})
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(
             job, ws, record, delta=(38., 0.)))
-        reply = landmarks.landmark_triangulation(job, ws, record.id)
+        reply = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         moved = job.deformations.current(job.state, record)
         whole = np.linalg.norm(moved.field_mm, axis=-1)[moved.footprint]
         assert whole.max() > 0.1 * extent_mm  # past the old limit
@@ -63,7 +63,7 @@ def test_a_large_landmark_move_is_not_outsized_and_fits_count_only_their_additio
             "linear_key": deformation.linear_key(job.state, record), "steps": []})
         record.landmarks = landmarks_from_json({})
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record, delta=(3., 0.)))
-        landmarks.landmark_triangulation(job, ws, record.id)
+        landmark_warp.landmark_triangulation(job, ws, record.id)
         over = job.deformations.current(job.state, record)
         assert "DISPLACEMENT_OUTSIZED" not in _codes(over)
         assert "DISPLACEMENT_OUTSIZED" not in _codes(

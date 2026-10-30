@@ -2,9 +2,9 @@
 
 :func:`build_tools` gathers each tool's body over one
 :class:`~langslice.tools.run.Run` (a function of the tool's module that takes
-the run first, :data:`TOOL_BODIES`; the closures of :mod:`.looking` and
-:mod:`.fitting`; a plugin's through :mod:`langslice.doors.plugins.runtime`)
-and makes each one a tool of the pipeline every call goes through
+the run first, :data:`TOOL_BODIES`; the closures of :mod:`.looking`; a
+plugin's through :mod:`langslice.doors.plugins.runtime`) and makes each one
+a tool of the pipeline every call goes through
 (:mod:`langslice.tools.pipeline`). It lives at the
 doors because the bodies do, and because it resolves the run's image model
 through the providers, which the tools do not import.
@@ -26,19 +26,25 @@ from langslice.core.pictures.sizes import (
 from langslice.core.space import Plane
 from langslice.core.stack.stack import Stack
 from langslice.doors.plugins import provenance, runtime
-from langslice.doors.tools import fitting, looking
+from langslice.doors.tools import looking
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import resolve_image_model
 from langslice.tools import (
+    affine_fit,
     damage,
+    deformable,
+    exports,
     history,
+    landmark_warp,
+    landmarks,
     masks,
     notes,
     positions,
     registrations,
     submit,
+    traces,
     transforms,
 )
 from langslice.tools.catalog import enabled, verbs_for
@@ -61,6 +67,12 @@ TOOL_BODIES: dict[str, Callable[..., object]] = {
     "redo": history.redo_tool,
     "restore_registration": registrations.restore_registration_tool,
     "submit": submit.submit_tool,
+    "elastix_affine": affine_fit.elastix_affine_tool,
+    "fireants_syn": deformable.fireants_syn_tool,
+    "set_landmarks": landmarks.set_landmarks_tool,
+    "landmark_triangulation": landmark_warp.landmark_triangulation_tool,
+    "trace_borders": traces.trace_borders_tool,
+    "export_maps": exports.export_maps_tool,
 }
 
 
@@ -99,7 +111,7 @@ def build_tools(
     (:func:`langslice.tools.catalog.enabled`); each tool's name, arguments and
     description are its declaration
     (:func:`langslice.tools.descriptions.render.declare`); each tool's body is
-    in its module (:data:`TOOL_BODIES`), :mod:`.looking` or :mod:`.fitting`.
+    in its module (:data:`TOOL_BODIES`) or :mod:`.looking`.
     The tools sit on *job*; without one, a job is made around *state* in the
     context's job folder (an empty undo history, nothing written until the
     first write).
@@ -160,7 +172,7 @@ def build_tools(
               traces_on=traces_on, image_model=image_model)
     box.run = run
     bodies: dict[str, Callable[..., Any]] = {
-        **looking.bodies(run), **fitting.bodies(run),
+        **looking.bodies(run),
         **{name: functools.partial(body, run)
            for name, body in TOOL_BODIES.items()},
     }

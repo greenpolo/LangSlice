@@ -1,4 +1,4 @@
-"""The Elastix affine fit: ``elastix_affine`` and a script's ``elastix_fit``.
+"""The Elastix affine fit: the ``elastix_affine`` tool and a script's ``elastix_fit``.
 
 :func:`elastix_affine` refines each section's in-plane transform against an
 atlas image and writes every fit that succeeded as one undo step
@@ -7,8 +7,16 @@ row carries what the fit read, how far it turned the section and the flags of
 an implausible change (:func:`plausibility_flags`); a fit restricted to
 regions carries their box, which its picture zooms to (:func:`zoom_window`).
 ``elastix_fit`` is one fit written nowhere, for scripts.
-"""
 
+:func:`elastix_affine_tool` answers the tool's call with a row per section,
+worded from the fit's numbers (the turn, the flags: :func:`affine_flag_text`),
+and shows each fitted section under its new registration with the atlas
+borders on it (:func:`langslice.tools.look.show_result`), drawn on the section
+image the fit read, unless the call's ``view`` is false and the host does not
+force it. With ``restrict_to`` those regions' borders are drawn thick and the
+others faint, and the picture is zoomed to the regions' box when that
+magnifies it at least :data:`MIN_ZOOM_GAIN` times.
+"""
 from __future__ import annotations
 
 import logging
@@ -35,12 +43,16 @@ from langslice.core.stack.json_reads import flag_at, numbers_at, object_at
 from langslice.job.settings.needs import marked, render
 from langslice.tools import masks as ops_masks
 from langslice.tools.deformable import (
+    check_atlas_image,
     inputs_block,
+    nothing_fitted,
     refuse_unknown_inputs,
     region_entries,
 )
 from langslice.tools.images import check_image
+from langslice.tools.look import show_result
 from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.run import Run, as_list, drawn_image, pictured
 from langslice.tools.stale import section_inputs, stale_row
 from langslice.tools.transforms import (
     KNOB_DEFAULTS,
@@ -573,3 +585,154 @@ def elastix_affine(
                 if box is not None:
                     row["restrict_box"] = box
     return result
+
+
+# --- the tool ----------------------------------------------------------------
+
+
+def affine_flag_text(flag: Mapping[str, Any]) -> str:
+    """Return one ``elastix_affine`` plausibility flag as a sentence.
+
+    Parameters
+    ----------
+    flag
+        One of the fit's flags
+        (:func:`plausibility_flags`).
+
+    Returns
+    -------
+    str
+        The flag's code and what it means for the fit; the bare code for a
+        flag without words.
+    """
+    if flag.get("code") == FitFlag.SCALE_CHANGED:
+        scale = flag.get("scale") or []
+        previous = flag.get("previous") or []
+        return (
+            f"SCALE_CHANGED: this fit scales the section to {scale} from "
+            f"{previous}, more than a section shrinks or swells; it may have "
+            "stretched the section over atlas it does not hold. Compare its "
+            "picture with the previous one."
+        )
+    if flag.get("code") == FitFlag.SHEAR:
+        return (
+            f"SHEAR: this fit shears the section by {flag.get('shear')} (it "
+            f"held {flag.get('previous')}); a section is rarely sheared that "
+            "much. Compare its picture with the previous one."
+        )
+    return str(flag.get("code"))
+
+
+def elastix_affine_tool(
+    run: Run,
+    sections: Sequence[str],
+    restrict_to: Sequence[str],
+    *,
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
+    mask: str = "none",
+    edges: bool = True,
+    view: bool = True,
+) -> dict[str, Any]:
+    """Run the ``elastix_affine`` tool: fit, answer, picture.
+
+    Parameters
+    ----------
+    run
+        The run the tool belongs to.
+    sections, restrict_to, section_image, atlas_image, mask, edges
+        The call's arguments, as the fit takes them
+        (:func:`elastix_affine`).
+    view
+        Whether to answer with the picture.
+
+    Returns
+    -------
+    dict
+        The reply: ``status``, the call's ``settings``, one row per section
+        (``results``) and the deformations the fit made stale.
+    """
+    from langslice.tools.catalog import (  # local: cycle with tools.catalog
+        check_section_count,
+    )
+
+    job, workspace = run.job, run.ctx
+    regions = region_entries(workspace, job.state, as_list(restrict_to))
+    check_atlas_image(workspace, atlas_image)
+    named = as_list(sections)
+    if not named:
+        raise Refused(
+            RefusalCode.BAD_ARGS, "sections must name one or more sections"
+        )
+    check_section_count(job, "elastix_affine", len(named))
+    done = elastix_affine(
+        job,
+        workspace,
+        named,
+        regions,
+        str(section_image or "preprocessed"),
+        str(atlas_image or "nissl"),
+        str(mask or "none"),
+        bool(edges),
+    )
+    # A fit's row as every reply gives a fit: the six raw numbers stay
+    # host-side, the knobs are its transform, the turn and flags its warning.
+    rows: list[dict[str, Any]] = []
+    fits: list[dict[str, Any]] = []
+    for row in done.rows:
+        if row.get("status") != ReplyStatus.OK:
+            rows.append(row)
+            continue
+        worded = {
+            key: value
+            for key, value in row.items()
+            if key not in ("params", "physical", "turn_deg")
+        }
+        worded["transform"] = row.get("physical")
+        words = [affine_flag_text(flag) for flag in row.get("flags") or []]
+        turn = row.get("turn_deg")
+        if turn is not None:
+            words.insert(
+                0,
+                f"This fit turns the section {turn:.0f} degrees "
+                "from its previous transform.",
+            )
+        if words:
+            worded["warning"] = " ".join(words)
+        rows.append(worded)
+        fits.append(worded)
+    status = "ok" if fits else "error"
+    result: dict[str, Any] = {"status": status}
+    if not fits:
+        result.update(nothing_fitted(rows))
+    result["settings"] = {
+        "section_image": str(section_image or "preprocessed"),
+        "atlas_image": str(atlas_image or "nissl"),
+        "mask": str(mask or "none"),
+        "restrict_to": list(regions),
+        "edges": bool(edges),
+    }
+    result["results"] = rows
+    if not fits or not run.shows(view):
+        return result
+
+    # A deformation this fit made stale goes before the picture is drawn.
+    cleared = job.clear_stale_deformations()
+    if cleared:
+        result["deformation_cleared"] = cleared
+    zooms: dict[str, list[float]] = {}
+    for row in fits:
+        window = zoom_window(row.get("restrict_box"))
+        if window:
+            zooms[str(row["id"])] = window
+    shown = show_result(
+        job,
+        workspace,
+        "elastix_affine",
+        "overlay",
+        [str(row["id"]) for row in fits],
+        zooms=zooms,
+        highlight=regions,
+        images=drawn_image(section_image),
+    )
+    return pictured(result, shown)

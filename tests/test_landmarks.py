@@ -34,7 +34,7 @@ from langslice.job.job import Job
 from langslice.job.pictures import DiscardedViews
 from langslice.job.settings.spec import NonlinearSpec
 from langslice.job.state_file import stack_from_json
-from langslice.tools import atlas, damage, landmarks, look
+from langslice.tools import atlas, damage, landmark_warp, landmarks, look
 from langslice.tools import zoom as tools_zoom
 from tests.shapes import json_of
 from tests.test_ops_look import _job
@@ -79,7 +79,7 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
     try:
         edits = saved_pairs(job, ws, record)
         depth = len(job.undo_stack)
-        reply = landmarks.set_landmarks(job, ws, record.id, edits)
+        reply = landmarks.set_landmarks(job, ws, record.id, edits).reply()
         assert reply["changed"] == ["L1", "L2", "L3"]
         assert len(job.undo_stack) == depth + 1 and record.deformation is None
         derived = job.layout.section_dir(record.id) / "landmarks.json"
@@ -99,7 +99,7 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         assert all(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
         assert all(p["stale"] for p in json.loads(derived.read_text())["pairs"])
         with pytest.raises(Refused, match="re-place their atlas endpoints"):
-            landmarks.landmark_triangulation(job, ws, record.id)
+            landmark_warp.landmark_triangulation(job, ws, record.id)
         assert job.undo()
         record = job.state.by_id(record.id)
         assert not any(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
@@ -140,7 +140,8 @@ def test_bad_batch_is_atomic_and_caption_points_are_refused(tmp_path):
             landmarks.set_landmarks(job, ws, record.id, unknown)
         assert caught.value.code == "UNKNOWN_PICTURE"
         depth = len(job.undo_stack)
-        assert not landmarks.set_landmarks(job, ws, record.id)["written"]  # no pairs: no write
+        listing = landmarks.set_landmarks(job, ws, record.id).reply()
+        assert not listing["written"]  # no pairs: no write
         assert len(job.undo_stack) == depth
     finally:
         job.close()
@@ -247,18 +248,18 @@ def test_explicit_application_composes_without_running_an_engine(tmp_path, monke
             lambda *_args: pytest.fail("No registration engine for landmarks"),
         )
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record, delta=(2.0, 1.0)))
-        first = landmarks.landmark_triangulation(job, ws, record.id)
+        first = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert first["written"] and not first["composed"]
         applied = job.deformations.current(job.state, record)
         assert applied.engine["name"] == "landmark_triangulation"
         assert applied.inverse_field_mm is not None and not first["fold_fraction"]
-        assert not landmarks.landmark_triangulation(job, ws, record.id)["written"]
+        assert not landmark_warp.landmark_triangulation(job, ws, record.id).reply()["written"]
         assert record.deformation is not None
         updates = saved_pairs(job, ws, record, delta=(3.0, 1.0))
         for k, update in enumerate(updates, 1):
             update["id"] = f"L{k}"
         landmarks.set_landmarks(job, ws, record.id, updates)
-        second = landmarks.landmark_triangulation(job, ws, record.id)
+        second = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert second["written"] and second["replaced"] and not second["composed"]
         composed = job.deformations.current(job.state, record)
         assert composed.parent is None
@@ -284,7 +285,7 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
     try:
         # A valid, nonzero field standing in for an already applied other method.
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record, delta=(1., .5)))
-        landmarks.landmark_triangulation(job, ws, record.id)
+        landmark_warp.landmark_triangulation(job, ws, record.id)
         baseline = copy.deepcopy(job.deformations.current(job.state, record))
         baseline.engine["name"] = "fireants"
         baseline_key = "other-method-baseline"
@@ -310,10 +311,10 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         extra["atlas"].update(x=a[0], y=a[1])
         extra["section"].update(x=b[0], y=b[1])
         landmarks.set_landmarks(job, ws, record.id, [*edits, extra])
-        first = landmarks.landmark_triangulation(job, ws, record.id)
+        first = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert first["composed"] and not first["replaced"]
         landmarks.set_landmarks(job, ws, record.id, delete=["L4"])
-        replaced = landmarks.landmark_triangulation(job, ws, record.id)
+        replaced = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert replaced["composed"] and replaced["replaced"]
         reduced = job.deformations.current(job.state, record)
         np.testing.assert_array_equal(reduced.parent.field_mm, baseline.field_mm)
@@ -325,7 +326,7 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         before = job.snapshot()
         record.deformation = deformation_from_json(copy.deepcopy(baseline_ref))
         job.commit(before)
-        landmarks.landmark_triangulation(job, ws, record.id)
+        landmark_warp.landmark_triangulation(job, ws, record.id)
         np.testing.assert_array_equal(
             job.deformations.current(job.state, record).field_mm, reduced.field_mm)
         # A different method applied after landmarks establishes a new baseline.
@@ -339,7 +340,7 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
                               "linear_key": deformation.linear_key(job.state, record),
                               "steps": [{"method": "trace_borders"}]})
         job.commit(before)
-        latest = landmarks.landmark_triangulation(job, ws, record.id)
+        latest = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert latest["composed"] and not latest["replaced"]
         result = job.deformations.current(job.state, record)
         np.testing.assert_array_equal(result.parent.field_mm, intervening.field_mm)
@@ -444,7 +445,7 @@ def test_a_frozen_deformation_refuses_pairs_and_triangulation_alike(tmp_path):
         job.spec = replace(job.spec, frozen={record.id: ["deformation"]})
         depth = len(job.undo_stack)
         for call in (lambda: landmarks.set_landmarks(job, ws, record.id, edits),
-                     lambda: landmarks.landmark_triangulation(job, ws, record.id)):
+                     lambda: landmark_warp.landmark_triangulation(job, ws, record.id)):
             with pytest.raises(Refused) as refused:
                 call()
             assert refused.value.code == "FROZEN"
@@ -467,7 +468,7 @@ def test_a_fold_is_applied_and_reported_and_a_sound_warp_reports_none(tmp_path, 
         edits = (_folded_pairs(job, ws, record) if folded
                  else saved_pairs(job, ws, record, delta=(2.0, 1.0)))
         landmarks.set_landmarks(job, ws, record.id, edits)
-        done = landmarks.landmark_triangulation(job, ws, record.id)
+        done = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         if not folded:
             assert "folds" not in done and not deformation_to_json(
                 record.deformation)["landmark_folds"]
@@ -479,7 +480,7 @@ def test_a_fold_is_applied_and_reported_and_a_sound_warp_reports_none(tmp_path, 
         assert folds["triangle_count"] >= 1 and folds["triangles"]
         stored = deformation_to_json(record.deformation)["landmark_folds"]
         assert stored["triangles"] and stored["area_fraction"] == folds["area_fraction"]
-        assert landmarks.landmark_triangulation(job, ws, record.id)["folds"] == folds
+        assert landmark_warp.landmark_triangulation(job, ws, record.id).reply()["folds"] == folds
     finally:
         job.close()
 
@@ -491,7 +492,7 @@ def test_repeated_section_points_refuse_the_triangulation(tmp_path):
         edits[1]["section"] = dict(edits[0]["section"])
         landmarks.set_landmarks(job, ws, record.id, edits)
         with pytest.raises(Refused) as caught:
-            landmarks.landmark_triangulation(job, ws, record.id)
+            landmark_warp.landmark_triangulation(job, ws, record.id)
         assert caught.value.code == "LANDMARK_TRIANGULATION_FAILED"
         assert caught.value.facts["pairs"] == ["L1", "L2"]
     finally:
@@ -507,7 +508,7 @@ def test_a_stale_plane_refuses_a_picture_from_the_old_plane(tmp_path):
         record.position_mm += 0.01
         job.commit(before)
         with pytest.raises(Refused) as caught:
-            landmarks.landmark_triangulation(job, ws, record.id)
+            landmark_warp.landmark_triangulation(job, ws, record.id)
         assert caught.value.facts["pairs"] == ["L1", "L2", "L3"]
         with pytest.raises(Refused) as caught:
             landmarks.set_landmarks(job, ws, record.id, [{"id": "L1", "atlas": edits[0]["atlas"]}])
@@ -528,10 +529,11 @@ def test_delete_all_clears_the_section_in_one_step_and_ids_are_not_reused(tmp_pa
     try:
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
         depth = len(job.undo_stack)
-        reply = landmarks.set_landmarks(job, ws, record.id, delete=["all"])
+        reply = landmarks.set_landmarks(job, ws, record.id, delete=["all"]).reply()
         assert reply["deleted"] == ["L1", "L2", "L3"] and reply["landmarks"] == []
         assert len(job.undo_stack) == depth + 1 and not landmarks_to_json(record.landmarks)["pairs"]
-        again = landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record)[:1])
+        again = landmarks.set_landmarks(
+            job, ws, record.id, saved_pairs(job, ws, record)[:1]).reply()
         assert again["changed"] == ["L4"]
         with pytest.raises(Refused, match="stands alone"):
             landmarks.set_landmarks(job, ws, record.id, delete=["all", "L4"])
@@ -589,21 +591,21 @@ def test_the_listing_follows_the_warp_states(tmp_path):
     try:
         edits = saved_pairs(job, ws, record)
         landmarks.set_landmarks(job, ws, record.id, edits)
-        assert landmarks.set_landmarks(job, ws, record.id)["warp"]["built_from"] == []
-        done = landmarks.landmark_triangulation(job, ws, record.id)
+        assert landmarks.set_landmarks(job, ws, record.id).reply()["warp"]["built_from"] == []
+        done = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert done["built_from"] == ["L1", "L2", "L3"]
-        gone = landmarks.set_landmarks(job, ws, record.id, delete=["L2"])
+        gone = landmarks.set_landmarks(job, ws, record.id, delete=["L2"]).reply()
         assert gone["warp"]["deleted_still_in_warp"] == ["L2"]
         moved = [{"id": "L3", "section": {**edits[2]["section"],
                                           "x": edits[2]["section"]["x"] + 5}}]
         more = landmarks.set_landmarks(job, ws, record.id, moved + [
-            {"atlas": edits[1]["atlas"], "section": edits[1]["section"]}])
+            {"atlas": edits[1]["atlas"], "section": edits[1]["section"]}]).reply()
         assert {r["id"]: r["state"] for r in more["landmarks"]} == {
             "L1": "applied", "L3": "moved", "L4": "pending"}
         assert more["counts"]["moved"] == 1 and more["counts"]["pending"] == 1
-        again = landmarks.landmark_triangulation(job, ws, record.id)
+        again = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert again["built_from"] == ["L1", "L3", "L4"] and again["replaced"]
-        final = landmarks.set_landmarks(job, ws, record.id)
+        final = landmarks.set_landmarks(job, ws, record.id).reply()
         assert {r["state"] for r in final["landmarks"]} == {"applied"}
     finally:
         job.close()
@@ -617,10 +619,11 @@ def test_the_reply_names_the_region_at_each_atlas_endpoint_and_refuses_one_outsi
 
     job, ws, record = setup(tmp_path)
     try:
-        reply = landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
+        reply = landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record)).reply()
         assert set(reply["atlas_endpoint_regions"]) == {"L1", "L2", "L3"}
         moved = saved_pairs(job, ws, record)[0]["section"]
-        reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L1", "section": moved}])
+        reply = landmarks.set_landmarks(
+            job, ws, record.id, [{"id": "L1", "section": moved}]).reply()
         assert "atlas_endpoint_regions" not in reply  # a section-only edit places no atlas end
         seq = landmarks_to_json(record.landmarks)["pairs"][0]["atlas"]["picture"]
         panel = next(p for p in job.views.lookup(seq).recipe["endpoint_panels"]
@@ -642,7 +645,7 @@ def test_the_reply_names_the_region_at_each_atlas_endpoint_and_refuses_one_outsi
         found = re.search(r"the nearest point inside it is \((\d+), (\d+)\) in picture", message)
         assert found is not None
         inside = {"picture": seq, "x": float(found[1]), "y": float(found[2])}
-        reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L2", "atlas": inside}])
+        reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L2", "atlas": inside}]).reply()
         assert reply["written"] and reply["changed"] == ["L2"]
         assert not reply["atlas_endpoint_regions"]["L2"].startswith("region 0")
     finally:
@@ -666,7 +669,7 @@ def test_the_warp_is_built_from_the_pairs_and_the_corners_alone(tmp_path):
         edits = saved_pairs(job, ws, record)
         edits[2]["atlas"]["x"] += 14
         landmarks.set_landmarks(job, ws, record.id, edits)
-        reply = landmarks.landmark_triangulation(job, ws, record.id)
+        reply = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         assert reply["built_from"] == ["L1", "L2", "L3"]
         assert not any("hold" in key for key in reply)
         current = job.deformations.current(job.state, record)
@@ -692,7 +695,7 @@ def test_a_pair_with_both_endpoints_on_one_point_keeps_that_spot(tmp_path):
         edits = saved_pairs(job, ws, record)
         edits[2]["atlas"]["x"] += 14
         landmarks.set_landmarks(job, ws, record.id, edits)
-        landmarks.landmark_triangulation(job, ws, record.id)
+        landmark_warp.landmark_triangulation(job, ws, record.id)
         mesh, source, target = _mesh_of(job.deformations.current(job.state, record))
         kept = source[4:6]
         assert np.allclose(target[4:6], kept, atol=1e-6)
@@ -707,7 +710,7 @@ def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_pa
     try:
         edits = _folded_pairs(job, ws, record)
         landmarks.set_landmarks(job, ws, record.id, edits)
-        landmarks.landmark_triangulation(job, ws, record.id)
+        landmark_warp.landmark_triangulation(job, ws, record.id)
         # what an earlier version saved: automatic holds and a fold through one
         before = job.snapshot()
         record.deformation = deformation_from_json(
@@ -726,9 +729,9 @@ def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_pa
                 again.deformation)["landmark_holds"] == [[0.5, 0.5], [0.25, 0.75]]
             assert look.look_pictures(
                 reloaded, ws, LookRequest("overlay", sections=[record.id])).pictures
-            listing = landmarks.set_landmarks(reloaded, ws, record.id)
+            listing = landmarks.set_landmarks(reloaded, ws, record.id).reply()
             assert {row["state"] for row in listing["landmarks"]} == {"applied"}
-            rebuilt = landmarks.landmark_triangulation(reloaded, ws, record.id)
+            rebuilt = landmark_warp.landmark_triangulation(reloaded, ws, record.id).reply()
             assert rebuilt["written"]
             assert "landmark_holds" not in json_of(again.deformation)
             assert all(not i.startswith("~") for tri in rebuilt["folds"]["triangles"]
@@ -769,9 +772,11 @@ def test_a_number_read_off_a_zoom_grid_lands_where_it_does_on_the_source_picture
         zoom = _zoom(job, ws, whole_number, [x - 50, y - 40, x + 50, y + 40])
         zoom_number = zoom.entries[0]["id"]
         a = landmarks.set_landmarks(job, ws, record.id, [
-            {"atlas": edits[0]["atlas"], "section": {"picture": whole_number, "x": x, "y": y}}])
+            {"atlas": edits[0]["atlas"],
+             "section": {"picture": whole_number, "x": x, "y": y}}]).reply()
         b = landmarks.set_landmarks(job, ws, record.id, [
-            {"atlas": edits[0]["atlas"], "section": {"picture": zoom_number, "x": x, "y": y}}])
+            {"atlas": edits[0]["atlas"],
+             "section": {"picture": zoom_number, "x": x, "y": y}}]).reply()
         pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert a["changed"] == ["L1"] and b["changed"] == ["L2"]
         assert np.allclose(pairs["L1"]["section_fraction_xy"],
@@ -780,7 +785,7 @@ def test_a_number_read_off_a_zoom_grid_lands_where_it_does_on_the_source_picture
         deeper = _zoom(job, ws, zoom_number, [x - 20, y - 15, x + 20, y + 15])
         c = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": edits[0]["atlas"],
-             "section": {"picture": deeper.entries[0]["id"], "x": x, "y": y}}])
+             "section": {"picture": deeper.entries[0]["id"], "x": x, "y": y}}]).reply()
         pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert np.allclose(pairs[c["changed"][0]]["section_fraction_xy"],
                            pairs["L1"]["section_fraction_xy"], atol=2e-3)
@@ -802,10 +807,10 @@ def test_an_atlas_zoom_and_an_overlay_zoom_read_the_same_numbers(tmp_path):
         zoom = _zoom(job, ws, atlas_end["picture"], [x - 40, y - 30, x + 40, y + 30])
         on_source = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": {"picture": atlas_end["picture"], "x": x, "y": y},
-             "section": edits[1]["section"]}])
+             "section": edits[1]["section"]}]).reply()
         on_zoom = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": {"picture": zoom.entries[0]["id"], "x": x, "y": y},
-             "section": edits[1]["section"]}])
+             "section": edits[1]["section"]}]).reply()
         pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert np.allclose(pairs[on_source["changed"][0]]["atlas_native_xy"],
                            pairs[on_zoom["changed"][0]]["atlas_native_xy"], atol=0.6)
@@ -818,11 +823,11 @@ def test_an_atlas_zoom_and_an_overlay_zoom_read_the_same_numbers(tmp_path):
         near = _zoom(job, ws, number, [point[0] - 40, point[1] - 30, point[0] + 40, point[1] + 30])
         first = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": atlas_end,
-             "section": {"picture": number, "x": float(point[0]), "y": float(point[1])}}])
+             "section": {"picture": number, "x": float(point[0]), "y": float(point[1])}}]).reply()
         second = landmarks.set_landmarks(job, ws, record.id, [
             {"atlas": atlas_end,
              "section": {"picture": near.entries[0]["id"], "x": float(point[0]),
-                         "y": float(point[1])}}])
+                         "y": float(point[1])}}]).reply()
         pairs = {p["id"]: p for p in landmarks_to_json(record.landmarks)["pairs"]}
         assert np.allclose(pairs[first["changed"][0]]["section_fraction_xy"],
                            pairs[second["changed"][0]]["section_fraction_xy"], atol=3e-3)
@@ -839,7 +844,7 @@ def test_a_dry_run_resolves_the_pictures_a_real_call_would(tmp_path):
         assert dry.lookup(number) is not None
         job.views = dry
         job.persist = False
-        reply = landmarks.set_landmarks(job, ws, record.id, edits)
+        reply = landmarks.set_landmarks(job, ws, record.id, edits).reply()
         assert reply["changed"] == ["L1", "L2", "L3"]
         made = look.look_pictures(job, ws, LookRequest("section", sections=[record.id]))
         assert made.entries[0]["id"] > number  # it numbers its own pictures after the saved ones

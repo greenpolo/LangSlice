@@ -43,6 +43,7 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
     from langslice.core.fits import deformation
     from langslice.core.pictures.options import default_options
     from langslice.tools.deformable import fit_deformable
+    from langslice.tools.fit_pictures import draw_fits
 
     choice = deformation.Choice(fit_section="preprocessed", fit_atlas="template",
                                 smoothness_um=80.0)
@@ -50,8 +51,8 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
                else default_options("overlay", long_edge=long_edge))
     job, workspace = handle.job, handle.workspace
     with job.views.shown("trace_borders", atlas_of=lambda: workspace.atlas) as shown:
-        done = fit_deformable(job, workspace, [job.state.by_id(name) for name in ids],
-                              choice, options=options)
+        done = draw_fits(workspace, fit_deformable(
+            job, workspace, [job.state.by_id(name) for name in ids], choice), options)
         shown.show(list(done.pictures), arguments={"slices": ids})
     job.views.flush()
     return done
