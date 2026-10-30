@@ -239,7 +239,8 @@ def shown_labels(
     *exclude* is set to background on the native plane, so only the kept
     regions' borders are drawn and their edge with the rest is an outline.
     Sides (``"CTX:left"``) are the section's as shown, through the placement.
-    Unknown names or sides raise ``ValueError``.
+    Unknown names or sides raise ``ValueError``; a choice that leaves no
+    region, :class:`Refused` ``BAD_ARGS``.
     """
     from langslice.core.atlas.sides import has_sides, native_left
     from langslice.core.fits.deformable.plane_images import regions_mask
@@ -256,7 +257,11 @@ def shown_labels(
     if exclude:
         keep &= ~regions_mask(atlas, labels, exclude, left)
     if not keep.any():
-        raise ValueError("The include / exclude choice leaves no atlas region on this section")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            "The regions chosen (restrict_to, less the section's marked "
+            "damage) leave no atlas region on this section's atlas plane; "
+            "nothing was started. Choose regions the plane shows.")
     return np.where(keep, shown, 0).astype(shown.dtype)
 
 
@@ -318,7 +323,8 @@ def start_correction(
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
-        raise ValueError("prompt must be text")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      "prompt is text; nothing was started.")
     # Validate prerequisites before spending a call or marking an attempt.
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)

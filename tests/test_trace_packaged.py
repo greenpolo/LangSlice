@@ -238,3 +238,40 @@ def test_without_engine_nothing_is_asked_of_the_image_model(tmp_path, atlas, mon
         monkeypatch.setattr(ops_deformable, "engine_ready", lambda: True)
         traces.trace_borders(job, ctx, ID, image_model=stub.model, restrict_to=["NOPE"])
     assert unknown.value.code == "UNKNOWN_REGIONS" and stub.calls == []
+
+
+def test_a_section_with_other_background_work_is_refused_busy(tmp_path, atlas):
+    """Other background work running on the section: ``SECTION_BUSY`` naming
+    that work, nothing asked of the image model."""
+    from langslice.job.background import DONE, Landed
+
+    job, ctx, stub = _job(tmp_path, atlas)
+    gate = threading.Event()
+
+    def hold() -> Landed:
+        assert gate.wait(10)
+        return Landed(status=DONE, text="held")
+
+    other = job.background.start("other_work", (ID,), hold, wait_for_images=False)
+    try:
+        with pytest.raises(Refused) as caught:
+            traces.trace_borders(job, ctx, ID, image_model=stub.model)
+    finally:
+        gate.set()
+        job.background.wait_all()
+    assert caught.value.code == RefusalCode.SECTION_BUSY
+    assert caught.value.facts["id"] == ID and caught.value.facts["work"] == [other.id]
+    assert not stub.calls
+
+
+def test_a_restrict_to_that_leaves_no_region_keeps_its_own_code(tmp_path, atlas):
+    """A refusal of the trace's own (regions that leave nothing on the plane)
+    is answered with its code, not as a bad linear placement."""
+    job, ctx, stub = _job(tmp_path, atlas)
+    with pytest.raises(Refused) as caught:  # STR lies on one side of the midline only
+        for side in ("left", "right"):
+            traces.trace_borders(job, ctx, ID, image_model=stub.model,
+                                 restrict_to=[f"STR:{side}"])
+            job.background.wait_all()
+    assert caught.value.code == RefusalCode.BAD_ARGS
+    assert "leave no atlas region" in caught.value.message

@@ -331,8 +331,7 @@ def _fit_elastix(
                 str(outcome.get("message", "")), job.engine_log,
                 f"the Elastix affine of {record.id} failed")
         else:
-            # reportAny: the fit's payload is a plain dict
-            text = str(cast(object, outcome.get("message", "")))
+            text = str(cast(object, outcome.get("message", "")))  # plain dict
             if marked(text):  # the message names another tool
                 outcome["message"] = render(text, job.spec.switched_off)
         rows.append(outcome)
@@ -426,9 +425,10 @@ def elastix_fit(
                                  exclude=dropped, atlas_image=resolved,
                                  section_image=section_image,
                                  edges=edges, section_weights=weights)
+    except Refused as refusal:  # its own code, as the tool's row carries it
+        raise Refused(refusal.code, **{**refusal.facts, "message": render(
+            refusal.message, job.spec.switched_off)}) from refusal
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
-        if isinstance(exc, Refused) and exc.code == RefusalCode.REGION_TOO_SMALL:
-            raise
         raise Refused(RefusalCode.FIT_FAILED,
                       message=f"{record.id}: " + failure_message(
             f"{type(exc).__name__}: {exc}", job.engine_log,

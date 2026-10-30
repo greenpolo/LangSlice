@@ -24,7 +24,7 @@ from langslice.core.sections.damage import exclusions
 from langslice.core.stack.codec import trace_from_json, trace_to_json
 from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
-from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.refusal import section_refusal, unknown_sections
 from langslice.tools.stale import section_inputs
 
 if TYPE_CHECKING:
@@ -89,10 +89,9 @@ def _start_trace(
     if record is None:
         raise unknown_sections(job.state, [str(ref)])
     section_id = record.id
-    frozen = frozen_row(job, section_id, "deformation")
-    if frozen is not None:
-        raise Refused(frozen["error"], id=section_id, properties=frozen["properties"],
-                      message=frozen["message"])
+    refusal = section_refusal(job, section_id, "deformation")
+    if refusal is not None:
+        raise Refused(refusal.code, id=section_id, **refusal.facts)
     try:
         current = handoff.correction_fingerprint(job.state, workspace, section_id)
         if job.image_job_running(section_id, current):
@@ -102,7 +101,9 @@ def _start_trace(
         result, call = registration_tool.start_correction(
             job.state, workspace, section_id, prompt=prompt, image_model=image_model,
             calls_dir=job.layout.border_trace_dir(section_id), include=kept, exclude=dropped)
-    except ValueError as exc:
+    except Refused:  # a refusal of its own (a side the plane lacks, regions that leave nothing)
+        raise
+    except ValueError as exc:  # the placement the trace starts from
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
                       id=section_id, message=str(exc)) from exc
     except OSError as exc:
@@ -185,10 +186,13 @@ def trace_borders(
     this placement and region choice, and whose fit the section's applied
     deformation already holds, fits nothing again (``landed``, no work).
     Refused before any image call:
-    ``ENGINE_MISSING``, ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES`` (a
-    bad *restrict_to*), ``UNKNOWN_SLICE_IDS``, ``FROZEN`` (the
-    section's deformation is frozen), ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
-    ``STALE_INPUT`` (the geometry changed while the call was prepared).
+    ``ENGINE_MISSING``; ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES``
+    (a bad *restrict_to*, or one that leaves no region on the plane);
+    ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` (other background work runs on
+    the section); ``FROZEN`` (the section's deformation is frozen);
+    ``INVALID_LINEAR_PLACEMENT`` (no position or no usable transform);
+    ``IMAGE_CORRECTION_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
+    while the call was prepared).
     """
     from langslice.tools.deformable import (
         refuse_without_engine,
