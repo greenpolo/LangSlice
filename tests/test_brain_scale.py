@@ -159,10 +159,11 @@ def test_the_ruler_margins_follow_the_brain():
 
 
 def test_a_description_states_the_neighbourhood_at_the_brain_scale():
-    from langslice.tools.descriptions.render import Variant, declaration
+    from langslice.tools.descriptions.description import DescriptionFacts
+    from langslice.tools.descriptions.render import declaration
 
-    assert "atlas within 300 um of them" in declaration("elastix_affine", Variant()).doc
-    rat = declaration("elastix_affine", Variant(brain_scale=1.7)).doc
+    assert "atlas within 300 um of them" in declaration("elastix_affine", DescriptionFacts()).doc
+    rat = declaration("elastix_affine", DescriptionFacts(brain_scale=1.7)).doc
     assert "atlas within 510 um of them" in rat and "300 um" not in rat
 
 

@@ -97,14 +97,14 @@ def test_a_bad_image_prompt_is_refused(settings, message):
 
 def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(images):
     import langslice
-    from langslice.tools.descriptions.render import Variant
+    from langslice.tools.descriptions.description import DescriptionFacts
 
     stub = Stub()
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=stub, nonlinear={"image_prompt": JOB_PROMPT}) as job:
         sent = JOB_PROMPT.replace("{plane}", "coronal")
-        assert Variant.of(job.job.spec, auto=False).prompt == sent
+        assert DescriptionFacts.from_spec(job.job.spec, auto=False).prompt == sent
         assert job.trace_borders(section=ID1)["status"] == "started"
         job.job.settle_image_corrections()
         job.job.background.wait_all()

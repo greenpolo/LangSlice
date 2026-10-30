@@ -2,12 +2,13 @@
 
 A plugin tool is declared from its own stub
 (:func:`langslice.tools.descriptions.render.declaration` reads it from the
-variant) and wrapped by the toolbox exactly as a native tool is: opening-read
-gate for writes, strict argument check, stale-deformation sweep, picture
-saving, background notices, the job's write lock. This module supplies the part
-between: it makes the call's :class:`ToolContext`, checks the tool's per-call
-limits, runs the handler and turns its
-:class:`~langslice.core.plugins.ToolResult` into the reply, with the pictures
+run's facts) and wrapped by the toolbox exactly as a native tool is:
+opening-read gate for writes, strict argument check, stale-deformation
+sweep, picture saving, background notices, the job's write lock. This
+module supplies the part between: it makes the call's
+:class:`ToolContext`, checks the tool's per-call limits, runs the handler
+and turns its :class:`~langslice.core.plugins.ToolResult` into the reply,
+with the pictures
 under the media key like every native tool's.
 """
 
@@ -28,7 +29,8 @@ from langslice.core.refusal import RefusalCode, Refused
 from langslice.doors.plugins.context import Caller, ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.job import plugins as core
-from langslice.tools.descriptions.render import Variant, declaration
+from langslice.tools.descriptions.description import DescriptionFacts
+from langslice.tools.descriptions.render import declaration
 
 if TYPE_CHECKING:
     from langslice.tools.run import Door
@@ -90,9 +92,10 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     return out
 
 
-def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
+def body(door: Door, tool: ToolSpec,
+         facts: DescriptionFacts) -> Callable[..., Any]:
     """The body of *tool* for *door*: takes the arguments its declaration in
-    *variant* has, by name."""
+    the run of *facts* has, by name."""
 
     def run(**arguments: Any) -> Any:
         tool_context = arguments.pop("tool_context", None)  # ADK's: the call's id
@@ -113,7 +116,7 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
                           message=f"{type(exc).__name__}: {exc}") from exc
         return reply_of(tool, result)
 
-    declared = declaration(tool.name, variant)
+    declared = declaration(tool.name, facts)
     run.__signature__ = declared.signature.replace(  # type: ignore[attr-defined]
         parameters=[*declared.signature.parameters.values(), inspect.Parameter(
             "tool_context", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None)],
@@ -122,7 +125,8 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
     return run
 
 
-def bodies(door: Door, variant: Variant) -> dict[str, Callable[..., Any]]:
+def bodies(door: Door,
+           facts: DescriptionFacts) -> dict[str, Callable[..., Any]]:
     """The bodies of every plugin tool the door's job has, by name."""
-    return {name: body(door, tool, variant)
+    return {name: body(door, tool, facts)
             for name, (_plugin, tool) in core.tool_specs(door.spec).items()}

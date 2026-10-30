@@ -63,7 +63,8 @@ from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import ImageModel, resolve_image_model
 from langslice.tools.arguments import argument_refusal
 from langslice.tools.catalog import enabled, verbs_for
-from langslice.tools.descriptions.render import Variant, declare
+from langslice.tools.descriptions.description import DescriptionFacts
+from langslice.tools.descriptions.render import FULL, declare
 from langslice.tools.run import Door
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
@@ -442,10 +443,9 @@ class ToolBox:
     #: What every tool body of the box shares (the job, the workspace, the
     #: picture level, the image model): a script's ``job.context`` sits on it.
     door: Door | None = None
-    #: The declarations' variant the tools were declared in
-    #: (:class:`langslice.tools.descriptions.render.Variant`; None before
-    #: :func:`build_tools` sets it): what ``TOOLS.md`` is written from.
-    variant: Any = None
+    #: The facts of the run the tools were declared in (every argument until
+    #: :func:`build_tools` sets them): what ``TOOLS.md`` is written from.
+    variant: DescriptionFacts = FULL
 
     @property
     def names(self) -> list[str]:
@@ -530,7 +530,7 @@ def build_tools(
     connected), so the tools are those of a run without one: no
     ``trace_borders``, ``submit`` not waiting for traces. The spec itself is
     left as it is. *door* is who reads the declarations (``agent``, ``mcp``,
-    ``cli``: :data:`langslice.tools.descriptions.render.DOORS`). *event_door*
+    ``cli``: ``tools.descriptions.description.DOORS``). *event_door*
     is the door the job folder's ``logs/events.jsonl`` names for every call
     (None: *door*; the library's is ``library``).
 
@@ -602,9 +602,10 @@ def build_tools(
         from langslice.core.space import Plane
 
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
-    variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
-                         door=door, prompt=prompt, uncapped=scripting,
-                         brain_scale=ctx.brain_scale)
+    variant = DescriptionFacts.from_spec(
+        spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
+        door=door, prompt=prompt, uncapped=scripting,
+        brain_scale=ctx.brain_scale)
     box.variant = variant
     if spec.plugins:
         from langslice.doors.plugins import provenance, runtime

@@ -57,8 +57,10 @@ from langslice.doors.agent_cli.envelope import (
     emit,
     stdout_to_stderr,
 )
+from langslice.doors.jobs import Opened
 from langslice.job.lock import JobBusy
 from langslice.job.state_file import stack_to_json
+from langslice.tools.descriptions.render import Declaration, declaration
 from langslice.tools.refusal import unknown_sections as unknown_refusal
 
 logger = logging.getLogger(__name__)
@@ -411,7 +413,8 @@ def _flag_text(value: Any) -> str:
     return shlex.quote(value if isinstance(value, str) else json.dumps(value))
 
 
-def corrected_call(tool: Any, verb: str, arguments: dict[str, Any], job: str) -> str:
+def corrected_call(declared: Declaration, verb: str,
+                   arguments: dict[str, Any], job: str) -> str:
     """The fix of an ``UNKNOWN_ARGUMENTS`` refusal: every argument *verb*
     takes, with the first sentence of its description and its default, then
     the call made of the arguments it knows (*arguments*, the unknown ones
@@ -419,20 +422,16 @@ def corrected_call(tool: Any, verb: str, arguments: dict[str, Any], job: str) ->
     signature (:data:`SHORT_SIGNATURE`), the others at their defaults."""
     import inspect
 
-    from langslice.tools.descriptions.render import argument_texts
-
-    declared = {name: parameter for name, parameter in inspect.signature(tool).parameters.items()
-                if name != "tool_context"}
-    texts = argument_texts(tool.__doc__ or "")
+    parameters = declared.signature.parameters
     takes = []
-    for name, parameter in declared.items():
-        about = _first_sentence(texts.get(name, "")).rstrip(".")
+    for name, parameter in parameters.items():
+        about = _first_sentence(declared.arguments.get(name, "")).rstrip(".")
         default = ("required" if parameter.default is inspect.Parameter.empty
                    else f"default {json.dumps(parameter.default)}")
         takes.append(f"{name} ({about + '; ' if about else ''}{default})")
     parts = [f"langslice-job {job} {verb}"]
-    short = len(declared) <= SHORT_SIGNATURE
-    for name, parameter in declared.items():
+    short = len(parameters) <= SHORT_SIGNATURE
+    for name, parameter in parameters.items():
         flag = "--" + name.replace("_", "-")
         if name in arguments:
             parts.append(f"{flag} {_flag_text(arguments[name])}")
@@ -444,7 +443,8 @@ def corrected_call(tool: Any, verb: str, arguments: dict[str, Any], job: str) ->
             f"`{' '.join(parts)}`.")
 
 
-def arguments_for(tool: Any, options: dict[str, Any],
+def arguments_for(tool: Any, declaration: Declaration,
+                  options: dict[str, Any],
                   flags: dict[str, list[str]], verb: str,
                   job: str = "FOLDER") -> dict[str, Any]:
     """The call's arguments: ``--args``, then each flag over it, read as the
@@ -471,10 +471,12 @@ def arguments_for(tool: Any, options: dict[str, Any],
         top_level = all(problem.get("argument") == "(top level)"
                         for problem in problems)
         known = {name: value for name, value in arguments.items() if name in declared}
+        fix = None
+        if top_level:
+            fix = corrected_call(declaration, verb, known, job)
         raise _Refusal(Envelope.failure(
             RefusalCode.UNKNOWN_ARGUMENTS, refusal.message,
-            result=refusal.payload(), verb=verb, job=job,
-            fix=corrected_call(tool, verb, known, job) if top_level else None))
+            result=refusal.payload(), verb=verb, job=job, fix=fix))
     missing = [name for name, parameter in declared.items()
                if parameter.default is inspect.Parameter.empty and name not in arguments]
     if missing:
@@ -499,7 +501,7 @@ def _spec_of(folder: str) -> Any:
         return None
 
 
-def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
+def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Opened:
     from langslice.doors.jobs import NoJob, open_folder
 
     try:
@@ -532,7 +534,8 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     token = DISABLED.set(tuple(opened.spec.switched_off))  # the fixes name what the job has
     try:
         # The job's verbs as the tool door builds them.
-        tools = {tool.__name__: tool for tool in opened.tools().tools}
+        box = opened.tools()
+        tools = {tool.__name__: tool for tool in box.tools}
         offered = opened.listed_verbs()
         if verb not in tools:
             spec = opened.spec
@@ -549,7 +552,9 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
                 + f") have no {verb}.",
                 result={"verbs": offered}, job=job_folder, verb=verb))
         tool = tools[verb]
-        arguments = arguments_for(tool, options, flags, verb, job_folder)
+        declared = declaration(verb, box.variant)
+        arguments = arguments_for(tool, declared, options, flags, verb,
+                                  job_folder)
         long = verbs_for(opened.spec)[verb].long
         if options.get("run_id"):
             background.begin(opened.job.layout, options["run_id"])

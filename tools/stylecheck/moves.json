@@ -2175,6 +2175,7 @@
 {"path": "src/langslice/core/plugins.py", "symbol": "tool_def", "new_path": "src/langslice/job/plugins.py", "new_symbol": "tool_def"},
 {"path": "src/langslice/core/plugins.py", "symbol": "tool_def.when", "new_path": "src/langslice/job/plugins.py", "new_symbol": "tool_def.when"},
 {"path": "src/langslice/core/plugins.py", "symbol": "tool_defs", "new_path": "src/langslice/job/plugins.py", "new_symbol": "tool_defs"},
-{"path": "src/langslice/core/plugins.py", "symbol": "tool_specs", "new_path": "src/langslice/job/plugins.py", "new_symbol": "tool_specs"}
+{"path": "src/langslice/core/plugins.py", "symbol": "tool_specs", "new_path": "src/langslice/job/plugins.py", "new_symbol": "tool_specs"},
+{"path": "src/langslice/tools/descriptions/render.py", "symbol": "Variant.of", "new_path": "src/langslice/tools/descriptions/description.py", "new_symbol": "DescriptionFacts.from_spec"}
 ]
 }

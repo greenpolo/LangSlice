@@ -48,8 +48,8 @@ host's pixel sizes and channel names, the picture level).
 
 `job/settings/tool_table.py` lists the tools, their options and what each
 needs, and `tools/catalog.py` binds them to the operations and decides tool
-availability; `tools/descriptions/render.py` supplies the common argument
-declarations. Tasks remove whole registration tools, a job's `disabled`
+availability; each tool's description is data in `tools/descriptions/`
+(one module per tool family), which `render.py` lays out for every door. Tasks remove whole registration tools, a job's `disabled`
 list removes single tools and options, and viewing and image tools remain
 available otherwise. Model-facing text that names a tool or an option is
 written with what it needs (`job/settings/needs.py`) and rendered for the

@@ -23,13 +23,9 @@ from langslice.job.settings.spec import (
 )
 from langslice.job.settings.tool_table import TOOLS, is_off, valid_names
 from langslice.tools.catalog import VERBS, enabled
+from langslice.tools.descriptions.description import DOORS, DescriptionFacts
 from langslice.tools.descriptions.fixes import FIXES
-from langslice.tools.descriptions.render import (
-    DOORS,
-    Variant,
-    arguments_schema,
-    declaration,
-)
+from langslice.tools.descriptions.render import arguments_schema, declaration
 from tests.linear_tool_helpers import SLAB, tool_named
 
 # --- the names ------------------------------------------------------------------------
@@ -129,15 +125,17 @@ def test_a_list_that_cannot_work_is_refused_with_one_line(fields: dict[str, Any]
 
 def test_the_look_schema_offers_only_the_modes_on():
     spec = _spec(tasks=["position"], disabled=["look:positioning"])
-    schema = arguments_schema("look", Variant.of(spec, auto=True))
+    schema = arguments_schema("look", DescriptionFacts.from_spec(spec, auto=True))
     assert schema["properties"]["mode"]["enum"] == ["section", "atlas", "overlay"]
-    default = arguments_schema("look", Variant.of(_spec(tasks=["position"]), auto=True))
+    plain = DescriptionFacts.from_spec(_spec(tasks=["position"]), auto=True)
+    default = arguments_schema("look", plain)
     assert default["properties"]["mode"]["enum"] == list(TOOLS["look"].options)
 
 
 def test_flip_is_not_in_the_sections_schema_when_it_is_off():
     def keys(spec: JobSpec) -> set[str]:
-        schema = arguments_schema("interactive_transform", Variant.of(spec, auto=True))
+        facts = DescriptionFacts.from_spec(spec, auto=True)
+        schema = arguments_schema("interactive_transform", facts)
         item = schema["properties"]["sections"]["items"]
         ref = item["$ref"].split("/")[-1]
         return set(schema["$defs"][ref]["properties"])
@@ -220,7 +218,7 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         ctx, state = opened.ctx, opened.job.state
         names = enabled(spec, scripting=True)
         for door, auto, traced in itertools.product(DOORS, (False, True), (True, False)):
-            variant = Variant.of(spec, auto=auto, door=door, image_model=traced)
+            variant = DescriptionFacts.from_spec(spec, auto=auto, door=door, image_model=traced)
             for tool in names:
                 declared = declaration(tool, variant)
                 texts[f"declaration {tool} {door} auto={auto} traced={traced}"] = declared.doc

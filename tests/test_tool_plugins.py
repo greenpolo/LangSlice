@@ -30,7 +30,8 @@ from langslice.job.settings.spec import JobSpec, TransformSpec
 from langslice.job.settings.tool_table import tools_for, valid_names
 from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import enabled, verbs_for
-from langslice.tools.descriptions.render import FULL, Variant, declaration
+from langslice.tools.descriptions.description import DescriptionFacts
+from langslice.tools.descriptions.render import FULL, declaration
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 from tests.shapes import json_of
 
@@ -1206,7 +1207,7 @@ def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
     assert "layers" in inspect.signature(tool_named(box, "look")).parameters
     assert "layers" in declaration("look", FULL).signature.parameters
     with_plugins = JobSpec(image_folder=str(images), plugins=[EXAMPLE])
-    declared = declaration("look", Variant.of(with_plugins, auto=True))
+    declared = declaration("look", DescriptionFacts.from_spec(with_plugins, auto=True))
     assert "layers" in declared.signature.parameters
 
 
@@ -1628,8 +1629,8 @@ def test_a_tool_is_offered_only_on_its_atlases_and_planes_and_no_text_names_it(
         "`mouse_only`" if "mouse_only" in expected else "")
 
 
-def _variant(spec: JobSpec) -> Variant:
-    return Variant.of(spec, auto=False)
+def _variant(spec: JobSpec) -> DescriptionFacts:
+    return DescriptionFacts.from_spec(spec, auto=False)
 
 
 TASKED = '''

@@ -74,7 +74,8 @@ def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
 
 def test_schema_of_one_verb_and_of_every_verb(capsys):
     from langslice.doors.agent_cli.catalog import SCHEMA_VERSION
-    from langslice.tools.descriptions.render import FULL, Variant, declaration
+    from langslice.tools.descriptions.description import DescriptionFacts
+    from langslice.tools.descriptions.render import FULL, declaration
 
     assert SCHEMA_VERSION == 3
     code, envelope = cli(capsys, "schema", "interactive-transform")
@@ -90,7 +91,7 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     # or not. The picture options are gone with the view modes.
     assert result["description"] == declaration(
         "interactive_transform",
-        Variant(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)).doc
+        DescriptionFacts(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)).doc
     assert "\n" in result["description"] and result["summary"] in result["description"]
     assert "picture_options" not in result
     assert result["long"] is False and result["job"] is None and "--job" in result["hint"]
