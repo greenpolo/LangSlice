@@ -49,6 +49,11 @@ The LangSlice environment is not active in this terminal. Run
 `conda activate langslice` and try again. The line where you type then starts
 with `(langslice)`.
 
+Once your AI app has set LangSlice up, `langslice` works in every new
+terminal without that command. If it does not, send `Set up LangSlice.` to
+your app again (see [The app cannot start LangSlice](#the-app-cannot-start-langslice)),
+then open a new terminal.
+
 ### The first registration waits a long time before anything happens
 
 LangSlice is downloading the atlas, about 600 MB for the Allen mouse atlas at
@@ -61,32 +66,35 @@ LangSlice is downloading the atlas, about 600 MB for the Allen mouse atlas at
 The app says the LangSlice server failed to start, or its agent says it has no
 LangSlice tools.
 
-- **Codex:** the `command` line in `config.toml` does not name the `langslice`
-  program. Run `where langslice` (Windows) or `which langslice` (macOS,
-  Linux) with the environment active, and put that exact line in `command`
-  ([step 3](getting-started/connect-codex.md#step-3-add-langslice-to-codexs-settings)).
-- **Antigravity and Claude Code:** the app cannot find `langslice` outside the
-  LangSlice environment. Open a new terminal without running
-  `conda activate langslice`, and run `langslice version`. If it fails, redo
-  "Let the app find LangSlice" for
-  [Antigravity](getting-started/connect-antigravity.md#step-2-let-antigravity-find-langslice)
-  or [Claude Code](getting-started/connect-claude-code.md#step-2-let-claude-find-langslice).
-- **Every app:** quit the app completely and open it again after a change. It
-  reads its settings when it starts.
+The app cannot find `langslice`: setup has not run yet, or LangSlice was
+installed again in another folder. In a new conversation, send
+`Set up LangSlice.` The app's setup skill finds `langslice` again, adds its
+folder to `PATH`, and updates the app's settings. Then quit the app
+completely and open it again: it reads `PATH` and its settings when it
+starts. Setup is step 3 of each connect page:
+[Claude Code](getting-started/connect-claude-code.md#step-3-ask-claude-to-set-up-langslice),
+[Codex](getting-started/connect-codex.md#step-3-ask-codex-to-set-up-langslice),
+[Antigravity](getting-started/connect-antigravity.md#step-3-ask-antigravity-to-set-up-langslice).
+
+To check outside the app, open a new terminal without running
+`conda activate langslice`, and run `langslice version`. It prints the version
+once setup has added LangSlice to `PATH`.
 
 ### Codex sees only `start_job`, and the registration agent cannot find the job's tools
 
 LangSlice shows a job's tools only once the agent has opened the job, and
 Codex follows that change only with `mcp_tool_list_changed = true` under
-`[features]` in `config.toml`. Add it
-([step 3](getting-started/connect-codex.md#step-3-add-langslice-to-codexs-settings)),
+`[features]` in `config.toml`. Codex's setup turns it on: in a new chat, send
+`Set up LangSlice.`
+([step 3](getting-started/connect-codex.md#step-3-ask-codex-to-set-up-langslice)),
 then restart the app.
 
 ### Codex stops a LangSlice tool after 60 seconds
 
 Codex's own time limit for a tool is 60 seconds, shorter than a deformation
 fit. Add `tool_timeout_sec = 3600` under `[mcp_servers.langslice]` in
-`config.toml`, then restart the app.
+`config.toml`, Codex's settings file in the `.codex` folder in your home
+folder. Then restart the app.
 
 ### Codex reports an error in `config.toml` after you edited it
 
@@ -103,10 +111,12 @@ Two common causes:
 - **Codex:** add `default_tools_approval_mode = "approve"` under
   `[mcp_servers.langslice]` in `config.toml`.
 - **Antigravity:** add the rule `"mcp(langslice_mcp/*)"` to the `allow` list in
-  its settings file ([step 4](getting-started/connect-antigravity.md#step-4-allow-langslices-tools)).
+  its settings file, or send "Set up LangSlice." again
+  ([step 3](getting-started/connect-antigravity.md#step-3-ask-antigravity-to-set-up-langslice)).
 - **Claude Code:** add the rule `"mcp__plugin_langslice_langslice"` to
-  `permissions.allow` in a Claude Code settings file
-  ([step 4](getting-started/connect-claude-code.md#step-4-test-the-connection)).
+  `permissions.allow` in a Claude Code settings file, or send
+  "Set up LangSlice." again
+  ([step 3](getting-started/connect-claude-code.md#step-3-ask-claude-to-set-up-langslice)).
 
 ### A second registration in the same conversation took over the first one's job
 

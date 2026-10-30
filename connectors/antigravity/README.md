@@ -10,32 +10,48 @@ library ([`docs/agents/cli.md`](../../docs/agents/cli.md)).
 
 ## Install
 
-LangSlice must be installed first, with `langslice` and `langslice-job` on
-the PATH of the shell that starts Antigravity (`langslice version` must work):
-the plugin's MCP server runs `langslice mcp`, `register-scripting` runs
-`langslice-job`, and the plugin's hook runs `langslice`.
+LangSlice must be installed first (the conda environment of
+`environment.yml`). Antigravity must then find `langslice` and
+`langslice-job` on the PATH it reads from the login shell (`$SHELL -ilc`;
+on Windows, the user and system environment variables): the plugin's MCP
+server runs `langslice mcp`, `register-scripting` runs `langslice-job`, and
+the plugin's hook runs `langslice`. The `setup` skill (below) puts them
+there.
 
 ```bash
-agy plugin install connectors/antigravity      # from a checkout
-agy plugin install https://github.com/greenpolo/LangSlice   # or from GitHub
+agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/antigravity
 ```
 
-`agy plugin install` copies the folder; install again after changing it, and
+Or ask Antigravity's `/plugin` skill, in a chat, to install that URL. To try
+it from a checkout: `agy plugin install connectors/antigravity`.
+
+`agy plugin install` copies the folder; install again after a change, and
 restart Antigravity. The plugin brings its own MCP server
 ([`mcp_config.json`](mcp_config.json): `langslice mcp` over stdio), started
 while the plugin is enabled; no `agy mcp add` is needed. Antigravity prefixes
 a plugin's servers with the plugin's name, so the server is `langslice_mcp`,
 and its tools need the allow rule `mcp(langslice_mcp/*)` (below).
 
+After installing and restarting, ask Antigravity to "Set up LangSlice.": the
+plugin's `setup` skill finds `langslice` (on PATH, else in a conda
+environment named `langslice`), appends its folder to PATH (a guarded line in
+`~/.zprofile` and `~/.zshrc` for zsh; in `~/.bashrc` and the bash login file
+for bash; the user `Path` on Windows), and adds the permission rules below to
+`settings.json` with this machine's folders. Until then the MCP server fails
+to start. Restart Antigravity again afterwards; then `start_job` with no
+arguments tests the connection.
+
 ## What is inside
 
 | Part | For | What it is |
 | --- | --- | --- |
 | skill `register-brain` | main session | prepares the job from the user's choices, starts one registration agent with `invoke_subagent`, then checks the job and handles export; it never registers itself |
+| skill `setup` | main session | once per computer: puts `langslice`'s folder on PATH and adds LangSlice's permission rules (below) to `settings.json` |
 | skill `abba` | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
 | MCP server `langslice_mcp` | `register` | `langslice mcp`: `start_job`, `show_stack` and the job's tools, whose replies carry the pictures |
 | agent `register` | registers one brain | the LangSlice MCP tools and `view_file`; no shell, no file writes |
 | agent `register-scripting` | registers one brain | `run_command`, `view_file`, `write_to_file`, `replace_file_content` and the web: the `langslice-job` command line, scripts with the LangSlice Python library, packages installed in the job's own environment (`langslice-job FOLDER env`) |
+| `assets/logo.svg` | the plugin list | LangSlice's logo, a copy of `assets/logo/logomark.svg` |
 | hook `langslice-transcript` | every session | at the end of a session, `langslice session-end --harness antigravity` copies the transcript into the job's `trace/` folder |
 
 ## The two agents
@@ -82,8 +98,8 @@ command, so it runs outside the sandbox; an `mcp(langslice_mcp/*)` rule lets
 an agent call its tools without asking.
 Permissions live in one file, `~/.gemini/antigravity-cli/settings.json`, for
 every session (a headless `agy -p` cannot ask, so anything not allowed is
-denied). The settings these agents need, with the paths of this machine
-replaced by yours:
+denied). The settings these agents need, which the `setup` skill adds with
+this machine's paths:
 
 ```json
 {

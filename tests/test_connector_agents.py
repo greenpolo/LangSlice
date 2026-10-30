@@ -1,5 +1,6 @@
 """The connectors' registration agents carry LangSlice's one system prompt,
-followed only by a line about their host's sandbox where it needs one."""
+followed only by a line about their host's sandbox where it needs one, and
+their setup skills find `langslice` and put it on PATH in the same words."""
 
 from __future__ import annotations
 
@@ -44,3 +45,24 @@ def test_markdown_agent_body_is_the_system_prompt(path: Path) -> None:
 def test_codex_agent_instructions_are_the_system_prompt(path: Path) -> None:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     assert _words(data["developer_instructions"]) == _words(SYSTEM_PROMPT)
+
+
+SETUP = [CONNECTORS / host / "skills" / "setup" / "SKILL.md"
+         for host in ("claude-code", "codex", "antigravity")]
+
+
+def _section(path: Path, heading: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## )", text, re.S | re.M)
+    assert match, (path, heading)
+    return match.group(1)
+
+
+@pytest.mark.parametrize("heading", ["1. Find `langslice`", "2. Put LangSlice's folder on PATH"])
+def test_setup_skills_share_find_and_path_steps(heading: str) -> None:
+    def text(path: Path) -> str:
+        return re.sub(r"Keep this absolute path for [^.]*\.", "", _section(path, heading))
+
+    first, *others = SETUP
+    for path in others:
+        assert text(path) == text(first), path

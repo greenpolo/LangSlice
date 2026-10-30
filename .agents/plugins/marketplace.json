@@ -1,0 +1,20 @@
+{
+  "name": "langslice",
+  "interface": {
+    "displayName": "LangSlice"
+  },
+  "plugins": [
+    {
+      "name": "langslice",
+      "source": {
+        "source": "local",
+        "path": "./connectors/codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Scientific Research"
+    }
+  ]
+}

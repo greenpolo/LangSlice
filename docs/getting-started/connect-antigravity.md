@@ -1,15 +1,15 @@
 # Connect Antigravity (Gemini)
 
 Antigravity is Google's app for AI agents that work on your computer, with
-Gemini models. On this page you install Antigravity, make LangSlice findable by
-it, install LangSlice's plugin, and allow LangSlice's tools.
+Gemini models. On this page you install Antigravity, install LangSlice's
+plugin, and ask Antigravity to finish setting LangSlice up. A **plugin** is a
+package of add-ons that an app installs in one go.
 
 **Before you start:** [install LangSlice](install.md).
 
 ```{note}
-The steps on this page follow LangSlice's Antigravity connector, which is
-tested from Antigravity's command-line version on Linux. They are untested in
-the app on Windows and macOS.
+The pictures on this page are from the app on Linux. The steps are untested
+on Windows and macOS.
 ```
 
 ## Step 1: Install Antigravity
@@ -21,62 +21,53 @@ the app on Windows and macOS.
 Antigravity's first screen after signing in.
 :::
 
-## Step 2: Let Antigravity find LangSlice
+## Step 2: Install the LangSlice plugin
 
-Antigravity starts LangSlice by the name `langslice`, so that name has to work
-outside the LangSlice environment too.
+Antigravity installs plugins through a skill of its own, named `plugin`.
 
-### Windows
+1. Click **New Conversation**.
+2. In the message box, type `/plugin`. A list of skills opens above the box.
+   Click **plugin**.
 
-1. Take the line `where langslice` printed in
-   [step 6 of the install](install.md#step-6-note-where-langslice-is-installed),
-   and remove `\langslice.exe` from its end. For example,
-   `C:\Users\you\miniforge3\envs\langslice\Scripts`.
-2. Open the Start menu, type `environment variables`, and choose **Edit
-   environment variables for your account**.
-3. Under **User variables**, select **Path** and click **Edit**.
-4. Click **New**, paste the folder from item 1, and click **OK** twice.
+   ```{figure} img/antigravity-plugin-skill.png
+   :alt: The message box with /plugin typed and the list of matching skills above it; the plugin skill is marked.
+
+   Type `/plugin` and pick the **plugin** skill.
+   ```
+
+3. After **plugin** in the message box, type this message and send it:
+
+   ```text
+   Please install this plugin: https://github.com/greenpolo/LangSlice/tree/main/connectors/antigravity
+   ```
+
+   ```{figure} img/antigravity-install-message.png
+   :alt: The message box holding the plugin skill followed by the install request with LangSlice's GitHub address.
+
+   The message, ready to send.
+   ```
+
+4. Antigravity installs the plugin from GitHub and says so. Quit Antigravity
+   completely and open it again to load the plugin.
 
 :::{admonition} Screenshot to come
-The **Edit environment variable** window with the LangSlice `Scripts` folder
-added.
+Antigravity's reply after installing the plugin.
 :::
 
-### macOS
+The plugin brings LangSlice's skills, its two registration agents and its MCP
+server, named `langslice_mcp` in Antigravity.
 
-In Terminal, run:
+<details>
+<summary>The same install from a terminal</summary>
 
-```bash
-echo 'conda activate langslice' >> ~/.zshrc
-```
-
-### Linux
-
-In a terminal, run:
+Antigravity's command-line tool, `agy`, installs the plugin with one command.
+Run it in any terminal, then quit Antigravity and open it again:
 
 ```bash
-echo 'conda activate langslice' >> ~/.bashrc
+agy plugin install https://github.com/greenpolo/LangSlice/tree/main/connectors/antigravity
 ```
 
-On macOS and Linux, every new terminal now starts in the LangSlice
-environment, and apps started from your desktop find `langslice` too.
-
-On every system, quit Antigravity completely and open it again so it picks up
-the change.
-
-## Step 3: Install the LangSlice plugin
-
-Open a terminal in the `LangSlice-main` folder, as in
-[step 3 of the install](install.md#step-3-open-a-terminal-in-the-langslice-folder),
-and run:
-
-```bash
-agy plugin install connectors/antigravity
-```
-
-`agy` is Antigravity's command-line tool. The plugin brings LangSlice's skill,
-its two registration agents and its MCP server, named `langslice_mcp` in
-Antigravity. Quit Antigravity and open it again to load the plugin.
+</details>
 
 <details>
 <summary>What the plugin holds</summary>
@@ -85,6 +76,8 @@ Antigravity. Quit Antigravity and open it again to load the plugin.
   registration, prepares it, starts one registration agent and checks the
   result. It never registers sections itself.
 - skill `abba`: how to work with ABBA.
+- skill `setup`: lets Antigravity find LangSlice, and adds LangSlice's
+  permission rules to Antigravity's settings (step 3).
 - MCP server `langslice_mcp`: LangSlice's tools, started by Antigravity as
   `langslice mcp`.
 - agent `register`: registers one brain through LangSlice's tools only, with
@@ -96,69 +89,82 @@ Antigravity. Quit Antigravity and open it again to load the plugin.
 
 </details>
 
-## Step 4: Allow LangSlice's tools
+## Step 3: Ask Antigravity to set up LangSlice
 
-Antigravity runs an agent's commands in a sandbox, a walled-off space that
-cannot read most of your files. It also asks before using a tool it has no
-rule for.
-LangSlice's commands read the atlas and your images, so they need rules.
-The rules live in one settings file for every session:
-`settings.json` in the folder `.gemini/antigravity-cli` in your home folder.
+The plugin starts LangSlice by its name, `langslice`, and so far that name
+works only in a terminal where the LangSlice environment is active. Also,
+Antigravity asks before using a tool it has no rule for, and runs an agent's
+commands in a sandbox, a walled-off space that cannot read most of your files.
+LangSlice's registration agents need rules that let them use LangSlice's tools
+and read the atlas and your images. A skill in the plugin, named `setup`,
+fixes both.
 
-1. Open that file in a text editor with the command for your system. If the
-   file does not exist yet, the commands create it.
+1. Click **New Conversation**.
+2. Send this message:
 
-   On Windows, in Miniforge Prompt (click **Yes** if Notepad offers to create
-   the file):
-
-   ```bat
-   mkdir "%USERPROFILE%\.gemini\antigravity-cli"
-   notepad "%USERPROFILE%\.gemini\antigravity-cli\settings.json"
+   ```text
+   Set up LangSlice.
    ```
 
-   On macOS, in Terminal:
+Antigravity follows the `setup` skill. It finds `langslice` on your
+computer, adds its folder to the list of places your computer looks for
+programs, finds the folders LangSlice reads, and adds LangSlice's rules to
+Antigravity's settings file. When it is done, it tells you to restart the
+app.
 
-   ```bash
-   mkdir -p ~/.gemini/antigravity-cli && touch ~/.gemini/antigravity-cli/settings.json
-   open -e ~/.gemini/antigravity-cli/settings.json
-   ```
+Antigravity may ask permission to write files outside the workspace, the
+folder the conversation works in. Allow it. The files are your shell's
+startup files in your home folder (on Windows, your user environment
+variables instead), and `settings.json` in the folder
+`.gemini/antigravity-cli` in your home folder, where Antigravity keeps its
+own settings.
 
-   On Linux, in a terminal:
+In this first conversation, Antigravity may say that LangSlice's server
+failed to start or that it has no LangSlice tools. That is expected until
+setup is done and the app restarts.
 
-   ```bash
-   mkdir -p ~/.gemini/antigravity-cli && touch ~/.gemini/antigravity-cli/settings.json
-   xdg-open ~/.gemini/antigravity-cli/settings.json
-   ```
-
-2. If the file is empty or new, paste the block below. If it already has
-   content, add the lines inside `"allow": [ ... ]` to its own `"allow"`
-   list.
-
-   ```json
-   {
-     "enableTerminalSandbox": true,
-     "toolPermission": "proceed-in-sandbox",
-     "permissions": {
-       "allow": [
-         "mcp(langslice_mcp/*)",
-         "command(langslice-job)",
-         "read_url(*)",
-         "read_file(/Users/you/Documents/LangSlice-main)",
-         "read_file(/Users/you/miniforge3/envs/langslice)",
-         "read_file(~/.brainglobe)"
-       ]
-     }
-   }
-   ```
-
-3. Replace the two example folder locations with your own: the `LangSlice-main` folder,
-   and the LangSlice environment folder (the location of `langslice` without
-   `/bin/langslice` at the end). On Windows, write them with forward
-   slashes, for example `C:/Users/you/miniforge3/envs/langslice`.
-4. Save the file, then quit Antigravity and open it again.
+:::{admonition} Screenshot to come
+The setup conversation: Antigravity asking to write the settings file, then
+reporting what it set up.
+:::
 
 <details>
-<summary>What each rule does</summary>
+<summary>What setup changed</summary>
+
+- `PATH`, the list of folders your computer searches for programs, gets the
+  folder that holds `langslice` and `langslice-job`, added at the end. On
+  macOS and Linux, setup adds these two lines, with that folder, to your
+  shell's startup files (`~/.zprofile` and `~/.zshrc` for zsh, the default
+  on macOS; `~/.bashrc` and `~/.bash_profile` or `~/.profile` for bash):
+
+  ```sh
+  # Added by LangSlice setup: lets apps find langslice and langslice-job
+  case ":$PATH:" in *":/Users/you/miniforge3/envs/langslice/bin:"*) ;; *) export PATH="$PATH:/Users/you/miniforge3/envs/langslice/bin" ;; esac
+  ```
+
+  On Windows, setup adds the folder, such as
+  `C:\Users\you\miniforge3\envs\langslice\Scripts`, to the `Path` in your
+  user environment variables. Setup does not activate the LangSlice
+  environment and changes nothing else.
+
+Setup adds these rules to the `allow` list in `settings.json`, with the
+folders of your computer, and keeps everything else in the file:
+
+```json
+{
+  "enableTerminalSandbox": true,
+  "toolPermission": "proceed-in-sandbox",
+  "permissions": {
+    "allow": [
+      "mcp(langslice_mcp/*)",
+      "command(langslice-job)",
+      "read_url(*)",
+      "read_file(/Users/you/miniforge3/envs/langslice)",
+      "read_file(~/.brainglobe)"
+    ]
+  }
+}
+```
 
 - `mcp(langslice_mcp/*)` lets an agent call LangSlice's tools without asking.
   This is the only rule the `register` agent needs.
@@ -169,12 +175,19 @@ The rules live in one settings file for every session:
   and documentation.
 - The `read_file` rules let a script in the sandbox read LangSlice, the
   Python it runs on, and the atlases.
+- `enableTerminalSandbox` and `toolPermission` are added only if the file
+  does not set them already.
 
 </details>
 
+## Step 4: Restart Antigravity
+
+Quit Antigravity completely and open it again. Antigravity reads `PATH` and
+its settings file when it starts.
+
 ## Step 5: Test the connection
 
-1. Start a new conversation in Antigravity.
+1. Click **New Conversation**.
 2. Send this message:
 
    ```text
@@ -187,8 +200,8 @@ That answer comes from LangSlice running on your computer, so the connection
 works.
 
 :::{admonition} Screenshot to come
-The Antigravity conversation after the test message, showing the `start_job`
-call and the reply about naming an image folder.
+The conversation after the test message, showing the reply about naming an
+image folder.
 :::
 
 If Antigravity says it has no LangSlice tools, or the server failed to start,

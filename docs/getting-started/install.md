@@ -58,7 +58,7 @@ Terminal after the reopen, with `(base)` at the start of the line.
 2. Click the green **Code** button, then **Download ZIP**.
 3. Unzip the file. You get a folder named `LangSlice-main`.
 4. Move that folder somewhere it can stay, such as your **Documents**
-   folder. Later steps copy files from it.
+   folder. Later steps use it.
 
 :::{admonition} Screenshot to come
 The GitHub page with the **Code** menu open and **Download ZIP** marked.
@@ -111,35 +111,29 @@ langslice 0.1.0
 ```
 
 Run `conda activate langslice` each time you open a new terminal for
-LangSlice. Your AI app does not need it; the next page shows how the app
-finds LangSlice.
+LangSlice. Your AI app does not need it: when you connect the app, its setup
+skill finds LangSlice and lets the app start it.
 
 :::{admonition} Screenshot to come
 Miniforge Prompt (Windows) and Terminal (macOS) after `langslice version`,
 showing `(langslice)` and `langslice 0.1.0`.
 :::
 
-## Step 6: Note where LangSlice is installed
+<details>
+<summary>Under the hood: how the apps find LangSlice</summary>
 
-Connecting an AI app needs the full location of the `langslice` program. With
-the environment active, run:
+Claude Desktop and Antigravity start the command `langslice mcp` by name, and
+LangSlice's agents run `langslice` and `langslice-job` by name. Each looks
+for them in the folders listed in the `PATH` setting. On macOS and Linux, the
+apps read `PATH` from your login shell when they start; on Windows, from your
+user and system environment variables. The setup skill adds the LangSlice
+environment's `bin` folder (`Scripts` on Windows) to the end of `PATH`: in
+your shell's startup files on macOS and Linux, and in your user environment
+variables on Windows. It does not activate the environment. Codex starts
+LangSlice's MCP server from its full location, which its setup writes into
+Codex's settings.
 
-On Windows:
-
-```bash
-where langslice
-```
-
-On macOS and Linux:
-
-```bash
-which langslice
-```
-
-It prints one line, for example
-`C:\Users\you\miniforge3\envs\langslice\Scripts\langslice.exe` on Windows or
-`/Users/you/miniforge3/envs/langslice/bin/langslice` on macOS. Keep this
-terminal open, or copy the line somewhere: you need it on the next page.
+</details>
 
 ## The atlas
 

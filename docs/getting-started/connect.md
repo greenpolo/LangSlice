@@ -32,6 +32,11 @@ your app:
 - two **registration agents**, `register` and `register-scripting`: the
   helpers the main agent starts to register one brain each.
 
+In every app these come in LangSlice's **plugin**, a package of add-ons that
+you install from inside the app. A short setup chat then finishes the job: you
+send "Set up LangSlice.", and the agent lets the app find LangSlice on your
+computer and adds the settings LangSlice needs.
+
 You talk to the main agent. It asks you about your sections, prepares the
 registration, starts a registration agent, and checks the result with you.
 
