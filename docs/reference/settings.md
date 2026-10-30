@@ -8,19 +8,29 @@ change, and which tools it gets. They are saved in the job folder's
 You usually do not type these settings. Tell your agent what you know ("the
 sections are 40 µm thick, one in every six was kept, don't touch the
 positions"), and it sets them when it creates the job with
-`langslice-job FOLDER init`. Each entry below names the setting as it is
-spelled in each place it can be given:
+`langslice-job FOLDER init`. Each setting has one name, and every place it
+can be given spells it from that name:
 
+- **`job.json`**: the name, under `spec` (`position.thickness_um` is
+  `spec.position.thickness_um`).
 - **Flag**: the option of `langslice-job FOLDER init` and of
   `langslice linear run` (the same flags; `langslice-job schema init` lists
-  them with their help).
-- **Library**: the keyword of `langslice.create_job`.
-- **`job.json`**: the key under `spec`.
+  them with their help). It is the name with `.` and `_` written `-`
+  (`--position-thickness-um`); a key of `inputs` drops the `inputs.`
+  (`--positions`); a setting that is on unless turned off takes `--no-` and
+  its name (`--no-debrief`). The cutting angles are the one exception:
+  `--pitch` and `--yaw`, or `--section-angles`.
+- **Library**: the keyword of `langslice.create_job`: the name, with a task
+  section's keys given in that section's mapping
+  (`position={"thickness_um": 40}`).
+
+The flags of earlier versions (such as `--thickness`, `--image-provider`,
+`--disable`, `--fresh`) and `create_job`'s `fresh=` are still read.
 
 A job already in the folder is continued with its saved settings. `init` with
 other settings is refused with `SETTINGS_CHANGED`, and other supplied
-`inputs` or `frozen` with `INPUTS_CHANGED`; `--fresh` starts the job over and
-discards its work.
+`inputs` or `frozen` with `INPUTS_CHANGED`; `--no-resume` starts the job over
+and discards its work.
 
 ## Summary
 
@@ -118,7 +128,7 @@ refused. What is supplied is a starting point: the agent may change it unless
 `orientation` and `transforms` from a registration made elsewhere: QuickNII or
 VisuAlign JSON or XML, DeepSlice CSV, JSON or XML, or a LangSlice
 `registration.json`. It cannot be combined with those keys or with
-`--angles`. VisuAlign markers are not imported. See
+`--transform-angles`. VisuAlign markers are not imported. See
 [importing a registration](file_formats.md#importing-a-registration).
 
 Supply `pixel_size_um` when the image files carry no pixel size in their
@@ -180,7 +190,7 @@ it is a starting guess the agent should improve.
 
 ### `facts`
 
-Default none. Flag `--fact TEXT` (repeatable); library `facts=[...]`.
+Default none. Flag `--facts TEXT` (repeatable); library `facts=[...]`.
 
 Free-form facts about the stack, one line each, passed to the agent
 verbatim. Use them for what no other setting holds: the stain, the strain,
@@ -190,7 +200,7 @@ an injection site, a known problem with the slides.
 
 ### `disabled`
 
-Default none. Flag `--disable NAME[,NAME...]`; library `disabled=[...]`.
+Default none. Flag `--disabled NAME[,NAME...]`; library `disabled=[...]`.
 
 Tools and tool options switched off on top of what the tasks give: a tool
 (`zoom`) or `tool:option` (`look:positioning`,
@@ -204,8 +214,8 @@ alone. `disabled` is not a guard against a script; [`frozen`](#frozen) is.
 
 ### `plugins`
 
-Default none. Flag `--tool-plugin MODULE:FACTORY` (repeatable;
-`langslice linear run` only) and `--tool-plugin-config MODULE:FACTORY=JSON`;
+Default none. Flag `--plugins MODULE:FACTORY` (repeatable;
+`langslice linear run` only) and `--plugin-config MODULE:FACTORY=JSON`;
 library `plugins=` and `plugin_config=`.
 
 Tool plugins add tools to the agent's toolbox: each `module:factory` is a
@@ -223,10 +233,10 @@ own or a published one wrapped as a tool.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `position.thickness_um` | not supplied | `--thickness` | Section thickness, a whole number of µm. |
-| `position.interval_um` | not supplied | `--interval` | Distance between consecutive sections in the stack, a whole number of µm. |
-| `position.strict_interval` | off | `--strict-interval` | `submit` requires positions at most 10% from the interval; needs `interval_um`. |
-| `position.playbook` | off | `--playbook` | Adds positioning guidance to the job statement: compare candidate planes and regions, write supported placements, revisit uncertainty, review the stack. |
+| `position.thickness_um` | not supplied | `--position-thickness-um` | Section thickness, a whole number of µm. |
+| `position.interval_um` | not supplied | `--position-interval-um` | Distance between consecutive sections in the stack, a whole number of µm. |
+| `position.strict_interval` | off | `--position-strict-interval` | `submit` requires positions at most 10% from the interval; needs `interval_um`. |
+| `position.playbook` | off | `--position-playbook` | Adds positioning guidance to the job statement: compare candidate planes and regions, write supported placements, revisit uncertainty, review the stack. |
 | `position.notes` | empty | `--position-notes TEXT` | Your notes for this task, shown to the agent with it. |
 
 Give the thickness and interval when you know them. Without them the agent
@@ -238,8 +248,8 @@ present and the interval was kept exactly.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `transform.hemisphere_cue` | empty | `--hemisphere-cue TEXT` | What marks a hemisphere in these sections (a notch, an injection), shown where the agent may mirror sections. |
-| `transform.angles` | off | `--angles` | Lets the agent set the stack's cutting angles when Positioning is off (`position_sections` with `cutting_angles` only). |
+| `transform.hemisphere_cue` | empty | `--transform-hemisphere-cue TEXT` | What marks a hemisphere in these sections (a notch, an injection), shown where the agent may mirror sections. |
+| `transform.angles` | off | `--transform-angles` | Lets the agent set the stack's cutting angles when Positioning is off (`position_sections` with `cutting_angles` only). |
 | `transform.max_parallel` | 4 | (library and `job.json` only) | Most sections one `interactive_transform` or `elastix_affine` call takes, 1 to 4. |
 | `transform.notes` | empty | `--transform-notes TEXT` | Your notes for this task. |
 
@@ -250,11 +260,14 @@ mark, a mirrored section can be told only from an oblique cutting angle.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `nonlinear.provider` | `openai-oauth` (library: `none`) | `--image-provider` | The {term}`image model`'s access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). |
-| `nonlinear.image_model` | the provider's | `--image-model` | Which image model of that provider. |
-| `nonlinear.image_prompt` | LangSlice's | `--image-prompt FILE` | The base prompt `trace_borders` sends, in place of LangSlice's own; `{plane}` in it becomes the section plane. Its traces are recorded as an untested profile. |
-| `nonlinear.require_deformation` | off | `--require-deformation` | `submit` is refused until every section has a deformation at its current placement. |
+| `nonlinear.provider` | `openai-oauth` (library: `none`) | `--nonlinear-provider` | The {term}`image model`'s access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). |
+| `nonlinear.image_model` | the provider's | `--nonlinear-image-model` | Which image model of that provider. |
+| `nonlinear.image_prompt` | LangSlice's | `--nonlinear-image-prompt FILE` | The base prompt `trace_borders` sends, in place of LangSlice's own; `{plane}` in it becomes the section plane. Its traces are recorded as an untested profile. |
+| `nonlinear.require_deformation` | off | `--nonlinear-require-deformation` | `submit` is refused until every section has a deformation at its current placement. |
 | `nonlinear.notes` | empty | `--nonlinear-notes TEXT` | Your notes for this task. |
+
+In the library, `create_job`'s `image_model=` (a provider name or a model)
+sets `provider` and `image_model` together.
 
 Set the provider to `none` when you have no image model, or want every
 deformation fitted to the stain and landmarks alone. A custom base prompt
@@ -296,7 +309,7 @@ chooses the model.
 | `image_folder` | (required) | the folder argument | The folder of section images. |
 | `job_dir` | `<images>/langslice` | `--job-dir PATH` | Where the job folder goes. A read-only image folder falls back to `~/.langslice/jobs/<id>/`. |
 | `out` | `<job folder>/exports/linear_results.json` | `--out` | Where the built-in agent writes its results JSON. |
-| `resume` | on | `--fresh` turns it off | Continue the job in the folder. Off: start over. |
+| `resume` | on | `--no-resume` | Continue the job in the folder. Off: start over. |
 
 ## Notes and viewer
 

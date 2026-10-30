@@ -233,7 +233,7 @@ on a folder whose checkpoint was made from other supplied inputs
 (`JobSpec.inputs` and `JobSpec.frozen`, compared with the checkpoint's own
 spec: `job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
 anything is written, naming the keys that differ and how to start fresh
-(`START_FRESH`: `--fresh`, `resume=False`); resuming would have kept the
+(`START_FRESH`: `--no-resume`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
 agent CLI's `init` answers `INPUTS_CHANGED` (exit 3). ABBA's Claude mode
 (`prepare_saved_job`) never resumes (`prepare_linear` sets `resume` False),
@@ -398,7 +398,7 @@ longer exist be taken over by the images it is opened with.
   `current_state(data, upgrade=)` (every format through *upgrade*, the
   job's `migrations.FolderMigration`; a newer LangSlice's format is refused
   and asks for an update, an older one no migration reads (`older_format`)
-  for a new job, `--fresh` or `resume=False`; without *upgrade* only the
+  for a new job, `--no-resume` or `resume=False`; without *upgrade* only the
   current format reads; history steps are read the same way),
   `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to

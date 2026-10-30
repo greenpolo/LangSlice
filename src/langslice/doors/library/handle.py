@@ -393,7 +393,7 @@ def create_job(
     pixel_size_um: float | Mapping[str, float] | None = None,
     inputs: Mapping[str, Any] | None = None,
     registration: str | os.PathLike[str] | None = None,
-    fresh: bool = False,
+    resume: bool = True,
     plugins: Any = None,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
@@ -436,8 +436,8 @@ def create_job(
     options), so reopening it loads the same plugins. Loading runs their code.
 
     *image_model* as in :func:`open_job`; None makes a job
-    without one (nonlinear provider ``none``). *fresh* starts over instead
-    of continuing the folder's job. *settings* are further
+    without one (nonlinear provider ``none``). *resume* False starts over
+    instead of continuing the folder's job. *settings* are further
     :class:`JobSpec` fields (``preprocess``, ``interval_um`` lives in
     ``position``...).
     """
@@ -449,6 +449,8 @@ def create_job(
     )
     from langslice.job.layout import write_job_file
 
+    if "fresh" in settings:  # resume='s old spelling, still read
+        resume = not settings.pop("fresh")
     load_credentials()  # the image model's keys, as open_job loads them
     model = as_image_model(image_model)
     if plugins is not None:
@@ -465,7 +467,7 @@ def create_job(
             "orientation": orientation, "pixel_size_um": pixel_size_um, "inputs": inputs,
             "tasks": tasks, "job_dir": job_dir,
             "registration": registration}.items() if value is not None}
-        if given or settings or fresh:
+        if given or settings or not resume:
             raise ValueError("create_job takes a JobSpec as it is: set "
                              f"{sorted({*given, *settings})} on the spec instead")
         spec = images
@@ -505,7 +507,7 @@ def create_job(
             "nonlinear": nonlinear, "inputs": supplied,
             "job_dir": None if job_dir is None else os.path.abspath(
                 os.path.expanduser(os.fspath(job_dir))),
-            "resume": not fresh,
+            "resume": resume,
         })
     _check_model_fits(spec, model)
     imported: dict[str, Any] | None = None

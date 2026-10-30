@@ -21,10 +21,10 @@ task). No further seam was needed.
 ## Use
 
 ```bash
-langslice linear run ... --tool-plugin langslice.engines.emlddmm.plugin:tools
+langslice linear run ... --plugins langslice.engines.emlddmm.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--tool-plugin-config`):
+or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--plugin-config`):
 `python`, `emlddmm_src`, `brainglobe_dir`, `device` (`auto`), `dtype` (`float64`), `section_um`
 (58.88, the example's pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb`
 (24), `threads`, `timeout_s`. Engine calls take the GPU lock file STalign's engine takes

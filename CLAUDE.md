@@ -56,7 +56,7 @@ and `environment.yml` hold the worker's source installation.
   named by filename only.
 - A tool plugin (`JobSpec.plugins`, `docs/developers/plugins.md`) adds first-class tools
   through `langslice.plugin_api`; it loads only where the user chose it
-  (library, `linear run --tool-plugin`), never through MCP or the ABBA worker,
+  (library, `linear run --plugins`), never through MCP or the ABBA worker,
   writes job state only through the context's operations and files only under
   `plugins/<tool>/`; a job without plugins shows no trace of the seam.
 - Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`

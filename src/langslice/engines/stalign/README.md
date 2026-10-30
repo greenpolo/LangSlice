@@ -17,11 +17,11 @@ plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
 ## Use
 
 ```bash
-langslice linear run ... --tool-plugin langslice.engines.stalign.plugin:tools
+langslice linear run ... --plugins langslice.engines.stalign.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])`.
-Options (`--tool-plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python`, `device` (`auto`: the GPU at
+Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python`, `device` (`auto`: the GPU at
 float32 when there is one, else the CPU at float64 with STalign's C++ engine; the GPU result
 matched the CPU's to 0.001 atlas px on a test section), `threads` (4), `timeout_s`.
 

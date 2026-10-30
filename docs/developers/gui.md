@@ -100,20 +100,20 @@ langslice-job /data/brain1 init \
   --tasks position,transform,nonlinear \
   --atlas allen_mouse_25um \
   --plane coronal \
-  --thickness 40 \
-  --interval 120 \
-  --disable zoom,trace_borders \
+  --position-thickness-um 40 \
+  --position-interval-um 120 \
+  --disabled zoom,trace_borders \
   --frozen '{"*":["orientation"]}' \
   --damaged '{"s012.tif":"left cortex torn"}' \
-  --fact 'The file names sort in the order the sections were cut.' \
+  --facts 'The file names sort in the order the sections were cut.' \
   --notes 'Injection in the right striatum.'
 ```
 ````
 
 Each line of the command is one of `init`'s settings (`langslice-job schema
-init` lists them all): `--tasks` what to do, `--disable` the tools and
+init` lists them all): `--tasks` what to do, `--disabled` the tools and
 options turned off, `--frozen` what stays as it is on every section,
-`--damaged` the damage notes, `--fact` the cutting order and `--notes` your
+`--damaged` the damage notes, `--facts` the cutting order and `--notes` your
 notes. A choice of tools the job would refuse (a task with none of the tools
 that do it, a tool without the pictures it needs, `look` with no kind of
 picture) shows in red instead of a message, with what to turn back on. The

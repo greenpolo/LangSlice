@@ -307,7 +307,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
                          (("--pitch", "1"), "--pitch"),
                          (("--section-angles", json.dumps({ID0: {"pitch": 1}})),
                           "--section-angles"),
-                         (("--angles",), "--angles")):
+                         (("--angles",), "--transform-angles")):
         code, envelope = cli(capsys, *base, *flags)
         assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
         assert named in envelope["error"]["message"]

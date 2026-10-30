@@ -6,12 +6,22 @@ library's job creation, the Fiji worker's request) and kept in the job
 folder's ``job.json``. :data:`SETTINGS` lists each setting once
 (:class:`Setting`): its name, its type and the job's default, its
 command-line flags, the library's keyword for it, its ``job.json`` key and
-the doors that may set it. The spellings are the ones each door uses today,
-and where a door's default is not the job's own the row says what it is.
+the doors that may set it; where a door's default is not the job's own the
+row says what it is.
 
-The filled form is :class:`~langslice.job.settings.spec.JobSpec`. A setting
-of a task's section is named by section and key
-(``position.thickness_um``), a supplied answer by ``inputs.`` and its key.
+Every spelling follows the setting's name. A setting of a task's section is
+named by section and key (``position.thickness_um``), a supplied answer by
+``inputs.`` and its key. Its ``job.json`` key is ``spec.`` and the name; its
+flag is the name with ``inputs.`` dropped and ``.`` and ``_`` written ``-``
+(``--position-thickness-um``, ``--positions``), and ``--no-`` and the name
+for a switch that turns an on setting off (``--no-debrief``); its library
+keyword is the name, a section's key given in that section's
+mapping (``position={"thickness_um": 40}``). The cutting angles alone are
+given by other flags: ``--pitch`` and ``--yaw``, or ``--section-angles``.
+The flags a setting was spelled with before are its ``aliases``: still
+read, listed nowhere.
+
+The filled form is :class:`~langslice.job.settings.spec.JobSpec`.
 """
 
 from __future__ import annotations
@@ -102,6 +112,9 @@ class Setting:
     keyword: str | None = None
     #: Its command-line flags, in the order the commands list them.
     flags: tuple[str, ...] = ()
+    #: The flags it was spelled with before, read as its first flag and
+    #: listed in no help.
+    aliases: tuple[str, ...] = ()
     #: The values it takes, when they are a fixed list.
     choices: tuple[str, ...] | None = None
     #: A door's default where it is not :attr:`default`, in that door's
@@ -156,8 +169,9 @@ SETTINGS: tuple[Setting, ...] = (
         default="openai-oauth",
         doors=EVERY_DOOR,
         json_key="spec.nonlinear.provider",
-        keyword="image_model",
-        flags=("--image-provider",),
+        keyword="nonlinear",
+        flags=("--nonlinear-provider",),
+        aliases=("--image-provider",),
         door_defaults={"library": "none, or image_model='s provider"},
     ),
     Setting(
@@ -166,8 +180,9 @@ SETTINGS: tuple[Setting, ...] = (
         default=None,
         doors=EVERY_DOOR,
         json_key="spec.nonlinear.image_model",
-        keyword="image_model",
-        flags=("--image-model",),
+        keyword="nonlinear",
+        flags=("--nonlinear-image-model",),
+        aliases=("--image-model",),
     ),
     Setting(
         name="nonlinear.image_prompt",
@@ -176,7 +191,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=CODE_DOORS,
         json_key="spec.nonlinear.image_prompt",
         keyword="nonlinear",
-        flags=("--image-prompt",),
+        flags=("--nonlinear-image-prompt",),
+        aliases=("--image-prompt",),
     ),
     Setting(
         name="inputs.pixel_size_um",
@@ -215,7 +231,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.disabled",
         keyword="disabled",
-        flags=("--disable",),
+        flags=("--disabled",),
+        aliases=("--disable",),
     ),
     Setting(
         name="transform.hemisphere_cue",
@@ -224,7 +241,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.transform.hemisphere_cue",
         keyword="transform",
-        flags=("--hemisphere-cue",),
+        flags=("--transform-hemisphere-cue",),
+        aliases=("--hemisphere-cue",),
     ),
     Setting(
         name="position.thickness_um",
@@ -233,7 +251,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.position.thickness_um",
         keyword="position",
-        flags=("--thickness",),
+        flags=("--position-thickness-um",),
+        aliases=("--thickness",),
     ),
     Setting(
         name="position.interval_um",
@@ -242,7 +261,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.position.interval_um",
         keyword="position",
-        flags=("--interval",),
+        flags=("--position-interval-um",),
+        aliases=("--interval",),
     ),
     Setting(
         name="position.strict_interval",
@@ -251,7 +271,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.position.strict_interval",
         keyword="position",
-        flags=("--strict-interval",),
+        flags=("--position-strict-interval",),
+        aliases=("--strict-interval",),
     ),
     Setting(
         name="transform.angles",
@@ -260,7 +281,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.transform.angles",
         keyword="transform",
-        flags=("--angles",),
+        flags=("--transform-angles",),
+        aliases=("--angles",),
         door_defaults={"abba": "True: the stack's angles are ABBA's to set"},
     ),
     Setting(
@@ -280,7 +302,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.facts",
         keyword="facts",
-        flags=("--fact",),
+        flags=("--facts",),
+        aliases=("--fact",),
     ),
     Setting(
         name="inputs.positions",
@@ -372,7 +395,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=EVERY_DOOR,
         json_key="spec.position.playbook",
         keyword="position",
-        flags=("--playbook",),
+        flags=("--position-playbook",),
+        aliases=("--playbook",),
     ),
     Setting(
         name="position.notes",
@@ -408,7 +432,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=("run", "library"),
         json_key="spec.plugins",
         keyword="plugins",
-        flags=("--tool-plugin",),
+        flags=("--plugins",),
+        aliases=("--tool-plugin",),
     ),
     Setting(
         name="plugin_config",
@@ -417,7 +442,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=("run", "library"),
         json_key="spec.plugin_config",
         keyword="plugin_config",
-        flags=("--tool-plugin-config",),
+        flags=("--plugin-config",),
+        aliases=("--tool-plugin-config",),
     ),
     Setting(
         name="model",
@@ -468,7 +494,8 @@ SETTINGS: tuple[Setting, ...] = (
         doors=RUN_DOORS,
         json_key="spec.nonlinear.require_deformation",
         keyword="nonlinear",
-        flags=("--require-deformation",),
+        flags=("--nonlinear-require-deformation",),
+        aliases=("--require-deformation",),
     ),
     Setting(
         name="resume",
@@ -476,8 +503,9 @@ SETTINGS: tuple[Setting, ...] = (
         default=True,
         doors=("run", "init", "library"),
         json_key="spec.resume",
-        keyword="fresh",
-        flags=("--fresh",),
+        keyword="resume",
+        flags=("--no-resume",),
+        aliases=("--fresh",),
         door_defaults={
             "mcp": "True: a folder's own job keeps its saved settings",
             "abba": "False: each request is a new run",

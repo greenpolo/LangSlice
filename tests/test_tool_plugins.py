@@ -1102,14 +1102,14 @@ def test_the_cli_flag_names_plugins_and_their_options(make, images: Path):
 
     parser = build_parser()
     configurable = make("configurable_flag", HELLO.replace("def tools():", "def tools(config):"))
-    args = parser.parse_args(["linear", "run", str(images), "--tool-plugin", configurable,
-                              "--tool-plugin-config", f'{configurable}={{"a": 1}}'])
+    args = parser.parse_args(["linear", "run", str(images), "--plugins", configurable,
+                              "--plugin-config", f'{configurable}={{"a": 1}}'])
     spec = with_tool_plugins(build_linear_spec(args, str(images)), args)
     assert spec.plugins == [configurable] and spec.plugin_config == {configurable: {"a": 1}}
     bare = parser.parse_args(["linear", "run", str(images)])
     assert with_tool_plugins(build_linear_spec(bare, str(images)), bare).plugins == []
     stray = parser.parse_args(["linear", "run", str(images), "--tool-plugin-config", "x=1"])
-    with pytest.raises(ValueError, match="needs the --tool-plugin"):
+    with pytest.raises(ValueError, match="needs the --plugins"):
         with_tool_plugins(build_linear_spec(stray, str(images)), stray)
     broken = parser.parse_args(["linear", "run", str(images), "--tool-plugin", "no_module:x"])
     with pytest.raises(ValueError, match="cannot import"):

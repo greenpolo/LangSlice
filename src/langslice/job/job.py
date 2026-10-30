@@ -323,7 +323,8 @@ class InputsChanged(ValueError):
 
 
 #: How a caller starts over instead of resuming (the CLI flag and the spec field).
-START_FRESH = "start a fresh job instead (`--fresh` on the command line, resume=False in a spec)"
+START_FRESH = ("start a fresh job instead (`--no-resume` on the command line, resume=False in "
+               "a spec)")
 
 
 def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:

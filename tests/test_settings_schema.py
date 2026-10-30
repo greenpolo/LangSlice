@@ -1,7 +1,8 @@
 """The settings table (``job/settings/schema.py``) and the doors that read it:
-the table names exactly the job form's keys and defaults, the commands' flags
-are the table's, and ``create_job`` takes each library setting by the
-keyword the table records."""
+the table names exactly the job form's keys and defaults, every spelling
+follows the setting's name, the commands' flags are the table's (its old
+spellings read and never listed), and ``create_job`` takes each library
+setting by the keyword the table records."""
 
 from __future__ import annotations
 
@@ -66,7 +67,30 @@ def test_every_setting_is_named_once() -> None:
 
 def _flags(parser: argparse.ArgumentParser) -> list[str]:
     return [action.option_strings[0] for action in parser._actions  # noqa: SLF001
-            if action.option_strings and action.option_strings[0] not in NOT_SETTINGS]
+            if action.option_strings and action.option_strings[0] not in NOT_SETTINGS
+            and action.help != argparse.SUPPRESS]
+
+
+#: The settings given by flags the rule does not make: the stack's cutting
+#: angles as two numbers, or each section's.
+NAMED_OTHERWISE = {"inputs.angles": ("--pitch", "--yaw", "--section-angles")}
+
+
+def test_every_spelling_follows_the_settings_name() -> None:
+    for row in schema.SETTINGS:
+        if row.json_key is not None and row.json_key.startswith("spec."):
+            assert row.json_key == f"spec.{row.name}", row.name
+        if not row.flags:
+            continue
+        flag = "--" + row.name.removeprefix(schema.ANSWER_PREFIX).replace(".", "-").replace(
+            "_", "-")
+        if row.default is True:  # a switch turns it off
+            flag = "--no-" + flag.removeprefix("--")
+        assert row.flags == NAMED_OTHERWISE.get(row.name, (flag,)), row.name
+        section, dot, _key = row.name.partition(".")
+        wanted = row.name if not dot else "inputs" if section == "inputs" else section
+        assert row.keyword in (None, wanted, row.name.removeprefix(schema.ANSWER_PREFIX)), (
+            row.name)
 
 
 def _command(name: str) -> argparse.ArgumentParser:
@@ -90,6 +114,8 @@ def _command_of(parser: argparse.ArgumentParser, name: str) -> argparse.Argument
 def test_the_commands_flags_are_the_tables_in_its_order() -> None:
     spelled = [spelling for row in schema.SETTINGS for spelling in row.flags]
     assert set(spelled) == set(FLAGS)
+    aliases = [alias for row in schema.SETTINGS for alias in row.aliases]
+    assert not set(aliases) & set(spelled) and len(aliases) == len(set(aliases))
     for door, parser in (("run", _command("linear")), ("mcp", _command("mcp")),
                          ("init", init_parser())):
         flags = _flags(parser)
@@ -114,4 +140,22 @@ def test_create_job_takes_each_library_setting_by_its_keyword() -> None:
 def test_the_prompt_generator_spells_each_flag_as_the_table_does() -> None:
     flags = generator.payload()["flags"]
     assert flags == schema.flag_spellings()
-    assert flags["position.thickness_um"] == "--thickness"
+    assert flags["position.thickness_um"] == "--position-thickness-um"
+
+
+def test_an_old_spelling_is_read_as_the_new_one_and_listed_nowhere() -> None:
+    from langslice.doors.agent_cli.catalog import flags_table
+
+    parser = init_parser()
+    listed = {row["flag"] for row in flags_table(parser)} | {
+        alias for row in flags_table(parser) for alias in row["aliases"]}
+    for row in schema.SETTINGS:
+        assert not set(row.aliases) & listed, row.name
+    assert "--thickness" not in parser.format_help()
+    old = parser.parse_args(["--thickness", "40", "--image-provider", "none", "--angles",
+                             "--disable", "zoom", "--fact", "a", "--fresh"])
+    new = parser.parse_args(["--position-thickness-um", "40", "--nonlinear-provider", "none",
+                             "--transform-angles", "--disabled", "zoom", "--facts", "a",
+                             "--no-resume"])
+    assert vars(old) == vars(new)
+    assert vars(parser.parse_args([])) == vars(init_parser().parse_args([]))

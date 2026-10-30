@@ -1,6 +1,6 @@
 """emlddmm as LangSlice tools: the adapter, run in LangSlice's process.
 
-Load it with ``--tool-plugin langslice.engines.emlddmm.plugin:tools`` or
+Load it with ``--plugins langslice.engines.emlddmm.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.emlddmm.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python`` (the
 ``rigid_emlddmm`` interpreter), ``emlddmm_src`` (the fork's folder), ``brainglobe_dir`` (where the

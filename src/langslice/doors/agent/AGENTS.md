@@ -226,7 +226,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   sections) refuse a call naming more sections (`catalog.check_section_count`)
   and the statement states the cap.
 - **`disabled`** (default empty): tools and tool options the job does
-  without, `--disable NAME[,NAME...]`. A host's `inputs["damaged"]` note is
+  without, `--disabled NAME[,NAME...]`. A host's `inputs["damaged"]` note is
   the section's `damage_note` (shown in status and the statement) whether or
   not `mark_damage` is disabled; it does not make the section damaged, and it
   stays first in the note whatever the agent marks.
@@ -243,7 +243,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   everywhere; a tool that writes only frozen properties is not built
   (`JobSpec.switched_off`). The statement's frozen line and each status row's
   `frozen` tell the agent.
-- **`nonlinear.require_deformation`** (`--require-deformation`, default off):
+- **`nonlinear.require_deformation`** (`--nonlinear-require-deformation`, default off):
   every section needs a deformation, and `submit` is refused
   (`MISSING_DEFORMATIONS`) until it has one; off, a deformation is the
   agent's choice and the job line says so.
@@ -374,7 +374,7 @@ statement (the same text runs against every BrainGlobe atlas, species and
 plane). Each tool's description is the only place it is described, apart from
 the one-line summaries of the deformable methods above.
 
-`--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
+`--position-playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
 method in the statement: compare candidate planes and distinguishing regions,
 write supported placements, revisit uncertain sections and review the stack.
 This is guidance, not enforcement.
@@ -383,7 +383,7 @@ This is guidance, not enforcement.
 caused it; a failed `submit` neither writes nor ends the run. `submit`
 waits for the background work, then refuses `MISSING_POSITIONS`,
 `STRICT_INTERVAL` (spacing within 10% of the interval and no breaks, with
-`--strict-interval`), `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must
+`--position-strict-interval`), `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must
 exceed 1.5x the median written spacing), `MISSING_TRANSFORMS` (every
 section, damaged included) and, with `nonlinear`, `MISSING_DEFORMATIONS`.
 Gates run only for tasks that are on.
