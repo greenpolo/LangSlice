@@ -25,7 +25,8 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * Calibrated snapshots and native, undoable registrations in an existing ABBA 0.24 session.
+ * Calibrated snapshots and native, undoable registrations in an existing ABBA 0.25 session (0.24 works too, without
+ * ABBA's own failure reasons in a refused row).
  *
  * <p>Each section may carry at most two LangSlice steps, on top of whatever registrations it had
  * when the run started: LangSlice's affine step and, on top of it, LangSlice's warp step (a BigWarp
@@ -329,9 +330,10 @@ final class AbbaHostSession {
                 }
             }
             for (Map.Entry<String, JsonObject> row : rows.entrySet()) {
+                int mark = failureMark();
                 try { applyRow(row.getKey(), row.getValue()); report.applied.add(row.getKey()); }
                 catch (RuntimeException failure) {
-                    String why = reason(failure);
+                    String why = reason(failure) + abbaFailures(mark, slices.get(row.getKey()));
                     report.failed.put(row.getKey(), why);
                     pending.put(row.getKey(), row.getValue());
                     pendingReasons.put(row.getKey(), why);
@@ -356,6 +358,29 @@ final class AbbaHostSession {
 
     private static String reason(RuntimeException failure) {
         return failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+    }
+
+    /**
+     * The index of the newest failure ABBA has recorded in this session (0: none yet), or -1 when ABBA keeps no
+     * failure list (before 0.25).
+     */
+    int failureMark() {
+        try {
+            List<MultiSlicePositioner.Failure> failures = mp.getFailures(0);
+            return failures.isEmpty() ? 0 : failures.get(failures.size() - 1).index;
+        } catch (LinkageError olderAbba) { return -1; }
+    }
+
+    /**
+     * ABBA's own reasons for the actions that failed on *slice* since *mark* ({@link #failureMark}), as
+     * " ABBA: reason; reason", or "" when it recorded none (or keeps no failure list).
+     */
+    String abbaFailures(int mark, SliceSources slice) {
+        if (mark < 0 || slice == null) return "";
+        StringJoiner reasons = new StringJoiner("; ", " ABBA: ", "").setEmptyValue("");
+        for (MultiSlicePositioner.Failure failure : mp.getFailures(mark))
+            if (failure.slices.contains(slice.getName())) reasons.add(failure.reason.replaceAll("\\s*\n\\s*", " "));
+        return reasons.toString();
     }
 
     /** Opens the checkpoint's undo batch right before its first change in ABBA. */
@@ -449,7 +474,7 @@ final class AbbaHostSession {
         mp.waitForTasks();
     }
 
-    private void appendRegistration(SliceSources slice, Registration<SourceAndConverter<?>[]> registration) {
+    void appendRegistration(SliceSources slice, Registration<SourceAndConverter<?>[]> registration) {
         int before = slice.getNumberOfRegistrations();
         RegisterSliceAction action = new RegisterSliceAction(mp, slice, registration,
                 SourcesProcessorHelper.Identity(), SourcesProcessorHelper.Identity());

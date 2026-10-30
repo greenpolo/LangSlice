@@ -15,7 +15,7 @@ import argparse
 def add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "abba",
-        help="Start ABBA (0.24.x, from Python) with the LangSlice connector; its runs "
+        help="Start ABBA (0.25.x, from Python) with the LangSlice connector; its runs "
         "can be watched in the Python agent viewer and log",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )

@@ -6,12 +6,12 @@ import math
 from typing import Any
 
 FOCUS_COLORS = ((109, 222, 183), (118, 181, 255), (249, 199, 107), (207, 156, 244))
-#: ABBA 0.24's slice handles (bigdataviewer-biop-tools).
+#: ABBA 0.25's slice handles (bigdataviewer-biop-tools).
 HANDLE_PACKAGE = "ch.epfl.biop.viewer.bdv.graphicalhandle"
 
 
 def native_position_x(z: float, voxel_size: float, tile_width: float, step: int) -> float:
-    """ABBA 0.24 ``getDisplayedCenter`` in positioning mode, including its
+    """ABBA 0.25 ``getDisplayedCenter`` in positioning mode, including its
     voxel snapping (Java ``(int)`` truncates towards zero)."""
     if voxel_size <= 0 or step <= 0 or not math.isfinite(z):
         raise ValueError("Invalid native positioning calibration")

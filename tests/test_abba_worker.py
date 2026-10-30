@@ -204,7 +204,7 @@ def test_an_angle_per_section_is_refused_before_abba_sees_it(params, monkeypatch
         run_linear(params, [].append)
 
 
-# --- ABBA 0.24 contract: angles, z offset, existing warps, warp rows -------------------
+# --- ABBA contract: angles, z offset, existing warps, warp rows -------------------
 
 
 def test_abba_angles_become_the_stack_wide_input_and_angle_tasks_are_allowed(params):

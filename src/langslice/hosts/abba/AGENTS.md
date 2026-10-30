@@ -9,7 +9,7 @@ dialog under ABBA's Register menu, Setup, the native actions) with
 LangSlice as its own Python worker (`langslice serve --stdio`,
 `hosts/service.py`; the worker itself is `doors/abba/worker.py`).
 This package is the optional Python side of a session started with
-`langslice abba`: it starts ABBA 0.24.x from Python and follows the
+`langslice abba`: it starts ABBA 0.25.x from Python and follows the
 connector's runs in a passive agent viewer and an activity log. Nothing
 here changes ABBA's registrations: the connector applies every change.
 The Fiji connector converts ABBA's `ReslicedAtlas` rotations to the job's
@@ -18,7 +18,7 @@ cutting angles (`AbbaHostSession.anglesDeg`: pitch = -rotateX, yaw = -rotateY).
 ## `launch.py` — `langslice abba` (`hosts/cli.py`)
 
 - ABBA starts from Python (pyimagej + abba-python's `Abba` class, `ij=`
-  our own) with `ABBA_JAVA_DEPENDENCIES` (ImageToAtlasRegister 0.24.1 and
+  our own) with `ABBA_JAVA_DEPENDENCIES` (ImageToAtlasRegister 0.25.0 and
   the versions its pom pins; abba-python 0.11.0's own list is for ABBA
   0.11) on Java 21 (`scyjava.config.set_java_constraints(fetch="auto",
   version="21")`), and the connector jar on the classpath
@@ -51,7 +51,7 @@ cutting angles (`AbbaHostSession.anglesDeg`: pitch = -rotateX, yaw = -rotateY).
   plumbing is tested with fakes (`tests/test_integrations_abba_launch.py`).
   `tests/test_abba_viewer_jvm.py` (marked `slow`; needs a Python with
   JPype and scyjava, `LANGSLICE_ABBA_PYTHON`) starts a headless ABBA
-  0.24.1 JVM and checks every Java member the viewer and launcher use,
+  0.25.0 JVM and checks every Java member the viewer and launcher use,
   copies a real source the way the viewer does, and delivers a connector
   message into `RunListener` when the jar is built.
 
@@ -88,7 +88,7 @@ positioning mosaic at the host's `getStep`, with the host's active atlas
 channels and copied converter settings. Sections keep native size. In
 positioning mode their centres are the host's `getDisplayedCenter`
 (overlap and stair placement included); in review mode the overview uses
-ABBA 0.24's positioning formula (`native_position_x`, voxel-snapped) one
+ABBA 0.25's positioning formula (`native_position_x`, voxel-snapped) one
 atlas height below, without switching the host's mode. The camera fits the
 stack, keeps in-range framing and reframes when the host changes its
 display step. Selection is drawn with ABBA's own `CircleGraphicalHandle`

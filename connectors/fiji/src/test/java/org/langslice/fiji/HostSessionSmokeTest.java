@@ -18,7 +18,7 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * Opt-in integration smoke against a REAL headless ABBA 0.24.1 with the cached Allen V3p1 atlas; never contacts
+ * Opt-in integration smoke against a REAL headless ABBA 0.25.0 with the cached Allen V3p1 atlas; never contacts
  * a model provider. After build.py --test, run with the same resolved test classpath:
  * <pre>java -Djava.awt.headless=true --add-opens=java.base/java.lang=ALL-UNNAMED -cp TEST_CLASSES:CLASSES:MAVEN_CLASSPATH
  *     org.langslice.fiji.HostSessionSmokeTest /path/to/cached_atlas</pre>
@@ -27,7 +27,8 @@ import java.util.*;
  * Checks: AP positions from ABBA's own toAtlasZ against ABBA's atlas coordinate images read at the slice, a tilted
  * session's angles_deg, existing_warp, live checkpoints (position, affine step, warp step, cutting angles),
  * the affine-then-warp replace/remove order, one checkpoint = one Undo (angles included), refusal and retry
- * after an outside change, and save then reload without LangSlice with the warp step intact.
+ * after an outside change, ABBA's own reason for a refused registration, and save then reload without LangSlice with
+ * the warp step intact.
  */
 public final class HostSessionSmokeTest {
     // ImageJ 1.x classes must be patched before any is loaded (ij1-patcher); Fiji's launcher does this itself.
@@ -234,7 +235,24 @@ public final class HostSessionSmokeTest {
         // 9. The checkpoints are on ABBA's undo stack, between batch marks.
         require(mp.userActionsSize() > undoBefore && Math.abs(z0 - one.getSlicingAxisPosition()) > 1e-6, "Checkpoints are on ABBA's undo stack");
 
-        // 10. Native save.
+        // 10. A registration ABBA refuses is reported with ABBA's own reason (its failure list, ABBA 0.25) and leaves the slice as it was.
+        int mark = host.failureMark();
+        ch.epfl.biop.registration.source.affine.AffineRegistration refusing = new ch.epfl.biop.registration.source.affine.AffineRegistration() {
+            @Override public boolean register() { return false; }
+            @Override public String getExceptionMessage() { return "probe refused"; }
+        };
+        refusing.setScijavaContext(mp.getContext());
+        int registrationsBefore = two.getNumberOfRegistrations();
+        boolean refused = false;
+        try { host.appendRegistration(two, refusing); } catch (IllegalStateException expected) { refused = true; }
+        mp.waitForTasks();
+        require(refused && two.getNumberOfRegistrations() == registrationsBefore, "A refused registration fails and changes nothing");
+        String abbaReason = host.abbaFailures(mark, two);
+        System.out.println("ABBA_FAILURE mark=" + mark + " reason=" + abbaReason);
+        if (mark >= 0) require(abbaReason.contains("probe refused") && host.abbaFailures(mark, one).isEmpty(),
+                "ABBA's own failure reason names the refused slice only: " + abbaReason);
+
+        // 11. Native save.
         require(mp.saveState(output.resolve("smoke.abba").toFile(), true), "Native ABBA state saves");
         JsonObject expected = new JsonObject();
         expected.addProperty("slices", 2);
@@ -244,7 +262,7 @@ public final class HostSessionSmokeTest {
         expected.addProperty("amplitude", .02);
         expected.addProperty("ap_probe", probed); expected.addProperty("ap_converted", converted);
         System.out.println("HOST_SESSION_PASS toAtlasZ=probe (" + converted + " vs " + probed + "), tilted prepare, existing_warp, live position/affine/warp/angles,"
-                + " warp-before-affine replace, one-checkpoint undo/redo, outside-change refusal + retry, native save");
+                + " warp-before-affine replace, one-checkpoint undo/redo, outside-change refusal + retry, ABBA failure reason, native save");
         return expected;
     }
 

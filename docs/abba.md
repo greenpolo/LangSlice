@@ -2,7 +2,7 @@
 
 The Fiji connector lets an agent register sections inside ABBA, applying
 changes as native, undoable ABBA registrations. It uses a separate Python
-environment. Supported sessions use ABBA 0.24, Java 21, and the Allen Mouse
+environment. Supported sessions use ABBA 0.25 (0.24.1 also works), Java 21, and the Allen Mouse
 V3 or V3p1 atlas in the coronal plane; tilted cutting angles are supported.
 
 ## Install
@@ -23,7 +23,7 @@ V3 or V3p1 atlas in the coronal plane; tilted cutting angles are supported.
    [build instructions](https://github.com/greenpolo/LangSlice/blob/main/connectors/fiji/README.md#build).
    Copy `langslice-fiji-0.2.0.jar` into Fiji's `jars` folder and restart Fiji.
    Keep only one connector version installed. The connector is built against
-   ABBA 0.24.1 and uses ABBA's dependencies.
+   ABBA 0.25.0 and uses ABBA's dependencies.
 
 3. Open **Plugins > LangSlice > LangSlice setup…** in Fiji, or **Setup…**
    in the LangSlice Registration dialog. Select the environment folder
@@ -84,7 +84,8 @@ Changes appear while the agent works. Each checkpoint is an ABBA undo step;
 a section has at most one LangSlice affine and one BigWarp warp above it.
 The warp can be opened in BigWarp. Avoid editing those sections'
 registrations during a run: conflicting updates are refused and can be
-retried with **Retry failed updates**.
+retried with **Retry failed updates**. When ABBA refuses an update, the log
+gives ABBA's own reason.
 
 **Stop run** stops the built-in agent and keeps completed changes. In Claude
 mode, closing the window disconnects live updates; the MCP job continues

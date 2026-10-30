@@ -1,4 +1,4 @@
-"""The agent viewer against a real ABBA 0.24.1 JVM (headless).
+"""The agent viewer against a real ABBA 0.25.0 JVM (headless).
 
 Starts a JVM with ``abba_launch.ABBA_JAVA_DEPENDENCIES`` in a subprocess and
 checks that every ABBA, BigDataViewer and bdv-playground member the viewer
@@ -123,7 +123,7 @@ def _python() -> str | None:
     return shutil.which(given) or (given if given and Path(given).is_file() else None)
 
 
-def test_viewer_and_launcher_java_members_exist_in_abba_0_24_1():
+def test_viewer_and_launcher_java_members_exist_in_abba_0_25_0():
     python = _python()
     if python is None:
         pytest.skip("No Python with JPype and scyjava (set LANGSLICE_ABBA_PYTHON)")
