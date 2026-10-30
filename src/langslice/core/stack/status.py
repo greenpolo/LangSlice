@@ -182,8 +182,8 @@ ROW_FIELDS: tuple[str, ...] = (
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):
 #: ``frozen`` (the properties the user froze on the section) and
-#: ``damage_by_user`` (``tools.status.stack_status``) are set only when there are
-#: any.
+#: ``damage_by_user`` (``tools.status.stack_status``) are set only when
+#: there are any.
 ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "frozen": [],
                                 "damage_by_user": False}
 #: The reply keys that hold status rows (``status``: the whole table; a

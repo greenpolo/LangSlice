@@ -776,7 +776,9 @@ def _region_zooms(
     None without regions, and none where it would not magnify enough
     (:func:`langslice.tools.affine_fit.zoom_window`).
     """
-    from langslice.tools import affine_fit  # local: cycle with tools.affine_fit
+    from langslice.tools import (
+        affine_fit,  # local: cycle with tools.affine_fit
+    )
 
     zooms: dict[str, list[float]] = {}
     if not regions:
@@ -785,7 +787,9 @@ def _region_zooms(
         section = run.job.state.by_id(name)
         box = None
         if section is not None:
-            box = affine_fit.region_box(run.ctx, run.job.state, section, regions)
+            box = affine_fit.region_box(
+                run.ctx, run.job.state, section, regions
+            )
         window = affine_fit.zoom_window(box)
         if window is not None:
             zooms[name] = window

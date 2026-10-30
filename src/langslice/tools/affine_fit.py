@@ -1,4 +1,4 @@
-"""The Elastix affine fit: the ``elastix_affine`` tool and a script's ``elastix_fit``.
+"""The Elastix affine fit: the ``elastix_affine`` tool and ``elastix_fit``.
 
 :func:`elastix_affine` refines each section's in-plane transform against an
 atlas image and writes every fit that succeeded as one undo step
@@ -8,15 +8,16 @@ an implausible change (:func:`plausibility_flags`); a fit restricted to
 regions carries their box, which its picture zooms to (:func:`zoom_window`).
 ``elastix_fit`` is one fit written nowhere, for scripts.
 
-:func:`elastix_affine_tool` answers the tool's call with a row per section,
-worded from the fit's numbers (the turn, the flags: :func:`affine_flag_text`),
-and shows each fitted section under its new registration with the atlas
-borders on it (:func:`langslice.tools.look.show_result`), drawn on the section
-image the fit read, unless the call's ``view`` is false and the host does not
-force it. With ``restrict_to`` those regions' borders are drawn thick and the
+``elastix_affine_tool`` answers the tool's call with a row per section,
+worded from the fit's numbers (the turn, and the flags in
+``affine_flag_text``'s words), and shows each fitted section under its new
+registration with the atlas borders on it, drawn on the section image the
+fit read, unless the call's ``view`` is false and the host does not force
+it. With ``restrict_to`` those regions' borders are drawn thick and the
 others faint, and the picture is zoomed to the regions' box when that
-magnifies it at least :data:`MIN_ZOOM_GAIN` times.
+magnifies it at least ``MIN_ZOOM_GAIN`` times.
 """
+
 from __future__ import annotations
 
 import logging
