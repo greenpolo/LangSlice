@@ -109,7 +109,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `transform.max_parallel`, each None for no cap; `TOO_MANY_SECTIONS`) are
   checked by the tool door with its other arguments.
 - A model is passed in, never chosen here: `traces.trace_borders`
-  takes the image model (`providers.connections.ImageModel`: provider, model, `call`)
+  takes the image model (`core.fits.trace.request.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
   (`core.fits.frame.correction_fingerprint`).
 - A write to a property the job froze (`JobSpec.frozen`, `job/settings/frozen.py`) is

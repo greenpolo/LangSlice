@@ -25,8 +25,8 @@ from langslice.tools import status as ops_views
 from langslice.tools.look import Looked
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
+    from langslice.core.fits.trace.request import ImageModel
     from langslice.doors.agent.engine import EngineContext
-    from langslice.providers.connections import ImageModel
     from langslice.tools.pipeline import ToolBox
 
 #: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a

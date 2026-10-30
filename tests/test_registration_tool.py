@@ -18,12 +18,13 @@ from langslice.core.fits.trace import trace as tool
 from langslice.core.fits.trace.canvas import Upright
 from langslice.core.fits.trace.lines import smooth_border_overlay
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
+from langslice.core.fits.trace.request import ImageModel
 from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.job.state_file import stack_to_json
-from langslice.providers.connections import ImageModel, resolve_image_model
+from langslice.providers.connections import resolve_image_model
 
 
 def _correct(state, ctx, section_id, **kwargs):

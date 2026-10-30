@@ -2425,6 +2425,7 @@
 {"path": "src/langslice/doors/agent_cli/warm.py", "symbol": "serve_main", "new_path": "src/langslice/doors/agent_cli/warm/server.py", "new_symbol": "serve_main"},
 {"path": "src/langslice/doors/agent_cli/warm.py", "symbol": "start_server", "new_path": "src/langslice/doors/agent_cli/warm/client.py", "new_symbol": "start_server"},
 {"path": "src/langslice/doors/agent_cli/warm.py", "symbol": "tree_stats", "new_path": "src/langslice/doors/agent_cli/warm/server.py", "new_symbol": "tree_stats"},
-{"path": "src/langslice/doors/agent_cli/warm.py", "symbol": "warm_up", "new_path": "src/langslice/doors/agent_cli/warm/server.py", "new_symbol": "warm_up"}
+{"path": "src/langslice/doors/agent_cli/warm.py", "symbol": "warm_up", "new_path": "src/langslice/doors/agent_cli/warm/server.py", "new_symbol": "warm_up"},
+{"path": "src/langslice/providers/connections.py", "symbol": "ImageModel", "new_path": "src/langslice/core/fits/trace/request.py", "new_symbol": "ImageModel"}
 ]
 }

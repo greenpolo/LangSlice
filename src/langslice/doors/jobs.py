@@ -35,7 +35,7 @@ from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
-    from langslice.providers.connections import ImageModel
+    from langslice.core.fits.trace.request import ImageModel
     from langslice.tools.pipeline import ToolBox
 
 #: The largest picture a script call may ask for (``view.resolution``): no
