@@ -179,24 +179,12 @@ def look_tool(
     Parameters
     ----------
     run
-        The run the tool is called in: its job, workspace and picture size.
-    mode, sections, images, positions_mm, atlas_layers, atlas_opacity
-        The call's arguments as the model sent them (the description says
-        what each does); a list argument may come as one item. Section
-        filenames are checked by :func:`look_pictures`.
-    warp
-        ``applied`` draws the applied deformation, ``none`` the linear
-        placement alone.
-    resolution
-        The long edge asked for, clamped to the driver model's limits.
-    layers, depth, masks
-        The same as the first, for the drawing's options.
-    registrations
-        ``{filename: number}``: the earlier registrations to draw sections
-        under (``look_pictures``).
-    sheet
-        Whether the pictures are also tiled into sheets no larger than the
-        largest picture the driver model takes.
+        The run the tool is called in.
+    mode, sections, images, positions_mm, atlas_layers, atlas_opacity, warp
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
+    resolution, layers, depth, masks, registrations, sheet
+        More of the declared arguments, as sent.
 
     Returns
     -------

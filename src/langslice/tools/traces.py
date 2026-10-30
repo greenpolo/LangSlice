@@ -333,16 +333,13 @@ def trace_borders_tool(
 ) -> dict[str, Any]:
     """Run the ``trace_borders`` tool: start the packaged trace, answer at once.
 
-    The trace and its fit are drawn when the work lands
-    (:func:`land_trace`), at the run's picture size; the tool door hands
-    the work's notice out at the head of a later reply.
-
     Parameters
     ----------
     run
-        The run the tool belongs to; it holds the image model.
+        The run the tool is called in.
     section, prompt, restrict_to
-        The call's arguments, as :func:`trace_borders` takes them.
+        The declared arguments as the model sent them
+        (``tools/descriptions/fitting.py``).
 
     Returns
     -------

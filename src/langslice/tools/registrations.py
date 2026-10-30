@@ -398,31 +398,18 @@ def restore_registration_tool(
 ) -> dict[str, Any]:
     """Run the ``restore_registration`` tool: list, or restore and picture.
 
-    *section* alone lists that section's registrations (:func:`listing`);
-    *sections* puts one registration of each back (:func:`restore`) and
-    answers with a row per section and the overlays of those put back (at
-    most the door's picture cap, spread over them).
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    section
-        The section whose registrations to list.
-    sections
-        ``{"id", "registration"}`` per section to put back.
-    view
-        Whether to answer a restore with the picture.
+        The run the tool is called in.
+    section, sections, view
+        The declared arguments as the model sent them
+        (``tools/descriptions/bookkeeping.py``).
 
     Returns
     -------
     dict
         The listing, or the restore's rows and the rows it changed.
-
-    Raises
-    ------
-    Refused
-        ``BAD_ARGS`` unless exactly one of *section* and *sections* is given.
     """
     job = run.job
     entries = as_list(sections)

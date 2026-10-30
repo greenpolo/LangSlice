@@ -236,13 +236,10 @@ def mark_damage_tool(
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    section
-        The section's filename.
-    regions
-        The atlas regions it lost; empty clears them.
-    note
-        What the damage is.
+        The run the tool is called in.
+    section, regions, note
+        The declared arguments as the model sent them
+        (``tools/descriptions/changing.py``).
 
     Returns
     -------

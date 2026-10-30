@@ -90,11 +90,9 @@ def list_files_tool(run: Run, path: str, glob: str) -> dict[str, object]:
     ----------
     run
         The run the tool is called in.
-    path
-        A path in the job folder; empty is the folder itself.
-    glob
-        A pattern every file below *path* is matched against; empty lists
-        *path* itself.
+    path, glob
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
 
     Returns
     -------
@@ -115,12 +113,9 @@ def search_files_tool(
     ----------
     run
         The run the tool is called in.
-    query
-        A regular expression, or plain text when it is not one.
-    path
-        The folder or file searched; empty is the job folder.
-    glob
-        A pattern the files searched must match; empty keeps every file.
+    query, path, glob
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
 
     Returns
     -------
@@ -143,23 +138,15 @@ def read_file_tool(
     ----------
     run
         The run the tool is called in.
-    path
-        The file, in the job folder.
-    offset
-        The lines skipped before the first line shown.
-    limit
-        The most lines shown; 0 is the default.
+    path, offset, limit
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
 
     Returns
     -------
     dict
         ``status``, the ``text`` and, for a picture file, its ``picture``
         number.
-
-    Raises
-    ------
-    Refused
-        ``BAD_ARGS`` when *offset* or *limit* is not a whole number.
     """
     run.job.views.flush()
     try:

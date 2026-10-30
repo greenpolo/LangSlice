@@ -584,12 +584,10 @@ def elastix_affine_tool(
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    sections, restrict_to, section_image, atlas_image, mask, edges
-        The call's arguments, as the fit takes them
-        (:func:`elastix_affine`).
-    view
-        Whether to answer with the picture.
+        The run the tool is called in.
+    sections, restrict_to, section_image, atlas_image, mask, edges, view
+        The declared arguments as the model sent them
+        (``tools/descriptions/fitting.py``).
 
     Returns
     -------

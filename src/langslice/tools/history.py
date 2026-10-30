@@ -142,21 +142,16 @@ def undo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
     Parameters
     ----------
     run
-        The run the tool belongs to.
+        The run the tool is called in.
     steps
-        How many steps, a whole number from 1.
+        The declared argument as the model sent it
+        (``tools/descriptions/bookkeeping.py``).
 
     Returns
     -------
     dict
         The reply: what the steps undid and the rows they changed
         (:func:`_stepped_reply`).
-
-    Raises
-    ------
-    Refused
-        ``BAD_ARGS`` for *steps* that is not a whole number from 1;
-        ``NOTHING_TO_UNDO`` when the history holds no earlier step.
     """
     count = _step_count(steps)
     step = undo(run.job, count)
@@ -174,21 +169,16 @@ def redo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
     Parameters
     ----------
     run
-        The run the tool belongs to.
+        The run the tool is called in.
     steps
-        How many steps, a whole number from 1.
+        The declared argument as the model sent it
+        (``tools/descriptions/bookkeeping.py``).
 
     Returns
     -------
     dict
         The reply: what the steps redid and the rows they changed
         (:func:`_stepped_reply`).
-
-    Raises
-    ------
-    Refused
-        ``BAD_ARGS`` for *steps* that is not a whole number from 1;
-        ``NOTHING_TO_REDO`` when nothing undone is left to redo.
     """
     count = _step_count(steps)
     step = redo(run.job, count)

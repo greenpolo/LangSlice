@@ -253,22 +253,13 @@ def position_sections_tool(
 ) -> dict[str, Any]:
     """Run the ``position_sections`` tool: write, answer, picture.
 
-    A call whose every section is unknown, with no angles, is refused
-    (``UNKNOWN_SLICE_IDS``); otherwise the unknown names are listed beside
-    what was written. The picture is the positioning picture of the
-    sections written (none written: the whole stack), or, where the job
-    disables ``look:positioning``, their overlays.
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    sections
-        ``{"id", "position_mm"}`` per section, as the model sent them.
-    cutting_angles
-        ``{"pitch_deg", "yaw_deg"}`` for the whole stack; empty is none.
-    view
-        Whether to answer with the picture.
+        The run the tool is called in.
+    sections, cutting_angles, view
+        The declared arguments as the model sent them
+        (``tools/descriptions/changing.py``).
 
     Returns
     -------

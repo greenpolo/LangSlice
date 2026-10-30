@@ -445,31 +445,13 @@ def make_mask_tool(
 ) -> dict[str, Any]:
     """Run the ``make_mask`` tool: write, answer, picture.
 
-    The arguments are :func:`make_mask`'s, as the model sent them; *view*
-    adds the picture of each section's new mask outlined on the section
-    image an ``em`` mask sorted (at most the door's picture cap, spread over
-    the sections).
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    name
-        The mask's name.
-    sections
-        The sections' filenames; none is every section.
-    source
-        ``em`` or ``fit``.
-    section_image
-        The section image an ``em`` mask sorts.
-    atlas_image
-        The atlas image an ``em`` mask sorts against.
-    sorting
-        The sorting's starting points.
-    delete
-        Remove the mask instead.
-    view
-        Whether to answer with the picture.
+        The run the tool is called in.
+    name, sections, source, section_image, atlas_image, sorting, delete, view
+        The declared arguments as the model sent them
+        (``tools/descriptions/changing.py``).
 
     Returns
     -------

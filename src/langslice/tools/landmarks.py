@@ -519,19 +519,13 @@ def set_landmarks_tool(
 ) -> dict[str, Any]:
     """Run the ``set_landmarks`` tool: write the pairs, answer, picture.
 
-    With pictures, a call takes at most :data:`MAX_PAIR_PICTURES` pairs
-    (``TOO_MANY_LANDMARK_VIEWS``, nothing written) and answers with one
-    picture per pair it added or edited. A picture that fails leaves the
-    write standing (``render_failed``).
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    section, pairs, delete
-        The call's arguments, as :func:`set_landmarks` takes them.
-    view
-        Whether to answer with the pairs' pictures.
+        The run the tool is called in.
+    section, pairs, delete, view
+        The declared arguments as the model sent them
+        (``tools/descriptions/landmarks.py``).
 
     Returns
     -------

@@ -67,13 +67,9 @@ def zoom_tool(
     ----------
     run
         The run the tool is called in.
-    box
-        ``[x0, y0, x1, y1]`` in pixels of the picture (on a zoom, the
-        numbers its grid prints).
-    picture
-        The picture's number; 0 is the newest picture that is not a zoom.
-    region
-        An atlas region whose whole bounds replace the box (an overlay).
+    box, picture, region
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
 
     Returns
     -------
@@ -81,12 +77,6 @@ def zoom_tool(
         The reply: the picture the box was read on, whether it was redrawn,
         the sheet and the box on its tile for a box given on a sheet,
         ``stale`` when the stack changed since, and the new picture.
-
-    Raises
-    ------
-    Refused
-        ``BAD_ARGS`` when ``picture`` is not a number; the refusals of
-        :func:`zoom_picture`.
     """
     try:
         number = int(picture or 0) or None

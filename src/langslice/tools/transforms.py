@@ -540,21 +540,13 @@ def interactive_transform_tool(
 ) -> dict[str, Any]:
     """Run the ``interactive_transform`` tool: write, answer, picture.
 
-    A call names each section once (``DUPLICATE_SLICE_IDS``), and no more
-    than the door and the job let one transform call take
-    (``TOO_MANY_SECTIONS``). Each entry is a row: its orientation, whether
-    it was written, its knobs, or its own refusal. The picture is each
-    section written under its new transform, after the deformations that
-    write made stale are dropped.
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    sections
-        One entry per section, as the model sent them.
-    view
-        Whether to answer with the picture.
+        The run the tool is called in.
+    sections, view
+        The declared arguments as the model sent them
+        (``tools/descriptions/changing.py``).
 
     Returns
     -------

@@ -404,9 +404,10 @@ def export_maps_tool(
     Parameters
     ----------
     run
-        The run the verb belongs to.
+        The run the tool is called in.
     sections, full_resolution
-        The call's arguments, as :func:`export_maps` takes them (``ids``).
+        The declared arguments as the model sent them
+        (``tools/descriptions/bookkeeping.py``).
 
     Returns
     -------

@@ -460,26 +460,16 @@ def landmark_triangulation_tool(
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    section
-        The section whose pairs are applied, by filename.
-    view
-        Whether to answer with the picture of the section as it now stands.
-    resolution
-        The picture's long edge in pixels (0: the run's size), read only
-        where the run sizes every picture (``auto``); one outside the
-        driver model's limits is clamped and the reply says so.
+        The run the tool is called in.
+    section, view, resolution
+        The declared arguments as the model sent them
+        (``tools/descriptions/landmarks.py``).
 
     Returns
     -------
     dict
         The reply (:meth:`LandmarksApplied.reply`), with a
         ``resolution_note`` when the edge was clamped, and its picture.
-
-    Raises
-    ------
-    Refused
-        ``BAD_ARGS`` for a resolution that is not a number of pixels.
     """
     edge, note = requested_edge(run, resolution)
     applied = landmark_triangulation(run.job, run.workspace, section)

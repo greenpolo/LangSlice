@@ -159,21 +159,13 @@ def submit_tool(
 ) -> dict[str, Any]:
     """Run the ``submit`` tool: end the run and answer with the whole table.
 
-    The submission is kept on the toolbox for the door; under the built-in
-    agent (*tool_context* is ADK's) the agent's turn ends here.
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
-    summary
-        One line on the registration.
-    notes
-        Notes to save with it.
-    interval_breaks
-        The filenames of the sections after each gap.
-    tool_context
-        ADK's context of the call; None at every other door.
+        The run the tool is called in.
+    summary, notes, interval_breaks, tool_context
+        The declared arguments as the model sent them
+        (``tools/descriptions/bookkeeping.py``).
 
     Returns
     -------

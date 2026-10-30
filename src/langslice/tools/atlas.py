@@ -74,14 +74,9 @@ def grep_atlas_tool(
     ----------
     run
         The run the tool is called in.
-    query
-        Text matched against the regions' acronyms and names.
-    section
-        A section's filename: each row then says whether the region shows
-        in its atlas plane.
-    points
-        ``{picture, x, y}`` points of saved pictures, each answered with the
-        region drawn there.
+    query, section, points
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
 
     Returns
     -------
@@ -468,10 +463,9 @@ def grep_atlas_view_tool(
     ----------
     run
         The run the tool is called in.
-    regions
-        Atlas regions (acronyms, names or ids; ``"CTX:left"`` for one side).
-    positions_mm
-        Atlas positions along the slicing axis, one picture each.
+    regions, positions_mm
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
 
     Returns
     -------

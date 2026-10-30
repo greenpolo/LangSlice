@@ -178,31 +178,17 @@ def make_image_tool(
     ----------
     run
         The run the tool is called in.
-    name
-        The made image's name.
-    sections
-        The sections' filenames; empty is every section.
-    weights, clahe_clip, clahe_tiles, n4, denoise, contrast, gamma, invert
-        The recipe as the model gave it (:class:`ImageRecipe`); its values
-        are checked here.
-    delete
-        Whether the image is removed from the sections instead.
-    view
-        Whether the reply shows a ``section`` picture of a spread of the
-        sections drawn with the image (the job may show it regardless, or
-        never).
+    name, sections, weights, clahe_clip, clahe_tiles, n4, denoise, contrast
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
+    gamma, invert, delete, view
+        More of the declared arguments, as sent.
 
     Returns
     -------
     dict
         The image, the sections it was made for, its recipe (or
         ``deleted``), every section image of the stack and the pictures.
-
-    Raises
-    ------
-    Refused
-        ``UNKNOWN_SLICE_IDS``; ``BAD_ARGS`` for a value that is not a
-        number; the refusals of :func:`make_section_image`.
     """
     job = run.job
     ids = _section_ids(run, as_list(sections))

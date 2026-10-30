@@ -35,9 +35,10 @@ def note_tool(run: Run, text: str) -> dict[str, Any]:
     Parameters
     ----------
     run
-        The run the tool belongs to.
+        The run the tool is called in.
     text
-        The line to add.
+        The declared argument as the model sent it
+        (``tools/descriptions/bookkeeping.py``).
 
     Returns
     -------

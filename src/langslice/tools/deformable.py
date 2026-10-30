@@ -695,22 +695,15 @@ def fireants_syn_tool(
 ) -> dict[str, Any]:
     """Run the ``fireants_syn`` tool: fit, answer, picture.
 
-    The call is capped at :data:`MAX_FIREANTS_SYN_SECTIONS` sections
-    (``TOO_MANY_SECTIONS``) and fitted by :func:`fireants_syn`. The picture
-    is each fitted section under its new registration, drawn on the image
-    the fit read, zoomed to the ``restrict_to`` regions' box when that
-    magnifies it, those regions' borders thick.
-
     Parameters
     ----------
     run
-        The run the tool belongs to.
+        The run the tool is called in.
     sections, restrict_to, section_image, atlas_image, mask, smoothness_um
-        The call's arguments, as :func:`fireants_syn` takes them.
-    metric, edges, detail
-        The engine's options, as :func:`fireants_syn` takes them.
-    view
-        Whether to answer with the picture.
+        The declared arguments as the model sent them
+        (``tools/descriptions/fitting.py``).
+    metric, edges, detail, view
+        More of the declared arguments, as sent.
 
     Returns
     -------
