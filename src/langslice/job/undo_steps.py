@@ -10,7 +10,8 @@ cap on the number of steps.
 
 A file that does not read, or a newer LangSlice's, is left as it is and
 undo covers the session; an older LangSlice's step files (``index.json``,
-``step-*.json``) are ignored, with one warning, and left on disk.
+``step-*.json``) are ignored, with one warning per process, and left on
+disk.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
 from langslice.core.stack.json_reads import (
@@ -39,6 +41,8 @@ logger = logging.getLogger(__name__)
 UNDO_FORMAT_VERSION = 1
 #: The step files of an older LangSlice's ``history/``.
 _OLD_INDEX, _OLD_STEP_PREFIX = "index.json", "step-"
+#: The undo files whose folder's older step files this process told of.
+_TOLD_OLDER: set[Path] = set()
 
 
 @dataclass(frozen=True)
@@ -180,7 +184,8 @@ class UndoFile:
         try:
             data = json_object(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            if self._older_history():
+            if self.path not in _TOLD_OLDER and self._older_history():
+                _TOLD_OLDER.add(self.path)
                 self._tell(
                     "The undo history of an older LangSlice in "
                     f"{self.path.parent} is ignored; undo covers this session."

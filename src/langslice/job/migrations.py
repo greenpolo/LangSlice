@@ -26,7 +26,7 @@ history) is read as the lines of its ``history.jsonl`` by
 the section's next write writes ``history.jsonl`` from them and removes it
 (:mod:`langslice.job.history`). An older LangSlice's undo steps
 (``history/index.json`` and ``step-*.json``) are not read: the folder opens
-with one warning and undo starts with its session.
+with one warning (once per process) and undo starts with its session.
 
 The trace folders stay where format 4 put them,
 ``sections/<name>/image_correction/``, and the paths stored to them are

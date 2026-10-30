@@ -375,7 +375,7 @@ longer exist be taken over by the images it is opened with.
   `redo` lists of `UndoStep`: `step`, `by`, `at`, `sections` {id: seq
   before}, `stack_before`); `load` (an unreadable or newer file: no steps,
   `notice` says why and `writable` False, so `save` leaves it; an older
-  LangSlice's `index.json` / `step-*.json`: no steps, one warning, left on
+  LangSlice's `index.json` / `step-*.json`: no steps, one warning per process, left on
   disk), `save`; `combined_steps` (the earliest line per section and field
   wins: `merge_steps`, `amend`). No cap on the steps.
 - `recent.py` — the jobs opened on this computer,

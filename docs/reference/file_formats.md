@@ -86,7 +86,8 @@ older than format 3 (a pre-release LangSlice's) is refused: start a new job.
 
 The undo steps of a LangSlice before the section histories
 (`history/index.json` and `history/step-*.json`) are not read: the job opens
-with one warning, undo starts with the session, and the files stay on disk.
+with one warning (said once per process), undo starts with the session, and
+the files stay on disk.
 A section's `registrations.jsonl` of that LangSlice is read as its history,
 so the registration numbers stay as they were; the section's next write
 writes `history.jsonl` from it and removes it.

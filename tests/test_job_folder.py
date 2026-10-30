@@ -173,7 +173,8 @@ def test_an_older_langslice_s_undo_steps_are_ignored_and_left(tmp_path: Path, ca
     (history / "index.json").write_text('{"format_version": 1, "undo": ["step-000001.json"]}')
     (history / "step-000001.json").write_text("{}")
     with caplog.at_level(logging.WARNING):
-        again, _ = _open(folder)
+        _open(folder)
+        again, _ = _open(folder)  # said once in a process, not per open
     assert again.undo_stack == []
     assert sum("older LangSlice" in record.getMessage() for record in caplog.records) == 1
     before = again.snapshot()
