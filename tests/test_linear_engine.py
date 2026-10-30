@@ -16,7 +16,8 @@ from PIL import Image
 from langslice.core.stack.codec import affine_to_json
 from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context, run
-from langslice.job.job import apply_host_inputs, ingest
+from langslice.job.host_inputs import apply_host_inputs
+from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, PositionSpec
 from tests import fakes
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack

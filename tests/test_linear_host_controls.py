@@ -17,7 +17,8 @@ from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.gates import submit_errors
-from langslice.job.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest
+from langslice.job.host_inputs import HOST_TRANSFORM_KIND, apply_host_inputs
+from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools import transforms as ops_transforms
 from langslice.tools.transforms import AffineFit

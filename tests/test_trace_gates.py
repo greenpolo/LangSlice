@@ -18,7 +18,7 @@ from langslice.core.stack.codec import (
 )
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.job import apply_host_inputs
+from langslice.job.host_inputs import apply_host_inputs
 from langslice.job.settings.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
 from langslice.tools.events import target_ids

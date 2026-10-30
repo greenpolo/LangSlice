@@ -828,7 +828,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         read_spec,
         with_registration,
     )
-    from langslice.job.job import InputsChanged
+    from langslice.job.host_inputs import InputsChanged
 
     args = init_parser().parse_args(rest)
     images = Path(folder).expanduser().resolve()
