@@ -12,7 +12,6 @@ import pytest
 
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.hosts.gui import watch
 from langslice.hosts.gui.watch import JobList, JobWatcher
 from langslice.job.state_file import write_checkpoint, write_json_atomic
 
@@ -188,9 +187,7 @@ def test_undo_steps_are_labelled_by_the_call_that_made_each_depth(tmp_path: Path
     _append(events, _end("position_sections", 1, ("s000.png",)), _end("look", 1),
             _end("interactive_transform", 2, ("s001.png",)), _end("note", 3),
             _end("undo", 2), _end("elastix_affine", 2, ("s001.png",), failed=True))
-    write_json_atomic(str(folder / "history" / "index.json"), {
-        "format_version": 1, "undo": ["step-000001.json", "step-000002.json"],
-        "redo": ["step-000003.json"]})
+    _write_undo(folder, undo=2, redo=1)
     watcher = JobWatcher(folder)
     snap = _snap(watcher)
     assert snap["history"] == {
@@ -199,24 +196,18 @@ def test_undo_steps_are_labelled_by_the_call_that_made_each_depth(tmp_path: Path
     tool = next(i for i in snap["items"] if i["kind"] == "tool")
     assert tool["args"] == "{\"sections\": ["  # a truncated argument string passes through
     _append(events, _end("redo", 3), _end("mark_damage", 4, ("s002.png",)))
-    write_json_atomic(str(folder / "history" / "index.json"), {
-        "format_version": 1, "redo": [],
-        "undo": [f"step-00000{n}.json" for n in (1, 2, 3, 4)]})
+    _write_undo(folder, undo=4, redo=0)
     assert _snap(watcher)["history"]["undo"][2:] == ["Note", "Mark damage (s002.png)"]
 
 
-def test_at_the_history_cap_a_write_drops_the_oldest_label(tmp_path: Path) -> None:
-    folder = _job(tmp_path)
-    depth = watch.UNDO_DEPTH
-    _append(folder / "logs" / "events.jsonl",
-            *[_end("interactive_transform", d, (f"s{d:03d}.png",)) for d in range(1, depth + 1)],
-            _end("look", depth), _end("note", depth))
-    write_json_atomic(str(folder / "history" / "index.json"), {
-        "format_version": 1, "redo": [],
-        "undo": [f"step-{n:06d}.json" for n in range(2, depth + 2)]})
-    undo = _snap(JobWatcher(folder))["history"]["undo"]
-    assert len(undo) == depth
-    assert undo[0] == "Interactive transform (s002.png)" and undo[-1] == "Note"
+def _write_undo(folder: Path, *, undo: int, redo: int) -> None:
+    def step(number: int) -> dict[str, object]:
+        return {"step": number, "by": "note", "at": None, "sections": {}, "stack_before": {}}
+
+    write_json_atomic(str(folder / "history" / "undo.json"), {
+        "format_version": 1, "next_step": undo + redo + 1,
+        "undo": [step(n) for n in range(1, undo + 1)],
+        "redo": [step(n) for n in range(undo + 1, undo + redo + 1)]})
 
 
 def test_pictures_named_by_a_path_outside_the_folder_are_refused(tmp_path: Path) -> None:

@@ -95,7 +95,7 @@ class Work:
     captions: list[str] = field(default_factory=list)
     result: dict[str, Any] = field(default_factory=dict)
     #: The registration each section holds after its landing, by section
-    #: (:mod:`langslice.job.registrations`).
+    #: (:mod:`langslice.job.history`).
     registrations: dict[str, int] = field(default_factory=dict)
     #: Whether :meth:`BackgroundWork.notices` handed the notice out.
     delivered: bool = False

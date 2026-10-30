@@ -3,9 +3,10 @@
 :class:`JobCheckpoint` is the base of :class:`langslice.job.job.Job`: it
 holds the stack, the spec and the job folder, writes the checkpoint (the
 state, then ``registration.json`` and the landmark files as the lock's
-outermost hold ends), tells the observers, and lists the registrations each
-step leaves. Every path the state stores (a deformation's ``record``, a
-border trace's artifacts) is relative to the job folder.
+outermost hold ends), tells the observers, and holds the section histories
+and undo steps (:mod:`langslice.job.history`) that ``undo.py`` writes. Every
+path the state stores (a deformation's ``record``, a border trace's
+artifacts) is relative to the job folder.
 """
 
 from __future__ import annotations
@@ -18,19 +19,17 @@ from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.fits import deformation
 from langslice.core.jsonable import JsonObject
 from langslice.core.stack.stack import Stack
 from langslice.job import public_files as formats
-from langslice.job import registrations as regs
-from langslice.job.history import UNDO_DEPTH, History
+from langslice.job.history import SCRIPT, SectionHistories
 from langslice.job.host_inputs import host_damaged_ids
 from langslice.job.layout import JobLayout
 from langslice.job.lock import FolderLock
 from langslice.job.pictures import ViewStore
-from langslice.job.registrations import Registrations
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import (
     Upgrade,
@@ -39,6 +38,7 @@ from langslice.job.state_file import (
     state_paths,
     write_checkpoint,
 )
+from langslice.job.undo_steps import UndoFile, UndoStep
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -113,15 +113,9 @@ class JobCheckpoint:
     results_path
         Where the results JSON goes; None is the job folder's
         ``exports/linear_results.json``.
-    undo
-        The undo steps to start with, oldest first.
-    redo
-        The redo steps to start with.
-    history
-        The undo history on disk; None reads the job folder's.
     seen
-        The stamps of the state file and the history taken before they
-        were read; None takes them now.
+        The stamps of the state file and ``history/undo.json`` taken
+        before they were read; None takes them now.
     """
 
     def __init__(
@@ -131,16 +125,16 @@ class JobCheckpoint:
         *,
         layout: JobLayout,
         results_path: str | None = None,
-        undo: list[dict[str, Any]] | None = None,
-        redo: list[dict[str, Any]] | None = None,
-        history: History | None = None,
         seen: tuple[Stamp, Stamp] | None = None,
     ) -> None:
         self.state = state
         self.spec = spec
         self.layout = layout
         self.results_path = str(results_path or layout.results_file)
-        self.history = history or History(layout.history_dir)
+        #: Each section's history (``sections/<name>/history.jsonl``).
+        self.histories = SectionHistories(layout)
+        #: The undo and redo steps on disk (``history/undo.json``).
+        self.undo_file = UndoFile(layout)
         #: The pictures the model was shown, saved with their layers.
         self.views: ViewStore = ViewStore(layout)
         #: ``registration.json`` and the landmark files are owed: the state
@@ -151,9 +145,11 @@ class JobCheckpoint:
         #: Sections the host gave a damage note (``inputs.damaged``); the note
         #: stays first in the section's ``damage_note``.
         self.host_damaged = frozenset(host_damaged_ids(spec))
-        #: Whole states, oldest first; the last one is what ``undo`` restores.
-        self.undo_stack: list[dict[str, Any]] = list(undo or [])[-UNDO_DEPTH:]
-        self.redo_stack: list[dict[str, Any]] = list(redo or [])
+        #: The undo steps, oldest first; the last one is what ``undo`` takes.
+        self.undo_stack: list[UndoStep] = []
+        self.redo_stack: list[UndoStep] = []
+        #: The number the job's next write gets (a line's ``step``).
+        self.next_step = 1
         #: Undo steps recorded by this job so far (:meth:`merge_steps`).
         self.pushed: int = 0
         #: The most pictures one call of a picture verb shows, and the most sections
@@ -175,7 +171,7 @@ class JobCheckpoint:
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
         self.persist = True
         self._workspace: Workspace | None = None
-        #: How a state file and history step of an older format are read as
+        #: How a state file and history line of an older format are read as
         #: the current format (the job's migrations, set by :meth:`open` and
         #: :meth:`load`; None refuses them).
         self.upgrade: Upgrade | None = None
@@ -186,7 +182,6 @@ class JobCheckpoint:
         #: back by the next locked :meth:`sync`, and the file's stamp then.
         self._peeked: dict[str, Any] | None = None
         self._peek_stamp: Stamp = None
-        self._registrations: Registrations | None = None
         #: The tool whose call this thread runs (:meth:`acting`).
         self._acting = threading.local()
         #: Each registration a write left, in order: (thread, section, number),
@@ -239,8 +234,8 @@ class JobCheckpoint:
 
     @property
     def undo_path(self) -> str:
-        """The undo history's index (``history/index.json``)."""
-        return str(self.history.index_path)
+        """The undo and redo steps, ``history/undo.json``."""
+        return str(self.undo_file.path)
 
     @property
     def engine_log(self) -> str | None:
@@ -290,17 +285,10 @@ class JobCheckpoint:
         formats.write_registration(self.layout, self.state, self.workspace)
         formats.write_landmarks(self.layout, self.state)
 
-    @property
-    def registrations(self) -> Registrations:
-        """Every registration each section has held (:mod:`langslice.job.registrations`)."""
-        if self._registrations is None:
-            self._registrations = Registrations(self.layout)
-        return self._registrations
-
     @contextlib.contextmanager
     def acting(self, tool: str) -> Iterator[None]:
-        """This thread runs *tool*'s call for the block: the registrations its
-        writes leave are listed as made by it."""
+        """This thread runs *tool*'s call for the block: the history lines its
+        writes append are made by it."""
         outer = getattr(self._acting, "tool", None)
         self._acting.tool = tool
         try:
@@ -308,13 +296,18 @@ class JobCheckpoint:
         finally:
             self._acting.tool = outer
 
+    @property
+    def actor(self) -> str:
+        """The tool this thread runs (:meth:`acting`); ``script`` for none."""
+        return getattr(self._acting, "tool", None) or SCRIPT
+
     def registration_numbers(self, ids: Sequence[str]) -> dict[str, int]:
         """The number of the registration each section of *ids* holds now,
-        for the sections that hold a listed one (a picture records them)."""
+        for the sections that hold a numbered one (a picture records them)."""
         out: dict[str, int] = {}
         for section_id in ids:
             record = self.state.by_id(section_id)
-            number = (self.registrations.number_of(self.state, record)
+            number = (self.histories.registration_number(self.state, record)
                       if record is not None else None)
             if number is not None:
                 out[section_id] = number
@@ -326,41 +319,6 @@ class JobCheckpoint:
         me = threading.get_ident()
         return {section: number for thread, section, number in self.registered[mark:]
                 if thread == me}
-
-    def list_registrations(self, before: dict[str, Any]) -> None:
-        """List each registration a step left (*before*: the state before it,
-        as :meth:`snapshot` gives it), as made by the tool this thread runs
-        (:meth:`acting`; ``script`` for none), and the one it replaced when
-        that was never listed (a job older than the list). A deformation the
-        step made stale is no part of a registration
-        (:func:`langslice.job.registrations.value`). A failure is logged; the
-        step stands."""
-        if not self.persist:
-            return
-        store = self.registrations
-        by = getattr(self._acting, "tool", None) or regs.SCRIPT
-        try:
-            old = stack_from_json(before)
-            for section in self.state.slices:
-                now = regs.value(self.state, section)
-                prior = old.by_id(section.id)
-                then = regs.value(old, prior) if prior is not None else None
-                key = regs.digest(now) if now is not None else None
-                if key == (regs.digest(then) if then is not None else None):
-                    continue
-                if then is not None and prior is not None and store.find(
-                        section.id, regs.digest(then)) is None:
-                    store.add(section.id, then, position_mm=prior.position_mm,
-                              angles=prior.angles, by=regs.made_by(then),
-                              at=None)
-                if now is not None:
-                    entry = store.add(section.id, now, position_mm=section.position_mm,
-                                      angles=section.angles, by=by,
-                                      at=regs.now())
-                    number = cast("int", entry["id"])  # an entry's number, from its file
-                    self.registered.append((threading.get_ident(), section.id, number))
-        except Exception:  # noqa: BLE001 - the step is written: a listing failure never undoes it
-            logger.warning("Could not list the registrations a step left", exc_info=True)
 
     def _notify(self) -> None:
         for observer in list(self.observers):

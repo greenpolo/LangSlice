@@ -63,7 +63,7 @@ def _old_folder(tmp_path: Path) -> Path:
     record["spec"]["tasks"] = ["reorder", *record["spec"]["tasks"]]
     (folder / "job.json").write_text(json.dumps(record))
     old_rows = {"damaged": True, "position_source": ""}
-    for path in [folder / "state.json", *sorted((folder / "history").glob("step-*.json"))]:
+    for path in [folder / "state.json"]:
         state = json.loads(path.read_text())
         state["appearance"] = {}
         state["slices"] = [{**row, **old_rows} for row in state["slices"]]
@@ -94,7 +94,7 @@ def test_an_old_folder_opens_with_one_warning_per_removed_name(
     spec = json.loads((folder / "job.json").read_text())["spec"]
     assert "max_input_tokens" not in spec and "flip" not in spec["transform"]
     assert "reorder" not in spec["tasks"]
-    for path in [folder / "state.json", *sorted((folder / "history").glob("step-*.json"))]:
+    for path in [folder / "state.json"]:
         state = json.loads(path.read_text())
         assert "appearance" not in state
         assert all("damaged" not in row and "position_source" not in row
@@ -154,7 +154,7 @@ def _format_four_folder(tmp_path: Path) -> Path:
     trace = {"id": "s0.png", "geometry_fingerprint": "f" * 16, "status": "ok",
              "artifact_dir": OLD_DIR,
              "artifact_paths": {"raw_reply": f"{OLD_DIR}/raw_reply.png"}}
-    for path in [folder / "state.json", *sorted((folder / "history").glob("step-*.json"))]:
+    for path in [folder / "state.json"]:
         state = json.loads(path.read_text())
         state["format_version"] = 4
         rows = []
@@ -194,7 +194,7 @@ def test_an_open_that_writes_finds_the_trace_through_its_stored_paths(tmp_path: 
 
     assert not (folder / "sections" / "s0" / "border_trace").exists()
     assert (folder / OLD_DIR / "result.json").read_bytes() == reply_before
-    for path in [folder / "state.json", *sorted((folder / "history").glob("step-*.json"))]:
+    for path in [folder / "state.json"]:
         state = json.loads(path.read_text())
         assert state["format_version"] == STATE_FORMAT_VERSION == 5
         row = state["slices"][0]

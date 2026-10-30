@@ -24,7 +24,7 @@ import json
 import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
 from langslice.core.stack.json_reads import (
@@ -84,6 +84,30 @@ def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
         raise
 
 
+def json_object(text: str) -> JsonObject | None:
+    """Return the JSON object a text holds; None for any other JSON value.
+
+    Parameters
+    ----------
+    text
+        One JSON value written as text.
+
+    Returns
+    -------
+    JsonObject or None
+        The object.
+
+    Raises
+    ------
+    ValueError
+        When the text is not JSON.
+    """
+    data = cast("object", json.loads(text))  # json.loads: any JSON value
+    if not isinstance(data, dict):
+        return None
+    return cast("JsonObject", data)  # a JSON object: text keys, JSON values
+
+
 #: The stack's own keys, in the order the state file writes them.
 STACK_KEYS = (
     "image_folder", "atlas", "plane", "interval_mm", "thickness_mm", "spec",
@@ -125,7 +149,27 @@ def stack_to_json(state: Stack) -> dict[str, JsonValue]:
         for key in OPTIONAL_ROW_KEYS:
             if not row[key]:
                 del row[key]
-    data: dict[str, JsonValue] = {
+    fields = stack_fields(state)
+    data = {key: fields.get(key) for key in STACK_KEYS}
+    data["slices"] = list[JsonValue](rows)
+    data[ANGLES_KEY] = angles
+    return data
+
+
+def stack_fields(state: Stack) -> dict[str, JsonValue]:
+    """Return the stack's own fields in their JSON form, without its sections.
+
+    Parameters
+    ----------
+    state
+        The stack read.
+
+    Returns
+    -------
+    dict
+        :data:`STACK_KEYS` but ``slices``.
+    """
+    return {
         "image_folder": state.image_folder,
         "atlas": state.atlas,
         "plane": state.plane,
@@ -134,12 +178,25 @@ def stack_to_json(state: Stack) -> dict[str, JsonValue]:
         "spec": to_jsonable(state.spec),
         "interval_breaks": list[JsonValue](state.interval_breaks),
         "notes": list[JsonValue](state.notes),
-        "slices": list[JsonValue](rows),
         "submitted": state.submitted,
         "debrief": state.debrief,
-        ANGLES_KEY: angles,
     }
-    return data
+
+
+def set_stack_fields(state: Stack, fields: JsonObject) -> None:
+    """Put some of the stack's own fields back, from their JSON form.
+
+    Parameters
+    ----------
+    state
+        The stack written, in place.
+    fields
+        Keys of :data:`STACK_KEYS` but ``slices``, as
+        :func:`stack_fields` gives them.
+    """
+    read = stack_from_json(fields)
+    for key in fields:
+        setattr(state, key, getattr(read, key))
 
 
 def _rows(data: JsonObject) -> tuple[JsonObject, ...]:

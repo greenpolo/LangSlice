@@ -23,7 +23,7 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image
 
@@ -38,7 +38,6 @@ from langslice.core.pictures.sizes import (
     clamp_resolution,
 )
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.job import registrations as regs
 from langslice.job.pictures import has_frame
 from langslice.tools.refusal import unknown_sections
 from langslice.tools.run import as_list, pictured
@@ -418,7 +417,8 @@ def _under_registrations(
     trial = copy.deepcopy(job.state)
     shown: list[tuple[str, int, bool]] = []
     for ref, number in registrations.items():
-        record, entry, held = ops_registrations.entry_for(job, ref, number)
+        given = cast("object", number)  # the model's, checked there
+        record, entry, held = ops_registrations.entry_for(job, ref, given)
         if ids and record.id not in ids:
             raise Refused(RefusalCode.BAD_ARGS,
                           message=f"registrations names {record.id}, which is not "
@@ -426,11 +426,12 @@ def _under_registrations(
                           "empty.")
         copy_ = trial.by_id(record.id)
         assert copy_ is not None
-        copy_.flip = bool(entry.get("flip"))
-        copy_.rotation_deg = int(entry.get("rotation_deg") or 0)
-        copy_.transform = regs.entry_transform(entry)
-        copy_.deformation = regs.entry_deformation(entry)
-        shown.append((record.id, int(entry["id"]), held == int(entry["id"])))
+        copy_.flip = entry.flip
+        copy_.rotation_deg = entry.rotation_deg
+        copy_.transform = entry.transform
+        copy_.deformation = entry.deformation
+        number = cast("int", entry.registration)  # a numbered line
+        shown.append((record.id, number, held == number))
     drawn = ids or [name for name, _number, _held in shown]
     return trial, drawn, tuple(shown)
 

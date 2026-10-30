@@ -72,7 +72,7 @@ def stack_status(job: Job) -> StackStatus:
     a damage note (``inputs.damaged``: a note, not damage)
     ``damage_by_user: true``; the others carry neither. A section holding a
     listed registration carries its number, ``registration``
-    (:mod:`langslice.job.registrations`)."""
+    (:mod:`langslice.job.history`)."""
     state = job.state
     rows = status_rows(state)
     held = freeze.sections_of(job.spec.frozen, [row["id"] for row in rows])
@@ -82,7 +82,8 @@ def stack_status(job: Job) -> StackStatus:
         if row["id"] in job.host_damaged:
             row["damage_by_user"] = True
         record = state.by_id(row["id"])
-        number = job.registrations.number_of(state, record) if record is not None else None
+        number = (job.histories.registration_number(state, record)
+                  if record is not None else None)
         if number is not None:
             row["registration"] = number
     return StackStatus(rows=rows, cutting_angles_deg=stack_angles_entry(state),

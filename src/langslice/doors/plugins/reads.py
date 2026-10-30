@@ -190,8 +190,9 @@ class ContextReads:
         self._grids: dict[tuple[str, str], Any] = {}
         self._depth: int = 0  # open ``writing()`` blocks
         #: The call's undo step so far: the mark it began at, ``job.pushed``
-        #: after it and the undo entry on top then; None before any write.
-        self._step: tuple[int, int, dict[str, Any]] | None = None
+        #: after it and the number of the undo step on top then; None before
+        #: any write.
+        self._step: tuple[int, int, int] | None = None
 
     def _fresh(self) -> None:
         """A script's read first picks up what another writer saved (a plugin

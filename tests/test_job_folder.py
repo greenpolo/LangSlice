@@ -1,4 +1,4 @@
-"""The job folder: layout, per-step undo files, refused newer and older formats,
+"""The job folder: layout, section histories and undo steps, refused newer and older formats,
 read-only image folders, and every picture the model is shown saved with its
 layers."""
 
@@ -17,7 +17,6 @@ from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.layers import coordinate_map
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.history import UNDO_DEPTH
 from langslice.job.job import Job
 from langslice.job.layout import (
     JOB_FORMAT_VERSION,
@@ -90,45 +89,49 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
                for entry in registration["sections"])
 
 
-def test_undo_is_one_file_per_step_and_bounded(tmp_path: Path):
+def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
+    """A write appends one line to each section it changed; the undo step
+    names the line before it; undo puts it back and appends a line of its
+    own. The steps are one small file, without a cap."""
     folder = _folder(tmp_path / "stack")
     job, _ctx = _open(folder)
-    history = folder / "langslice" / "history"
+    root = folder / "langslice"
 
-    def steps() -> list[str]:
-        return sorted(path.name for path in history.glob("step-*.json"))
+    def lines(name: str) -> list[dict[str, Any]]:
+        text = (root / "sections" / name / "history.jsonl").read_text()
+        return [json.loads(line) for line in text.splitlines()]
 
-    before = job.snapshot()
-    job.state.notes.append("first")
-    job.commit(before)
-    first = steps()
-    assert len(first) == 1
-    stamp = (history / first[0]).stat()
-    before = job.snapshot()
-    job.state.notes.append("second")
-    job.commit(before)
-    assert steps()[:1] == first and len(steps()) == 2
-    again_stamp = (history / first[0]).stat()  # the old step is not rewritten
-    assert (again_stamp.st_ino, again_stamp.st_mtime_ns) == (stamp.st_ino, stamp.st_mtime_ns)
-    for index in range(UNDO_DEPTH + 5):
+    assert [(line["seq"], line["by"], line["step"]) for line in lines("s0")] == [(1, "host", 0)]
+    with job.acting("position_sections"):
+        before = job.snapshot()
+        job.state.by_id("s0.png").position_mm = 2.5
+        job.commit(before)
+    assert [(line["by"], line["position_mm"]) for line in lines("s0")] == [
+        ("host", None), ("position_sections", 2.5)]
+    assert len(lines("s1")) == 1  # untouched
+    step = json.loads((root / "history" / "undo.json").read_text())["undo"][-1]
+    assert step["sections"] == {"s0.png": 1} and step["by"] == "position_sections"
+    for index in range(60):
         before = job.snapshot()
         job.state.notes.append(f"note {index}")
         job.commit(before)
-    assert len(steps()) == UNDO_DEPTH and first[0] not in steps()
-    index = json.loads((history / "index.json").read_text())
-    assert index["undo"] == steps() and index["redo"] == []
-    assert job.undo() and len(steps()) == UNDO_DEPTH  # one leaves undo, one joins redo
+    assert len(job.undo_stack) == 61 and len(lines("s0")) == 2  # notes are the stack's
+    assert job.undo() and job.state.notes[-1] == "note 58"
     again, _ = _open(folder)
-    assert len(again.undo_stack) == UNDO_DEPTH - 1 and len(again.redo_stack) == 1
-    assert again.redo() and again.state.notes[-1] == f"note {UNDO_DEPTH + 4}"
+    assert len(again.undo_stack) == 60 and len(again.redo_stack) == 1
+    assert again.redo() and again.state.notes[-1] == "note 59"
+    for _ in range(61):
+        assert again.undo()
+    assert again.state.by_id("s0.png").position_mm is None
+    assert [line["position_mm"] for line in lines("s0")] == [None, 2.5, None]
 
 
-@pytest.mark.parametrize("damage", ["step", "newer_index"])
-def test_a_history_that_cannot_be_read_is_never_deleted(tmp_path: Path, damage: str,
-                                                       caplog: Any):
-    """An unreadable step or an index from a newer LangSlice: the job opens
-    without undo for the session, with a warning, and the history on disk
-    is left exactly as it was, through the open and later writes."""
+@pytest.mark.parametrize("damage", ["unreadable", "newer"])
+def test_undo_steps_that_cannot_be_read_are_never_deleted(tmp_path: Path, damage: str,
+                                                         caplog: Any):
+    """An unreadable undo file, or one from a newer LangSlice: the job opens
+    without undo for the session, with a warning, and the file is left
+    exactly as it was, through the open and later writes."""
     import logging
 
     folder = _folder(tmp_path / "stack")
@@ -137,27 +140,73 @@ def test_a_history_that_cannot_be_read_is_never_deleted(tmp_path: Path, damage: 
         before = job.snapshot()
         job.state.notes.append(f"note {index}")
         job.commit(before)
-    history = folder / "langslice" / "history"
-    if damage == "step":
-        (history / "step-000002.json").write_text("{ not json")
+    undo_file = folder / "langslice" / "history" / "undo.json"
+    if damage == "unreadable":
+        undo_file.write_text("{ not json")
     else:
-        index = json.loads((history / "index.json").read_text())
-        index["format_version"] = 99
-        (history / "index.json").write_text(json.dumps(index))
-    held = {path.name: path.read_bytes() for path in history.iterdir()}
+        steps = json.loads(undo_file.read_text())
+        steps["format_version"] = 99
+        undo_file.write_text(json.dumps(steps))
+    held = undo_file.read_bytes()
     with caplog.at_level(logging.WARNING):
         again, _ = _open(folder)
     assert again.undo_stack == [] and again.redo_stack == []
-    assert any("history" in record.getMessage() for record in caplog.records)
+    assert any("undo history" in record.getMessage() for record in caplog.records)
     before = again.snapshot()
     again.state.notes.append("after")
     again.commit(before)
     assert again.undo() and again.state.notes[-1] == "note 2"  # this session's own step
-    assert {path.name: path.read_bytes() for path in history.iterdir()} == held
+    assert undo_file.read_bytes() == held
     # A fresh job on the folder leaves it alone too.
     fresh, _ = _open(folder, resume=False)
-    assert {path.name: path.read_bytes() for path in history.iterdir()} == held
+    assert undo_file.read_bytes() == held
     assert fresh.undo_stack == []
+
+
+def test_an_older_langslice_s_undo_steps_are_ignored_and_left(tmp_path: Path, caplog: Any):
+    import logging
+
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    history = folder / "langslice" / "history"
+    (history / "undo.json").unlink(missing_ok=True)
+    (history / "index.json").write_text('{"format_version": 1, "undo": ["step-000001.json"]}')
+    (history / "step-000001.json").write_text("{}")
+    with caplog.at_level(logging.WARNING):
+        again, _ = _open(folder)
+    assert again.undo_stack == []
+    assert sum("older LangSlice" in record.getMessage() for record in caplog.records) == 1
+    before = again.snapshot()
+    again.state.notes.append("after")
+    again.commit(before)
+    assert sorted(path.name for path in history.iterdir()) == [
+        "index.json", "step-000001.json", "undo.json"]
+
+
+def test_a_record_no_line_names_is_deleted_and_an_applied_one_stays(tmp_path: Path):
+    """A fit saved and never applied goes at the section's next write; a
+    record any line held stays, through later writes and undo."""
+    from langslice.core.stack.deformation import DeformationRef
+
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    deformable = folder / "langslice" / "sections" / "s0" / "deformable"
+    for name in ("a" * 24, "b" * 24, "c" * 24):
+        (deformable / name).mkdir(parents=True)
+        (deformable / name / "record.json").write_text(
+            json.dumps({"parent": "c" * 24 if name == "a" * 24 else None}))
+    record = job.state.by_id("s0.png")
+    before = job.snapshot()
+    record.deformation = DeformationRef(key="a" * 64, linear_key="x", steps=(),
+                                        record=f"sections/s0/deformable/{'a' * 24}")
+    job.commit(before)
+    # "b" was never applied; "c" is the parent of the one applied
+    assert sorted(path.name for path in deformable.iterdir()) == ["a" * 24, "c" * 24]
+    before = job.snapshot()
+    record.deformation = None
+    job.commit(before)
+    assert sorted(path.name for path in deformable.iterdir()) == ["a" * 24, "c" * 24]
+
 
 # --- older formats ---------------------------------------------------------------------------
 
