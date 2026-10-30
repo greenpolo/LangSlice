@@ -38,7 +38,9 @@ a person or agent decides what that means.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -69,6 +71,8 @@ from langslice.core.stack.json_reads import (
     text_at,
 )
 
+logger = logging.getLogger(__name__)
+
 #: Area ratio (warped / placed) limits for solid tissue regions.
 TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
 #: Looser limits for the ventricular system, which collapses or dilates freely.
@@ -98,7 +102,8 @@ READ_VERSIONS = (2, 3)
 #: other is refused on loading.
 _RECORD_KEYS = ("version", "step", "parent", "placement", "section_size", "settings",
                 "field_convention", "fields", "inverse_source", "labels",
-                "excluded_ids", "engine", "diagnostics", "atlas", "provenance")
+                "excluded_ids", "engine", "diagnostics", "atlas", "provenance",
+                "fields_sha256")
 #: ``record.json``'s ``fields``: what ``warp.ome.zarr`` holds of them
 #: (:mod:`~langslice.core.fits.deformable.ome_warp`).
 FIELDS_WHOLE = "section_grid"
@@ -321,7 +326,7 @@ class DeformableRecord:
             self.weights = np.asarray(self.weights).astype(np.float16)
 
     def metadata(self) -> dict[str, Any]:
-        return {
+        meta: dict[str, Any] = {
             "version": RECORD_VERSION, "step": self.step,
             "parent": None if self.parent is None else self.parent.saved_as,
             "placement": self.placement.to_dict(),
@@ -340,6 +345,12 @@ class DeformableRecord:
             "engine": self.engine, "diagnostics": self.diagnostics, "atlas": self.atlas,
             "provenance": self.provenance,
         }
+
+        if self.stored_step is not None:
+            # Rebuilt fields are pinned to the bits they were made with.
+            meta["fields_sha256"] = fields_digest(
+                self.field_mm, _present(self.inverse_field_mm))
+        return meta
 
     @property
     def fields_kind(self) -> str:
@@ -392,6 +403,7 @@ class DeformableRecord:
         try:
             arrays = ome_warp.read(root)
             field_mm, inverse_mm, stored_step = _read_fields(meta, arrays, parent)
+            _check_rebuilt(root, meta, field_mm, inverse_mm)
             return cls(
                 placement=Placement.from_dict(meta["placement"]),
                 section_size=(int(meta["section_size"][0]), int(meta["section_size"][1])),
@@ -482,6 +494,60 @@ def _read_fields(
         step, (width, height), mm_per_px, previous)
     field_mm = at_storage_precision(field_mm)
     return field_mm, at_storage_precision(inverse_mm), step
+
+
+def fields_digest(field_mm: np.ndarray, inverse_field_mm: np.ndarray) -> str:
+    """Hash a record's fields as stored: float16, forward then inverse.
+
+    Parameters
+    ----------
+    field_mm
+        The forward field, ``(height, width, 2)``, at storage precision.
+    inverse_field_mm
+        The inverse field, likewise.
+
+    Returns
+    -------
+    str
+        The SHA-256 of both fields' float16 bytes in C order, hex.
+    """
+    digest = hashlib.sha256()
+    for plane in (field_mm, inverse_field_mm):
+        stored = np.ascontiguousarray(plane, dtype=np.float16)
+        digest.update(stored.tobytes())
+    return digest.hexdigest()
+
+
+def _check_rebuilt(
+    root: Path,
+    meta: JsonObject,
+    field_mm: np.ndarray,
+    inverse_field_mm: np.ndarray | None,
+) -> None:
+    """Warn when rebuilt fields differ from the bits the record was made with.
+
+    Parameters
+    ----------
+    root
+        The record's folder.
+    meta
+        Its ``record.json``; one without ``fields_sha256`` is not checked.
+    field_mm
+        The forward field as read, at storage precision.
+    inverse_field_mm
+        The inverse field likewise.
+    """
+    made = optional_at(meta, "fields_sha256", text_at)
+    if made is None or inverse_field_mm is None:
+        return
+    if fields_digest(field_mm, inverse_field_mm) == made:
+        return
+    logger.warning(
+        "%s: the fields were rebuilt with different bits on this machine "
+        "than the ones the record was made with; a fit started from this "
+        "record can differ from one started on the machine that made it",
+        root / "record.json",
+    )
 
 
 def _present(array: np.ndarray | None) -> np.ndarray:

@@ -226,8 +226,13 @@ is a folder that nothing deletes, so undo can return to it. It holds:
   the image file), `settings`, `field_convention`, `fields` (how the
   fields are stored, below), `inverse_source`,
   `labels`, `excluded_ids`, `engine`, `diagnostics`, `atlas` (name,
-  orientation, `resolution_um`, `native_size`, `native_to_volume_index`)
-  and `provenance`.
+  orientation, `resolution_um`, `native_size`, `native_to_volume_index`),
+  `provenance` and, for `fields` `engine_grid` and `landmark_mesh`,
+  `fields_sha256`: the SHA-256 of the forward then the inverse field as
+  made, float16 `(rows, cols, 2)` `(dx, dy)` in C order. Loading rebuilds
+  the fields and logs a warning when their digest differs (another
+  OpenCV, SciPy or CPU can round a few values the other way); the record
+  is still read.
 - `warp.ome.zarr`: the arrays, a Zarr v3 store in the OME-Zarr 0.6 layout,
   every array one chunk compressed with Blosc zstd and byte shuffle:
 

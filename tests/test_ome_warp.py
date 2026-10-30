@@ -306,6 +306,40 @@ def test_an_engine_step_is_stored_on_its_grid_and_rebuilt_bit_for_bit(tmp_path: 
     assert kinds[0] == "sequence"
 
 
+def test_rebuilt_fields_are_checked_against_the_bits_they_were_made_with(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    import logging
+
+    record = _engine_record(0)
+    record.save(tmp_path / "a")
+    path = tmp_path / "a" / "record.json"
+    meta = json.loads(path.read_text())
+    assert len(meta["fields_sha256"]) == 64
+    with caplog.at_level(logging.WARNING):
+        DeformableRecord.load(tmp_path / "a")
+    assert not caplog.records
+    # Other bits: loaded as rebuilt, with a warning naming the record.
+    meta["fields_sha256"] = "0" * 64
+    path.write_text(json.dumps(meta))
+    with caplog.at_level(logging.WARNING):
+        loaded = DeformableRecord.load(tmp_path / "a")
+    assert np.array_equal(loaded.field_mm, record.field_mm)
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert str(path) in caplog.text and "different bits" in caplog.text
+    # A record saved before the digest loads silently.
+    caplog.clear()
+    del meta["fields_sha256"]
+    path.write_text(json.dumps(meta))
+    with caplog.at_level(logging.WARNING):
+        DeformableRecord.load(tmp_path / "a")
+    assert not caplog.records
+    # Fields stored whole carry no digest.
+    _record(1).save(tmp_path / "b")
+    whole = json.loads((tmp_path / "b" / "record.json").read_text())
+    assert "fields_sha256" not in whole
+
+
 def test_a_landmark_mesh_is_rebuilt_from_record_json(tmp_path: Path):
     from langslice.core.fits.deformable.fields import MeshStep, mesh_fields
     from langslice.core.geometry.triangulation import visualign_mesh
