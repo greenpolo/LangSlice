@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import io
 import json
 import re
 from collections.abc import Callable
@@ -39,7 +40,6 @@ from langslice.core.fits.trace.canvas import (
     upright,
 )
 from langslice.core.fits.trace.lines import (
-    border_overlay,
     extract_thinned_lines,
     smooth_border_overlay,
 )
@@ -121,6 +121,13 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
     temporary.replace(path)
+
+
+def _png_sha256(image: Image.Image) -> str:
+    """Return the SHA-256 of *image* as PIL writes it to a PNG file."""
+    encoded = io.BytesIO()
+    image.save(encoded, format="PNG")
+    return hashlib.sha256(encoded.getvalue()).hexdigest()
 
 
 def _saved_result(result_path: Path) -> dict[str, Any] | None:
@@ -360,12 +367,12 @@ def start_correction(
         return opened, None
     in_progress, directory, attempt = opened
     paths = {key: str(directory / filename) for key, filename in {
-        "original": "input_slice.png", "rough_overlay": "rough_border_overlay.png",
-        "raw_reply": "raw_reply.png", "lines_on_original": "lines_on_original.png",
-        "prompt": "prompt.txt", "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
+        "raw_reply": "raw_reply.png", "prompt": "prompt.txt",
+        "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
     }.items()}
-    canvas.save(paths["original"])
-    rough.save(paths["rough_overlay"])
+    # The pictures sent are not kept (the canvas and its placed borders are
+    # drawn again from the request); their PNG digests are.
+    sent_images = {"original": canvas, "rough_overlay": rough}
     Path(paths["prompt"]).write_text(sent)
     Path(paths["base_prompt"]).write_text(base_prompt)
     Path(paths["prompt_diff"]).write_text(prompt_diff(base_prompt, sent) + "\n")
@@ -378,8 +385,7 @@ def start_correction(
         "upright": {"turn_deg": stance.turn_deg, "midline_centred": stance.through is not None,
                     "atlas_margin": FOOTPRINT_MARGIN},
         "attachments": [
-            {"role": role, "path": paths[key],
-             "sha256": hashlib.sha256(Path(paths[key]).read_bytes()).hexdigest()}
+            {"role": role, "sha256": _png_sha256(sent_images[key])}
             for role, key in (_GPT_ATTACHMENTS if gpt_twin else _GEMINI_ATTACHMENTS)
         ],
     }
@@ -406,7 +412,6 @@ def start_correction(
             raw.save(paths["raw_reply"])
             mask = extract_thinned_lines(raw, canvas.size)
             Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
-            border_overlay(canvas, mask).save(paths["lines_on_original"])
             # Even an empty drawing is retained; anatomy is not a submit gate.
             result.update(
                 status="ok", route=generated.route, raw_size=list(raw.size),

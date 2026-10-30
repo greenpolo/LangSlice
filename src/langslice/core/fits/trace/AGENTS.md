@@ -32,7 +32,14 @@ yellow.
   the base prompt (`profile_prompt`) and join the call key; an untested
   profile marks its request and result `untested` (`profile_marks`).
 It keeps the call-key folders and attempts, takes the image model as an
-argument, and leaves fitting to the tools layer.
+argument, and leaves fitting to the tools layer. An attempt's folder holds
+`request.json` (what was sent: the geometry, and each attached picture's
+role and PNG SHA-256 in the order sent), `prompt.txt`, `base_prompt.txt`,
+`prompt_diff.txt`, `raw_reply.png` (the model's answer, kept as received)
+and `extracted_lines.png` (the lines a fit reads); the pictures sent are not
+kept: `_canvas_and_placement` and `lines.smooth_border_overlay` draw them
+again from the section and the request, and `lines.border_overlay` draws
+the extracted lines on the canvas.
 
 Atlas labels and grayscale references use the same position, plane, cutting
 angles and orientation. Reflection is explicit, never guessed from a

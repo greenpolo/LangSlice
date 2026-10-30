@@ -1,5 +1,8 @@
 """The agent controls minimal prompt edits; the tool owns placement and first-result retention."""
 
+import hashlib
+import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -104,8 +107,13 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     assert not np.array_equal(np.asarray(expected), np.asarray(original))
     paths = result["artifact_paths"]
     np.testing.assert_array_equal(Image.open(paths["raw_reply"]), raw)
-    overlay = np.asarray(Image.open(paths["lines_on_original"]))
-    np.testing.assert_array_equal(overlay[~mask], np.asarray(original)[~mask])
+    # The pictures sent are not kept, only their PNG digests, in the order sent.
+    folder = Path(result["artifact_dir"])
+    for name in ("input_slice.png", "rough_border_overlay.png", "lines_on_original.png"):
+        assert not (folder / name).exists()
+    attachments = json.loads((folder / "request.json").read_text())["attachments"]
+    assert [entry["sha256"] for entry in attachments] == [
+        _png_sha256(request.slice_image), _png_sha256(request.reference_images[0])]
     assert stack_to_json(state) == before
     assert result["fit_performed"] is False
 
@@ -183,3 +191,9 @@ def test_a_door_resolves_the_provider_and_none_has_no_image_model():
     assert resolve_image_model("gemini-api", "some-model").model == "some-model"
     with pytest.raises(ValueError, match="image-model provider"):
         resolve_image_model("none")
+
+
+def _png_sha256(image: Image.Image) -> str:
+    encoded = io.BytesIO()
+    image.save(encoded, format="PNG")
+    return hashlib.sha256(encoded.getvalue()).hexdigest()
