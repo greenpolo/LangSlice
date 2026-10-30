@@ -245,7 +245,10 @@ existing folder as it stands (the checkpoint and its history; nothing
 rewritten, `FileNotFoundError` without a checkpoint, another image
 folder's job refused): the agent CLI and the library open a job per call
 this way (`doors/jobs.py`), so a call beside a running agent changes
-nothing until its first write. `Job.persist` False (`Job.load(...,
+nothing until its first write. It stamps the state file and the history
+index before it reads them (the constructor's `seen`), so a write that
+lands during the load is reloaded by its first write, not overwritten.
+`Job.persist` False (`Job.load(...,
 persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
 checkpoint, no history, and `pictures.DiscardedViews` saves no picture.
 `Job.engine_log` is where the engines' own output goes while they fit

@@ -258,6 +258,33 @@ def test_a_job_that_read_while_locked_out_writes_on_the_state_as_saved(images):
     writer.close()
 
 
+def test_a_write_landing_while_a_job_loads_is_kept(images, monkeypatch):
+    """A write that lands between a job's unlocked read of the folder and
+    the end of its load is reloaded by that job's first write, not
+    overwritten by it: the load stamps the files before it reads them."""
+    from langslice.job import job as job_module
+
+    writer = langslice.open_job(images)
+    removed_settings = job_module._removed_settings  # pyright: ignore[reportPrivateUsage]
+    landed: list[bool] = []
+
+    def write_during_the_load(layout: Any) -> Any:
+        if not landed:
+            landed.append(True)
+            writer.note(text="landed during the load")
+        return removed_settings(layout)
+
+    monkeypatch.setattr(job_module, "_removed_settings", write_during_the_load)
+    reader = langslice.open_job(images)
+    assert landed
+    reader.note(text="the reader's")
+    notes = json.loads((images / "langslice" / "state.json").read_text())["notes"]
+    assert "landed during the load" in notes
+    assert "the reader's" in notes
+    reader.close()
+    writer.close()
+
+
 @pytest.mark.slow
 def test_cli_processes_writing_at_once_all_land(images):
     # Each commit waits 0.4 s inside its write: without the lock, writers

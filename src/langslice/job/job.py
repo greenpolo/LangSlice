@@ -464,8 +464,9 @@ class Job:
     checkpoint), or around a state already in hand
     (``Job(state, spec, layout=...)``: an empty history, nothing read or
     written until the first operation; the files as they stand on disk at
-    that moment count as already seen). *results_path* None is the job
-    folder's ``exports/linear_results.json``.
+    that moment count as already seen, unless *seen* gives the stamps of
+    the state file and the history taken before they were read).
+    *results_path* None is the job folder's ``exports/linear_results.json``.
     """
 
     def __init__(
@@ -478,6 +479,7 @@ class Job:
         undo: list[dict[str, Any]] | None = None,
         redo: list[dict[str, Any]] | None = None,
         history: History | None = None,
+        seen: tuple[Stamp, Stamp] | None = None,
     ) -> None:
         self.state = state
         self.spec = spec
@@ -523,8 +525,8 @@ class Job:
         #: the current format (the job's migrations, set by :meth:`open` and
         #: :meth:`load`; None refuses them).
         self.upgrade: Upgrade | None = None
-        self._state_stamp = _stamp(self.checkpoint_path)
-        self._undo_stamp = _stamp(self.undo_path)
+        self._state_stamp, self._undo_stamp = seen or (
+            _stamp(self.checkpoint_path), _stamp(self.undo_path))
         #: A read's view of a state another process saved while it held the
         #: lock (:meth:`reading`): the state this job held before it, put
         #: back by the next locked :meth:`sync`, and the file's stamp then.
@@ -678,16 +680,20 @@ class Job:
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
+        history = History(layout.history_dir, migration)
+        # stamped before the unlocked reads: a write landing during them is
+        # reloaded by the first sync, not overwritten by the first commit
+        seen = (_stamp(str(layout.state_file)),
+                _stamp(str(history.index_path)))
         data = read_checkpoint(str(layout.state_file), migration)
         if data is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
         removed = _removed_settings(layout)
         migration.seed(data)
-        history = History(layout.history_dir, migration)
         undo, redo = history.load()
         job = cls(_state_from(data, layout.state_file), spec, layout=layout,
                   results_path=results_path,
-                  undo=undo, redo=redo, history=history)
+                  undo=undo, redo=redo, history=history, seen=seen)
         job.persist = persist
         job.workspace = workspace
         job.upgrade = migration
