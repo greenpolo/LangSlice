@@ -1,12 +1,32 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+# setuptools 77 reads the SPDX license expression below (PEP 639).
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "langslice"
 version = "0.1.0"
 description = "Agent-driven registration of histological brain sections to BrainGlobe atlases"
-requires-python = ">=3.11"
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "Nash Baughman", email = "nfbaughman@gmail.com" }]
+keywords = [
+    "neuroscience", "brain-atlas", "histology", "registration", "brainglobe",
+    "allen-atlas", "vision-language-model", "quint",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+# Python 3.11 only: FireANTs 1.5.0 pins SimpleITK 2.2.1, whose wheels stop at 3.11.
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "google-genai",
     "google-adk",
@@ -35,14 +55,16 @@ dependencies = [
     "itk-elastix",
     # The deformable engine (langslice.core.fits.deformable): fireants_syn and the
     # packaged trace_borders fit with FireANTs' SyN on torch (on the GPU when
-    # torch sees one). FireANTs 1.5.1 is not on PyPI; its GitHub archive at
-    # f8a9cc2 builds without the private submodule a git install trips on.
-    # SimpleITK is the one dependency of FireANTs it imports; it also runs N4
-    # bias-field correction and denoising of the preprocessed channel
-    # (langslice.core.sections.reading).
+    # torch sees one). FireANTs 1.5.0 is the newest release on PyPI, and PyPI
+    # refuses a package whose dependency is a URL; its SGD optimizer composes
+    # each step once, which LangSlice asks for by name (compose_n 1) where a
+    # newer FireANTs takes the setting. FireANTs 1.5.0 pins SimpleITK 2.2.1,
+    # so that is the SimpleITK installed. SimpleITK is the one dependency of
+    # FireANTs it imports; it also runs N4 bias-field correction and denoising
+    # of the preprocessed channel (langslice.core.sections.reading).
     "torch>=2.3",
     "SimpleITK>=2.2.1",
-    "fireants @ https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz",
+    "fireants==1.5.0",
     # The job folder's cross-process write lock (langslice.job.lock).
     "filelock>=3.12",
 ]
@@ -89,6 +111,12 @@ dev = [
     "pydata-sphinx-theme>=0.15",
     "sphinx-copybutton>=0.5",
 ]
+
+[project.urls]
+Homepage = "https://github.com/greenpolo/LangSlice"
+Documentation = "https://langslice.readthedocs.io"
+Repository = "https://github.com/greenpolo/LangSlice"
+Issues = "https://github.com/greenpolo/LangSlice/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
