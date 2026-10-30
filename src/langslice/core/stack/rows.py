@@ -57,7 +57,7 @@ Row = dict[str, JsonValue]
 ROW_KEYS = (
     "id", "index_original", "index_corrected", "flip", "rotation_deg",
     "damaged_regions", "damage_note", "position_mm", "transform",
-    "image_correction", "deformation", "landmarks", "layers", "masks",
+    "border_trace", "deformation", "landmarks", "layers", "masks",
     "images", "caveats", "cutting_angles_deg",
 )  # fmt: skip
 #: The key a row holds a section's cutting angles under.
@@ -96,7 +96,7 @@ def section_to_json(section: Section) -> Row:
         "damage_note": section.damage_note,
         "position_mm": section.position_mm,
         "transform": transform,
-        "image_correction": trace,
+        "border_trace": trace,
         "deformation": deformation,
         "landmarks": landmarks_to_json(section.landmarks),
         "layers": [layer_to_json(ref) for ref in section.layers],
@@ -244,7 +244,7 @@ def section_from_json(row: JsonObject) -> Section:
         the section and the part (``section <id>, deformation: ...``).
     """
     transform = _part(row, "transform", affine_from_json)
-    trace = _part(row, "image_correction", trace_from_json)
+    trace = _part(row, "border_trace", trace_from_json)
     deformation = _part(row, "deformation", deformation_from_json)
     return Section(
         id=text_at(row, "id"),

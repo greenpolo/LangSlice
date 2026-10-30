@@ -161,7 +161,7 @@ def trace_borders(
 
     Now: the section's border trace is started in the background, or a
     saved reply at its geometry reused (``cached``), the section's
-    ``image_correction`` record written as ONE undo step when it changed, and a
+    ``border_trace`` record written as ONE undo step when it changed, and a
     piece of background work started. The model is shown the section's
     ``preprocessed`` image and the same picture with the placed atlas borders
     (``registration_tool.start_correction``): with *restrict_to*, only those
@@ -169,7 +169,7 @@ def trace_borders(
     the section's marked regions left out
     (:func:`langslice.core.sections.damage.exclusions`). *prompt* replaces the
     base prompt (blank sends it unchanged); the prompt sent is saved with each
-    attempt in the job folder (``sections/<name>/image_correction/``).
+    attempt in the job folder (``sections/<name>/border_trace/``).
 
     When the reply lands (:func:`land_trace`): the trace is recorded on the
     section, then a fit of the traced borders runs (:data:`TRACE_FIT`, on

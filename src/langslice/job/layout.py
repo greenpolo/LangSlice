@@ -14,7 +14,7 @@ without an id. Inside::
     index.json + one file per step sections/<name>/     per section (<name>:
     the image filename's stem)
         deformable/<key>/          applied deformation records
-        image_correction/<key>/    trace_borders calls and their attempts
+        border_trace/<key>/        trace_borders calls and their attempts
         views/<seq>_<tool>_<mode>/ pictures of this section the model saw
         coords.tif, labels.tif, labels_fiji.tif, labels.csv,
         residual.tif, maps.json    the section's maps (at submit and by
@@ -95,7 +95,7 @@ DEFORMABLE_DIR = "deformable"
 MASKS_DIR = "masks"
 #: A section's made images (``<name>.png``, ``<name>.2.png``...; never deleted).
 IMAGES_DIR = "images"
-BORDER_TRACE_DIR = "image_correction"
+BORDER_TRACE_DIR = "border_trace"
 SECTION_VIEWS_DIR = "views"
 #: The public rendering of the state (:mod:`langslice.job.public_files`, which
 #: also names each section's map files).

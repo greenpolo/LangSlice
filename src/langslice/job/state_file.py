@@ -59,8 +59,9 @@ FORMAT_KEY = "format_version"
 #: ``cutting_angles_deg``; one whose sections differ (a registration
 #: supplied per section) writes the stack's as null. Every section's made
 #: images are entries (``Section.images``) naming files under the job
-#: folder; the stack has no ``appearance``.
-STATE_FORMAT_VERSION = 4
+#: folder; the stack has no ``appearance``. A section's border trace is
+#: under ``border_trace``, its files in ``sections/<name>/border_trace/``.
+STATE_FORMAT_VERSION = 5
 
 
 def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
@@ -276,7 +277,7 @@ def state_paths(
         held = row.get("deformation")
         if isinstance(held, dict) and isinstance(held.get("record"), str):
             row["deformation"] = {**held, "record": convert(held["record"])}
-        correction = row.get("image_correction")
+        correction = row.get("border_trace")
         if isinstance(correction, dict):
             correction = dict(correction)
             if isinstance(correction.get("artifact_dir"), str):
@@ -286,7 +287,7 @@ def state_paths(
                 correction["artifact_paths"] = {
                     key: convert(value) if isinstance(value, str) else value
                     for key, value in paths.items()}
-            row["image_correction"] = correction
+            row["border_trace"] = correction
         slices.append(row)
     return {**data, "slices": slices} if "slices" in data else dict(data)
 

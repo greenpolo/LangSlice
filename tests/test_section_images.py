@@ -272,7 +272,7 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
             assert (folder / entry.file).is_file()
     # Display properties are gone, the state is format 4 on disk, history too.
     saved = json.loads((folder / "state.json").read_text())
-    assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 4 and "appearance" not in saved
+    assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 5 and "appearance" not in saved
     for path in sorted((folder / "history").glob("step-*.json")):
         assert json.loads(path.read_text())[FORMAT_KEY] == STATE_FORMAT_VERSION
     assert loaded.undo_stack  # the history survived its migration
@@ -322,4 +322,4 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     assert held is not None and held.position_mm == 0.2
     saved = json.loads((folder / "state.json").read_text())
     row = next(item for item in saved["slices"] if item["id"] == "s0.png")
-    assert saved[FORMAT_KEY] == 4 and row["position_mm"] == 0.2
+    assert saved[FORMAT_KEY] == 5 and row["position_mm"] == 0.2

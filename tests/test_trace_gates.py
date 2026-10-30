@@ -81,7 +81,7 @@ def test_border_trace_runs_in_background_and_submit_waits(tmp_path: Path, monkey
     assert (model.provider, model.model) == ("openai-api", "test-model")
     assert calls == [("s0.png", {
         "prompt": "Edited prompt.",
-        "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "image_correction",
+        "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "border_trace",
         "include": (), "exclude": (),
     })]
     # The tool returns while the image call is still running, with no images.

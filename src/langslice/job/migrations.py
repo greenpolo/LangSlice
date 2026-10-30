@@ -16,7 +16,20 @@ migration         reads  what it does, to the next format
                          no recipe); the raw channels' display
                          properties are dropped; a mask's ``channel``
                          is named ``section_image``
+``state_4_to_5``  4      a section's ``image_correction`` is named
+                         ``border_trace``; the paths it stores, and the
+                         trace a deformation step records, name the
+                         section's ``border_trace/`` folder once that
+                         folder has moved there
 ================  =====  =============================================
+
+The folder itself, ``sections/<name>/image_correction/``, moves to
+``sections/<name>/border_trace/`` when the job is opened to write, under
+its write lock and before the state is read (``trace_folders``, which
+also writes the paths naming it again in the trace folder's own requests
+and replies, the pictures' records and the sections' registrations). An
+open that writes nothing (a dry run, a read-only folder) moves nothing
+and reads the paths as the folder stands, so its traces are still found.
 
 An older format is refused: a pre-release LangSlice made it.
 
@@ -75,6 +88,7 @@ from langslice.core.stack.json_reads import (
 from langslice.core.workspace import Workspace
 from langslice.job.layout import JobLayout
 from langslice.job.state_file import STATE_FORMAT_VERSION, older_format
+from langslice.job.trace_folders import moved_path
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +118,12 @@ REMOVED_TASKS = ("reorder",)
 REMOVED_STACK_KEYS = ("appearance",)
 #: The keys of a section row a state may hold that no reader uses.
 REMOVED_SECTION_KEYS = ("position_source", "damaged")
+
+#: A section row's key for its border trace, before format 5 and since.
+OLD_TRACE_KEY, TRACE_KEY = "image_correction", "border_trace"
+#: The keys that hold such a path: a trace's folder and files, and the
+#: trace a deformation step records.
+PATH_KEYS = ("artifact_dir", "artifact_paths", "trace")
 
 
 class FolderMigration:
@@ -447,6 +467,82 @@ def _recipe_3_to_4(old: JsonObject, raw: Sequence[str]) -> JsonObject:
     )
 
 
+def state_4_to_5(data: Fields, folder: FolderMigration) -> Fields:
+    """Return a format-4 state's fields as format 5.
+
+    Parameters
+    ----------
+    data
+        The fields at format 4; not changed.
+    folder
+        The job folder's migration; the paths are checked in its folder.
+
+    Returns
+    -------
+    dict
+        The fields at format 5: each section's border trace under
+        ``border_trace``, its paths and its deformation steps' traces in
+        the moved folder once it has moved
+        (:func:`~langslice.job.trace_folders.moved_path`).
+    """
+    fields = dict(data)
+    if "slices" in fields:
+        layout = folder.layout
+        rows = [_section_4_to_5(row, layout) for row in _rows(fields)]
+        fields["slices"] = list[JsonValue](rows)
+    return fields
+
+
+def _section_4_to_5(row: JsonObject, layout: JobLayout) -> Fields:
+    """Return a format-4 section row as format 5."""
+    section: Fields = {}
+    for key, value in row.items():
+        name = TRACE_KEY if key == OLD_TRACE_KEY else key
+        section[name] = to_jsonable(value)
+    trace = section.get(TRACE_KEY)
+    if isinstance(trace, dict):
+        section[TRACE_KEY] = {
+            key: _moved_value(value, layout, key)
+            for key, value in trace.items()
+        }
+    deformation = section.get("deformation")
+    steps = None
+    if isinstance(deformation, dict):
+        steps = deformation.get("steps")
+    if isinstance(deformation, dict) and isinstance(steps, list):
+        section["deformation"] = {
+            **deformation,
+            "steps": [_step_moved(step, layout) for step in steps],
+        }
+    return section
+
+
+def _step_moved(step: JsonValue, layout: JobLayout) -> JsonValue:
+    """Return a deformation step with its trace's folder moved."""
+    if not isinstance(step, dict):
+        return step
+    return {
+        key: _moved_value(value, layout, key) for key, value in step.items()
+    }
+
+
+def _moved_value(value: JsonValue, layout: JobLayout, key: str) -> JsonValue:
+    """Return a stored path, or an object of paths, in the moved folder.
+
+    The keys that hold one are :data:`PATH_KEYS`.
+    """
+    if key not in PATH_KEYS:
+        return value
+    if isinstance(value, str):
+        return moved_path(value, layout)
+    if isinstance(value, dict):
+        return {
+            name: _moved_value(path, layout, key)
+            for name, path in value.items()
+        }
+    return value
+
+
 @dataclass(frozen=True)
 class Dropped:
     """Hold a state's fields without its removed keys, and what was dropped.
@@ -610,4 +706,7 @@ class Migration:
 
 #: Every state migration, oldest first; the last one's next format is
 #: the current one, ``state_file.STATE_FORMAT_VERSION``.
-STATE_MIGRATIONS = (Migration("state_3_to_4", 3, state_3_to_4),)
+STATE_MIGRATIONS = (
+    Migration("state_3_to_4", 3, state_3_to_4),
+    Migration("state_4_to_5", 4, state_4_to_5),
+)

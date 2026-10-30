@@ -27,7 +27,7 @@ The files most readers use are the exports (`exports/quicknii.json`,
                         every registration it has held (registrations.jsonl),
                         its made section images (images/<name>.png), its masks
                         (masks/<name>.npz), image-model traces
-                        (image_correction/), its pictures (views/)
+                        (border_trace/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   views.seq             the picture and call numbers handed out
@@ -57,9 +57,20 @@ paths are relative to the job folder. The default image folder reference is
 
 ### Old job folders
 
-A job folder an earlier LangSlice wrote opens as the current format: one
-table of migrations (`job/migrations.py`) reads it. `state.json` of format 3
-is read as format 4 (its section images, [below](#section-images-sectionsstemimagesnamepng)).
+A job folder an earlier LangSlice wrote opens as the current format
+(`state.json` format 5): one table of migrations (`job/migrations.py`)
+reads it. `state.json` of format 3 is read as format 4 (its section images,
+[below](#section-images-sectionsstemimagesnamepng)), and format 4 as format
+5: a section's image-model border trace, under `image_correction` in format
+4, is under `border_trace`. Its folder, `sections/<name>/image_correction/`,
+moves to `sections/<name>/border_trace/` the first time the job is opened to
+write, and the paths naming it are written again in `state.json`, the undo
+steps, the trace folder's own `request.json` and `result.json` files,
+`views.jsonl`, each picture's `view.json` and each section's
+`registrations.jsonl`. A deformation record's `record.json` keeps the trace
+path it was fitted from (record folders are never rewritten). A dry run, or
+a folder this process cannot write, moves nothing and reads the traces where
+they are.
 What a file still holds of what LangSlice no longer has is dropped as it is
 read, with one logged warning per name (the `langslice.job.migrations`
 logger: on the agent CLI's standard error, in a script's logging):
@@ -73,8 +84,9 @@ logger: on the agent CLI's standard error, in a script's logging):
   damage is marked by region, `damaged_regions`).
 
 An open that writes (the agent CLI, the library, MCP, `Job.open`) writes
-`job.json`, `state.json` and the undo steps again without them, once, and
-logs a `migrated` event; a dry run (`--dry-run`) changes nothing on disk. A
+`job.json`, `state.json` and the undo steps again at the current format
+without them, once, and logs a `migrated` event; a dry run (`--dry-run`)
+changes nothing on disk. A
 setting no LangSlice wrote is still refused, naming it. A checkpoint older
 than format 3 (a pre-release LangSlice's) is refused: start a new job.
 
@@ -307,7 +319,7 @@ follow the job through it.
 | `kind` | When | Other fields |
 |---|---|---|
 | `open` | the job is opened (`Job.open`: created or resumed) | `resumed` |
-| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`) |
+| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`), `trace_folders` (the sections whose `image_correction/` folder moved to `border_trace/`) |
 | `plugins` | the tool plugins' record in `job.json` changed | `plugins` |
 | `script_write` | a script's `job.context` write landed | `property`, `sections`, `notes`, `argv0`, `call` |
 | `tool_start` | a tool call begins, on any door | `name`, `execution_id`, `door`, `target_ids`, `args` |
@@ -412,7 +424,7 @@ with `full_resolution`, the file's own pixels. A NumPy `.npz` archive:
 |---|---|
 | `borders` | bool, `(rows, cols)`: the model's lines as LangSlice extracts them from its reply (yellow pixels, thinned): the lines the trace's fit is fitted to |
 | `reply` | uint8 RGB, `(rows, cols, 3)`: the model's raw reply, cropped to the canvas's aspect and resized to it as the lines are, then mapped to the grid; black outside the canvas |
-| `info` | JSON text: `section`, `grid_size` (`[width, height]`), `full_resolution`, `frame`, `grid_from_canvas` (3x3 on `[x, y, 1]`: the model's canvas to the grid's pixel centres), `artifact_dir` (the attempt's folder under `sections/<name>/image_correction/`, relative to the job folder), `attempt`, `provider`, `model`, `prompt_edited`, `profile` and `untested` (an untested profile), `include` / `exclude` (the regions `restrict_to` chose), `placement_current` (whether the section's placement is still the one traced), `written_by` |
+| `info` | JSON text: `section`, `grid_size` (`[width, height]`), `full_resolution`, `frame`, `grid_from_canvas` (3x3 on `[x, y, 1]`: the model's canvas to the grid's pixel centres), `artifact_dir` (the attempt's folder under `sections/<name>/border_trace/`, relative to the job folder), `attempt`, `provider`, `model`, `prompt_edited`, `profile` and `untested` (an untested profile), `include` / `exclude` (the regions `restrict_to` chose), `placement_current` (whether the section's placement is still the one traced), `written_by` |
 
 The map from the canvas to the grid is the images' own (the canvas's
 upright turn, crop to the placed atlas plus a margin, padding and resize of
@@ -572,13 +584,13 @@ weights, `weights_used` (the weights it resolved to, by raw channel). The
 opening `preprocessed` file is the automatic path run on the working copy;
 like every made image, each reader reads the file, resized to its own size.
 
-State format 4 holds these entries; a job of format 3 (the stack's
+State formats 4 and 5 hold these entries; a job of format 3 (the stack's
 `appearance`: recipes and raw channels' display properties) is read through
 the migration when it opens (`state_3_to_4`, `job/migrations.py`): each recipe is
 made into a file and an entry per section (a section's own override
 honoured), `preprocessed` without a recipe becomes the opening image, the
 display properties are dropped, a mask's `channel` is named `section_image`,
-and the state and its history steps are written again as format 4.
+and the state and its history steps are written again at the current format.
 Deformation records are not rewritten. A recipe image is made once on the
 working copy, so a fit on a migrated job reads that file: it is not the image
 the older LangSlice ran the recipe on at the fit's size, and a refit does not
