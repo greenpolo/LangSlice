@@ -52,13 +52,15 @@ def section_inputs(
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def stale_row(section_id: str) -> dict[str, Any]:
-    """The row of a section refused because its inputs changed.
+def stale_refusal() -> Refused:
+    """Return the refusal of a section whose inputs changed meanwhile.
 
-    The refusal is ``STALE_INPUT``.
+    Returns
+    -------
+    Refused
+        ``STALE_INPUT``, saying to run the fit again.
     """
-    refusal = Refused(
+    return Refused(
         RefusalCode.STALE_INPUT,
         "This section's placement, images or deformation changed while the "
         "fit ran; nothing was written for it. Run the fit again.")
-    return refusal.payload(section_id=section_id)

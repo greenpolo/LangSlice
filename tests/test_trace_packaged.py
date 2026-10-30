@@ -176,7 +176,7 @@ def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_pa
 
     job, ctx, stub = _job(tmp_path, atlas)
     fitted = ops_deformable.fireants_syn(job, ctx, [ID])
-    assert fitted.rows[0]["status"] == "ok", fitted.rows
+    assert fitted.rows[0].refusal is None, fitted.rows
     options = default_options("overlay")
     traces.trace_borders(job, ctx, ID, image_model=stub.model, options=options)
     job.background.wait_all()

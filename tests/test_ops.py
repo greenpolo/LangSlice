@@ -11,7 +11,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.fits.affine import FittedAffine
 from langslice.core.refusal import Refused
+from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.codec import affine_to_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.status import stack_angles_entry
@@ -107,9 +109,9 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     assert transforms.same_transform(replace(record, note="other"), record)
 
     fitted = affine_fit.fit_transform(
-        {"params": [1, 0, 0, 0, 1, 0], "physical": {},
-                    "calibration": {"section_um_per_px": 1.0, "source": "host"},
-                    "mirrored": False},
+        FittedAffine(position_mm=1.0, params=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+                     physical=PhysicalAffine(), mirrored=False,
+                     calibration=Calibration(section_um_per_px=1.0, source="host")),
         exclude=["HY"], fit_atlas="nissl")
     assert affine_to_json(fitted)["regions"] == {"include": [], "exclude": ["HY"]}
     assert fitted.fit_atlas == "nissl"

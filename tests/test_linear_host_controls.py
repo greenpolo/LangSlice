@@ -13,6 +13,7 @@ import pytest
 from PIL import Image
 
 from langslice.core.fits import deformation
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
@@ -21,7 +22,7 @@ from langslice.job.host_inputs import HOST_TRANSFORM_KIND, apply_host_inputs
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools import affine_fit as ops_transforms
-from langslice.tools.affine_fit import AffineFit
+from langslice.tools.affine_fit import AffineFit, AffineRow
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.fakes import SlabAtlas
 
@@ -96,7 +97,7 @@ def _no_fit(monkeypatch) -> list[list[str]]:
     def fit(job, ctx, sections, regions, *_inputs):
         names = list(sections)
         asked.append(names)
-        return AffineFit(rows=[{"id": name, "status": "error", "error": "FIT_FAILED"}
+        return AffineFit(rows=[AffineRow(name, refusal=Refused(RefusalCode.FIT_FAILED))
                                for name in names])
 
     monkeypatch.setattr(ops_transforms, "elastix_affine", fit)

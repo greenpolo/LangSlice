@@ -90,7 +90,7 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     # A picture smaller than the fit grid, so the residual is resampled (the
     # fit is a second step on top of the first).
     again = _fit_and_draw(job, [ID0], long_edge=160)
-    assert again.rows[0]["status"] == "ok" and again.written == [ID0]
+    assert again.rows[0].refusal is None and again.written == [ID0]
     exported = job.export_maps()
     job.close()
     yield job, Path(job.folder), exported

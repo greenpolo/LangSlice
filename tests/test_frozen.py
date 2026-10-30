@@ -10,7 +10,9 @@ from typing import Any
 import pytest
 
 import langslice
+from langslice.core.fits.affine import FittedAffine
 from langslice.core.refusal import Refused
+from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.codec import (
     affine_from_json,
     affine_to_json,
@@ -23,6 +25,7 @@ from langslice.job.settings.tool_table import TOOLS
 from langslice.tools import affine_fit, positions, transforms
 from langslice.tools import deformable as ops_deformable
 from langslice.tools.catalog import enabled
+from langslice.tools.deformable_rows import deformable_row_to_json
 from tests.linear_tool_helpers import SLAB, tool_named
 from tests.test_disabled_tools import (
     _base_specs,
@@ -162,8 +165,9 @@ def test_elastix_affine_and_set_transforms_refuse_a_frozen_affine(
                         lambda _s, _w, record, **_k: seen.append(record.id) or _ok_fit(1.0))
     job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]})
     done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
-    assert [row.get("error") for row in done.rows] == [None, "FROZEN"]
-    assert done.rows[1]["properties"] == ["affine"] and seen == ["s0.png"]
+    rows = [affine_fit.affine_row_to_json(row) for row in done.rows]
+    assert [row.get("error") for row in rows] == [None, "FROZEN"]
+    assert rows[1]["properties"] == ["affine"] and seen == ["s0.png"]
     with pytest.raises(Refused) as refused:
         transforms.set_transforms(job, {"s1.png": {"params": [1, 0, 0, 0, 1, 0]}})
     assert refused.value.code == "FROZEN" and refused.value.facts["ids"] == ["s1.png"]
@@ -177,7 +181,8 @@ def test_the_deformation_tools_refuse_a_frozen_deformation(
     for record in job.state.slices:
         record.transform = affine_from_json({"kind": "imported", "params": [1, 0, 0, 0, 1, 0]})
     fit = ops_deformable.fireants_syn(job, ctx, ["s0.png"])
-    assert fit.rows[0]["error"] == "FROZEN" and fit.rows[0]["properties"] == ["deformation"]
+    row = deformable_row_to_json(fit.rows[0])
+    assert row["error"] == "FROZEN" and row["properties"] == ["deformation"]
     # Even where the host requires a deformation on every section, the gate
     # asks only for the section whose deformation is free.
     required = JobSpec.from_dict({**job.spec.to_dict(), "nonlinear": {
@@ -190,13 +195,14 @@ def test_the_deformation_tools_refuse_a_frozen_deformation(
 # --- the partial freezes ---------------------------------------------------------------
 
 
-def _ok_fit(determinant: float) -> dict[str, Any]:
-    return {"status": "ok", "params": [determinant, 0.0, 0.0, 0.0, 1.0, 0.0],
-            "physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-                         "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
-                         "pivot": [0.5, 0.5]},
-            "calibration": {"section_um_per_px": 1.0, "source": "host"},
-            "mirrored": determinant < 0}
+def _ok_fit(determinant: float) -> FittedAffine:
+    return FittedAffine(
+        position_mm=1.0, params=(determinant, 0.0, 0.0, 0.0, 1.0, 0.0),
+        physical=PhysicalAffine(rotation_deg=0.0, scale_x=1.0, scale_y=1.0,
+                                translate_x_mm=0.0, translate_y_mm=0.0, shear=0.0,
+                                pivot=(0.5, 0.5)),
+        mirrored=determinant < 0,
+        calibration=Calibration(section_um_per_px=1.0, source="host"))
 
 
 @pytest.mark.parametrize("determinant, kept", [(1.0, True), (-1.0, False)])
@@ -206,9 +212,10 @@ def test_a_fit_under_a_frozen_orientation_keeps_the_handedness(
                         lambda _s, _w, _r, **_k: _ok_fit(determinant))
     job, ctx = _open(tmp_path, frozen={"s0.png": ["orientation"]})
     done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
-    free = done.rows[1]
+    rows = [affine_fit.affine_row_to_json(row) for row in done.rows]
+    free = rows[1]
     assert free["status"] == "ok"  # s1's orientation is free: a mirroring fit is its to make
-    row = done.rows[0]
+    row = rows[0]
     if kept:
         assert row["status"] == "ok" and "s0.png" in done.fitted
     else:

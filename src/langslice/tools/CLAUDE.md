@@ -101,7 +101,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   it from the state they read and take it themselves to apply, comparing
   each section's `stale.section_inputs` with the value they computed from:
   a changed section is that section's row `STALE_INPUT`
-  (`stale.stale_row`; `trace_borders` raises it), the others apply.
+  (`stale.stale_refusal`; `trace_borders` raises it), the others apply.
   `set_transforms` takes it itself too. A read (`status.py`, `atlas.py`, `look.py`)
   writes nothing.
 - Pictures are the core's, never drawn here: a read verb, or a write that
@@ -125,15 +125,22 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
 - A write to a property the job froze (`JobSpec.frozen`, `job/settings/frozen.py`) is
   refused with the one code `FROZEN` (`ids`, `properties`, `message`):
   `refusal.check_frozen(job, ids, *properties)` raises it for a whole call,
-  `refusal.frozen_row(job, id, *properties)` is a section's row in a
-  per-section answer.
+  `refusal.section_refusal(job, id, *properties)` is one section's
+  refusal in a per-section answer (`SECTION_BUSY` first).
 - A refusal is the core's `Refused(RefusalCode.X, message, **facts)`
   (`core/refusal.py`), raised, nothing written; this package re-exports
   nothing of it. `Refused.payload()` is the `{"status": ..., "error": code,
   ...}` the tool door answers with (`status` "refused" for a gate, the
   opening-read gate's and the job's submit gates, which return theirs as a
-  `Refused`, `Job.submit_errors`, that `submit` raises); a section's row
-  in a per-section answer is `{"id": ..., **refusal.payload()}`. A code is
+  `Refused`, `Job.submit_errors`, that `submit` raises). A per-section
+  answer is a list of typed rows, one per section (`affine_fit.AffineRow`,
+  `deformable_rows.DeformableRow`, `warps.WarpApplied`, `masks.MaskMade`,
+  `registrations.Restored`, `transforms` entries), each holding its
+  `Refused` or what was done; the tool's body converts each row to its
+  reply once (`affine_fit.affine_row_to_json`,
+  `deformable_rows.deformable_row_to_json`; a refused row is
+  `refusal.refused_row`: `{"id", "status", "error", ...facts}`), and a
+  plugin context converts the rows it hands a plugin. A code is
   always a `RefusalCode` member (a fit's flag a `core.fits.flags.FitFlag`),
   never a string written out.
 - A section is named by its filename (`Stack.resolve`: the filename,
@@ -367,7 +374,9 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `restrict_box`: the regions' bounding box on that section's canvas as
   `[x0, y0, x1, y1]` fractions (`fit_regions.region_box`; `core.pictures.canvas.zoom_box`'s
   zoom). Refused: `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. Returns `AffineFit`
-  (`rows`, `fitted`). `elastix_fit(job, workspace, section, restrict_to=,
+  (`rows`: an `AffineRow` per section, the core's `FittedAffine` or the
+  refusal; `fitted`). `affine_row_to_json` is a row's reply: the knobs as
+  `transform`, the turn and flags in words as `warning`. `elastix_fit(job, workspace, section, restrict_to=,
   exclude=, atlas_image=, mask=, marked=True)`: one Elastix affine from the
   section's current placement, written nowhere (`core.fits.affine.ElastixFit`;
   a script's `job.context.fit_elastix`): regions checked, the marked regions
@@ -387,7 +396,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   problems (`INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
   `NO_TRACE`/`TRACE_*`, `BAD_SETTINGS`, `FIT_FAILED`, `RECORD_WRITE_FAILED`,
   `STALE_INPUT`) are rows, not refusals. Returns `DeformableFit`: `rows`
-  (call order), `fitted` (each row with its fit and record), `traced` (per
+  (call order, `deformable_rows.DeformableRow`: the `AppliedFit` or the
+  refusal; `deformable_row_to_json` is its reply), `fitted` (each row with its fit and record), `traced` (per
   traced section, the image read and the trace's lines on the fit grid),
   `written`. `fit_pictures.draw_fits(workspace, done, options)` then draws
   each fit (the final borders on the image it read, titled with the
@@ -429,6 +439,12 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   its tool `fireants_syn_tool` (the section cap, the reply, the picture).
   `nothing_fitted(rows)` is the top-level error of a fit tool that fitted
   nothing; `check_atlas_image` the atlas-image check both fit tools make.
+- `deformable_rows.py` — `DeformableRow` (one section's answer from
+  `fit_deformable`: its `settings`, a traced fit's `trace_regions`, the
+  `AppliedFit` (engine numbers, summary, runtime, cache, GPU queue, the
+  `inputs` / `estimated` blocks) or the `Refused`, `steps`,
+  `image_indexes`) and `deformable_row_to_json`, its one conversion to a
+  reply row (`fireants_syn`'s `results`, a landed trace's `row`).
 - `warps.py` — `warp_from_map(job, workspace, section, native_xy, method=, step=,
   provenance=, weights=, start=, settings=, engine_settings=, engine_version=)`:
   a deformation made elsewhere (a tool plugin's), given as the
@@ -447,7 +463,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   with a `parent_key`, keeping its steps before its own (`start` `current`);
   per row `FROZEN`, `STALE_INPUT` (the placement is not the one the warp was
   built on, or the section no longer holds its parent), `RECORD_WRITE_FAILED`.
-  Returns `WarpsApplied`.
+  Returns `WarpsApplied` (a `WarpApplied` per warp: its numbers or its
+  refusal).
   `fit_record(job, workspace, section, settings, start="linear"|"current",
   mask=, em=True, marked=True, section_image="preprocessed")`: one FireANTs
   stain fit with a `FitSettings` of the caller's own on that section image
@@ -511,7 +528,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   position, plane, angles, flip, rotation, transform; its made images'
   digests, so an image made again while a long verb runs makes it stale;
   damage: marked regions and a mark naming none; with `deformation` the applied deformation's key, with `trace`
-  its image correction), `STALE_INPUT`, `stale_row`.
+  its image correction); `stale_refusal()`, `STALE_INPUT`.
 - `atlas.py` — `search_regions(job, workspace, query="", section="", points=())` (the tool `grep_atlas`): with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
   hierarchy searched like text (`core/atlas/search.py`), with `in_section`
   per row for a placed section. `draw_regions(job, workspace, regions,

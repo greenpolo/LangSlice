@@ -11,15 +11,16 @@ draws them with its work (:func:`langslice.tools.traces.land_trace`).
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from PIL import Image
 
 from langslice.core.fits import deformation
 from langslice.core.fits.deformable.render import drawn_border_coverage
+from langslice.core.jsonable import JsonObject
 from langslice.core.pictures import deformation as pictures_deformation
 from langslice.core.pictures import drawn as pictures_drawn
 from langslice.core.pictures.canvas import (
@@ -28,8 +29,10 @@ from langslice.core.pictures.canvas import (
     validate_border_thickness,
 )
 from langslice.core.sections import images as images_
+from langslice.core.stack.codec import Written
 from langslice.core.stack.section import Section
 from langslice.tools.deformable import DeformableFit, Fitted, fit_regions
+from langslice.tools.deformable_rows import DeformableRow
 
 if TYPE_CHECKING:
     from langslice.core.pictures.options import DisplayOptions
@@ -54,6 +57,7 @@ def draw_fits(
     ``render_failed``.
     """
     parts: list[Image.Image] = []
+    indexes: dict[str, tuple[int, ...]] = {}
     failed: list[dict[str, str]] = []
     thickness = validate_border_thickness(options.border_thickness)
     # `color` is the image model's own fixed yellow (`trace_picture` below
@@ -74,6 +78,8 @@ def draw_fits(
     )
     for fitted in done.fitted:
         row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
+        applied = row.applied
+        assert applied is not None  # a fitted row holds its fit
         record = fit.grid.record
         include, exclude = fit_regions(fit)
         fit_style = replace(
@@ -114,7 +120,7 @@ def draw_fits(
                         "caption": fit_caption(
                             record,
                             fit,
-                            row,
+                            applied.numbers,
                             include,
                             exclude,
                             border_words(core),
@@ -131,9 +137,44 @@ def draw_fits(
             del parts[first:]
             failed.append({"id": record.id, "message": str(exc)})
             continue
-        row["image_indexes"] = list(range(first, len(parts)))
+        indexes[row.id] = tuple(range(first, len(parts)))
     # Each traced section's trace, once per call, so it can be reviewed.
-    traces: list[dict[str, Any]] = []
+    traces, pictures, untraced = _trace_pictures(done, style, start=len(parts))
+    return replace(
+        done,
+        rows=_indexed(done.rows, indexes),
+        pictures=[*parts, *pictures],
+        traces=traces,
+        render_failed=[*failed, *untraced],
+    )
+
+
+def _trace_pictures(
+    done: DeformableFit, style: pictures_deformation.Style, *, start: int
+) -> tuple[list[Written], list[Image.Image], list[dict[str, str]]]:
+    """Draw each traced section's trace on the section.
+
+    Parameters
+    ----------
+    done
+        The fits, with the traced sections' images and lines.
+    style
+        The drawing style of the call's pictures.
+    start
+        The index the first trace picture takes among the call's pictures.
+
+    Returns
+    -------
+    traces : list of dict
+        ``{"id", "image_indexes"}`` per trace drawn.
+    pictures : list of PIL.Image.Image
+        The trace pictures, in order.
+    failed : list of dict
+        ``{"id", "message"}`` per trace picture that failed.
+    """
+    traces: list[Written] = []
+    pictures: list[Image.Image] = []
+    failed: list[dict[str, str]] = []
     where = {
         fitted.fit.grid.record.id: fitted.fit.grid.record
         for fitted in done.fitted
@@ -142,15 +183,30 @@ def draw_fits(
         record = where.get(section_id)
         try:
             picture = _trace_picture(section_id, image, lines, style, record)
-        except Exception as exc:
+        except Exception as exc:  # a picture that fails leaves the write
             logger.warning(
                 "trace picture failed for %s", section_id, exc_info=True
             )
             failed.append({"id": section_id, "message": str(exc)})
             continue
-        traces.append({"id": section_id, "image_indexes": [len(parts)]})
-        parts.append(picture)
-    return replace(done, pictures=parts, traces=traces, render_failed=failed)
+        index = start + len(pictures)
+        traces.append({"id": section_id, "image_indexes": [index]})
+        pictures.append(picture)
+    return traces, pictures, failed
+
+
+def _indexed(
+    rows: Sequence[DeformableRow], indexes: Mapping[str, tuple[int, ...]]
+) -> list[DeformableRow]:
+    """Return the rows, each drawn one with its pictures' indexes."""
+    out: list[DeformableRow] = []
+    for row in rows:
+        at = indexes.get(row.id)
+        if at is None:
+            out.append(row)
+        else:
+            out.append(replace(row, image_indexes=at))
+    return out
 
 
 def _fit_title(
@@ -213,7 +269,7 @@ _FIT_SECTION_WORDS = {
 def fit_caption(
     record: Section,
     fit: deformation.Job,
-    row: dict[str, Any],
+    numbers: JsonObject,
     include: Sequence[str],
     exclude: Sequence[str],
     border_word: str = "",
@@ -221,7 +277,7 @@ def fit_caption(
     """The index caption of a deformable fit's picture: the section, the
     fit (engine, smoothness, what it read against which atlas image), the
     position, the regions drawn thick or left out, the colour the fitted
-    borders are drawn in, and the fit's numbers."""
+    borders are drawn in, and the fit's *numbers* (``deformation.summary``)."""
     choice = fit.choice
     read = _FIT_SECTION_WORDS.get(choice.fit_section, choice.fit_section)
     at = (
@@ -229,13 +285,13 @@ def fit_caption(
         if record.position_mm is not None
         else ""
     )
-    numbers = cast("dict[str, object]", row.get("displacement_mm") or {})
+    moved = cast("dict[str, object]", numbers.get("displacement_mm") or {})
     facts = (
         (
-            f"displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
-            f"fold fraction {row.get('fold_fraction')}"
+            f"displacement median {moved.get('median')} mm, max {moved.get('max')} mm; "
+            f"fold fraction {numbers.get('fold_fraction')}"
         )
-        if numbers
+        if moved
         else ""
     )
     engine = getattr(fit.result, "engine", {}).get("name")

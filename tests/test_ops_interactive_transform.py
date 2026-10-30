@@ -10,7 +10,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.fits.affine import FittedAffine
 from langslice.core.refusal import Refused
+from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
@@ -132,15 +134,15 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     seen: list[dict[str, Any]] = []
 
     def fake(_state: Any, _ws: Any, record: Any, *, include: Any = (), exclude: Any = (),
-             atlas_image: str = "template", **_inputs: Any) -> dict[str, Any]:
+             atlas_image: str = "template", **_inputs: Any) -> FittedAffine:
         seen.append({"id": record.id, "include": tuple(include), "exclude": tuple(exclude),
                      "atlas_image": atlas_image})
-        return {"status": "ok", "id": record.id, "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                "physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-                             "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
-                             "pivot": [0.5, 0.5]},
-                "calibration": {"section_um_per_px": 1.0, "source": "host"},
-                "mirrored": False}
+        return FittedAffine(
+            position_mm=1.0, params=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            physical=PhysicalAffine(rotation_deg=0.0, scale_x=1.0, scale_y=1.0,
+                                    translate_x_mm=0.0, translate_y_mm=0.0, shear=0.0,
+                                    pivot=(0.5, 0.5)),
+            mirrored=False, calibration=Calibration(section_um_per_px=1.0, source="host"))
 
     monkeypatch.setattr("langslice.core.fits.affine.fit_elastix", fake)
     return seen
@@ -161,7 +163,7 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
     stored = affine_to_json(record.transform)
     assert stored["kind"] == "elastix" and stored["fit_atlas"] == "nissl"
     assert affine_to_json(record.transform)["regions"] == {"include": ["L"], "exclude": []}
-    x0, y0, x1, y1 = done.rows[0]["restrict_box"]
+    x0, y0, x1, y1 = done.rows[0].restrict_box or ()
     assert 0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0
     # The left half of the brain: the box leaves the right side of the canvas out.
     assert x1 < 0.8 and (x0 + x1) / 2 < 0.5
@@ -171,7 +173,7 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
                                            atlas_image="template")
     assert [call["id"] for call in calls] == ["s0.png", "s1.png"]
     assert {call["atlas_image"] for call in calls} == {"template"}
-    assert all("restrict_box" not in row for row in everything.rows)
+    assert all(row.restrict_box is None for row in everything.rows)
 
 
 def test_elastix_affine_leaves_marked_damage_out_on_its_own(
@@ -214,6 +216,6 @@ def test_elastix_affine_refuses_a_frozen_affine_and_fits_a_noted_one(
     job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]}, inputs={
                                        "damaged": {"s0.png": "torn"}})
     done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
-    assert [row.get("error") for row in done.rows] == [None, "FROZEN"]
+    assert [row.refusal and row.refusal.code for row in done.rows] == [None, "FROZEN"]
     assert done.fitted == ["s0.png"]
     assert calls == [{"id": "s0.png", "include": (), "exclude": (), "atlas_image": "template"}]

@@ -293,12 +293,16 @@ class ContextFits(ContextProposals):
         proposal = self.transform_from_params(record.id, fitted.params,
                                               note=note or "Elastix affine, settings of the "
                                               "caller's")
+        read = fitted.inputs
+        resolved, inputs = atlas_image, None
+        if read is not None:
+            resolved, inputs = read.atlas_image_resolved, read.payload()
         stored = {**proposal.record, "fit": {
             "engine": "elastix", "restrict_to": list(fitted.report.get("include") or ()),
             "exclude": list(fitted.report.get("exclude") or ()),
-            "atlas_image": (fitted.inputs or {}).get("atlas_image_resolved", atlas_image),
+            "atlas_image": resolved,
             "section_image": str(section_image), "edges": bool(edges),
-            "marked": bool(marked), "mask": label, "inputs": fitted.inputs}}
+            "marked": bool(marked), "mask": label, "inputs": inputs}}
         return replace(proposal, record=stored)
 
 

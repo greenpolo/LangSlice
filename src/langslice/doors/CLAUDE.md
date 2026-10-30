@@ -63,7 +63,7 @@ bodies, and turned into an answer once per door:
   stale deformations, name registrations, save pictures and open the reply
   with background notices, so a refusal's reply passes through them as any
   reply does; a per-section answer carries a refused section as its
-  row, `Refused.payload(section_id=...)`; a plugin tool's `ToolError` is a `Refused` and is answered
+  row (`tools.refusal.refused_row`, converted once in the tool's body); a plugin tool's `ToolError` is a `Refused` and is answered
   the same way (`plugins/runtime.py` re-raises it; any other exception of a
   handler is `PLUGIN_FAILED`);
 - the agent CLI: a verb's reply whose `status` is in
