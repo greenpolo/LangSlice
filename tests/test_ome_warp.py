@@ -254,9 +254,9 @@ def _engine_record(seed: int, parent: DeformableRecord | None = None) -> Deforma
     """A record made as finish_fit makes one from an engine's working-grid step."""
     from langslice.core.fits.deformable.fields import (
         EngineStep,
+        carry_to_section,
         compose_forward,
         compose_inverse,
-        section_step,
     )
     from langslice.core.fits.deformable.geometry import WorkingGrid
 
@@ -264,7 +264,7 @@ def _engine_record(seed: int, parent: DeformableRecord | None = None) -> Deforma
     grid = WorkingGrid((W, H), MM, (20, 15))
     step = EngineStep(grid, rng.normal(0.0, 0.05, (15, 20, 2)).astype(np.float32),
                       rng.normal(0.0, 0.05, (15, 20, 2)).astype(np.float32))
-    field, inverse = section_step(step)
+    field, inverse = carry_to_section(step)
     if parent is not None:
         field = compose_forward(field, parent.field_mm, MM)
         inverse = compose_inverse(inverse, parent.inverse_field_mm, MM)

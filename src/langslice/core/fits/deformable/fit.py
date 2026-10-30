@@ -46,10 +46,10 @@ from langslice.core.fits.deformable.engines import (
 )
 from langslice.core.fits.deformable.fields import (
     EngineStep,
+    carry_to_section,
     compose_forward,
     compose_inverse,
     sample_field,
-    section_step,
 )
 from langslice.core.fits.deformable.geometry import (
     Placement,
@@ -566,7 +566,7 @@ def finish_fit(
     mm = prepared.placement.section_mm_per_px
     width, height = grid.section_size
     step = EngineStep(grid, result.field_mm, result.inverse_field_mm)
-    step_field, step_inverse = section_step(step)
+    step_field, step_inverse = carry_to_section(step)
     if prepared.step_weight is not None:
         weight = prepared.step_weight[..., None]
         step_field = (step_field * weight).astype(np.float32)

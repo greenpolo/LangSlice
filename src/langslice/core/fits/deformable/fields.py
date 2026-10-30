@@ -84,7 +84,7 @@ class MeshStep:
 StoredStep = EngineStep | MeshStep
 
 
-def section_step(step: EngineStep) -> tuple[np.ndarray, np.ndarray]:
+def carry_to_section(step: EngineStep) -> tuple[np.ndarray, np.ndarray]:
     """Carry an engine's step onto the section grid, bilinearly.
 
     Parameters
@@ -262,12 +262,11 @@ def rebuilt_fields(
         Its inverse field, likewise.
     """
     if isinstance(step, MeshStep):
-        grid = WorkingGrid(section_size, mm_per_px, section_size)
         forward_mm, inverse_mm = mesh_fields(step, section_size, mm_per_px)
-        step_mm = grid.field_to_section(forward_mm)
-        step_inverse_mm = grid.field_to_section(inverse_mm)
+        step_mm = forward_mm.astype(np.float32)
+        step_inverse_mm = inverse_mm.astype(np.float32)
     else:
-        step_mm, step_inverse_mm = section_step(step)
+        step_mm, step_inverse_mm = carry_to_section(step)
     if previous is None:
         return step_mm, step_inverse_mm
     field_mm = compose_forward(step_mm, previous[0], mm_per_px)
