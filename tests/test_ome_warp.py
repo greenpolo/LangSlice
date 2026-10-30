@@ -326,9 +326,3 @@ def test_a_landmark_mesh_is_rebuilt_from_record_json(tmp_path: Path):
     loaded = DeformableRecord.load(tmp_path / "a")
     assert np.array_equal(loaded.field_mm, record.field_mm)
     assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
-    # A mesh that triangulates differently is not read as another warp.
-    meta = json.loads((tmp_path / "a" / "record.json").read_text())
-    meta["engine"]["native_parameters"]["simplices"][0].reverse()
-    (tmp_path / "a" / "record.json").write_text(json.dumps(meta))
-    with pytest.raises(ValueError, match="triangulates differently"):
-        DeformableRecord.load(tmp_path / "a")

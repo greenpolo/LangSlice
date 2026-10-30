@@ -309,8 +309,8 @@ written from the record and never read back). The fields are stored as
 `finish_fit` made the record with, so the rebuilt fields are the saved
 record's bit for bit; `landmark_mesh`, nothing (the mesh in
 `engine.native_parameters` is a `MeshStep`, rebuilt by
-`fields.mesh_fields`, the landmark tool's own fields; a mesh that
-triangulates differently is refused); `section_grid`, the fields whole as
+`fields.mesh_fields` on its stored triangles, the landmark tool's own
+fields); `section_grid`, the fields whole as
 float16 `(2, rows, cols)` `(dy, dx)` (a map made elsewhere, whose fields are
 the whole map even with a parent; a restricted fit, whose tapered step's
 inverse `_invert_step` takes seconds; a fit whose working grid is the

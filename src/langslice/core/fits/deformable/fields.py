@@ -127,17 +127,8 @@ def mesh_fields(
     inverse_field_mm : numpy.ndarray
         Placed atlas to section, the same shape and units.
 
-    Raises
-    ------
-    ValueError
-        When the vertices no longer triangulate into ``step.simplices``.
     """
-    mesh = PiecewiseAffine(step.source_xy, step.target_xy)
-    if not np.array_equal(mesh.simplices, step.simplices):
-        raise ValueError(
-            "the landmark mesh triangulates differently from when it was "
-            "applied"
-        )
+    mesh = PiecewiseAffine(step.source_xy, step.target_xy, step.simplices)
     xx, yy = _pixel_centres(section_size)
     points = np.stack([xx, yy], -1)
     forward = mesh.map(points)
