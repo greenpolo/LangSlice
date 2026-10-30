@@ -34,7 +34,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.settings.tool_table import (
     GROUPS,
     TOOLS,
@@ -160,30 +159,6 @@ VERBS: dict[str, Verb] = {
                limits=_LIMITS.get(name, {}))
     for name, tool in TOOLS.items()
 }
-
-#: The tools the job's own ``transform.max_parallel`` also caps.
-_TRANSFORM_TOOLS = ("interactive_transform", "elastix_affine")
-
-
-def check_section_count(job: Any, name: str, count: int) -> None:
-    """Refuse (``TOO_MANY_SECTIONS``, with ``max_sections`` and ``requested``) a
-    call of tool *name* naming *count* sections when that is more than its
-    ``limits["sections"]`` (:data:`VERBS`), or, for the transform tools, more
-    than the door lets one call take (``Job.picture_cap``) or the job lets one
-    transform call take (``Job.transform_cap``); a cap that is None is no cap.
-    The message says why the cap holds."""
-    cap = VERBS[name].limits.get("sections")
-    reason = f" ({deformable.SECTION_CAP_REASON})"
-    if name in _TRANSFORM_TOOLS:
-        held = [value for value in (job.picture_cap, job.transform_cap) if value is not None]
-        cap = min(held) if held else None
-        reason = " here"
-    if cap is not None and count > cap:
-        raise Refused(RefusalCode.TOO_MANY_SECTIONS,
-                      max_sections=cap, requested=count,
-                      message=f"{name} takes at most {cap} sections per call{reason}; "
-                      f"{count} were named. Nothing was done: split them over calls.")
-
 
 def verbs_for(spec: Any = None) -> dict[str, Verb]:
     """Every verb a job of *spec* can have: :data:`VERBS`, then one verb per

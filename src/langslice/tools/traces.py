@@ -28,12 +28,9 @@ from langslice.core.sections.damage import exclusions
 from langslice.core.stack.codec import trace_from_json, trace_to_json
 from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
-from langslice.tools.deformable import (
-    fit_deformable,
-    refuse_without_engine,
-    region_entries,
-)
+from langslice.tools.deformable import fit_deformable, refuse_without_engine
 from langslice.tools.fit_pictures import draw_fits
+from langslice.tools.fit_regions import region_entries
 from langslice.tools.refusal import section_refusal, unknown_sections
 from langslice.tools.run import Run, as_list
 from langslice.tools.stale import section_inputs

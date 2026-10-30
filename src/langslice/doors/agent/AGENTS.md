@@ -225,7 +225,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   `facts` stay in the run facts.
 - **`transform.max_parallel`** (1..4, default 4): below 4,
   `interactive_transform` and `elastix_affine` (each takes one to four
-  sections) refuse a call naming more sections (`catalog.check_section_count`)
+  sections) refuse a call naming more sections (`tools.refusal.check_section_count`)
   and the statement states the cap.
 - **`disabled`** (default empty): tools and tool options the job does
   without, `--disabled NAME[,NAME...]`. A host's `inputs["damaged"]` note is

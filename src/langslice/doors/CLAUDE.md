@@ -312,7 +312,7 @@ bodies, and turned into an answer once per door:
   deformations their write made stale before drawing it, so the picture
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past
-  `tools.affine_fit.MIN_ZOOM_GAIN`; `with_notices` lists each background
+  `tools.fit_regions.MIN_ZOOM_GAIN`; `with_notices` lists each background
   picture with its caption; `work_pictures` is the saved files of those pictures, for the CLI and `JobHandle.wait`), `arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
   `argument_refusal`, the one strictness rule every door

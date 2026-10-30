@@ -219,7 +219,7 @@ class ContextFits(ContextProposals):
         marked damage regions in the fit."""
         from langslice.core.atlas.images import resolve_image
         from langslice.core.fits.deformable.render import composed_native_grid
-        from langslice.tools import deformable, warps
+        from langslice.tools import deformable, fit_regions, warps
 
         record = self._record(section)
         workspace = self._run.ctx
@@ -231,8 +231,8 @@ class ContextFits(ContextProposals):
             raise ToolError(RefusalCode.BAD_ARGS,
                             f"detail is one of {list(deformable.DETAILS)}; got {detail!r}")
         try:
-            regions = deformable.region_entries(workspace, self._run.job.state, list(restrict_to))
-            left_out = deformable.region_entries(workspace, self._run.job.state, list(exclude))
+            regions = fit_regions.region_entries(workspace, self._run.job.state, list(restrict_to))
+            left_out = fit_regions.region_entries(workspace, self._run.job.state, list(exclude))
             chosen = replace(warps.default_settings(workspace), smoothness_um=float(smoothness_um),
                              atlas_image=str(atlas_image), stain_metric=str(metric),
                              stain_edges=bool(edges), detail=str(detail),

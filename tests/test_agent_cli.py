@@ -1115,7 +1115,7 @@ def test_a_transform_cap_of_the_job_holds_without_a_picture_cap():
     from types import SimpleNamespace
 
     from langslice.core.refusal import Refused
-    from langslice.tools.catalog import check_section_count
+    from langslice.tools.refusal import check_section_count
 
     check_section_count(SimpleNamespace(picture_cap=None, transform_cap=None),
                         "elastix_affine", 50)

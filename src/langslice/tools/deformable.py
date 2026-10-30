@@ -45,9 +45,18 @@ from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.tools import masks as ops_masks
+from langslice.tools.fit_regions import (
+    region_box,
+    region_entries,
+    zoom_window,
+)
 from langslice.tools.images import check_image
 from langslice.tools.look import show_result
-from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.refusal import (
+    check_section_count,
+    frozen_row,
+    unknown_sections,
+)
 from langslice.tools.run import Run, as_list, drawn_image, pictured
 from langslice.tools.stale import section_inputs, stale_row
 
@@ -498,35 +507,6 @@ def refuse_without_engine() -> None:
                       message=deformation.ENGINE_MISSING + ".")
 
 
-def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str, ...]:
-    """*entries* (region acronyms, names or ids, ``"CTX:left"`` for one side)
-    checked against the atlas and normalized. Refused: ``BAD_ARGS`` (not a
-    list of names, or a side that does not exist), ``UNKNOWN_REGIONS``,
-    ``NO_SIDES`` (a side on a sagittal stack)."""
-    from langslice.core.atlas.sides import has_sides
-    from langslice.core.fits.deformable.plane_images import resolve_entries
-    from langslice.core.sections.damage import normalized_entries
-
-    if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="restrict_to is a list of atlas regions.")
-    try:
-        names = normalized_entries(str(entry) for entry in entries)
-    except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
-    if names:
-        try:
-            resolve_entries(workspace.atlas, names)
-        except ValueError as exc:
-            raise Refused(RefusalCode.UNKNOWN_REGIONS,
-                          message=str(exc)) from exc
-        if state.plane == "sagittal" and has_sides(names):
-            raise Refused(RefusalCode.NO_SIDES,
-                          message="A sagittal section lies within one "
-                          "hemisphere, so a region cannot be limited to one side.")
-    return tuple(names)
-
-
 def fireants_syn(
     job: Job,
     workspace: Workspace,
@@ -738,12 +718,10 @@ def fireants_syn_tool(
         The reply: ``status``, the call's ``settings``, one row per section
         (``results``), the status rows the write changed.
     """
-    from langslice.tools.catalog import (  # local: cycle with tools.catalog
-        check_section_count,
-    )
-
     job, workspace = run.job, run.ctx
-    check_section_count(job, "fireants_syn", len(as_list(sections)))
+    check_section_count(
+        job, "fireants_syn", len(as_list(sections)),
+        cap=MAX_FIREANTS_SYN_SECTIONS, reason=SECTION_CAP_REASON)
     done = fireants_syn(
         job, workspace, as_list(sections), restrict_to=as_list(restrict_to),
         section_image=section_image, atlas_image=atlas_image, mask=mask,
@@ -774,12 +752,8 @@ def _region_zooms(
     """Return each fitted section's zoom to the regions' box.
 
     None without regions, and none where it would not magnify enough
-    (:func:`langslice.tools.affine_fit.zoom_window`).
+    (:func:`langslice.tools.fit_regions.zoom_window`).
     """
-    from langslice.tools import (
-        affine_fit,  # local: cycle with tools.affine_fit
-    )
-
     zooms: dict[str, list[float]] = {}
     if not regions:
         return zooms
@@ -787,10 +761,8 @@ def _region_zooms(
         section = run.job.state.by_id(name)
         box = None
         if section is not None:
-            box = affine_fit.region_box(
-                run.ctx, run.job.state, section, regions
-            )
-        window = affine_fit.zoom_window(box)
+            box = region_box(run.ctx, run.job.state, section, regions)
+        window = zoom_window(box)
         if window is not None:
             zooms[name] = window
     return zooms

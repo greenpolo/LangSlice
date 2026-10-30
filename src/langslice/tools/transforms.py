@@ -33,6 +33,7 @@ from langslice.core.stack.section import ROTATIONS
 from langslice.tools.look import show_result
 from langslice.tools.refusal import (
     check_frozen,
+    check_section_count,
     section_refusal,
     unknown_sections,
 )
@@ -560,10 +561,6 @@ def interactive_transform_tool(
     dict
         The reply: ``status``, one row per entry, the rows the write changed.
     """
-    from langslice.tools.catalog import (
-        check_section_count,
-    )  # local: cycle with tools.catalog
-
     job = run.job
     entries = as_list(sections)
     if not entries:

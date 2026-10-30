@@ -1809,7 +1809,7 @@
 {"path": "src/langslice/ops/deformable.py", "symbol": "engine_ready", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "engine_ready"},
 {"path": "src/langslice/ops/deformable.py", "symbol": "refuse_without_engine", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "refuse_without_engine"},
 {"path": "src/langslice/ops/deformable.py", "symbol": "fit_record", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "fit_record"},
-{"path": "src/langslice/ops/deformable.py", "symbol": "region_entries", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "region_entries"},
+{"path": "src/langslice/ops/deformable.py", "symbol": "region_entries", "new_path": "src/langslice/tools/fit_regions.py", "new_symbol": "region_entries"},
 {"path": "src/langslice/ops/deformable.py", "symbol": "fireants_syn", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "fireants_syn"},
 {"path": "src/langslice/ops/deformable.py", "symbol": "_mask_label", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "_mask_label"},
 {"path": "src/langslice/ops/deformable.py", "symbol": "refuse_unknown_inputs", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "refuse_unknown_inputs"},
@@ -1969,7 +1969,7 @@
 {"path": "src/langslice/ops/registry.py", "symbol": "Verb.long", "new_path": "src/langslice/tools/catalog.py", "new_symbol": "Verb.long"},
 {"path": "src/langslice/ops/registry.py", "symbol": "Verb.scripting", "new_path": "src/langslice/tools/catalog.py", "new_symbol": "Verb.scripting"},
 {"path": "src/langslice/ops/registry.py", "symbol": "Verb.image_model", "new_path": "src/langslice/tools/catalog.py", "new_symbol": "Verb.image_model"},
-{"path": "src/langslice/ops/registry.py", "symbol": "check_section_count", "new_path": "src/langslice/tools/catalog.py", "new_symbol": "check_section_count"},
+{"path": "src/langslice/ops/registry.py", "symbol": "check_section_count", "new_path": "src/langslice/tools/refusal.py", "new_symbol": "check_section_count"},
 {"path": "src/langslice/ops/registry.py", "symbol": "verbs_for", "new_path": "src/langslice/tools/catalog.py", "new_symbol": "verbs_for"},
 {"path": "src/langslice/ops/registry.py", "symbol": "enabled", "new_path": "src/langslice/tools/catalog.py", "new_symbol": "enabled"},
 {"path": "src/langslice/ops/submit.py", "symbol": "<module>", "new_path": "src/langslice/tools/submit.py", "new_symbol": "<module>"},
@@ -2474,8 +2474,8 @@
 {"path": "src/langslice/tools/transforms.py", "symbol": "refit_refusal", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "refit_refusal"},
 {"path": "src/langslice/tools/transforms.py", "symbol": "_fit_elastix", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "_fit_elastix"},
 {"path": "src/langslice/tools/transforms.py", "symbol": "elastix_fit", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "elastix_fit"},
-{"path": "src/langslice/tools/transforms.py", "symbol": "zoom_window", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "zoom_window"},
-{"path": "src/langslice/tools/transforms.py", "symbol": "region_box", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "region_box"},
+{"path": "src/langslice/tools/transforms.py", "symbol": "zoom_window", "new_path": "src/langslice/tools/fit_regions.py", "new_symbol": "zoom_window"},
+{"path": "src/langslice/tools/transforms.py", "symbol": "region_box", "new_path": "src/langslice/tools/fit_regions.py", "new_symbol": "region_box"},
 {"path": "src/langslice/tools/transforms.py", "symbol": "elastix_affine", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "elastix_affine"},
 {"path": "src/langslice/tools/transforms.py", "symbol": "<module>", "new_path": "src/langslice/tools/affine_fit.py", "new_symbol": "<module>"},
 {"path": "src/langslice/tools/transforms.py", "symbol": "<module>", "new_path": "src/langslice/tools/transforms.py", "new_symbol": "<module>"},
@@ -2524,6 +2524,8 @@
 {"path": "src/langslice/tools/landmarks.py", "symbol": "_unchanged_reply", "new_path": "src/langslice/tools/landmark_warp.py", "new_symbol": "_unchanged"},
 {"path": "src/langslice/tools/deformable.py", "symbol": "default_settings", "new_path": "src/langslice/tools/warps.py", "new_symbol": "default_settings"},
 {"path": "src/langslice/tools/deformable.py", "symbol": "fit_record", "new_path": "src/langslice/tools/warps.py", "new_symbol": "fit_record"},
-{"path": "src/langslice/tools/deformable.py", "symbol": "_resolved", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "resolved_atlas_image"}
+{"path": "src/langslice/tools/deformable.py", "symbol": "_resolved", "new_path": "src/langslice/tools/deformable.py", "new_symbol": "resolved_atlas_image"},
+{"path": "src/langslice/tools/deformable.py", "symbol": "region_entries", "new_path": "src/langslice/tools/fit_regions.py", "new_symbol": "region_entries"},
+{"path": "src/langslice/tools/catalog.py", "symbol": "check_section_count", "new_path": "src/langslice/tools/refusal.py", "new_symbol": "check_section_count"}
 ]
 }

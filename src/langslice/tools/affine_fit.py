@@ -5,7 +5,7 @@ atlas image and writes every fit that succeeded as one undo step
 (the transforms' one write, :func:`fit_transform` records). Each
 row carries what the fit read, how far it turned the section and the flags of
 an implausible change (:func:`plausibility_flags`); a fit restricted to
-regions carries their box, which its picture zooms to (:func:`zoom_window`).
+regions carries their box, which its picture zooms to.
 ``elastix_fit`` is one fit written nowhere, for scripts.
 
 ``elastix_affine_tool`` answers the tool's call with a row per section,
@@ -15,7 +15,7 @@ registration with the atlas borders on it, drawn on the section image the
 fit read, unless the call's ``view`` is false and the host does not force
 it. With ``restrict_to`` those regions' borders are drawn thick and the
 others faint, and the picture is zoomed to the regions' box when that
-magnifies it at least ``MIN_ZOOM_GAIN`` times.
+magnifies it at least ``fit_regions.MIN_ZOOM_GAIN`` times.
 """
 
 from __future__ import annotations
@@ -25,17 +25,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
-
 from langslice.core.atlas.images import resolve_image
-from langslice.core.atlas.sides import split_side
 from langslice.core.fits import affine as core_affine
-from langslice.core.fits.deformable.plane_images import regions_mask
 from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.flags import FitFlag
 from langslice.core.geometry.affine import IDENTITY_PARAMS
 from langslice.core.jsonable import JsonObject
-from langslice.core.pictures.placement import stage
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack import codec
@@ -48,15 +43,22 @@ from langslice.tools.deformable import (
     inputs_block,
     nothing_fitted,
     refuse_unknown_inputs,
+)
+from langslice.tools.fit_regions import (
+    region_box,
     region_entries,
+    zoom_window,
 )
 from langslice.tools.images import check_image
 from langslice.tools.look import show_result
-from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.refusal import (
+    check_section_count,
+    frozen_row,
+    unknown_sections,
+)
 from langslice.tools.run import Run, as_list, drawn_image, pictured
 from langslice.tools.stale import section_inputs, stale_row
 from langslice.tools.transforms import (
-    KNOB_DEFAULTS,
     NO_POSITION,
     mirror_message,
     physical_knobs,
@@ -452,65 +454,7 @@ def elastix_fit(
     return replace(fit, inputs=block.payload())
 
 
-# --- the regions' box and the tool's operation -------------------------------
-
-#: Margin added round the regions' bounding box, as a fraction of the canvas.
-BOX_MARGIN = 0.05
-#: The least magnification a restricted fit's picture zooms to its regions'
-#: box for (:func:`zoom_window`); a box covering more of the canvas is drawn
-#: whole, its regions highlighted only.
-MIN_ZOOM_GAIN = 1.5
-
-
-def zoom_window(box: Sequence[float] | None) -> list[float] | None:
-    """*box* (:func:`region_box`) as the zoom of a restricted fit's picture,
-    or None when it would magnify less than :data:`MIN_ZOOM_GAIN` times
-    (its larger side over 1 / ``MIN_ZOOM_GAIN`` of the canvas's)."""
-    if not box:
-        return None
-    extent = max(float(box[2]) - float(box[0]), float(box[3]) - float(box[1]))
-    return [float(v) for v in box] if extent * MIN_ZOOM_GAIN <= 1.0 else None
-
-
-def region_box(
-    workspace: Workspace,
-    state: Any,
-    record: Section,
-    regions: Sequence[str],
-) -> list[float] | None:
-    """The atlas regions' bounding box on the section's canvas.
-
-    ``[x0, y0, x1, y1]`` as fractions of the canvas, with a small margin: the
-    zoom :func:`langslice.core.pictures.canvas.zoom_box` takes. None when the
-    regions are not in the plane there. A side (``CTX:left``) is read as the
-    region on both sides.
-    """
-    if not regions:
-        return None
-    try:
-        names = [split_side(name)[0] for name in regions]
-        geometry = stage(
-            workspace, state, record, dict(KNOB_DEFAULTS), "canvas"
-        ).geometry
-        mask = regions_mask(workspace.atlas, geometry.annotation, names)
-    except Exception as exc:
-        logger.warning("region box failed for %s: %s", record.id, exc)
-        return None
-    rows = np.flatnonzero(mask.any(axis=1))
-    cols = np.flatnonzero(mask.any(axis=0))
-    if rows.size == 0 or cols.size == 0:
-        return None
-    width, height = geometry.size
-    scale = geometry.atlas_scale
-    left, top = geometry.atlas_offset
-    x0, x1 = left + cols[0] * scale, left + (cols[-1] + 1) * scale
-    y0, y1 = top + rows[0] * scale, top + (rows[-1] + 1) * scale
-    return [
-        round(max(0.0, x0 / width - BOX_MARGIN), 4),
-        round(max(0.0, y0 / height - BOX_MARGIN), 4),
-        round(min(1.0, x1 / width + BOX_MARGIN), 4),
-        round(min(1.0, y1 / height + BOX_MARGIN), 4),
-    ]
+# --- the tool's operation ----------------------------------------------------
 
 
 def elastix_affine(
@@ -653,10 +597,6 @@ def elastix_affine_tool(
         The reply: ``status``, the call's ``settings``, one row per section
         (``results``) and the deformations the fit made stale.
     """
-    from langslice.tools.catalog import (  # local: cycle with tools.catalog
-        check_section_count,
-    )
-
     job, workspace = run.job, run.ctx
     regions = region_entries(workspace, job.state, as_list(restrict_to))
     check_atlas_image(workspace, atlas_image)

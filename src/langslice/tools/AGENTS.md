@@ -113,10 +113,11 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   tool door after the write.
 - It never words anything for a model. Job rules (frozen
   properties, host damage marks, the spec's flip switch, the submit gates)
-  are the job's and are applied here; the per-call section caps (`catalog.check_section_count`:
-  `Verb.limits`, and for the transform tools `Job.picture_cap` and the job's
-  `transform.max_parallel`, each None for no cap; `TOO_MANY_SECTIONS`) are
-  checked by the tool door with its other arguments.
+  are the job's and are applied here; the per-call section caps (`refusal.check_section_count`:
+  the tool's own cap, its `Verb.limits`, and for the transform tools
+  `Job.picture_cap` and the job's `transform.max_parallel`, each None for no
+  cap; `TOO_MANY_SECTIONS`) are checked by each tool's body with its other
+  arguments.
 - A model is passed in, never chosen here: `traces.trace_borders`
   takes the image model (`core.fits.trace.request.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
@@ -364,7 +365,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   (`plausibility_flags`: `SCALE_CHANGED`, `SHEAR`); each fit runs inside
   `core.fits.engine_log.engine_output(job.engine_log)`. With `restrict_to`, each ok row carries
   `restrict_box`: the regions' bounding box on that section's canvas as
-  `[x0, y0, x1, y1]` fractions (`region_box`; `core.pictures.canvas.zoom_box`'s
+  `[x0, y0, x1, y1]` fractions (`fit_regions.region_box`; `core.pictures.canvas.zoom_box`'s
   zoom). Refused: `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. Returns `AffineFit`
   (`rows`, `fitted`). `elastix_fit(job, workspace, section, restrict_to=,
   exclude=, atlas_image=, mask=, marked=True)`: one Elastix affine from the
@@ -417,7 +418,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   images (`core.atlas.images`; `nissl` resolves per atlas) with a named section
   mask, on top of the applied deformation
   (undo is how to start over); *restrict_to*
-  checked against the atlas (`region_entries`); refused, nothing done:
+  checked against the atlas (`fit_regions.region_entries`); refused, nothing done:
   `ENGINE_MISSING` (`refuse_without_engine`: FireANTs and torch must import, `engine_ready`),
   `BAD_ARGS` (no sections, an unknown
   atlas image, metric, detail or smoothness, a malformed region list;
@@ -499,6 +500,12 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   regions that leave nothing on the plane, keeps its own code),
   `BORDER_TRACE_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
+- `fit_regions.py` — `region_entries(workspace, state, entries)`: a call's
+  `restrict_to` (or `exclude`) checked against the atlas and normalized
+  (`BAD_ARGS`, `UNKNOWN_REGIONS`, `NO_SIDES`), for every fit tool and a
+  script's fit; `region_box` (the regions' bounding box on a section's
+  canvas, with `BOX_MARGIN`) and `zoom_window` (that box as a restricted
+  fit's picture zoom, only past `MIN_ZOOM_GAIN`).
 - `stale.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
   position, plane, angles, flip, rotation, transform; its made images'
