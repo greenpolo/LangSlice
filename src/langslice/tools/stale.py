@@ -61,4 +61,4 @@ def stale_row(section_id: str) -> dict[str, Any]:
         RefusalCode.STALE_INPUT,
         "This section's placement, images or deformation changed while the "
         "fit ran; nothing was written for it. Run the fit again.")
-    return {"id": section_id, **refusal.payload()}
+    return refusal.payload(section_id=section_id)

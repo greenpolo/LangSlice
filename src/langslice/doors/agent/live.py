@@ -7,13 +7,11 @@ reasoning and model configuration are never serialized or forwarded.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import Any
 
-from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.tools.events import LiveCallback, plain
 
 logger = logging.getLogger(__name__)
-LiveCallback = Callable[[dict[str, Any]], None]
 
 
 def _model_name(model: Any) -> str:
@@ -25,21 +23,6 @@ def _model_name(model: Any) -> str:
         return model
     name = getattr(model, "model", None)
     return name if isinstance(name, str) else type(model).__name__
-
-
-def plain(value: Any) -> Any:
-    """Copy JSON content without falling back to object reprs or media bytes."""
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, dict):
-        return {
-            key: plain(item) for key, item in value.items()
-            if isinstance(key, str)
-            and key not in {TOOL_MEDIA_PARTS_KEY, "thought_signature", "encrypted_content"}
-        }
-    if isinstance(value, (list, tuple)):
-        return [plain(item) for item in value]
-    return "<non-text content>"
 
 
 def _images(parts: Any, *, label: str) -> list[dict[str, Any]]:

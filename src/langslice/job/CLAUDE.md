@@ -188,8 +188,8 @@ plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/)
                      the only place a plugin tool writes
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read), per
                      change of the plugins' record, and a `tool_start` / `tool_end`
-                     pair per tool call on every door (`doors/tools/toolbox.py`,
-                     `_job_events`; `docs/reference/file_formats.md` has the fields)
+                     pair per tool call on every door (`tools/events.py`,
+                     `EventLog`; `docs/reference/file_formats.md` has the fields)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, an error's
                      code and message, artifacts, `reply`)
@@ -481,7 +481,7 @@ longer exist be taken over by the images it is opened with.
   `numbers` and `captions` say what was saved) and the store queues each
   with its note (the atlas, for a placement picture's layers, asked of
   `atlas_of` only then; a block that raises saves nothing; a failed queue is
-  logged, never raised). The tool door's `toolbox._saves_views` wraps every
+  logged, never raised). The tool pipeline's `_save_pictures` step runs every
   tool in it, so the ADK and MCP tools save the same way, and a CLI or
   script would too. The ADK driver queues the opening's message images
   (`engine.save_opening`), the MCP door each `show_stack` page's image

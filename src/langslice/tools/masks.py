@@ -180,7 +180,7 @@ def make_mask(
                               atlas_image=resolved, params=params))
         except Refused as refusal:
             first = first or refusal
-            row = {"id": section.id, **refusal.payload()}
+            row = refusal.payload(section_id=section.id)
             row.update(status=ReplyStatus.ERROR, message=refusal.message or refusal.code)
             rows.append(row)
             continue

@@ -284,11 +284,11 @@ def fit_deformable(
         if unreadable or (current is None and held is not None
                           and held.linear_key == deformation.linear_key(state, record)):
             folder = None if held is None else held.record
-            rows.append({"id": record.id, **Refused(
+            rows.append(Refused(
                 RefusalCode.DEFORMATION_UNREADABLE,
                 "The section's applied deformation record cannot be read "
                 f"({folder}); it is not replaced by a fit from the "
-                "linear placement.").payload()})
+                "linear placement.").payload(section_id=record.id))
             continue
         own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
@@ -297,8 +297,8 @@ def fit_deformable(
         try:
             grid = deformation.fit_grid(state, workspace, record)
         except (ValueError, OSError) as exc:
-            rows.append({"id": record.id, **Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                                message=str(exc)).payload()})
+            rows.append(Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                message=str(exc)).payload(section_id=record.id))
             continue
         previous = current
         previous_key = None
@@ -624,7 +624,7 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
         for warp in warps:
             record = job.state.by_id(warp.id)
             if record is None:
-                rows.append({"id": warp.id, **Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload()})
+                rows.append(Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload(section_id=warp.id))
                 continue
             frozen = frozen_row(job, record.id, "deformation")
             if frozen is not None:
@@ -640,8 +640,8 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
             try:
                 folder = store.save(record.id, warp.key, warp.record)
             except (OSError, ValueError) as exc:
-                rows.append({"id": record.id, **Refused(RefusalCode.RECORD_WRITE_FAILED,
-                                    message=str(exc)).payload()})
+                rows.append(Refused(RefusalCode.RECORD_WRITE_FAILED,
+                                    message=str(exc)).payload(section_id=record.id))
                 continue
             record.deformation = deformation.reference(
                 folder=job.layout.relative(folder), key=warp.key, linear=warp.linear_key,

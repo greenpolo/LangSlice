@@ -22,7 +22,7 @@ from langslice.doors.plugins.context import (
 if TYPE_CHECKING:
     from PIL import Image
 
-    from langslice.tools.run import Door
+    from langslice.tools.run import Run
 
 
 # --- a script's own method ----------------------------------------------------------------
@@ -98,8 +98,8 @@ class ScriptContext(ToolContext):
       layers=[name])``.
     """
 
-    def __init__(self, door: Door) -> None:
-        super().__init__(door, Caller.script(), f"{SCRIPT_CALLER}-0")
+    def __init__(self, run: Run) -> None:
+        super().__init__(run, Caller.script(), f"{SCRIPT_CALLER}-0")
         self._calls = 0
         self._pending = False  # a call id taken by a proposal its write has not used yet
 
@@ -136,7 +136,7 @@ class ScriptContext(ToolContext):
             if outer:
                 self._pending = False
         if result.ok and result.written:
-            self._door.job.layout.log_event(
+            self._run.job.layout.log_event(
                 "script_write", property=list(properties), sections=list(result.written),
                 notes=notes(result) if notes is not None else {},
                 argv0=str(sys.argv[0]) if sys.argv else "", call=self.call)
@@ -168,7 +168,7 @@ class ScriptContext(ToolContext):
         def notes(result: WriteResult) -> dict[str, str]:
             out: dict[str, str] = {}
             for row in rows:
-                record = self._door.state.resolve(row.get("id"))
+                record = self._run.state.resolve(row.get("id"))
                 text = str(row.get("note") or (row.get("transform") or {}).get("note") or "")
                 if record is not None and record.id in result.written and text:
                     out[record.id] = text
@@ -182,7 +182,7 @@ class ScriptContext(ToolContext):
         def notes(result: WriteResult) -> dict[str, str]:
             out: dict[str, str] = {}
             for row in rows:
-                record = self._door.state.resolve(row.get("id"))
+                record = self._run.state.resolve(row.get("id"))
                 held = row.get("deformation")
                 text = str(row.get("note") or (held._warp.step.get("note") if isinstance(
                     held, DeformationProposal) else "") or "")
@@ -210,7 +210,7 @@ class ScriptContext(ToolContext):
                 self._pending = False
         import sys
 
-        self._door.job.layout.log_event(
+        self._run.job.layout.log_event(
             "script_write", property=["layer"], sections=[ref.section], notes={},
             layer=ref.name, argv0=str(sys.argv[0]) if sys.argv else "", call=self.call)
         return ref
@@ -296,9 +296,9 @@ class ScriptContext(ToolContext):
         each noted by *noted*; written before this returns."""
         from langslice.job.pictures import PICTURE_FILE, captured
 
-        job = self._door.job
+        job = self._run.job
         with captured() as saved:
-            with job.views.shown(SCRIPT_CALLER, atlas_of=lambda: self._door.ctx.atlas) as shown:
+            with job.views.shown(SCRIPT_CALLER, atlas_of=lambda: self._run.ctx.atlas) as shown:
                 for picture in pictures:
                     noted(picture)
                 shown.show(list(pictures), arguments=to_jsonable(arguments), call_id=self.call)

@@ -35,7 +35,7 @@ from langslice.tools import submit as ops_submit
 from langslice.tools import transforms as ops_transforms
 from langslice.tools.catalog import check_section_count
 from langslice.tools.refusal import unknown_sections as unknown_refusal
-from langslice.tools.run import Door, as_list, drawn_image, pictured, spread
+from langslice.tools.run import Run, as_list, drawn_image, pictured, spread
 
 #: Positions closer than this (mm) are one atlas picture in a positioning picture.
 SAME_POSITION_MM = 0.02
@@ -58,9 +58,9 @@ def _first_refusal(rows: list[dict[str, Any]]) -> dict[str, Any]:
             **({"message": first["message"]} if first.get("message") else {})}
 
 
-def bodies(door: Door) -> dict[str, Callable[..., Any]]:
-    """The changing and bookkeeping tools' bodies over *door*."""
-    job, ctx, spec = door.job, door.ctx, door.spec
+def bodies(run: Run) -> dict[str, Callable[..., Any]]:
+    """The changing and bookkeeping tools' bodies over *run*."""
+    job, ctx, spec = run.job, run.ctx, run.spec
 
     def shows(view: bool) -> bool:
         return bool(view) or bool(spec.force_view)
@@ -88,7 +88,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                if unknown else {}),
             "order": done.order,
             **({"reordered": done.reordered} if done.reordered else {}),
-            **door.answered(*done.touched),
+            **run.answered(*done.touched),
         }
         if not shows(view):
             return result
@@ -143,7 +143,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             "status": "ok" if ok else "error",
             **({} if ok else {"error": RefusalCode.NOTHING_WRITTEN}),
             "results": rows,
-            **({"changed": door.changed(done.written)["changed"]} if done.written else {}),
+            **({"changed": run.changed(done.written)["changed"]} if done.written else {}),
         }
         if not ok or not shows(view):
             return result
@@ -163,7 +163,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             "status": "ok", "id": done.id, "regions": done.regions, "note": done.note,
             "damaged": done.damaged, "written": done.written,
             **({"render_failed": done.render_failed} if done.render_failed else {}),
-            **({"changed": door.changed(done.touched)["changed"]} if done.touched else {}),
+            **({"changed": run.changed(done.touched)["changed"]} if done.touched else {}),
         }
         if done.pictures:
             for picture in done.pictures:
@@ -180,7 +180,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         named = as_list(sections)
         ids: list[str] | None = None
         if named:
-            scope, unknown = door.resolve_many(named)
+            scope, unknown = run.resolve_many(named)
             if unknown or not scope:
                 raise unknown_refusal(job.state, unknown)
             ids = [record.id for record in scope]
@@ -234,7 +234,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 result["message"] = (f"{asked} steps were asked and the history held "
                                      f"{step.steps}: all {step.steps} were taken.")
         if what["sections"]:
-            rows = door.changed(what["sections"])
+            rows = run.changed(what["sections"])
             result["changed"] = rows["changed"]
             if "placement" in info.get("fields", []):
                 result["cutting_angles_deg"] = rows["cutting_angles_deg"]
@@ -288,7 +288,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             "status": "ok" if ok else "error",
             **({} if ok else _first_refusal(done.rows)),
             "results": done.rows,
-            **({"changed": door.changed(done.written)["changed"]} if done.written else {}),
+            **({"changed": run.changed(done.written)["changed"]} if done.written else {}),
         }
         if not ok or not shows(view):
             return result
@@ -303,12 +303,12 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         done = ops_submit.submit(
             job, summary=summary, notes=as_list(notes),
             interval_breaks=as_list(interval_breaks),
-            traces=door.traces_on, workspace=ctx)
-        door.box.submission.update({"summary": done.summary, "notes": done.notes,
+            traces=run.traces_on, workspace=ctx)
+        run.box.submission.update({"summary": done.summary, "notes": done.notes,
                                     "interval_breaks": done.interval_breaks})
         if tool_context is not None:
             tool_context.actions.escalate = True
-        return {"status": "ok", **door.rows()}
+        return {"status": "ok", **run.rows()}
 
     return {
         "position_sections": position_sections,

@@ -162,9 +162,9 @@ class JobHandle:
         (:class:`ScriptContext`, ``docs/developers/library.md``): the same reads,
         conversions and writes a tool plugin has, recorded as ``script``."""
         if self._context is None:
-            door = self._opened.tools().door
-            assert door is not None  # build_tools keeps the door it built
-            self._context = ScriptContext(door)
+            run = self._opened.tools().run
+            assert run is not None  # build_tools keeps the run it built
+            self._context = ScriptContext(run)
         return self._context
 
     @property
@@ -243,7 +243,7 @@ class JobHandle:
         ``artifacts`` and ``images``. Work that finished meanwhile is delivered
         once, here or at the head of the next reply. *timeout* seconds (None: as
         long as it takes) leave work still running listed under ``running``."""
-        from langslice.doors.tools.toolbox import with_notices, work_pictures
+        from langslice.tools.pipeline import with_notices, work_pictures
 
         job = self._opened.job
         job.background.wait_all(timeout)

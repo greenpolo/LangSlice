@@ -39,7 +39,7 @@ import sys
 import time
 import typing
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from langslice.core.refusal import FAILED_STATUSES, RefusalCode, ReplyStatus
 from langslice.core.stack.codec import trace_to_json
@@ -60,6 +60,9 @@ from langslice.doors.agent_cli.envelope import (
 from langslice.job.lock import JobBusy
 from langslice.job.state_file import stack_to_json
 from langslice.tools.refusal import unknown_sections as unknown_refusal
+
+if TYPE_CHECKING:  # a type only: the job module loads with the call
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -629,10 +632,10 @@ def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
 
 def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
          dry_run: bool, verbose: bool) -> Envelope:
-    from langslice.doors.tools.toolbox import work_pictures
     from langslice.job.pictures import artifacts as picture_artifacts
     from langslice.job.pictures import captured
     from langslice.tools.catalog import verbs_for
+    from langslice.tools.pipeline import work_pictures
 
     verbs = verbs_for(opened.spec)
     job = opened.job
@@ -646,7 +649,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         if waits:
             job.background.wait_all()  # and the work started (its pictures saved)
     if waits and isinstance(reply, dict):
-        from langslice.doors.tools.toolbox import with_notices
+        from langslice.tools.pipeline import with_notices
 
         reply = with_notices(job, reply)
     artifacts: list[dict[str, Any]] = []
@@ -665,7 +668,8 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     pictures, unsaved = picture_artifacts(saved, verb)
     artifacts += pictures
     warnings += unsaved
-    artifacts += work_pictures(job, reply, start=len(pictures))
+    artifacts += work_pictures(
+        cast("Job", job), cast(object, reply), start=len(pictures))
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
         result["image_correction"] = _landed(job, result.get("id"))

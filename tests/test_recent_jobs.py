@@ -64,12 +64,12 @@ def test_a_long_list_keeps_the_newest_line_of_each_job(
 
 
 def test_event_arguments_are_capped():
-    from langslice.doors.tools.toolbox import EVENT_ARGS_BYTES, _event_args
+    from langslice.tools.events import EVENT_ARGS_BYTES, event_args
 
     small = {"sections": ["s1.png"]}
-    assert _event_args(small) == {"args": small}
+    assert event_args(small) == {"args": small}
     big = {"pairs": [{"atlas": [index, index], "section": [index, index]}
                      for index in range(500)]}
-    capped = _event_args(big)
+    capped = event_args(big)
     assert capped["args_truncated"] is True and isinstance(capped["args"], str)
     assert len(capped["args"].encode()) <= EVENT_ARGS_BYTES

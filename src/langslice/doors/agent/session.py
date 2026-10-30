@@ -33,7 +33,7 @@ from langslice.doors.agent.adk_plugins import (
     StrictArgumentsPlugin,
     WorkingSetImages,
 )
-from langslice.doors.agent.live import LiveCallback, LiveEvents
+from langslice.doors.agent.live import LiveEvents
 from langslice.doors.agent.models import (
     default_http_options,
     env_float,
@@ -42,6 +42,7 @@ from langslice.doors.agent.models import (
 )
 from langslice.doors.agent.spend import SpendMonitor
 from langslice.doors.agent.trace import open_trace
+from langslice.tools.events import LiveCallback
 
 logger = logging.getLogger(__name__)
 

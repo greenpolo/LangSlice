@@ -298,7 +298,7 @@ def test_a_reply_without_the_section_s_row_names_its_registration():
     is named beside them; a section whose status row the reply shows is not."""
     from types import SimpleNamespace
 
-    from langslice.doors.tools.toolbox import registrations_named
+    from langslice.tools.pipeline import registrations_named
 
     job = SimpleNamespace(registered_since=lambda mark: {ID0: 3, ID1: 5})
     reply = registrations_named(job, {"rows": [{"id": ID0, "fitted": "x"}],  # pyright: ignore[reportArgumentType]

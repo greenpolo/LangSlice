@@ -7,8 +7,8 @@ facts behind it (the ids, the allowed values). Nothing is written for a
 refused call. The core, the job and the tools raise it; each door turns it
 into its own answer once: the tool reply (:meth:`Refused.payload`), the
 agent CLI's envelope, the MCP text block, the library's reply. A per-section
-answer carries a refused section as its row, ``{"id": ..., **payload}``, the
-other sections going on.
+answer carries a refused section as its row, the other sections going on;
+a crash is answered as a refusal whose code is the exception's class name.
 
 The codes are strings the agent reads, so a member's value never changes.
 A member's name is its value (one excepted, :attr:`RefusalCode.NO_SUCH_PATH`,
@@ -354,12 +354,44 @@ class Refused(ValueError):
         text = self.facts.get("message")
         return text if isinstance(text, str) else ""
 
-    def payload(self) -> dict[str, object]:
+    @classmethod
+    def from_exception(cls, error: BaseException) -> Refused:
+        """Return the refusal an unexpected exception is answered with.
+
+        A tool, an image-model call or a background job that crashes is
+        answered like a refusal whose code is the exception's class name
+        (``ValueError``, ``KeyError``): no :class:`RefusalCode` member, since
+        the class is whatever was raised.
+
+        Parameters
+        ----------
+        error
+            The exception that ended the call.
+
+        Returns
+        -------
+        Refused
+            The class name as the code, the exception's text as the message.
+        """
+        return cls(type(error).__name__, message=str(error))
+
+    def payload(self, *, section_id: str | None = None) -> dict[str, object]:
         """Return the reply every door answers with.
+
+        Parameters
+        ----------
+        section_id
+            The filename of the section a per-section answer's row is for;
+            None for the reply to a whole call.
 
         Returns
         -------
         dict
-            ``status``, ``error`` (the code), then the facts.
+            ``status``, ``error`` (the code), then the facts; a section's
+            row has its ``id`` first.
         """
-        return {"status": self.status, "error": self.code, **self.facts}
+        reply: dict[str, object] = {"status": self.status, "error": self.code}
+        reply.update(self.facts)
+        if section_id is None:
+            return reply
+        return {"id": section_id, **reply}

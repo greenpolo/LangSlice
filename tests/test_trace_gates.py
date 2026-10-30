@@ -17,10 +17,11 @@ from langslice.core.stack.codec import (
     trace_to_json,
 )
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
+from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs
 from langslice.job.settings.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
+from langslice.tools.events import target_ids
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
@@ -106,8 +107,8 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert trace_to_json(
         load_checkpoint(ctx.checkpoint_path).slices[0].image_correction)["status"] == "ok"
     assert state.slices[0].transform == transform
-    assert _tool_target_ids(state, "trace_borders", {"section": "s0"}) == ["s0.png"]
-    assert _tool_target_ids(state, "trace_borders", {"section": "0"}) == []
+    assert target_ids(state, "trace_borders", {"section": "s0"}) == ["s0.png"]
+    assert target_ids(state, "trace_borders", {"section": "0"}) == []
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):

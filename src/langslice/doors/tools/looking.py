@@ -26,12 +26,12 @@ from langslice.tools import images as ops_images
 from langslice.tools import look as ops_look
 from langslice.tools import zoom as tools_zoom
 from langslice.tools.refusal import unknown_sections
-from langslice.tools.run import Door, as_list, pictured, spread
+from langslice.tools.run import Run, as_list, pictured, spread
 
 
-def can_change(door: Door) -> list[str]:
+def can_change(run: Run) -> list[str]:
     """What this run lets the agent change, in words (``status``)."""
-    spec = door.spec
+    spec = run.spec
 
     def has(name: str) -> bool:
         return TOOLS[name].is_on(spec)
@@ -57,7 +57,7 @@ def can_change(door: Door) -> list[str]:
         out.append("damaged regions")
     if spec.has("nonlinear"):
         fits = [name for name in ("fireants_syn", "trace_borders")
-                if has(name) and (name != "trace_borders" or door.traces_on)]
+                if has(name) and (name != "trace_borders" or run.traces_on)]
         if has("set_landmarks") and has("landmark_triangulation"):
             fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")
         out.append("deformations" + (f" ({', '.join(fits)})" if fits else ""))
@@ -72,18 +72,18 @@ def can_change(door: Door) -> list[str]:
     return out
 
 
-def raw_channels(door: Door) -> Any:
+def raw_channels(run: Run) -> Any:
     """The raw channels for ``status``: one list when every section shares
     them, else ``{filename: [names]}``."""
-    named = {record.id: section_images.raw_names(door.ctx, record.id)
-             for record in door.job.state.in_order()}
+    named = {record.id: section_images.raw_names(run.ctx, record.id)
+             for record in run.job.state.in_order()}
     distinct = {tuple(names) for names in named.values()}
     return list(next(iter(distinct))) if len(distinct) == 1 else named
 
 
-def bodies(door: Door) -> dict[str, Callable[..., Any]]:
-    """The looking tools' bodies over *door*."""
-    job, ctx = door.job, door.ctx
+def bodies(run: Run) -> dict[str, Callable[..., Any]]:
+    """The looking tools' bodies over *run*."""
+    job, ctx = run.job, run.ctx
 
     def look(mode: str, sections: list[str], images: list[str],
              positions_mm: list[float] | None = None, atlas_layers: list[str] | None = None,
@@ -94,9 +94,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
              sheet: bool = False) -> dict[str, Any]:
         note = ""
         edge: int | None = None
-        if resolution and door.level == AUTO_RESOLUTION:
+        if resolution and run.level == AUTO_RESOLUTION:
             try:
-                edge, note = clamp_resolution(resolution, door.box.max_view_edge)
+                edge, note = clamp_resolution(resolution, run.box.max_view_edge)
             except (TypeError, ValueError):
                 raise Refused(RefusalCode.BAD_ARGS,
                               "resolution is a whole number of pixels.") from None
@@ -108,7 +108,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             warp=str(warp or "applied").strip().lower(), resolution=edge,
             plugin_layers=as_list(layers), depth=depth, masks=as_list(masks),
             registrations=dict(registrations or {}),
-            sheet_edge=int(door.box.max_view_edge) if sheet else None)
+            sheet_edge=int(run.box.max_view_edge) if sheet else None)
         result: dict[str, Any] = {"status": "ok"}
         if note:
             result["resolution_note"] = note
@@ -150,7 +150,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         named = as_list(sections)
         ids: list[str] | None = None
         if named:
-            scope, unknown = door.resolve_many(named)
+            scope, unknown = run.resolve_many(named)
             if unknown or not scope:
                 raise unknown_sections(job.state, unknown)
             ids = [record.id for record in scope]
@@ -170,8 +170,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             **({"deleted": True} if done.deleted else {"recipe": done.in_force}),
             "section_images": done.images,
         }
-        if done.deleted or door.spec.off("look:section") or not (
-                view or door.spec.force_view):
+        if done.deleted or run.spec.off("look:section") or not (
+                view or run.spec.force_view):
             return result
         records = [record for record in (job.state.by_id(i) for i in done.sections)
                    if record is not None]
@@ -200,14 +200,14 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     def status() -> dict[str, Any]:
         state = job.state
-        result: dict[str, Any] = {"status": "ok", **door.rows()}
-        result["raw_channels"] = raw_channels(door)
-        settings = door.ctx.settings
+        result: dict[str, Any] = {"status": "ok", **run.rows()}
+        result["raw_channels"] = raw_channels(run)
+        settings = run.ctx.settings
         result["section_images"] = section_images.summary(state, settings)
         running = [work.summary() for work in job.background.running()]
         if running:
             result["background_running"] = running
-        result["can_change"] = can_change(door)
+        result["can_change"] = can_change(run)
         return result
 
     def list_files(path: str, glob: str) -> dict[str, Any]:

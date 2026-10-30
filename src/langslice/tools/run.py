@@ -1,9 +1,10 @@
 """What every tool body of one run shares: the job, the workspace, the run's settings.
 
-The tool bodies are closures over one :class:`Door`: the job and the workspace
-they work on, the toolbox's door-side record, the run's picture size, the image
-model, and the small helpers every body words its reply with (the status rows a
-write changed, a section list resolved, a refusal as a payload).
+The tool bodies are closures over one :class:`Run`: the job and the workspace
+they work on, the toolbox, the run's picture size, the image model, and the
+small helpers every body words its reply with (the status rows a write
+changed, a section list resolved). A run sits behind one door (the way in:
+the built-in agent, MCP, the agent CLI, the library).
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ from langslice.tools.look import Looked
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.doors.agent.engine import EngineContext
-    from langslice.doors.tools.toolbox import ToolBox
     from langslice.providers.connections import ImageModel
+    from langslice.tools.pipeline import ToolBox
 
 #: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a
 #: picture (captioned PIL image) or a line of text, in reading order.
@@ -34,8 +35,8 @@ Media = Image.Image | str
 
 
 @dataclass
-class Door:
-    """One run's tool door, as every tool body sees it."""
+class Run:
+    """One run, as every tool body sees it."""
 
     job: Job
     ctx: EngineContext
@@ -128,4 +129,4 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
-__all__ = ["Door", "Media", "as_list", "pictured"]
+__all__ = ["Media", "Run", "as_list", "pictured"]
