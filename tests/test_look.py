@@ -65,7 +65,7 @@ def test_section_refusals(tmp_path: Path):
         assert caught.value.code == code
     with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("section", sections=("nope.png",)))
-    assert caught.value.code == "UNKNOWN_SECTION"
+    assert caught.value.code == "UNKNOWN_SLICE_IDS"
     with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("sideways"))
     assert caught.value.code == "UNKNOWN_MODE"
@@ -132,7 +132,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     assert changed_since(state, held)
     with pytest.raises(Refused) as caught:
         restored(state, held)
-    assert caught.value.code == "UNKNOWN_SECTION"
+    assert caught.value.code == "SECTION_GONE"
 
 
 def test_request_round_trips_through_recipe_args():

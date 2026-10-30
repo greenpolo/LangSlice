@@ -76,4 +76,4 @@ plane search (sigmas 2, muA 3, muB 0). Sorting defaults are STalign's own (`clas
 
 Takes no section mask (it sorts the section's pixels itself; a named mask is refused `MASK_UNSUPPORTED`). One image pair (channels are fitted jointly by STalign but the tool gives one). Its final sorting is saved with the deformation. Brightness: slide 0, tissue 1.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.
+A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

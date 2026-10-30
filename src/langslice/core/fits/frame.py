@@ -130,7 +130,8 @@ def prepare_linear_registration(
     if section is None:
         raise ValueError(f"Unknown section: {section_id}")
     if section.position_mm is None or not np.isfinite(section.position_mm):
-        raise ValueError("A finite written position is required")
+        raise ValueError("A finite written position is required: write the "
+                         "section's position first")
     orientation = None
     if params is None:
         transform = section.transform

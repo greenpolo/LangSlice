@@ -120,4 +120,4 @@ SPOmiAlign code. In LangSlice, SPOmiAlign's code is to ship inside LangSlice's o
 
 One RGB image pair per call. No weighting in the matcher: a section mask can only drop matches whose section end has weight under 0.5 (the reply says "approximated by dropping matches"), and it estimates no mask of its own (`estimated` is null). Brightness: 8-bit, Nissl rendered dark on white. `smoothness_um` (a Gaussian sigma on the displacement field, as `fireants_syn`'s is) becomes `smoothing_px` per section from the canvas geometry.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.
+A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

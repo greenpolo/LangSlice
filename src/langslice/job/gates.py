@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from langslice.core.fits import deformation
-from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.stack.stack import Stack
 from langslice.job.settings.spec import JobSpec
 
@@ -18,6 +18,14 @@ STRICT_INTERVAL_TOLERANCE = 0.10
 # --- the submit gates ------------------------------------------------------------
 
 
+def _gate(code: RefusalCode, message: str, **facts: object) -> Refused:
+    """Return a submit gate's refusal: status ``refused``, then *message*.
+
+    The call is valid; the stack is not ready for it.
+    """
+    return Refused(code, message, status=ReplyStatus.REFUSED, **facts)
+
+
 def missing_positions(state: Stack) -> Refused | None:
     """``None`` when every section has a position, else the refusal
     naming the sections without one."""
@@ -26,30 +34,26 @@ def missing_positions(state: Stack) -> Refused | None:
     ]
     if not missing:
         return None
-    return Refused(
+    return _gate(
         RefusalCode.MISSING_POSITIONS,
+        f"{len(missing)} of {len(state.slices)} section(s) have no position; "
+        "every section needs one, damaged ones included.",
         missing_ids=missing,
-        message=(
-            f"{len(missing)} of {len(state.slices)} section(s) have no position; "
-            "every section needs one, damaged ones included."
-        ),
     )
 
 
 def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
     """Every consecutive spacing within 10% of the interval, no breaks."""
     if breaks:
-        return Refused(
+        return _gate(
             RefusalCode.STRICT_INTERVAL,
+            "strict_interval is on: interval_breaks must be empty, "
+            f"{len(breaks)} were reported.",
             reported_breaks=[
                 record.id
                 for record in state.in_order()
                 if record.index_corrected in set(breaks)
             ],
-            message=(
-                "strict_interval is on: interval_breaks must be empty, "
-                f"{len(breaks)} were reported."
-            ),
         )
     interval = float(state.interval_mm or 0.0)
     if interval <= 0:
@@ -68,16 +72,14 @@ def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
             )
     if not failures:
         return None
-    return Refused(
+    return _gate(
         RefusalCode.STRICT_INTERVAL,
+        f"strict_interval is on: every consecutive spacing must be within "
+        f"{STRICT_INTERVAL_TOLERANCE:.0%} of {interval:.3f} mm; "
+        f"{len(failures)} pair(s) are not.",
         interval_mm=round(interval, 3),
         tolerance_mm=round(tolerance, 3),
         failures=failures,
-        message=(
-            f"strict_interval is on: every consecutive spacing must be within "
-            f"{STRICT_INTERVAL_TOLERANCE:.0%} of {interval:.3f} mm; "
-            f"{len(failures)} pair(s) are not."
-        ),
     )
 
 
@@ -141,15 +143,13 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
         )
     if not failures:
         return None
-    return Refused(
+    return _gate(
         RefusalCode.INTERVAL_BREAKS_UNSUPPORTED,
+        f"{len(failures)} reported interval break(s) are not in the "
+        "positions you wrote. A break is accepted only where the "
+        f"written interval exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the "
+        "stack's median written spacing.",
         failures=failures,
-        message=(
-            f"{len(failures)} reported interval break(s) are not in the "
-            "positions you wrote. A break is accepted only where the "
-            f"written interval exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the "
-            "stack's median written spacing."
-        ),
     )
 
 
@@ -160,13 +160,11 @@ def missing_transforms(state: Stack) -> Refused | None:
     ]
     if not missing:
         return None
-    return Refused(
+    return _gate(
         RefusalCode.MISSING_TRANSFORMS,
+        f"{len(missing)} of {len(state.slices)} section(s) carry no "
+        "transform; every section needs one, damaged ones included.",
         missing_ids=missing,
-        message=(
-            f"{len(missing)} of {len(state.slices)} section(s) carry no "
-            "transform; every section needs one, damaged ones included."
-        ),
     )
 
 
@@ -193,13 +191,11 @@ def missing_deformations(
             )
     if not missing:
         return None
-    return Refused(
+    return _gate(
         RefusalCode.MISSING_DEFORMATIONS,
+        f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
+        "current placement. The user requires a deformation on every section: fit one on each.",
         sections=missing,
-        message=(
-            f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
-            "current placement. The user requires a deformation on every section: fit one on each."
-        ),
     )
 
 

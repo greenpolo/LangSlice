@@ -624,7 +624,8 @@ def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
         for warp in warps:
             record = job.state.by_id(warp.id)
             if record is None:
-                rows.append(Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload(section_id=warp.id))
+                rows.append(unknown_sections(job.state, [warp.id])
+                            .payload(section_id=warp.id))
                 continue
             frozen = frozen_row(job, record.id, "deformation")
             if frozen is not None:

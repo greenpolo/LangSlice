@@ -89,7 +89,8 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
                           message=f"Picture {number} is not saved: this job keeps no pictures "
                           "beyond this process.")
         raise Refused(RefusalCode.UNKNOWN_PICTURE, picture=number,
-                      message=f"There is no picture {number}.")
+                      message=f"There is no picture {number}; use a number "
+                      "a reply gave.")
     return found
 
 

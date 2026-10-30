@@ -406,8 +406,9 @@ the angles in a caption (empty for the flat plane).
   so a zoom of the picture is not stale for drawing a registration the
   section does not hold. `redraw(recipe, window, ws, state)` draws a recipe at a window,
   from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
-  another version of LangSlice saved is `UNREADABLE_RECIPE` (the zoom crops
-  the saved picture). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
+  another version of LangSlice saved is `UNREADABLE_RECIPE`, one showing a
+  section the stack no longer holds `SECTION_GONE` (the zoom crops the saved
+  picture for either). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_IMAGE`,
   `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn

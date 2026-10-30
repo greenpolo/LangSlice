@@ -22,9 +22,9 @@ FIXES: dict[str, str] = {
         "Name sections by filename, as `langslice-job {job} status` "
         "lists them."
     ),
-    RefusalCode.UNKNOWN_SECTION: (
-        "Name sections by filename, as `langslice-job {job} status` "
-        "lists them."
+    RefusalCode.SECTION_GONE: (
+        "The picture shows a section the stack no longer holds; "
+        "`langslice-job {job} status` lists the sections it holds now."
     ),
     RefusalCode.NO_JOB: (
         "Create the job first: `langslice-job <image folder> init`; a job made "
@@ -111,10 +111,9 @@ FIXES: dict[str, str] = {
         "no break (the user asked for a strict interval)."
     ),
     RefusalCode.OPTION_OFF: (
-        "That option is switched off for this job; use one of the others the "
-        "message lists."
+        "That option is switched off for this job: leave it out, or use one "
+        "of the others the message lists."
     ),
-    RefusalCode.FLIP_DISABLED: "Flipping is switched off for this job; leave flip out.",
     RefusalCode.INVALID_LINEAR_PLACEMENT: (
         "Give the section a position and a transform"
         "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
@@ -122,8 +121,8 @@ FIXES: dict[str, str] = {
         "]])]] first."
     ),
     RefusalCode.ENGINE_MISSING: (
-        "torch or fireants does not import on this host; reinstall "
-        "LangSlice (see the message)."
+        "The engine is not installed on this host (the message names what is "
+        "missing): use another method, or ask the user to install it."
     ),
     RefusalCode.FIT_FAILED: (
         "The engine failed on this section: the message "

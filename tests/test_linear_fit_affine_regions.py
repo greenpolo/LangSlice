@@ -126,3 +126,35 @@ def test_tiny_region_is_refused_before_elastix_and_does_not_write(tmp_path: Path
     assert "Region is too small for elastix" in row["message"]
     assert box.job.snapshot() == before
     assert state.slices[0].transform is None
+
+
+def test_a_script_fit_answers_as_the_tool_row_does(tmp_path: Path, monkeypatch):
+    """A script's Elastix fit refuses with the code the tool's row carries: a
+    side the placement lacks is ``WRONG_SIDE_PAIR`` (not ``FIT_FAILED``), and a
+    region too small is ``REGION_TOO_SMALL`` with its text written for the job."""
+    from langslice.core.fits.deformable import engines
+    from langslice.core.refusal import Refused
+    from langslice.tools.transforms import elastix_fit
+
+    state, box = _box(tmp_path, HalvesAtlas(), _tall_section(), pixel_size_um=50.0,
+                      position_mm=1.0)
+    _tool(box, "interactive_transform")(
+        [{"id": "s0.png", "rotation_deg": 90, "scale_x": 1, "scale_y": 1,
+          "translate_x_mm": 0, "translate_y_mm": 0}], view=False)
+    with pytest.raises(Refused) as caught:
+        elastix_fit(box.job, box.run.ctx, "s0.png", restrict_to=["L:left"])
+    assert caught.value.code == "WRONG_SIDE_PAIR"
+
+    atlas = HalvesAtlas()
+    atlas.annotation[atlas.annotation == CORE] = LEFT
+    atlas.annotation[:, 47:50, 39:42] = CORE
+    folder = tmp_path / "tiny"
+    folder.mkdir()
+    state, box = _box(folder, atlas, _left_half_section(), pixel_size_um=50.0, position_mm=0.5)
+    monkeypatch.setattr(engines, "run_elastix_affine",
+                        lambda *a, **k: pytest.fail("Tiny region reached Elastix"))
+    with pytest.raises(Refused) as caught:
+        elastix_fit(box.job, box.run.ctx, "s0.png", restrict_to=["C"])
+    assert caught.value.code == "REGION_TOO_SMALL"
+    assert "[[" not in caught.value.message
+    assert "interactive_transform" in caught.value.message

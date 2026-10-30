@@ -39,14 +39,37 @@ def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> No
         raise found
 
 
-def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | None:
-    """One section's ``SECTION_BUSY`` or ``FROZEN`` row (``id``, ``status``
-    ``error``, ``error``, ``message``; ``work`` or ``properties``), as a
-    per-section answer carries it, as :func:`check_frozen` decides, else None."""
-    found = job.busy_refusal([section_id]) or job.frozen_refusal([section_id], *properties)
-    if found is None:
+def section_refusal(
+    job: Job, section_id: str, *properties: str,
+) -> Refused | None:
+    """Return one section's busy or frozen refusal (:func:`check_frozen`).
+
+    Parameters
+    ----------
+    job
+        The job whose background work and frozen properties decide.
+    section_id
+        The section's filename.
+    *properties
+        The properties the call would write.
+
+    Returns
+    -------
+    Refused or None
+        ``SECTION_BUSY`` (``work``, ``message``) or ``FROZEN``
+        (``properties``, ``message``); None when the section may be written.
+    """
+    refusal = (job.busy_refusal([section_id])
+               or job.frozen_refusal([section_id], *properties))
+    if refusal is None:
         return None
-    named = "work" if "work" in found.facts else "properties"
-    row = Refused(found.code,
-                  **{named: found.facts[named]}, message=found.message)
-    return row.payload(section_id=section_id)
+    named = "work" if "work" in refusal.facts else "properties"
+    return Refused(refusal.code, **{named: refusal.facts[named]},
+                   message=refusal.message)
+
+
+def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | None:
+    """One section's :func:`section_refusal` as a per-section answer's row
+    (``id``, ``status`` ``error``, ``error``, then its facts), else None."""
+    refusal = section_refusal(job, section_id, *properties)
+    return None if refusal is None else refusal.payload(section_id=section_id)

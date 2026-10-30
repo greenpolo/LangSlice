@@ -72,10 +72,8 @@ def bodies(run: Run) -> dict[str, Callable[..., Any]]:
         angles = cutting_angles if cutting_angles else None
         done = ops_positions.position_sections(job, ctx, entries, angles)
         unknown = unknown_sections(job.state, done.unknown) if done.unknown else None
-        if not done.written and done.cutting_angles is None:
-            facts = ({"unknown_ids": done.unknown, "message": unknown["message"],
-                      "filenames": unknown["filenames"]} if unknown else {})
-            raise Refused(RefusalCode.NOTHING_WRITTEN, **facts)
+        if not done.written and done.cutting_angles is None and unknown:
+            raise Refused(RefusalCode.UNKNOWN_SLICE_IDS, **unknown)  # every name
         result: dict[str, Any] = {
             "written": [{"id": name, "position_mm": round(value, 3)}
                         for name, value in done.written],
@@ -255,7 +253,9 @@ def bodies(run: Run) -> dict[str, Callable[..., Any]]:
                           "steps is a whole number, 1 or more.")
         step = ops_history.undo(job, count)
         if not step.done:
-            raise Refused(RefusalCode.NOTHING_TO_UNDO)
+            raise Refused(RefusalCode.NOTHING_TO_UNDO,
+                          "Nothing to undo: the job's history holds no "
+                          "earlier step.")
         return stepped("undone", "undo_depth", step, count)
 
     def redo(steps: int = 1) -> dict[str, Any]:
@@ -265,7 +265,9 @@ def bodies(run: Run) -> dict[str, Callable[..., Any]]:
                           "steps is a whole number, 1 or more.")
         step = ops_history.redo(job, count)
         if not step.done:
-            raise Refused(RefusalCode.NOTHING_TO_REDO)
+            raise Refused(RefusalCode.NOTHING_TO_REDO,
+                          "Nothing to redo: redo follows an undo, and a "
+                          "write after it clears what was undone.")
         return stepped("redone", "redo_depth", step, count)
 
     def restore_registration(section: str = "",

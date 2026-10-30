@@ -53,14 +53,14 @@ class ToolError(Refused):
 
     The plugin's name for :class:`~langslice.core.refusal.Refused`: ``code``
     is the machine-readable reason (a ``RefusalCode`` member, or a code of
-    the plugin's own), ``message`` says why (the code when it is empty) and
-    ``details`` are plain facts; the reply is ``{"status": "error", "error":
-    code, "message": ..., **details}``.
+    the plugin's own), ``message`` says what was attempted, what was found
+    and what to do, and ``details`` are plain facts; the reply is
+    ``{"status": "error", "error": code, "message": ..., **details}``, as a
+    native refusal's.
     """
 
     def __init__(self, code: str, message: str = "", **details: Any) -> None:
-        super().__init__(str(code), str(message or code), **details)
-        self.details = details
+        super().__init__(str(code), str(message), **details)
 
 
 class PluginError(ValueError):

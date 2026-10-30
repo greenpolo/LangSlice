@@ -678,11 +678,12 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         cast("Job", job), cast(object, reply), start=len(pictures))
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
-        result["image_correction"] = _landed(job, result.get("id"))
-        work = job.background.get(str(result.get("work") or ""))
+        traced = cast("dict[str, object]", result)  # trace_borders' reply
+        traced["border_trace"] = _landed(job, traced.get("id"))
+        work = job.background.get(str(traced.get("work") or ""))
         if work is not None:  # the packaged trace, landed in this process
-            result["work_status"] = work.status
-            result["work_result"] = work.result
+            traced["work_status"] = work.status
+            traced["work_result"] = work.result
     if verb == "status" and isinstance(result, dict):
         result["verbs"] = opened.listed_verbs()
         state = image_model_state(opened.spec, connected=opened.image_model_connected)
@@ -710,9 +711,10 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
                          if isinstance(row, dict) and row.get("status") == ReplyStatus.ERROR]
     if not ok:
         unnamed = RefusalCode.ERROR  # a failed reply that names no code
-        code = str(reply.get("error") or unnamed)
-        message = str(reply.get("message") or reply.get("detail") or "")
-        rows = reply.get("results")
+        told = cast("dict[str, object]", reply)  # a failed reply is a dict
+        code = str(told.get("error") or unnamed)
+        message = str(told.get("message") or "")
+        rows = told.get("results")
         if not message and isinstance(rows, list):  # per-section refusals
             message = "; ".join(f"{row.get('id')}: {row.get('error')}" for row in rows
                                 if isinstance(row, dict) and row.get("error"))

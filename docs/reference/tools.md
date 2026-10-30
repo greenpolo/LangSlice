@@ -122,8 +122,8 @@ saying why. The checks, in order:
 What a job switches off is absent everywhere the agent looks: the tool is not
 built, an option is not in the tool's arguments, and no sentence of the job
 statement, a tool description, the `status` reply or a refusal names it. A
-call that names a switched-off `look` mode or quarter turn anyway is refused
-with `OPTION_OFF`, and a flip with `FLIP_DISABLED`. A reply that would use a
+call that names a switched-off `look` mode, quarter turn or flip anyway is
+refused with `OPTION_OFF`. A reply that would use a
 disabled option uses another: with `look:positioning` off,
 `position_sections` returns an overlay of each written section.
 

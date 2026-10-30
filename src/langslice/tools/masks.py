@@ -238,7 +238,8 @@ def _from_em(
 
     if section.position_mm is None:
         raise Refused(RefusalCode.NO_POSITION,
-                      message=f"{section.id} has no position yet.")
+                      message=f"{section.id} has no position yet; write it "
+                      "first.")
     try:
         grid = deformation.fit_grid(job.state, workspace, section)
     except (ValueError, OSError) as exc:

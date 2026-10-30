@@ -120,9 +120,9 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
 - A refusal is the core's `Refused(RefusalCode.X, message, **facts)`
   (`core/refusal.py`), raised, nothing written; this package re-exports
   nothing of it. `Refused.payload()` is the `{"status": ..., "error": code,
-  ...}` the tool door answers with (`status` "refused" for a gate, as the
-  opening-read gate's; the job's submit gates return theirs as a `Refused`,
-  `Job.submit_errors`, which `submit` raises); a section's row
+  ...}` the tool door answers with (`status` "refused" for a gate, the
+  opening-read gate's and the job's submit gates, which return theirs as a
+  `Refused`, `Job.submit_errors`, that `submit` raises); a section's row
   in a per-section answer is `{"id": ..., **refusal.payload()}`. A code is
   always a `RefusalCode` member (a fit's flag a `core.fits.flags.FitFlag`),
   never a string written out.
@@ -332,7 +332,7 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   orientation); a frozen orientation refuses a changed flip or quarter turn
   and a transform that would mirror the section. Per entry `FROZEN`
   (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
-  `BAD_ROTATION`, `FLIP_DISABLED`, `NO_POSITION`, the stager's codes
+  `BAD_ROTATION`, `OPTION_OFF`, `NO_POSITION`, the stager's codes
   (`core.pictures.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
   `error`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
@@ -474,9 +474,12 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   call runs on the job's image executor and the section's
   `border_trace` record is written as one undo step when it changed.
   Prepared outside the lock, started and written under it. Refused:
-  `UNKNOWN_SLICE_IDS`, `FROZEN` (the section's deformation is frozen),
-  `INVALID_LINEAR_PLACEMENT`,
-  `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
+  `UNKNOWN_SLICE_IDS`, `SECTION_BUSY` (other background work runs on the
+  section), `FROZEN` (the section's deformation is frozen),
+  `INVALID_LINEAR_PLACEMENT` (no position or no usable transform; a refusal
+  raised while the trace is prepared, such as `NO_SIDES` or `BAD_ARGS` for
+  regions that leave nothing on the plane, keeps its own code),
+  `BORDER_TRACE_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
 - `stale.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
@@ -578,8 +581,8 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   `ToolDef.writes`, is off: `JobSpec.switched_off`). A
   tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
   `interactive_transform:flip` and `:rotate` are the options) is off in every
-  run: the operations refuse a disabled `look` mode and a changed quarter
-  turn (`OPTION_OFF`) and a changed flip (`FLIP_DISABLED`).
+  run: the operations refuse a disabled `look` mode, a changed quarter turn
+  and a changed flip (`OPTION_OFF`, its `option` naming which).
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the

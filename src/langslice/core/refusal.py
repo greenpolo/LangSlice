@@ -95,6 +95,8 @@ class RefusalCode(TextEnum):
     BAD_SETTINGS = "BAD_SETTINGS"
     #: ``look``'s ``warp`` is not one of its choices.
     BAD_WARP = "BAD_WARP"
+    #: A border trace's record could not be written or read in the job folder.
+    BORDER_TRACE_IO_ERROR = "BORDER_TRACE_IO_ERROR"
     #: A section's saved deformation cannot be read.
     DEFORMATION_UNREADABLE = "DEFORMATION_UNREADABLE"
     #: A call names the same section twice.
@@ -103,18 +105,15 @@ class RefusalCode(TextEnum):
     EMPTY_BOX = "EMPTY_BOX"
     #: A plugin's registration engine ran and failed.
     ENGINE_FAILED = "ENGINE_FAILED"
-    #: The deformable engine (FireANTs on torch) cannot import here.
+    #: A registration engine is not installed here: FireANTs on torch does
+    #: not import, or a plugin engine's interpreter or source is missing.
     ENGINE_MISSING = "ENGINE_MISSING"
-    #: A plugin's registration engine is not installed here.
-    ENGINE_UNAVAILABLE = "ENGINE_UNAVAILABLE"
     #: The agent CLI could not set up or change the job's environment.
     ENV_FAILED = "ENV_FAILED"
     #: A failed reply that names no code of its own.
     ERROR = "ERROR"
     #: A fit's engine raised; the message is its error's first line.
     FIT_FAILED = "FIT_FAILED"
-    #: A flip asked while the job switches flipping off.
-    FLIP_DISABLED = "FLIP_DISABLED"
     #: A write would change a property the job froze.
     FROZEN = "FROZEN"
     #: An affine fit asked of a section that holds a deformation.
@@ -123,8 +122,6 @@ class RefusalCode(TextEnum):
     IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED = (
         "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED"
     )
-    #: A trace's record could not be written or read in the job folder.
-    IMAGE_CORRECTION_IO_ERROR = "IMAGE_CORRECTION_IO_ERROR"
     #: A verb that needs the job's image model, which is not connected.
     IMAGE_MODEL_OFF = "IMAGE_MODEL_OFF"
     #: The folder's job was made from other supplied inputs.
@@ -221,7 +218,7 @@ class RefusalCode(TextEnum):
     NOTHING_WRITTEN = "NOTHING_WRITTEN"
     #: A write before every opening page was read.
     OPENING_NOT_READ = "OPENING_NOT_READ"
-    #: An option the job switches off.
+    #: An option the job switches off: a ``look`` mode, a flip, a quarter turn.
     OPTION_OFF = "OPTION_OFF"
     #: A picture number with no saved image to crop.
     PICTURE_NOT_SAVED = "PICTURE_NOT_SAVED"
@@ -245,6 +242,8 @@ class RefusalCode(TextEnum):
     RUN_LOST = "RUN_LOST"
     #: Background work is running on the section.
     SECTION_BUSY = "SECTION_BUSY"
+    #: A saved picture shows a section the stack does not hold.
+    SECTION_GONE = "SECTION_GONE"
     #: The folder's job was made with other settings.
     SETTINGS_CHANGED = "SETTINGS_CHANGED"
     #: The placement's midline is too oblique to name sides.
@@ -297,8 +296,6 @@ class RefusalCode(TextEnum):
     UNKNOWN_REGISTRATION = "UNKNOWN_REGISTRATION"
     #: A background run id the job does not have.
     UNKNOWN_RUN = "UNKNOWN_RUN"
-    #: A picture's section is not in the stack.
-    UNKNOWN_SECTION = "UNKNOWN_SECTION"
     #: A name that is no section's filename.
     UNKNOWN_SLICE_IDS = "UNKNOWN_SLICE_IDS"
     #: A verb that does not exist.
@@ -330,7 +327,7 @@ class Refused(ValueError):
         reply's order. ``status`` among them is the reply's status word:
         ``error`` (the call could not run; the default) or ``refused`` (a
         gate: the call is valid but the job is not ready, as the opening
-        pages' gate).
+        pages' gate and the submit gates).
     """
 
     def __init__(

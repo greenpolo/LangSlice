@@ -331,8 +331,7 @@ def _fit_elastix(
                 str(outcome.get("message", "")), job.engine_log,
                 f"the Elastix affine of {record.id} failed")
         else:
-            # reportAny: the fit's payload is a plain dict
-            text = str(cast(object, outcome.get("message", "")))
+            text = str(cast(object, outcome.get("message", "")))  # plain dict
             if marked(text):  # the message names another tool
                 outcome["message"] = render(text, job.spec.switched_off)
         rows.append(outcome)
@@ -403,7 +402,7 @@ def elastix_fit(
         raise unknown_sections(job.state, [str(section)])
     if record.position_mm is None:
         raise Refused(RefusalCode.NO_POSITION,
-                      message=f"{record.id} has no position yet.")
+                      message=_NO_POSITION.format(record.id))
     if record.deformation:
         raise refit_refusal(record)
     try:
@@ -426,9 +425,10 @@ def elastix_fit(
                                  exclude=dropped, atlas_image=resolved,
                                  section_image=section_image,
                                  edges=edges, section_weights=weights)
+    except Refused as refusal:  # its own code, as the tool's row carries it
+        raise Refused(refusal.code, **{**refusal.facts, "message": render(
+            refusal.message, job.spec.switched_off)}) from refusal
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
-        if isinstance(exc, Refused) and exc.code == RefusalCode.REGION_TOO_SMALL:
-            raise
         raise Refused(RefusalCode.FIT_FAILED,
                       message=f"{record.id}: " + failure_message(
             f"{type(exc).__name__}: {exc}", job.engine_log,
@@ -486,6 +486,12 @@ class Adjusted:
     written: list[str] = field(default_factory=list)
 
 
+#: ``interactive_transform``'s refusals of one entry (the section's name, an
+#: option's name, filled in).
+_ENTRY = "Each entry is an object: the section's id and what to change."
+_ROTATIONS = "rotate_quarter is 0, 90, 180 or 270."
+_OPTION_OFF = "{} is switched off for this job; leave it out."
+_NO_POSITION = "{} has no position yet; write its position first."
 #: The knobs ``interactive_transform`` takes, with the value of no change.
 KNOB_DEFAULTS: dict[str, float] = {
     "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
@@ -498,17 +504,9 @@ def held_knobs(section: Section) -> dict[str, float]:
     physical = _knobs(section.transform)
     if section.transform is None or section.transform.physical is None:
         return dict(KNOB_DEFAULTS)
-    given = {
-        "rotation_deg": physical.rotation_deg,
-        "scale_x": physical.scale_x,
-        "scale_y": physical.scale_y,
-        "translate_x_mm": physical.translate_x_mm,
-        "translate_y_mm": physical.translate_y_mm,
-        "shear": physical.shear,
-    }
     knobs: dict[str, float] = {}
-    for name, default in KNOB_DEFAULTS.items():
-        value = given[name]
+    for name, default in KNOB_DEFAULTS.items():  # the knobs are its fields
+        value = cast("float | None", getattr(physical, name))
         knobs[name] = default if value is None else float(value)
     return knobs
 
@@ -541,8 +539,8 @@ def interactive_transform(
     a frozen orientation, turn the section over: a transform whose determinant
     changes sign), ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (not a mapping, a knob
     that is not a finite number, a flip that is not true/false),
-    ``BAD_ROTATION``, ``FLIP_DISABLED`` (the job disables
-    ``interactive_transform:flip`` and the call changes the flip),
+    ``BAD_ROTATION``, ``OPTION_OFF`` (the job disables
+    ``interactive_transform:flip`` or ``:rotate`` and the call changes it),
     ``NO_POSITION`` (a transform to build on a section without a position) and
     the stager's codes (:func:`langslice.core.pictures.placement.stage`). All
     the changed sections are written together, under the job's lock; the tool
@@ -559,7 +557,8 @@ def interactive_transform(
     pending: dict[str, tuple[bool, int, StoredAffine | None]] = {}
     for entry in sections:
         if not isinstance(entry, Mapping):
-            done.append(Adjustment(error=Refused(RefusalCode.BAD_ARGS).payload()))
+            entry_refusal = Refused(RefusalCode.BAD_ARGS, _ENTRY)
+            done.append(Adjustment(error=entry_refusal.payload()))
             continue
         record = state.resolve(entry.get("id", ""))
         if record is None:
@@ -569,17 +568,18 @@ def interactive_transform(
         name = record.id
         frozen_now = job.frozen_for(name)
 
-        def refuse(error: str, name: str = name, **facts: Any) -> None:
-            refusal = Refused(error, id=name, **facts)
+        def refuse(error: str, message: str, name: str = name,
+                   **facts: object) -> None:
+            refusal = Refused(error, message, id=name, **facts)
             done.append(Adjustment(error=refusal.payload(), id=name))
 
         flip = record.flip
         if entry.get("flip") is not None:
             if not isinstance(entry["flip"], bool):
-                refuse(RefusalCode.BAD_ARGS, message="flip is true or false")
+                refuse(RefusalCode.BAD_ARGS, "flip is true or false.")
                 continue
             if entry["flip"] != flip and job.spec.off("interactive_transform:flip"):
-                refuse(RefusalCode.FLIP_DISABLED)
+                refuse(RefusalCode.OPTION_OFF, _OPTION_OFF.format("flip"))
                 continue
             flip = entry["flip"]
         rotation = record.rotation_deg
@@ -590,23 +590,22 @@ def interactive_transform(
             except (TypeError, ValueError):
                 rotation = -1
             if rotation not in ROTATIONS:
-                refuse(RefusalCode.BAD_ROTATION, allowed=list(ROTATIONS))
+                refuse(RefusalCode.BAD_ROTATION, _ROTATIONS,
+                       allowed=list(ROTATIONS))
                 continue
             if rotation != record.rotation_deg and job.spec.off("interactive_transform:rotate"):
                 refuse(RefusalCode.OPTION_OFF,
-                       message="rotate_quarter is switched off for this job")
+                       _OPTION_OFF.format("rotate_quarter"))
                 continue
         knobs = held_knobs(record)
         given = {key: entry[key] for key in KNOB_DEFAULTS if entry.get(key) is not None}
         try:
             knobs.update({key: float(value) for key, value in given.items()})
         except (TypeError, ValueError):
-            refuse(RefusalCode.BAD_ARGS,
-                   message="every transform number must be a number")
+            refuse(RefusalCode.BAD_ARGS, "every transform number is a number.")
             continue
         if not all(math.isfinite(value) for value in knobs.values()):
-            refuse(RefusalCode.BAD_ARGS,
-                   message="every transform number must be finite")
+            refuse(RefusalCode.BAD_ARGS, "every transform number is finite.")
             continue
         changed = (flip, rotation) != (record.flip, record.rotation_deg)
         held = record.transform
@@ -628,7 +627,7 @@ def interactive_transform(
             done.append(Adjustment(id=name, orientation=orientation, written=changed))
             continue
         if record.position_mm is None:
-            refuse(RefusalCode.NO_POSITION)
+            refuse(RefusalCode.NO_POSITION, _NO_POSITION.format(name))
             continue
         stored_pivot = _knobs(held).pivot
         pivot = None if stored_pivot is None else list(stored_pivot)

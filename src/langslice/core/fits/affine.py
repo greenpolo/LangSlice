@@ -316,7 +316,9 @@ def fit_elastix(
     regions were given.
     """
     if section.position_mm is None:
-        return Refused(RefusalCode.NO_POSITION, id=section.id).payload()
+        return Refused(RefusalCode.NO_POSITION, id=section.id,
+                       message=f"{section.id} has no position yet; write its "
+                       "position first.").payload()
     rendered = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
     stored = None if section.transform is None else section.transform.params
     start = (list(stored) if stored is not None and len(stored) == 6

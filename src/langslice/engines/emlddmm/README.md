@@ -93,4 +93,4 @@ after); without it the fit takes the same points from 229 to 113 um. The whole 2
 
 Takes a section mask as soft weights (`W0 *= weights`). Estimates its own three-class sorting, saved with each deformation it writes. One smooth 3-D warp for the stack, no per-section bends; needs dense, evenly spaced sections. Brightness: the channel as it is, 0-1.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.
+A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

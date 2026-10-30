@@ -364,7 +364,7 @@ def _require(config: dict[str, Any], *keys: str) -> None:
     for key in keys:
         path = Path(str(config[key])).expanduser()
         if not path.exists():
-            raise ToolError(RefusalCode.ENGINE_UNAVAILABLE,
+            raise ToolError(RefusalCode.ENGINE_MISSING,
                             f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
                             f"it in the plugin_config of {REF})")
 
