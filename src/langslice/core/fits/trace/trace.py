@@ -4,7 +4,7 @@ The first image reply is retained automatically. This tool produces annotation
 artifacts, not a fitted deformation or a replacement linear transform.
 
 The image model is an argument
-(:class:`langslice.providers.connections.ImageModel`, resolved by a door), so
+(:class:`langslice.core.fits.trace.request.ImageModel`, resolved by a door), so
 this module imports no provider and is core-clean
 (``tests/test_core_imports.py``); the geometry it starts from is the core's
 (:mod:`langslice.core.fits.frame`).
@@ -47,7 +47,7 @@ from langslice.core.fits.trace.prompts import (
     border_correction_tool_prompt,
     supplied_prompt_is_gpt_twin,
 )
-from langslice.core.fits.trace.request import BorderTraceRequest
+from langslice.core.fits.trace.request import BorderTraceRequest, ImageModel
 from langslice.core.geometry.affine import pixel_center_map
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.space import Plane
@@ -55,7 +55,6 @@ from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
-    from langslice.providers.connections import ImageModel
 
 #: Width of the placed boundaries in Image 1, in canvas pixels at a 1536-px long edge.
 BORDER_WIDTH_PX = 2.0

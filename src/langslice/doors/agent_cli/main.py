@@ -54,9 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     under ``python``). Without *argv* (the process's own command line) the
     job's warm process answers when it can; with *argv* the call runs here."""
     if argv is None:
-        from langslice.doors.agent_cli import warm
+        from langslice.doors.agent_cli.warm import client
 
-        code = warm.run(sys.argv[1:])
+        code = client.run(sys.argv[1:])
         if code is not None:
             return code
     return run(list(sys.argv[1:] if argv is None else argv))

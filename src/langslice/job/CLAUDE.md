@@ -4,8 +4,9 @@ Package guide for `src/langslice/job/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The job layer: the `Job` (`job.py`: the state, undo, the checkpoint,
-ingest and the host's inputs; `gates.py`: the submit gates;
+The job layer: the `Job` (`job.py` on `checkpoint.py`, `undo.py` and
+`border_traces.py`: the state, undo, the checkpoint, ingest;
+`host_inputs.py`: the host's inputs; `gates.py`: the submit gates;
 `state_file.py`: `state.json`), the job's settings (`settings/`), the
 registry of loaded tool plugins (`plugins.py`), where its files live and how
 they are named, indexed and filled with pictures, the public files rendered
@@ -428,7 +429,13 @@ longer exist be taken over by the images it is opened with.
   (`warn_removed_settings`). The module text names the two old shapes the
   core reads itself (a deformation record's format, its fit settings'
   `stiffness`) and why.
-- `job.py` — `Job`: `open` (resume or ingest, the opening `preprocessed`
+- `job.py` — `Job`, assembled from one class per seam, each built on the
+  one below: `checkpoint.py` `JobCheckpoint` (the state and its files,
+  `checkpoint`, the observers, the registrations each step leaves,
+  `wire_views`, `background`), `undo.py` `JobUndo` (`writing` / `reading` /
+  `sync`, `snapshot` / `commit`, `undo` / `redo`), `border_traces.py`
+  `JobBorderTraces` (the image-correction jobs); `job.py` adds `open`,
+  `load`, the rules and the results. Its methods: `open` (resume or ingest, the opening `preprocessed`
   image of every section without one, `core.sections.images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records
   `resumed`; a folder the migrations changed adds a `migrated` event; the
@@ -459,7 +466,7 @@ longer exist be taken over by the images it is opened with.
   property the job froze on one of the sections would change it: `ids`,
   `properties`, `message`; `busy_refusal(ids)` the `SECTION_BUSY` one),
   `emit_results` (atomic).
-  `ingest`, `apply_host_inputs` (the host's inputs, each section named
+  `ingest`; in `host_inputs.py`, `apply_host_inputs` (the host's inputs, each section named
   checked; `spec.frozen` must name sections that are here, a frozen position
   must have been supplied, and a frozen affine without a supplied transform
   carries `host_transform()`, `kind` `"host"`), `changed_inputs` (above;

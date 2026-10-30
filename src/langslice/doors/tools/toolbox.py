@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+from langslice.core.fits.trace.request import ImageModel
 from langslice.core.fits.trace.trace import profile_prompt
 from langslice.core.pictures.sizes import (
     AUTO_RESOLUTION,
@@ -27,7 +28,7 @@ from langslice.doors.tools import changing, fitting, looking
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.providers.connections import ImageModel, resolve_image_model
+from langslice.providers.connections import resolve_image_model
 from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.events import EventLog, LiveCallback

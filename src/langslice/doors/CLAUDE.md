@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `langslice.tools.descriptions.render.declare`d | LangSlice's agent (`doors/agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `agent_cli/launch.py`) | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`agent_cli/warm.py`) | Claude Code, Antigravity, Codex |
+| agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`agent_cli/warm/`) | Claude Code, Antigravity, Codex |
 | library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
@@ -50,7 +50,7 @@ armed by the MCP door only). Deliberately different: the host owns the loop
 for MCP and the CLI (no turn budget, nudges, debrief, image working set or
 quota accounting there); pictures are files and artifacts in the CLI, inline elsewhere;
 each CLI call is a process of its own (cold, or the child the job's warm
-process forks for it, `agent_cli/warm.py`).
+process forks for it, `agent_cli/warm/`).
 
 A refusal is the core's `Refused` (`core/refusal.py`: a `RefusalCode`, a
 message, the facts), raised by the core, the job, the tools and the tool
@@ -97,51 +97,57 @@ bodies, and turned into an answer once per door:
   SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
   at import); `as_refs` (the library's objects: factory functions by
   `module:qualname`, ToolSpecs as `inline:<digest>`).
-  `context.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
+  `caller.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
   plugin tool, labels `plugin:<tool>`; `Caller.script()` a script's
   `job.context`, label `script`, every property writable the job leaves free,
   no `work_dir` / `start_work` (`NOT_FOR_SCRIPTS`), `in_tool_call` False: its
   reads sync the job first and its placement writes drop the deformations
   they made stale, `merge_calls` False: each outermost write one undo step;
   `provenance`: a deformation record's `plugin` or `script` entry, the latter
-  with `argv0`); `ToolContext(door, caller, call)` (reads `sections`, `section_image`, `atlas`,
-  `fit_frame` (`placed_atlas_to_section`: the current placement; `image=` a
-  section image as `section_image` with `section_image_ref`), `atlas_slice`,
-  `section_inputs`, `channels` (a section's raw channel names), `image_names`
-  (its section images), `working_grid`, `raw_plane` / `working_rgb` (a raw
-  channel and the working copy in the file's orientation, the frame
-  `add_image` takes),
-  `read_registration` (each section in its current orientation, `params`, `at=` a
-  fixed plane, `registered_on="oriented"` for a file made on the oriented
-  render); `section_raster(images=, raw=)`;
-  conversions `transform_from_matrix` / `transform_from_params`, and
-  `deformation_from_map` (a full fit-grid-to-native map as a
-  `DeformationProposal`, `tools.deformable.warp_from_map`; `start="current"`
-  for a map made on top of the held deformation, its chain kept; `settings`,
-  `engine_settings`, `engine_version` kept as a native fit's); writes
-  `set_positions`, `set_transforms`, `set_deformations`
+  with `argv0`). `ToolContext(run, caller, call)` (`context.py`: the job,
+  `work_dir`, `start_work`) is assembled from one class per family of
+  methods, each built on the one below, so the plugin API stays flat:
+  `reads.py` `ContextReads` (the run, the caller, a section by filename;
+  `sections`, `section`, `atlas`, `channels` (a section's raw channel
+  names), `image_names` (its section images), `working_grid`, `raw_plane` /
+  `working_rgb` (a raw channel and the working copy in the file's
+  orientation, the frame `add_image` takes), `mask`, `section_inputs`,
+  `section_image`, `section_raster(images=, raw=)`, `layers`); `frames.py`
+  `ContextFrames` (`fit_frame` (`placed_atlas_to_section`: the current
+  placement; `image=` a section image as `section_image` with
+  `section_image_ref`), `atlas_slice`, `angles_from_plane`, `atlas_plane` /
+  `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
+  `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`));
+  `proposals.py` `ContextProposals` (conversions `transform_from_matrix` /
+  `transform_from_params`, and `deformation_from_map` (a full
+  fit-grid-to-native map as a `DeformationProposal`,
+  `tools.deformable.warp_from_map`; `start="current"` for a map made on top
+  of the held deformation, its chain kept; `settings`, `engine_settings`,
+  `engine_version` kept as a native fit's), `read_registration` (each
+  section in its current orientation, `params`, `at=` a fixed plane,
+  `registered_on="oriented"` for a file made on the oriented render));
+  `fits.py` `ContextFits` (`write_frame` / `map_from_itk` /
+  `transform_from_itk` (`core.maps.itk`: an outside engine's inputs and
+  answer), `fit_fireants` / `fit_elastix` (`tools.deformable.fit_record`,
+  `tools.transforms.elastix_fit`: the native engines with settings and a
+  mask of the caller's own, by the tools' names and with their defaults
+  (`restrict_to`, `section_image`, `atlas_image`, `mask`, `smoothness_um`,
+  `metric`, `edges`, `detail`), a proposal not written, the settings as its
+  step's `settings` / the record's `fit`)); `writes.py` `ContextWrites`
+  (`set_positions`, `set_transforms`, `set_deformations`
   (`tools.deformable.apply_warps`, maps converted before the lock),
   `mark_damage` through `tools/`, `add_image` (a made section image,
-  `tools.images.add_image`), `add_layer`
-  through `job/plugin_store` (a script's under `plugins/script/`), `expect=` fingerprints refusing `STALE_INPUT`
-  rows; `writing()` holds the lock around several writes; a plugin call's writes are
-  one undo step unless another write came between; `atlas_plane` /
-  `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
-  `from_atlas_um` / `plane_distance_um` / `region_at` (`tools.points`),
-  `write_frame` / `map_from_itk` / `transform_from_itk` (`core.maps.itk`: an
-  outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
-  (`tools.deformable.fit_record`, `tools.transforms.elastix_fit`: the native
-  engines with settings and a mask of the caller's own, by the tools' names
-  and with their defaults (`restrict_to`, `section_image`, `atlas_image`,
-  `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
-  written, the settings as its step's `settings` / the record's `fit`); `overlay_picture` and
+  `tools.images.add_image`), `add_layer` through `job/plugin_store` (a
+  script's under `plugins/script/`), `expect=` fingerprints refusing
+  `STALE_INPUT` rows; `writing()` holds the lock around several writes; a
+  plugin call's writes are one undo step unless another write came
+  between); `pictures.py` `ContextPictures` (`overlay_picture` and
   `positioning_picture` (a proposal drawn on a copy of the state), with a
-  deformation proposal drawn through an in-memory record store; a proposal's
-  note records no registration, `extra["registrations"]` empty), `caption`
-  (keeps the drawn picture's sections on the captioned copy, or takes
-  `sections=` for a picture of the handler's own, so the saved picture
-  records each section's registration) and
-  its views. `runtime.py`: the body of a plugin tool (limits, the context, a
+  deformation proposal drawn through an in-memory record store; a
+  proposal's note records no registration, `extra["registrations"]` empty),
+  `caption` (keeps the drawn picture's sections on the captioned copy, or
+  takes `sections=` for a picture of the handler's own, so the saved
+  picture records each section's registration)). `runtime.py`: the body of a plugin tool (limits, the context, a
   write tool's call as one undo step, a `ToolError` / `Refused` left to the
   tool door, any other exception `PLUGIN_FAILED`, the reply and pictures from
   the `ToolResult`). `provenance.py`:
@@ -399,14 +405,18 @@ bodies, and turned into an answer once per door:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.agent_cli.main:main`,
     also `python -m langslice.doors.agent_cli.main`): `main()` without argv
     (the process's own command line) asks the job's warm process first
-    (`warm.run`), importing nothing else until that is decided (the
+    (`warm.client.run`), importing nothing else until that is decided (the
     package's `__init__` imports its command groups where it builds its
     parser); `run(argv)`, the call in this process (a cold call, a warm
     child's): `ops` and `schema` first (run inside `stdout_to_stderr`,
     their envelope printed after), anything else `FOLDER VERB`; returns the
     exit code.
-  - `warm.py` — the warm process (`docs/agents/cli.md`, "The warm process"):
-    one fork server per job folder and Python environment (`identity`:
+  - `warm/` — the warm process (`docs/agents/cli.md`, "The warm process";
+    its `README.md` lists the private names it touches): `protocol.py`
+    (`identity`, `runtime_dir`, `Place`, `job_folder`, `send_message` /
+    `read_message`), `client.py`, `server.py`, `pools.py` (`quiet_pools`),
+    `child.py`, `script.py`.
+    One fork server per job folder and Python environment (`identity`:
     interpreter, flags, import path, LangSlice's folder), standard library
     only on the client's side. Client `run(argv)`: `job_folder` (not
     `init`, `ops`, `schema`), `request` (argv, cwd, environment, `envkey`,
@@ -420,7 +430,7 @@ bodies, and turned into an answer once per door:
     `serve_main`: the lock, `warm_up` (the CLI's modules,
     `core.fits.deformable.engines.preload`, the job opened read-only, its tools,
     atlas arrays, `core.maps.section_maps.share_frames`, the oblique template volumes when
-    its sections are tilted; `_quiet_pools` stops dask's, zarr's,
+    its sections are tilted; `quiet_pools` stops dask's, zarr's,
     fsspec's and the sampling threads; `gc.freeze`), `Server` (one thread,
     `selectors`; `refusal`: protocol, identity, `Sources.changed` (the
     loaded first-party modules, the import path's folders, the atlas
@@ -429,7 +439,7 @@ bodies, and turned into an answer once per door:
     killed when the client goes (`SIGKILL`) or signals; `reap`; idle
     `check` (stale code, a gone job, frames shared again when `state.json`
     changed, unless the job is now submitted, `_submitted`); `IDLE_S` (10
-    min), `SUBMITTED_IDLE_S` (60 s) once the job is submitted). Child `_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
+    min), `SUBMITTED_IDLE_S` (60 s) once the job is submitted). Child `run_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
     fds on 0-2, cwd, environment, `sys.argv` / `sys.path` / `sys.executable`,
     `_streams`, `_fresh_process` (tempdir, tz, logging, `formats.source`,
     numpy's seed), `jobcli.run`, `as_python` (exit codes, tracebacks,

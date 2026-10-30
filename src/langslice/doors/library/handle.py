@@ -59,11 +59,11 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from langslice.core.fits.trace.request import ImageModel
 from langslice.doors.jobs import Opened, open_folder
 from langslice.doors.library.replies import Reply, library_reply
 from langslice.doors.library.script_context import ScriptContext
 from langslice.job.settings.spec import JobSpec
-from langslice.providers.connections import ImageModel
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ class JobHandle:
     @property
     def image_model(self) -> Any:
         """The image model ``trace_borders`` calls when one was handed in
-        (:class:`langslice.providers.connections.ImageModel`), else None."""
+        (:class:`langslice.core.fits.trace.request.ImageModel`), else None."""
         return self._opened.image_model
 
     @property

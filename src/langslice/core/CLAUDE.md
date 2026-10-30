@@ -521,7 +521,7 @@ the angles in a caption (empty for the flat plane).
   past `FRAME_CACHE_SECTIONS`). `share_frames(state, workspace)` computes
   every placed section's frame and keeps it for the workspaces the process
   makes after it forks (`_SHARED_FRAMES`; the agent CLI's warm process,
-  `doors/agent_cli/warm.py`): a later workspace takes one only at the same image
+  `doors/agent_cli/warm/`): a later workspace takes one only at the same image
   folder and settings text (`_scope`: `ImageSettings.settings_text`), key and atlas object. A section with no pixel size (neither the file
   nor the host gives one) is mapped at the scale its placement pictures draw
   it at, `core.fits.affine.calibrate` on its working frame (uncalibrated: the

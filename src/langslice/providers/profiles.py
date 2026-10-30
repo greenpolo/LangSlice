@@ -2,7 +2,7 @@
 
 Different image models need different prompts, so the trace's model and its
 prompt travel together as one
-:class:`~langslice.providers.connections.ImageModel` (its ``prompt``,
+:class:`~langslice.core.fits.trace.request.ImageModel` (its ``prompt``,
 ``photograph_first``, ``profile`` and ``tested`` fields).
 
 - A built-in profile is a provider's own model with LangSlice's prompt for it
@@ -28,9 +28,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.connections import CUSTOM_PROVIDER, canonical_provider
+from langslice.core.fits.trace.request import ImageModel
 from langslice.providers.connections import (
     CANONICAL_PROVIDERS,
-    ImageModel,
     resolve_image_model,
 )
 
@@ -117,7 +117,7 @@ def image_model(
       with *model* the image model (None: the
       provider's default). Without *prompt* or *prompt_file* this is the
       provider's built-in profile (LangSlice's prompt; ``tested``).
-    - an :class:`~langslice.providers.connections.ImageModel`, or any object
+    - an :class:`~langslice.core.fits.trace.request.ImageModel`, or any object
       with a ``call`` attribute (and optionally ``provider`` and ``model``), or
       a plain function: the model of the caller's own. ``call(request)`` takes
       a

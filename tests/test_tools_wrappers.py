@@ -19,7 +19,7 @@ from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed
-from langslice.job.job import HOST_TRANSFORM_KIND
+from langslice.job.host_inputs import HOST_TRANSFORM_KIND
 from langslice.job.pictures import PICTURE_FILE
 from langslice.job.state_file import stack_to_json
 from langslice.tools.events import target_ids

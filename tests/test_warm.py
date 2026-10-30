@@ -270,7 +270,7 @@ def test_python_runs_the_script_as_the_job_environments_python(warm):
                          cwd_name="job")
     assert raised.returncode == 1
     assert raised.stderr.startswith("Traceback (most recent call last):\n  File \"")
-    assert raised.stderr.endswith("ValueError: boom\n") and "warm.py" not in raised.stderr
+    assert raised.stderr.endswith("ValueError: boom\n") and "agent_cli/warm" not in raised.stderr
     _cold, three = same(place, "python", "scripts/probe.py", "{folder}", "exit", "3",
                         cwd_name="job")
     assert three.returncode == 3
@@ -381,7 +381,7 @@ def test_a_submitted_jobs_server_exits_after_a_short_idle(tmp_path):
     after ``SUBMITTED_IDLE_S`` without a call, not ``IDLE_S``."""
     from types import SimpleNamespace
 
-    from langslice.doors.agent_cli import warm
+    from langslice.doors.agent_cli.warm import server as warm
 
     assert warm.SUBMITTED_IDLE_S < warm.IDLE_S <= 15 * 60
     state = tmp_path / "state.json"

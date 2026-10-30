@@ -37,6 +37,8 @@ from typing import Any
 
 from langslice.core.refusal import RefusalCode
 from langslice.doors.agent_cli.envelope import Envelope
+from langslice.doors.agent_cli.warm.child import in_child
+from langslice.doors.agent_cli.warm.script import run_script
 from langslice.job.layout import ENV_DIR, JobLayout
 
 #: The list of the packages installed in the job's environment.
@@ -223,12 +225,11 @@ def python(folder: str, rest: list[str]) -> int:
     (:func:`script_path`). Its stdout, stderr
     and exit code are the script's, as ``env/bin/python SCRIPT ARGS`` gives
     them; in the job's warm process
-    (:func:`langslice.doors.agent_cli.warm.run_script`)
+    (:func:`langslice.doors.agent_cli.warm.script.run_script`)
     the script runs in this process with that python's import path, else this
     process becomes that python. A call that cannot start the script prints
     the envelope of its refusal (``NO_JOB``, ``BAD_ARGUMENTS``,
     ``ENV_FAILED``) and returns its exit code."""
-    from langslice.doors.agent_cli import warm
     from langslice.doors.agent_cli.envelope import emit
     from langslice.doors.call_log import log_call
     from langslice.doors.jobs import NoJob, find
@@ -248,10 +249,10 @@ def python(folder: str, rest: list[str]) -> int:
                                      str(exc), verb="python"))
     rest = [script_path(layout, rest[0]), *rest[1:]]
     log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest),
-                               "warm": warm.in_child()})
+                               "warm": in_child()})
     interpreter = python_of(env_dir(layout))
-    if warm.in_child():
-        return warm.run_script(interpreter, rest)
+    if in_child():
+        return run_script(interpreter, rest)
     sys.stdout.flush()
     sys.stderr.flush()
     if os.name == "nt":  # no exec there: the script's exit code is passed on

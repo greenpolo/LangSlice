@@ -247,7 +247,7 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
         return
     try:
         paths = [str(item.get("path")) for item in envelope.artifacts]
-        from langslice.doors.agent_cli.warm import in_child
+        from langslice.doors.agent_cli.warm.child import in_child
 
         kept = save_reply(layout.logs_dir, verb, dumps(envelope))
         log_call(layout.logs_dir, {
@@ -828,7 +828,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         read_spec,
         with_registration,
     )
-    from langslice.job.job import InputsChanged
+    from langslice.job.host_inputs import InputsChanged
 
     args = init_parser().parse_args(rest)
     images = Path(folder).expanduser().resolve()

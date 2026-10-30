@@ -4,10 +4,11 @@
 call runs in the background, and when it lands a fit of the traced borders is
 applied as background work (:mod:`langslice.job.background`,
 :func:`land_trace`). It takes the image model as an argument
-(:class:`langslice.providers.connections.ImageModel`, resolved by the door), so
-this module never chooses or imports a provider. The section's current geometry
-is the core's (:func:`langslice.core.fits.frame.correction_fingerprint`) and
-the edit is prepared by ``registration_tool.start_correction``.
+(:class:`langslice.core.fits.trace.request.ImageModel`, resolved by the
+door), so this module never chooses or imports a provider. The section's
+current geometry is the core's
+(:func:`langslice.core.fits.frame.correction_fingerprint`) and the edit is
+prepared by ``registration_tool.start_correction``.
 """
 
 from __future__ import annotations
@@ -28,11 +29,11 @@ from langslice.tools.refusal import section_refusal, unknown_sections
 from langslice.tools.stale import section_inputs
 
 if TYPE_CHECKING:
+    from langslice.core.fits.trace.request import ImageModel
     from langslice.core.pictures.options import DisplayOptions
     from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
-    from langslice.providers.connections import ImageModel
 
 
 @dataclass(frozen=True)

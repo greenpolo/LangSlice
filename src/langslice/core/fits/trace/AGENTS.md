@@ -92,8 +92,10 @@ residual alone is never exported.
   semantic each transport translates its own way; `size_tier` is the
   output tier the transport passes on. A door resolves a provider name to
   this call once (`providers.connections.resolve_image_model`) and passes it in
-  as the `ImageModel`; a model call without one is refused, so the core never
-  imports the transport.
+  as the `ImageModel` (defined here: provider, model, profile and `call`, an
+  `ImageCall` protocol the providers' calls implement); a model call without
+  one is refused, so the core, the job and the tools never import a provider,
+  not even for a type.
 - `frames.py` — canvas and aspect facts only (`image_model_family`,
   `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
 
