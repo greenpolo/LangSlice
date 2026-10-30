@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from PIL import Image
 
+from langslice.core.atlas.images import resolve_image
 from langslice.core.fits import deformation
 from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.inputs import (
@@ -44,8 +45,11 @@ from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.tools import masks as ops_masks
+from langslice.tools import transforms
 from langslice.tools.images import check_image
+from langslice.tools.look import show_result
 from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.run import Run, as_list, drawn_image, pictured
 from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
@@ -648,18 +652,13 @@ def fireants_syn(
     ``UNKNOWN_IMAGE``; ``UNKNOWN_MASK`` (a section without that mask);
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
-    from langslice.core.atlas.images import resolve_image
     from langslice.core.fits.deformable.settings import SMOOTHNESS_BOUNDS_UM
 
     refs = list(sections or [])
     if not refs:
         raise Refused(RefusalCode.BAD_ARGS,
                       message="Name the sections to fit.")
-    kind = str(atlas_image or "nissl").strip()
-    try:
-        resolve_image(workspace.atlas, kind)
-    except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+    kind = check_atlas_image(workspace, atlas_image)
     metric_name = str(metric or "mutual_information").strip()
     if metric_name not in METRICS:
         raise Refused(RefusalCode.BAD_ARGS,
@@ -721,3 +720,152 @@ def refuse_unknown_inputs(
                           message=f"No mask {label!r} on {', '.join(lacking)}; make it with "
                           "make_mask.")
     return image
+
+
+def check_atlas_image(workspace: Workspace, atlas_image: object) -> str:
+    """Return the atlas image a fit reads, by the name the call gave.
+
+    Parameters
+    ----------
+    workspace
+        The job's workspace, whose atlas must have the image.
+    atlas_image
+        The call's ``atlas_image``; empty is ``nissl``.
+
+    Returns
+    -------
+    str
+        The name, stripped (``nissl`` resolves per atlas when the fit runs).
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` when the atlas has no image of that name.
+    """
+    kind = str(atlas_image or "nissl").strip()
+    try:
+        resolve_image(workspace.atlas, kind)
+    except ValueError as exc:
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+    return kind
+
+
+def nothing_fitted(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Return the top-level error of a fit call that fitted nothing.
+
+    Parameters
+    ----------
+    rows
+        The call's per-section rows, each refused.
+
+    Returns
+    -------
+    dict
+        When every section was refused for the same reason, that reason's
+        ``error`` and ``message`` (the rows keep theirs); otherwise
+        ``NOTHING_FITTED``, each row naming its own.
+    """
+    codes = {str(row.get("error")) for row in rows if row.get("error")}
+    if not rows or len(codes) != 1 or not all(row.get("error") for row in rows):
+        return {"error": RefusalCode.NOTHING_FITTED}
+    code = codes.pop()
+    message = str(rows[0].get("message") or "")
+    if message and len(rows) > 1:
+        message = f"Every section was refused for this reason. {message}"
+    if not message:
+        return {"error": code}
+    return {"error": code, "message": message}
+
+
+# --- the tool ----------------------------------------------------------------
+
+
+def fireants_syn_tool(
+    run: Run,
+    sections: Sequence[str],
+    restrict_to: Sequence[str],
+    *,
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
+    mask: str = "none",
+    smoothness_um: float = 80.0,
+    metric: str = "mutual_information",
+    edges: bool = True,
+    detail: str = "standard",
+    view: bool = True,
+) -> dict[str, Any]:
+    """Run the ``fireants_syn`` tool: fit, answer, picture.
+
+    The call is capped at :data:`MAX_FIREANTS_SYN_SECTIONS` sections
+    (``TOO_MANY_SECTIONS``) and fitted by :func:`fireants_syn`. The picture
+    is each fitted section under its new registration, drawn on the image
+    the fit read, zoomed to the ``restrict_to`` regions' box when that
+    magnifies it, those regions' borders thick.
+
+    Parameters
+    ----------
+    run
+        The run the tool belongs to.
+    sections, restrict_to, section_image, atlas_image, mask, smoothness_um
+        The call's arguments, as :func:`fireants_syn` takes them.
+    metric, edges, detail
+        The engine's options, as :func:`fireants_syn` takes them.
+    view
+        Whether to answer with the picture.
+
+    Returns
+    -------
+    dict
+        The reply: ``status``, the call's ``settings``, one row per section
+        (``results``), the status rows the write changed.
+    """
+    from langslice.tools.catalog import (  # local: cycle with tools.catalog
+        check_section_count,
+    )
+
+    job, workspace = run.job, run.ctx
+    check_section_count(job, "fireants_syn", len(as_list(sections)))
+    done = fireants_syn(
+        job, workspace, as_list(sections), restrict_to=as_list(restrict_to),
+        section_image=section_image, atlas_image=atlas_image, mask=mask,
+        smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
+    fitted = [str(row["id"]) for row in done.rows
+              if row.get("status") == ReplyStatus.OK]
+    result: dict[str, Any] = {"status": "ok" if fitted else "error"}
+    if not fitted:
+        result.update(nothing_fitted(done.rows))
+    result["settings"] = done.settings
+    result["results"] = done.rows
+    if done.written:
+        result["changed"] = run.changed(done.written)["changed"]
+    if not fitted or not run.shows(view):
+        return result
+
+    regions = region_entries(workspace, job.state, as_list(restrict_to))
+    zooms = _region_zooms(run, fitted, regions)
+    shown = show_result(
+        job, workspace, "fireants_syn", "overlay", fitted, zooms=zooms,
+        highlight=regions, images=drawn_image(section_image))
+    return pictured(result, shown)
+
+
+def _region_zooms(
+    run: Run, fitted: Sequence[str], regions: Sequence[str]
+) -> dict[str, list[float]]:
+    """Return each fitted section's zoom to the regions' box.
+
+    None without regions, and none where it would not magnify enough
+    (``transforms.zoom_window``).
+    """
+    zooms: dict[str, list[float]] = {}
+    if not regions:
+        return zooms
+    for name in fitted:
+        section = run.job.state.by_id(name)
+        box = None
+        if section is not None:
+            box = transforms.region_box(run.ctx, run.job.state, section, regions)
+        window = transforms.zoom_window(box)
+        if window is not None:
+            zooms[name] = window
+    return zooms

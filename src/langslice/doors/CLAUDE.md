@@ -296,11 +296,14 @@ bodies, and turned into an answer once per door:
   one call, `tools.history`), `restore_registration` (`section` lists,
   `tools.registrations.listing`; `sections` `[{id, registration}]` puts them
   back, per-section `results`, one undo step, and shows their overlays;
-  both or neither `BAD_ARGS`), `submit`; `fitting.py`:
-  `elastix_affine` (its `turn_deg` and plausibility `flags` worded in the
-  row's `warning`, `affine_flag_words`; the knobs under `transform`),
-  `fireants_syn`, `trace_borders`,
-  `export_maps`; a change tool's picture is drawn after its write by
+  both or neither `BAD_ARGS`), `submit`; the fit tools' bodies are
+  functions of their `tools/` modules, wired by name in `toolbox.TOOL_BODIES`
+  and called with the run first (`tools.affine_fit.elastix_affine_tool`, its
+  `turn_deg` and plausibility `flags` worded in the row's `warning`,
+  `affine_flag_text`, the knobs under `transform`;
+  `tools.deformable.fireants_syn_tool`, `tools.traces.trace_borders_tool`,
+  `tools.exports.export_maps_tool`, `tools.landmarks.set_landmarks_tool`,
+  `tools.landmark_warp.landmark_triangulation_tool`); a change tool's picture is drawn after its write by
   `tools.look.show_result` unless its `view` is false and the host does not
   force it (a fit's and an `em` mask's picture drawn on the section image
   it read, `run.drawn_image`); `interactive_transform` and `elastix_affine` drop the
@@ -313,8 +316,8 @@ bodies, and turned into an answer once per door:
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
-  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host,
-  `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,
+  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host;
+  `look`'s `resolution` is clamped by `core.pictures.sizes.clamp_resolution`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys

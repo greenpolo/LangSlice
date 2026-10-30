@@ -4,37 +4,23 @@ from __future__ import annotations
 
 import copy
 import logging
-import time
 from collections.abc import Sequence
-from dataclasses import replace
-from pathlib import Path
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import scipy
-from scipy.ndimage import map_coordinates
 
 from langslice.core.atlas.tree import structure_table
-from langslice.core.fits import deformation
 from langslice.core.fits import landmarks as geometry
-from langslice.core.fits.deformable import finish_fit, prepare_warp
-from langslice.core.fits.deformable.engines import EngineResult
-from langslice.core.fits.deformable.fields import MeshStep, mesh_fields
-from langslice.core.fits.deformable.geometry import WorkingGrid
-from langslice.core.fits.deformable.record import DeformableRecord
-from langslice.core.fits.frame import digest
 from langslice.core.geometry.pixel_frames import source_frame
-from langslice.core.geometry.triangulation import (
-    DegenerateMesh,
-    PiecewiseAffine,
-    visualign_mesh,
-)
-from langslice.core.jsonable import JsonObject, to_jsonable
+from langslice.core.jsonable import JsonObject
+from langslice.core.pictures.drawn import collecting
+from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.deformation import DeformationRef, LandmarkWarp
 from langslice.core.stack.landmarks import Endpoint, Landmarks, Pair
-from langslice.core.stack.landmarks_json import pair_to_json
+from langslice.tools.look import Looked, save_pictures
 from langslice.tools.refusal import check_frozen, unknown_sections
+from langslice.tools.run import Run, pictured
 
 if TYPE_CHECKING:
     from langslice.core.stack.section import Section
@@ -48,7 +34,27 @@ logger = logging.getLogger(__name__)
 DELETE_ALL = "all"
 
 
-def _section(job: Job, section: str) -> Section:
+def landmark_section(job: Job, section: str) -> Section:
+    """Return the section a landmark call names.
+
+    Parameters
+    ----------
+    job
+        The job whose stack holds the section.
+    section
+        The section's filename, or its stem.
+
+    Returns
+    -------
+    Section
+        The section, which may take pairs and a landmark warp.
+
+    Raises
+    ------
+    Refused
+        ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` or ``FROZEN`` (its
+        deformation), as :func:`langslice.tools.refusal.check_frozen`.
+    """
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [section])
@@ -303,12 +309,6 @@ def _listing(job: Job, record: Section) -> list[dict[str, Any]]:
     return rows
 
 
-def _counts(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
-    states = [row["state"] for row in rows]
-    kinds = ("applied", "moved", "pending", "stale")
-    return {"total": len(states), **{k: states.count(k) for k in kinds}}
-
-
 def _edited_pair(
     job: Job, section: Section, previous: Pair | None, pair_id: str,
     edit: JsonObject, label: str,
@@ -344,13 +344,64 @@ def _edited_pair(
     return replace(item, stale=geometry.stale(job.state, section, item))
 
 
+@dataclass(frozen=True)
+class LandmarksEdited:
+    """What :func:`set_landmarks` wrote, and the pairs as they are now."""
+
+    section: str
+    written: bool
+    #: The call named no pairs and no delete: it only lists them.
+    listing: bool
+    #: The pairs added or edited, by id, in call order.
+    changed: tuple[str, ...]
+    deleted: tuple[str, ...]
+    #: The region each new atlas endpoint lies in, by pair id.
+    atlas_endpoint_regions: dict[str, str]
+    #: One compact record per pair: id, endpoints, state.
+    landmarks: Sequence[JsonObject]
+    #: Which pairs the current warp was built from (empty: no warp).
+    warp: JsonObject
+
+    def reply(self) -> dict[str, Any]:
+        """Return the tool's reply: the write, the pairs and their states.
+
+        Returns
+        -------
+        dict
+            ``status``, ``section``, ``written``, a ``note`` for a listing,
+            ``changed``, ``atlas_endpoint_regions``, ``deleted``, ``counts``
+            (pairs per state), ``landmarks`` and ``warp``; the empty ones
+            left out.
+        """
+        reply: dict[str, Any] = {
+            "status": "ok", "section": self.section, "written": self.written}
+        if self.listing:
+            reply["note"] = ("No pairs or delete given: this is the listing; "
+                             "nothing was written.")
+        reply["changed"] = list(self.changed)
+        if self.atlas_endpoint_regions:
+            reply["atlas_endpoint_regions"] = self.atlas_endpoint_regions
+        reply["deleted"] = list(self.deleted)
+        states = [row["state"] for row in self.landmarks]
+        reply["counts"] = {"total": len(states)} | {
+            kind: states.count(kind) for kind in _PAIR_STATES}
+        reply["landmarks"] = list(self.landmarks)
+        if self.warp:
+            reply["warp"] = self.warp
+        return reply
+
+
+#: The states a pair can be in, as the reply counts them.
+_PAIR_STATES = ("applied", "moved", "pending", "stale")
+
+
 def set_landmarks(
     job: Job,
     workspace: Workspace,
     section: str,
     pairs: Sequence[dict[str, Any]] = (),
     delete: Sequence[str] = (),
-) -> dict[str, Any]:
+) -> LandmarksEdited:
     """Atomically add/edit/delete pairs without applying any deformation.
 
     ``delete=["all"]`` clears the section's pairs (pair IDs are never reused).
@@ -373,7 +424,7 @@ def set_landmarks(
             RefusalCode.BAD_ARGS,
             message="pairs is a list of objects; delete is a list of pair IDs.",
         )
-    record = _section(job, section)
+    record = landmark_section(job, section)
     saved = record.landmarks or Landmarks()
     next_id = saved.next_id
     by_id = {pair.id: pair for pair in saved.pairs}
@@ -443,297 +494,77 @@ def set_landmarks(
     if written:
         record.landmarks = current
         job.commit(before)
-    rows = _listing(job, record)
-    regions = _atlas_regions(workspace, geometry.plane_context(job.state, record), placed)
-    return {
-        "status": "ok",
-        "section": record.id,
-        "written": written,
-        **({} if pairs or delete else {"note": "No pairs or delete given: this is the listing; "
-                                                "nothing was written."}),
-        "changed": changed,
-        **({"atlas_endpoint_regions": regions} if regions else {}),
-        "deleted": deleted,
-        "counts": _counts(rows),
-        "landmarks": rows,
-        **({"warp": report} if (report := geometry.warp_report(job.state, record)) else {}),
-    }
+    return LandmarksEdited(
+        section=record.id, written=written, listing=not (pairs or delete),
+        changed=tuple(changed), deleted=tuple(deleted),
+        atlas_endpoint_regions=_atlas_regions(
+            workspace, geometry.plane_context(job.state, record), placed),
+        landmarks=_listing(job, record),
+        warp=geometry.warp_report(job.state, record))
 
 
-def _sample(field: np.ndarray, points: np.ndarray) -> np.ndarray:
-    return np.stack(
-        [
-            map_coordinates(
-                field[..., k], [points[..., 1], points[..., 0]], order=1, mode="nearest"
-            )
-            for k in range(2)
-        ],
-        -1,
-    )
+# --- the tool ----------------------------------------------------------------
+
+#: The most pairs one call pictures (one picture per pair).
+MAX_PAIR_PICTURES = 4
 
 
-#: What the apply reply's two displacement figures are.
-DISPLACEMENT_NOTE_KEY = "displacement_note"
-DISPLACEMENT_NOTE = (
-    "displacement_mm is the whole deformation now applied to the section (every step "
-    "since its linear placement, the landmark warp included); step_displacement_mm, when "
-    "present, is only the change this application made over the warp it replaced or "
-    "was applied onto."
-)
-#: Folded triangles a reply lists; the rest are counted.
-MAX_FOLDS_LISTED = 8
+def set_landmarks_tool(
+    run: Run,
+    section: str,
+    pairs: list[dict[str, Any]],
+    delete: list[str],
+    *,
+    view: bool = True,
+) -> dict[str, Any]:
+    """Run the ``set_landmarks`` tool: write the pairs, answer, picture.
 
+    With pictures, a call takes at most :data:`MAX_PAIR_PICTURES` pairs
+    (``TOO_MANY_LANDMARK_VIEWS``, nothing written) and answers with one
+    picture per pair it added or edited. A picture that fails leaves the
+    write standing (``render_failed``).
 
-def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
-    def ids(group: Sequence[int]) -> str:
-        return ", ".join("a fixed corner" if i < 4 else names[i - 4] for i in group)
+    Parameters
+    ----------
+    run
+        The run the tool belongs to.
+    section, pairs, delete
+        The call's arguments, as :func:`set_landmarks` takes them.
+    view
+        Whether to answer with the pairs' pictures.
 
-    groups = "; ".join(ids(group) for group in exc.vertices[:6])
-    if "Repeated" in str(exc):
-        return (f"Pairs with the same section point cannot be triangulated ({groups}). "
-                "Move one section endpoint of each group, or delete one pair.")
-    return (f"The section points of {groups} lie on one line, a zero-area triangle. "
-            "Move one of those section endpoints off the line, or delete one pair.")
-
-
-def _folds(mesh: Any, points: np.ndarray, names: Sequence[str]) -> dict[str, Any]:
-    """The warp's folded triangles: the share of the section frame they cover
-    and their vertices' pair ids (a fixed corner vertex has none, so a
-    triangle at the frame's edge lists fewer than three)."""
-    triangles = [[names[i - 4] for i in sorted(tri) if i >= 4]
-                 for tri in mesh.folded_triangles()]
-    if not triangles:
-        return {}
-    return {"area_fraction": round(mesh.folded_fraction(points), 5), "triangles": triangles}
-
-
-def _folds_reply(folds: dict[str, Any] | None) -> dict[str, Any]:
-    """The reply's ``folds``: nothing when the warp has none."""
-    if not folds:
-        return {}
-    triangles = folds["triangles"]
-    ids = sorted({i for tri in triangles for i in tri}, key=lambda s: (len(s), s))
-    return {
-        "folds": {
-            "area_fraction": folds["area_fraction"],
-            "pairs": ids,
-            "triangles": triangles[:MAX_FOLDS_LISTED],
-            "triangle_count": len(triangles),
-            "note": (
-                "Folded triangles are applied as VisuAlign does (outlined in magenta on the "
-                "picture). A fold means the section points of these pairs are ordered "
-                "differently from their atlas points; fix those pairs' endpoints if it is wrong."
-            ),
-        }
-    }
-
-
-def _require_applicable(job: Job, record: Section) -> tuple[Pair, ...]:
-    """The section's pairs, refusing too few of them or any placed against another plane."""
-    pairs = geometry.section_pairs(record)
-    if len(pairs) < 3:
+    Returns
+    -------
+    dict
+        The reply (:meth:`LandmarksEdited.reply`), with its pictures.
+    """
+    job, workspace = run.job, run.ctx
+    if run.shows(view) and len(pairs) > MAX_PAIR_PICTURES:
         raise Refused(
-            RefusalCode.INSUFFICIENT_LANDMARKS,
-            message=f"{record.id} has {len(pairs)} saved pair(s); at least three corresponding "
-            "pairs are required (set_landmarks adds them).",
-        )
-    stale_ids = [pair.id for pair in pairs if geometry.stale(job.state, record, pair)]
-    if stale_ids:
-        raise Refused(
-            RefusalCode.STALE_LANDMARK_PLANE,
-            pairs=stale_ids,
-            message=(
-                f"Pairs {', '.join(stale_ids)} were placed against an earlier atlas plane of "
-                f"{record.id}. Draw its current atlas plane with look, then re-place their atlas "
-                "endpoints with set_landmarks (the pair id and an atlas endpoint), or delete them."
-            ),
-        )
-    return pairs
+            RefusalCode.TOO_MANY_LANDMARK_VIEWS,
+            f"You sent {len(pairs)} pairs with view true, and a call draws one "
+            "picture per pair for at most four. Nothing was written. Send "
+            f"the same {len(pairs)} pairs again with view false (no pair "
+            "pictures; the pairs are listed in the reply), or send them in "
+            "calls of four or fewer.")
+    edited = set_landmarks(job, workspace, section, pairs, delete)
+    result = edited.reply()
+    if not run.shows(view) or not edited.changed:
+        return result
 
-
-def _mesh(
-    names: Sequence[str], source: np.ndarray, target: np.ndarray, size: tuple[int, int]
-) -> PiecewiseAffine:
-    """The VisuAlign mesh of the pairs and the four fixed corners, as VisuAlign
-    builds it; invalid geometry is refused naming the pairs."""
+    record = job.state.by_id(edited.section)
+    assert record is not None
+    saved = () if record.landmarks is None else record.landmarks.pairs
     try:
-        return visualign_mesh(source, target, size=size)
-    except DegenerateMesh as exc:
-        # The mesh's first four vertices are the fixed corners.
-        raise Refused(
-            RefusalCode.LANDMARK_TRIANGULATION_FAILED,
-            pairs=sorted({names[i - 4] for group in exc.vertices for i in group if i >= 4}),
-            message=_degenerate_words(exc, names),
-        ) from exc
-
-
-def _landmark_reference(
-    job: Job, section: Section, folder: Path, key: str,
-    result: DeformableRecord, numbers: dict[str, Any],
-    revision: str, pairs: Sequence[Pair], folds: dict[str, Any],
-    baseline_key: str | None, baseline_steps: tuple[JsonObject, ...],
-    composed: bool,
-) -> DeformationRef:
-    """The deformation reference the section holds for a landmark application."""
-    step: JsonObject = {
-        "method": "landmark_triangulation",
-        "start": "current" if composed else "linear",
-        "landmark_revision": revision,
-        "landmark_count": len(pairs),
-    }
-    keys = {p.id: geometry.pair_key(p) for p in pairs}
-    warp = LandmarkWarp(
-        revision=revision, pairs=keys, folds=folds,
-        baseline_key=baseline_key, baseline_steps=baseline_steps)
-    return DeformationRef(
-        key=key, linear_key=deformation.linear_key(job.state, section),
-        steps=(*baseline_steps, step), record=job.layout.relative(folder),
-        summary=numbers, inverse_source=result.inverse_source, landmark=warp)
-
-
-def _unchanged_reply(record: Section, pairs: Sequence[Pair]) -> dict[str, Any]:
-    """The reply when the section's warp is already the one these pairs make."""
-    applied = record.deformation
-    summary: JsonObject = {}
-    if applied is not None and applied.summary is not None:
-        summary = applied.summary
-    warp = geometry.landmark_warp(record)
-    folds = None if warp is None else to_jsonable(warp.folds)
-    return {
-        "status": "ok",
-        "section": record.id,
-        "written": False,
-        "landmark_count": len(pairs),
-        "built_from": [p.id for p in pairs],
-        **summary,
-        DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
-        **_folds_reply(folds),
-    }
-
-
-def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict[str, Any]:
-    """Apply the complete set, replacing the preceding landmark application."""
-    record = _section(job, section)
-    pairs = _require_applicable(job, record)
-    # The warp is the pairs' and the four corners' mesh alone; a warp saved
-    # before that (with automatic holds) has another revision, so the same
-    # pairs build it again.
-    pair_forms = [pair_to_json(pair) for pair in pairs]
-    revision = digest({"pairs": pair_forms, "mesh": "pairs and corners"})
-    held = record.deformation
-    applied_warp = geometry.landmark_warp(record)
-    if applied_warp is not None and applied_warp.revision == revision:
-        return _unchanged_reply(record, pairs)
-    started = time.monotonic()
-    try:
-        grid = deformation.fit_grid(job.state, workspace, record)
-        try:
-            current = job.deformations.current(job.state, record)
-        except ValueError:  # its record.json does not load (the error names it)
-            logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
-            current = None
-        if held is not None and current is None:
-            raise Refused(
-                RefusalCode.LANDMARK_WARP_UNAVAILABLE,
-                message="The current deformation cannot be read; undo it first.",
-            )
-        replacing = current is not None and current.engine.get("name") == "landmark_triangulation"
-        previous = current.parent if replacing and current is not None else current
-        baseline_key: str | None = None
-        baseline_steps: tuple[JsonObject, ...] = ()
-        if replacing and applied_warp is not None:
-            baseline_key = applied_warp.baseline_key
-            baseline_steps = applied_warp.baseline_steps
-        elif held is not None:
-            baseline_key, baseline_steps = held.key, held.steps or ()
-        size = grid.image.size
-        source = (
-            geometry.transform(
-                np.linalg.inv(geometry.orientation(record)),
-                [p.section_fraction_xy for p in pairs],
-            )
-            * np.asarray(size)
-            - 0.5
-        )
-        target = geometry.transform(
-            grid.placement.atlas_to_section, [p.atlas_native_xy for p in pairs]
-        )
-        if previous is not None:
-            assert previous.inverse_field_mm is not None
-            target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
-        names = [p.id for p in pairs]
-        prepared = prepare_warp(workspace.atlas, grid.placement, size, deformation.DETAIL_LEVEL,
-                                previous=previous)
-        mesh = _mesh(names, source, target, size)
-        yy, xx = np.indices((size[1], size[0]), dtype=float)
-        points = np.stack([xx, yy], -1)
-        mm = grid.placement.section_mm_per_px
-        # The fields as loading the record rebuilds them from its mesh.
-        step = MeshStep(mesh.source, mesh.target, mesh.simplices)
-        forward_mm, inverse_mm = mesh_fields(step, size, mm)
-        folds = _folds(mesh, points, names)
-        finite = np.isfinite(forward_mm).all()
-        finite = finite and np.isfinite(inverse_mm).all()
-        if not finite:
-            raise ValueError("The mesh does not cover the full section frame")
-        prepared.grid = WorkingGrid(size, mm, size)
-        result = finish_fit(
-            prepared,
-            EngineResult(
-                field_mm=forward_mm,
-                inverse_field_mm=inverse_mm,
-                inverse_source="exact inverse on the same landmark triangles",
-                native_parameters={
-                    "source_xy": mesh.source.tolist(),
-                    "target_xy": mesh.target.tolist(),
-                    "simplices": mesh.simplices.tolist(),
-                    "margin": 0.1,
-                    # vertices: 4 fixed corners, then the pairs
-                    "pair_count": len(names),
-                },
-                runtime_s=time.monotonic() - started,
-                engine_version=scipy.__version__,
-            ),
-            landmark_warp=True,
-        )
-        result.engine["name"] = "landmark_triangulation"
-        result.stored_step = step
-    except Refused:
-        raise
-    except (ValueError, OSError) as exc:
-        raise Refused(RefusalCode.LANDMARK_TRIANGULATION_FAILED,
-                      message=str(exc)) from exc
-    key = digest(
-        {
-            "landmarks": revision,
-            "linear": deformation.linear_key(job.state, record),
-            "previous": baseline_key,
-        }
-    )
-    result.provenance = {
-        "tool": "landmark_triangulation",
-        "section_id": record.id,
-        "landmark_revision": revision,
-        "landmark_baseline_key": baseline_key,
-        "pairs": pair_forms,
-    }
-    job.deformations.put(key, result)
-    folder = job.deformations.save(record.id, key, result)
-    numbers = deformation.summary(result, current)
-    before = job.snapshot()
-    record.deformation = _landmark_reference(
-        job, record, folder, key, result, numbers, revision, pairs, folds,
-        baseline_key, baseline_steps, previous is not None)
-    job.commit(before)
-    return {
-        "status": "ok",
-        "section": record.id,
-        "written": True,
-        "landmark_count": len(pairs),
-        "built_from": [p.id for p in pairs],
-        "composed": previous is not None,
-        "replaced": replacing,
-        **numbers,
-        DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
-        **_folds_reply(folds),
-    }
+        with collecting() as notes:
+            pictures = [
+                pair_picture(workspace, job.state, record, pair,
+                             store=job.deformations)
+                for pair in saved if pair.id in edited.changed]
+        entries = save_pictures(
+            job, workspace, "set_landmarks", pictures, notes, {})
+        looked = Looked(pictures=[p.image for p in pictures], entries=entries)
+        return pictured(result, looked)
+    except Exception as exc:  # noqa: BLE001 - the write stands
+        result["render_failed"] = str(exc)
+        return result

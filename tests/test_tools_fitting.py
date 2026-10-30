@@ -148,7 +148,7 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
 def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
     """An Elastix fit whose scale changes by more than a section shrinks or
     swells, or that shears it, carries flags, worded in the row's warning."""
-    from langslice.doors.tools.fitting import affine_flag_words
+    from langslice.tools.affine_fit import affine_flag_text
     from langslice.tools.transforms import plausibility_flags
 
     def fit(**physical: float) -> dict[str, Any]:
@@ -164,7 +164,7 @@ def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
     # Measured from the transform the section held: a manual 0.7 kept is no change.
     held = affine_from_json({"params": [1, 0, 0, 0, 1, 0], **fit(scale_x=0.7)})
     assert plausibility_flags(held, fit(scale_x=0.68)) == []
-    words = [affine_flag_words(flag) for flag in flags]
+    words = [affine_flag_text(flag) for flag in flags]
     assert words[0].startswith("SCALE_CHANGED: this fit scales the section to [0.67, 1.0] "
                                "from [1.0, 1.0]")
     assert words[1].startswith("SHEAR: this fit shears the section by 0.24 (it held 0.0)")
