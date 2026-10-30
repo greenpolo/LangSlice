@@ -6763,7 +6763,6 @@
 {"rule": "or-empty-get", "path": "src/langslice/doors/plugins/mcp_adapter.py", "symbol": "_doc", "count": 1},
 {"rule": "or-empty-get", "path": "src/langslice/doors/plugins/mcp_adapter.py", "symbol": "tools", "count": 1},
 {"rule": "or-empty-get", "path": "src/langslice/doors/plugins/provenance.py", "symbol": "record", "count": 1},
-{"rule": "or-empty-get", "path": "src/langslice/doors/reference_card.py", "symbol": "job_spec", "count": 1},
 {"rule": "or-empty-get", "path": "src/langslice/doors/reference_card.py", "symbol": "transform_cap_line", "count": 2},
 {"rule": "or-empty-get", "path": "src/langslice/doors/user_settings.py", "symbol": "agent_choice", "count": 1},
 {"rule": "or-empty-get", "path": "src/langslice/engines/emlddmm/plugin.py", "symbol": "_stack_tool.land", "count": 1},

@@ -31,6 +31,7 @@ from langslice.job.layout import (
     locate_job_folder,
     read_job_file,
 )
+from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
@@ -175,8 +176,9 @@ def read_spec(job_folder: Path) -> JobSpec:
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
             "<images>/langslice).")
     data["image_folder"] = str(images)
+    kept, _removed = without_removed_settings(data)  # the job's open logs them
     try:
-        spec = JobSpec.from_dict(data)
+        spec = JobSpec.from_dict(kept)
     except ValueError as exc:
         raise ValueError(f"{job_folder / 'job.json'}: {exc}") from exc
     spec.resume = True

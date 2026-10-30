@@ -55,6 +55,29 @@ read-only image folder falls back to `~/.langslice/jobs/<id>/`). Output artifact
 paths are relative to the job folder. The default image folder reference is
 `..`; a separately located job records an absolute image path.
 
+### Old job folders
+
+A job folder an earlier LangSlice wrote opens as the current format: one
+table of migrations (`job/migrations.py`) reads it. `state.json` of format 3
+is read as format 4 (its section images, [below](#section-images-sectionsstemimagesnamepng)).
+What a file still holds of what LangSlice no longer has is dropped as it is
+read, with one logged warning per name (the `langslice.job.migrations`
+logger: on the agent CLI's standard error, in a script's logging):
+
+- in `job.json`'s settings: `max_input_tokens`, `max_quota_percent`,
+  `agent_preprocessing`, `agent_damage`, `enabled`, `position.gated`,
+  `position.bayesian`, `transform.flip`, `transform.interactive`,
+  `transform.automatic`, `nonlinear.engine`, and the task `reorder`;
+- in `state.json` and the undo steps: the stack's `appearance` and a
+  section's `position_source` and `damaged` (a whole-section damage flag;
+  damage is marked by region, `damaged_regions`).
+
+An open that writes (the agent CLI, the library, MCP, `Job.open`) writes
+`job.json`, `state.json` and the undo steps again without them, once, and
+logs a `migrated` event; a dry run (`--dry-run`) changes nothing on disk. A
+setting no LangSlice wrote is still refused, naming it. A checkpoint older
+than format 3 (a pre-release LangSlice's) is refused: start a new job.
+
 ## Conventions
 
 - **Atlas coordinates** are BrainGlobe micrometres in the atlas's own axis
@@ -284,6 +307,7 @@ follow the job through it.
 | `kind` | When | Other fields |
 |---|---|---|
 | `open` | the job is opened (`Job.open`: created or resumed) | `resumed` |
+| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`) |
 | `plugins` | the tool plugins' record in `job.json` changed | `plugins` |
 | `script_write` | a script's `job.context` write landed | `property`, `sections`, `notes`, `argv0`, `call` |
 | `tool_start` | a tool call begins, on any door | `name`, `execution_id`, `door`, `target_ids`, `args` |

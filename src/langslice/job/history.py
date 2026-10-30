@@ -13,7 +13,8 @@ An unreadable index or step starts the job without a history (logged): the
 history is a convenience, the checkpoint is the record. A history from a
 newer LangSlice, or a step of another state format, is likewise ignored,
 never guessed at, except an older step the job's migrations read
-(:attr:`History.upgrade`), written again at the current format by the next
+(:attr:`History.upgrade`); a step they changed (an older format, or a key
+LangSlice no longer has) is written again at the current format by the next
 :meth:`History.save`. Either way the
 history on disk is left exactly as it is: :attr:`History.problem` is set and
 :meth:`History.save` writes and deletes nothing until a later
@@ -27,7 +28,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langslice.job.state_file import (
     FORMAT_KEY,
@@ -81,9 +82,13 @@ class History:
         data = json.loads((self.folder / name).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError(f"{name} does not hold a state")
-        if data.get(FORMAT_KEY) != STATE_FORMAT_VERSION:
-            self._upgraded.add(name)
-        return current_state(data, self.upgrade)
+        # reportUnknownArgumentType: a JSON object, its keys text
+        step = cast("dict[str, Any]", data)
+        fields = current_state(step, self.upgrade)
+        stored = {key: step[key] for key in step if key != FORMAT_KEY}
+        if step.get(FORMAT_KEY) != STATE_FORMAT_VERSION or fields != stored:
+            self._upgraded.add(name)  # the migrations changed it: saved again
+        return fields
 
     def load(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """``(undo, redo)`` from disk; empty without a history."""

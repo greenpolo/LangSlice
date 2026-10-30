@@ -20,6 +20,19 @@ migration         reads  what it does, to the next format
 
 An older format is refused: a pre-release LangSlice made it.
 
+What a file of any format may still hold of what LangSlice no longer has
+is dropped as it is read, with one logged warning per name (the
+``langslice.job.migrations`` logger; the job's ``logs/events.jsonl``
+gets a ``migrated`` line when it writes the folder again):
+
+- ``state.json`` and the undo steps: the stack's
+  ``REMOVED_STACK_KEYS`` and a section's ``REMOVED_SECTION_KEYS``
+  (``drop_removed_keys``, which the job's migration runs after the
+  table, at every format);
+- ``job.json``'s settings: ``REMOVED_SETTINGS`` and the tasks of
+  ``REMOVED_TASKS`` (``without_removed_settings``), which the
+  doors read the saved settings through.
+
 Two old shapes are read in the core, because the job never sees them
 first: a deformation's ``record.json`` is read by the core's record store
 when a fit, a picture or an export needs it, and record folders are
@@ -61,7 +74,7 @@ from langslice.core.stack.json_reads import (
 )
 from langslice.core.workspace import Workspace
 from langslice.job.layout import JobLayout
-from langslice.job.state_file import older_format
+from langslice.job.state_file import STATE_FORMAT_VERSION, older_format
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +82,28 @@ logger = logging.getLogger(__name__)
 Fields = dict[str, JsonValue]
 #: Makes a section image's pixels and what else its entry records.
 MakePixels = Callable[[], tuple[np.ndarray, JsonObject]]
+
+#: The settings an earlier LangSlice wrote to ``job.json`` that this one
+#: does not have (a task section's as ``section.key``).
+REMOVED_SETTINGS = (
+    "max_input_tokens",
+    "max_quota_percent",
+    "agent_preprocessing",
+    "agent_damage",
+    "enabled",
+    "position.gated",
+    "position.bayesian",
+    "transform.flip",
+    "transform.interactive",
+    "transform.automatic",
+    "nonlinear.engine",
+)
+#: The tasks an earlier LangSlice's ``job.json`` names that this one lacks.
+REMOVED_TASKS = ("reorder",)
+#: The keys of the stack a state may hold that no reader uses.
+REMOVED_STACK_KEYS = ("appearance",)
+#: The keys of a section row a state may hold that no reader uses.
+REMOVED_SECTION_KEYS = ("position_source", "damaged")
 
 
 class FolderMigration:
@@ -92,8 +127,14 @@ class FolderMigration:
         #: The entry of each section image made, by (section, name,
         #: source); None for one that could not be made.
         self.made: dict[tuple[str, str, str], Fields | None] = {}
-        #: Whether a state of an older format has been read through it.
+        #: Whether it changed a state it read: one of an older format, or
+        #: one holding a key it dropped.
         self.used = False
+        #: The migrations of the table it ran, by name, in order.
+        self.applied: list[str] = []
+        #: Each removed key it dropped (a section's as ``slices.key``),
+        #: with the number of sections that held it where it first was.
+        self.dropped: dict[str, int] = {}
 
     def seed(self, data: JsonObject) -> None:
         """Remember the section images a current state already holds.
@@ -116,8 +157,11 @@ class FolderMigration:
                 )
                 self.made.setdefault(key, fields)
 
-    def __call__(self, version: int, data: JsonObject) -> Fields:
-        """Return a state's fields of an older format as the current format.
+    def __call__(self, version: int, data: JsonObject) -> JsonObject:
+        """Return a state's fields as the current format.
+
+        The table's rows run from the state's format; then the keys
+        LangSlice no longer has are dropped, each logged the first time.
 
         Parameters
         ----------
@@ -128,20 +172,37 @@ class FolderMigration:
 
         Returns
         -------
-        dict
-            The fields at the current state format.
+        JsonObject
+            The fields at the current state format: *data* itself when
+            nothing changed.
 
         Raises
         ------
         ValueError
-            For a format no row of :data:`STATE_MIGRATIONS` reads.
+            For an older format no row of :data:`STATE_MIGRATIONS` reads.
         """
+        fields = data
+        if version < STATE_FORMAT_VERSION:
+            fields = self._run_table(version, data)
+        dropped = drop_removed_keys(fields)
+        for name, count in dropped.counts.items():
+            if name not in self.dropped:
+                self.dropped[name] = count
+                _warn_dropped_key(name, count)
+        if dropped.counts:
+            self.used = True
+        return dropped.fields
+
+    def _run_table(self, version: int, data: JsonObject) -> Fields:
+        """Run the table's rows from *version*; refuse a format it lacks."""
         if version not in {row.reads for row in STATE_MIGRATIONS}:
             raise older_format(version)
         fields = to_jsonable(data)
         for row in STATE_MIGRATIONS:
             if row.reads >= version:
                 fields = row.migrate(fields, self)
+                if row.name not in self.applied:
+                    self.applied.append(row.name)
         self.used = True
         return fields
 
@@ -383,6 +444,127 @@ def _recipe_3_to_4(old: JsonObject, raw: Sequence[str]) -> JsonObject:
         contrast=contrast,
         gamma=gamma,
         invert=bool(old.get("invert", False)),
+    )
+
+
+@dataclass(frozen=True)
+class Dropped:
+    """Hold a state's fields without its removed keys, and what was dropped.
+
+    Parameters
+    ----------
+    fields
+        The fields; the state's own when nothing was dropped.
+    counts
+        Each key dropped (a section's as ``slices.key``) with the number
+        of sections that held it (1 for a stack key).
+    """
+
+    fields: JsonObject
+    counts: Mapping[str, int]
+
+
+def drop_removed_keys(data: JsonObject) -> Dropped:
+    """Drop the stack's and the sections' keys that LangSlice no longer has.
+
+    Parameters
+    ----------
+    data
+        A state's fields at the current format; not changed.
+
+    Returns
+    -------
+    Dropped
+        The fields without :data:`REMOVED_STACK_KEYS` and
+        :data:`REMOVED_SECTION_KEYS`, and the keys dropped.
+    """
+    counts: dict[str, int] = {}
+    for key in REMOVED_STACK_KEYS:
+        if key in data:
+            counts[key] = 1
+    rows = _rows(data)
+    for key in REMOVED_SECTION_KEYS:
+        holders = sum(key in row for row in rows)
+        if holders:
+            counts[f"slices.{key}"] = holders
+    if not counts:
+        return Dropped(fields=data, counts={})
+
+    fields = {k: v for k, v in data.items() if k not in REMOVED_STACK_KEYS}
+    if "slices" in fields:
+        fields["slices"] = [
+            _without(row, REMOVED_SECTION_KEYS) for row in rows
+        ]
+    return Dropped(fields=fields, counts=counts)
+
+
+def _without(row: JsonObject, keys: Sequence[str]) -> JsonObject:
+    """Return a row without some keys."""
+    return {key: value for key, value in row.items() if key not in keys}
+
+
+def without_removed_settings(
+    settings: JsonObject,
+) -> tuple[Fields, tuple[str, ...]]:
+    """Return saved job settings without those LangSlice no longer has.
+
+    Parameters
+    ----------
+    settings
+        The settings as ``job.json`` holds them (its ``spec``); not
+        changed.
+
+    Returns
+    -------
+    kept : dict
+        The settings without :data:`REMOVED_SETTINGS`, and without the
+        tasks of :data:`REMOVED_TASKS` in ``tasks``.
+    removed : tuple of str
+        What was left out: each setting's name, and ``tasks: <task>``.
+    """
+    kept = to_jsonable(settings)
+    removed: list[str] = []
+    for name in REMOVED_SETTINGS:
+        section, _, key = name.rpartition(".")
+        holder = kept.get(section) if section else kept
+        if isinstance(holder, dict) and key in holder:
+            del holder[key]
+            removed.append(name)
+    tasks = kept.get("tasks")
+    if isinstance(tasks, list):
+        for task in REMOVED_TASKS:
+            if task in tasks:
+                tasks.remove(task)
+                removed.append(f"tasks: {task}")
+    return kept, tuple(removed)
+
+
+def warn_removed_settings(removed: Sequence[str]) -> None:
+    """Log one warning per setting :func:`without_removed_settings` left out.
+
+    Parameters
+    ----------
+    removed
+        The names it returned.
+    """
+    for name in removed:
+        logger.warning(
+            "job.json holds %s, which this LangSlice no longer has; it is "
+            "left out of the job's settings.",
+            name,
+        )
+
+
+def _warn_dropped_key(name: str, count: int) -> None:
+    """Log the warning for one removed state key, on its first reading."""
+    where = "the stack"
+    if name.startswith("slices."):
+        where = f"{count} section(s)"
+    logger.warning(
+        "The job's state holds %r (in %s), which this LangSlice no longer "
+        "reads; it is dropped.",
+        name.removeprefix("slices."),
+        where,
     )
 
 

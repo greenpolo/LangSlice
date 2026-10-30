@@ -18,10 +18,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import langslice
+from langslice.core.jsonable import JsonObject
 from langslice.job.layout import JobLayout, read_job_file
+from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.needs import render
 from langslice.job.settings.tool_table import TOOLS
 from langslice.tools.catalog import enabled, verbs_for
@@ -54,7 +56,11 @@ def job_spec(layout: JobLayout) -> Any:
     names loaded)."""
     from langslice.job.settings.spec import JobSpec
 
-    return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {})
+    record = read_job_file(layout) or {}
+    # reportUnknownVariableType: job.json's settings, a JSON object
+    saved = cast("JsonObject", record.get("spec") or {})
+    kept, _removed = without_removed_settings(saved)  # the open logs them
+    return JobSpec.from_dict(kept)
 
 
 def off_names(spec: Any) -> list[str]:

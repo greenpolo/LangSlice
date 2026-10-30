@@ -364,9 +364,10 @@ longer exist be taken over by the images it is opened with.
   the only file rewritten per step, and step files it no longer names are
   deleted, so the folder holds at most `UNDO_DEPTH` (50) undo steps plus
   the redo side. A new step never takes the name of an existing file (a
-  second job on the same folder). A step of an older state format is read
-  through `History.upgrade` (the job's migrations) and written again at the
-  current format by the next `save` (`upgraded`). An unreadable or newer
+  second job on the same folder). Every step is read through
+  `History.upgrade` (the job's migrations); one they changed (an older
+  format, or a removed key dropped) is written again at the current format
+  by the next `save` (`upgraded`). An unreadable or newer
   history (index, any step, step files without an index, or a step of
   another state format) starts the session without undo and is never deleted:
   `History.problem` says why (logged, and `Job.open` says it through the
@@ -391,11 +392,12 @@ longer exist be taken over by the images it is opened with.
   `stack_from_json` (unknown keys refused, a row without its own angles
   given the stack's), `serialized_mixed_angles`; `write_checkpoint` (atomic, versioned,
   `STATE_FORMAT_VERSION` 4), `read_checkpoint(path, upgrade=)`,
-  `current_state(data, upgrade=)` (an older format through *upgrade*, the
-  job's `migrations.FolderMigration`; refuses any other format: a newer
-  LangSlice's asks for an update, an older one no migration reads
-  (`older_format`) for a new job, `--fresh` or `resume=False`; history steps
-  are read the same way), `write_json_atomic` (every job file's writer),
+  `current_state(data, upgrade=)` (every format through *upgrade*, the
+  job's `migrations.FolderMigration`; a newer LangSlice's format is refused
+  and asks for an update, an older one no migration reads (`older_format`)
+  for a new job, `--fresh` or `resume=False`; without *upgrade* only the
+  current format reads; history steps are read the same way),
+  `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
 - `migrations.py` — old job folders read as the current format: the table
@@ -403,22 +405,36 @@ longer exist be taken over by the images it is opened with.
   step to the next format; `state_3_to_4` makes a format-3 state's
   `appearance` recipes into section image files and entries, drops the raw
   channels' display properties, names a mask's `channel` `section_image`).
-  `FolderMigration(workspace, layout)` is a job's `upgrade`: it applies the
+  `FolderMigration(workspace, layout)` is a job's `upgrade`, which every
+  read of the state file and of an undo step goes through: it applies the
   rows in order from a file's format, refuses one no row reads
-  (`state_file.older_format`), and keeps one memo of the images it made
-  across the checkpoint and its history steps (`seed` takes a current
-  state's entries; `used` says an older state was read). The module text
-  names the two old shapes the core reads itself (a deformation record's
-  format, its fit settings' `stiffness`) and why.
+  (`state_file.older_format`), then drops at every format the keys no
+  reader uses (`drop_removed_keys`: `REMOVED_STACK_KEYS` `appearance`,
+  `REMOVED_SECTION_KEYS` `position_source` and `damaged`), logging one
+  warning per key the first time (`dropped`, with the sections that held
+  it). It keeps one memo of the images it made across the checkpoint and
+  its history steps (`seed` takes a current state's entries); `used` says
+  it changed what it read, `applied` the rows it ran.
+  `without_removed_settings(spec)` leaves out of saved settings what
+  LangSlice no longer has (`REMOVED_SETTINGS`, the `REMOVED_TASKS` task
+  `reorder`) and names them; the doors read `job.json` through it
+  (`doors.jobs.read_spec`, the reference card) and the job logs them
+  (`warn_removed_settings`). The module text names the two old shapes the
+  core reads itself (a deformation record's format, its fit settings'
+  `stiffness`) and why.
 - `job.py` — `Job`: `open` (resume or ingest, the opening `preprocessed`
   image of every section without one, `core.sections.images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records
-  `resumed`; the job added to the recent jobs list, `recent.remember`), `load` (as it stands, writing nothing, except once for a job of
-  state format 3 or without its opening images: then the migrated state and
-  history are written at format 4 under the lock, after reading the state file
-  again there (`_write_upgrade`: another process may have migrated and written
-  meanwhile; its state is kept); a dry run keeps them in
-  memory, though the image files the migration makes are written), `upgrade` (the job's `FolderMigration`, which every read of the state
+  `resumed`; a folder the migrations changed adds a `migrated` event; the
+  job added to the recent jobs list, `recent.remember`), `load` (as it stands, writing nothing, except once for a job
+  the migrations change (an older state format, a removed key or setting)
+  or without its opening images: then the migrated state and history are
+  written at the current format, and `job.json` without its removed
+  settings, under the lock, after reading the state file again there
+  (`_write_upgrade`: another process may have migrated and written
+  meanwhile; its state is kept), with a `migrated` event; a dry run keeps them in
+  memory, though the image files the migration makes are written; the
+  removed settings are logged either way), `upgrade` (the job's `FolderMigration`, which every read of the state
   file goes through), `workspace` (setting it gives a workspace without a
   `job_folder` this job's folder, where its made images are read), `writing` / `reading` / `sync` (above), `snapshot` / `commit`, `undo` /
   `redo` (each lists the registrations it leaves: `list_registrations(before)`,

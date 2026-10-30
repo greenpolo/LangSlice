@@ -71,10 +71,15 @@ from langslice.job.layout import (
     JobLayout,
     check_owner,
     locate_job_folder,
+    read_job_file,
     write_job_file,
 )
 from langslice.job.lock import FolderLock
-from langslice.job.migrations import FolderMigration
+from langslice.job.migrations import (
+    FolderMigration,
+    warn_removed_settings,
+    without_removed_settings,
+)
 from langslice.job.pictures import DiscardedViews, ViewStore
 from langslice.job.registrations import Registrations
 from langslice.job.settings import frozen as freeze
@@ -343,6 +348,46 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     return sorted(changed)
 
 
+def _removed_settings(layout: JobLayout) -> tuple[str, ...]:
+    """Return the removed settings ``job.json`` holds, each logged."""
+    saved = _saved_settings(layout)
+    if saved is None:
+        return ()
+    _kept, removed = without_removed_settings(saved)
+    warn_removed_settings(removed)
+    return removed
+
+
+def _write_settings_without_removed(layout: JobLayout) -> tuple[str, ...]:
+    """Write ``job.json`` without its removed settings; return their names."""
+    saved = _saved_settings(layout)
+    if saved is None:
+        return ()
+    kept, removed = without_removed_settings(saved)
+    if removed:
+        write_job_file(layout, spec=kept)
+    return removed
+
+
+def _saved_settings(layout: JobLayout) -> JsonObject | None:
+    """Return the settings ``job.json`` holds; None without any."""
+    record = read_job_file(layout)
+    saved = None if record is None else record.get("spec")
+    if not isinstance(saved, dict):
+        return None
+    return cast("JsonObject", saved)
+
+
+def _log_migrated(
+    layout: JobLayout, migration: FolderMigration, removed: Sequence[str],
+) -> None:
+    """Log a ``migrated`` event when a migration changed what the job read."""
+    if migration.applied or migration.dropped or removed:
+        layout.log_event(
+            "migrated", migrations=list(migration.applied),
+            dropped=dict(migration.dropped), settings=list(removed))
+
+
 def _state_from(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
     """The stack state *path* holds; ``ValueError`` naming the file and the
     unknown keys when it holds any."""
@@ -571,6 +616,7 @@ class Job:
                 changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
                     raise inputs_changed(layout.folder, changed)
+            removed = _removed_settings(layout)  # this spec replaces them
             write_job_file(layout, spec=spec.to_dict())
             history = History(layout.history_dir, migration)
             undo: list[dict[str, Any]] = []
@@ -602,6 +648,7 @@ class Job:
                 # upgraded one is written again at the current format
                 job._save_history()
             job.checkpoint()
+        _log_migrated(layout, migration, removed)
         layout.log_event("open", resumed=resumed)
         recent.remember(layout.folder, images, spec.atlas)
         return job
@@ -630,6 +677,7 @@ class Job:
         data = read_checkpoint(str(layout.state_file), migration)
         if data is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
+        removed = _removed_settings(layout)
         migration.seed(data)
         history = History(layout.history_dir, migration)
         undo, redo = history.load()
@@ -642,11 +690,11 @@ class Job:
         if not persist:
             job.views = DiscardedViews(layout)
             job.wire_views()
-        upgraded = migration.used or history.upgraded
+        upgraded = migration.used or history.upgraded or bool(removed)
         if section_images.ensure_opening(workspace, layout, job.state) or upgraded:
-            # A job of the older state format, or one without its opening
-            # images: written once at the current format (a dry run keeps it
-            # in memory).
+            # A job of an older format, or one without its opening images:
+            # written once at the current format (a dry run keeps it in
+            # memory).
             if persist:
                 job._write_upgrade(migration)
         return job
@@ -654,11 +702,13 @@ class Job:
     def _write_upgrade(self, migration: FolderMigration) -> None:
         """Write the state and history at the current format, read again under
         the job's lock first: another process may have migrated (and written
-        to) the job since it was read, and its state is the one kept. Nothing
+        to) the job since it was read, and its state is the one kept; and
+        ``job.json`` without the settings LangSlice no longer has. Nothing
         is written when that read needs no upgrade and every section has its
         opening image."""
         assert self.workspace is not None
         with self.lock.held():
+            removed = _write_settings_without_removed(self.layout)
             migration.used = False
             data = read_checkpoint(self.checkpoint_path, migration)
             if data is not None:
@@ -673,6 +723,7 @@ class Job:
             else:
                 self._state_stamp = _stamp(self.checkpoint_path)
                 self._undo_stamp = _stamp(self.undo_path)
+        _log_migrated(self.layout, migration, removed)
 
     @property
     def folder(self) -> Path:

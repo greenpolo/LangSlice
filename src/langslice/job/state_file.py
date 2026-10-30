@@ -45,9 +45,9 @@ from langslice.core.stack.rows import (
 from langslice.core.stack.section import FLAT, Section
 from langslice.core.stack.stack import Stack
 
-#: A reader of a state's fields of an older format (the first argument)
-#: that returns them as the current format.
-Upgrade = Callable[[int, dict[str, Any]], dict[str, Any]]
+#: A reader of a state's fields of its format (the first argument) that
+#: returns them as the current format.
+Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 
 #: The key a job-folder file carries its format version under.
 FORMAT_KEY = "format_version"
@@ -334,10 +334,10 @@ def older_format(version: int) -> ValueError:
 
 
 def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[str, Any]:
-    """A checkpoint's state fields, without the version key; ``ValueError``
-    for any format but :data:`STATE_FORMAT_VERSION`, or an older one read
-    through *upgrade* (the job's migrations, which refuse a format they do
-    not read)."""
+    """A checkpoint's state fields, without the version key, read through
+    *upgrade* (the job's migrations, which refuse an older format they do
+    not read); ``ValueError`` without it for any format but
+    :data:`STATE_FORMAT_VERSION`, and for a newer one."""
     version = data.get(FORMAT_KEY, 0)
     if not isinstance(version, int) or isinstance(version, bool) or version < 0:
         raise ValueError(f"Unreadable checkpoint format_version {version!r}")
@@ -346,11 +346,11 @@ def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[
             f"This checkpoint was written by a newer LangSlice (format {version}; this "
             f"version reads format {STATE_FORMAT_VERSION}). Update LangSlice to open it.")
     fields = {key: data[key] for key in data if key != FORMAT_KEY}
-    if version == STATE_FORMAT_VERSION:
-        return fields
-    if upgrade is None:
+    if upgrade is not None:
+        return dict(upgrade(version, fields))
+    if version != STATE_FORMAT_VERSION:
         raise older_format(version)
-    return upgrade(version, fields)
+    return fields
 
 
 def read_checkpoint(path: str, upgrade: Upgrade | None = None) -> dict[str, Any] | None:
