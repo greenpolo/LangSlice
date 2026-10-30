@@ -313,14 +313,14 @@ bodies, and turned into an answer once per door:
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past
   `tools.fit_regions.MIN_ZOOM_GAIN`; `with_notices` lists each background
-  picture with its caption; `work_pictures` is the saved files of those pictures, for the CLI and `JobHandle.wait`), `arguments.py` (the argument shapes, typed dicts with
+  picture with its caption; `work_pictures` is the saved files of those pictures, for the CLI and `JobHandle.wait`), `tools/arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
   `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host;
-  a tool's `resolution` is clamped by `tools.look.requested_edge`), `media.py` (the ADK message parts: `packaged`,
-  `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
+  a tool's `resolution` is clamped by `tools.look.requested_edge`), `agent/media.py` (the ADK message parts: `packaged`,
+  `package_result`, `opening_parts`), `tools/reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys
   from `core/pictures/media_keys.py`.

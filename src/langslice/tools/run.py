@@ -145,4 +145,4 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
-__all__ = ["Media", "Run", "as_list", "pictured"]
+__all__ = ["Media", "Run", "as_list", "drawn_image", "pictured", "spread"]
