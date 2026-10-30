@@ -408,9 +408,9 @@ longer exist be taken over by the images it is opened with.
   step to the next format; `state_3_to_4` makes a format-3 state's
   `appearance` recipes into section image files and entries, drops the raw
   channels' display properties, names a mask's `channel` `section_image`).
-  `state_4_to_5` names a section's `image_correction` `border_trace` and,
-  once its folder has moved (`trace_folders.moved_path`: the old one gone,
-  the new one there), the paths the trace and its deformation steps store.
+  `state_4_to_5` names a section's `image_correction` `border_trace`; an
+  old trace stays in `sections/<name>/image_correction/` with the paths
+  stored to it, new traces go under `border_trace/`.
   `FolderMigration(workspace, layout)` is a job's `upgrade`, which every
   read of the state file and of an undo step goes through: it applies the
   rows in order from a file's format, refuses one no row reads
@@ -428,15 +428,6 @@ longer exist be taken over by the images it is opened with.
   (`warn_removed_settings`). The module text names the two old shapes the
   core reads itself (a deformation record's format, its fit settings'
   `stiffness`) and why.
-- `trace_folders.py` — the border trace folders of format 4:
-  `move_trace_folders(layout)` moves `sections/<name>/image_correction/` to
-  `border_trace/` and writes the paths again in the trace folder's JSON
-  files and `PATH_FILES` (`views.jsonl`, `view.json`,
-  `registrations.jsonl`); `Job.open` and `Job._write_upgrade` call it under
-  the lock before the state is read, so a dry run or a folder this process
-  cannot write moves nothing and reads the traces where they stand; a
-  folder that cannot be renamed stays where it is (logged). `moved_path`
-  is a stored path in the moved folder once it has moved.
 - `job.py` — `Job`: `open` (resume or ingest, the opening `preprocessed`
   image of every section without one, `core.sections.images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records

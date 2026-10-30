@@ -129,7 +129,7 @@ def test_a_dry_run_of_an_old_folder_warns_and_writes_nothing(
     assert after == before
 
 
-# --- the border trace's folder, moved at format 5 ------------------------------------------
+# --- the border trace, renamed at format 5 -------------------------------------------------
 
 CALL = "fedcba9876543210fedcba98"
 OLD_DIR = f"sections/s0/image_correction/{CALL}/attempt-01"
@@ -139,8 +139,7 @@ NEW_DIR = f"sections/s0/border_trace/{CALL}/attempt-01"
 def _format_four_folder(tmp_path: Path) -> Path:
     """A job folder as format 4 left it: a border trace of s0 under the
     row key ``image_correction`` and in ``sections/s0/image_correction/``,
-    its path also in a deformation step, a picture record and the trace's
-    own reply."""
+    its path also in a picture record and the trace's own reply."""
     folder = _old_folder(tmp_path)
     langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()  # format 5, clean
     attempt = folder / OLD_DIR
@@ -183,27 +182,28 @@ def test_a_dry_run_reads_a_format_four_trace_where_its_folder_stands(tmp_path: P
     assert after == before
 
 
-def test_an_open_that_writes_moves_the_trace_folder_and_every_path_to_it(tmp_path: Path):
+def test_an_open_that_writes_finds_the_trace_through_its_stored_paths(tmp_path: Path):
     folder = _format_four_folder(tmp_path)
-    langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()
+    reply_before = (folder / OLD_DIR / "result.json").read_bytes()
+    handle = langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS)
+    trace = handle.job.state.slices[0].border_trace
+    assert trace is not None and trace.artifact_dir == OLD_DIR
+    assert trace.artifact_paths == {"raw_reply": f"{OLD_DIR}/raw_reply.png"}
+    assert handle.job.layout.resolve(trace.artifact_paths["raw_reply"]).read_bytes() == b"png"
+    handle.close()
 
-    assert not (folder / "sections" / "s0" / "image_correction").exists()
-    assert (folder / NEW_DIR / "raw_reply.png").read_bytes() == b"png"
+    assert not (folder / "sections" / "s0" / "border_trace").exists()
+    assert (folder / OLD_DIR / "result.json").read_bytes() == reply_before
     for path in [folder / "state.json", *sorted((folder / "history").glob("step-*.json"))]:
         state = json.loads(path.read_text())
         assert state["format_version"] == STATE_FORMAT_VERSION == 5
         row = state["slices"][0]
         assert "image_correction" not in row
-        assert row["border_trace"]["artifact_dir"] == NEW_DIR
-        assert row["border_trace"]["artifact_paths"] == {"raw_reply": f"{NEW_DIR}/raw_reply.png"}
-    reply = json.loads((folder / NEW_DIR / "result.json").read_text())
-    assert reply["artifact_dir"] == str(folder / NEW_DIR)
-    assert "image_correction" not in (folder / "views.jsonl").read_text()
+        assert row["border_trace"]["artifact_dir"] == OLD_DIR
     events = [json.loads(line) for line in
               (folder / "logs" / "events.jsonl").read_text().splitlines()]
     migrated = [event for event in events if event["kind"] == "migrated"]
     assert migrated[-1]["migrations"] == ["state_4_to_5"]
-    assert migrated[-1]["trace_folders"] == ["s0"]
 
     stamp = (folder / "state.json").read_bytes()
     langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()

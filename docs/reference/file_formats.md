@@ -62,15 +62,9 @@ A job folder an earlier LangSlice wrote opens as the current format
 reads it. `state.json` of format 3 is read as format 4 (its section images,
 [below](#section-images-sectionsstemimagesnamepng)), and format 4 as format
 5: a section's image-model border trace, under `image_correction` in format
-4, is under `border_trace`. Its folder, `sections/<name>/image_correction/`,
-moves to `sections/<name>/border_trace/` the first time the job is opened to
-write, and the paths naming it are written again in `state.json`, the undo
-steps, the trace folder's own `request.json` and `result.json` files,
-`views.jsonl`, each picture's `view.json` and each section's
-`registrations.jsonl`. A deformation record's `record.json` keeps the trace
-path it was fitted from (record folders are never rewritten). A dry run, or
-a folder this process cannot write, moves nothing and reads the traces where
-they are.
+4, is under `border_trace`; an old trace stays in
+`sections/<name>/image_correction/` with the paths stored to it, and new
+traces go under `sections/<name>/border_trace/`.
 What a file still holds of what LangSlice no longer has is dropped as it is
 read, with one logged warning per name (the `langslice.job.migrations`
 logger: on the agent CLI's standard error, in a script's logging):
@@ -319,7 +313,7 @@ follow the job through it.
 | `kind` | When | Other fields |
 |---|---|---|
 | `open` | the job is opened (`Job.open`: created or resumed) | `resumed` |
-| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`), `trace_folders` (the sections whose `image_correction/` folder moved to `border_trace/`) |
+| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`) |
 | `plugins` | the tool plugins' record in `job.json` changed | `plugins` |
 | `script_write` | a script's `job.context` write landed | `property`, `sections`, `notes`, `argv0`, `call` |
 | `tool_start` | a tool call begins, on any door | `name`, `execution_id`, `door`, `target_ids`, `args` |

@@ -98,7 +98,6 @@ from langslice.job.state_file import (
     write_checkpoint,
     write_json_atomic,
 )
-from langslice.job.trace_folders import move_trace_folders
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -381,14 +380,12 @@ def _saved_settings(layout: JobLayout) -> JsonObject | None:
 
 def _log_migrated(
     layout: JobLayout, migration: FolderMigration, removed: Sequence[str],
-    moved: Sequence[str],
 ) -> None:
     """Log a ``migrated`` event when a migration changed the job's files."""
-    if migration.applied or migration.dropped or removed or moved:
+    if migration.applied or migration.dropped or removed:
         layout.log_event(
             "migrated", migrations=list(migration.applied),
-            dropped=dict(migration.dropped), settings=list(removed),
-            trace_folders=list(moved))
+            dropped=dict(migration.dropped), settings=list(removed))
 
 
 def _state_from(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
@@ -611,7 +608,6 @@ class Job:
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
         with lock.held():  # read and first checkpoint as one write
-            moved = move_trace_folders(layout)
             state = None
             resumed = False
             if spec.resume:
@@ -654,7 +650,7 @@ class Job:
                 # upgraded one is written again at the current format
                 job._save_history()
             job.checkpoint()
-        _log_migrated(layout, migration, removed, moved)
+        _log_migrated(layout, migration, removed)
         layout.log_event("open", resumed=resumed)
         recent.remember(layout.folder, images, spec.atlas)
         return job
@@ -719,7 +715,6 @@ class Job:
         assert self.workspace is not None
         with self.lock.held():
             removed = _write_settings_without_removed(self.layout)
-            moved = move_trace_folders(self.layout)
             migration.used = False
             data = read_checkpoint(self.checkpoint_path, migration)
             if data is not None:
@@ -734,7 +729,7 @@ class Job:
             else:
                 self._state_stamp = _stamp(self.checkpoint_path)
                 self._undo_stamp = _stamp(self.undo_path)
-        _log_migrated(self.layout, migration, removed, moved)
+        _log_migrated(self.layout, migration, removed)
 
     @property
     def folder(self) -> Path:
