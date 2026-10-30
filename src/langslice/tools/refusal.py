@@ -49,4 +49,4 @@ def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | 
     named = "work" if "work" in found.facts else "properties"
     row = Refused(found.code,
                   **{named: found.facts[named]}, message=found.message)
-    return {"id": section_id, **row.payload()}
+    return row.payload(section_id=section_id)

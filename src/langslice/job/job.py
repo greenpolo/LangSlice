@@ -387,11 +387,11 @@ def _job_result(
         if not future.done():  # the wait ran out; a job's own timeout is a result
             raise
         error: BaseException = future.exception() or TimeoutError()
-        failure = Refused(type(error).__name__, message=str(error))
-        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure.payload()}
+        failure = Refused.from_exception(error).payload()
+        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
     except Exception as exc:  # the job records its own failures; this is a backstop
-        failure = Refused(type(exc).__name__, message=str(exc))
-        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure.payload()}
+        failure = Refused.from_exception(exc).payload()
+        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
 
 
 def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -> bool:

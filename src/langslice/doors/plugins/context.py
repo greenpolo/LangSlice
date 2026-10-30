@@ -1903,10 +1903,10 @@ class ToolContext:
                     assert stored is not None
                     done = transforms.set_transforms(job, {name: stored})
                 except ToolError as exc:
-                    out[name] = {"id": name, **Refused(exc.code, message=exc.message).payload()}
+                    out[name] = Refused(exc.code, message=exc.message).payload(section_id=name)
                     continue
                 except Refused as refusal:
-                    out[name] = {"id": name, **refusal.payload()}
+                    out[name] = refusal.payload(section_id=name)
                     out[name].pop("ids", None)
                     continue
                 written += done
@@ -1964,7 +1964,7 @@ class ToolContext:
                                     "deformation is this section's "
                                     "DeformationProposal (deformation_from_map)")
             except ToolError as exc:
-                out[name] = {"id": name, **Refused(exc.code, message=exc.message).payload()}
+                out[name] = Refused(exc.code, message=exc.message).payload(section_id=name)
                 continue
             out[name] = {"id": name}
             proposals.append(proposal)
@@ -2003,7 +2003,7 @@ class ToolContext:
                     done = damage.mark_damage(job, workspace, name, list(row.get("regions") or ()),
                                               str(row.get("note") or ""))
                 except Refused as refusal:
-                    out.append({"id": name, **refusal.payload()})
+                    out.append(refusal.payload(section_id=name))
                     continue
                 out.append({"id": name, "status": "ok", "regions": list(done.regions),
                             "written": done.written})

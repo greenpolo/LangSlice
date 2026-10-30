@@ -293,7 +293,7 @@ def restore(job: Job, sections: Any) -> RestoredMany:
                     number = cast("object", item["registration"])
                     done = _restore_one(job, record, number)
                 except Refused as refusal:
-                    rows.append({"id": record.id, **refusal.payload()})
+                    rows.append(refusal.payload(section_id=record.id))
                     continue
                 rows.append({"id": done.id, "status": "ok", "registration": done.registration,
                              **({"replaced": done.replaced}

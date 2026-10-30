@@ -305,7 +305,7 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
             result = await to_thread.run_sync(serialized)
         except Exception as exc:
             logger.exception("Tool %s failed", tool.__name__)
-            result = Refused(type(exc).__name__, message=str(exc)).payload()
+            result = Refused.from_exception(exc).payload()
         blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
             session.trace.write("tool_result", name=tool.__name__, args=kwargs,

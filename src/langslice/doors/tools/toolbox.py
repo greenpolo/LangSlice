@@ -204,7 +204,7 @@ def _serialized(
                 with captured_views() as saved:
                     result = tool(*args, **kwargs)
             except Exception as exc:
-                failure = Refused(type(exc).__name__, message=str(exc))
+                failure = Refused.from_exception(exc)
                 notify({"kind": "tool_end", **fields, "failed": True,
                         "response": failure.payload()})
                 raise

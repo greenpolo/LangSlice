@@ -61,7 +61,8 @@ bodies, and turned into an answer once per door:
   gate's included) with `Refused.payload()`, inside the steps that clear
   stale deformations, name registrations, save pictures and open the reply
   with background notices, so a refusal's reply passes through them as any
-  reply does; a plugin tool's `ToolError` is a `Refused` and is answered
+  reply does; a per-section answer carries a refused section as its
+  row, `Refused.payload(section_id=...)`; a plugin tool's `ToolError` is a `Refused` and is answered
   the same way (`plugins/runtime.py` re-raises it; any other exception of a
   handler is `PLUGIN_FAILED`);
 - the agent CLI: a verb's reply whose `status` is in
@@ -73,7 +74,7 @@ bodies, and turned into an answer once per door:
   `calls._Refusal`, so the fix is read while the job's disabled list applies;
 - MCP: the reply as the first text block (`mcp/pages.result_blocks`);
   `start_job` without a job answers `NO_FOLDER`; an exception a tool raises
-  is answered with its type's name as the code;
+  is answered with its type's name as the code (`Refused.from_exception`);
 - the built-in agent: the reply is the function response;
   `agent/adk_plugins.StrictArgumentsPlugin` answers an argument refusal with
   its payload before the tool runs;

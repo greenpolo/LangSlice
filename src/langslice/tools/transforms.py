@@ -302,13 +302,13 @@ def _fit_elastix(
             rows.append(frozen)
             continue
         if record.deformation:
-            rows.append({"id": record.id, **refit_refusal(record).payload()})
+            rows.append(refit_refusal(record).payload(section_id=record.id))
             continue
         kept, dropped = exclusions(record, restrict_to)
         try:
             weights = ops_masks.section_weights(job, record, mask)
         except Refused as refusal:
-            rows.append({"id": record.id, **refusal.payload()})
+            rows.append(refusal.payload(section_id=record.id))
             continue
         try:
             with engine_output(job.engine_log, f"Elastix affine of {record.id}"):
@@ -324,7 +324,7 @@ def _fit_elastix(
                     f"{type(exc).__name__}: {exc}", job.engine_log,
                     f"the Elastix affine of {record.id} failed")
             failure = Refused(code, message=message)
-            rows.append({"id": record.id, **failure.payload()})
+            rows.append(failure.payload(section_id=record.id))
             continue
         if outcome.get("error") == RefusalCode.FIT_FAILED:
             outcome["message"] = failure_message(
