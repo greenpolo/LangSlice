@@ -158,13 +158,15 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      params)
 state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
-history/             undo/redo: index.json + step-NNNNNN.json, one per step
+history/undo.json    the undo and redo steps (history.py)
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                      filename when two images share a stem)
+  history.jsonl              every write that changed the section, its row and
+                             registration number (history.py); read back by
+                             undo, redo and restore_registration
   deformable/<key>/          deformation records (RecordStore): record.json +
-                             warp.ome.zarr, the parent a sibling it names
-  registrations.jsonl        every registration the section has held, numbered
-                             (registrations.py); read back by restore_registration
+                             warp.ome.zarr, the parent a sibling it names;
+                             one no history line names is deleted
   images/<name>.png          made section images (core/sections/images.py: the
                              opening preprocessed, make_image's, a script's
                              add_image); never deleted, <name>.2.png on a remake
@@ -242,16 +244,17 @@ so it is never refused.
 
 **Opening a job without writing.** `Job.open` writes `job.json` and a
 first checkpoint. `Job.load(spec, workspace, folder=)` opens an
-existing folder as it stands (the checkpoint and its history; nothing
+existing folder as it stands (the checkpoint and its undo steps; nothing
 rewritten, `FileNotFoundError` without a checkpoint, another image
 folder's job refused): the agent CLI and the library open a job per call
 this way (`doors/jobs.py`), so a call beside a running agent changes
-nothing until its first write. It stamps the state file and the history
-index before it reads them (the constructor's `seen`), so a write that
+nothing until its first write. It stamps the state file and
+`history/undo.json` before it reads them (the constructor's `seen`), so a write that
 lands during the load is reloaded by its first write, not overwritten.
 `Job.persist` False (`Job.load(...,
 persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
-checkpoint, no history, and `pictures.DiscardedViews` saves no picture.
+checkpoint, no history line, no undo file, and `pictures.DiscardedViews`
+saves no picture.
 `Job.engine_log` is where the engines' own output goes while they fit
 (`logs/engine.log`, `core.fits.engine_log`); None for a job that persists
 nothing.
@@ -260,7 +263,7 @@ nothing.
 the folder's `lock.FolderLock` (`job.lock`, `filelock`: `fcntl` on Linux
 and macOS, `msvcrt` on Windows, released by the OS if a process dies;
 reentrant in its thread; `LOCK_TIMEOUT_S` 300 then `JobBusy`) and runs
-`Job.sync` first. `commit`, `checkpoint` and the history save take it too;
+`Job.sync` first. `commit`, `checkpoint` and the undo file's save take it too;
 `undo`/`redo`, `clear_stale_deformations` and the landing of image
 corrections (`settle_border_traces`, `wait_image_job`: the calls run
 outside it, their results land under it) are written inside it, and so
@@ -273,10 +276,10 @@ tool door's guard for a read verb) keeps this process's other threads out
 (`FolderLock.threads`) and takes the folder lock only when it is free
 (`held_if_free`): then it syncs as a write does. While another process holds
 it (a long fit applying, a plugin tool that holds it while it computes), it
-reads the state file as that process last saved it (`_peek`: no history
+reads the state file as that process last saved it (`_peek`: no undo file
 read, no undo step), and keeps the state it held before (`_peeked`): the next
 locked `sync` puts that back first and then reloads as usual, so the other
-process's write enters this job's history as that job's step.
+process's write enters this job's undo steps as that job's step.
 
 **Paths are relative.** Every path a job file stores (a deformation's
 `record`, an image correction's `artifact_dir` / `artifact_paths`, the views
@@ -320,8 +323,8 @@ longer exist be taken over by the images it is opened with.
   (`status`, `text`, `pictures`, `result`); an exception is a `failed`
   work. The pictures *land* draws are saved among the job's pictures with
   their notes (`Job.views.save`), their numbers on the work; *land* runs as
-  the work's kind (`Job.acting`), so its registrations are listed as made by
-  it. The notice is
+  the work's kind (`Job.acting`), so its history lines are made by it. The
+  notice is
   `notice_text`: `"<id> <kind> of <sections> finished|failed: <text>
   Now registration <n> of <section>. Pictures #n, #m."`. `notices()` pops the work finished since the last call
   (each handed out once), `running()` / `running_for(section, kind)` list
@@ -335,22 +338,11 @@ longer exist be taken over by the images it is opened with.
   (`Job.writing` passes `gives_way` as the abort check on work threads) and
   the waiting thread runs that landing itself.
 - `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
-  `JobLayout` (the folder, every name, `section_dir`,
-  `deformable_dir`, `masks_dir`, `images_dir`, `border_trace_dir`, `section_views_dir`,
+  `JobLayout` (the folder, every name, `section_dir`, `section_history`,
+  `undo_file`, `deformable_dir`, `masks_dir`, `images_dir`, `border_trace_dir`, `section_views_dir`,
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
-- `registrations.py` — every registration a section has held
-  (`docs/reference/file_formats.md`, "Registrations"): `value(state, record)` (its
-  orientation, transform and deformation, copied; a deformation whose
-  `linear_key` changed is no part of it; None with neither a transform nor a
-  deformation), `digest` (orientation, transform, the deformation's record
-  key), `made_by` (what a registration held before its list began says made
-  it), `Registrations(layout)` (`sections/<stem>/registrations.jsonl`:
-  `entries` (cached by the file's stamp; a line cut short skipped), `get`,
-  `find` (by digest), `number_of(state, record)`, `add` (under the job's
-  lock: the next number, or the entry the registration already has)), `now`,
-  `SCRIPT`. Read back, never derived from the state; undo leaves it.
 - `plugin_store.py` — what tool plugins keep in the job folder
   (`docs/developers/plugins.md`): `register_layer(layout, record, tool, call, layer,
   persist=)` writes a layer's file under `plugins/<tool>/layers/`, lists it in
@@ -362,21 +354,30 @@ longer exist be taken over by the images it is opened with.
   `JobLayout.plugins_dir` / `plugin_dir(tool)`. `Job.pushed` counts undo steps
   and `Job.merge_steps(mark)` makes the steps since `mark` one (a plugin tool's
   call is one step however many operations it ran).
-- `history.py` — `History`: the undo/redo stacks on disk. A step is written
-  once, as its own file, when it enters the history (matched to the job's
-  stacks by identity); `index.json` (format 1: `undo`, `redo`, `next`) is
-  the only file rewritten per step, and step files it no longer names are
-  deleted, so the folder holds at most `UNDO_DEPTH` (50) undo steps plus
-  the redo side. A new step never takes the name of an existing file (a
-  second job on the same folder). Every step is read through
-  `History.upgrade` (the job's migrations); one they changed (an older
-  format, or a removed key dropped) is written again at the current format
-  by the next `save` (`upgraded`). An unreadable or newer
-  history (index, any step, step files without an index, or a step of
-  another state format) starts the session without undo and is never deleted:
-  `History.problem` says why (logged, and `Job.open` says it through the
-  progress log), and `save` writes and deletes nothing while it is set; a
-  fresh job reads a history before emptying it. Only a history that was read is pruned.
+- `history.py` — the record of every write (`docs/reference/file_formats.md`,
+  "Section history" and "Undo"). `SectionHistories(layout)`
+  (`Job.histories`): each section's `history.jsonl`, one `Row` per write that
+  changed it (`seq`, `step`, `by`, `at`, `registration`, `digest`,
+  `format_version`, then the section's row of `state.json`); `rows` (cached
+  by the file's stamp; a line cut short skipped; an older
+  `registrations.jsonl` read in its place), `head`, `row(seq)`,
+  `registrations` (the first line of each number), `registration(number)`,
+  `registration_number(state, section)`, `append` (under the job's lock; the
+  number the registration has, or the next one when `numbered`; writes an
+  older list's lines first and removes it), `collect_records` (deletes the
+  section's record folders no line or the section names, parents kept).
+  `registration_value` (orientation, transform and the deformation while its
+  `linear_key` holds; None with neither), `registration_digest`,
+  `guessed_maker` (what a `host` line's registration says made it), `HOST`,
+  `SCRIPT`, `set_head(section, fields)` (puts row fields back in place: undo,
+  redo and `restore_registration`), `section_row`. `UndoFile(layout)`
+  (`Job.undo_file`): `history/undo.json` (format 1: `next_step`, `undo`,
+  `redo` lists of `UndoStep`: `step`, `by`, `at`, `sections` {id: seq
+  before}, `stack_before`); `load` (an unreadable or newer file: no steps,
+  `notice` says why and `writable` False, so `save` leaves it; an older
+  LangSlice's `index.json` / `step-*.json`: no steps, one warning, left on
+  disk), `save`; `combined_steps` (the earliest line per section and field
+  wins: `merge_steps`, `amend`). No cap on the steps.
 - `recent.py` — the jobs opened on this computer,
   `~/.langslice/recent_jobs.jsonl` (`folder`, `image_folder`, `atlas`, `at`;
   one line per `Job.open`), for the GUI's job list: `remember`, `read`,
@@ -400,8 +401,10 @@ longer exist be taken over by the images it is opened with.
   job's `migrations.FolderMigration`; a newer LangSlice's format is refused
   and asks for an update, an older one no migration reads (`older_format`)
   for a new job, `--no-resume` or `resume=False`; without *upgrade* only the
-  current format reads; history steps are read the same way),
-  `write_json_atomic` (every job file's writer),
+  current format reads), `stack_fields` / `set_stack_fields` (the stack's
+  own fields without its sections, an undo step's `stack_before`),
+  `json_object` (a JSON text's object, or None), `write_json_atomic` (every
+  job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
 - `migrations.py` — old job folders read as the current format: the table
@@ -413,15 +416,20 @@ longer exist be taken over by the images it is opened with.
   old trace stays in `sections/<name>/image_correction/` with the paths
   stored to it, new traces go under `border_trace/`.
   `FolderMigration(workspace, layout)` is a job's `upgrade`, which every
-  read of the state file and of an undo step goes through: it applies the
+  read of the state file and of a history line of an older format goes
+  through: it applies the
   rows in order from a file's format, refuses one no row reads
   (`state_file.older_format`), then drops at every format the keys no
   reader uses (`drop_removed_keys`: `REMOVED_STACK_KEYS` `appearance`,
   `REMOVED_SECTION_KEYS` `position_source` and `damaged`), logging one
   warning per key the first time (`dropped`, with the sections that held
   it). It keeps one memo of the images it made across the checkpoint and
-  its history steps (`seed` takes a current state's entries); `used` says
+  the history lines (`seed` takes a current state's entries); `used` says
   it changed what it read, `applied` the rows it ran.
+  `lines_from_registration_list` reads an older LangSlice's
+  `sections/<stem>/registrations.jsonl` (`OLD_REGISTRATION_LIST`) as the
+  section's history lines, numbers kept; an older `history/index.json` and
+  step files are not read (`history.UndoFile` warns once).
   `without_removed_settings(spec)` leaves out of saved settings what
   LangSlice no longer has (`REMOVED_SETTINGS`, the `REMOVED_TASKS` task
   `reorder`) and names them; the doors read `job.json` through it
@@ -431,9 +439,9 @@ longer exist be taken over by the images it is opened with.
   `stiffness`) and why.
 - `job.py` — `Job`, assembled from one class per seam, each built on the
   one below: `checkpoint.py` `JobCheckpoint` (the state and its files,
-  `checkpoint`, the observers, the registrations each step leaves,
+  `checkpoint`, the observers, `histories` and `undo_file`,
   `wire_views`), `undo.py` `JobUndo` (`writing` / `reading` /
-  `sync`, `snapshot` / `commit`, `undo` / `redo`), `border_traces.py`
+  `sync`, `snapshot` / `commit` / `amend`, `undo` / `redo`), `border_traces.py`
   `JobBorderTraces` (the image-correction jobs and `background`, the
   background work that waits for them, whose threads give way to a lock
   holder through `_lock_abort`); `job.py` adds `open`,
@@ -443,7 +451,7 @@ longer exist be taken over by the images it is opened with.
   `resumed`; a folder the migrations changed adds a `migrated` event; the
   job added to the recent jobs list, `recent.remember`), `load` (as it stands, writing nothing, except once for a job
   the migrations change (an older state format, a removed key or setting)
-  or without its opening images: then the migrated state and history are
+  or without its opening images: then the migrated state is
   written at the current format, and `job.json` without its removed
   settings, under the lock, after reading the state file again there
   (`_write_upgrade`: another process may have migrated and written
@@ -451,14 +459,20 @@ longer exist be taken over by the images it is opened with.
   folder this process cannot write, keeps them in memory, though the image files the migration makes are written; the
   removed settings are logged either way), `upgrade` (the job's `FolderMigration`, which every read of the state
   file goes through), `workspace` (setting it gives a workspace without a
-  `job_folder` this job's folder, where its made images are read), `writing` / `reading` / `sync` (above), `snapshot` / `commit`, `undo` /
-  `redo` (each lists the registrations it leaves: `list_registrations(before)`,
-  the store `registrations`, made by the tool `acting(tool)` names for the
-  thread, else `script`; `registered`, the journal of (thread, section,
-  number), and `registered_since(mark)` for a door's reply), `checkpoint` (state, then `registration.json`, then the
+  `job_folder` this job's folder, where its made images are read), `writing` / `reading` / `sync` (above), `snapshot` / `commit`
+  (a history line per section the write changed, by the tool `acting(tool)`
+  names for the thread, else `script` (`actor`); one undo step; the record
+  folders no line names deleted), `amend` (the stale deformations cleared
+  after a write, joined to its step), `undo` / `redo` (put the lines a step
+  names back, `history.set_head`, and append lines of their own),
+  `number_registration(section)` (the number of the registration it holds,
+  numbered by a `host` line when it never was), `record_opening` (a fresh
+  job's opening lines); `registered`, the journal of (thread, section,
+  number) of each registration a write numbered or returned to, and
+  `registered_since(mark)` for a door's reply), `checkpoint` (state, then `registration.json`, then the
   observers: `observe(fn)` calls *fn* with the state after every
   checkpoint and reload, the hosts' live views; one that raises is logged),
-  `registration_numbers(ids)` (the listed registration each section holds,
+  `registration_numbers(ids)` (the numbered registration each section holds,
   what a saved picture records), the image-correction jobs (`start_image_job`, `settle_border_traces`,
   `wait_image_job`: timeout None waits as long as it takes; the call is
   forgotten only once its reply is recorded), `background` (above), `close`

@@ -65,11 +65,13 @@ through the same operations, and builds their declarations, provenance and the
 MCP adapter. The native tables are unchanged, and a job without plugins has
 none of this in any declaration, reply or picture.
 
-`state.json` is the checkpoint; every write creates an undo step and rewrites
-the derived `registration.json` once, as the write's hold of the job folder's
-lock ends. Each undo step also lists the registration it leaves each section
-in `sections/<name>/registrations.jsonl`, which `restore_registration` reads
-back. Source images remain immutable. Processes
+`state.json` is the checkpoint; every write appends a line to the history of
+each section it changed (`sections/<name>/history.jsonl`, `job/history.py`),
+records one undo step in `history/undo.json` (the line each section held
+before it), and rewrites the derived `registration.json` once, as the write's
+hold of the job folder's lock ends. Undo, redo and `restore_registration` put
+lines of a section's history back on it; a deformation record no line names
+is deleted. Source images remain immutable. Processes
 share a file lock and reload changed state before calls; a read never waits
 for the lock and reads the state as last saved. The agent CLI's calls
 on one job folder are answered by that folder's warm process

@@ -242,8 +242,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   fewer); `Stepped` (`done`, `depth`, `step`: a `HistoryStep`, the sections
   and field groups the steps changed together, `describe_step`, `steps`: how
   many were taken).
-- `registrations.py` — `restore_registration`'s operations over the job's
-  registration store (`job/registrations.py`): `listing(job, section)` ->
+- `registrations.py` — `restore_registration`'s operations over the
+  sections' histories (`job/history.py`): `listing(job, section)` ->
   `Listed` (`held`, the number the section holds; `rows`: per registration
   `registration`, `by`, `at`, `transform` (`core.stack.status.transform_entry`: kind
   and knobs), `deformation` (`core.stack.status.deformation_entry`: method, steps,
@@ -251,11 +251,12 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   pictures drawn by the tool in `by` whose `registrations` give the section
   that number), `held`, and `not_here` for one whose deformation was fitted at
   another position or cutting angles; the registration the section holds is
-  listed first when it never was; no state written); `restore(job,
+  numbered first when it never was; no state written); `restore(job,
   [{"id", "registration"}])` -> `RestoredMany` (`rows`, one `Restored` per
   section in call order: `registration`, `replaced`, `written` (False when
   the section holds it already), or that section's `refusal`; `written`): each section's
-  orientation, transform and deformation set as its entry holds them, ONE undo
+  orientation, transform and deformation set as the registration's first
+  history line holds them (`job.history.set_head`), ONE undo
   step for the call, the other sections untouched. Refused per section:
   `UNKNOWN_REGISTRATION` (with `registrations`, the section's numbers),
   `SECTION_BUSY` / `FROZEN` (`check_frozen` with the properties it would
@@ -403,7 +404,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `sections/<stem>/deformable/<key>`) and the section's `deformation` holds
   its path relative to the job folder; each step names its `method`
   (`fireants_syn`, or `trace_borders` for a traced fit; a step saved before
-  steps named it has none, `job.registrations.made_by` reads it) and the
+  steps named it has none, `job.history.guessed_maker` reads it) and the
   choice's settings, a stain fit's `metric`, `edges` and `detail` too; a
   fit's `FIT_FAILED` row says the error's first line and appends the whole
   error to `logs/engine.log` (`core.fits.engine_log.failure_message`, as

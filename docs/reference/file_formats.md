@@ -20,11 +20,12 @@ The files most readers use are the exports (`exports/quicknii.json`,
   job.lock              the write lock, held while a writer saves
   state.json            the checkpoint: the truth
   registration.json     its public rendering
-  history/              undo and redo steps
+  history/undo.json     the undo and redo steps
   sections/<name>/      per section (<name>: the filename's stem): its maps
                         (written by export_maps), landmarks.json (readable
                         corresponding pairs), deformation records (deformable/),
-                        every registration it has held (registrations.jsonl),
+                        every write that changed it, with the registrations it
+                        held (history.jsonl),
                         its made section images (images/<name>.png), its masks
                         (masks/<name>.npz), image-model traces
                         (border_trace/), its pictures (views/)
@@ -73,16 +74,22 @@ logger: on the agent CLI's standard error, in a script's logging):
   `agent_preprocessing`, `agent_damage`, `enabled`, `position.gated`,
   `position.bayesian`, `transform.flip`, `transform.interactive`,
   `transform.automatic`, `nonlinear.engine`, and the task `reorder`;
-- in `state.json` and the undo steps: the stack's `appearance` and a
+- in `state.json` and the section histories: the stack's `appearance` and a
   section's `position_source` and `damaged` (a whole-section damage flag;
   damage is marked by region, `damaged_regions`).
 
 An open that writes (the agent CLI, the library, MCP, `Job.open`) writes
-`job.json`, `state.json` and the undo steps again at the current format
-without them, once, and logs a `migrated` event; a dry run (`--dry-run`)
-changes nothing on disk. A
-setting no LangSlice wrote is still refused, naming it. A checkpoint older
-than format 3 (a pre-release LangSlice's) is refused: start a new job.
+`job.json` and `state.json` again at the current format without them, once,
+and logs a `migrated` event; a dry run (`--dry-run`) changes nothing on
+disk. A setting no LangSlice wrote is still refused, naming it. A checkpoint
+older than format 3 (a pre-release LangSlice's) is refused: start a new job.
+
+The undo steps of a LangSlice before the section histories
+(`history/index.json` and `history/step-*.json`) are not read: the job opens
+with one warning, undo starts with the session, and the files stay on disk.
+A section's `registrations.jsonl` of that LangSlice is read as its history,
+so the registration numbers stay as they were; the section's next write
+writes `history.jsonl` from it and removes it.
 
 ## Conventions
 
@@ -214,7 +221,10 @@ tens of MB; at full resolution of a whole-slide scan, hundreds.
 
 Every deformation a section held (each fit, landmark application and
 plugin warp; `<key>` the first 24 hex digits of the record's input digest)
-is a folder that nothing deletes, so undo can return to it. It holds:
+is a folder that stays as long as a line of the section's history names it
+(or names a record whose `parent` chain leads to it), so undo and
+`restore_registration` can return to it. A folder no line names, a fit saved
+and never applied, is deleted after the section's next write. It holds:
 
 - `record.json`, written last (a folder without it is incomplete):
   `version` 3, `step` (0 for a deformation on the linear placement),
@@ -278,28 +288,48 @@ into the 3-D volume (`native_to_volume_index`) and a `scale` by the
 resolution; and an `identity` from each image group's `section` system to
 the scene's. The metadata is written from `record.json` and never read back.
 
-## Registrations (`sections/<name>/registrations.jsonl`)
+## Section history (`sections/<name>/history.jsonl`)
 
-Every registration a section has held, one JSON line each, numbered from 1
-per section; `restore_registration` puts one back. A section's registration
-is its orientation, transform and deformation (a deformation whose linear
-placement has changed is no part of it). A line is appended when an undo
-step, an undo or a redo leaves the section a registration it never held, and
-never rewritten; undo leaves the file as it is. Fields: `format` (1), `id`
-(the number), `by` (the tool whose write left it, `script` for a script's
-own write; for one held before the section's list began, which a later write
-lists, what its content says made it), `at` (local time, `YYYY-MM-DD
-HH:MM:SS`; null for one held before the list began), `digest` (of the
-orientation, the transform and the deformation's record key: two writes that
-leave the same registration share its number), `position_mm` and
-`cutting_angles_deg` (where the section was), then the registration: `flip`,
-`rotation_deg`, `transform` (as `state.json` holds it) and `deformation` (the
-section's `deformation` entry, naming its record under `deformable/`, or
-null). A status row's `registration` is the number of the one the section
-holds. `restore_registration`'s list adds, per registration, the pictures its
-write saved: the `views.jsonl` pictures drawn by the tool named in `by` whose
-`registrations` give the section that number. The file is read back, as the deformation records are; a line cut
-short is skipped.
+Every write that changed the section, one JSON line each, appended under the
+job folder's lock and never rewritten. A line is the section's row of
+`state.json` (with its own `cutting_angles_deg`) beside:
+
+| Field | Meaning |
+|---|---|
+| `seq` | the line's number in the file, from 1 |
+| `step` | the job's write that appended it (0: the job's opening) |
+| `by` | the tool whose write it was; `script` for a script's own write or an edit of `state.json` from outside; `undo`, `redo` and `restore_registration` for theirs; `host` for a state LangSlice found rather than made (each section's opening line, and the state before a write when no line held it yet) |
+| `at` | local time, `YYYY-MM-DD HH:MM:SS` |
+| `registration` | the number of the registration the line holds, or null |
+| `digest` | that registration's identity: a digest of the orientation, the transform and the deformation's record key (null while the section holds none) |
+| `format_version` | the `state.json` format of the row |
+
+A section's registration is its orientation (`flip`, `rotation_deg`), its
+`transform` and its `deformation` while that still sits on the same linear
+placement. Each distinct one is numbered per section, from 1, when a write
+changes the section's registration to it (the one it replaced is numbered
+first when it never was), or when `restore_registration` lists the one the
+section holds; a later line holding the same one repeats its number. A
+status row's `registration` is the number of the one the section holds.
+`restore_registration` lists the first line of each number: `by` and `at`
+are that line's (for a `host` line, `by` is what the content says made it:
+the deformation's last method, else the transform's tool, else `supplied`,
+and `at` is left out), and the pictures its write saved: the `views.jsonl`
+pictures drawn by the tool named in `by` whose `registrations` give the
+section that number. A line cut short is skipped.
+
+## Undo (`history/undo.json`)
+
+The undo and redo steps, oldest first, rewritten after each write:
+`format_version` (1), `next_step` (the number the job's next write gets),
+`undo` and `redo`. A step is `step`, `by`, `at` (the write's number, tool
+and time), `sections` (for each section the write changed, the `seq` of the
+line it held before) and `stack_before` (the stack's own fields the write
+changed, such as `notes` or `interval_breaks`, as they were). Undo puts each
+section back to its line and the stack fields back, appends a line per
+section, and moves the step to `redo` as the step that takes it back; a
+write clears `redo`. Steps are not capped. A file that does not read, or a
+newer LangSlice's, is left as it is and undo covers the session.
 
 ## Pictures
 
@@ -526,8 +556,8 @@ earlier version may also carry automatic holds (`landmark_holds`,
 and ignored. `landmark_baseline_key` and `landmark_baseline_steps` in the
 section's deformation reference identify the registration before the current
 landmark method; its record's `parent` holds that baseline. Consecutive landmark
-applications replace the landmark method on that baseline. Undo history
-separately preserves the previously applied landmark result. Maps and exports
+applications replace the landmark method on that baseline. The section's
+history separately preserves the previously applied landmark result. Maps and exports
 consume the composed residual field through
 the same path as other applied deformations.
 
@@ -611,7 +641,7 @@ the migration when it opens (`state_3_to_4`, `job/migrations.py`): each recipe i
 made into a file and an entry per section (a section's own override
 honoured), `preprocessed` without a recipe becomes the opening image, the
 display properties are dropped, a mask's `channel` is named `section_image`,
-and the state and its history steps are written again at the current format.
+and the state is written again at the current format.
 Deformation records are not rewritten. A recipe image is made once on the
 working copy, so a fit on a migrated job reads that file: it is not the image
 the older LangSlice ran the recipe on at the fit's size, and a refit does not
