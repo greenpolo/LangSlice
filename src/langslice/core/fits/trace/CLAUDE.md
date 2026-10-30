@@ -38,8 +38,7 @@ role and PNG SHA-256 in the order sent), `prompt.txt`, `base_prompt.txt`,
 `prompt_diff.txt`, `raw_reply.png` (the model's answer, kept as received)
 and `extracted_lines.png` (the lines a fit reads); the pictures sent are not
 kept: `_canvas_and_placement` and `lines.smooth_border_overlay` draw them
-again from the section and the request, and `lines.border_overlay` draws
-the extracted lines on the canvas.
+again from the section and the request.
 
 Atlas labels and grayscale references use the same position, plane, cutting
 angles and orientation. Reflection is explicit, never guessed from a
@@ -82,7 +81,7 @@ residual alone is never exported.
   `atlas_margin`). `reply_on_grid` (the trace-reply export) reads the
   canvas-to-render map from the same matrix.
 - `lines.py` — the yellow lines of a trace: `smooth_border_overlay`
-  and `border_overlay` draw them on a section, `extract_thinned_lines`
+  draws them on a section, `extract_thinned_lines`
   (`yellow_mask`, `thin`) reads the model's lines off a raw reply. It fits
   nothing and calls no model.
 - `prompts.py` — the prompt functions; the OpenAI-GPT or Gemini wording is

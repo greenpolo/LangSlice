@@ -16,10 +16,7 @@ from langslice.core.fits.frame import (
 )
 from langslice.core.fits.trace import trace as tool
 from langslice.core.fits.trace.canvas import Upright
-from langslice.core.fits.trace.lines import (
-    border_overlay,
-    smooth_border_overlay,
-)
+from langslice.core.fits.trace.lines import smooth_border_overlay
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
 from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import Section
@@ -71,7 +68,9 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     calls = []
     mask = np.zeros((40, 60), dtype=bool)
     mask[5:30, 23] = True
-    raw = border_overlay(Image.new("RGB", original.size, (180, 20, 30)), mask)
+    pixels = np.full((*mask.shape, 3), (180, 20, 30), dtype=np.uint8)
+    pixels[mask] = (255, 255, 0)
+    raw = Image.fromarray(pixels)
 
     def generate(request):
         calls.append(request)
