@@ -326,3 +326,14 @@ def test_a_landmark_mesh_is_rebuilt_from_record_json(tmp_path: Path):
     loaded = DeformableRecord.load(tmp_path / "a")
     assert np.array_equal(loaded.field_mm, record.field_mm)
     assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
+    # Triangles stored otherwise than this scipy makes them (one triangle's
+    # vertices in another order) are the same mesh, read as stored.
+    meta = json.loads((tmp_path / "a" / "record.json").read_text())
+    meta["engine"]["native_parameters"]["simplices"][0].reverse()
+    (tmp_path / "a" / "record.json").write_text(json.dumps(meta))
+    reordered = DeformableRecord.load(tmp_path / "a")
+    assert isinstance(reordered.stored_step, MeshStep)
+    assert not np.array_equal(
+        reordered.stored_step.simplices, mesh.simplices)
+    assert np.array_equal(reordered.field_mm, record.field_mm)
+    assert np.array_equal(reordered.inverse_field_mm, record.inverse_field_mm)

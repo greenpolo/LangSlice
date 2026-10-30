@@ -128,7 +128,12 @@ def mesh_fields(
         Placed atlas to section, the same shape and units.
 
     """
-    mesh = PiecewiseAffine(step.source_xy, step.target_xy, step.simplices)
+    # The mesh's own Delaunay maps forward by a vectorised lookup; given
+    # triangles, by a loop over them, ten times slower. Its own triangles
+    # are the stored ones wherever scipy triangulates as it did then.
+    mesh = PiecewiseAffine(step.source_xy, step.target_xy)
+    if not np.array_equal(mesh.simplices, step.simplices):
+        mesh = PiecewiseAffine(step.source_xy, step.target_xy, step.simplices)
     xx, yy = _pixel_centres(section_size)
     points = np.stack([xx, yy], -1)
     forward = mesh.map(points)

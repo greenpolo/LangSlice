@@ -316,7 +316,7 @@ the whole map even with a parent; a restricted fit, whose tapered step's
 inverse `_invert_step` takes seconds; a fit whose working grid is the
 section's; every format-2 record). Loading reads the parent chain eagerly
 (each rebuild composes onto its parent's fields: about 20 ms per engine
-step, about 1 s for a landmark mesh at 1536 px). The parent is BY
+step, about 3 s for a landmark mesh at 1536 px, most of it the inverse). The parent is BY
 REFERENCE: `record.json`'s `parent`
 is the parent's folder name (`saved_as`), a sibling folder; `save` saves a
 parent that is not there first (one without `saved_as` is a `ValueError`),
