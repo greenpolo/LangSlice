@@ -131,7 +131,7 @@ private helpers next to their first use. A reader meets the public thing
 before its parts.
 
 **2.6 Keep infrastructure apart from science.** [review, linter] Code that
-exists for speed or process management (the warm fork server, locks, caches)
+exists for speed or process management (locks, caches, worker pools)
 lives in its own clearly named subpackage with a short README. Code that
 reaches into another library's private attributes does so in one module
 under that subpackage, with the library version it was written against.

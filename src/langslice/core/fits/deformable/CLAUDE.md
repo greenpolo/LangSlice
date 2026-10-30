@@ -9,9 +9,8 @@ behind `elastix_affine` (`core/transform.elastix_affine`: `prepare_fit`
 builds its images and masks, `engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
 markers read an applied record (`core/maps/section_maps.py`); the ABBA connector receives
 it as landmark pairs (`core/maps/abba.py`). `engines.py` is LangSlice's one
-itk-elastix registration wrapper; `engines.preload()` imports torch, FireANTs,
-SimpleITK and the ITK Elastix classes without running a fit or touching the GPU
-(the agent CLI's warm process forks after it). On Windows, `import_fireants` gives
+itk-elastix registration wrapper; torch, FireANTs, SimpleITK and ITK are
+imported inside the functions that use them, so a verb that runs no fit loads none of them. On Windows, `import_fireants` gives
 FireANTs' import a stand-in `fcntl` (it imports the Unix-only module for a
 multi-GPU file lock LangSlice never takes).
 
