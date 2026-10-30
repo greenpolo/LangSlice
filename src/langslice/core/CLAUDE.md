@@ -640,10 +640,13 @@ composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
 `core.fits.deformable.render.drawn_border_coverage` (exactly the lines drawn), a
 frame whose `pixel_to_atlas_um` is the record's linear placement on the
-picture, and, when the field was drawn, a residual layer `residual.tif`
-(`RESIDUAL_LAYER`, `(2, rows, cols)` float32, `(drow, dcol)` picture
-pixels) the frame names under `residual`; `coordinate_map` applies it
-(beside the `view.json`, or `folder=` for a record).
+picture, the record's folder (`deformation`, relative to the job folder)
+and, when the field was drawn, `residual`: the size the record's grid was
+resized to and the box of it shown (`grid_size`, `box`, as
+`resampled_record` takes them). `coordinate_map` draws the residual again
+from the record, found in the job folder above the `view.json` (or above
+`folder=` for a frame passed as a record), exactly as the picture was drawn
+with it; a picture saved with a `residual.tif` beside it reads that.
 
 Which pictures a call returned, and of what, is noted while it runs:
 `pictures.drawn.collecting()` (the job's saving hook, `Job.views.shown`, runs every

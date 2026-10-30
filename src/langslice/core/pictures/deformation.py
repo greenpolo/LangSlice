@@ -107,7 +107,7 @@ def picture(
             record=small, band=0, warped=warped,
             highlight=tuple(style.highlight), marked=tuple(style.marked),
             outlines=style.outlines, depth=style.depth, width_px=float(style.thickness),
-            native=native))
+            native=native, grid_size=full, box=shown))
     return captioned
 
 

@@ -12828,14 +12828,6 @@
                 }
             },
             {
-                "code": "reportUnknownArgumentType",
-                "range": {
-                    "startColumn": 66,
-                    "endColumn": 83,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportAny",
                 "range": {
                     "startColumn": 8,
@@ -48622,30 +48614,6 @@
                 "range": {
                     "startColumn": 25,
                     "endColumn": 39,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 31,
-                    "endColumn": 41,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 63,
-                    "endColumn": 73,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 56,
-                    "endColumn": 66,
                     "lineCount": 1
                 }
             },

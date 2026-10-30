@@ -312,10 +312,14 @@ placement picture and an `fireants_syn` picture carry
 `labels.tif` (the atlas id under every pixel below the caption, no tissue
 rule), `borders.png` and a frame in `view.json`.
 `langslice.coordinate_map(".../view.json")` gives every pixel's atlas
-micrometres. An `fireants_syn` picture showing its deformation adds
-`residual.tif` (float32, `(2, rows, cols)`, `(d_row, d_col)` in picture
-pixels, zero in the caption band); its frame's `residual` names it, and
-`coordinate_map` applies it. A script's preview of a proposal not written
+micrometres. The frame of a deformable-fit picture (a landed
+`trace_borders` fit) names its deformation record (`deformation`, relative
+to the job folder) and, when it shows the deformation, says in `residual`
+how the record's grid was resized (`grid_size`) and cropped (`box`) to the
+picture; `coordinate_map` resamples the record so and applies its field.
+A picture an earlier LangSlice saved with a `residual.tif` beside it
+(float32, `(2, rows, cols)`, `(d_row, d_col)` in picture pixels), which its
+frame's `residual` names, is read from that file. A script's preview of a proposal not written
 (`preview_overlay`, `preview_positioning`) is tool `script`
 (`<number>_script_overlay`, `<number>_script_positioning`), its caption
 saying `NOT written`, its recipe a `transport_snapshot` (a zoom crops the

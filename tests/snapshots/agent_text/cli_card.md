@@ -30,8 +30,8 @@ Maps and pictures are derived, never read back: editing one changes no registrat
 
 ## Pictures and coordinates
 Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame) and, for a section
-on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders); a
-deformable fit's adds `residual.tif`. `langslice.coordinate_map("<picture>/view.json")`: every
+on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders).
+`langslice.coordinate_map("<picture>/view.json")`: every
 pixel's atlas position, (rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in
 the atlas's own axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
 posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * resolution. Pixels

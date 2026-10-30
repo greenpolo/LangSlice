@@ -32,14 +32,20 @@ note is free.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
+import tifffile
 
 if TYPE_CHECKING:
     from langslice.core.pictures.canvas import PanelFrame
 
+from langslice.core.fits.deformable.record import DeformableRecord
+from langslice.core.fits.deformable.render import resampled_record
+from langslice.core.jsonable import JsonObject
 from langslice.core.pictures.drawn import PictureNote
+from langslice.core.stack.json_reads import as_object, numbers_at, text_at
 
 #: The frame record's format.
 FRAME_FORMAT_VERSION = 1
@@ -54,10 +60,11 @@ CONVENTION = (
 )
 #: Added to a deformable-fit picture's frame record.
 WARP_CONVENTION = (
-    " For a deformable-fit picture, residual names a 2-channel float32 TIFF beside "
-    "view.json, (drow, dcol) in picture pixels: pixel [row, col] shows the atlas "
-    "point pixel_to_atlas_um @ [row + drow, col + dcol, 1] (no residual: the "
-    "linear placement alone)."
+    " For a deformable-fit picture, residual says how the deformation record "
+    "named by deformation was resized (grid_size) and cropped (box) to the "
+    "picture; its field, (drow, dcol) in picture pixels, maps pixel [row, col] "
+    "to the atlas point pixel_to_atlas_um @ [row + drow, col + dcol, 1] (no "
+    "residual: the linear placement alone); langslice.coordinate_map applies it."
 )
 
 
@@ -211,21 +218,17 @@ def picture_layers(atlas: Any, note: PictureNote) -> tuple[np.ndarray, np.ndarra
     return labels_layer(note.panel), borders_layer(note.panel), frame_record(atlas, note)
 
 
-#: The name a deformable-fit picture's residual layer is saved under, beside
-#: its ``view.json`` (the frame record's ``residual``).
-RESIDUAL_LAYER = "residual.tif"
-
-
 def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) -> tuple[
-        np.ndarray, np.ndarray, dict[str, Any], np.ndarray | None]:
-    """``(labels, borders, frame record, residual)`` of a ``fit_deformable``
-    picture (a :class:`WarpNote`), on the picture's own pixel grid.
+        np.ndarray, np.ndarray, dict[str, Any]]:
+    """``(labels, borders, frame record)`` of a ``fit_deformable`` picture
+    (a :class:`WarpNote`), on the picture's own pixel grid.
 
     The frame's ``pixel_to_atlas_um`` is the record's linear placement on
-    the picture; *residual* (``(rows, cols, 2)`` float32, ``(drow, dcol)``
-    in picture pixels, zero in the caption band; None when the picture shows
-    the linear placement alone) completes it: a pixel ``[r, c]`` shows atlas
-    point ``pixel_to_atlas_um @ [r + drow, c + dcol, 1]``. Labels are the
+    the picture; its ``residual`` (None when the picture shows the linear
+    placement alone) names how the record (the frame's ``deformation``) was
+    resized and cropped to the picture, so :func:`coordinate_map` draws the
+    residual again from the record: a pixel ``[r, c]`` shows atlas point
+    ``pixel_to_atlas_um @ [r + drow, c + dcol, 1]``. Labels are the
     native atlas plane's ids under that map (nearest) at every content pixel,
     as a placement picture's labels: no tissue rule cuts them (the drawn
     lines stop at the tissue; the labels do not); borders the drawn lines'
@@ -274,11 +277,9 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
         outlines=warp.outlines, depth=warp.depth, width_px=warp.width_px, native=native)
     borders = np.zeros((height, width), dtype=np.uint8)
     borders[band:band + rows, :cols] = np.rint(np.clip(coverage, 0.0, 1.0) * 255.0)
-    residual: np.ndarray | None = None
+    residual = None
     if warp.warped:
-        residual = np.zeros((height, width, 2), dtype=np.float32)
-        residual[band:band + rows, :cols, 0] = shift_y.astype(np.float32)
-        residual[band:band + rows, :cols, 1] = shift_x.astype(np.float32)
+        residual = {"grid_size": list(warp.grid_size), "box": list(warp.box)}
     frame = {
         "format_version": FRAME_FORMAT_VERSION,
         "atlas": facts,
@@ -293,11 +294,11 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
                             "resized and cropped to the picture"},
         "deformation": note.deformation,
         "warped": bool(warp.warped),
-        "residual": RESIDUAL_LAYER if residual is not None else None,
+        "residual": residual,
         "pixel_to_atlas_um": to_um.tolist(),
         "convention": CONVENTION + WARP_CONVENTION,
     }
-    return labels, borders, frame, residual
+    return labels, borders, frame
 
 
 # --- on demand: the coordinate map ------------------------------------------------------
@@ -314,10 +315,12 @@ def coordinate_map(
     micrometres (voxel ``i``'s centre at ``i * resolution``); the caption
     band, which shows no canvas, is NaN. A placement picture shows one atlas
     plane, so the map is ``pixel_to_atlas_um`` applied to every pixel
-    centre, exactly. A deformable-fit picture adds its residual layer (the
-    frame's ``residual``, read from beside the ``view.json``, or from
-    *folder* when *view* is a record): ``pixel_to_atlas_um`` at each pixel
-    plus its displacement.
+    centre, exactly. A deformable-fit picture adds its residual: its
+    deformation record (the frame's ``deformation``, in the job folder above
+    the ``view.json``, or above *folder* when *view* is a record) resized and
+    cropped as the frame's ``residual`` says, ``pixel_to_atlas_um`` at each
+    pixel plus its displacement. (A picture saved with a ``residual.tif``
+    layer beside it, which the frame's ``residual`` names, reads that.)
     """
     base: str | None = None
     if isinstance(view, dict):
@@ -338,12 +341,9 @@ def coordinate_map(
     rows, cols = np.mgrid[0:height, 0:width].astype(np.float64)
     if frame.get("residual"):
         if base is None:
-            raise ValueError("This picture's map needs its residual layer: pass the "
+            raise ValueError("This picture's map needs its deformation record: pass the "
                              "view.json path, or folder= with the record")
-        import tifffile
-
-        shift = np.asarray(tifffile.imread(os.path.join(base, str(frame["residual"]))),
-                           dtype=np.float64)
+        shift = _residual_shift(cast("JsonObject", frame), base)  # view.json is JSON
         rows = rows + shift[0]
         cols = cols + shift[1]
     out = (np.tensordot(matrix[:, :2], np.stack([rows, cols]), axes=1)
@@ -354,3 +354,43 @@ def coordinate_map(
     outside[y0:y1, x0:x1] = False
     result[outside] = np.nan
     return result
+
+
+def _residual_shift(frame: JsonObject, base: str) -> np.ndarray:
+    """Return a deformable-fit picture's residual as it was drawn with it.
+
+    ``(2, rows, cols)`` ``(drow, dcol)`` in picture pixels, zero outside the
+    content: the frame's record resampled as its ``residual`` says, or the
+    ``residual.tif`` beside a picture saved with one.
+    """
+    residual = frame["residual"]
+    if isinstance(residual, str):
+        layer = tifffile.imread(Path(base) / residual)
+        return np.asarray(layer, dtype=np.float64)
+    resample = as_object("residual", residual)
+    folder = _record_folder(Path(base), text_at(frame, "deformation"))
+    record = DeformableRecord.load(folder)
+    width, height = (int(v) for v in numbers_at(resample, "grid_size"))
+    x0, y0, x1, y1 = (int(v) for v in numbers_at(resample, "box"))
+    resampled = resampled_record(record, (width, height), (x0, y0, x1, y1))
+    field = resampled.field_mm.astype(np.float64) / resampled.mm_per_px
+    columns, rows = (int(v) for v in numbers_at(frame, "picture_size"))
+    content = numbers_at(frame, "content_box")
+    left, top, right, bottom = (int(v) for v in content)
+    shift = np.zeros((2, rows, columns), dtype=np.float32)
+    shift[0, top:bottom, left:right] = field[..., 1]
+    shift[1, top:bottom, left:right] = field[..., 0]
+    return shift.astype(np.float64)
+
+
+def _record_folder(base: Path, relative: str) -> Path:
+    """Return the folder of the record a job-relative path names, in the
+    job folder above *base* (a picture's folder).
+    """
+    for folder in (base.resolve(), *base.resolve().parents):
+        if (folder / relative / "record.json").exists():
+            return folder / relative
+    raise ValueError(
+        f"The deformation record {relative} this picture was drawn with is "
+        f"not in a job folder above {base}"
+    )
