@@ -266,7 +266,8 @@ def land_trace(
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
                           options=options)
     row: dict[str, Any] = (done.rows[0] if done.rows
-                           else Refused(RefusalCode.FIT_FAILED).payload())
+                           else Refused(RefusalCode.FIT_FAILED,
+                                        "The fit returned no row.").payload())
     if row.get("status") == "error":
         if row.get("error") in _STALE_CODES:
             return _stale(trace)

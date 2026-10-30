@@ -150,6 +150,11 @@ def _open_attempt(
     except FileExistsError:
         return Refused(
             RefusalCode.IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED,
+            "An image call for this section at this placement and region "
+            "choice is still running, or was interrupted before its reply "
+            "was recorded (its folder is artifact_dir); no new call was "
+            "made. A call at another placement or region choice starts "
+            "afresh.",
             id=section_id, geometry_fingerprint=fingerprint,
             artifact_dir=str(call_directory),
         ).payload()

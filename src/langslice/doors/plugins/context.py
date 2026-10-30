@@ -62,10 +62,6 @@ if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 
-#: The row of a write row whose ``id`` names no section, after its ``id``.
-UNKNOWN_ROW = Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload()
-
-
 # --- what a handler reads ---------------------------------------------------------------
 
 
@@ -1826,7 +1822,8 @@ class ToolContext:
             stale = self._stale([name for name in ids if name], expect)
             for row, name in zip(rows, ids, strict=True):
                 if not name:
-                    out[str(row.get("id"))] = {"id": str(row.get("id")), **UNKNOWN_ROW}
+                    ref = str(row.get("id"))
+                    out[ref] = self._unknown(ref).payload(section_id=ref)
                 elif name in stale:
                     out[name] = stale[name]
                 elif (frozen := frozen_row(job, name, "position")) is not None:
@@ -1864,6 +1861,10 @@ class ToolContext:
         record = self._run.state.resolve(ref)
         return record.id if record is not None else ""
 
+    def _unknown(self, ref: str) -> Refused:
+        """Return the refusal of a write row whose ``id`` names no section."""
+        return unknown_sections(self._run.state, [ref])
+
     def set_transforms(self, rows: Sequence[Mapping[str, Any]], *,
                        expect: Mapping[str, str] | None = None) -> WriteResult:
         """Set in-plane transforms. A row is ``{"id", "transform": record}``
@@ -1883,7 +1884,8 @@ class ToolContext:
             written: list[str] = []
             for row, name in zip(rows, ids, strict=True):
                 if not name:
-                    out[str(row.get("id"))] = {"id": str(row.get("id")), **UNKNOWN_ROW}
+                    ref = str(row.get("id"))
+                    out[ref] = self._unknown(ref).payload(section_id=ref)
                     continue
                 if name in stale:
                     out[name] = stale[name]
@@ -1943,7 +1945,8 @@ class ToolContext:
         for row in rows:
             name = self._resolve_id(row.get("id"))
             if not name:
-                out[str(row.get("id"))] = {"id": str(row.get("id")), **UNKNOWN_ROW}
+                ref = str(row.get("id"))
+                out[ref] = self._unknown(ref).payload(section_id=ref)
                 continue
             frozen = frozen_row(job, name, "deformation")
             if frozen is not None:
@@ -1993,7 +1996,8 @@ class ToolContext:
             for row in rows:
                 name = self._resolve_id(row.get("id"))
                 if not name:
-                    out.append({"id": str(row.get("id")), **UNKNOWN_ROW})
+                    ref = str(row.get("id"))
+                    out.append(self._unknown(ref).payload(section_id=ref))
                     continue
                 stale = self._stale([name], expect)
                 if name in stale:

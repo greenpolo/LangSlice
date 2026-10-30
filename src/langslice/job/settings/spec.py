@@ -43,7 +43,8 @@ INPUT_KEYS: tuple[str, ...] = (
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
 
 #: What a fit says of a section with no written in-plane transform.
-NO_TRANSFORM = "A written affine transform is required"
+NO_TRANSFORM = ("A written affine transform is required: give the section a "
+                "transform first")
 #: ... in a job whose Linear task is off, so nothing in it writes one: what
 #: the caller does instead (written with what it needs). A missing transform
 #: is the identity to the maps, never to the nonlinear step.

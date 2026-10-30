@@ -99,7 +99,9 @@ and `ctx.caption(image, text, sections=[id])` names the sections a picture of
 the handler's own shows: the saved picture then records the registration each
 section holds, so `restore_registration`'s list names it among the pictures the
 call's write saved; a picture of a proposal not written records none. Raising `ToolError(code, message, **details)` refuses the call with
-`{"status": "error", "error": code, "message": message, **details}`; any other
+`{"status": "error", "error": code, "message": message, **details}` (the
+message says what was attempted, what was found and what to do, as every
+refusal LangSlice raises does); any other
 exception is a reply `PLUGIN_FAILED` naming it, and the job carries on.
 `ToolError` is the plugin's name for LangSlice's own refusal (a `ValueError`,
 as every refusal the context raises is); `code` is a member of

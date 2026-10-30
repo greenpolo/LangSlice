@@ -540,8 +540,8 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                 "pairs_dropped_by_mask": by_mask})
             relative = here.relative_to(ctx.job_dir) if here.is_relative_to(ctx.job_dir) else here
             if "error" in got:
-                rows.append({"id": sid, **ToolError(RefusalCode.FIT_FAILED).payload(),
-                             "message": str(got["error"]), "files": str(relative)})
+                failed = ToolError(RefusalCode.FIT_FAILED, f"{got['error']}")
+                rows.append({**failed.payload(section_id=sid), "files": str(relative)})
                 continue
             what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"
             note = (f"SPOmiAlign {what}, atlas {resolved}, {int(got['pairs'])} pairs, "

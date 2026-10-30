@@ -68,7 +68,7 @@
 ```json
 {
  "error": "UNKNOWN_PICTURE",
- "message": "There is no picture 999.",
+ "message": "There is no picture 999; use a number a reply gave.",
  "picture": 999,
  "status": "error"
 }
@@ -89,6 +89,7 @@
 ```json
 {
  "error": "NOTHING_TO_UNDO",
+ "message": "Nothing to undo: the job's history holds no earlier step.",
  "status": "error"
 }
 ```

@@ -402,7 +402,7 @@ def elastix_fit(
         raise unknown_sections(job.state, [str(section)])
     if record.position_mm is None:
         raise Refused(RefusalCode.NO_POSITION,
-                      message=f"{record.id} has no position yet.")
+                      message=_NO_POSITION.format(record.id))
     if record.deformation:
         raise refit_refusal(record)
     try:

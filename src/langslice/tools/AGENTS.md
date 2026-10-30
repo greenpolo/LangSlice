@@ -474,8 +474,11 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
   call runs on the job's image executor and the section's
   `border_trace` record is written as one undo step when it changed.
   Prepared outside the lock, started and written under it. Refused:
-  `UNKNOWN_SLICE_IDS`, `FROZEN` (the section's deformation is frozen),
-  `INVALID_LINEAR_PLACEMENT`,
+  `UNKNOWN_SLICE_IDS`, `SECTION_BUSY` (other background work runs on the
+  section), `FROZEN` (the section's deformation is frozen),
+  `INVALID_LINEAR_PLACEMENT` (no position or no usable transform; a refusal
+  raised while the trace is prepared, such as `NO_SIDES` or `BAD_ARGS` for
+  regions that leave nothing on the plane, keeps its own code),
   `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
 - `stale.py` — `section_inputs(state, record, deformation=, trace=)`: a

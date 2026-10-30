@@ -90,8 +90,8 @@ def test_unknown_ids_are_named_and_nothing_is_written(tmp_path: Path):
     before = stack_to_json(state)
     result = _tool(box, "position_sections")([{"id": "nope.png", "position_mm": 1.0}],
                                              view=False)
-    assert result["unknown_ids"] == ["nope.png"]
-    assert result["error"] == "NOTHING_WRITTEN"
+    assert result["unknown"] == ["nope.png"]
+    assert result["error"] == "UNKNOWN_SLICE_IDS"
     assert stack_to_json(state) == before
     assert box.job.undo_stack == []
     assert load_checkpoint(ctx.checkpoint_path) is None

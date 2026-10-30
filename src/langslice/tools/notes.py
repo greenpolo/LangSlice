@@ -17,7 +17,11 @@ def add_note(job: Job, text: str) -> list[str]:
     """
     cleaned = str(text or "").strip()
     if not cleaned:
-        raise Refused(RefusalCode.BAD_ARGS)
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            "A note is a line of text; this one is empty, so "
+            "nothing was written.",
+        )
     before = job.snapshot()
     job.state.notes.append(cleaned)
     job.commit(before)
