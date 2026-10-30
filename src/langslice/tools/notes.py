@@ -1,13 +1,14 @@
-"""Run notes: free text saved with the results."""
+"""Run notes: free text saved with the results; the ``note`` tool."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.refusal import RefusalCode, Refused
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
+    from langslice.tools.run import Run
 
 
 def add_note(job: Job, text: str) -> list[str]:
@@ -26,3 +27,21 @@ def add_note(job: Job, text: str) -> list[str]:
     job.state.notes.append(cleaned)
     job.commit(before)
     return list(job.state.notes)
+
+
+def note_tool(run: Run, text: str) -> dict[str, Any]:
+    """Run the ``note`` tool: add the line, answer with every note.
+
+    Parameters
+    ----------
+    run
+        The run the tool belongs to.
+    text
+        The line to add.
+
+    Returns
+    -------
+    dict
+        ``status`` and the run notes as they now stand.
+    """
+    return {"status": "ok", "notes": add_note(run.job, text)}

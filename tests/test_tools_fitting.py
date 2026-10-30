@@ -149,7 +149,7 @@ def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
     """An Elastix fit whose scale changes by more than a section shrinks or
     swells, or that shears it, carries flags, worded in the row's warning."""
     from langslice.doors.tools.fitting import affine_flag_words
-    from langslice.tools.transforms import plausibility_flags
+    from langslice.tools.affine_fit import plausibility_flags
 
     def fit(**physical: float) -> dict[str, Any]:
         return {"physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,

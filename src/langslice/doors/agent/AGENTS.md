@@ -188,10 +188,11 @@ The tools are the toolbox `doors.tools.toolbox.build_tools(state, ctx, spec,
 job=, image_model=, level=, max_view_edge=)` builds: the verbs
 `tools.catalog.enabled(spec)` names, each declared once in
 `langslice/tools/descriptions/render.py` (name, arguments, description) and each body
-(the looking tools: a function in their module under `langslice/tools/`,
-wired by `doors/tools/looking.py`; the others `doors/tools/changing.py`,
-`fitting.py`) argument checking, one call into `langslice/tools/` and the
-wording. Every call runs through
+(the looking and changing tools: a function in their module under
+`langslice/tools/`, wired by `doors/tools/looking.py` or
+`doors.tools.toolbox.TOOL_BODIES`; the others `doors/tools/fitting.py`)
+argument checking, one call into `langslice/tools/` and the wording. Every
+call runs through
 the tool pipeline's steps (`langslice/tools/pipeline.py`, `TOOL_STEPS`):
 `_serialize` (one lock: ADK runs a turn's calls concurrently, the state has
 one writer), `_log_events` (the host events), `_announce_work` (the notices

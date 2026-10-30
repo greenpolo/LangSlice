@@ -285,7 +285,7 @@ class ContextFits(ContextProposals):
         :meth:`fit_fireants`; an array is refused ``BAD_ARGS``), *edges*;
         *exclude* adds regions to leave out; *marked* False keeps the section's
         marked damage regions in the fit."""
-        from langslice.tools.transforms import elastix_fit
+        from langslice.tools.affine_fit import elastix_fit
 
         record = self._record(section)
         label = _mask_name(mask)

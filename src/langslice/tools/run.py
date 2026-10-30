@@ -52,6 +52,22 @@ class Run:
     def state(self) -> Stack:
         return self.job.state
 
+    def shows(self, view: bool) -> bool:
+        """Return whether a change tool answers with its picture.
+
+        Parameters
+        ----------
+        view
+            The call's ``view`` argument.
+
+        Returns
+        -------
+        bool
+            *view*, or True where the host forces the picture
+            (``JobSpec.force_view``).
+        """
+        return bool(view) or bool(self.spec.force_view)
+
     # --- the status rows -------------------------------------------------------
 
     def rows(self) -> dict[str, Any]:

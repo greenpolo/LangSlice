@@ -216,7 +216,7 @@ class ElastixFit:
     fit_image: Image.Image
     engine: dict[str, Any]
     #: What the fit read, named (``core.fits.inputs.InputsBlock.payload()``);
-    #: set by the operation that ran it (``tools.transforms.elastix_fit``).
+    #: set by the operation that ran it (``tools.affine_fit.elastix_fit``).
     inputs: dict[str, Any] | None = None
 
 

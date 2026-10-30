@@ -20,8 +20,8 @@ from langslice.doors import jobs
 from langslice.job.gates import submit_errors
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.settings.tool_table import TOOLS
+from langslice.tools import affine_fit, positions, transforms
 from langslice.tools import deformable as ops_deformable
-from langslice.tools import positions, transforms
 from langslice.tools.catalog import enabled
 from tests.linear_tool_helpers import SLAB, tool_named
 from tests.test_disabled_tools import (
@@ -137,10 +137,10 @@ def test_interactive_transform_refuses_per_entry_what_is_frozen(tmp_path: Path):
         {"id": "s1.png", "rotate_quarter": 90},      # orientation is free, no transform yet
         {"id": "s2.png", "flip": True, "rotation_deg": 1.0},
     ])
-    errors = [(entry.error or {}).get("error") for entry in done.entries]
+    errors = [entry.refusal and entry.refusal.code for entry in done.entries]
     assert errors == ["FROZEN", None, "FROZEN", None, None]
-    assert done.entries[0].error["properties"] == ["orientation"]
-    assert done.entries[2].error["properties"] == ["affine"]
+    assert done.entries[0].refusal.facts["properties"] == ["orientation"]
+    assert done.entries[2].refusal.facts["properties"] == ["affine"]
     assert sorted(done.written) == ["s0.png", "s1.png", "s2.png"]
     assert job.state.by_id("s0.png").flip is False
     assert job.state.by_id("s1.png").rotation_deg == 90
@@ -151,7 +151,7 @@ def test_interactive_transform_refuses_per_entry_what_is_frozen(tmp_path: Path):
 def test_a_frozen_affine_can_still_be_looked_at_with_its_own_numbers(tmp_path: Path):
     job, ctx = _open(tmp_path, n=2, frozen={"s0.png": ["affine"]})
     done = transforms.interactive_transform(job, ctx, [{"id": "s0.png", "scale_x": 1.0}])
-    assert done.entries[0].error is None and done.written == []
+    assert done.entries[0].refusal is None and done.written == []
     assert job.undo_stack == []
 
 
@@ -161,7 +161,7 @@ def test_elastix_affine_and_set_transforms_refuse_a_frozen_affine(
     monkeypatch.setattr("langslice.core.fits.affine.fit_elastix",
                         lambda _s, _w, record, **_k: seen.append(record.id) or _ok_fit(1.0))
     job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]})
-    done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
+    done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     assert [row.get("error") for row in done.rows] == [None, "FROZEN"]
     assert done.rows[1]["properties"] == ["affine"] and seen == ["s0.png"]
     with pytest.raises(Refused) as refused:
@@ -205,7 +205,7 @@ def test_a_fit_under_a_frozen_orientation_keeps_the_handedness(
     monkeypatch.setattr("langslice.core.fits.affine.fit_elastix",
                         lambda _s, _w, _r, **_k: _ok_fit(determinant))
     job, ctx = _open(tmp_path, frozen={"s0.png": ["orientation"]})
-    done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
+    done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     free = done.rows[1]
     assert free["status"] == "ok"  # s1's orientation is free: a mirroring fit is its to make
     row = done.rows[0]
@@ -236,8 +236,8 @@ def test_a_manual_transform_under_a_frozen_orientation_cannot_mirror(tmp_path: P
     job, ctx = _open(tmp_path, frozen={"s0.png": ["orientation"]})
     done = transforms.interactive_transform(job, ctx, [
         {"id": "s0.png", "scale_x": -1.0}, {"id": "s0.png", "scale_x": 1.2}])
-    assert [(entry.error or {}).get("error") for entry in done.entries] == ["FROZEN", None]
-    assert done.entries[0].error["properties"] == ["orientation"]
+    assert [entry.refusal and entry.refusal.code for entry in done.entries] == ["FROZEN", None]
+    assert done.entries[0].refusal.facts["properties"] == ["orientation"]
     assert affine_to_json(job.state.by_id("s0.png").transform)["physical"]["scale_x"] == 1.2
 
 

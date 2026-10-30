@@ -6,7 +6,7 @@ section under its new registration with the atlas borders on it
 read, unless the call's ``view`` is false and the host does not force it. With
 ``restrict_to`` those regions' borders are drawn thick and the others faint,
 and the picture is zoomed to the regions' box when that magnifies it at least
-:data:`~langslice.tools.transforms.MIN_ZOOM_GAIN` times. ``trace_borders``
+:data:`~langslice.tools.affine_fit.MIN_ZOOM_GAIN` times. ``trace_borders``
 starts background work and answers at once; its landing draws the trace and the
 fit, and the tool door hands its notice out at the head of a later reply.
 """
@@ -25,12 +25,12 @@ from langslice.core.pictures.sizes import (
     picture_edge,
 )
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
+from langslice.tools import affine_fit
 from langslice.tools import deformable as ops_deformable
 from langslice.tools import exports as ops_exports
 from langslice.tools import landmarks as ops_landmarks
 from langslice.tools import look as ops_look
 from langslice.tools import traces as ops_traces
-from langslice.tools import transforms as ops_transforms
 from langslice.tools.catalog import check_section_count
 from langslice.tools.run import Run, as_list, drawn_image, pictured
 
@@ -51,7 +51,7 @@ def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def affine_flag_words(flag: dict[str, Any]) -> str:
     """One ``elastix_affine`` plausibility flag
-    (:func:`langslice.tools.transforms.plausibility_flags`) as a sentence."""
+    (:func:`langslice.tools.affine_fit.plausibility_flags`) as a sentence."""
     if flag.get("code") == FitFlag.SCALE_CHANGED:
         scale, held = flag.get("scale") or [], flag.get("previous") or []
         return (f"SCALE_CHANGED: this fit scales the section to {scale} from {held}, more "
@@ -89,7 +89,7 @@ def bodies(run: Run) -> dict[str, Callable[..., Any]]:
             raise Refused(RefusalCode.BAD_ARGS,
                           "sections must name one or more sections")
         check_section_count(job, "elastix_affine", len(named))
-        done = ops_transforms.elastix_affine(
+        done = affine_fit.elastix_affine(
             job, ctx, named, regions, str(section_image or "preprocessed"),
             str(atlas_image or "nissl"), str(mask or "none"), bool(edges))
         fits = [row for row in done.rows
@@ -123,7 +123,7 @@ def bodies(run: Run) -> dict[str, Callable[..., Any]]:
         if cleared:
             result["deformation_cleared"] = cleared
         zooms = {str(row["id"]): window for row in fits
-                 if (window := ops_transforms.zoom_window(row.get("restrict_box")))}
+                 if (window := affine_fit.zoom_window(row.get("restrict_box")))}
         shown = ops_look.show_result(job, ctx, "elastix_affine", "overlay", fitted,
                                      zooms=zooms, highlight=regions,
                                      images=drawn_image(section_image))
@@ -156,9 +156,9 @@ def bodies(run: Run) -> dict[str, Callable[..., Any]]:
         if regions:
             for name in drawn:
                 record = job.state.by_id(name)
-                box = (ops_transforms.region_box(ctx, job.state, record, regions)
+                box = (affine_fit.region_box(ctx, job.state, record, regions)
                        if record is not None else None)
-                window = ops_transforms.zoom_window(box)
+                window = affine_fit.zoom_window(box)
                 if window is not None:
                     zooms[name] = window
         shown = ops_look.show_result(job, ctx, "fireants_syn", "overlay", drawn, zooms=zooms,
