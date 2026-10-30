@@ -426,8 +426,9 @@ def elastix_fit(
                                  section_image=section_image,
                                  edges=edges, section_weights=weights)
     except Refused as refusal:  # its own code, as the tool's row carries it
-        raise Refused(refusal.code, **{**refusal.facts, "message": render(
-            refusal.message, job.spec.switched_off)}) from refusal
+        told = render(refusal.message, job.spec.switched_off)
+        facts = {**refusal.facts, "message": told} if told else refusal.facts
+        raise Refused(refusal.code, **facts) from refusal
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
         raise Refused(RefusalCode.FIT_FAILED,
                       message=f"{record.id}: " + failure_message(

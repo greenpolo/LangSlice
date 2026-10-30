@@ -158,3 +158,23 @@ def test_a_script_fit_answers_as_the_tool_row_does(tmp_path: Path, monkeypatch):
     assert caught.value.code == "REGION_TOO_SMALL"
     assert "[[" not in caught.value.message
     assert "interactive_transform" in caught.value.message
+
+
+def test_a_fit_refusal_without_a_message_is_passed_on_without_one(
+    tmp_path: Path, monkeypatch
+):
+    from langslice.core.fits import affine
+    from langslice.core.refusal import Refused
+    from langslice.tools import transforms
+
+    state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(),
+                      pixel_size_um=50.0, position_mm=0.5)
+
+    def refuse(*args, **kwargs):
+        raise Refused("NO_STRUCTURES", regions=["C"])
+
+    monkeypatch.setattr(affine, "elastix_affine", refuse)
+    with pytest.raises(Refused) as caught:
+        transforms.elastix_fit(box.job, box.run.ctx, "s0.png")
+    assert caught.value.code == "NO_STRUCTURES"
+    assert caught.value.facts == {"regions": ["C"]}
