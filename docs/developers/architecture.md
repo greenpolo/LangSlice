@@ -71,11 +71,8 @@ lock ends. Each undo step also lists the registration it leaves each section
 in `sections/<name>/registrations.jsonl`, which `restore_registration` reads
 back. Source images remain immutable. Processes
 share a file lock and reload changed state before calls; a read never waits
-for the lock and reads the state as last saved. The agent CLI's calls
-on one job folder are answered by that folder's warm process
-(`doors/agent_cli/warm/`, [details](../agents/cli.md#the-warm-process)): it loads the
-libraries and the atlas once and forks a child per call, which runs the cold
-call's code as a process of its own. Long operations
+for the lock and reads the state as last saved. Each agent CLI
+call is a process of its own. Long operations
 compute outside the lock, then validate their inputs before applying;
 conflicting section results are refused as `STALE_INPUT`.
 

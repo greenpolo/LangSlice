@@ -19,9 +19,7 @@ Subcommands: ``env`` (make it when missing; its paths and packages),
 ``env remove``.
 
 ``langslice-job FOLDER python SCRIPT [ARGS ...]`` (:func:`python`) runs the
-agent's script as the environment's python would (made first when missing): in
-the job's warm process when one answers (:mod:`langslice.doors.agent_cli.warm`,
-with that python's import path), else that python itself.
+agent's script with the environment's python (made first when missing).
 """
 
 from __future__ import annotations
@@ -37,8 +35,6 @@ from typing import Any
 
 from langslice.core.refusal import RefusalCode
 from langslice.doors.agent_cli.envelope import Envelope
-from langslice.doors.agent_cli.warm.child import in_child
-from langslice.doors.agent_cli.warm.script import run_script
 from langslice.job.layout import ENV_DIR, JobLayout
 
 #: The list of the packages installed in the job's environment.
@@ -224,11 +220,8 @@ def python(folder: str, rest: list[str]) -> int:
     the working folder does not hold is read from the job folder
     (:func:`script_path`). Its stdout, stderr
     and exit code are the script's, as ``env/bin/python SCRIPT ARGS`` gives
-    them; in the job's warm process
-    (:func:`langslice.doors.agent_cli.warm.script.run_script`)
-    the script runs in this process with that python's import path, else this
-    process becomes that python. A call that cannot start the script prints
-    the envelope of its refusal (``NO_JOB``, ``BAD_ARGUMENTS``,
+    them: this process becomes that python. A call that cannot start the
+    script prints the envelope of its refusal (``NO_JOB``, ``BAD_ARGUMENTS``,
     ``ENV_FAILED``) and returns its exit code."""
     from langslice.doors.agent_cli.envelope import emit
     from langslice.doors.call_log import log_call
@@ -248,11 +241,8 @@ def python(folder: str, rest: list[str]) -> int:
         return emit(Envelope.failure(RefusalCode.ENV_FAILED,
                                      str(exc), verb="python"))
     rest = [script_path(layout, rest[0]), *rest[1:]]
-    log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest),
-                               "warm": in_child()})
+    log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest)})
     interpreter = python_of(env_dir(layout))
-    if in_child():
-        return run_script(interpreter, rest)
     sys.stdout.flush()
     sys.stderr.flush()
     if os.name == "nt":  # no exec there: the script's exit code is passed on

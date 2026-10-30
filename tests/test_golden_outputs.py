@@ -134,8 +134,8 @@ EMPTY_ENV = (
 )
 #: A child has no GPU, so FireANTs runs its deterministic CPU path; no
 #: atlas cache, recent-jobs list or user settings; BrainGlobe asks no
-#: server for a newer atlas; the agent CLI runs each call cold and a long
-#: verb in the calling process, so no process outlives the scenario.
+#: server for a newer atlas; the agent CLI runs a long verb in the calling
+#: process, so no process outlives the scenario.
 CHILD_ENV = {
     "CUDA_VISIBLE_DEVICES": "",
     "LANGSLICE_ATLAS_CACHE": "off",
@@ -143,7 +143,6 @@ CHILD_ENV = {
     "LANGSLICE_DETACH": "0",
     "LANGSLICE_RECENT_JOBS": "off",
     "LANGSLICE_SETTINGS": "off",
-    "LANGSLICE_WARM": "0",
     "PYTHONPATH": str(ROOT / "src"),
 }
 #: A fixed mtime for the copied sections (2026-01-01 UTC).

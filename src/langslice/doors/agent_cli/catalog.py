@@ -243,7 +243,8 @@ def _job_here() -> str | None:
         return None
 
 
-def add_parsers(subparsers: argparse._SubParsersAction) -> None:
+def add_parsers(parser: argparse.ArgumentParser) -> None:
+    subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("ops", help="List the verbs of the agent CLI (JSON)")
     schema = subparsers.add_parser(
         "schema", help="A verb's description and arguments (JSON)")
