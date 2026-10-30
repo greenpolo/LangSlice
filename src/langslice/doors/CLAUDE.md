@@ -280,17 +280,14 @@ bodies, and turned into an answer once per door:
   image model, `rows`, `changed`, `answered`, `resolve_many`; `pictured`,
   `as_list`, `spread`: the sections a change tool pictures when the call
   names none), the
-  tool bodies (`looking.py`: `look` (`images`: one section image alone, or
-  raw channels together; empty draws `preprocessed`; `registrations`
-  `{filename: number}`, a section under an earlier registration of its own,
-  nothing written; `sheet`, declared where pictures are uncapped, tiles the
-  pictures into sheets at the box's `max_view_edge`: the reply's `pictures`
-  are the sheets, `tiled` the pictures they tile), `zoom` (on a sheet, the
-  tile's picture, with `sheet` and `box`), `make_image`
-  (its `section` pictures through `tools.look.show_result`, none where
-  `look:section` is off, which also drops its `view`), `grep_atlas`,
-  `grep_atlas_view`, `status` (`raw_channels`, `section_images`:
-  `core.sections.images.summary`), the job-folder tools;
+  tool bodies (`looking.py` wires each looking tool to its function under
+  `langslice/tools/` (`look.look`, `zoom.zoom`, `images.make_image`,
+  `atlas.grep_atlas`, `atlas.grep_atlas_view`, `status.status`, the
+  job-folder tools in `files`), building `look`'s `LookRequest` (`_look`)
+  and `make_image`'s `ImageRecipe` (`_make_image`) from the model's
+  arguments; `look`'s `sheet`, declared where pictures are uncapped, tiles
+  the pictures into sheets at the box's `max_view_edge`: the reply's
+  `pictures` are the sheets, `tiled` the pictures they tile;
   `changing.py`: `position_sections`, `interactive_transform`,
   `mark_damage`, `make_mask` (per-section `rows`), `note`, `undo`, `redo` (`steps`, default 1: that many in
   one call, `tools.history`), `restore_registration` (`section` lists,
@@ -313,8 +310,8 @@ bodies, and turned into an answer once per door:
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
-  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host,
-  `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,
+  `core.pictures.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host),
+  `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys
