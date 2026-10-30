@@ -149,7 +149,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 def init(capsys: pytest.CaptureFixture[str], images: Path, tasks: str, *flags: str,
          provider: str = "none") -> Path:
     code, envelope = cli(capsys, str(images), "init", "--tasks", tasks,
-                         "--image-provider", provider, "--preprocess", "none",
+                         "--nonlinear-provider", provider, "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM), *flags)
     assert code == 0, envelope
     return Path(envelope["result"]["job_folder"])
@@ -437,9 +437,9 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
         assert job.export_maps()["status"] == "ok"
-        assert all(trace_to_json(job.state.by_id(name).image_correction).get("status") == "ok"
+        assert all(trace_to_json(job.state.by_id(name).border_trace).get("status") == "ok"
                    for name in (ID0, ID1))
-        assert job.state.by_id(ID2).image_correction is None
+        assert job.state.by_id(ID2).border_trace is None
     assert_exported(images / "langslice", residual=IDS, maps_exported=True)
 
 
@@ -565,19 +565,20 @@ def test_6_an_unknown_input_is_refused(images):
 def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images):
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS))
     moved = {name: round(mm + 0.02, 6) for name, mm in POSITIONS.items()}
-    flags = ("--tasks", "nonlinear", "--image-provider", "none", "--preprocess", "none",
+    flags = ("--tasks", "nonlinear", "--nonlinear-provider", "none", "--preprocess", "none",
              "--pixel-size-um", str(PIXEL_SIZE_UM))
 
     def positions() -> dict[str, float]:
         _code, status = cli(capsys, str(images), "status")
         return {row["id"]: row["position_mm"] for row in status["result"]["rows"]}
 
-    # Different inputs: refused, naming --fresh; nothing rewritten.
+    # Different inputs: refused, naming --no-resume; nothing rewritten.
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(moved))
     assert code == 3 and envelope["error"]["code"] == "INPUTS_CHANGED", envelope
     assert "positions" in envelope["error"]["message"]
-    assert "--fresh" in envelope["error"]["message"] and "--fresh" in envelope["error"]["fix"]
+    assert "--no-resume" in envelope["error"]["message"]
+    assert "--no-resume" in envelope["error"]["fix"]
     spec = json.loads((job / "job.json").read_text())["spec"]
     assert spec["inputs"]["positions"] == POSITIONS
     assert positions() == POSITIONS
@@ -585,8 +586,8 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(POSITIONS))
     assert code == 0, envelope
-    # --fresh: a new job from the new inputs.
-    code, envelope = cli(capsys, str(images), "init", *flags, "--fresh",
+    # --no-resume: a new job from the new inputs.
+    code, envelope = cli(capsys, str(images), "init", *flags, "--no-resume",
                          "--positions", json.dumps(moved))
     assert code == 0, envelope
     assert positions() == moved
@@ -625,7 +626,7 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     quicknii = tmp_path / "quicknii.json"
     shutil.copy(source / "exports" / "quicknii.json", quicknii)
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
-                         "--image-provider", "none", "--job-dir", str(tmp_path / "again"),
+                         "--nonlinear-provider", "none", "--job-dir", str(tmp_path / "again"),
                          "--registration", str(quicknii))
     assert code == 0, envelope
     result = envelope["result"]
@@ -696,7 +697,7 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
     verb only when the job's provider is not none AND its key or login is
     present. Without it, trace_borders is simply not listed, the statement
     says why, and submit does not wait for traces."""
-    from langslice.doors.statement import IMAGE_MODEL_OFF
+    from langslice.tools.descriptions.door_text import IMAGE_MODEL_OFF
 
     connected(monkeypatch, linked)
     server = _mcp_server(spec_for(images, ["nonlinear"], provider="openai-oauth",

@@ -30,7 +30,8 @@ from langslice.job.settings.spec import JobSpec, TransformSpec
 from langslice.job.settings.tool_table import tools_for, valid_names
 from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import enabled, verbs_for
-from langslice.tools.descriptions.render import FULL, Variant, declaration
+from langslice.tools.descriptions.description import DescriptionFacts
+from langslice.tools.descriptions.render import FULL, declaration
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 from tests.shapes import json_of
 
@@ -1101,19 +1102,19 @@ def test_the_cli_flag_names_plugins_and_their_options(make, images: Path):
 
     parser = build_parser()
     configurable = make("configurable_flag", HELLO.replace("def tools():", "def tools(config):"))
-    args = parser.parse_args(["linear", "run", str(images), "--tool-plugin", configurable,
-                              "--tool-plugin-config", f'{configurable}={{"a": 1}}'])
+    args = parser.parse_args(["linear", "run", str(images), "--plugins", configurable,
+                              "--plugin-config", f'{configurable}={{"a": 1}}'])
     spec = with_tool_plugins(build_linear_spec(args, str(images)), args)
     assert spec.plugins == [configurable] and spec.plugin_config == {configurable: {"a": 1}}
     bare = parser.parse_args(["linear", "run", str(images)])
     assert with_tool_plugins(build_linear_spec(bare, str(images)), bare).plugins == []
-    stray = parser.parse_args(["linear", "run", str(images), "--tool-plugin-config", "x=1"])
-    with pytest.raises(ValueError, match="needs the --tool-plugin"):
+    stray = parser.parse_args(["linear", "run", str(images), "--plugin-config", "x=1"])
+    with pytest.raises(ValueError, match="needs the --plugins"):
         with_tool_plugins(build_linear_spec(stray, str(images)), stray)
-    broken = parser.parse_args(["linear", "run", str(images), "--tool-plugin", "no_module:x"])
+    broken = parser.parse_args(["linear", "run", str(images), "--plugins", "no_module:x"])
     with pytest.raises(ValueError, match="cannot import"):
         with_tool_plugins(build_linear_spec(broken, str(images)), broken)
-    assert "--tool-plugin" not in parser.parse_args(["mcp"]).__dict__
+    assert "plugins" not in parser.parse_args(["mcp"]).__dict__
 
 
 def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(
@@ -1206,7 +1207,7 @@ def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
     assert "layers" in inspect.signature(tool_named(box, "look")).parameters
     assert "layers" in declaration("look", FULL).signature.parameters
     with_plugins = JobSpec(image_folder=str(images), plugins=[EXAMPLE])
-    declared = declaration("look", Variant.of(with_plugins, auto=True))
+    declared = declaration("look", DescriptionFacts.from_spec(with_plugins, auto=True))
     assert "layers" in declared.signature.parameters
 
 
@@ -1537,6 +1538,7 @@ def test_the_library_waits_for_work_a_plugin_verb_started_and_returns_its_landin
     job = _library_job(images, plugins=[ref])
     started = job.mark_later(section="s0.png")
     assert started["work"] == "w1"
+    assert "background" not in started  # however soon it lands: its notice comes later
     landed = job.wait()
     assert landed["status"] == "ok" and landed["running"] == []
     assert landed["background"][0].endswith("mark_later of s0.png finished: moved.")
@@ -1628,8 +1630,8 @@ def test_a_tool_is_offered_only_on_its_atlases_and_planes_and_no_text_names_it(
         "`mouse_only`" if "mouse_only" in expected else "")
 
 
-def _variant(spec: JobSpec) -> Variant:
-    return Variant.of(spec, auto=False)
+def _variant(spec: JobSpec) -> DescriptionFacts:
+    return DescriptionFacts.from_spec(spec, auto=False)
 
 
 TASKED = '''

@@ -31,11 +31,12 @@ from langslice.job.layout import (
     locate_job_folder,
     read_job_file,
 )
+from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
-    from langslice.doors.tools.toolbox import ToolBox
-    from langslice.providers.connections import ImageModel
+    from langslice.core.fits.trace.request import ImageModel
+    from langslice.tools.pipeline import ToolBox
 
 #: The largest picture a script call may ask for (``view.resolution``): no
 #: model's limit applies, only the source's own pixels (nothing is upsampled
@@ -69,7 +70,7 @@ def close_job(job: Job) -> None:
     session, the end of ``serve``) and LangSlice's own agent
     (``doors.agent.engine.run``)."""
     if job.image_jobs:
-        job.settle_image_corrections()
+        job.settle_border_traces()
     job.close()
 
 
@@ -175,8 +176,9 @@ def read_spec(job_folder: Path) -> JobSpec:
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
             "<images>/langslice).")
     data["image_folder"] = str(images)
+    kept, _removed = without_removed_settings(data)  # the job's open logs them
     try:
-        spec = JobSpec.from_dict(data)
+        spec = JobSpec.from_dict(kept)
     except ValueError as exc:
         raise ValueError(f"{job_folder / 'job.json'}: {exc}") from exc
     spec.resume = True
@@ -257,7 +259,7 @@ class Opened:
         return list(self.tools().names)
 
     def close(self) -> None:
-        """Finish the job's background writes (image corrections, pictures):
+        """Finish the job's background writes (border traces, pictures):
         :func:`close_job`."""
         close_job(self.job)
 

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
+from pathlib import Path
 
+import langslice
 from langslice.core.fits.flags import FitFlag
 from langslice.core.refusal import (
     FAILED_STATUSES,
@@ -55,9 +58,33 @@ def test_a_gate_says_refused() -> None:
                               "pages": [1]}
 
 
-def test_a_plugin_tool_error_is_a_refusal_with_its_message_first() -> None:
-    error = ToolError(RefusalCode.BAD_ARGS, "", rows=2)
+def test_a_plugin_tool_error_answers_as_a_refusal() -> None:
+    error = ToolError(RefusalCode.BAD_ARGS, "rows is 2 or more.", rows=2)
     assert isinstance(error, Refused) and isinstance(error, ValueError)
     assert error.payload() == {"status": "error", "error": "BAD_ARGS",
-                               "message": "BAD_ARGS", "rows": 2}
-    assert error.details == {"rows": 2} and error.message == "BAD_ARGS"
+                               "message": "rows is 2 or more.", "rows": 2}
+    bare = ToolError(RefusalCode.BAD_ARGS, rows=2)  # as a Refused with none
+    assert bare.payload() == Refused(RefusalCode.BAD_ARGS, rows=2).payload()
+
+
+def _gives_a_message(call: ast.Call) -> bool:
+    """A refusal built with a message: positional, ``message=``, or spread
+    from another refusal's or a helper's facts (``**``)."""
+    return len(call.args) > 1 or any(
+        keyword.arg in ("message", None) for keyword in call.keywords)
+
+
+def test_every_refusal_langslice_raises_says_what_to_do() -> None:
+    """Every ``Refused`` and ``ToolError`` built in the package carries a
+    message (what was attempted, what was found, what to do); a reply whose
+    rows each name their own refusal is a reply, not a ``Refused``."""
+    root = Path(langslice.__file__).parent
+    bare: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", getattr(node.func, "attr", ""))
+            if name in ("Refused", "ToolError") and not _gives_a_message(node):
+                bare.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert bare == []

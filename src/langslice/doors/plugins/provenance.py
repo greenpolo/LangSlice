@@ -5,7 +5,7 @@ exactly as the model sees it: per plugin the module, factory, versions, the
 SHA-256 of the source files that declared its tools and the plugin API
 version (:attr:`langslice.job.plugins.LoadedPlugin.provenance`), and per
 tool its kind, group, task, writes, limits and its rendered declaration (the
-name, description and argument schema in this job's variant). The record is
+name, description and argument schema in this job's run). The record is
 ``job.json``'s ``plugins`` and the run trace's ``plugins`` line; a change of
 what a job runs with is also an event in ``logs/events.jsonl``.
 """
@@ -16,8 +16,8 @@ import logging
 from typing import Any
 
 from langslice.job.job import Job
+from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.descriptions.render import (
-    Variant,
     arguments_schema,
     declaration,
 )
@@ -28,13 +28,13 @@ logger = logging.getLogger(__name__)
 KEY = "plugins"
 
 
-def records(variant: Variant) -> list[dict[str, Any]]:
-    """The provenance record of every plugin *variant* holds."""
+def records(facts: DescriptionFacts) -> list[dict[str, Any]]:
+    """The provenance record of every plugin the run of *facts* holds."""
     out: list[dict[str, Any]] = []
-    for plugin in variant.plugins:
+    for plugin in facts.plugins:
         tools = []
         for tool in plugin.tools:
-            declared = declaration(tool.name, variant)
+            declared = declaration(tool.name, facts)
             tools.append({
                 "name": tool.name, "kind": tool.kind, "group": tool.group, "task": tool.task,
                 "writes": list(tool.writes), "long": tool.long, "limits": dict(tool.limits),
@@ -43,7 +43,7 @@ def records(variant: Variant) -> list[dict[str, Any]]:
                 **({"planes": list(tool.planes)} if tool.planes else {}),
                 **({"meta": dict(tool.meta)} if tool.meta else {}),
                 "declaration": {"name": tool.name, "description": declared.doc,
-                                "arguments": arguments_schema(tool.name, variant)},
+                                "arguments": arguments_schema(tool.name, facts)},
             })
         out.append({**plugin.provenance, "tools": tools})
     return out

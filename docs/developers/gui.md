@@ -50,7 +50,8 @@ appear. For the chosen job:
   under **Details**.
 - **Sections.** Order, filename, position, cutting angles, flip, transform,
   deformation method, damage and registration number. A job saved by an older
-  LangSlice is shown from its raw fields.
+  LangSlice is read as every other way in opens it; one whose state this
+  LangSlice cannot read (a newer one's) is shown from its raw fields.
 - **Undo** and **Redo.** The steps that can be undone and redone, each named by
   the call that made it.
 - **Notes** (yours from the job's settings, and the run's) and **Spend**
@@ -100,20 +101,20 @@ langslice-job /data/brain1 init \
   --tasks position,transform,nonlinear \
   --atlas allen_mouse_25um \
   --plane coronal \
-  --thickness 40 \
-  --interval 120 \
-  --disable zoom,trace_borders \
+  --position-thickness-um 40 \
+  --position-interval-um 120 \
+  --disabled zoom,trace_borders \
   --frozen '{"*":["orientation"]}' \
   --damaged '{"s012.tif":"left cortex torn"}' \
-  --fact 'The file names sort in the order the sections were cut.' \
+  --facts 'The file names sort in the order the sections were cut.' \
   --notes 'Injection in the right striatum.'
 ```
 ````
 
 Each line of the command is one of `init`'s settings (`langslice-job schema
-init` lists them all): `--tasks` what to do, `--disable` the tools and
+init` lists them all): `--tasks` what to do, `--disabled` the tools and
 options turned off, `--frozen` what stays as it is on every section,
-`--damaged` the damage notes, `--fact` the cutting order and `--notes` your
+`--damaged` the damage notes, `--facts` the cutting order and `--notes` your
 notes. A choice of tools the job would refuse (a task with none of the tools
 that do it, a tool without the pictures it needs, `look` with no kind of
 picture) shows in red instead of a message, with what to turn back on. The
@@ -156,7 +157,7 @@ The choices are saved in `~/.langslice/settings.json`
 The window is a page served by `langslice gui` on `127.0.0.1` under a random
 address, reachable only from this computer. The agent viewer watches the job folder's files
 (`logs/events.jsonl`, `views.jsonl`, `trace/`, `state.json`,
-`history/index.json`, `job.json`, `exports/spend.json`; see
+`history/undo.json`, `job.json`, `exports/spend.json`; see
 [file formats](../reference/file_formats.md)) four times a second while a page looks at the
 job, and serves only the folders it lists. The prompt generator's choices
 (the tools, the tasks, the atlases) come from the installed LangSlice, so a

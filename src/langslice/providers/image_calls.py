@@ -1,7 +1,7 @@
 """The image-edit transports: one request in, one edited image out.
 
 ``generate_warped_segmentation_image`` sends a
-:class:`~langslice.core.fits.trace.request.SegmentationGenerationRequest` to
+:class:`~langslice.core.fits.trace.request.BorderTraceRequest` to
 its provider: ``gemini-api`` (``generate_content`` with an image config),
 ``openai-api`` (the Images API edit endpoint) or ``openai-oauth`` (the Codex
 ``images/edits`` endpoint,
@@ -20,8 +20,8 @@ from PIL import Image
 
 from langslice.core.fits.trace.frames import gemini_aspect_for
 from langslice.core.fits.trace.request import (
+    BorderTraceRequest,
     GeneratedSegmentation,
-    SegmentationGenerationRequest,
 )
 from langslice.providers import gemini_api as vlm_config
 from langslice.providers.connections import (
@@ -103,7 +103,7 @@ def _extract_openai_image_b64(response: Any) -> str:
 
 
 def _build_metadata(
-    request: SegmentationGenerationRequest,
+    request: BorderTraceRequest,
     *,
     provider: str,
     route: str,
@@ -129,7 +129,7 @@ _GEMINI_IMAGE_SIZES = frozenset({"512", "512P", "512PX", "1K", "2K", "4K"})
 
 
 def _gemini_image_config(
-    request: SegmentationGenerationRequest,
+    request: BorderTraceRequest,
     response_modalities: tuple[str, ...] = ("IMAGE",),
 ) -> Any:
     """The image config Gemini needs to return an aligned edit.
@@ -157,7 +157,7 @@ def _gemini_image_config(
     )
 
 
-def _generate_google_segmentation(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
+def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegmentation:
     model = request.model or GEMINI_DEFAULT_IMAGE_MODEL
     client = vlm_config.get_client()
 
@@ -191,7 +191,7 @@ def _generate_google_segmentation(request: SegmentationGenerationRequest) -> Gen
 
 
 def _generate_openai_images_segmentation(
-    request: SegmentationGenerationRequest,
+    request: BorderTraceRequest,
     *,
     provider: str,
 ) -> GeneratedSegmentation:
@@ -249,7 +249,7 @@ def _api_edit_size(canvas: Image.Image, budget_px: int = 1024 * 1536) -> str:
 
 
 def _generate_openai_oauth_segmentation(
-    request: SegmentationGenerationRequest,
+    request: BorderTraceRequest,
 ) -> GeneratedSegmentation:
     from langslice.providers.oauth import transport
 
@@ -278,7 +278,7 @@ def _generate_openai_oauth_segmentation(
 
 
 def generate_warped_segmentation_image(
-    request: SegmentationGenerationRequest,
+    request: BorderTraceRequest,
 ) -> GeneratedSegmentation:
     """Send *request* to its provider's image model; the edited image."""
     provider = canonical_provider(request.provider)

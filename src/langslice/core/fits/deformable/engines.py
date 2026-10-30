@@ -171,6 +171,12 @@ def _windows_fcntl() -> Iterator[None]:
         del sys.modules["fcntl"]
 
 
+#: One import at a time: torch's first import is not safe from two threads,
+#: and the import swaps ``sys.stdout`` (process-wide) while it runs, which
+#: two threads at once would leave swapped.
+_IMPORTING = threading.Lock()
+
+
 def import_fireants() -> Any:
     """Import torch and FireANTs' SyN (``RuntimeError`` with the install hint).
 
@@ -178,6 +184,7 @@ def import_fireants() -> Any:
     deterministic algorithms can run on the GPU.
     """
     os.environ.setdefault(*_CUBLAS_ENV)
+    _IMPORTING.acquire()
     try:
         import torch
         # FireANTs warns once per module that its optional fused CUDA kernels
@@ -193,27 +200,9 @@ def import_fireants() -> Any:
             "The deformable engine needs FireANTs and torch, LangSlice dependencies "
             "(reinstall LangSlice)"
         ) from exc
+    finally:
+        _IMPORTING.release()
     return torch
-
-
-def preload() -> None:
-    """Import both engines' libraries without running either: torch and
-    FireANTs (:func:`import_fireants`), SimpleITK, and the ITK Elastix
-    classes the affine uses (ITK loads its modules on first attribute use).
-    Nothing touches the GPU, so a process may fork after it (the agent
-    CLI's warm process, :mod:`langslice.doors.agent_cli.warm`)."""
-    torch = import_fireants()
-    # Switching the deterministic algorithms (:func:`_deterministic`) loads
-    # torch's compiler packages the first time: set them as they are.
-    torch.use_deterministic_algorithms(
-        torch.are_deterministic_algorithms_enabled(),
-        warn_only=torch.is_deterministic_algorithms_warn_only_enabled())
-    import itk
-    import SimpleITK  # noqa: F401
-
-    for name in ("ElastixRegistrationMethod", "ParameterObject", "MultiThreaderBase",
-                 "image_from_array"):
-        getattr(itk, name)
 
 
 def fit_device() -> str:

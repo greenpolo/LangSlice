@@ -125,6 +125,13 @@ def test_image_model_custom_profiles(tmp_path):
 # --- create_job ---------------------------------------------------------------------------
 
 
+def test_create_job_takes_resume_or_fresh_not_both(tmp_path):
+    import langslice
+
+    with pytest.raises(TypeError, match="not both"):
+        langslice.create_job(tmp_path, resume=True, fresh=True)
+
+
 def test_create_job_from_a_folder(images):
     import langslice
 
@@ -154,14 +161,14 @@ def test_create_job_from_a_folder(images):
         langslice.create_job(images, no_such_setting=1)
     # A profile not tested with LangSlice reopens without traces until a model is given.
     langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
-                         pixel_size_um=PIXEL_SIZE_UM, preprocess="none", fresh=True,
+                         pixel_size_um=PIXEL_SIZE_UM, preprocess="none", resume=False,
                          image_model=langslice.image_model("openai-oauth",
                                                            prompt=PROFILE_PROMPT)).close()
     with langslice.open_job(images) as job:
         assert "trace_borders" not in job.verbs
     with langslice.open_job(images, image_model=Stub()) as job:
         assert "trace_borders" in job.verbs
-    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS, fresh=True).close()
+    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS, resume=False).close()
     with pytest.raises(ValueError, match="without an image model"):
         langslice.open_job(images, image_model=Stub())
 
@@ -180,11 +187,11 @@ def test_create_job_takes_angles_per_section(images):
             (1.0, -0.5), (-0.75, 0.0), (0.0, 0.0)]
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               angles={"pitch": 2, "yaw": 1}, pixel_size_um=PIXEL_SIZE_UM,
-                              preprocess="none", fresh=True) as job:
+                              preprocess="none", resume=False) as job:
         assert job.state.stack_angles == (2.0, 1.0)
     with pytest.raises(ValueError, match="mixes"):
         langslice.create_job(images, angles={"pitch": 1.0, ID0: {"pitch": 1.0}},
-                             fresh=True)
+                             resume=False)
 
 
 # --- the custom profile's prompt is the one sent and saved ---------------------------------
@@ -201,9 +208,9 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=profile) as job:
         assert job.trace_borders(section=ID1, prompt=edited)["status"] == "started"
-        job.job.settle_image_corrections()
+        job.job.settle_border_traces()
         job.job.background.wait_all()
-        record = trace_to_json(job.state.by_id(ID1).image_correction)
+        record = trace_to_json(job.state.by_id(ID1).border_trace)
     sent = PROFILE_PROMPT.replace("{plane}", "coronal")
     assert [request.prompt for request in stub.requests] == [edited]
     # photograph_first: Image 1 is the clean photograph, Image 2 the placed borders.

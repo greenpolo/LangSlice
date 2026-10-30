@@ -22,7 +22,7 @@ exceptions: a violation is fixed by moving code.
 | Package | Role | Guide |
 |---|---|---|
 | `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; `refusal.py` (the one `Refused` and its `RefusalCode`s); of a job's settings only the `ImageSettings` the workspace carries | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
-| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the form `JobSpec`, the table of every setting `schema.py`, `frozen.py`, the tool table `tool_table.py`, the needs marks `needs.py`, the tool labels); the plugin registry (`plugins.py`) | `job/CLAUDE.md` |
+| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), old formats (`migrations.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the form `JobSpec`, the table of every setting `schema.py`, `frozen.py`, the tool table `tool_table.py`, the needs marks `needs.py`, the tool labels); the plugin registry (`plugins.py`) | `job/CLAUDE.md` |
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement, the agent CLI's fixes) | `tools/CLAUDE.md` |
 | `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the ABBA worker (`abba/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth` (`oauth/`), `none`; no task logic | |
@@ -56,7 +56,7 @@ and `environment.yml` hold the worker's source installation.
   named by filename only.
 - A tool plugin (`JobSpec.plugins`, `docs/developers/plugins.md`) adds first-class tools
   through `langslice.plugin_api`; it loads only where the user chose it
-  (library, `linear run --tool-plugin`), never through MCP or the ABBA worker,
+  (library, `linear run --plugins`), never through MCP or the ABBA worker,
   writes job state only through the context's operations and files only under
   `plugins/<tool>/`; a job without plugins shows no trace of the seam.
 - Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`

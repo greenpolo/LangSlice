@@ -10,7 +10,7 @@ decomposition it reports) lives here.
 The fit returns numbers, never pictures. Parameters are ABBA's — rotation
 about the canvas centre (or a chosen pivot), per-axis scales, translations in
 MILLIMETRES — which only mean anything once the canvas is calibrated, so
-every payload carries the calibration and where it came from.
+every fit carries the calibration and where it came from.
 
 Everything here is a PROPOSAL: six normalized numbers recorded on the state,
 never applied to the user's images (see :mod:`langslice.core.geometry.affine`
@@ -28,12 +28,14 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.borders import annotation_slice, atlas_um_per_px
+from langslice.core.fits.inputs import InputsBlock
 from langslice.core.geometry.affine import (
     IDENTITY_PARAMS,
     decompose_affine,
     denormalized_affine,
     normalized_affine,
 )
+from langslice.core.jsonable import JsonObject
 from langslice.core.pictures.canvas import canvas_geometry
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.renders import (
@@ -42,6 +44,7 @@ from langslice.core.sections.renders import (
     render_slice,
 )
 from langslice.core.space import Plane
+from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
@@ -88,47 +91,28 @@ def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
     return (shift @ square @ inverse)[:2]
 
 
-def _fit_payload(
-    record: Section,
-    section: Image.Image,
-    um_per_px: float,
-    source: str,
-    geometry: Any,
-    in_section: np.ndarray,
-    *,
-    regions: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """The tool-shaped payload of one fit.
+@dataclass(frozen=True)
+class FittedAffine:
+    """One positioned section's Elastix affine (:func:`fit_elastix`).
 
-    *in_section* is the fitted 2x3 on the working frame *section*; the
-    numbers stay on that frame.
+    The tool's row and the stored transform are both made from it; the
+    numbers stay on the section's working frame.
     """
-    assert record.position_mm is not None
-    on_canvas = _conjugate(in_section, geometry.section_offset)
-    params = normalized_affine(in_section, section.size)
-    width, height = geometry.size
-    payload: dict[str, Any] = {
-        "status": "ok",
-        "id": record.id,
-        "position_mm": round(record.position_mm, 3),
-        "params": params,
-        # The same five knobs the interactive tools take, about the canvas
-        # centre: one representation for every transform this run records.
-        "physical": {
-            **physical_params(
-                on_canvas, pivot=(width / 2.0, height / 2.0), um_per_px=um_per_px
-            ),
-            "pivot": [0.5, 0.5],
-        },
-        "mirrored": bool(decompose_affine(params)["mirrored"]),
-        "calibration": {
-            "section_um_per_px": round(um_per_px, 4),
-            "source": source,
-        },
-    }
-    if regions is not None:
-        payload["regions"] = regions
-    return payload
+
+    #: The section's position, to the micrometre.
+    position_mm: float
+    #: The six normalized numbers on the section's frame, as stored.
+    params: tuple[float, ...]
+    #: The knobs the interactive tools take, about the canvas centre: one
+    #: representation for every transform a run records.
+    physical: PhysicalAffine
+    #: Whether the fit turns the section over.
+    mirrored: bool
+    #: The working frame's scale, and where it came from.
+    calibration: Calibration
+    #: The regions report of a restricted fit (``include``, ``exclude``,
+    #: ``atlas_kept_fraction``); None for a fit by every region.
+    regions: JsonObject | None = None
 
 
 # --- the Elastix affine ----------------------------------------------------
@@ -215,9 +199,9 @@ class ElastixFit:
     grid_image: Image.Image
     fit_image: Image.Image
     engine: dict[str, Any]
-    #: What the fit read, named (``core.fits.inputs.InputsBlock.payload()``);
-    #: set by the operation that ran it (``tools.transforms.elastix_fit``).
-    inputs: dict[str, Any] | None = None
+    #: What the fit read, named; set by the operation that ran it
+    #: (``tools.affine_fit.elastix_fit``).
+    inputs: InputsBlock | None = None
 
 
 def elastix_affine(
@@ -305,18 +289,19 @@ def fit_elastix(
     section_image: str = "preprocessed",
     edges: bool = True,
     section_weights: np.ndarray | None = None,
-) -> dict[str, Any]:
+) -> FittedAffine | Refused:
     """``elastix_affine`` for one positioned section.
 
     A local refinement of the section's CURRENT placement (its stored six
-    numbers, or the identity without a transform) by :func:`elastix_affine`.
-    The payload: ``params`` (six normalized numbers on the section's frame),
-    the ``physical`` knobs about the canvas centre, the
-    ``calibration`` of the working frame, and a ``regions`` report when
-    regions were given.
+    numbers, or the identity without a transform) by :func:`elastix_affine`:
+    the fitted affine (a ``regions`` report when regions were given), or the
+    section's refusal, which names it (``id``): ``NO_POSITION``, the fit's
+    own code (regions too small, a side it lacks) or ``FIT_FAILED``.
     """
     if section.position_mm is None:
-        return Refused(RefusalCode.NO_POSITION, id=section.id).payload()
+        return Refused(RefusalCode.NO_POSITION, id=section.id,
+                       message=f"{section.id} has no position yet; write its "
+                       "position first.")
     rendered = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
     stored = None if section.transform is None else section.transform.params
     start = (list(stored) if stored is not None and len(stored) == 6
@@ -337,19 +322,43 @@ def fit_elastix(
                              section_image=section_image, edges=edges,
                              section_weights=section_weights)
     except Refused as refusal:  # regions too small, or a side it lacks
-        return Refused(
-            refusal.code, id=section.id, message=refusal.message
-        ).payload()
+        return Refused(refusal.code, id=section.id, message=refusal.message)
     except Exception as exc:
         logger.warning("elastix_affine failed for %s: %s", section.id, exc)
         return Refused(
             RefusalCode.FIT_FAILED,
             id=section.id,
             message=f"The Elastix affine failed: {exc}",
-        ).payload()
+        )
+    # The fitted 2x3 on the working frame; the numbers stay on that frame,
+    # the knobs are read on the canvas about its centre.
     in_section = denormalized_affine(fit.params, rendered.size)
-    return _fit_payload(section, rendered, um_per_px, source, geometry, in_section,
-                        regions=fit.report if (include or exclude) else None)
+    on_canvas = _conjugate(in_section, geometry.section_offset)
+    params = normalized_affine(in_section, rendered.size)
+    width, height = geometry.size
+    knobs = physical_params(
+        on_canvas, pivot=(width / 2.0, height / 2.0), um_per_px=um_per_px
+    )
+    parts = decompose_affine(params)
+    regions = fit.report if include or exclude else None
+    return FittedAffine(
+        position_mm=round(section.position_mm, 3),
+        params=tuple(float(value) for value in params),
+        physical=PhysicalAffine(
+            rotation_deg=knobs["rotation_deg"],
+            scale_x=knobs["scale_x"],
+            scale_y=knobs["scale_y"],
+            translate_x_mm=knobs["translate_x_mm"],
+            translate_y_mm=knobs["translate_y_mm"],
+            shear=knobs["shear"],
+            pivot=(0.5, 0.5),
+        ),
+        mirrored=bool(cast("object", parts["mirrored"])),
+        calibration=Calibration(
+            section_um_per_px=round(um_per_px, 4), source=source
+        ),
+        regions=regions,
+    )
 
 
 # --- what the interactive tools share ------------------------------------

@@ -4,7 +4,7 @@ The first image reply is retained automatically. This tool produces annotation
 artifacts, not a fitted deformation or a replacement linear transform.
 
 The image model is an argument
-(:class:`langslice.providers.connections.ImageModel`, resolved by a door), so
+(:class:`langslice.core.fits.trace.request.ImageModel`, resolved by a door), so
 this module imports no provider and is core-clean
 (``tests/test_core_imports.py``); the geometry it starts from is the core's
 (:mod:`langslice.core.fits.frame`).
@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import io
 import json
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import cv2
 import numpy as np
+from filelock import FileLock, Timeout
 from PIL import Image
 
 from langslice.core.atlas.borders import annotation_slice
@@ -39,7 +41,6 @@ from langslice.core.fits.trace.canvas import (
     upright,
 )
 from langslice.core.fits.trace.lines import (
-    border_overlay,
     extract_thinned_lines,
     smooth_border_overlay,
 )
@@ -47,7 +48,7 @@ from langslice.core.fits.trace.prompts import (
     border_correction_tool_prompt,
     supplied_prompt_is_gpt_twin,
 )
-from langslice.core.fits.trace.request import SegmentationGenerationRequest
+from langslice.core.fits.trace.request import BorderTraceRequest, ImageModel
 from langslice.core.geometry.affine import pixel_center_map
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.space import Plane
@@ -55,7 +56,6 @@ from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
-    from langslice.providers.connections import ImageModel
 
 #: Width of the placed boundaries in Image 1, in canvas pixels at a 1536-px long edge.
 BORDER_WIDTH_PX = 2.0
@@ -123,49 +123,79 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _png_sha256(image: Image.Image) -> str:
+    """Return the SHA-256 of *image* as PIL writes it to a PNG file."""
+    encoded = io.BytesIO()
+    image.save(encoded, format="PNG")
+    return hashlib.sha256(encoded.getvalue()).hexdigest()
+
+
 def _saved_result(result_path: Path) -> dict[str, Any] | None:
     """The result saved under one call key, if any."""
     if not result_path.exists():
         return None
-    saved = json.loads(result_path.read_text())
+    try:
+        saved = cast(object, json.loads(result_path.read_text()))
+        problem = f"a JSON {type(saved).__name__}"
+    except (OSError, ValueError) as exc:
+        saved, problem = None, str(exc)
     if not isinstance(saved, dict):
-        raise ValueError("Saved image correction result must be an object")
-    return saved
+        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
+                      f"The saved image reply {result_path} cannot be read "
+                      f"({problem}); nothing was started. The file is "
+                      "damaged: tell the user.")
+    return cast("dict[str, Any]", saved)  # a saved result: by key
+
+
+#: The file a call key's running attempt holds a lock on (``filelock``)
+#: until its outcome is saved.
+_CLAIM = ".call.lock"
 
 
 def _open_attempt(
-    call_directory: Path, previous: dict[str, Any] | None, section_id: str, fingerprint: str,
-) -> tuple[Path, Path, int] | dict[str, Any]:
-    """``(in_progress, attempt directory, attempt)`` for a new attempt under a
-    call key, or the error record when one is in progress or was interrupted.
+    call_directory: Path, section_id: str, fingerprint: str,
+) -> tuple[FileLock, Path, int] | dict[str, Any]:
+    """``(claim, attempt directory, attempt)`` for a new attempt under a call
+    key, or the refusal while another attempt under it is running.
 
-    Exclusive creation detects interrupted requests with no known outcome. A
-    recorded transport failure may start another attempt under the same key.
+    The claim is a lock on the key's :data:`_CLAIM`, held until the
+    attempt's outcome is saved. A process that dies mid-call releases it,
+    so an interrupted call is made again as the next attempt, as is a
+    recorded transport failure.
     """
-    in_progress = call_directory / ".in_progress"
+    call_directory.mkdir(parents=True, exist_ok=True)
+    claim = FileLock(str(call_directory / _CLAIM), timeout=0,
+                     thread_local=False)
     try:
-        call_directory.mkdir(parents=True, exist_ok=previous is not None)
-        with in_progress.open("x") as handle:
-            handle.write("Request in progress; no completed outcome recorded yet.\n")
-    except FileExistsError:
+        claim.acquire()
+    except Timeout:
         return Refused(
-            RefusalCode.IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED,
+            RefusalCode.IMAGE_CALL_IN_PROGRESS,
+            "An image call for this section at this placement and region "
+            "choice is still running in another process (its folder is "
+            "artifact_dir); no new call was made. Its reply is saved there "
+            "when it lands: trace the section again then.",
             id=section_id, geometry_fingerprint=fingerprint,
             artifact_dir=str(call_directory),
         ).payload()
-    attempt = int((previous or {}).get("attempt", 0)) + 1
+    attempt = 1
+    for path in call_directory.iterdir():
+        made = re.fullmatch(r"attempt-(\d+)", path.name)
+        if made:
+            attempt = max(attempt, int(made.group(1)) + 1)
     directory = call_directory / f"attempt-{attempt:02d}"
     directory.mkdir()
-    return in_progress, directory, attempt
+    return claim, directory, attempt
 
 
 def _finish_attempt(
-    directory: Path, result_path: Path, in_progress: Path, result: dict[str, Any],
+    directory: Path, result_path: Path, claim: FileLock,
+    result: dict[str, Any],
 ) -> dict[str, Any]:
     """Save an attempt's outcome (its own and the call key's) and release the key."""
     _write_json(directory / "result.json", result)
     _write_json(result_path, result)
-    in_progress.unlink()
+    claim.release()
     return dict(result)
 
 
@@ -239,7 +269,8 @@ def shown_labels(
     *exclude* is set to background on the native plane, so only the kept
     regions' borders are drawn and their edge with the rest is an outline.
     Sides (``"CTX:left"``) are the section's as shown, through the placement.
-    Unknown names or sides raise ``ValueError``.
+    Unknown names or sides raise ``ValueError``; a choice that leaves no
+    region, :class:`Refused` ``BAD_ARGS``.
     """
     from langslice.core.atlas.sides import has_sides, native_left
     from langslice.core.fits.deformable.plane_images import regions_mask
@@ -256,7 +287,11 @@ def shown_labels(
     if exclude:
         keep &= ~regions_mask(atlas, labels, exclude, left)
     if not keep.any():
-        raise ValueError("The include / exclude choice leaves no atlas region on this section")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            "The regions chosen (restrict_to, less the section's marked "
+            "damage) leave no atlas region on this section's atlas plane; "
+            "nothing was started. Choose regions the plane shows.")
     return np.where(keep, shown, 0).astype(shown.dtype)
 
 
@@ -287,7 +322,8 @@ def start_correction(
     here, so ``job`` (the image call and its artifacts) may run in another
     thread while the agent keeps working. ``job`` is ``None`` when there is
     nothing to run: a saved reply at this geometry (returned with
-    ``cached``), or an attempt already in progress or interrupted.
+    ``cached``), or an attempt another process is running
+    (``IMAGE_CALL_IN_PROGRESS``; an interrupted one is made again).
 
     *prompt* is the agent's edited copy of the base prompt (blank sends the
     base); the base, the prompt sent and their word diff are saved with the
@@ -296,7 +332,7 @@ def start_correction(
     is part of the call key; an untested profile's request and result say
     so (``profile``, ``untested`` True: :func:`profile_marks`). The calls
     are saved in *calls_dir* (the section's own folder, one subfolder per
-    call key; the job's ``sections/<name>/image_correction``)
+    call key; the job's ``sections/<name>/border_trace``)
     or, without it, in ``<out>/<section filename>``. There is no
     atlas search, model veto, or selection step. Repeated calls at the same
     geometry return the first image reply. Failed transports that returned no
@@ -318,7 +354,8 @@ def start_correction(
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
-        raise ValueError("prompt must be text")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      "prompt is text; nothing was started.")
     # Validate prerequisites before spending a call or marking an attempt.
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
@@ -355,17 +392,17 @@ def start_correction(
     sent = prompt.strip() or base_prompt
     marks = profile_marks(image_model)
 
-    opened = _open_attempt(call_directory, previous, section_id, fingerprint)
+    opened = _open_attempt(call_directory, section_id, fingerprint)
     if isinstance(opened, dict):
         return opened, None
-    in_progress, directory, attempt = opened
+    claim, directory, attempt = opened
     paths = {key: str(directory / filename) for key, filename in {
-        "original": "input_slice.png", "rough_overlay": "rough_border_overlay.png",
-        "raw_reply": "raw_reply.png", "lines_on_original": "lines_on_original.png",
-        "prompt": "prompt.txt", "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
+        "raw_reply": "raw_reply.png", "prompt": "prompt.txt",
+        "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
     }.items()}
-    canvas.save(paths["original"])
-    rough.save(paths["rough_overlay"])
+    # The pictures sent are not kept (the canvas and its placed borders are
+    # drawn again from the request); their PNG digests are.
+    sent_images = {"original": canvas, "rough_overlay": rough}
     Path(paths["prompt"]).write_text(sent)
     Path(paths["base_prompt"]).write_text(base_prompt)
     Path(paths["prompt_diff"]).write_text(prompt_diff(base_prompt, sent) + "\n")
@@ -378,8 +415,7 @@ def start_correction(
         "upright": {"turn_deg": stance.turn_deg, "midline_centred": stance.through is not None,
                     "atlas_margin": FOOTPRINT_MARGIN},
         "attachments": [
-            {"role": role, "path": paths[key],
-             "sha256": hashlib.sha256(Path(paths[key]).read_bytes()).hexdigest()}
+            {"role": role, "sha256": _png_sha256(sent_images[key])}
             for role, key in (_GPT_ATTACHMENTS if gpt_twin else _GEMINI_ATTACHMENTS)
         ],
     }
@@ -397,7 +433,7 @@ def start_correction(
     def job() -> dict[str, Any]:
         try:
             first, second = (canvas, rough) if gpt_twin else (rough, canvas)
-            generated = image_model.call(SegmentationGenerationRequest(
+            generated = image_model.call(BorderTraceRequest(
                 slice_image=first, reference_images=[second], prompt=sent,
                 provider=provider, model=model,
             ))
@@ -406,15 +442,14 @@ def start_correction(
             raw.save(paths["raw_reply"])
             mask = extract_thinned_lines(raw, canvas.size)
             Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
-            border_overlay(canvas, mask).save(paths["lines_on_original"])
             # Even an empty drawing is retained; anatomy is not a submit gate.
             result.update(
                 status="ok", route=generated.route, raw_size=list(raw.size),
                 model_border_pixels=int(mask.sum()),
             )
         except Exception as exc:
-            result.update(status="error", error=type(exc).__name__, message=str(exc))
-        return _finish_attempt(directory, result_path, in_progress, result)
+            result.update(Refused.from_exception(exc).payload())
+        return _finish_attempt(directory, result_path, claim, result)
 
     return submitted, job
 

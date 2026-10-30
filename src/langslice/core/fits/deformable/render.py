@@ -138,7 +138,10 @@ def warped_border_layers(
 def _without_field(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 
-    return replace(record, field_mm=np.zeros_like(record.field_mm))
+    # Zero fields are no step's: the copy keeps none to rebuild from.
+    return replace(
+        record, field_mm=np.zeros_like(record.field_mm), stored_step=None
+    )
 
 
 def _drawn_layers(
@@ -252,7 +255,7 @@ def resampled_record(
     return replace(
         record, placement=placement, section_size=size, field_mm=field,
         inverse_field_mm=None, labels=np.zeros(footprint.shape, dtype=record.labels.dtype),
-        footprint=footprint, parent=None,
+        footprint=footprint, parent=None, stored_step=None,
     )
 
 

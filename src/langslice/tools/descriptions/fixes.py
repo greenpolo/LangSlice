@@ -22,9 +22,9 @@ FIXES: dict[str, str] = {
         "Name sections by filename, as `langslice-job {job} status` "
         "lists them."
     ),
-    RefusalCode.UNKNOWN_SECTION: (
-        "Name sections by filename, as `langslice-job {job} status` "
-        "lists them."
+    RefusalCode.SECTION_GONE: (
+        "The picture shows a section the stack no longer holds; "
+        "`langslice-job {job} status` lists the sections it holds now."
     ),
     RefusalCode.NO_JOB: (
         "Create the job first: `langslice-job <image folder> init`; a job made "
@@ -91,7 +91,7 @@ FIXES: dict[str, str] = {
         "on the job's atlas."
     ),
     RefusalCode.INPUTS_CHANGED: (
-        "Rerun `langslice-job {job} init` with --fresh to start a new job "
+        "Rerun `langslice-job {job} init` with --no-resume to start a new job "
         "from these inputs (the old one's work is replaced), or with the "
         "inputs the job was made from (job.json, spec.inputs) to continue it."
     ),
@@ -111,19 +111,27 @@ FIXES: dict[str, str] = {
         "no break (the user asked for a strict interval)."
     ),
     RefusalCode.OPTION_OFF: (
-        "That option is switched off for this job; use one of the others the "
-        "message lists."
+        "That option is switched off for this job: leave it out, or use one "
+        "of the others the message lists."
     ),
-    RefusalCode.FLIP_DISABLED: "Flipping is switched off for this job; leave flip out.",
     RefusalCode.INVALID_LINEAR_PLACEMENT: (
-        "Give the section a position and a transform"
+        "Give the section a usable transform"
         "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
         "elastix_affine||interactive_transform=interactive_transform"
-        "]])]] first."
+        "]])]] first; the message says what is wrong with the one it has."
+    ),
+    RefusalCode.DEFORMATION_UNREADABLE: (
+        "The section's saved deformation cannot be read: put the section "
+        "back on another registration[[?restore_registration  "
+        "(restore_registration)]], or undo the step that applied it."
+    ),
+    RefusalCode.IMAGE_CALL_IN_PROGRESS: (
+        "Another process is making this image call; call again once its "
+        "reply has landed."
     ),
     RefusalCode.ENGINE_MISSING: (
-        "torch or fireants does not import on this host; reinstall "
-        "LangSlice (see the message)."
+        "The engine is not installed on this host (the message names what is "
+        "missing): use another method, or ask the user to install it."
     ),
     RefusalCode.FIT_FAILED: (
         "The engine failed on this section: the message "

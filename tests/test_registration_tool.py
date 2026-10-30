@@ -1,5 +1,8 @@
 """The agent controls minimal prompt edits; the tool owns placement and first-result retention."""
 
+import hashlib
+import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,17 +16,15 @@ from langslice.core.fits.frame import (
 )
 from langslice.core.fits.trace import trace as tool
 from langslice.core.fits.trace.canvas import Upright
-from langslice.core.fits.trace.lines import (
-    border_overlay,
-    smooth_border_overlay,
-)
+from langslice.core.fits.trace.lines import smooth_border_overlay
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
+from langslice.core.fits.trace.request import ImageModel
 from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.job.state_file import stack_to_json
-from langslice.providers.connections import ImageModel, resolve_image_model
+from langslice.providers.connections import resolve_image_model
 
 
 def _correct(state, ctx, section_id, **kwargs):
@@ -68,7 +69,9 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     calls = []
     mask = np.zeros((40, 60), dtype=bool)
     mask[5:30, 23] = True
-    raw = border_overlay(Image.new("RGB", original.size, (180, 20, 30)), mask)
+    pixels = np.full((*mask.shape, 3), (180, 20, 30), dtype=np.uint8)
+    pixels[mask] = (255, 255, 0)
+    raw = Image.fromarray(pixels)
 
     def generate(request):
         calls.append(request)
@@ -104,8 +107,13 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     assert not np.array_equal(np.asarray(expected), np.asarray(original))
     paths = result["artifact_paths"]
     np.testing.assert_array_equal(Image.open(paths["raw_reply"]), raw)
-    overlay = np.asarray(Image.open(paths["lines_on_original"]))
-    np.testing.assert_array_equal(overlay[~mask], np.asarray(original)[~mask])
+    # The pictures sent are not kept, only their PNG digests, in the order sent.
+    folder = Path(result["artifact_dir"])
+    for name in ("input_slice.png", "rough_border_overlay.png", "lines_on_original.png"):
+        assert not (folder / name).exists()
+    attachments = json.loads((folder / "request.json").read_text())["attachments"]
+    assert [entry["sha256"] for entry in attachments] == [
+        _png_sha256(request.slice_image), _png_sha256(request.reference_images[0])]
     assert stack_to_json(state) == before
     assert result["fit_performed"] is False
 
@@ -167,6 +175,28 @@ def test_transport_can_retry_without_discarding_any_image_reply(case, tmp_path, 
     assert cached["cached"] and len(calls) == 2
 
 
+def test_a_running_call_refuses_another_and_an_interrupted_one_is_made_again(
+        case, tmp_path):
+    """While an attempt's call runs, the same call is refused (another process
+    holds it); a call whose process died, its claim released and no reply
+    saved, is made again as the next attempt."""
+    state, ctx, record, original, *_ = case
+    calls = []
+    model = _model(lambda request: calls.append(request) or SimpleNamespace(
+        image=original, route="test"))
+    submitted, job = tool.start_correction(state, ctx, record.id, out=tmp_path / "out",
+                                           image_model=model)
+    assert submitted["status"] == "running" and job is not None
+    refused, none = tool.start_correction(state, ctx, record.id, out=tmp_path / "out",
+                                          image_model=model)
+    assert none is None and refused["error"] == "IMAGE_CALL_IN_PROGRESS"
+    assert refused["artifact_dir"] == str(Path(submitted["artifact_dir"]).parent)
+    del job  # the process ends mid-call: its claim goes with it, no reply saved
+    again = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    assert again["status"] == "ok" and again["attempt"] == 2 and len(calls) == 1
+    assert Path(submitted["artifact_dir"]).name == "attempt-01"
+
+
 def test_another_image_provider_makes_a_trace_stale(case):
     state, ctx, record, *_ = case
     first = tool.correction_fingerprint(state, ctx, record.id)
@@ -183,3 +213,9 @@ def test_a_door_resolves_the_provider_and_none_has_no_image_model():
     assert resolve_image_model("gemini-api", "some-model").model == "some-model"
     with pytest.raises(ValueError, match="image-model provider"):
         resolve_image_model("none")
+
+
+def _png_sha256(image: Image.Image) -> str:
+    encoded = io.BytesIO()
+    image.save(encoded, format="PNG")
+    return hashlib.sha256(encoded.getvalue()).hexdigest()

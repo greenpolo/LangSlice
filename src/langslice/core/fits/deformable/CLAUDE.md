@@ -9,9 +9,8 @@ behind `elastix_affine` (`core/transform.elastix_affine`: `prepare_fit`
 builds its images and masks, `engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
 markers read an applied record (`core/maps/section_maps.py`); the ABBA connector receives
 it as landmark pairs (`core/maps/abba.py`). `engines.py` is LangSlice's one
-itk-elastix registration wrapper; `engines.preload()` imports torch, FireANTs,
-SimpleITK and the ITK Elastix classes without running a fit or touching the GPU
-(the agent CLI's warm process forks after it). On Windows, `import_fireants` gives
+itk-elastix registration wrapper; torch, FireANTs, SimpleITK and ITK are
+imported inside the functions that use them, so a verb that runs no fit loads none of them. On Windows, `import_fireants` gives
 FireANTs' import a stand-in `fcntl` (it imports the Unix-only module for a
 multi-GPU file lock LangSlice never takes).
 
@@ -293,15 +292,35 @@ folder's maps (`coords.tif`, `labels.tif`, `residual.tif`, written by
 `core/maps/section_maps.py` (`native_points`).
 
 On disk (`save(directory)` / `load(directory)`, `docs/reference/file_formats.md`):
-`record.json` (format `RECORD_VERSION` 2, written last: a folder without it
-is incomplete) and `warp.ome.zarr` (`ome_warp.py`: a Zarr v3 store in the
-OME-Zarr 0.6 layout; the fields `(2, rows, cols)` `(dy, dx)` float16, Blosc
-zstd + shuffle, read back as `(rows, cols, 2)` float32; `warped_labels`,
-`footprint`, `left_out`, `weights` (float16) lossless; the root's `ome.scene` states section mm
--> placed atlas mm (a `bijection` of the two `displacements`) -> atlas µm (a
-`sequence`: scale, the placement's inverse affine, the plane-to-volume
-affine, the resolution), written from the record and never read back). No
-other format is read. The parent is BY REFERENCE: `record.json`'s `parent`
+`record.json` (format `RECORD_VERSION` 3, written last: a folder without it
+is incomplete; format 2 is read too) and `warp.ome.zarr` (`ome_warp.py`: a
+Zarr v3 store in the OME-Zarr 0.6 layout; `warped_labels`, `footprint`,
+`left_out`, `weights` (float16) lossless; the root's `ome.scene` states
+section mm -> placed atlas mm (a `bijection` of two `displacements`, when
+the stored fields are the whole map) -> atlas µm (a `sequence`: scale, the
+placement's inverse affine, the plane-to-volume affine, the resolution),
+written from the record and never read back). The fields are stored as
+`record.json`'s `fields` says (`fields.py`, the record's `stored_step`):
+`engine_grid`, the engine's own step on its working grid, float32 (an
+`EngineStep`), which loading carries onto the section grid
+(`WorkingGrid.field_to_section`) and composes with the parent
+(`fields.compose_forward` / `compose_inverse`) by the very functions
+`finish_fit` made the record with, so the rebuilt fields are the saved
+record's bit for bit; `landmark_mesh`, nothing (the mesh in
+`engine.native_parameters` is a `MeshStep`, rebuilt by
+`fields.mesh_fields` on its stored triangles, the landmark tool's own
+fields); both write `fields_sha256` in `record.json`
+(`record.fields_digest`, the float16 fields as made) and loading logs a
+warning, not a refusal, when the rebuilt fields hash otherwise (another
+OpenCV, SciPy or CPU; a record without it is not checked);
+`section_grid`, the fields whole as
+float16 `(2, rows, cols)` `(dy, dx)` (a map made elsewhere, whose fields are
+the whole map even with a parent; a restricted fit, whose tapered step's
+inverse `_invert_step` takes seconds; a fit whose working grid is the
+section's; every format-2 record). Loading reads the parent chain eagerly
+(each rebuild composes onto its parent's fields: about 20 ms per engine
+step, about 3 s for a landmark mesh at 1536 px, most of it the inverse). The parent is BY
+REFERENCE: `record.json`'s `parent`
 is the parent's folder name (`saved_as`), a sibling folder; `save` saves a
 parent that is not there first (one without `saved_as` is a `ValueError`),
 `load` reads the chain from the siblings. `save` rounds the fields to
@@ -310,7 +329,8 @@ float16 precision in memory first (`round_to_storage`,
 does the same for every record it holds, so a record in memory equals the
 one read back and a fit built on either is the same (SyN refinements are
 sensitive to their start: a 0.24 µm change of a soft whole-section
-refinement's start moved its result by up to 1 mm on a rat section).
+refinement's start moved its result by up to 1 mm on a rat section);
+`finish_fit` composes a step onto its parent's fields at that precision.
 `RecordStore` saves under `deformable/<key[:24]>` and deletes nothing, so
 undo and every child find their records.
 
@@ -386,7 +406,7 @@ mm_per_px` over *placement*, its inverse by `_invert_step`'s fixed point
 (guess: minus the forward field), `prepare_warp` and `finish_fit` as for the
 landmark warp below, `engine["name"]` *engine*. A tool plugin's
 deformations go through it (`core.fits.deformation.record_from_map`,
-`tools.deformable.warp_from_map`).
+`tools.warps.warp_from_map`).
 
 ## Landmark record adapter
 

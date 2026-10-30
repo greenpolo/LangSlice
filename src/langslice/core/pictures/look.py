@@ -90,7 +90,7 @@ from langslice.core.sections.native import framed_window
 from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.stack.rows import fields_to_json, with_fields
 from langslice.core.stack.section import Angles, Section
-from langslice.core.stack.stack import Stack
+from langslice.core.stack.stack import Stack, unknown_sections
 from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
@@ -294,7 +294,7 @@ def differs_since(state: Stack, held: dict[str, Any]) -> bool:
     return snapshot(state, ids, view_angles="view_angles" in held) != to_jsonable(held)
 
 
-#: The section fields a registration is (:mod:`langslice.job.registrations`):
+#: The section fields a registration is (``job/history.py``):
 #: a picture of a registration the section did not hold differs in them by
 #: design (:func:`changed_since`'s *besides*).
 REGISTRATION_FIELDS: tuple[str, ...] = ("flip", "rotation_deg", "transform", "deformation")
@@ -322,14 +322,16 @@ def changed_since(state: Stack, held: dict[str, Any], *,
 
 def restored(state: Stack, held: dict[str, Any]) -> Stack:
     """A copy of *state* with the snapshot *held* put back; *state* is
-    untouched. :class:`Refused` ``UNKNOWN_SECTION`` when a section of the
+    untouched. :class:`Refused` ``SECTION_GONE`` when a section of the
     snapshot is no longer in the stack."""
     out = copy.deepcopy(state)
     snapshots = cast("dict[str, JsonObject]", held.get("sections") or {})
     for section_id in snapshots:
         if out.by_id(section_id) is None:
-            raise Refused(RefusalCode.UNKNOWN_SECTION,
-                          f"{section_id} is no longer in the stack")
+            raise Refused(RefusalCode.SECTION_GONE,
+                          f"{section_id} is no longer in the stack, so this "
+                          "picture cannot be drawn again; draw the stack as "
+                          "it is now.")
     for index, section in enumerate(out.slices):
         fields = snapshots.get(section.id)
         if fields is not None:
@@ -470,14 +472,13 @@ def _where(record: Section) -> str:
 def _records(state: Stack, ids: Sequence[str]) -> list[Section]:
     if not ids:
         return sorted(state.slices, key=lambda record: record.index_original)
-    out: list[Section] = []
-    for section_id in ids:
-        record = state.by_id(str(section_id))
-        if record is None:
-            raise Refused(RefusalCode.UNKNOWN_SECTION,
-                          f"no section {section_id!r} in the stack")
-        out.append(record)
-    return out
+    records = [state.by_id(str(name)) for name in ids]
+    unknown = [str(name) for name, record in zip(ids, records, strict=True)
+               if record is None]
+    if unknown:
+        raise Refused(RefusalCode.UNKNOWN_SLICE_IDS,
+                      **unknown_sections(state, unknown))
+    return [record for record in records if record is not None]
 
 
 def _zoom_pixels(window: Sequence[float], base: tuple[float, float]) -> tuple[float, ...]:
@@ -681,7 +682,9 @@ def overlay_region_window(
     records = _records(drawn, request.sections)
     if len(records) != 1:
         raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                      "Region zoom needs a single-section overlay.")
+                      "region needs an overlay picture of one section; "
+                      "draw that section's overlay alone and give its "
+                      "picture.")
     record = records[0]
     names, image = _images_for(ws, record, request.images)
     options = _options(request, names=names, image=image,
@@ -978,8 +981,9 @@ def look(
                                    long_edge, base, base_um, record.angles)
                     for record in records]
         if not request.positions_mm:
-            raise Refused(RefusalCode.NO_POSITIONS,
-                          "atlas mode needs positions_mm or sections")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "atlas mode needs positions_mm or sections; "
+                          "nothing was drawn.")
         return [_atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
                 for mm in request.positions_mm]
     records = _records(state, request.sections)
@@ -997,7 +1001,7 @@ def redraw(
     """The picture of *recipe* drawn again at *window* (fractions of its
     unzoomed content; empty: whole), from the stack as it was when the
     recipe was made (``stale`` when it has changed since).
-    :class:`Refused` ``UNKNOWN_SECTION`` when a section it showed is gone.
+    :class:`Refused` ``SECTION_GONE`` when a section it showed is gone.
     """
     request = replace(LookRequest.from_args(recipe["args"]),
                       zoom=tuple(float(v) for v in window))

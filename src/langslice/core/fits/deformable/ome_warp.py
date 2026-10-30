@@ -19,21 +19,34 @@ programs through the OME-NGFF 0.6 coordinate transformations (RFC-5):
   volume indices (``atlas["native_to_volume_index"]``) and a ``scale`` by
   the atlas resolution; and an ``identity`` from each image group's own
   ``section`` system to the scene's;
-- ``coordinateTransformations/field`` and ``.../inverse_field``: multiscale
-  groups of one level ``s0``, ``(2, rows, cols)`` float16 ``(dy, dx)`` in
-  mm (the ``displacement`` axis first, as the spec orders it; the record
-  holds ``(rows, cols, 2)`` ``(dx, dy)`` float32);
+- the fields as ``record.json``'s ``fields`` says (the ``displacement``
+  axis first, as the spec orders it, ``(dy, dx)`` in mm; the record holds
+  ``(rows, cols, 2)`` ``(dx, dy)`` float32):
+
+  - ``engine_grid``: ``coordinateTransformations/step_field`` and
+    ``.../step_inverse_field``, the engine's own fields of this step on its
+    working grid, float32;
+  - ``landmark_mesh``: none (the mesh is in ``record.json``);
+  - ``section_grid`` (a map made elsewhere, a restricted fit, and every
+    format-2 record): ``coordinateTransformations/field`` and
+    ``.../inverse_field`` on the section grid, float16;
+
+  each a multiscale group of one level ``s0``;
 - ``warped_labels`` (the leaf ids under the composed warp), ``footprint``
   ``left_out`` and ``weights`` (the engine's own P(match) sorting of the
   section, float16; absent when the engine estimated nothing): multiscale
   images of one level on the section grid, stored losslessly.
 
-Every array is one chunk, Blosc zstd with byte shuffle. The fields are
-written as float16 (rounding of at most 0.25 µm on a displacement under
-0.5 mm, 0.5 µm under 1 mm) and read back as float32; :func:`at_storage_precision` rounds a
-field the same way, so a record kept in memory equals the one read back.
-The scene metadata is derived from the record for other readers; LangSlice
-reads only the arrays (the placement comes from ``record.json``).
+Every array is one chunk, Blosc zstd with byte shuffle. A record's fields
+are kept at float16 precision (rounding of at most 0.25 µm on a
+displacement under 0.5 mm, 0.5 µm under 1 mm) and read back as float32;
+:func:`at_storage_precision` rounds a field the same way, so a record kept
+in memory equals the one read back. The scene's deformation is the stored
+fields when they are the whole map (fields stored whole, or an engine
+step on the linear placement); a step to compose with its parent and a
+mesh are left out of it. The scene metadata is derived from the
+record for other readers; LangSlice reads only the arrays (the placement
+comes from ``record.json``).
 """
 
 from __future__ import annotations
@@ -44,16 +57,27 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from langslice.core.fits.deformable.fields import EngineStep
+from langslice.core.fits.deformable.geometry import WorkingGrid
+
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
 
 #: The store's folder name inside a record's folder.
 WARP_STORE = "warp.ome.zarr"
 OME_VERSION = "0.6"
-#: How the displacement fields are stored (read back as float32).
+#: How the section-grid displacement fields are stored (read back as float32).
 FIELD_DTYPE = np.float16
+#: How an engine's own working-grid fields are stored: as it produced them.
+STEP_DTYPE = np.float32
 FIELD_GROUP = "coordinateTransformations/field"
 INVERSE_GROUP = "coordinateTransformations/inverse_field"
+STEP_GROUP = "coordinateTransformations/step_field"
+STEP_INVERSE_GROUP = "coordinateTransformations/step_inverse_field"
+#: The fields :func:`read` returns, by the group that holds each.
+FIELD_GROUPS = {"field_mm": FIELD_GROUP, "inverse_field_mm": INVERSE_GROUP,
+                "step_field_mm": STEP_GROUP,
+                "step_inverse_field_mm": STEP_INVERSE_GROUP}
 #: The record's other arrays, by the image group that holds each.
 IMAGE_GROUPS = {"labels": "warped_labels", "footprint": "footprint", "left_out": "left_out",
                 "weights": "weights"}
@@ -111,38 +135,52 @@ def _to_volume_yx(native_to_volume: np.ndarray) -> list[list[float]]:
 
 
 def _image_attributes(name: str, system: dict[str, Any], scale: list[float],
-                      ) -> dict[str, Any]:
+                      *, origin: list[float] | None = None) -> dict[str, Any]:
+    to_system = {"input": {"path": LEVEL}, "output": {"name": system["name"]}}
+    placing = {"type": "scale", "scale": scale, **to_system}
+    if origin is not None:  # a working grid: its first pixel is off zero
+        steps = [{"type": "scale", "scale": scale},
+                 {"type": "translation", "translation": origin}]
+        placing = {"type": "sequence", "transformations": steps, **to_system}
     return {"ome": {"version": OME_VERSION, "multiscales": [{
         "name": name,
         # One level: nothing was downsampled (the spec's SHOULD fields).
-        "type": "none", "metadata": {"description": "a single full-resolution level"},
+        "type": "none",
+        "metadata": {"description": "a single full-resolution level"},
         "coordinateSystems": [system],
-        "datasets": [{"path": LEVEL, "coordinateTransformations": [{
-            "type": "scale", "scale": scale,
-            "input": {"path": LEVEL}, "output": {"name": system["name"]},
-        }]}],
+        "datasets": [{"path": LEVEL, "coordinateTransformations": [placing]}],
     }]}}
 
 
-def _field_attributes(name: str, frame: str, mm: float) -> dict[str, Any]:
+def _field_attributes(name: str, frame: str, mm: float,
+                      *, grid: WorkingGrid | None = None) -> dict[str, Any]:
     axes = [{"name": "c", "type": "displacement", "discrete": True}, *_plane_axes("millimeter")]
-    return _image_attributes(name, _system(frame, axes), [1.0, mm, mm])
+    if grid is None:
+        return _image_attributes(name, _system(frame, axes), [1.0, mm, mm])
+    spacing_x, spacing_y = grid.spacing_mm
+    origin_x, origin_y = grid.origin_mm
+    return _image_attributes(name, _system(frame, axes),
+                             [1.0, spacing_y, spacing_x],
+                             origin=[0.0, origin_y, origin_x])
 
 
 def scene_attributes(record: DeformableRecord, images: list[str]) -> dict[str, Any]:
     """The root group's attributes: the ``ome.scene`` of the module text,
     *images* the image groups written."""
     mm = float(record.mm_per_px)
-    forward = {"type": "displacements", "path": FIELD_GROUP, "interpolation": "linear",
-               "name": "section to placed atlas"}
-    warp: dict[str, Any] = forward
-    if record.inverse_field_mm is not None:
-        warp = {"type": "bijection",
-                "forward": forward,
-                "inverse": {"type": "displacements", "path": INVERSE_GROUP,
-                            "interpolation": "linear", "name": "placed atlas to section"}}
-    warp = {**warp, "name": "the deformation", "input": {"name": SECTION},
-            "output": {"name": PLACED}}
+    groups = _whole_map_groups(record)
+    deformation = []
+    if groups is not None:
+        forward = {"type": "displacements", "path": groups[0],
+                   "interpolation": "linear", "name": "section to placed atlas"}
+        warp: dict[str, Any] = forward
+        if groups[1] is not None:
+            inverse = {"type": "displacements", "path": groups[1],
+                       "interpolation": "linear",
+                       "name": "placed atlas to section"}
+            warp = {"type": "bijection", "forward": forward, "inverse": inverse}
+        ends = {"input": {"name": SECTION}, "output": {"name": PLACED}}
+        deformation = [{**warp, "name": "the deformation", **ends}]
     atlas = record.atlas
     resolution = [float(v) for v in atlas["resolution_um"]]
     placement = {
@@ -166,8 +204,27 @@ def scene_attributes(record: DeformableRecord, images: list[str]) -> dict[str, A
             _system(PLACED, _plane_axes("millimeter")),
             _system(ATLAS, _atlas_axes(str(atlas.get("orientation", "")))),
         ],
-        "coordinateTransformations": [warp, placement, *links],
+        "coordinateTransformations": [*deformation, placement, *links],
     }}}
+
+
+def _whole_map_groups(
+    record: DeformableRecord,
+) -> tuple[str, str | None] | None:
+    """Return the field groups when they hold the whole deformation.
+
+    The forward group and the inverse's (None without one); None when the
+    stored arrays are a step to compose with the parent, or a landmark
+    mesh's (no arrays).
+    """
+    step = record.stored_step
+    if step is None:
+        if record.inverse_field_mm is None:
+            return FIELD_GROUP, None
+        return FIELD_GROUP, INVERSE_GROUP
+    if isinstance(step, EngineStep) and record.parent is None:
+        return STEP_GROUP, STEP_INVERSE_GROUP
+    return None
 
 
 # --- writing and reading --------------------------------------------------------------
@@ -188,7 +245,7 @@ def _array(group: Any, name: str, data: np.ndarray, dimensions: tuple[str, ...])
 
 def _field_planes(field_mm: np.ndarray) -> np.ndarray:
     """``(rows, cols, 2)`` ``(dx, dy)`` as the stored ``(2, rows, cols)`` ``(dy, dx)``."""
-    return np.stack([field_mm[..., 1], field_mm[..., 0]]).astype(FIELD_DTYPE)
+    return np.stack([field_mm[..., 1], field_mm[..., 0]])
 
 
 def write(directory: str | Path, record: DeformableRecord) -> Path:
@@ -202,12 +259,28 @@ def write(directory: str | Path, record: DeformableRecord) -> Path:
     mm = float(record.mm_per_px)
     root = zarr.open_group(str(path), mode="w", zarr_format=3)
     transforms = root.create_group("coordinateTransformations")
-    fields = [("field", record.field_mm, SECTION)]
-    if record.inverse_field_mm is not None:
-        fields.append(("inverse_field", record.inverse_field_mm, PLACED))
-    for name, field_mm, frame in fields:
-        group = transforms.create_group(name, attributes=_field_attributes(name, frame, mm))
-        _array(group, LEVEL, _field_planes(field_mm), ("c", "y", "x"))
+
+    # a record without a step keeps its fields whole, on the section grid
+    step = record.stored_step
+    whole = [("field", record.field_mm, SECTION)] if step is None else []
+    if record.inverse_field_mm is not None and step is None:
+        whole.append(("inverse_field", record.inverse_field_mm, PLACED))
+    for name, field_mm, frame in whole:
+        attributes = _field_attributes(name, frame, mm)
+        group = transforms.create_group(name, attributes=attributes)
+        planes = _field_planes(field_mm).astype(FIELD_DTYPE)
+        _array(group, LEVEL, planes, ("c", "y", "x"))
+
+    # an engine's step on its working grid, as the engine produced it
+    if isinstance(step, EngineStep):
+        engine_fields = [("step_field", step.field_mm, SECTION),
+                         ("step_inverse_field", step.inverse_field_mm, PLACED)]
+        for name, field_mm, frame in engine_fields:
+            attributes = _field_attributes(name, frame, mm, grid=step.grid)
+            group = transforms.create_group(name, attributes=attributes)
+            planes = _field_planes(field_mm).astype(STEP_DTYPE)
+            _array(group, LEVEL, planes, ("c", "y", "x"))
+
     images: list[str] = []
     for attribute, name in IMAGE_GROUPS.items():
         data = getattr(record, attribute)
@@ -227,10 +300,10 @@ def _field(root: Any, group: str) -> np.ndarray:
 
 
 def read(directory: str | Path) -> dict[str, np.ndarray | None]:
-    """The arrays of ``<directory>/warp.ome.zarr``: ``field_mm`` and
-    ``inverse_field_mm`` (``(rows, cols, 2)`` float32 ``(dx, dy)``, the
-    inverse None when not stored), ``labels``, ``footprint``, ``left_out`` and ``weights``
-    (None when not stored). ``FileNotFoundError`` without the store."""
+    """The arrays of ``<directory>/warp.ome.zarr``: the fields of
+    :data:`FIELD_GROUPS` (``(rows, cols, 2)`` float32 ``(dx, dy)``),
+    ``labels``, ``footprint``, ``left_out`` and ``weights``, each None when
+    not stored. ``FileNotFoundError`` without the store."""
     import zarr
 
     path = Path(directory) / WARP_STORE
@@ -238,11 +311,9 @@ def read(directory: str | Path) -> dict[str, np.ndarray | None]:
         raise FileNotFoundError(f"{path} does not exist")
     root: Any = zarr.open_group(str(path), mode="r")
     members = {name for name, _ in root.members(max_depth=None)}
-    arrays: dict[str, np.ndarray | None] = {
-        "field_mm": _field(root, FIELD_GROUP),
-        "inverse_field_mm": (_field(root, INVERSE_GROUP)
-                             if f"{INVERSE_GROUP}/{LEVEL}" in members else None),
-    }
+    arrays: dict[str, np.ndarray | None] = {}
+    for key, group in FIELD_GROUPS.items():
+        arrays[key] = _field(root, group) if f"{group}/{LEVEL}" in members else None
     for attribute, name in IMAGE_GROUPS.items():
         key = f"{name}/{LEVEL}"
         arrays[attribute] = np.asarray(root[key][...]) if key in members else None

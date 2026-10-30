@@ -90,8 +90,8 @@ def test_unknown_ids_are_named_and_nothing_is_written(tmp_path: Path):
     before = stack_to_json(state)
     result = _tool(box, "position_sections")([{"id": "nope.png", "position_mm": 1.0}],
                                              view=False)
-    assert result["unknown_ids"] == ["nope.png"]
-    assert result["error"] == "NOTHING_WRITTEN"
+    assert result["unknown"] == ["nope.png"]
+    assert result["error"] == "UNKNOWN_SLICE_IDS"
     assert stack_to_json(state) == before
     assert box.job.undo_stack == []
     assert load_checkpoint(ctx.checkpoint_path) is None
@@ -306,7 +306,7 @@ def test_mark_damage_refuses_unknown_regions_and_sections(tmp_path: Path):
 def test_submit_refuses_an_unplaced_stack(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"])
     result = _submit(box)
-    assert result["error"] == "MISSING_POSITIONS"
+    assert result["error"] == "MISSING_POSITIONS" and result["status"] == "refused"
     assert len(result["missing_ids"]) == 5
     assert state.submitted is False
 

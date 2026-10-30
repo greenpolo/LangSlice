@@ -1,6 +1,6 @@
 """SPOmiAlign as a LangSlice tool: the adapter, run in LangSlice's process.
 
-Load it with ``--tool-plugin langslice.engines.spomialign.plugin:tools`` or
+Load it with ``--plugins langslice.engines.spomialign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.spomialign.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python``
 (the ``rigid_spomialign`` interpreter), ``src`` (SPOmiAlign's ``SPOmiAlign`` folder),
@@ -316,12 +316,12 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
     if done.returncode != 0 or not dst.exists():
         missing = _weights_missing()
         if missing:
-            raise ToolError(RefusalCode.ENGINE_FAILED,
+            raise ToolError(RefusalCode.ENGINE_MISSING,
                             "SPOmiAlign's matcher weights are not in torch's "
                             "hub cache and could not be downloaded: "
                             + ", ".join(WEIGHTS[name] for name in missing))
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError(RefusalCode.ENGINE_FAILED,
+        raise ToolError(RefusalCode.FIT_FAILED,
                         f"SPOmiAlign did not run: {tail[0]}")
     out = np.load(dst)
     results = []
@@ -388,7 +388,7 @@ def _require(config: dict[str, Any], *keys: str) -> None:
     for key in keys:
         path = Path(str(config[key])).expanduser()
         if not path.exists():
-            raise ToolError(RefusalCode.ENGINE_UNAVAILABLE,
+            raise ToolError(RefusalCode.ENGINE_MISSING,
                             f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
                             f"it in the plugin_config of {REF})")
 
@@ -540,8 +540,8 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                 "pairs_dropped_by_mask": by_mask})
             relative = here.relative_to(ctx.job_dir) if here.is_relative_to(ctx.job_dir) else here
             if "error" in got:
-                rows.append({"id": sid, **ToolError(RefusalCode.FIT_FAILED).payload(),
-                             "message": str(got["error"]), "files": str(relative)})
+                failed = ToolError(RefusalCode.FIT_FAILED, f"{got['error']}")
+                rows.append({**failed.payload(section_id=sid), "files": str(relative)})
                 continue
             what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"
             note = (f"SPOmiAlign {what}, atlas {resolved}, {int(got['pairs'])} pairs, "

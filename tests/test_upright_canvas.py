@@ -28,12 +28,13 @@ from langslice.core.fits import frame as handoff
 from langslice.core.fits.frame import LinearRegistrationInput
 from langslice.core.fits.trace import trace as tool
 from langslice.core.fits.trace.canvas import upright
+from langslice.core.fits.trace.request import ImageModel
 from langslice.core.geometry.oblique import plane_index_affine
 from langslice.core.space import atlas_space_context
 from langslice.core.stack.codec import affine_from_json, trace_from_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.providers.connections import ImageModel, resolve_image_model
+from langslice.providers.connections import resolve_image_model
 from tests.deformable_synthetic import SyntheticAtlas
 
 POSITION_MM = 0.1
@@ -147,7 +148,7 @@ def test_lines_drawn_on_the_turned_canvas_read_back_onto_the_section_borders(
     assert job is not None
     result = job()
     assert result["status"] == "ok" and result["model_border_pixels"] > 0
-    record.image_correction = trace_from_json(result)
+    record.border_trace = trace_from_json(result)
 
     grid = SimpleNamespace(record=record, image=render,
                            placement=SimpleNamespace(atlas_to_section=atlas_to_slice))

@@ -17,10 +17,11 @@ from langslice.core.stack.codec import (
     trace_to_json,
 )
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
-from langslice.job.job import apply_host_inputs
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.host_inputs import apply_host_inputs
 from langslice.job.settings.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
+from langslice.tools.events import target_ids
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
@@ -48,7 +49,7 @@ def test_image_tool_is_opt_in(tmp_path: Path):
     assert restored.nonlinear == NonlinearSpec()
 
 
-def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, monkeypatch):
+def test_border_trace_runs_in_background_and_submit_waits(tmp_path: Path, monkeypatch):
     import threading
 
     from langslice.core.fits.trace import trace as registration_tool
@@ -81,7 +82,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert (model.provider, model.model) == ("openai-api", "test-model")
     assert calls == [("s0.png", {
         "prompt": "Edited prompt.",
-        "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "image_correction",
+        "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "border_trace",
         "include": (), "exclude": (),
     })]
     # The tool returns while the image call is still running, with no images.
@@ -90,24 +91,24 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert again["status"] == "running" and again["work"] == "w1"
     assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
-    assert saved.slices[0].image_correction == state.slices[0].image_correction
+    assert saved.slices[0].border_trace == state.slices[0].border_trace
     restored = stack_from_json(json.loads(json.dumps(stack_to_json(state))))
-    assert restored.slices[0].image_correction == state.slices[0].image_correction
+    assert restored.slices[0].border_trace == state.slices[0].border_trace
     assert state.slices[0].transform == transform
     _tool(box, "undo")()
-    assert state.slices[0].image_correction is None
+    assert state.slices[0].border_trace is None
     _tool(box, "redo")()
-    assert trace_to_json(state.slices[0].image_correction)["status"] == "running"
+    assert trace_to_json(state.slices[0].border_trace)["status"] == "running"
     release.set()
     # submit waits for the work; the stand-in's trace has no lines to fit.
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert box.job.background.running() == []
-    assert trace_to_json(state.slices[0].image_correction)["status"] == "ok"
+    assert trace_to_json(state.slices[0].border_trace)["status"] == "ok"
     assert trace_to_json(
-        load_checkpoint(ctx.checkpoint_path).slices[0].image_correction)["status"] == "ok"
+        load_checkpoint(ctx.checkpoint_path).slices[0].border_trace)["status"] == "ok"
     assert state.slices[0].transform == transform
-    assert _tool_target_ids(state, "trace_borders", {"section": "s0"}) == ["s0.png"]
-    assert _tool_target_ids(state, "trace_borders", {"section": "0"}) == []
+    assert target_ids(state, "trace_borders", {"section": "s0"}) == ["s0.png"]
+    assert target_ids(state, "trace_borders", {"section": "0"}) == []
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):
@@ -121,8 +122,8 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     box = build_tools(state, ctx, spec)
     _tool(box, "trace_borders")("0")
     _tool(box, "undo")()
-    assert box.job.settle_image_corrections() is False
-    assert state.slices[0].image_correction is None
+    assert box.job.settle_border_traces() is False
+    assert state.slices[0].border_trace is None
     box.job.background.wait_all()
     assert state.slices[0].deformation is None
 
@@ -135,7 +136,7 @@ def test_submit_needs_no_completed_correction(tmp_path, monkeypatch, result):
     """Tracing is the agent's choice: with or without a current trace, submit
     asks for no deformation either unless the host requires one."""
     state, ctx, spec = _placed(tmp_path)
-    state.slices[0].image_correction = None if result is None else trace_from_json(result)
+    state.slices[0].border_trace = None if result is None else trace_from_json(result)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
@@ -156,7 +157,7 @@ def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
     for record in state.slices:
         record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
                             "calibration": {"section_um_per_px": 25, "source": "host"}})
-    state.slices[0].image_correction = trace_from_json(
+    state.slices[0].border_trace = trace_from_json(
         {"id": "s0.png", "status": "ok", "geometry_fingerprint": "current"})
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
@@ -178,7 +179,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
     box = build_tools(state, ctx, spec)
     response = _tool(box, "trace_borders")("s0.png")
     assert response["error"] == "INVALID_LINEAR_PLACEMENT"
-    assert state.slices[0].image_correction is None
+    assert state.slices[0].border_trace is None
     assert not box.job.undo_stack
 
 

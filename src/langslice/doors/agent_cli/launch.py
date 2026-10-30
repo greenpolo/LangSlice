@@ -3,7 +3,8 @@
 A registering agent's job is the message that launched it. The main session
 (the user's app) runs this command and passes ``result.prompt`` unchanged as
 the registration subagent's whole prompt; the subagent's system prompt is
-:data:`langslice.doors.statement.SYSTEM_PROMPT`, the same for every job.
+:data:`langslice.tools.descriptions.statement.SYSTEM_PROMPT`, the same
+for every job.
 
 * ``register`` (the MCP subagent): one line naming the job folder and
   ``start_job``, then the job statement worded for the MCP door, built by
@@ -33,6 +34,18 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
+
+from langslice.doors.jobs import Opened
+from langslice.tools.descriptions.description import CLI_DOOR
+from langslice.tools.descriptions.door_text import (
+    image_model_state,
+    opening_for_cli,
+    read_notes,
+)
+from langslice.tools.descriptions.statement import (
+    StatementFacts,
+    job_statement,
+)
 
 #: The roles, as the connectors name their agents.
 ROLES = ("register", "register-scripting")
@@ -68,8 +81,6 @@ def resolution_range(opened: Any) -> dict[str, int]:
 def facts(opened: Any) -> dict[str, Any]:
     """The CLI job's viewer, ``look`` resolution range and image model, as
     ``init`` reports them."""
-    from langslice.doors.statement import image_model_state
-
     state = image_model_state(opened.spec, connected=opened.image_model_connected)
     return {"viewer": opened.viewer or "claude", "resolution": resolution_range(opened),
             **({"image_model": state} if state is not None else {})}
@@ -108,16 +119,11 @@ def mcp_prompt(job_folder: Path, atlas_loader: Any = None) -> str:
         session.close()
 
 
-def cli_prompt(opened: Any) -> Launch:
+def cli_prompt(opened: Opened) -> Launch:
     """The ``register-scripting`` prompt of the open job *opened* (a
     :class:`langslice.doors.jobs.Opened` for the CLI: its viewer and door)."""
     from langslice.core.pictures.opening import VIEWER_LIMITS, opening_items
     from langslice.doors.jobs import image_model_off
-    from langslice.doors.statement import (
-        job_statement,
-        opening_for_cli,
-        read_notes,
-    )
     from langslice.job.pictures import PICTURE_FILE, captured
 
     job = opened.job
@@ -150,11 +156,14 @@ def cli_prompt(opened: Any) -> Launch:
                                      "label": label})
         number += 1
     spec = job.spec
+    known = StatementFacts.from_run(
+        spec, job.state, opened.ctx, tool_names=opened.listed_verbs(),
+        max_resolution=box.max_view_edge, auto=True)
     statement = job_statement(
-        spec, job.state, opened.ctx, door="cli", tool_names=opened.listed_verbs(),
-        opening=opening_for_cli(folder, listing, spec.switched_off, spec),
-        notes=read_notes(job.layout), max_resolution=box.max_view_edge,
-        image_model_off=image_model_off(spec, opened.image_model_connected), auto=True,
+        known, door=CLI_DOOR,
+        opening=opening_for_cli(folder, listing, spec.switched_off, spec=spec),
+        notes=read_notes(job.layout),
+        image_model_off=image_model_off(spec, opened.image_model_connected),
     )
     launch.prompt = role_line("register-scripting", folder) + "\n\n" + statement
     tools = write_tools(job.layout.folder, box)

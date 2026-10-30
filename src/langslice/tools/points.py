@@ -62,6 +62,9 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [str(section)])
+    if record.position_mm is None:
+        raise Refused(RefusalCode.NO_POSITION, f"{record.id} has no "
+                      "position yet; write its position first.")
     problem = placement_problem(job.state, record)
     if problem is not None:
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -112,8 +115,8 @@ def atlas_points(job: Job, workspace: Workspace, section: Any, xy: Any, *,
     """Section points *xy* (``(N, 2)`` ``[x, y]`` pixels of *frame*: ``file``,
     the image file's own, or ``fit``, the fit grid's) in the atlas, through the
     section's current registration (deformation included). Refused:
-    ``UNKNOWN_SLICE_IDS``, ``INVALID_LINEAR_PLACEMENT``, ``DEFORMATION_UNREADABLE``,
-    ``BAD_ARGS``."""
+    ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``INVALID_LINEAR_PLACEMENT``,
+    ``DEFORMATION_UNREADABLE``, ``BAD_ARGS``."""
     from langslice.core.fits.deformable.geometry import sample_native
     from langslice.core.maps.section_maps import (
         apply,

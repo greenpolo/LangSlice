@@ -20,14 +20,15 @@ The files most readers use are the exports (`exports/quicknii.json`,
   job.lock              the write lock, held while a writer saves
   state.json            the checkpoint: the truth
   registration.json     its public rendering
-  history/              undo and redo steps
+  history/undo.json     the undo and redo steps
   sections/<name>/      per section (<name>: the filename's stem): its maps
                         (written by export_maps), landmarks.json (readable
                         corresponding pairs), deformation records (deformable/),
-                        every registration it has held (registrations.jsonl),
+                        every write that changed it, with the registrations it
+                        held (history.jsonl),
                         its made section images (images/<name>.png), its masks
                         (masks/<name>.npz), image-model traces
-                        (image_correction/), its pictures (views/)
+                        (border_trace/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   views.seq             the picture and call numbers handed out
@@ -54,6 +55,43 @@ The job folder is `<images>/langslice/` unless [`--job-dir`](settings.md#folders
 read-only image folder falls back to `~/.langslice/jobs/<id>/`). Output artifact
 paths are relative to the job folder. The default image folder reference is
 `..`; a separately located job records an absolute image path.
+
+### Old job folders
+
+A job folder an earlier LangSlice wrote opens as the current format
+(`state.json` format 5): one table of migrations (`job/migrations.py`)
+reads it. `state.json` of format 3 is read as format 4 (its section images,
+[below](#section-images-sectionsstemimagesnamepng)), and format 4 as format
+5: a section's image-model border trace, under `image_correction` in format
+4, is under `border_trace`; an old trace stays in
+`sections/<name>/image_correction/` with the paths stored to it, and new
+traces go under `sections/<name>/border_trace/`.
+What a file still holds of what LangSlice no longer has is dropped as it is
+read, with one logged warning per name (the `langslice.job.migrations`
+logger: on the agent CLI's standard error, in a script's logging):
+
+- in `job.json`'s settings: `max_input_tokens`, `max_quota_percent`,
+  `agent_preprocessing`, `agent_damage`, `enabled`, `position.gated`,
+  `position.bayesian`, `transform.flip`, `transform.interactive`,
+  `transform.automatic`, `nonlinear.engine`, and the task `reorder`;
+- in `state.json` and the section histories: the stack's `appearance` and a
+  section's `position_source` and `damaged` (a whole-section damage flag;
+  damage is marked by region, `damaged_regions`).
+
+An open that writes (the agent CLI, the library, MCP, `Job.open`) writes
+`job.json` and `state.json` again at the current format without them, once,
+and logs a `migrated` event; a dry run (`--dry-run`) changes nothing on
+disk. A setting no LangSlice wrote is still refused, naming it. A checkpoint
+older than format 3 (a pre-release LangSlice's) is refused: start a new job.
+
+The undo steps of a LangSlice before the section histories
+(`history/index.json` and `history/step-*.json`) are not read: the job opens
+with one warning (said once per process), undo starts with the session, and
+the files stay on disk. While they are there no deformation record folder is
+deleted, since those steps may name records no line of a history does.
+A section's `registrations.jsonl` of that LangSlice is read as its history,
+so the registration numbers stay as they were; the section's next write
+writes `history.jsonl` from it and removes it.
 
 ## Conventions
 
@@ -185,69 +223,118 @@ tens of MB; at full resolution of a whole-slide scan, hundreds.
 
 Every deformation a section held (each fit, landmark application and
 plugin warp; `<key>` the first 24 hex digits of the record's input digest)
-is a folder that nothing deletes, so undo can return to it. It holds:
+is a folder that stays as long as a line of the section's history names it
+(or names a record whose `parent` chain leads to it), so undo and
+`restore_registration` can return to it. A folder no line names, a fit saved
+and never applied, is deleted after the section's next write. It holds:
 
 - `record.json`, written last (a folder without it is incomplete):
-  `version` 2, `step` (0 for a deformation on the linear placement),
+  `version` 3, `step` (0 for a deformation on the linear placement),
   `parent` (the folder name of the record this step was fitted on, a sibling
   in the same `deformable/` folder, or null), `placement` (atlas, position,
   plane, angles, `atlas_to_section`: native atlas-plane pixel centres to
   fit-grid pixel centres, `section_mm_per_px`), `section_size` (the fit
   grid, `[width, height]`: the oriented section render the fit ran on, not
-  the image file), `settings`, `field_convention`, `inverse_source`,
+  the image file), `settings`, `field_convention`, `fields` (how the
+  fields are stored, below), `inverse_source`,
   `labels`, `excluded_ids`, `engine`, `diagnostics`, `atlas` (name,
-  orientation, `resolution_um`, `native_size`, `native_to_volume_index`)
-  and `provenance`.
+  orientation, `resolution_um`, `native_size`, `native_to_volume_index`),
+  `provenance` and, for `fields` `engine_grid` and `landmark_mesh`,
+  `fields_sha256`: the SHA-256 of the forward then the inverse field as
+  made, float16 `(rows, cols, 2)` `(dx, dy)` in C order. Loading rebuilds
+  the fields and logs a warning when their digest differs (another
+  OpenCV, SciPy or CPU can round a few values the other way); the record
+  is still read.
 - `warp.ome.zarr`: the arrays, a Zarr v3 store in the OME-Zarr 0.6 layout,
   every array one chunk compressed with Blosc zstd and byte shuffle:
 
 | Path | Content |
 |---|---|
-| `coordinateTransformations/field/s0` | float16 `(2, rows, cols)`: `(dy, dx)` in mm on the fit grid. A section point `p = (row, col) * section_mm_per_px` corresponds to the placed atlas point `p + field[:, row, col]`. Stored as float16 (rounding under 0.25 µm on displacements below 0.5 mm; LangSlice reads it as float32) |
-| `coordinateTransformations/inverse_field/s0` | the same for the inverse, on the placed-atlas grid: placed point `q` corresponds to section point `q + inverse_field(q)`; absent when the record has none |
+| `coordinateTransformations/field/s0` | `fields` `section_grid` only. float16 `(2, rows, cols)`: `(dy, dx)` in mm on the fit grid. A section point `p = (row, col) * section_mm_per_px` corresponds to the placed atlas point `p + field[:, row, col]`. Stored as float16 (rounding under 0.25 µm on displacements below 0.5 mm; LangSlice reads it as float32) |
+| `coordinateTransformations/inverse_field/s0` | `fields` `section_grid` only. The same for the inverse, on the placed-atlas grid: placed point `q` corresponds to section point `q + inverse_field(q)`; absent when the record has none |
+| `coordinateTransformations/step_field/s0`, `.../step_inverse_field/s0` | `fields` `engine_grid` only. float32 `(2, rows, cols)`: the engine's own forward and inverse fields of this step, `(dy, dx)` in mm on its working grid (`engine.working_grid`), as it produced them |
 | `warped_labels/s0` | uint32 `(rows, cols)`: the leaf atlas ids under the composed warp |
 | `footprint/s0` | bool `(rows, cols)`: the placed atlas footprint |
 | `left_out/s0` | bool `(rows, cols)`: the section pixels an engine's own sorting left out; absent otherwise |
 | `weights` | float16 `(rows, cols)` in [0, 1]: the engine's own tissue sorting (P(match)) on the fit grid, `make_mask(source="fit")` copies it; absent when the engine estimated none |
 
+The record's fields (forward and inverse, `(rows, cols)` on the fit grid)
+are what `fields` says:
+
+| `fields` | Stored | The fields are |
+|---|---|---|
+| `engine_grid` | the engine's step on its working grid, float32 | that step resized bilinearly onto the fit grid (OpenCV `INTER_LINEAR`, pixel centres on pixel centres) and, with a `parent`, composed with the parent's fields (forward: `u(p) = w(p) + u_parent(p + w(p))`; inverse: `v(q) = v_parent(q) + v_w(q + v_parent(q))`, both sampled bilinearly), then rounded to float16 precision |
+| `landmark_mesh` | nothing: the mesh is `engine.native_parameters` (`source_xy`, `target_xy` in fit-grid pixels, the four fixed corners first, and `simplices`) | the mesh's piecewise-affine map and its inverse on the same triangles at every fit-grid pixel, composed with the parent's as above, then rounded to float16 precision |
+| `section_grid` | the fields themselves, float16 on the fit grid | read as stored: a map made elsewhere (a tool plugin's or a script's, whose fields are the whole map even with a `parent`), a restricted fit (`settings.structures`: its tapered step's inverse takes seconds to compute), a fit whose working grid is the fit grid, and every record of format 2 |
+
+LangSlice reads formats 2 and 3; a format-2 record (written before
+`fields`) holds its fields whole, as `section_grid` does.
+
 Each group is an OME-Zarr multiscale image of one level whose `s0` scale is
 the grid's millimetres per pixel (1 on the displacement axis, `type`
-`displacement`). The root group's `ome.scene` states the whole mapping with
-the OME-NGFF 0.6 coordinate transformations, so another program can read it
-without LangSlice: coordinate systems `section` and `placed_atlas` (`y`, `x`
-in millimetres) and `atlas` (`axis0`..`axis2` in micrometres, the atlas's
-own axis order, voxel `i`'s centre at `i * resolution`); a `bijection`
-`section` -> `placed_atlas` whose forward and inverse are the
+`displacement`); a working-grid group's is a `sequence` of that `scale`
+and a `translation` to its first pixel's centre. The root group's
+`ome.scene` states the mapping with the OME-NGFF 0.6 coordinate
+transformations, so another program can read it without LangSlice:
+coordinate systems `section` and `placed_atlas` (`y`, `x` in millimetres)
+and `atlas` (`axis0`..`axis2` in micrometres, the atlas's own axis order,
+voxel `i`'s centre at `i * resolution`); when the stored fields are the
+whole deformation (`section_grid`, or `engine_grid` without a `parent`), a
+`bijection` `section` -> `placed_atlas` whose forward and inverse are the
 `displacements` of the two fields (the forward `displacements` alone when
-there is no inverse); a `sequence` `placed_atlas` -> `atlas` of a `scale`
+there is no inverse; a step to compose with its parent and a landmark
+mesh are not stated); a `sequence` `placed_atlas` -> `atlas` of a `scale`
 (mm to placed pixels), an `affine` (placed pixels to native atlas-plane
 pixels: the inverse of `atlas_to_section`), an `affine` from the 2-D plane
 into the 3-D volume (`native_to_volume_index`) and a `scale` by the
 resolution; and an `identity` from each image group's `section` system to
 the scene's. The metadata is written from `record.json` and never read back.
 
-## Registrations (`sections/<name>/registrations.jsonl`)
+## Section history (`sections/<name>/history.jsonl`)
 
-Every registration a section has held, one JSON line each, numbered from 1
-per section; `restore_registration` puts one back. A section's registration
-is its orientation, transform and deformation (a deformation whose linear
-placement has changed is no part of it). A line is appended when an undo
-step, an undo or a redo leaves the section a registration it never held, and
-never rewritten; undo leaves the file as it is. Fields: `format` (1), `id`
-(the number), `by` (the tool whose write left it, `script` for a script's
-own write; for one held before the section's list began, which a later write
-lists, what its content says made it), `at` (local time, `YYYY-MM-DD
-HH:MM:SS`; null for one held before the list began), `digest` (of the
-orientation, the transform and the deformation's record key: two writes that
-leave the same registration share its number), `position_mm` and
-`cutting_angles_deg` (where the section was), then the registration: `flip`,
-`rotation_deg`, `transform` (as `state.json` holds it) and `deformation` (the
-section's `deformation` entry, naming its record under `deformable/`, or
-null). A status row's `registration` is the number of the one the section
-holds. `restore_registration`'s list adds, per registration, the pictures its
-write saved: the `views.jsonl` pictures drawn by the tool named in `by` whose
-`registrations` give the section that number. The file is read back, as the deformation records are; a line cut
-short is skipped.
+Every write that changed the section, one JSON line each, appended under the
+job folder's lock and never rewritten. A line is the section's row of
+`state.json` (with its own `cutting_angles_deg`) beside:
+
+| Field | Meaning |
+|---|---|
+| `seq` | the line's number in the file, from 1 |
+| `step` | the job's write that appended it (0: the job's opening) |
+| `by` | the tool whose write it was; `script` for a script's own write or an edit of `state.json` from outside; `undo`, `redo` and `restore_registration` for theirs; `host` for a state LangSlice found rather than made (each section's opening line, and the state before a write when no line held it yet) |
+| `at` | local time, `YYYY-MM-DD HH:MM:SS` |
+| `registration` | the number of the registration the line holds, or null |
+| `digest` | that registration's identity: a digest of the orientation, the transform and the deformation's record key (null while the section holds none) |
+| `format_version` | the `state.json` format of the row |
+
+A section's registration is its orientation (`flip`, `rotation_deg`), its
+`transform` and its `deformation` while that still sits on the same linear
+placement. Each distinct one is numbered per section, from 1, when a write
+changes the section's registration to it (the one it replaced is numbered
+first when it never was), or when `restore_registration` lists the one the
+section holds; a later line holding the same one repeats its number. A
+status row's `registration` is the number of the one the section holds.
+`restore_registration` lists the first line of each number: `by` and `at`
+are that line's (for a `host` line, `by` is what the content says made it:
+the deformation's last method, else the transform's tool, else `supplied`,
+and `at` is left out), and the pictures its write saved: the `views.jsonl`
+pictures drawn by the tool named in `by` whose `registrations` give the
+section that number. A line cut short is skipped.
+
+## Undo (`history/undo.json`)
+
+The undo and redo steps, oldest first, rewritten after each write:
+`format_version` (1), `next_step` (the number the job's next write gets),
+`undo` and `redo`. A step is `step`, `by`, `at` (the write's number, tool
+and time), `sections` (for each section the write changed, the `seq` of the
+line it held before), `stack_before` (the stack's own fields the write
+changed, such as `interval_breaks`, as they were) and `notes_before` (null
+when the write left the notes alone, else `keep`, how many of the notes
+from the first it left as they were, and `then`, the notes that followed
+them before it). Undo puts each
+section back to its line and the stack fields back, appends a line per
+section, and moves the step to `redo` as the step that takes it back; a
+write clears `redo`. Steps are not capped. A file that does not read, or a
+newer LangSlice's, is left as it is and undo covers the session.
 
 ## Pictures
 
@@ -265,10 +352,14 @@ placement picture and an `fireants_syn` picture carry
 `labels.tif` (the atlas id under every pixel below the caption, no tissue
 rule), `borders.png` and a frame in `view.json`.
 `langslice.coordinate_map(".../view.json")` gives every pixel's atlas
-micrometres. An `fireants_syn` picture showing its deformation adds
-`residual.tif` (float32, `(2, rows, cols)`, `(d_row, d_col)` in picture
-pixels, zero in the caption band); its frame's `residual` names it, and
-`coordinate_map` applies it. A script's preview of a proposal not written
+micrometres. The frame of a deformable-fit picture (a landed
+`trace_borders` fit) names its deformation record (`deformation`, relative
+to the job folder) and, when it shows the deformation, says in `residual`
+how the record's grid was resized (`grid_size`) and cropped (`box`) to the
+picture; `coordinate_map` resamples the record so and applies its field.
+A picture an earlier LangSlice saved with a `residual.tif` beside it
+(float32, `(2, rows, cols)`, `(d_row, d_col)` in picture pixels), which its
+frame's `residual` names, is read from that file. A script's preview of a proposal not written
 (`preview_overlay`, `preview_positioning`) is tool `script`
 (`<number>_script_overlay`, `<number>_script_positioning`), its caption
 saying `NOT written`, its recipe a `transport_snapshot` (a zoom crops the
@@ -284,6 +375,7 @@ follow the job through it.
 | `kind` | When | Other fields |
 |---|---|---|
 | `open` | the job is opened (`Job.open`: created or resumed) | `resumed` |
+| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`) |
 | `plugins` | the tool plugins' record in `job.json` changed | `plugins` |
 | `script_write` | a script's `job.context` write landed | `property`, `sections`, `notes`, `argv0`, `call` |
 | `tool_start` | a tool call begins, on any door | `name`, `execution_id`, `door`, `target_ids`, `args` |
@@ -388,7 +480,7 @@ with `full_resolution`, the file's own pixels. A NumPy `.npz` archive:
 |---|---|
 | `borders` | bool, `(rows, cols)`: the model's lines as LangSlice extracts them from its reply (yellow pixels, thinned): the lines the trace's fit is fitted to |
 | `reply` | uint8 RGB, `(rows, cols, 3)`: the model's raw reply, cropped to the canvas's aspect and resized to it as the lines are, then mapped to the grid; black outside the canvas |
-| `info` | JSON text: `section`, `grid_size` (`[width, height]`), `full_resolution`, `frame`, `grid_from_canvas` (3x3 on `[x, y, 1]`: the model's canvas to the grid's pixel centres), `artifact_dir` (the attempt's folder under `sections/<name>/image_correction/`, relative to the job folder), `attempt`, `provider`, `model`, `prompt_edited`, `profile` and `untested` (an untested profile), `include` / `exclude` (the regions `restrict_to` chose), `placement_current` (whether the section's placement is still the one traced), `written_by` |
+| `info` | JSON text: `section`, `grid_size` (`[width, height]`), `full_resolution`, `frame`, `grid_from_canvas` (3x3 on `[x, y, 1]`: the model's canvas to the grid's pixel centres), `artifact_dir` (the attempt's folder under `sections/<name>/border_trace/`, relative to the job folder), `attempt`, `provider`, `model`, `prompt_edited`, `profile` and `untested` (an untested profile), `include` / `exclude` (the regions `restrict_to` chose), `placement_current` (whether the section's placement is still the one traced), `written_by` |
 
 The map from the canvas to the grid is the images' own (the canvas's
 upright turn, crop to the placed atlas plus a margin, padding and resize of
@@ -469,8 +561,8 @@ earlier version may also carry automatic holds (`landmark_holds`,
 and ignored. `landmark_baseline_key` and `landmark_baseline_steps` in the
 section's deformation reference identify the registration before the current
 landmark method; its record's `parent` holds that baseline. Consecutive landmark
-applications replace the landmark method on that baseline. Undo history
-separately preserves the previously applied landmark result. Maps and exports
+applications replace the landmark method on that baseline. The section's
+history separately preserves the previously applied landmark result. Maps and exports
 consume the composed residual field through
 the same path as other applied deformations.
 
@@ -548,13 +640,13 @@ weights, `weights_used` (the weights it resolved to, by raw channel). The
 opening `preprocessed` file is the automatic path run on the working copy;
 like every made image, each reader reads the file, resized to its own size.
 
-State format 4 holds these entries; a job of format 3 (the stack's
+State formats 4 and 5 hold these entries; a job of format 3 (the stack's
 `appearance`: recipes and raw channels' display properties) is read through
-the migration when it opens (`core.sections.images.Migration`): each recipe is
+the migration when it opens (`state_3_to_4`, `job/migrations.py`): each recipe is
 made into a file and an entry per section (a section's own override
 honoured), `preprocessed` without a recipe becomes the opening image, the
 display properties are dropped, a mask's `channel` is named `section_image`,
-and the state and its history steps are written again as format 4.
+and the state is written again at the current format.
 Deformation records are not rewritten. A recipe image is made once on the
 working copy, so a fit on a migrated job reads that file: it is not the image
 the older LangSlice ran the recipe on at the fit's size, and a refit does not

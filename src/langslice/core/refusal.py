@@ -7,8 +7,8 @@ facts behind it (the ids, the allowed values). Nothing is written for a
 refused call. The core, the job and the tools raise it; each door turns it
 into its own answer once: the tool reply (:meth:`Refused.payload`), the
 agent CLI's envelope, the MCP text block, the library's reply. A per-section
-answer carries a refused section as its row, ``{"id": ..., **payload}``, the
-other sections going on.
+answer carries a refused section as its row, the other sections going on;
+a crash is answered as a refusal whose code is the exception's class name.
 
 The codes are strings the agent reads, so a member's value never changes.
 A member's name is its value (one excepted, :attr:`RefusalCode.NO_SUCH_PATH`,
@@ -59,10 +59,9 @@ class RefusalCode(TextEnum):
     ATLAS_ENDPOINT_OUTSIDE = "ATLAS_ENDPOINT_OUTSIDE"
     #: The atlas plane at a section's position cannot be drawn.
     ATLAS_RENDER_FAILED = "ATLAS_RENDER_FAILED"
-    #: A tool argument is malformed or out of range.
+    #: A tool argument, or the agent CLI's command line, is malformed or out
+    #: of range.
     BAD_ARGS = "BAD_ARGS"
-    #: The agent CLI's command line cannot be parsed.
-    BAD_ARGUMENTS = "BAD_ARGUMENTS"
     #: A zoom box is not four numbers.
     BAD_BOX = "BAD_BOX"
     #: A configured MCP plugin names an unknown rule or layer kind.
@@ -95,36 +94,31 @@ class RefusalCode(TextEnum):
     BAD_SETTINGS = "BAD_SETTINGS"
     #: ``look``'s ``warp`` is not one of its choices.
     BAD_WARP = "BAD_WARP"
-    #: A section's saved deformation cannot be read.
+    #: A border trace's record could not be written or read in the job folder.
+    BORDER_TRACE_IO_ERROR = "BORDER_TRACE_IO_ERROR"
+    #: A section's saved deformation cannot be read (a record of a format
+    #: this version does not read, or its files are gone).
     DEFORMATION_UNREADABLE = "DEFORMATION_UNREADABLE"
     #: A call names the same section twice.
     DUPLICATE_SLICE_IDS = "DUPLICATE_SLICE_IDS"
     #: A zoom box has no area inside its picture.
     EMPTY_BOX = "EMPTY_BOX"
-    #: A plugin's registration engine ran and failed.
-    ENGINE_FAILED = "ENGINE_FAILED"
-    #: The deformable engine (FireANTs on torch) cannot import here.
+    #: A registration engine is not installed here: FireANTs on torch does
+    #: not import, or a plugin engine's interpreter or source is missing.
     ENGINE_MISSING = "ENGINE_MISSING"
-    #: A plugin's registration engine is not installed here.
-    ENGINE_UNAVAILABLE = "ENGINE_UNAVAILABLE"
     #: The agent CLI could not set up or change the job's environment.
     ENV_FAILED = "ENV_FAILED"
     #: A failed reply that names no code of its own.
     ERROR = "ERROR"
-    #: A fit's engine raised; the message is its error's first line.
+    #: A fit's engine raised or its process failed; the message says why.
     FIT_FAILED = "FIT_FAILED"
-    #: A flip asked while the job switches flipping off.
-    FLIP_DISABLED = "FLIP_DISABLED"
     #: A write would change a property the job froze.
     FROZEN = "FROZEN"
     #: An affine fit asked of a section that holds a deformation.
     HAS_DEFORMATION = "HAS_DEFORMATION"
-    #: A trace's image call never answered: still running or interrupted.
-    IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED = (
-        "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED"
-    )
-    #: A trace's record could not be written or read in the job folder.
-    IMAGE_CORRECTION_IO_ERROR = "IMAGE_CORRECTION_IO_ERROR"
+    #: A trace's image call at the same placement is running in another
+    #: process (an interrupted one is started again).
+    IMAGE_CALL_IN_PROGRESS = "IMAGE_CALL_IN_PROGRESS"
     #: A verb that needs the job's image model, which is not connected.
     IMAGE_MODEL_OFF = "IMAGE_MODEL_OFF"
     #: The folder's job was made from other supplied inputs.
@@ -135,7 +129,8 @@ class RefusalCode(TextEnum):
     INTERNAL = "INTERNAL"
     #: Interval breaks reported where the spacing shows no gap.
     INTERVAL_BREAKS_UNSUPPORTED = "INTERVAL_BREAKS_UNSUPPORTED"
-    #: A section lacks the position or transform the call needs.
+    #: A section's transform is missing or cannot be used (marked stale,
+    #: made on another orientation); a missing position is ``NO_POSITION``.
     INVALID_LINEAR_PLACEMENT = "INVALID_LINEAR_PLACEMENT"
     #: Another writer holds the job folder's lock.
     JOB_BUSY = "JOB_BUSY"
@@ -181,10 +176,8 @@ class RefusalCode(TextEnum):
     NO_JOB = "NO_JOB"
     #: No picture to zoom, and no saved copy to crop.
     NO_PICTURE = "NO_PICTURE"
-    #: The section has no atlas position yet.
+    #: The section has no atlas position yet, and the call needs one.
     NO_POSITION = "NO_POSITION"
-    #: An atlas picture asked without positions or sections.
-    NO_POSITIONS = "NO_POSITIONS"
     #: The section has no marked regions to draw.
     NO_REGIONS = "NO_REGIONS"
     #: A one-sided region on a section whose plane has no two sides.
@@ -221,7 +214,7 @@ class RefusalCode(TextEnum):
     NOTHING_WRITTEN = "NOTHING_WRITTEN"
     #: A write before every opening page was read.
     OPENING_NOT_READ = "OPENING_NOT_READ"
-    #: An option the job switches off.
+    #: An option the job switches off: a ``look`` mode, a flip, a quarter turn.
     OPTION_OFF = "OPTION_OFF"
     #: A picture number with no saved image to crop.
     PICTURE_NOT_SAVED = "PICTURE_NOT_SAVED"
@@ -245,6 +238,8 @@ class RefusalCode(TextEnum):
     RUN_LOST = "RUN_LOST"
     #: Background work is running on the section.
     SECTION_BUSY = "SECTION_BUSY"
+    #: A saved picture shows a section the stack does not hold.
+    SECTION_GONE = "SECTION_GONE"
     #: The folder's job was made with other settings.
     SETTINGS_CHANGED = "SETTINGS_CHANGED"
     #: The placement's midline is too oblique to name sides.
@@ -297,8 +292,6 @@ class RefusalCode(TextEnum):
     UNKNOWN_REGISTRATION = "UNKNOWN_REGISTRATION"
     #: A background run id the job does not have.
     UNKNOWN_RUN = "UNKNOWN_RUN"
-    #: A picture's section is not in the stack.
-    UNKNOWN_SECTION = "UNKNOWN_SECTION"
     #: A name that is no section's filename.
     UNKNOWN_SLICE_IDS = "UNKNOWN_SLICE_IDS"
     #: A verb that does not exist.
@@ -330,7 +323,7 @@ class Refused(ValueError):
         reply's order. ``status`` among them is the reply's status word:
         ``error`` (the call could not run; the default) or ``refused`` (a
         gate: the call is valid but the job is not ready, as the opening
-        pages' gate).
+        pages' gate and the submit gates).
     """
 
     def __init__(
@@ -354,12 +347,44 @@ class Refused(ValueError):
         text = self.facts.get("message")
         return text if isinstance(text, str) else ""
 
-    def payload(self) -> dict[str, object]:
+    @classmethod
+    def from_exception(cls, error: BaseException) -> Refused:
+        """Return the refusal an unexpected exception is answered with.
+
+        A tool, an image-model call or a background job that crashes is
+        answered like a refusal whose code is the exception's class name
+        (``ValueError``, ``KeyError``): no :class:`RefusalCode` member, since
+        the class is whatever was raised.
+
+        Parameters
+        ----------
+        error
+            The exception that ended the call.
+
+        Returns
+        -------
+        Refused
+            The class name as the code, the exception's text as the message.
+        """
+        return cls(type(error).__name__, message=str(error))
+
+    def payload(self, *, section_id: str | None = None) -> dict[str, object]:
         """Return the reply every door answers with.
+
+        Parameters
+        ----------
+        section_id
+            The filename of the section a per-section answer's row is for;
+            None for the reply to a whole call.
 
         Returns
         -------
         dict
-            ``status``, ``error`` (the code), then the facts.
+            ``status``, ``error`` (the code), then the facts; a section's
+            row has its ``id`` first.
         """
-        return {"status": self.status, "error": self.code, **self.facts}
+        reply: dict[str, object] = {"status": self.status, "error": self.code}
+        reply.update(self.facts)
+        if section_id is None:
+            return reply
+        return {"id": section_id, **reply}

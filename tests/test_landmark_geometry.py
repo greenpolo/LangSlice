@@ -153,7 +153,7 @@ def test_endpoint_pixels_follow_actual_image_rotation_flip_and_crop(rotation, fl
 
 
 def test_applied_record_interpolates_correspondences_after_sequential_corrections(tmp_path):
-    from langslice.tools import landmarks
+    from langslice.tools import landmark_warp, landmarks
     from tests.test_landmarks import saved_pairs, setup
 
     job, workspace, section = setup(tmp_path)
@@ -164,7 +164,7 @@ def test_applied_record_interpolates_correspondences_after_sequential_correction
                 for index, edit in enumerate(edits, 1):
                     edit["id"] = f"L{index}"
             landmarks.set_landmarks(job, workspace, section.id, edits)
-            landmarks.landmark_triangulation(job, workspace, section.id)
+            landmark_warp.landmark_triangulation(job, workspace, section.id)
             applied = job.deformations.current(job.state, section)
             assert applied is not None
             for pair in landmarks_to_json(section.landmarks)["pairs"]:
@@ -186,7 +186,7 @@ def test_applied_record_interpolates_correspondences_after_sequential_correction
 def test_deleted_landmark_loses_its_influence_when_the_complete_set_is_reapplied(tmp_path):
     from langslice.core.fits import deformation
     from langslice.core.fits import landmarks as geometry
-    from langslice.tools import landmarks
+    from langslice.tools import landmark_warp, landmarks
     from tests.test_landmarks import saved_pairs, setup
 
     job, workspace, section = setup(tmp_path)
@@ -207,11 +207,11 @@ def test_deleted_landmark_loses_its_influence_when_the_complete_set_is_reapplied
         edits.append({"atlas": {"picture": atlas_id, "x": atlas_xy[0], "y": atlas_xy[1]},
                       "section": {"picture": section_id, "x": section_xy[0], "y": section_xy[1]}})
         landmarks.set_landmarks(job, workspace, section.id, edits)
-        landmarks.landmark_triangulation(job, workspace, section.id)
+        landmark_warp.landmark_triangulation(job, workspace, section.id)
         before = job.deformations.current(job.state, section)
         assert np.max(np.abs(before.field_mm)) > .05
         landmarks.set_landmarks(job, workspace, section.id, delete=["L4"])
-        landmarks.landmark_triangulation(job, workspace, section.id)
+        landmark_warp.landmark_triangulation(job, workspace, section.id)
         after = job.deformations.current(job.state, section)
         # The remaining three correspondences are identity constraints. An
         # application of this complete set must erase L4's previous influence.

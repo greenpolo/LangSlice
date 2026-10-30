@@ -12,6 +12,7 @@ import pytest
 from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote
+from langslice.core.pictures.look import LookRequest
 from langslice.core.refusal import Refused
 from langslice.core.stack.section import Section
 from langslice.doors.agent.engine import build_context
@@ -74,8 +75,9 @@ def _move(job: Job, section_id: str, position: float) -> None:
 
 def test_look_numbers_every_picture_and_indexes_its_recipe(tmp_path: Path):
     job, ws = _job(tmp_path)
-    first = ops_look.look(job, ws, "section", sections=[SECTIONS[0], SECTIONS[1]])
-    second = ops_look.look(job, ws, "overlay", sections=[SECTIONS[2]])
+    first = ops_look.look_pictures(
+        job, ws, LookRequest("section", sections=[SECTIONS[0], SECTIONS[1]]))
+    second = ops_look.look_pictures(job, ws, LookRequest("overlay", sections=[SECTIONS[2]]))
     assert [e["id"] for e in first.entries] == [1, 2]
     assert [e["id"] for e in second.entries] == [3]
     assert len(first.pictures) == 2 and not first.not_shown
@@ -88,7 +90,7 @@ def test_look_numbers_every_picture_and_indexes_its_recipe(tmp_path: Path):
     assert _record(job, 2).sections == (SECTIONS[1],)
     assert _record(job, 3).mode == "overlay"
     # No arguments reads no state: every section, in stack order.
-    every = ops_look.look(job, ws, "section")
+    every = ops_look.look_pictures(job, ws, LookRequest("section"))
     assert len(every.entries) == 4 == len(every.pictures)
 
 
@@ -97,7 +99,7 @@ def test_look_refusals(tmp_path: Path):
     cases = [
         (dict(mode="section", sections=["nope.png"]), "UNKNOWN_SLICE_IDS"),
         (dict(mode="sideways"), "UNKNOWN_MODE"),
-        (dict(mode="atlas"), "NO_POSITIONS"),
+        (dict(mode="atlas"), "BAD_ARGS"),
         (dict(mode="section", warp="wavy"), "BAD_WARP"),
         (dict(mode="section", images=["nope"]), "UNKNOWN_IMAGE"),
         (dict(mode="atlas", positions_mm=[0.1], atlas_opacity=3), "BAD_ARGS"),
@@ -105,7 +107,7 @@ def test_look_refusals(tmp_path: Path):
     ]
     for kwargs, code in cases:
         with pytest.raises(Refused) as caught:
-            ops_look.look(job, ws, **kwargs)  # type: ignore[arg-type]
+            ops_look.look_pictures(job, ws, LookRequest(**kwargs))  # type: ignore[arg-type]
         assert caught.value.code == code, (kwargs, caught.value.code)
     assert job.views.latest(exclude_tool=None) is None  # nothing saved
 
@@ -114,7 +116,7 @@ def test_a_job_with_a_picture_cap_names_the_pictures_past_it_not_shown(tmp_path:
     job, ws = _job(tmp_path)
     job.picture_cap = 4  # the agent tools and MCP set this (build_tools)
     positions = [0.05, 0.08, 0.11, 0.14, 0.17]
-    looked = ops_look.look(job, ws, "atlas", positions_mm=positions)
+    looked = ops_look.look_pictures(job, ws, LookRequest("atlas", positions_mm=positions))
     assert len(looked.pictures) == len(looked.entries) == 4
     (left_out,) = looked.not_shown
     assert left_out["positions_mm"] == [0.17] and left_out["mode"] == "atlas"
@@ -126,50 +128,50 @@ def test_a_job_without_a_picture_cap_shows_every_picture(tmp_path: Path):
     job, ws = _job(tmp_path)
     assert job.picture_cap is None  # the agent CLI and the library
     positions = [0.05, 0.08, 0.11, 0.14, 0.17, 0.2]
-    looked = ops_look.look(job, ws, "atlas", positions_mm=positions)
+    looked = ops_look.look_pictures(job, ws, LookRequest("atlas", positions_mm=positions))
     assert len(looked.pictures) == len(looked.entries) == 6 and looked.not_shown == []
     assert [r.seq for r in job.views.records()] == [1, 2, 3, 4, 5, 6]
-    regions = ops_atlas.grep_atlas_view(job, ws, ["TH"], positions)
+    regions = ops_atlas.draw_regions(job, ws, ["TH"], positions)
     assert len(regions.pictures) == 6 and regions.not_shown == []
 
 
 def test_zoom_defaults_to_the_latest_picture_that_is_not_a_zoom(tmp_path: Path):
     job, ws = _job(tmp_path)
-    looked = ops_look.look(job, ws, "section", sections=[MARKED])
+    looked = ops_look.look_pictures(job, ws, LookRequest("section", sections=[MARKED]))
     (entry,) = looked.entries
     width, height = _recipe(job, entry["id"])["shown"]
-    first = tools_zoom.zoom(job, ws, [0, 0, width / 2, height / 2])
+    first = tools_zoom.zoom_picture(job, ws, [0, 0, width / 2, height / 2])
     assert first.picture == entry["id"] and first.redrawn and not first.stale
     assert first.entries[0]["id"] == entry["id"] + 1
     saved = job.views.lookup(first.entries[0]["id"])
     assert saved is not None and saved.tool == "zoom" and saved.sections == (MARKED,)
     # The latest picture is now a zoom; the default still reads the look.
-    second = tools_zoom.zoom(job, ws, [0, 0, width / 4, height / 4])
+    second = tools_zoom.zoom_picture(job, ws, [0, 0, width / 4, height / 4])
     assert second.picture == entry["id"]
     assert second.entries[0]["id"] == entry["id"] + 2
     with pytest.raises(Refused) as caught:
-        tools_zoom.zoom(job, ws, [0, 0, 10, 10], picture=999)
+        tools_zoom.zoom_picture(job, ws, [0, 0, 10, 10], picture=999)
     assert caught.value.code == "UNKNOWN_PICTURE"
     with pytest.raises(Refused) as caught:
-        tools_zoom.zoom(job, ws, [5, 5, 5, 5], picture=entry["id"])
+        tools_zoom.zoom_picture(job, ws, [5, 5, 5, 5], picture=entry["id"])
     assert caught.value.code == "EMPTY_BOX"
 
 
 def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
     job, ws = _job(tmp_path)
-    (entry,) = ops_look.look(job, ws, "section", sections=[MARKED]).entries
+    (entry,) = ops_look.look_pictures(job, ws, LookRequest("section", sections=[MARKED])).entries
     recipe = _recipe(job, entry["id"])
     width, height = recipe["shown"]
     content = np.asarray(Image.open(job.layout.resolve(
         _record(job, entry["id"]).path) / PICTURE_FILE).convert("L"))[:height, :width]
     ys, xs = np.nonzero(content > 250)
     box = [xs.min() - 20, ys.min() - 20, xs.max() + 20, ys.max() + 20]
-    zoomed = tools_zoom.zoom(job, ws, box, picture=entry["id"])
+    zoomed = tools_zoom.zoom_picture(job, ws, box, picture=entry["id"])
     assert zoomed.redrawn and zoomed.entries[0]["caption"]
     window = _recipe(job, zoomed.entries[0]["id"])["args"]["zoom"]
     assert window[0] == pytest.approx(box[0] / width, abs=1e-6)
     # On a zoom, a box is in the grid's numbers: the whole picture's pixels.
-    again = tools_zoom.zoom(job, ws, [box[0], box[1], box[0] + 10, box[1] + 10],
+    again = tools_zoom.zoom_picture(job, ws, [box[0], box[1], box[0] + 10, box[1] + 10],
                           picture=zoomed.entries[0]["id"])
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["base"] == recipe["base"]  # redrawn from the original, not enlarged
@@ -188,9 +190,10 @@ def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
 
 def test_a_changed_stack_is_redrawn_as_it_was_and_flagged_stale(tmp_path: Path):
     job, ws = _job(tmp_path)
-    (entry,) = ops_look.look(job, ws, "overlay", sections=[SECTIONS[1]]).entries
+    (entry,) = ops_look.look_pictures(
+        job, ws, LookRequest("overlay", sections=[SECTIONS[1]])).entries
     _move(job, SECTIONS[1], 0.22)
-    zoomed = tools_zoom.zoom(job, ws, [0, 0, 50, 50])
+    zoomed = tools_zoom.zoom_picture(job, ws, [0, 0, 50, 50])
     assert zoomed.stale and zoomed.redrawn and zoomed.picture == entry["id"]
     assert f"at {POSITIONS[1]:.2f} mm" in zoomed.entries[0]["caption"]
     assert "changed since" in zoomed.entries[0]["caption"]
@@ -203,14 +206,14 @@ def test_a_picture_without_a_recipe_is_cropped_and_a_crop_of_a_crop_maps_back(tm
     source.paste((255, 255, 255), (300, 100, 400, 200))
     (name,) = job.views.save(tool="strip", pictures=[(source, PictureNote(mode="strip"))])
     number = int(name.split("_")[0])
-    crop = tools_zoom.zoom(job, ws, [200, 0, 400, 200], picture=number)
+    crop = tools_zoom.zoom_picture(job, ws, [200, 0, 400, 200], picture=number)
     assert not crop.redrawn and crop.picture == number
     crop_id = crop.entries[0]["id"]
     held = job.views.lookup(crop_id)
     assert held is not None and held.recipe is not None
     assert held.recipe["renderer"] == "crop" and held.recipe["source"] == number
     # A box on the crop is in the source picture's pixels (the grid's numbers).
-    again = tools_zoom.zoom(job, ws, [300, 100, 400, 200], picture=crop_id)
+    again = tools_zoom.zoom_picture(job, ws, [300, 100, 400, 200], picture=crop_id)
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["args"]["box"] == [300.0, 100.0, 400.0, 200.0] and inner["source"] == number
     assert np.median(np.asarray(again.pictures[0].convert("L"))[150:250, 150:250]) > 240
@@ -223,20 +226,21 @@ def test_a_picture_that_is_not_saved_is_refused_and_a_dry_run_zooms_from_memory(
     job.views.flush()
     (job.layout.resolve(_record(job, number).path) / PICTURE_FILE).unlink()
     with pytest.raises(Refused) as caught:
-        tools_zoom.zoom(job, ws, [0, 0, 20, 20], picture=number)
+        tools_zoom.zoom_picture(job, ws, [0, 0, 20, 20], picture=number)
     assert caught.value.code == "PICTURE_NOT_SAVED"
     # A dry run keeps no pictures between processes: an unknown number is "not saved".
     (tmp_path / "dry").mkdir()
     dry, dry_ws = _job(tmp_path / "dry", persist=False)
     with pytest.raises(Refused) as caught:
-        tools_zoom.zoom(dry, dry_ws, [0, 0, 20, 20], picture=7)
+        tools_zoom.zoom_picture(dry, dry_ws, [0, 0, 20, 20], picture=7)
     assert caught.value.code == "PICTURE_NOT_SAVED"
     with pytest.raises(Refused) as caught:
-        tools_zoom.zoom(dry, dry_ws, [0, 0, 20, 20])
+        tools_zoom.zoom_picture(dry, dry_ws, [0, 0, 20, 20])
     assert caught.value.code == "NO_PICTURE"
     # ... but within the process a dry run zooms from memory.
-    (entry,) = ops_look.look(dry, dry_ws, "section", sections=[SECTIONS[0]]).entries
-    zoomed = tools_zoom.zoom(dry, dry_ws, [0, 0, 60, 40])
+    (entry,) = ops_look.look_pictures(
+        dry, dry_ws, LookRequest("section", sections=[SECTIONS[0]])).entries
+    zoomed = tools_zoom.zoom_picture(dry, dry_ws, [0, 0, 60, 40])
     assert zoomed.picture == entry["id"] and zoomed.redrawn
     assert zoomed.entries[0]["id"] == entry["id"] + 1
 
@@ -262,10 +266,10 @@ def _centre_x(plain: Image.Image, picture: Image.Image) -> float:
 def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     (tmp_path / "plain").mkdir()
     plain_job, plain_ws = _job(tmp_path / "plain")
-    (plain,) = ops_look.look(plain_job, plain_ws, "atlas", positions_mm=[0.1],
-                             atlas_layers=["template"]).pictures
+    (plain,) = ops_look.look_pictures(plain_job, plain_ws, LookRequest("atlas", positions_mm=[0.1],
+                             atlas_layers=["template"])).pictures
     job, ws = _job(tmp_path)
-    view = ops_atlas.grep_atlas_view(job, ws, ["STR"], [0.1, 0.3])
+    view = ops_atlas.draw_regions(job, ws, ["STR"], [0.1, 0.3])
     assert view.regions == ["STR"] and len(view.pictures) == 2
     assert [e["id"] for e in view.entries] == [1, 2]
     assert view.clamped and view.clamped[0] == (0.3, pytest.approx(ws.position_range[1]))
@@ -274,21 +278,21 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     assert saved is not None and saved.tool == "grep_atlas_view" and saved.mode == "atlas"
     assert saved.recipe is not None and saved.recipe["args"]["regions"] == ["STR"]
     striatum = _centre_x(plain, view.pictures[0])
-    thalamus_view = ops_atlas.grep_atlas_view(job, ws, ["TH"], [0.1])
+    thalamus_view = ops_atlas.draw_regions(job, ws, ["TH"], [0.1])
     thalamus = _centre_x(plain, thalamus_view.pictures[0])
     assert striatum < 0.45 < 0.55 < thalamus  # STR sits left of TH in the synthetic plane
     # One side of a region: the highlight is the half on that side only.
-    both_view = ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1])
+    both_view = ops_atlas.draw_regions(job, ws, ["CTX"], [0.1])
     both = _border_color_mask(plain, both_view.pictures[0]).sum()
-    left_view = ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1])
+    left_view = ops_atlas.draw_regions(job, ws, ["CTX:left"], [0.1])
     left = _border_color_mask(plain, left_view.pictures[0]).sum()
     assert 0 < left < both
     assert not view.regions_not_in_plane
     # More than four positions: the rest are named, and a zoom redraws through the recipe.
     job.picture_cap = 4
-    many = ops_atlas.grep_atlas_view(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
+    many = ops_atlas.draw_regions(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
     assert len(many.entries) == 4 and many.not_shown[0]["positions_mm"] == [0.14]
-    shown = tools_zoom.zoom(job, ws, [0, 0, 120, 90], picture=many.entries[0]["id"])
+    shown = tools_zoom.zoom_picture(job, ws, [0, 0, 120, 90], picture=many.entries[0]["id"])
     assert shown.redrawn and not shown.stale
     zoom_recipe = _recipe(job, shown.entries[0]["id"])
     assert zoom_recipe["renderer"] == "grep_atlas_view" and zoom_recipe["args"]["zoom"]
@@ -298,7 +302,7 @@ def test_grep_atlas_view_names_a_side_with_no_pixel_as_not_in_plane(tmp_path: Pa
     """TH lies wholly right of the midline: "TH:left" is drawn nowhere, and
     the reply says so, as it says for a region absent from the plane."""
     job, ws = _job(tmp_path)
-    view = ops_atlas.grep_atlas_view(job, ws, ["TH:left", "TH:right", "STR"], [0.1])
+    view = ops_atlas.draw_regions(job, ws, ["TH:left", "TH:right", "STR"], [0.1])
     assert view.regions_not_in_plane == {"0.10": ["TH:left"]}
 
 
@@ -306,10 +310,10 @@ def test_grep_atlas_view_refuses_unknown_regions(tmp_path: Path):
     job, ws = _job(tmp_path)
     for regions, code in ((["NOPE"], "UNKNOWN_REGIONS"), ([], "BAD_ARGS"), ("CTX", "BAD_ARGS")):
         with pytest.raises(Refused) as caught:
-            ops_atlas.grep_atlas_view(job, ws, regions, [0.1])  # type: ignore[arg-type]
+            ops_atlas.draw_regions(job, ws, regions, [0.1])  # type: ignore[arg-type]
         assert caught.value.code == code
     with pytest.raises(Refused) as caught:
-        ops_atlas.grep_atlas_view(job, ws, ["CTX"], [])
+        ops_atlas.draw_regions(job, ws, ["CTX"], [])
     assert caught.value.code == "BAD_ARGS"
     assert job.views.latest(exclude_tool=None) is None
 

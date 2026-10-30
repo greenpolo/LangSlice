@@ -2,8 +2,10 @@
 
 A section image (:mod:`langslice.core.sections.images`) is a raw channel of the
 file, never edited, or a made image: a recipe over the section's other images
-(:func:`make_image`) or an array a script computed (:func:`add_image`), saved
-as ``sections/<stem>/images/<name>.png`` with its entry in
+(:func:`make_section_image`, which the ``make_image`` tool,
+:func:`make_image_tool`, calls) or an array a script computed
+(:func:`add_image`), saved as ``sections/<stem>/images/<name>.png`` with
+its entry in
 ``Section.images``. Every write is one undo step; files are never deleted
 (undo hides the entry). :func:`image_names`, :func:`read` and
 :func:`check_image` are what the fits and the pictures read through.
@@ -22,7 +24,9 @@ from langslice.core.sections import images
 from langslice.core.sections.images import NAME_PATTERN, PREPROCESSED
 from langslice.core.stack.codec import image_to_json
 from langslice.core.stack.images import ImageRef
+from langslice.tools.look import show_result
 from langslice.tools.refusal import unknown_sections
+from langslice.tools.run import as_list, pictured, spread
 
 if TYPE_CHECKING:
     from langslice.core.sections.images import ImageView
@@ -30,6 +34,7 @@ if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+    from langslice.tools.run import Run
 
 #: Names no made image may take: the fits' word for no mask, and ``look``'s
 #: word for every layer.
@@ -37,8 +42,30 @@ RESERVED = ("none", "all")
 
 
 @dataclass(frozen=True)
+class ImageRecipe:
+    """How a made image is computed from the section's other images.
+
+    :func:`make_image_tool` builds it from ``make_image``'s arguments as the
+    model gives them and checks the values.
+    """
+
+    #: ``{image name: weight}``; empty: each raw channel by its tissue
+    #: coverage.
+    weights: Mapping[str, float] = field(default_factory=dict[str, float])
+    clahe_clip: float = images.DEFAULT_CLAHE_CLIP
+    clahe_tiles: int = images.DEFAULT_CLAHE_TILES
+    n4: bool = False
+    denoise: bool = False
+    #: ``[low, high]``, fractions 0 to 1 of the blended image; empty: none.
+    contrast: Sequence[float] = ()
+    #: The gamma after the blend; None (or 0, 1): linear.
+    gamma: float | None = None
+    invert: bool = False
+
+
+@dataclass(frozen=True)
 class ImagesMade:
-    """What :func:`make_image` did."""
+    """What :func:`make_section_image` did."""
 
     name: str
     #: The sections the image was made for (or removed from).
@@ -129,26 +156,116 @@ def _in_force(workspace: Workspace, job: Job, name: str) -> dict[str, Any]:
     return dict(images.summary(job.state, workspace.settings).get(name) or {})
 
 
-def make_image(
+def make_image_tool(
+    run: Run,
+    name: str,
+    sections: list[str],
+    weights: dict[str, float],
+    clahe_clip: float,
+    clahe_tiles: int,
+    n4: bool,
+    denoise: bool,
+    contrast: list[float],
+    gamma: float,
+    invert: bool,
+    delete: bool,
+    *,
+    view: bool = True,
+) -> dict[str, object]:
+    """Make, replace or delete a made image; return the ``make_image`` reply.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    name, sections, weights, clahe_clip, clahe_tiles, n4, denoise, contrast
+        The declared arguments as the model sent them
+        (``tools/descriptions/looking.py``).
+    gamma, invert, delete, view
+        More of the declared arguments, as sent.
+
+    Returns
+    -------
+    dict
+        The image, the sections it was made for, its recipe (or
+        ``deleted``), every section image of the stack and the pictures.
+    """
+    job = run.job
+    ids = _section_ids(run, as_list(sections))
+    try:
+        given = ImageRecipe(
+            weights=dict(weights or {}),
+            clahe_clip=clahe_clip,
+            clahe_tiles=clahe_tiles,
+            n4=bool(n4),
+            denoise=bool(denoise),
+            contrast=as_list(contrast),
+            gamma=_exponent(gamma),
+            invert=bool(invert),
+        )
+        done = make_section_image(
+            job, run.workspace, str(name), ids, given, delete=bool(delete)
+        )
+    except Refused:
+        raise
+    except (TypeError, ValueError):
+        raise Refused(RefusalCode.BAD_ARGS, "gamma is a number.") from None
+    reply: dict[str, object] = {
+        "status": "ok",
+        "image": done.name,
+        "sections": ids or "every section",
+    }
+    if done.deleted:
+        reply["deleted"] = True
+    else:
+        reply["recipe"] = done.in_force
+    reply["section_images"] = done.images
+    if done.deleted or run.spec.off("look:section") or not run.shows(view):
+        return reply
+    made = [job.state.by_id(section) for section in done.sections]
+    existing = [section for section in made if section is not None]
+    spread_out: list[Section] = spread(existing, job.picture_cap)
+    pictures = show_result(
+        job,
+        run.workspace,
+        "make_image",
+        "section",
+        [section.id for section in spread_out],
+        images=[done.name],
+    )
+    return pictured(reply, pictures)
+
+
+def _section_ids(run: Run, named: list[str]) -> list[str] | None:
+    """Return the filenames of the sections named; None when none is named."""
+    if not named:
+        return None
+    scope, unknown = run.resolve_many(named)
+    if unknown or not scope:
+        raise unknown_sections(run.job.state, unknown)
+    return [section.id for section in scope]
+
+
+def _exponent(gamma: float | None) -> float | None:
+    """Return a recipe's gamma as a number; 0 or None is none."""
+    if not gamma:
+        return None
+    return float(gamma)
+
+
+def make_section_image(
     job: Job,
     workspace: Workspace,
     name: str,
-    sections: Sequence[str] | None = None,
+    sections: Sequence[str] | None,
+    given: ImageRecipe,
     *,
-    weights: Mapping[str, float] | None = None,
-    clahe_clip: float = images.DEFAULT_CLAHE_CLIP,
-    clahe_tiles: int = images.DEFAULT_CLAHE_TILES,
-    n4: bool = False,
-    denoise: bool = False,
-    contrast: Sequence[float] | None = None,
-    gamma: float | None = None,
-    invert: bool = False,
     delete: bool = False,
 ) -> ImagesMade:
     """Make, replace or delete the made image *name* of the sections (empty:
     every section). One undo step.
 
-    The recipe (:func:`langslice.core.sections.images.validate_recipe`):
+    The recipe *given* (:func:`langslice.core.sections.images.validate_recipe`):
     *weights* ``{image name: weight}`` (empty: each raw channel by its tissue
     coverage), CLAHE, *n4*, *denoise*, then *contrast* (fractions 0 to 1),
     *gamma*, *invert*. Each section's image is computed from its own images
@@ -184,10 +301,12 @@ def make_image(
                           deleted=True, in_force=_in_force(workspace, job, label),
                           images=stack_images(workspace, job.state))
     try:
+        weights = dict(given.weights) if given.weights else None
+        contrast = list(given.contrast) if given.contrast else None
         recipe = images.validate_recipe(
-            weights=dict(weights) if weights else None, clahe_clip=clahe_clip,
-            clahe_tiles=clahe_tiles, n4=n4, denoise=denoise,
-            contrast=list(contrast) if contrast else None, gamma=gamma or None, invert=invert)
+            weights=weights, clahe_clip=given.clahe_clip,
+            clahe_tiles=given.clahe_tiles, n4=given.n4, denoise=given.denoise,
+            contrast=contrast, gamma=given.gamma or None, invert=given.invert)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     held = recipe["weights"]

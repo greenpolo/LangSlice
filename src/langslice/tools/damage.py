@@ -5,32 +5,40 @@ A section is damaged exactly when it has marked regions
 and note; the fits and the image model's trace read them
 (:func:`langslice.core.sections.damage.exclusions`). A host's note
 (``inputs.damaged``, ``{filename: note}``) is the section's ``damage_note``
-alone: it stays first in the note, and the agent marks the regions.
+alone: it stays first in the note, and the agent marks the regions. The
+tool's function (``mark_damage_tool``) adds its row and the picture of the
+marked regions.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
+from langslice.core.pictures import drawn as pictures_drawn
+from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
+from langslice.core.pictures.options import default_options
+from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import (
     damage_picture,
     normalized_entries,
 )
 from langslice.tools.refusal import check_frozen, unknown_sections
+from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
     from langslice.core.pictures.options import DisplayOptions
     from langslice.core.stack.section import Section
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+    from langslice.tools.run import Run
 
 
-# --- mark_damage: by region -----------------------------------------------------------
+# --- mark_damage: by region --------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -63,7 +71,11 @@ class DamageRegions:
 def _user_note(job: Job, record: Section) -> str:
     """The note the host gave with its mark ("" for none, or no mark)."""
     marks = (job.spec.inputs or {}).get("damaged") or {}
-    return str(marks.get(record.id) or "").strip() if record.id in job.host_damaged else ""
+    return (
+        str(marks.get(record.id) or "").strip()
+        if record.id in job.host_damaged
+        else ""
+    )
 
 
 def _joined_note(user: str, agent: str) -> str:
@@ -72,7 +84,9 @@ def _joined_note(user: str, agent: str) -> str:
     return "; ".join(dict.fromkeys(parts))
 
 
-def _check_sides(job: Job, workspace: Workspace, record: Section, names: Sequence[str]) -> None:
+def _check_sides(
+    job: Job, workspace: Workspace, record: Section, names: Sequence[str]
+) -> None:
     """Refuse a one-sided entry whose side the section's current placement does
     not have (the picture's check, made before the write); a section without a
     usable placement is not checked."""
@@ -90,11 +104,17 @@ def _check_sides(job: Job, workspace: Workspace, record: Section, names: Sequenc
     for name in names:
         side = split_side(name)[1]
         if side is not None and pair is not None and side not in pair:
-            runs = "vertically" if side in ("top", "bottom") else "horizontally"
-            raise Refused(RefusalCode.WRONG_SIDE_PAIR, message=(
-                f"On this section the midline runs {runs}, so its halves are "
-                f"{pair[0]!r} and {pair[1]!r}, not {side!r}: name one of those "
-                f"(e.g. \"{split_side(name)[0]}:{pair[0]}\")."))
+            runs = (
+                "vertically" if side in ("top", "bottom") else "horizontally"
+            )
+            raise Refused(
+                RefusalCode.WRONG_SIDE_PAIR,
+                message=(
+                    f"On this section the midline runs {runs}, so its halves are "
+                    f"{pair[0]!r} and {pair[1]!r}, not {side!r}: name one of those "
+                    f'(e.g. "{split_side(name)[0]}:{pair[0]}").'
+                ),
+            )
 
 
 def mark_damage(
@@ -131,8 +151,10 @@ def mark_damage(
     from langslice.core.fits.deformable.plane_images import resolve_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="regions must be a list of acronyms or ids")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message="regions must be a list of acronyms or ids",
+        )
     try:
         names = normalized_entries(regions)
     except ValueError as exc:
@@ -141,18 +163,23 @@ def mark_damage(
         try:
             resolve_entries(workspace.atlas, names)
         except ValueError as exc:
-            raise Refused(RefusalCode.UNKNOWN_REGIONS,
-                          message=str(exc)) from exc
+            raise Refused(
+                RefusalCode.UNKNOWN_REGIONS, message=str(exc)
+            ) from exc
         if job.state.plane == "sagittal" and has_sides(names):
-            raise Refused(RefusalCode.NO_SIDES,
-                          message="A sagittal section lies within one "
-                          "hemisphere, so a region cannot be limited to one side.")
+            raise Refused(
+                RefusalCode.NO_SIDES,
+                message="A sagittal section lies within one "
+                "hemisphere, so a region cannot be limited to one side.",
+            )
     with job.writing():
         state = job.state
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [str(section)])
-        check_frozen(job, [record.id])  # no frozen property: refused only while work runs on it
+        check_frozen(
+            job, [record.id]
+        )  # no frozen property: refused only while work runs on it
         if has_sides(names):
             _check_sides(job, workspace, record, names)
         by_user = record.id in job.host_damaged
@@ -162,20 +189,96 @@ def mark_damage(
         written = after != (list(record.damaged_regions), record.damage_note)
         if written:
             before = job.snapshot()
-            record.damaged_regions, record.damage_note = list(after[0]), after[1]
+            record.damaged_regions, record.damage_note = (
+                list(after[0]),
+                after[1],
+            )
             job.commit(before)
-        result = {"id": record.id, "regions": list(record.damaged_regions),
-                  "note": record.damage_note, "damaged": record.damaged,
-                  "by_user": by_user, "written": written}
+        result = {
+            "id": record.id,
+            "regions": list(record.damaged_regions),
+            "note": record.damage_note,
+            "damaged": record.damaged,
+            "by_user": by_user,
+            "written": written,
+        }
     drawn: list[Image.Image] = []
     failed: dict[str, str] | None = None
     if options is not None and record.damaged_regions:
         try:
-            drawn = [damage_picture(
-                workspace, state, record, store=job.deformations,
-                long_edge=options.long_edge, border_color=options.border_color,
-                border_thickness=options.border_thickness)]
+            drawn = [
+                damage_picture(
+                    workspace,
+                    state,
+                    record,
+                    store=job.deformations,
+                    long_edge=options.long_edge,
+                    border_color=options.border_color,
+                    border_thickness=options.border_thickness,
+                )
+            ]
         except Exception as exc:  # noqa: BLE001 - the write stands; say why
-            failed = {"error": getattr(exc, "code", RefusalCode.RENDER_FAILED),
-                      "message": str(exc)}
+            failed = {
+                "error": getattr(exc, "code", RefusalCode.RENDER_FAILED),
+                "message": str(exc),
+            }
     return DamageRegions(**result, pictures=drawn, render_failed=failed)
+
+
+# --- the tool ----------------------------------------------------------------
+
+
+def mark_damage_tool(
+    run: Run, section: str, regions: list[str], note: str
+) -> dict[str, Any]:
+    """Run the ``mark_damage`` tool: write, answer, picture.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    section, regions, note
+        The declared arguments as the model sent them
+        (``tools/descriptions/changing.py``).
+
+    Returns
+    -------
+    dict
+        The reply: the section's regions and note after the call, the row
+        the write changed, and the picture of the marked regions on the
+        section and on the atlas.
+    """
+    edge = picture_edge(run.workspace)
+    options = default_options("overlay", long_edge=edge)
+    done = mark_damage(
+        run.job,
+        run.workspace,
+        section,
+        as_list(regions),
+        note,
+        options=options,
+    )
+
+    result: dict[str, Any] = {
+        "status": "ok",
+        "id": done.id,
+        "regions": done.regions,
+        "note": done.note,
+        "damaged": done.damaged,
+        "written": done.written,
+    }
+    if done.render_failed:
+        result["render_failed"] = done.render_failed
+    if done.touched:
+        result["changed"] = run.changed(done.touched)["changed"]
+    if done.pictures:
+        caption = (
+            f"{done.id}: marked damage regions "
+            + ", ".join(done.regions)
+            + " shaded on the section under its current registration (left) "
+            "and on the atlas (right)"
+        )
+        for picture in done.pictures:
+            pictures_drawn.annotate(picture, caption=caption)
+        result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
+    return result

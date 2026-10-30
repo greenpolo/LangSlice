@@ -143,21 +143,21 @@ settings are saved in the job folder's `job.json`.
 | What you said | Flag |
 |---|---|
 | Notes | `--notes TEXT` |
-| A fact | `--fact TEXT` (repeatable) |
+| A fact | `--facts TEXT` (repeatable) |
 | A note for one task | `--position-notes`, `--transform-notes`, `--nonlinear-notes` |
 | Damage notes | `--damaged '{"M04_s07.tif": "torn left cortex"}'` |
-| Hemisphere cue | `--hemisphere-cue TEXT` |
+| Hemisphere cue | `--transform-hemisphere-cue TEXT` |
 | Pixel size | `--pixel-size-um 0.65`, or `'{"a.tif": 0.65, "b.tif": 0.5}'` |
-| Thickness, interval | `--thickness 40 --interval 240`, plus `--strict-interval` |
+| Thickness, interval | `--position-thickness-um 40 --position-interval-um 240`, plus `--position-strict-interval` |
 | Order | `--order '["s03.tif", "s01.tif", "s02.tif"]'` |
 | Positions | `--positions '{"s01.tif": 5.2, "s02.tif": 5.44}'` |
 | Cutting angles | `--pitch 3 --yaw 0`, or `--section-angles` per section |
 | Fixed values | `--frozen '{"*": ["position", "angles"], "s12.tif": ["deformation"]}'` |
-| Tools off | `--disable interactive_transform:flip` |
+| Tools off | `--disabled interactive_transform:flip` |
 
 `"*"` means every section. The JSON values can also be file paths. Running
 `init` again with other settings is refused with `SETTINGS_CHANGED` or
-`INPUTS_CHANGED`; `--fresh` starts the job over. Every flag is in
+`INPUTS_CHANGED`; `--no-resume` starts the job over. Every flag is in
 [Job settings](../reference/settings.md).
 
 </details>

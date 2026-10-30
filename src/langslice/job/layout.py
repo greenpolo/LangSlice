@@ -9,12 +9,12 @@ without an id. Inside::
     job.json             settings (the JobSpec) + format_version; a saved
                          host job's own fields under "host"
     state.json           the state checkpoint (Stack, versioned)
-    registration.json    its public rendering
-    (:mod:`langslice.job.public_files`) history/             undo/redo:
-    index.json + one file per step sections/<name>/     per section (<name>:
-    the image filename's stem)
+    registration.json    its public rendering (public_files.py)
+    history/undo.json    the undo and redo steps (undo_steps.py)
+    sections/<name>/     per section (<name>: the image filename's stem)
+        history.jsonl              every write that changed it (history.py)
         deformable/<key>/          applied deformation records
-        image_correction/<key>/    trace_borders calls and their attempts
+        border_trace/<key>/        trace_borders calls and their attempts
         views/<seq>_<tool>_<mode>/ pictures of this section the model saw
         coords.tif, labels.tif, labels_fiji.tif, labels.csv,
         residual.tif, maps.json    the section's maps (at submit and by
@@ -67,6 +67,10 @@ JOB_DIRNAME = "langslice"
 JOB_FILE = "job.json"
 STATE_FILE = "state.json"
 HISTORY_DIR = "history"
+#: Under ``history/``: the undo and redo steps.
+UNDO_FILE = "undo.json"
+#: Under ``sections/<name>/``: every write that changed the section.
+SECTION_HISTORY_FILE = "history.jsonl"
 SECTIONS_DIR = "sections"
 VIEWS_DIR = "views"
 VIEWS_INDEX = "views.jsonl"
@@ -95,7 +99,7 @@ DEFORMABLE_DIR = "deformable"
 MASKS_DIR = "masks"
 #: A section's made images (``<name>.png``, ``<name>.2.png``...; never deleted).
 IMAGES_DIR = "images"
-IMAGE_CORRECTION_DIR = "image_correction"
+BORDER_TRACE_DIR = "border_trace"
 SECTION_VIEWS_DIR = "views"
 #: The public rendering of the state (:mod:`langslice.job.public_files`, which
 #: also names each section's map files).
@@ -271,6 +275,11 @@ class JobLayout:
         return self.folder / HISTORY_DIR
 
     @property
+    def undo_file(self) -> Path:
+        """The undo and redo steps, ``history/undo.json``."""
+        return self.history_dir / UNDO_FILE
+
+    @property
     def sections_dir(self) -> Path:
         return self.folder / SECTIONS_DIR
 
@@ -338,6 +347,21 @@ class JobLayout:
     def section_dir(self, section_id: str) -> Path:
         return self.sections_dir / self.section_name(section_id)
 
+    def section_history(self, section_id: str) -> Path:
+        """Return the path of a section's history.
+
+        Parameters
+        ----------
+        section_id
+            The section's filename.
+
+        Returns
+        -------
+        Path
+            Its ``history.jsonl``, appended to by every write.
+        """
+        return self.section_dir(section_id) / SECTION_HISTORY_FILE
+
     def deformable_dir(self, section_id: str) -> Path:
         """Where a section's applied deformation records live (one per key)."""
         return self.section_dir(section_id) / DEFORMABLE_DIR
@@ -350,9 +374,20 @@ class JobLayout:
         """Where a section's made images live (``<name>.png``; never deleted)."""
         return self.section_dir(section_id) / IMAGES_DIR
 
-    def image_correction_dir(self, section_id: str) -> Path:
-        """Where a section's ``trace_borders`` calls live (one per call key)."""
-        return self.section_dir(section_id) / IMAGE_CORRECTION_DIR
+    def border_trace_dir(self, section_id: str) -> Path:
+        """Return the folder of a section's ``trace_borders`` calls.
+
+        Parameters
+        ----------
+        section_id
+            The section's filename.
+
+        Returns
+        -------
+        Path
+            The folder; one subfolder per call key.
+        """
+        return self.section_dir(section_id) / BORDER_TRACE_DIR
 
     def section_views_dir(self, section_id: str) -> Path:
         return self.section_dir(section_id) / SECTION_VIEWS_DIR

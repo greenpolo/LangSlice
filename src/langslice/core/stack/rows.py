@@ -57,7 +57,7 @@ Row = dict[str, JsonValue]
 ROW_KEYS = (
     "id", "index_original", "index_corrected", "flip", "rotation_deg",
     "damaged_regions", "damage_note", "position_mm", "transform",
-    "image_correction", "deformation", "landmarks", "layers", "masks",
+    "border_trace", "deformation", "landmarks", "layers", "masks",
     "images", "caveats", "cutting_angles_deg",
 )  # fmt: skip
 #: The key a row holds a section's cutting angles under.
@@ -80,8 +80,8 @@ def section_to_json(section: Section) -> Row:
     transform = trace = deformation = None
     if section.transform is not None:
         transform = affine_to_json(section.transform)
-    if section.image_correction is not None:
-        trace = trace_to_json(section.image_correction)
+    if section.border_trace is not None:
+        trace = trace_to_json(section.border_trace)
     if section.deformation is not None:
         deformation = deformation_to_json(section.deformation)
     images = {name: image_to_json(ref) for name, ref in section.images.items()}
@@ -96,7 +96,7 @@ def section_to_json(section: Section) -> Row:
         "damage_note": section.damage_note,
         "position_mm": section.position_mm,
         "transform": transform,
-        "image_correction": trace,
+        "border_trace": trace,
         "deformation": deformation,
         "landmarks": landmarks_to_json(section.landmarks),
         "layers": [layer_to_json(ref) for ref in section.layers],
@@ -235,7 +235,6 @@ def section_from_json(row: JsonObject) -> Section:
     Returns
     -------
     Section
-        The section.
 
     Raises
     ------
@@ -244,7 +243,7 @@ def section_from_json(row: JsonObject) -> Section:
         the section and the part (``section <id>, deformation: ...``).
     """
     transform = _part(row, "transform", affine_from_json)
-    trace = _part(row, "image_correction", trace_from_json)
+    trace = _part(row, "border_trace", trace_from_json)
     deformation = _part(row, "deformation", deformation_from_json)
     return Section(
         id=text_at(row, "id"),
@@ -256,7 +255,7 @@ def section_from_json(row: JsonObject) -> Section:
         damage_note=_or_default(row, "damage_note", text_at, ""),
         position_mm=_position(row),
         transform=transform,
-        image_correction=trace,
+        border_trace=trace,
         deformation=deformation,
         landmarks=_named(row, "landmarks", _landmarks),
         layers=_named(row, "layers", _layers),
@@ -280,6 +279,5 @@ def with_fields(section: Section, fields: JsonObject) -> Section:
     Returns
     -------
     Section
-        A new section.
     """
     return section_from_json({**section_to_json(section), **fields})

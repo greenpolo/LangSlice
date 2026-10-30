@@ -146,12 +146,12 @@ def test_frozen_properties_and_tasks_that_are_off_refuse_a_scripts_write(images:
         assert moved.rows[0]["error"] == "FROZEN" and not moved.written
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
-                              tasks=["transform"], fresh=True) as job:
+                              tasks=["transform"], resume=False) as job:
         c = job.context
         done = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
         assert done.rows[0]["error"] == "FROZEN"
     # Switching a tool off does not gate a script's write of what it writes.
-    with make(images, disabled=["fireants_syn"], fresh=True) as job:
+    with make(images, disabled=["fireants_syn"], resume=False) as job:
         c = job.context
         done = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
         assert done.written == [ID0]
@@ -321,7 +321,8 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
         frame = c.fit_frame(ID0)
         with pytest.raises(ToolError) as array_refused:  # a mask is a name, not an array
             c.fit_fireants(ID0, mask=np.ones(frame.image.shape[:2], dtype=bool))
-        assert array_refused.value.code == "BAD_ARGS" and "make_mask" in str(array_refused.value)
+        assert array_refused.value.code == "BAD_ARGS"
+        assert "an array is not taken" in str(array_refused.value)
         with pytest.raises(ToolError) as unknown:
             c.fit_fireants(ID0, mask="nope")
         assert unknown.value.code == "UNKNOWN_MASK"

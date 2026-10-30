@@ -21,10 +21,10 @@ task). No further seam was needed.
 ## Use
 
 ```bash
-langslice linear run ... --tool-plugin langslice.engines.emlddmm.plugin:tools
+langslice linear run ... --plugins langslice.engines.emlddmm.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--tool-plugin-config`):
+or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--plugin-config`):
 `python`, `emlddmm_src`, `brainglobe_dir`, `device` (`auto`), `dtype` (`float64`), `section_um`
 (58.88, the example's pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb`
 (24), `threads`, `timeout_s`. Engine calls take the GPU lock file STalign's engine takes
@@ -93,4 +93,4 @@ after); without it the fit takes the same points from 229 to 113 um. The whole 2
 
 Takes a section mask as soft weights (`W0 *= weights`). Estimates its own three-class sorting, saved with each deformation it writes. One smooth 3-D warp for the stack, no per-section bends; needs dense, evenly spaced sections. Brightness: the channel as it is, 0-1.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.
+A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

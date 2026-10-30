@@ -22,7 +22,8 @@ if TYPE_CHECKING:
 REGISTRATION_CLASHES = {
     "positions": "--positions", "transforms": "--transforms",
     "orientation": "--orientation", "pitch": "--pitch", "yaw": "--yaw",
-    "section_angles": "--section-angles", "angles": "--angles",
+    "section_angles": "--section-angles",
+    "transform_angles": "--transform-angles",
 }
 
 def add_run_parser(
@@ -38,7 +39,7 @@ def add_run_parser(
     add_flags(p, "plugins")
     add_flags(p, "session")
     add_trace_argument(p)
-    add_flags(p, "fresh")
+    add_flags(p, "resume")
     p.add_argument(
         "--gui",
         action="store_true",
@@ -210,22 +211,29 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         preprocess=args.preprocess,
         tasks=[task.strip() for task in tasks.split(",") if task.strip()],
         position=PositionSpec(
-            thickness_um=args.thickness,
-            interval_um=args.interval,
-            strict_interval=args.strict_interval,
-            playbook=args.playbook,
+            thickness_um=getattr(args, "position_thickness_um", None),
+            interval_um=getattr(args, "position_interval_um", None),
+            strict_interval=bool(
+                getattr(args, "position_strict_interval", False)),
+            playbook=bool(getattr(args, "position_playbook", False)),
             notes=getattr(args, "position_notes", ""),
         ),
-        transform=TransformSpec(angles=args.angles, hemisphere_cue=args.hemisphere_cue,
-                                notes=getattr(args, "transform_notes", "")),
+        transform=TransformSpec(
+            angles=bool(getattr(args, "transform_angles", False)),
+            hemisphere_cue=getattr(args, "transform_hemisphere_cue", ""),
+            notes=getattr(args, "transform_notes", "")),
         disabled=[name.strip() for item in getattr(args, "disabled", []) for name in item.split(",")
                   if name.strip()],
         nonlinear=NonlinearSpec(
-            provider=args.image_provider,
-            image_model=args.image_model,
-            require_deformation=bool(getattr(args, "require_deformation", False)),
+            provider=getattr(
+                args, "nonlinear_provider", NonlinearSpec.provider),
+            image_model=getattr(args, "nonlinear_image_model", None),
+            require_deformation=bool(
+                getattr(args, "nonlinear_require_deformation", False)),
             notes=getattr(args, "nonlinear_notes", ""),
-            image_prompt=read_text_arg(getattr(args, "image_prompt", None), "--image-prompt"),
+            image_prompt=read_text_arg(
+                getattr(args, "nonlinear_image_prompt", None),
+                "--nonlinear-image-prompt"),
         ),
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),
@@ -238,26 +246,28 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
 
 
 def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
-    """*spec* with the tool plugins ``--tool-plugin`` names (and their
-    ``--tool-plugin-config`` options): the plugins are loaded, so a plugin
+    """*spec* with the tool plugins ``--plugins`` names (and their
+    ``--plugin-config`` options): the plugins are loaded, so a plugin
     that cannot be loaded, or whose tools clash, is a ``ValueError`` here."""
-    refs = [ref.strip() for item in getattr(args, "tool_plugins", []) for ref in item.split(",")
+    named: list[str] = getattr(args, "plugins", [])
+    refs = [ref.strip() for item in named for ref in item.split(",")
             if ref.strip()]
     if not refs:
-        if getattr(args, "tool_plugin_configs", []):
-            raise ValueError("--tool-plugin-config needs the --tool-plugin it configures")
+        if getattr(args, "plugin_config", []):
+            raise ValueError(
+                "--plugin-config needs the --plugins it configures")
         return spec
     import dataclasses
 
     configs: dict[str, Any] = {}
-    for item in getattr(args, "tool_plugin_configs", []):
+    for item in getattr(args, "plugin_config", []):
         ref, equals, value = item.partition("=")
         if not equals or ref.strip() not in refs:
-            raise ValueError(f"--tool-plugin-config {item[:40]!r}: expected MODULE:FACTORY=JSON "
-                             "of a --tool-plugin")
-        loaded = load_json_arg(value, "--tool-plugin-config")
+            raise ValueError(f"--plugin-config {item[:40]!r}: expected "
+                             "MODULE:FACTORY=JSON of a --plugins")
+        loaded = load_json_arg(value, "--plugin-config")
         if not isinstance(loaded, dict):
-            raise ValueError("--tool-plugin-config options are a JSON object")
+            raise ValueError("--plugin-config options are a JSON object")
         configs[ref.strip()] = loaded
     return dataclasses.replace(spec, plugins=[*spec.plugins, *refs],
                                plugin_config={**spec.plugin_config, **configs})

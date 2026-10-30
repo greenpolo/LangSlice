@@ -41,10 +41,10 @@ def test_run_abba_without_a_connector_jar_says_how_to_get_one(monkeypatch, tmp_p
 def test_cli_protocol_is_optional_and_explicit_values_survive():
     parser = build_parser()
     unknown = parser.parse_args(["linear", "run", "/tmp/sections"])
-    assert unknown.thickness is None and unknown.interval is None
-    known = parser.parse_args(["linear", "run", "/tmp/sections", "--thickness", "50",
-                               "--interval", "200"])
-    assert known.thickness == 50 and known.interval == 200
+    assert unknown.position_thickness_um is None and unknown.position_interval_um is None
+    known = parser.parse_args(["linear", "run", "/tmp/sections", "--position-thickness-um",
+                               "50", "--position-interval-um", "200"])
+    assert known.position_thickness_um == 50 and known.position_interval_um == 200
 
 
 def test_saved_job_prompt_handles_unknown_protocol():

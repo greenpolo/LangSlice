@@ -11,31 +11,28 @@ holds) and the landing of a packaged trace
 What can go wrong per section (no valid placement, an applied deformation
 that cannot be read, a trace that is missing, stale or failed, a
 fit that failed, a record that cannot be saved) is that section's row, not
-a refusal of the call. With display options, :func:`pictures` draws each
-fit and each traced section's trace through the core.
+a refusal of the call. :func:`langslice.tools.fit_pictures.draw_fits` draws
+each fit and each traced section's trace through the core.
 
-A deformation made elsewhere (a tool plugin's engine, a script's) is written
-the same way: :func:`warp_from_map` builds its record from the full map,
-:func:`apply_warps` writes it as the section's deformation, one undo step.
-:func:`fit_record` runs the deformable engine once with settings of the
-caller's own and writes nothing (a script's ``job.context.fit_fireants``).
+The ``fireants_syn`` tool's body is :func:`fireants_syn_tool`; a script's
+own FireANTs fit, written nowhere, is :func:`langslice.tools.warps.fit_record`.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
 
+from langslice.core.atlas.images import resolve_image
 from langslice.core.fits import deformation
 from langslice.core.fits.engine_log import engine_output, failure_message
-from langslice.core.fits.frame import digest
 from langslice.core.fits.inputs import (
     NATIVE_BRIGHTNESS,
     EstimatedBlock,
@@ -43,19 +40,35 @@ from langslice.core.fits.inputs import (
     damage_block,
     mask_block,
 )
-from langslice.core.pictures import deformation as pictures_deformation
-from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
+from langslice.core.jsonable import JsonObject
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
+from langslice.job.settings.needs import render
 from langslice.tools import masks as ops_masks
+from langslice.tools.deformable_rows import (
+    AppliedFit,
+    DeformableRow,
+    deformable_row_to_json,
+)
+from langslice.tools.fit_regions import (
+    region_box,
+    region_entries,
+    zoom_window,
+)
 from langslice.tools.images import check_image
-from langslice.tools.refusal import frozen_row, unknown_sections
-from langslice.tools.stale import section_inputs, stale_row
+from langslice.tools.look import show_result
+from langslice.tools.refusal import (
+    check_section_count,
+    section_refusal,
+    unknown_sections,
+)
+from langslice.tools.run import Run, as_list, drawn_image, pictured
+from langslice.tools.stale import section_inputs, stale_refusal
 
 if TYPE_CHECKING:
-    from langslice.core.pictures.options import DisplayOptions
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
@@ -63,33 +76,34 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Fitted:
-    """One fit that produced a record, for the door to draw: its row (the
-    same dict as in :attr:`DeformableFit.rows`), the fit itself (the image
-    it read, the record it started from) and its record."""
+    """One fit that produced a record, for the door to draw: its row, the
+    fit itself (the image it read, the record it started from) and its
+    record."""
 
-    row: dict[str, Any]
+    row: DeformableRow
     fit: deformation.Job
     outcome: deformation.DeformableRecord
+    #: The record's folder, relative to the job folder.
+    folder: str
 
 
 @dataclass(frozen=True)
 class DeformableFit:
     """What one :func:`fit_deformable` call did.
 
-    ``rows``: one per section, in call order: the settings, the engine
-    numbers, the displacement summary, ``cached``, ``written`` and
-    ``steps``; or ``status: error`` with the code. ``fitted``: the rows that
-    hold a fit to draw, in the same order. ``traced``: per section whose
-    settings read its trace, the image the fit read and the trace's lines on
-    the fit grid. ``written``: the sections whose deformation changed.
+    ``rows``: one :class:`DeformableRow` per section, in call order.
+    ``fitted``: the rows that hold a fit to draw, in the same order.
+    ``traced``: per section whose settings read its trace, the image the fit
+    read and the trace's lines on the fit grid. ``written``: the sections
+    whose deformation changed.
     """
 
-    rows: list[dict[str, Any]] = field(default_factory=list)
+    rows: list[DeformableRow] = field(default_factory=list[DeformableRow])
     fitted: list[Fitted] = field(default_factory=list)
     traced: dict[str, tuple[Image.Image, np.ndarray]] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
-    #: With display options (:func:`pictures`): the pictures, in order (each
-    #: drawn row's ``image_indexes`` point into them), ``{"id",
+    #: Once drawn (``fit_pictures.draw_fits``): the pictures, in order
+    #: (each drawn row's ``image_indexes`` point into them), ``{"id",
     #: "image_indexes"}`` per traced section's trace picture, and ``{"id",
     #: "message"}`` per picture that failed (the write stands).
     pictures: list[Image.Image] = field(default_factory=list)
@@ -150,21 +164,24 @@ def estimated_block(record: deformation.DeformableRecord) -> EstimatedBlock | No
                           left_out_fraction=round(float(inside.mean()), 4) if inside.size else 0.0)
 
 
-def _resolved(workspace: Workspace, atlas_image: str) -> str:
-    from langslice.core.atlas.images import resolve_image
+def resolved_atlas_image(workspace: Workspace, atlas_image: str) -> str:
+    """Return the atlas image a fit reads, resolved for the atlas.
 
+    Parameters
+    ----------
+    workspace
+        The job's workspace, whose atlas resolves the name.
+    atlas_image
+        The name a call gave (``nissl`` resolves per atlas); the traced
+        fit's ``borders`` stays as it is.
+
+    Returns
+    -------
+    str
+        The atlas's own image name.
+    """
     return resolve_image(workspace.atlas, atlas_image) if atlas_image not in (
         deformation.FIT_BORDERS,) else atlas_image
-
-
-def default_settings(workspace: Workspace) -> Any:
-    """``fireants_syn``'s own settings (a
-    :class:`~langslice.core.fits.deformable.settings.FitSettings`:
-    Nissl, 80 um smoothness, mutual information and edges, standard detail),
-    the base a script's ``fit_fireants`` changes."""
-    return deformation.Choice(
-        fit_section=images_.PREPROCESSED, fit_atlas="nissl").settings(
-        (), (), brain_scale=workspace.brain_scale)
 
 
 def traced_regions(
@@ -176,7 +193,7 @@ def traced_regions(
     exclude), so the atlas side drops the same ones: the call's *exclude*
     plus the trace's, and the call's *include*, else the trace's.
     """
-    held = record.image_correction
+    held = record.border_trace
     traced_in: tuple[str, ...] = ()
     traced_out: tuple[str, ...] = ()
     if held is not None:
@@ -220,7 +237,6 @@ def fit_deformable(
     choice: deformation.Choice,
     *,
     restrict_to: tuple[str, ...] = (),
-    options: DisplayOptions | None = None,
     overrides: Mapping[str, Any] | None = None,
 ) -> DeformableFit:
     """Fit *choice* on every section and apply each result.
@@ -242,10 +258,8 @@ def fit_deformable(
     running (one :data:`~langslice.core.fits.deformation.TRACE_WAIT_S` deadline
     for the call; a trace that lands is checkpointed without an undo step) and
     adds the trace's own regions (:func:`traced_regions`; the row's
-    ``trace_regions``). Identical inputs reuse a cached or saved result. With
-    *options*, every fit and every traced section's trace is then drawn
-    (:func:`pictures`). A section whose deformation is frozen is refused (its
-    row ``FROZEN``).
+    ``trace_regions``). Identical inputs reuse a cached or saved result. A
+    section whose deformation is frozen is refused (its row ``FROZEN``).
 
     The fits run outside the job's write lock, from the state as it stood;
     applying takes the lock (:meth:`~langslice.job.job.Job.writing`) and
@@ -255,7 +269,9 @@ def fit_deformable(
     """
     state = job.state
     store = job.deformations
-    rows: list[dict[str, Any]] = []
+    rows: list[DeformableRow] = []
+    # the job index of each row whose fit was queued
+    queued: dict[int, int] = {}
     jobs: list[deformation.Job] = []
     traced: dict[str, tuple[Image.Image, Any]] = {}
     trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
@@ -264,9 +280,9 @@ def fit_deformable(
     starts: dict[str, str] = {}
     blocks: dict[int, InputsBlock] = {}
     for record in records:
-        frozen = frozen_row(job, record.id, "deformation")
+        frozen = section_refusal(job, record.id, "deformation")
         if frozen is not None:
-            rows.append(frozen)
+            rows.append(DeformableRow(record.id, refusal=frozen))
             continue
         running = False
         if traced_choice:
@@ -284,34 +300,38 @@ def fit_deformable(
         if unreadable or (current is None and held is not None
                           and held.linear_key == deformation.linear_key(state, record)):
             folder = None if held is None else held.record
-            rows.append({"id": record.id, **Refused(
+            rows.append(DeformableRow(record.id, refusal=Refused(
                 RefusalCode.DEFORMATION_UNREADABLE,
                 "The section's applied deformation record cannot be read "
                 f"({folder}); it is not replaced by a fit from the "
-                "linear placement.").payload()})
+                "linear placement. Put the section back on another "
+                "registration, or undo the step that applied it.")))
             continue
         own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
-        expected[record.id] = section_inputs(state, record, deformation=own_start == "current",
-                                             trace=traced_choice)
+        expected[record.id] = section_inputs(
+            state, record, deformation=own_start == deformation.FitStart.CURRENT,
+            trace=traced_choice)
         try:
             grid = deformation.fit_grid(state, workspace, record)
+        except Refused as refusal:  # no position
+            rows.append(DeformableRow(record.id, refusal=refusal))
+            continue
         except (ValueError, OSError) as exc:
-            rows.append({"id": record.id, **Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                                message=str(exc)).payload()})
+            rows.append(DeformableRow(record.id, refusal=Refused(
+                RefusalCode.INVALID_LINEAR_PLACEMENT, message=str(exc))))
             continue
         previous = current
         previous_key = None
         if current is not None and record.deformation is not None:
             previous_key = record.deformation.key
         own = exclusions(record, tuple(restrict_to))
-        failure = {"id": record.id, "status": ReplyStatus.ERROR,
-                   "settings": choice.tool_settings()}
+        failure = partial(DeformableRow, record.id, choice.tool_settings())
         regions = traced_regions(record, *own) if traced_choice else own
         try:
             weights = ops_masks.section_weights(job, record, choice.mask)
         except Refused as refusal:
-            rows.append({**failure, **refusal.payload()})
+            rows.append(failure(refusal=refusal))
             continue
         try:
             image, identity = deformation.section_image(
@@ -328,11 +348,11 @@ def fit_deformable(
             if overrides:
                 settings = replace(settings, **dict(overrides))
         except Refused as refusal:  # the trace the fit reads
-            rows.append({**failure, **refusal.payload()})
+            rows.append(failure(refusal=refusal))
             continue
         except (ValueError, OSError) as exc:
             refusal = Refused(RefusalCode.BAD_SETTINGS, message=str(exc))
-            rows.append({**failure, **refusal.payload()})
+            rows.append(failure(refusal=refusal))
             continue
         held_mask = record.masks.get(choice.mask)
         key = deformation.cache_key(
@@ -351,54 +371,48 @@ def fit_deformable(
                 atlas_image=choice.fit_atlas, mask=choice.mask,
                 damage=[str(name) for name in own[1]],
                 restrict_to=[str(name) for name in restrict_to],
-                resolved=_resolved(workspace, choice.fit_atlas))
-        inherited = regions != own
-        rows.append({"id": record.id, "job": len(jobs) - 1,
-                     **({"trace_regions": {"include": list(regions[0]),
-                                           "exclude": list(regions[1])}}
-                        if inherited else {})})
+                resolved=resolved_atlas_image(workspace, choice.fit_atlas))
+        added = None
+        if regions != own:
+            added = {"include": list(regions[0]), "exclude": list(regions[1])}
+        queued[len(rows)] = len(jobs) - 1
+        rows.append(DeformableRow(record.id, trace_regions=added, queued=True))
     with engine_output(job.engine_log, f"deformable fits of {len(jobs)} section(s)"):
         deformation.run_jobs(workspace, jobs)
 
     with job.writing():
         before = job.snapshot()
-        done = _apply(job, rows, jobs, expected=expected, starts=starts, blocks=blocks,
-                      brain_scale=workspace.brain_scale)
+        done = _apply(job, rows, queued, jobs, expected=expected, starts=starts,
+                      blocks=blocks, brain_scale=workspace.brain_scale)
         if done.written:
             job.commit(before)
-    done = replace(done, traced=traced)
-    if options is None:
-        return done
-    return pictures(workspace, done, options)
+    return replace(done, traced=traced)
 
 
 def _apply(
-    job: Job, rows: list[dict[str, Any]], jobs: list[deformation.Job], *,
-    expected: dict[str, str], starts: dict[str, str], blocks: Mapping[int, InputsBlock],
-    brain_scale: float = 1.0,
+    job: Job, rows: list[DeformableRow], queued: Mapping[int, int],
+    jobs: list[deformation.Job], *, expected: dict[str, str], starts: dict[str, str],
+    blocks: Mapping[int, InputsBlock], brain_scale: float = 1.0,
 ) -> DeformableFit:
-    """Every fit's row (its engine numbers at the atlas's *brain_scale*) and,
-    under the job's lock, each section's result as its deformation when its
-    inputs are unchanged."""
+    """Every queued fit's row (its engine numbers at the atlas's
+    *brain_scale*; *queued* gives each row's job) and, under the job's lock,
+    each section's result as its deformation when its inputs are unchanged."""
     state = job.state
     store = job.deformations
+    rows = list(rows)
     written: list[str] = []
     fitted: list[Fitted] = []
-    for row in rows:
-        index = row.pop("job", None)
-        if index is None:
-            continue
-        position = cast("int", index)  # the job index fit_deformable set on the row
+    for at, position in queued.items():
         fit = jobs[position]
         outcome = fit.result
         block = blocks.get(position)
-        row["settings"] = fit.choice.tool_settings()
+        row = replace(rows[at], settings=fit.choice.tool_settings())
+        rows[at] = row
         if not isinstance(outcome, deformation.DeformableRecord):
             message = failure_message(
                 str(getattr(outcome, "error", "no result")), job.engine_log,
                 f"the fit of {fit.grid.record.id} failed")
-            row.update(Refused(RefusalCode.FIT_FAILED,
-                               message=message).payload())
+            rows[at] = replace(row, refusal=Refused(RefusalCode.FIT_FAILED, message=message))
             continue
         store.put(fit.key, outcome)
         numbers = deformation.summary(outcome, fit.previous)
@@ -407,37 +421,41 @@ def _apply(
         # The state may have been reloaded: the section as it is now.
         now = state.by_id(record.id)
         if now is None or section_inputs(
-                state, now, deformation=start == "current",
+                state, now, deformation=start == deformation.FitStart.CURRENT,
                 trace=fit.choice.fit_section == deformation.TRACED_BORDERS) != expected[record.id]:
-            row.update(stale_row(record.id))
+            rows[at] = replace(row, refusal=stale_refusal())
             continue
         record = now
-        row.update(status="ok",
-                   engine_settings=deformation.engine_settings(fit.settings, brain_scale),
-                   **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
-                   cached=fit.cached)
-        if not fit.cached:
-            row.update(gpu_rows(outcome.engine))
         linear = deformation.linear_key(state, record)
         include, exclude = fit_regions(fit)
         outcome.provenance = deformation.provenance(
             fit.grid, fit.choice, include, exclude, start, fit.image_identity, linear)
+        estimated = None
         if block is not None:
             estimated = estimated_block(outcome)
-            row["inputs"] = block.payload()
-            row["estimated"] = None if estimated is None else estimated.payload()
             # The record's provenance holds the same two blocks; what the
             # fit's choice and image were moves to ``fit``.
             outcome.provenance["fit"] = outcome.provenance.pop("inputs", None)
-            outcome.provenance["inputs"] = row["inputs"]
-            outcome.provenance["estimated"] = row["estimated"]
+            outcome.provenance["inputs"] = block.payload()
+            outcome.provenance["estimated"] = None
+            if estimated is not None:
+                outcome.provenance["estimated"] = estimated.payload()
+        queue: JsonObject = {}
+        if not fit.cached:
+            queue = gpu_rows(outcome.engine)
+        runtime_s = cast("float", outcome.engine.get("runtime_s", 0.0))
+        row = replace(row, applied=AppliedFit(
+            engine_settings=deformation.engine_settings(fit.settings, brain_scale),
+            numbers=numbers, runtime_s=round(float(runtime_s), 1),
+            cached=fit.cached, gpu=queue, inputs=block, estimated=estimated))
+        rows[at] = row
         held = record.deformation
         try:
             folder = store.save(record.id, fit.key, outcome)
         except OSError as exc:
             refusal = Refused(RefusalCode.RECORD_WRITE_FAILED,
                               message=str(exc))
-            row.update(refusal.payload())
+            rows[at] = replace(row, refusal=refusal)
             continue
         traced_fit = fit.choice.fit_section == deformation.TRACED_BORDERS
         step: dict[str, Any] = {
@@ -458,330 +476,12 @@ def _apply(
             folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
             step=step, previous=held, numbers=numbers,
         )
-        row["written"] = True
         written.append(record.id)
-        row["steps"] = len(record.deformation.steps or ())
-        fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
+        row = replace(row, steps=len(record.deformation.steps or ()))
+        rows[at] = row
+        fitted.append(Fitted(row=row, fit=fit, outcome=outcome,
+                             folder=job.layout.relative(folder)))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
-
-
-@dataclass(frozen=True)
-class MappedWarp:
-    """A deformation made elsewhere, as a record not written yet
-    (:func:`warp_from_map`): the section, the record and its key, the linear
-    placement it sits on (``linear_key``), the step the section's reference
-    will list, and the record's numbers
-    (:func:`langslice.core.fits.deformation.summary`)."""
-
-    id: str
-    key: str
-    linear_key: str
-    record: deformation.DeformableRecord
-    step: dict[str, Any]
-    numbers: dict[str, Any]
-    #: The key of the deformation it was built on (``start`` ``current``), which
-    #: the section must still hold when it is applied; None: built on the
-    #: linear placement.
-    parent_key: str | None = None
-
-
-def warp_from_map(
-    job: Job, workspace: Workspace, section: Any, native_xy: Any, *, method: str,
-    step: dict[str, Any] | None = None, provenance: dict[str, Any] | None = None,
-    weights: Any = None, start: str = "linear", settings: Mapping[str, Any] | None = None,
-    engine_settings: Mapping[str, Any] | None = None, engine_version: str = "",
-) -> MappedWarp:
-    """The section's deformation from a full map made elsewhere, not written.
-
-    *native_xy* is a float ``(H, W, 2)`` array: for each pixel centre of the
-    section's fit grid (:func:`langslice.core.fits.deformation.fit_grid`'s
-    image, ``(W, H)`` its size), the native atlas-plane pixel ``(x, y)`` it
-    corresponds to, linear placement and deformation together. It becomes a
-    record as every applied deformation is stored: the residual over the
-    section's current linear placement
-    (:func:`langslice.core.fits.deformation.record_from_map`). *start*
-    ``linear``: built on nothing the section held before; ``current``: the map
-    was made on top of the deformation the section holds, so that record is its
-    parent and the section's steps are kept before its own, as a native fit
-    chains (the map is still the whole registration). *method* names it (the
-    record's engine and the step's ``method``); *settings* (the call's
-    settings, by the tool's names) are the step's ``settings``;
-    *engine_settings* (what the engine ran at, in its own units) and
-    *engine_version* are the record's ``engine.native_parameters`` and
-    ``engine.version``, as a FireANTs record holds them; *step* adds fields to
-    the step, *provenance* to the record's. *weights* is the weighting the
-    engine estimated for itself, a float ``(H, W)`` array on the fit grid in
-    [0, 1] (stored as float16 with the record; ``make_mask`` source ``fit``
-    copies it); None when it estimated none.
-
-    Refused (nothing built): ``UNKNOWN_SLICE_IDS``; ``INVALID_LINEAR_PLACEMENT``
-    (no position or no usable transform, as a fit refuses); ``BAD_FIELD`` (not
-    a float array of the grid's shape with two channels, or not finite;
-    *weights* not a finite ``(H, W)`` array); ``BAD_ARGS`` (a *start* that is
-    neither, ``current`` on a section that holds no deformation);
-    ``DEFORMATION_UNREADABLE``.
-    """
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
-    if start not in ("linear", "current"):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="start is 'linear' or 'current'.")
-    try:
-        grid = deformation.fit_grid(job.state, workspace, record)
-    except (ValueError, OSError) as exc:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                      message=f"{record.id}: {exc}") from exc
-    previous: deformation.DeformableRecord | None = None
-    if start == "current":
-        try:
-            previous = job.deformations.current(job.state, record)
-        except ValueError as exc:
-            raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
-                          message=f"{record.id}: {exc}") from exc
-        if previous is None:
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message=f"{record.id} holds no deformation to build on: "
-                          "start is 'linear'.")
-    parent_key = None
-    if previous is not None:
-        parent_key = record.deformation_key
-    width, height = grid.image.size
-    array = np.asarray(native_xy)
-    if not np.issubdtype(array.dtype, np.floating):
-        raise Refused(RefusalCode.BAD_FIELD,
-                      message=f"{record.id}: the map is a float array, not "
-                      f"{array.dtype}.")
-    if array.shape != (height, width, 2):
-        raise Refused(RefusalCode.BAD_FIELD,
-                      message=f"{record.id}: the map is (H, W, 2) = "
-                      f"({height}, {width}, 2) on the fit grid; got {array.shape}.",
-                      expected_shape=[height, width, 2])
-    if not np.isfinite(array).all():
-        raise Refused(RefusalCode.BAD_FIELD,
-                      message=f"{record.id}: the map has values that are not "
-                      "finite.")
-    stored_weights = None
-    if weights is not None:
-        held = np.asarray(weights)
-        if held.shape != (height, width) or not np.isfinite(held.astype(np.float64)).all():
-            raise Refused(RefusalCode.BAD_FIELD,
-                          message=f"{record.id}: weights are a finite (H, W) = "
-                          f"({height}, {width}) array on the fit grid; got {held.shape}.",
-                          expected_shape=[height, width])
-        stored_weights = np.clip(held.astype(np.float32), 0.0, 1.0).astype(np.float16)
-    linear = deformation.linear_key(job.state, record)
-    array = np.ascontiguousarray(array, dtype=np.float64)
-    key = digest({"method": method, "linear": linear,
-                  "map": hashlib.sha256(array.tobytes()).hexdigest(),
-                  **({"parent": parent_key} if parent_key else {}),
-                  **({"weights": hashlib.sha256(stored_weights.tobytes()).hexdigest()}
-                     if stored_weights is not None else {})})
-    outcome = deformation.record_from_map(
-        workspace, grid, array, method=method,
-        provenance={"tool": method, "linear_key": linear, "start": start,
-                    **({"settings": dict(settings)} if settings else {}),
-                    **(provenance or {})},
-        native_parameters=dict(engine_settings or {}), engine_version=str(engine_version))
-    outcome.weights = stored_weights
-    if previous is not None:
-        outcome.parent = previous
-        outcome.step = previous.step + 1
-    return MappedWarp(id=record.id, key=key, linear_key=linear, record=outcome,
-                      step={"method": method, "start": start, **(step or {}),
-                            **({"settings": dict(settings)} if settings else {})},
-                      numbers=deformation.summary(outcome, previous), parent_key=parent_key)
-
-
-@dataclass(frozen=True)
-class WarpsApplied:
-    """What :func:`apply_warps` did: one row per warp (``status`` ``ok`` with
-    the record's numbers, or ``error`` with the code) and the sections written."""
-
-    rows: list[dict[str, Any]] = field(default_factory=list)
-    written: list[str] = field(default_factory=list)
-
-
-def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
-    """Write each warp as its section's deformation: ONE undo step.
-
-    Under the job's write lock, per warp: a section whose deformation is
-    frozen is its row ``FROZEN``; one whose linear placement is no longer the
-    one the warp was built on, or (a warp built on the section's deformation,
-    ``parent_key``) that no longer holds that deformation, is ``STALE_INPUT``;
-    otherwise the record is saved in the section's folder (``job.deformations``)
-    and the section's ``deformation`` names it, as an applied fit's does: a
-    warp built on the linear placement replaces what the section held, one
-    built on its deformation keeps that deformation's steps before its own
-    (``undo`` brings the earlier one back). A later change to the placement
-    clears it as it clears any deformation.
-    """
-    store = job.deformations
-    rows: list[dict[str, Any]] = []
-    written: list[str] = []
-    with job.writing():
-        before = job.snapshot()
-        for warp in warps:
-            record = job.state.by_id(warp.id)
-            if record is None:
-                rows.append({"id": warp.id, **Refused(RefusalCode.UNKNOWN_SLICE_IDS).payload()})
-                continue
-            frozen = frozen_row(job, record.id, "deformation")
-            if frozen is not None:
-                rows.append(frozen)
-                continue
-            held = record.deformation
-            if deformation.linear_key(job.state, record) != warp.linear_key or (
-                    warp.parent_key is not None
-                    and record.deformation_key != warp.parent_key):
-                rows.append(stale_row(record.id))
-                continue
-            store.put(warp.key, warp.record)
-            try:
-                folder = store.save(record.id, warp.key, warp.record)
-            except (OSError, ValueError) as exc:
-                rows.append({"id": record.id, **Refused(RefusalCode.RECORD_WRITE_FAILED,
-                                    message=str(exc)).payload()})
-                continue
-            record.deformation = deformation.reference(
-                folder=job.layout.relative(folder), key=warp.key, linear=warp.linear_key,
-                record=warp.record, step=dict(warp.step),
-                previous=held if warp.parent_key is not None else None, numbers=warp.numbers)
-            written.append(record.id)
-            rows.append({"id": record.id, "status": "ok", **warp.numbers})
-        if written:
-            job.commit(before)
-    return WarpsApplied(rows=rows, written=written)
-
-
-def pictures(
-    workspace: Workspace,
-    done: DeformableFit,
-    options: DisplayOptions,
-) -> DeformableFit:
-    """*done* with its pictures: per drawn row, the final atlas borders on the
-    image the fit read (:func:`langslice.core.pictures.deformation.picture`),
-    titled
-    with the section, engine, smoothness and what was fitted. Then each
-    traced section's trace on the section
-    (:func:`~langslice.core.pictures.deformation.trace_picture`).
-    Included or ``view.regions`` borders strong, excluded ones pink. Each
-    drawn row gets ``image_indexes``; a picture that fails is listed in
-    ``render_failed``.
-    """
-    import numpy as np
-
-    from langslice.core.fits.deformable.render import drawn_border_coverage
-    from langslice.core.pictures import drawn as pictures_drawn
-    from langslice.core.pictures.canvas import (
-        border_words,
-        resolve_border_color,
-        validate_border_thickness,
-    )
-
-    parts: list[Image.Image] = []
-    failed: list[dict[str, str]] = []
-    thickness = validate_border_thickness(options.border_thickness)
-    # `color` is the image model's own fixed yellow (`trace_picture` below
-    # draws it plain: its prompt says yellow and its reply is read back by
-    # colour). Each fitted-atlas picture gets its cased core (`core`) per row
-    # below, resolved against that row's own tissue -- never one for the whole
-    # batch, since different sections in one call can need different ones.
-    style = pictures_deformation.Style(
-        zoom=() if options.full_view else tuple(options.zoom),
-        highlight=tuple(name for name, _ids in options.regions), marked=(),
-        outlines=options.layer, color=(255, 255, 0), thickness=thickness,
-        atlas_opacity=options.atlas_opacity, depth=options.depth, long_edge=options.long_edge,
-    )
-    for fitted in done.fitted:
-        row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
-        record = fit.grid.record
-        include, exclude = fit_regions(fit)
-        fit_style = replace(style, highlight=style.highlight or include, marked=exclude)
-        coverage = drawn_border_coverage(
-            outcome, workspace.atlas, highlight=fit_style.highlight, marked=fit_style.marked,
-            warped=True, outlines=fit_style.outlines, depth=fit_style.depth,
-            width_px=fit_style.thickness,
-        )
-        core, _ = resolve_border_color(
-            options.border_color, options.border_thickness,
-            rgb=np.asarray(fit.image.convert("RGB")), coverage=coverage,
-        )
-        fit_style = replace(fit_style, core=core)
-        heading = (f"{record.id}  applied: {outcome.engine['name']} "
-                   f"smoothness {fit.choice.smoothness_um:g} um")
-        start = "current" if fit.previous is not None else "linear"
-        detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
-                       + (f", include {','.join(include)}" if include else "")
-                       + (f", exclude {','.join(exclude)}" if exclude else ""))
-        shown_atlas = options.atlas_images
-        first = len(parts)
-        try:
-            parts.append(pictures_deformation.picture(
-                workspace, fit.image, outcome, warped=True, style=fit_style,
-                atlas_images=shown_atlas, title=f"{heading}\n{detail_line}",
-                note={"sections": (record.id,), "mode": options.mode,
-                      "caption": fit_caption(record, fit, row, include, exclude,
-                                             border_words(core))}))
-        except Exception as exc:
-            logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
-            del parts[first:]
-            failed.append({"id": record.id, "message": str(exc)})
-            continue
-        row["image_indexes"] = list(range(first, len(parts)))
-    # Each traced section's trace, once per call, so it can be reviewed.
-    traces: list[dict[str, Any]] = []
-    where = {fitted.fit.grid.record.id: fitted.fit.grid.record for fitted in done.fitted}
-    for section_id, (image, lines) in done.traced.items():
-        try:
-            picture = pictures_deformation.trace_picture(
-                image, lines, style=style,
-                title=f"{section_id}  trace_borders result: the image model's lines")
-        except Exception as exc:
-            logger.warning("trace picture failed for %s", section_id, exc_info=True)
-            failed.append({"id": section_id, "message": str(exc)})
-            continue
-        traces.append({"id": section_id, "image_indexes": [len(parts)]})
-        held = where.get(section_id)
-        at = (f", at {float(held.position_mm):.2f} mm"
-              if held is not None and held.position_mm is not None else "")
-        parts.append(pictures_drawn.note(
-            picture, sections=(section_id,), mode="trace",
-            caption=f"{section_id} trace_borders: the image model's traced lines drawn on "
-            f"the section{at}"))
-    return replace(done, pictures=parts, traces=traces, render_failed=failed)
-
-
-#: How a fit picture's caption names what of the section a fit read.
-_FIT_SECTION_WORDS = {
-    images_.PREPROCESSED: "the preprocessed image",
-    deformation.TRACED_BORDERS: "the image model's traced borders",
-}
-
-
-def fit_caption(record: Section, fit: deformation.Job, row: dict[str, Any],
-                include: Sequence[str], exclude: Sequence[str],
-                border_word: str = "") -> str:
-    """The index caption of a deformable fit's picture: the section, the
-    fit (engine, smoothness, what it read against which atlas image), the
-    position, the regions drawn thick or left out, the colour the fitted
-    borders are drawn in, and the fit's numbers."""
-    choice = fit.choice
-    read = _FIT_SECTION_WORDS.get(choice.fit_section, choice.fit_section)
-    at = (f", at {float(record.position_mm):.2f} mm"
-          if record.position_mm is not None else "")
-    numbers = row.get("displacement_mm") or {}
-    facts = (f"displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
-             f"fold fraction {row.get('fold_fraction')}") if numbers else ""
-    engine = getattr(fit.result, "engine", {}).get("name")
-    return (f"{record.id} deformation fit ({engine} smoothness {choice.smoothness_um:g} um, "
-            f"{read} against the atlas {choice.fit_atlas}){at}; the fitted atlas borders "
-            + (f"({border_word}) " if border_word else "")
-            + "on the image the fit read"
-            + (f"; regions {', '.join(include)} drawn thick, the other borders faint"
-               if include else "")
-            + (f"; left out (second colour): {', '.join(exclude)}" if exclude else "")
-            + (f"; {facts}" if facts else ""))
 
 
 #: The metrics and detail levels ``fireants_syn`` takes.
@@ -818,118 +518,6 @@ def refuse_without_engine() -> None:
     if not engine_ready():
         raise Refused(RefusalCode.ENGINE_MISSING,
                       message=deformation.ENGINE_MISSING + ".")
-
-
-def fit_record(
-    job: Job, workspace: Workspace, section: Any, settings: Any, *,
-    start: str = "linear", mask: str = "none", marked: bool = True,
-    section_image: str = images_.PREPROCESSED,
-) -> deformation.DeformableRecord:
-    """One FireANTs SyN fit of the section with *settings* (a
-    :class:`~langslice.core.fits.deformable.settings.FitSettings`: a stain fit,
-    any
-    smoothness, detail, atlas image, metric, edge channel, regions), written
-    nowhere: the record (``field_mm`` the residual over the section's linear
-    placement, composed onto its applied deformation with *start*
-    ``current``). Its ``provenance`` holds the fit's ``inputs`` and
-    ``estimated`` blocks (:mod:`langslice.core.fits.inputs`).
-
-    *mask* is ``"none"`` or the name of one of the section's masks
-    (:mod:`langslice.tools.masks`): its weights, thresholded at 0.5, narrow the
-    section mask (:func:`langslice.core.fits.deformable.fit.prepare_fit`);
-    *marked* adds the section's marked damage regions to the settings'
-    ``exclude``, as every native fit leaves them out.
-
-    Refused: ``UNKNOWN_SLICE_IDS``, ``ENGINE_MISSING``, ``BAD_ARGS`` (settings
-    that are not a FireANTs stain fit, a start that is neither, ``current``
-    without a deformation), ``INVALID_LINEAR_PLACEMENT``, ``UNKNOWN_MASK``,
-    ``STALE_MASK``, ``FIT_FAILED`` (the engine or the masks failed, the
-    message says how).
-    """
-    from langslice.core.fits.deformable import FitSettings
-    from langslice.core.fits.deformable.fit import prepare_fit, run_prepared
-
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
-    if not isinstance(settings, FitSettings) or settings.engine != "fireants" or (
-            settings.section_image != "stain" or settings.labels != "none"):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="settings are a FireANTs stain fit's FitSettings "
-                      "(engine fireants, section_image stain, labels none).")
-    if start not in ("linear", "current"):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="start is 'linear' or 'current'.")
-    refuse_without_engine()
-    label = str(mask or ops_masks.NO_MASK).strip()
-    weights = ops_masks.section_weights(job, record, label)
-    try:
-        grid = deformation.fit_grid(job.state, workspace, record)
-    except (ValueError, OSError) as exc:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                      message=f"{record.id}: {exc}") from exc
-    previous = None
-    if start == "current":
-        previous = job.deformations.current(job.state, record)
-        if previous is None:
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message=f"{record.id} has no deformation to start from.")
-    image_name = check_image(job, workspace, [record], section_image)
-    _kept, dropped = exclusions(record, tuple(str(name) for name in settings.structures))
-    if marked:
-        settings = replace(settings, exclude=tuple(dict.fromkeys(
-            (*settings.exclude, *dropped))))
-    try:
-        image, _look = deformation.section_image(workspace, job.state, grid, image_name)
-        prepared = prepare_fit(image, workspace.atlas, grid.placement, settings,
-                               previous=previous, section_weights=weights)
-        with deformation.engine_lock(), engine_output(job.engine_log,
-                                                      f"FireANTs fit of {record.id}"):
-            outcome = run_prepared(prepared)
-    except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
-        raise Refused(RefusalCode.FIT_FAILED,
-                      message=f"{record.id}: " + failure_message(
-            f"{type(exc).__name__}: {exc}", job.engine_log,
-            f"the FireANTs fit of {record.id} failed")) from exc
-    block = inputs_block(
-        job.state, workspace, record, section_image=image_name,
-        atlas_image=str(settings.atlas_image), mask=label,
-        damage=[str(name) for name in dropped] if marked else [],
-        restrict_to=[str(name) for name in settings.structures],
-        resolved=_resolved(workspace, str(settings.atlas_image)))
-    estimated = estimated_block(outcome)
-    outcome.provenance = {**outcome.provenance, "inputs": block.payload(),
-                          "estimated": None if estimated is None else estimated.payload()}
-    return outcome
-
-
-def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str, ...]:
-    """*entries* (region acronyms, names or ids, ``"CTX:left"`` for one side)
-    checked against the atlas and normalized. Refused: ``BAD_ARGS`` (not a
-    list of names, or a side that does not exist), ``UNKNOWN_REGIONS``,
-    ``NO_SIDES`` (a side on a sagittal stack)."""
-    from langslice.core.atlas.sides import has_sides
-    from langslice.core.fits.deformable.plane_images import resolve_entries
-    from langslice.core.sections.damage import normalized_entries
-
-    if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="restrict_to is a list of atlas regions.")
-    try:
-        names = normalized_entries(str(entry) for entry in entries)
-    except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
-    if names:
-        try:
-            resolve_entries(workspace.atlas, names)
-        except ValueError as exc:
-            raise Refused(RefusalCode.UNKNOWN_REGIONS,
-                          message=str(exc)) from exc
-        if state.plane == "sagittal" and has_sides(names):
-            raise Refused(RefusalCode.NO_SIDES,
-                          message="A sagittal section lies within one "
-                          "hemisphere, so a region cannot be limited to one side.")
-    return tuple(names)
 
 
 def fireants_syn(
@@ -976,18 +564,13 @@ def fireants_syn(
     ``UNKNOWN_IMAGE``; ``UNKNOWN_MASK`` (a section without that mask);
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
-    from langslice.core.atlas.images import resolve_image
     from langslice.core.fits.deformable.settings import SMOOTHNESS_BOUNDS_UM
 
     refs = list(sections or [])
     if not refs:
         raise Refused(RefusalCode.BAD_ARGS,
                       message="Name the sections to fit.")
-    kind = str(atlas_image or "nissl").strip()
-    try:
-        resolve_image(workspace.atlas, kind)
-    except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+    kind = check_atlas_image(workspace, atlas_image)
     metric_name = str(metric or "mutual_information").strip()
     if metric_name not in METRICS:
         raise Refused(RefusalCode.BAD_ARGS,
@@ -1024,7 +607,7 @@ def fireants_syn(
                    **({} if level == "standard" else {"detail": level})})
     return replace(done, settings={
         "section_image": image, "atlas_image": kind,
-        "atlas_image_resolved": _resolved(workspace, kind), "mask": choice.mask,
+        "atlas_image_resolved": resolved_atlas_image(workspace, kind), "mask": choice.mask,
         "restrict_to": list(regions), "smoothness_um": float(smoothness_um),
         "metric": metric_name, "edges": bool(edges), "detail": level})
 
@@ -1045,7 +628,150 @@ def refuse_unknown_inputs(
     if label != ops_masks.NO_MASK:
         lacking = [record.id for record in records if label not in record.masks]
         if lacking:
+            named = ", ".join(lacking)
             raise Refused(RefusalCode.UNKNOWN_MASK, sections=lacking,
-                          message=f"No mask {label!r} on {', '.join(lacking)}; make it with "
-                          "make_mask.")
+                          message=render(
+                              f"No mask {label!r} on {named}[[?make_mask ; "
+                              "make it with make_mask||; status lists each "
+                              "section's masks]].", job.spec.switched_off))
     return image
+
+
+def check_atlas_image(workspace: Workspace, atlas_image: object) -> str:
+    """Return the atlas image a fit reads, by the name the call gave.
+
+    Parameters
+    ----------
+    workspace
+        The job's workspace, whose atlas must have the image.
+    atlas_image
+        The call's ``atlas_image``; empty is ``nissl``.
+
+    Returns
+    -------
+    str
+        The name, stripped (``nissl`` resolves per atlas when the fit runs).
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` when the atlas has no image of that name.
+    """
+    kind = str(atlas_image or "nissl").strip()
+    try:
+        resolve_image(workspace.atlas, kind)
+    except ValueError as exc:
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+    return kind
+
+
+def nothing_fitted(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Return the top-level error of a fit call that fitted nothing.
+
+    Parameters
+    ----------
+    rows
+        The call's per-section rows, each refused.
+
+    Returns
+    -------
+    dict
+        When every section was refused for the same reason, that reason's
+        ``error`` and ``message`` (the rows keep theirs); otherwise
+        ``NOTHING_FITTED``, each row naming its own.
+    """
+    codes = {str(row.get("error")) for row in rows if row.get("error")}
+    if not rows or len(codes) != 1 or not all(row.get("error") for row in rows):
+        return {"error": RefusalCode.NOTHING_FITTED}
+    code = codes.pop()
+    message = str(rows[0].get("message") or "")
+    if message and len(rows) > 1:
+        message = f"Every section was refused for this reason. {message}"
+    if not message:
+        return {"error": code}
+    return {"error": code, "message": message}
+
+
+# --- the tool ----------------------------------------------------------------
+
+
+def fireants_syn_tool(
+    run: Run,
+    sections: Sequence[str],
+    restrict_to: Sequence[str],
+    *,
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
+    mask: str = "none",
+    smoothness_um: float = 80.0,
+    metric: str = "mutual_information",
+    edges: bool = True,
+    detail: str = "standard",
+    view: bool = True,
+) -> dict[str, Any]:
+    """Run the ``fireants_syn`` tool: fit, answer, picture.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    sections, restrict_to, section_image, atlas_image, mask, smoothness_um
+        The declared arguments as the model sent them
+        (``tools/descriptions/fitting.py``).
+    metric, edges, detail, view
+        More of the declared arguments, as sent.
+
+    Returns
+    -------
+    dict
+        The reply: ``status``, the call's ``settings``, one row per section
+        (``results``), the status rows the write changed.
+    """
+    job, workspace = run.job, run.workspace
+    check_section_count(
+        job, "fireants_syn", len(as_list(sections)),
+        cap=MAX_FIREANTS_SYN_SECTIONS, reason=SECTION_CAP_REASON)
+    done = fireants_syn(
+        job, workspace, as_list(sections), restrict_to=as_list(restrict_to),
+        section_image=section_image, atlas_image=atlas_image, mask=mask,
+        smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
+    fitted = [row.id for row in done.rows if row.refusal is None]
+    rows = [deformable_row_to_json(row) for row in done.rows]
+    result: dict[str, Any] = {"status": "ok" if fitted else "error"}
+    if not fitted:
+        result.update(nothing_fitted(rows))
+    result["settings"] = done.settings
+    result["results"] = rows
+    if done.written:
+        result["changed"] = run.changed(done.written)["changed"]
+    if not fitted or not run.shows(view):
+        return result
+
+    regions = region_entries(workspace, job.state, as_list(restrict_to))
+    zooms = _region_zooms(run, fitted, regions)
+    shown = show_result(
+        job, workspace, "fireants_syn", "overlay", fitted, zooms=zooms,
+        highlight=regions, images=drawn_image(section_image))
+    return pictured(result, shown)
+
+
+def _region_zooms(
+    run: Run, fitted: Sequence[str], regions: Sequence[str]
+) -> dict[str, list[float]]:
+    """Return each fitted section's zoom to the regions' box.
+
+    None without regions, and none where it would not magnify enough
+    (:func:`langslice.tools.fit_regions.zoom_window`).
+    """
+    zooms: dict[str, list[float]] = {}
+    if not regions:
+        return zooms
+    for name in fitted:
+        section = run.job.state.by_id(name)
+        box = None
+        if section is not None:
+            box = region_box(run.workspace, run.job.state, section, regions)
+        window = zoom_window(box)
+        if window is not None:
+            zooms[name] = window
+    return zooms

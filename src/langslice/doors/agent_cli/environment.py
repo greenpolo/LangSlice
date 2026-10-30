@@ -19,9 +19,7 @@ Subcommands: ``env`` (make it when missing; its paths and packages),
 ``env remove``.
 
 ``langslice-job FOLDER python SCRIPT [ARGS ...]`` (:func:`python`) runs the
-agent's script as the environment's python would (made first when missing): in
-the job's warm process when one answers (:mod:`langslice.doors.agent_cli.warm`,
-with that python's import path), else that python itself.
+agent's script with the environment's python (made first when missing).
 """
 
 from __future__ import annotations
@@ -58,7 +56,7 @@ def command(layout: JobLayout, positional: list[str]) -> Envelope:
                                 "requirements": str(layout.folder / REQUIREMENTS)})
     if action not in ("", "install") or (action == "install" and not packages):
         return Envelope.failure(
-            RefusalCode.BAD_ARGUMENTS,
+            RefusalCode.BAD_ARGS,
             "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.")
     try:
         built = ensure(layout)
@@ -222,13 +220,9 @@ def python(folder: str, rest: list[str]) -> int:
     the working folder does not hold is read from the job folder
     (:func:`script_path`). Its stdout, stderr
     and exit code are the script's, as ``env/bin/python SCRIPT ARGS`` gives
-    them; in the job's warm process
-    (:func:`langslice.doors.agent_cli.warm.run_script`)
-    the script runs in this process with that python's import path, else this
-    process becomes that python. A call that cannot start the script prints
-    the envelope of its refusal (``NO_JOB``, ``BAD_ARGUMENTS``,
+    them: this process becomes that python. A call that cannot start the
+    script prints the envelope of its refusal (``NO_JOB``, ``BAD_ARGS``,
     ``ENV_FAILED``) and returns its exit code."""
-    from langslice.doors.agent_cli import warm
     from langslice.doors.agent_cli.envelope import emit
     from langslice.doors.call_log import log_call
     from langslice.doors.jobs import NoJob, find
@@ -239,7 +233,7 @@ def python(folder: str, rest: list[str]) -> int:
         return emit(Envelope.failure(RefusalCode.NO_JOB, str(exc)))
     if not rest or rest[0].startswith("-"):
         return emit(Envelope.failure(
-            RefusalCode.BAD_ARGUMENTS, f"python takes a script and its arguments: {PYTHON_USAGE} "
+            RefusalCode.BAD_ARGS, f"python takes a script and its arguments: {PYTHON_USAGE} "
             "(no interpreter options).", verb="python"))
     try:
         ensure(layout)
@@ -247,11 +241,8 @@ def python(folder: str, rest: list[str]) -> int:
         return emit(Envelope.failure(RefusalCode.ENV_FAILED,
                                      str(exc), verb="python"))
     rest = [script_path(layout, rest[0]), *rest[1:]]
-    log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest),
-                               "warm": warm.in_child()})
+    log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest)})
     interpreter = python_of(env_dir(layout))
-    if warm.in_child():
-        return warm.run_script(interpreter, rest)
     sys.stdout.flush()
     sys.stderr.flush()
     if os.name == "nt":  # no exec there: the script's exit code is passed on

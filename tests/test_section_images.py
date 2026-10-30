@@ -246,14 +246,6 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
     folder = job.folder
     old = _format_three(job)
     (folder / "state.json").write_text(json.dumps({FORMAT_KEY: 3, **old}))
-    steps = sorted((folder / "history").glob("step-*.json"))
-    assert steps
-    for path in steps:
-        held = json.loads(path.read_text())
-        held.pop(FORMAT_KEY)
-        for row in held.get("slices", []):
-            row.pop("images", None)
-        path.write_text(json.dumps({FORMAT_KEY: 3, **held, "appearance": {}}))
     for path in (folder / "sections").glob("*/images/*.png"):
         path.unlink()
     job.close()
@@ -270,12 +262,10 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
     for record in (s0, s1):
         for entry in record.images.values():
             assert (folder / entry.file).is_file()
-    # Display properties are gone, the state is format 4 on disk, history too.
+    # Display properties are gone and the state is the current format on disk.
     saved = json.loads((folder / "state.json").read_text())
-    assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 4 and "appearance" not in saved
-    for path in sorted((folder / "history").glob("step-*.json")):
-        assert json.loads(path.read_text())[FORMAT_KEY] == STATE_FORMAT_VERSION
-    assert loaded.undo_stack  # the history survived its migration
+    assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 5 and "appearance" not in saved
+    assert loaded.undo_stack  # the undo steps survived the migration
     # The opening image comes back with the same pixels it had.
     drawn = render_slice(fresh, s0, long_edge=160)
     source, _ = fresh.working_source("s0.png")
@@ -311,7 +301,7 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     def stale(path: str, upgrade: Any = None) -> Any:  # the first read saw format 3
         calls.append(1)
         if len(calls) == 1:
-            return upgrade({key: value for key, value in old.items()})
+            return upgrade(3, {key: value for key, value in old.items()})
         return real(path, upgrade)
 
     monkeypatch.setattr(job_module, "read_checkpoint", stale)
@@ -322,4 +312,4 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     assert held is not None and held.position_mm == 0.2
     saved = json.loads((folder / "state.json").read_text())
     row = next(item for item in saved["slices"] if item["id"] == "s0.png")
-    assert saved[FORMAT_KEY] == 4 and row["position_mm"] == 0.2
+    assert saved[FORMAT_KEY] == 5 and row["position_mm"] == 0.2

@@ -1,11 +1,12 @@
-"""The wrappers every tool runs inside (``doors/tools/toolbox.py``): the
+"""The steps every tool call goes through (``tools/pipeline.py``): the
 serialization lock and its host events, the strict argument check, the
 picture saving, the background notices, the opening-read gate and the
-host display targets."""
+host display targets (``tools/events.py``)."""
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
 import time
 from pathlib import Path
@@ -16,39 +17,39 @@ from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.toolbox import (
-    _saves_views,
-    _serialized,
-    _tool_target_ids,
-    build_tools,
-)
+from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed
-from langslice.job.job import HOST_TRANSFORM_KIND
+from langslice.job.host_inputs import HOST_TRANSFORM_KIND
 from langslice.job.pictures import PICTURE_FILE
 from langslice.job.state_file import stack_to_json
+from langslice.tools.events import target_ids
+from langslice.tools.pipeline import ToolCall, run_call
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
 
-# --- _serialized ---------------------------------------------------------------------
+# --- _serialize ---------------------------------------------------------------------
 
 
-def test_tools_keep_their_identity_and_run_one_at_a_time():
+def test_tools_keep_their_identity_and_run_one_at_a_time(tmp_path: Path):
     """ADK runs a turn's several calls concurrently; every tool shares one
     state, so the box serializes them without changing what ADK sees."""
-    lock = threading.Lock()
     inside = {"now": 0, "peak": 0}
+    _, _, box = _box(tmp_path, placed=True)
+    note = _tool(box, "note")
+    assert note.__name__ == "note" and note.__doc__ == note.__wrapped__.__doc__
+    assert inspect.signature(note) == inspect.signature(note.__wrapped__)
 
     def slow(x: int) -> int:
-        """Doc kept."""
         inside["now"] += 1
         inside["peak"] = max(inside["peak"], inside["now"])
         time.sleep(0.005)
         inside["now"] -= 1
         return x
 
-    wrapped = _serialized(slow, lock)
-    assert wrapped.__name__ == "slow" and wrapped.__doc__ == "Doc kept."
+    def wrapped(k: int) -> object:
+        return run_call(ToolCall("note", slow, box, (k,), {}))
+
     threads = [threading.Thread(target=wrapped, args=(k,)) for k in range(4)]
     for thread in threads:
         thread.start()
@@ -113,7 +114,7 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
         assert set(endpoint["properties"]) == {"picture", "x", "y"}
 
 
-# --- _strict -----------------------------------------------------------------------------
+# --- strict_arguments -----------------------------------------------------------------------------
 
 
 def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_path: Path):
@@ -160,24 +161,25 @@ def test_the_adk_plugin_refuses_what_adk_would_drop(tmp_path: Path):
         tool=FunctionTool(look), tool_args={"mode": "section"}, tool_context=None)) is None
 
 
-# --- _saves_views ----------------------------------------------------------------------------
+# --- _save_pictures ----------------------------------------------------------------------------
 
 
 def test_pictures_an_operation_saved_are_not_saved_again(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, n=2, placed=True)
-    job = build_tools(state, ctx, spec).job
+    box = build_tools(state, ctx, spec)
+    job = box.job
     image = Image.new("RGB", (20, 10), "green")
     listed = [{"id": 7, "caption": "saved by its operation"}]
 
     def looked() -> dict:
         return {"status": "ok", "pictures": list(listed), TOOL_MEDIA_PARTS_KEY: [image]}
 
-    result = _saves_views(looked, job, ctx)()
+    result = run_call(ToolCall("look", looked, box, (), {}))
     assert result["pictures"] == listed
     assert job.views.records() == []
 
 
-# --- _announces_work ------------------------------------------------------------------------
+# --- announce_work ------------------------------------------------------------------------
 
 
 def test_background_notices_open_the_next_reply_with_their_pictures_last(tmp_path: Path):
@@ -211,7 +213,7 @@ def test_the_opening_gate_refuses_writes_until_every_page_is_read(tmp_path: Path
     refused = note("first")
     assert refused["status"] == "refused" and refused["error"] == "OPENING_NOT_READ"
     assert refused["pages"] == [1, 2]
-    assert "show_stack(page=1), show_stack(page=2)" in refused["detail"]
+    assert "show_stack(page=1), show_stack(page=2)" in refused["message"]
     assert _tool(box, "status")()["status"] == "ok"  # reads pass
     box.opening_read(1)
     assert note("first")["pages"] == [2]
@@ -222,7 +224,7 @@ def test_the_opening_gate_refuses_writes_until_every_page_is_read(tmp_path: Path
     assert state.notes[-2:] == ["first", "second"]
 
 
-# --- _tool_target_ids -------------------------------------------------------------------------
+# --- target_ids -------------------------------------------------------------------------
 
 
 def test_host_display_targets_follow_each_tools_scope():
@@ -235,22 +237,22 @@ def test_host_display_targets_follow_each_tools_scope():
     ])
     every = ["a", "b", "c"]
     for name in ("status", "undo", "redo", "submit"):
-        assert _tool_target_ids(state, name, {}) == every
-    assert _tool_target_ids(state, "look", {"mode": "positioning", "sections": []}) == every
-    assert _tool_target_ids(state, "look", {"mode": "atlas", "sections": []}) == []
-    assert _tool_target_ids(state, "look", {"mode": "overlay", "sections": ["2"]}) == []
-    assert _tool_target_ids(state, "look", {"mode": "overlay", "sections": ["c"]}) == ["c"]
-    assert _tool_target_ids(state, "position_sections",
+        assert target_ids(state, name, {}) == every
+    assert target_ids(state, "look", {"mode": "positioning", "sections": []}) == every
+    assert target_ids(state, "look", {"mode": "atlas", "sections": []}) == []
+    assert target_ids(state, "look", {"mode": "overlay", "sections": ["2"]}) == []
+    assert target_ids(state, "look", {"mode": "overlay", "sections": ["c"]}) == ["c"]
+    assert target_ids(state, "position_sections",
                             {"sections": [], "cutting_angles": {"pitch_deg": 1}}) == every
-    assert _tool_target_ids(state, "position_sections", {
+    assert target_ids(state, "position_sections", {
         "sections": [{"id": "c", "position_mm": 1.0}, {"id": "a", "position_mm": 4.0}],
     }) == ["c", "a"]
-    assert _tool_target_ids(state, "make_image",
+    assert target_ids(state, "make_image",
                             {"sections": []}) == every
-    assert _tool_target_ids(state, "elastix_affine", {"sections": ["b", "a"]}) == ["b", "a"]
-    assert _tool_target_ids(state, "interactive_transform", {
+    assert target_ids(state, "elastix_affine", {"sections": ["b", "a"]}) == ["b", "a"]
+    assert target_ids(state, "interactive_transform", {
         "sections": [{"id": "b"}, {"id": "a"}, {"id": "1"}, {"id": "a"}],
     }) == ["b", "a"]
-    assert _tool_target_ids(state, "mark_damage", {"section": "b", "regions": []}) == ["b"]
-    assert _tool_target_ids(state, "make_mask", {"sections": ["c"], "name": "m"}) == ["c"]
-    assert _tool_target_ids(state, "export_maps", {"slices": ["c", "nope"]}) == ["c"]
+    assert target_ids(state, "mark_damage", {"section": "b", "regions": []}) == ["b"]
+    assert target_ids(state, "make_mask", {"sections": ["c"], "name": "m"}) == ["c"]
+    assert target_ids(state, "export_maps", {"slices": ["c", "nope"]}) == ["c"]

@@ -1,4 +1,4 @@
-"""Ending the run: the job's submit gates, then the final write."""
+"""Ending the run: the submit gates, the final write, the ``submit`` tool."""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import break_ids, normalize_to_atlas_order
 from langslice.tools.exports import Exported
 from langslice.tools.refusal import unknown_sections
+from langslice.tools.run import as_list
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+    from langslice.tools.run import Run
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +49,10 @@ def clean_breaks(job: Job, values: Any) -> list[int]:
     if values is None:
         return []
     if not isinstance(values, (list, tuple)):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="interval_breaks is a list of filenames.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message="interval_breaks is a list of filenames.",
+        )
     breaks: list[int] = []
     unknown: list[str] = []
     for raw in values:
@@ -99,7 +103,7 @@ def submit(
     breaks = clean_breaks(job, interval_breaks)
     job.background.wait_all()
     if traces:
-        job.settle_image_corrections()
+        job.settle_border_traces()
     refusal = job.submit_errors(breaks)
     if refusal is not None:
         raise refusal
@@ -133,7 +137,57 @@ def submit(
         try:
             exported = export_stack(job, workspace)
         except Exception:  # the derived files must never undo a submit
-            logger.warning("Could not write the exports at submit", exc_info=True)
-    return Submitted(summary=summary_text, notes=clean_notes,
-                     interval_breaks=break_ids(state), reversed=reversed_order,
-                     exported=exported)
+            logger.warning(
+                "Could not write the exports at submit", exc_info=True
+            )
+    return Submitted(
+        summary=summary_text,
+        notes=clean_notes,
+        interval_breaks=break_ids(state),
+        reversed=reversed_order,
+        exported=exported,
+    )
+
+
+def submit_tool(
+    run: Run,
+    summary: str,
+    notes: list[str],
+    interval_breaks: list[str],
+    *,
+    tool_context: Any = None,
+) -> dict[str, Any]:
+    """Run the ``submit`` tool: end the run and answer with the whole table.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    summary, notes, interval_breaks, tool_context
+        The declared arguments as the model sent them
+        (``tools/descriptions/bookkeeping.py``).
+
+    Returns
+    -------
+    dict
+        ``status`` and every section's row, the cutting angles and the
+        interval breaks.
+    """
+    done = submit(
+        run.job,
+        summary=summary,
+        notes=as_list(notes),
+        interval_breaks=as_list(interval_breaks),
+        traces=run.traces_on,
+        workspace=run.workspace,
+    )
+    run.box.submission.update(
+        {
+            "summary": done.summary,
+            "notes": done.notes,
+            "interval_breaks": done.interval_breaks,
+        }
+    )
+    if tool_context is not None:
+        tool_context.actions.escalate = True
+    return {"status": "ok", **run.rows()}

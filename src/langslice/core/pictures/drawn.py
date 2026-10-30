@@ -63,6 +63,11 @@ class WarpNote:
     depth: int = OVERLAY_DEPTH
     width_px: float = 2.0
     native: Any = None
+    #: The size the record's grid was resized to and the box of it the
+    #: picture shows (``resampled_record``'s ``size`` and ``box``), so the
+    #: picture's residual is drawn again from the record on demand.
+    grid_size: tuple[int, int] = (0, 0)
+    box: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 _NOTES: contextvars.ContextVar[list[tuple[Image.Image, PictureNote]] | None] = (

@@ -59,11 +59,11 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from langslice.core.fits.trace.request import ImageModel
 from langslice.doors.jobs import Opened, open_folder
 from langslice.doors.library.replies import Reply, library_reply
 from langslice.doors.library.script_context import ScriptContext
 from langslice.job.settings.spec import JobSpec
-from langslice.providers.connections import ImageModel
 
 logger = logging.getLogger(__name__)
 
@@ -162,9 +162,9 @@ class JobHandle:
         (:class:`ScriptContext`, ``docs/developers/library.md``): the same reads,
         conversions and writes a tool plugin has, recorded as ``script``."""
         if self._context is None:
-            door = self._opened.tools().door
-            assert door is not None  # build_tools keeps the door it built
-            self._context = ScriptContext(door)
+            run = self._opened.tools().run
+            assert run is not None  # build_tools keeps the run it built
+            self._context = ScriptContext(run)
         return self._context
 
     @property
@@ -175,7 +175,7 @@ class JobHandle:
     @property
     def image_model(self) -> Any:
         """The image model ``trace_borders`` calls when one was handed in
-        (:class:`langslice.providers.connections.ImageModel`), else None."""
+        (:class:`langslice.core.fits.trace.request.ImageModel`), else None."""
         return self._opened.image_model
 
     @property
@@ -243,7 +243,7 @@ class JobHandle:
         ``artifacts`` and ``images``. Work that finished meanwhile is delivered
         once, here or at the head of the next reply. *timeout* seconds (None: as
         long as it takes) leave work still running listed under ``running``."""
-        from langslice.doors.tools.toolbox import with_notices, work_pictures
+        from langslice.tools.pipeline import with_notices, work_pictures
 
         job = self._opened.job
         job.background.wait_all(timeout)
@@ -393,7 +393,7 @@ def create_job(
     pixel_size_um: float | Mapping[str, float] | None = None,
     inputs: Mapping[str, Any] | None = None,
     registration: str | os.PathLike[str] | None = None,
-    fresh: bool = False,
+    resume: bool | None = None,
     plugins: Any = None,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
@@ -436,8 +436,8 @@ def create_job(
     options), so reopening it loads the same plugins. Loading runs their code.
 
     *image_model* as in :func:`open_job`; None makes a job
-    without one (nonlinear provider ``none``). *fresh* starts over instead
-    of continuing the folder's job. *settings* are further
+    without one (nonlinear provider ``none``). *resume* False starts over
+    instead of continuing the folder's job. *settings* are further
     :class:`JobSpec` fields (``preprocess``, ``interval_um`` lives in
     ``position``...).
     """
@@ -449,6 +449,12 @@ def create_job(
     )
     from langslice.job.layout import write_job_file
 
+    if "fresh" in settings:  # resume='s old spelling, still read
+        if resume is not None:
+            raise TypeError("create_job takes resume= or its old spelling "
+                            "fresh=, not both")
+        resume = not settings.pop("fresh")
+    resume = True if resume is None else resume
     load_credentials()  # the image model's keys, as open_job loads them
     model = as_image_model(image_model)
     if plugins is not None:
@@ -465,7 +471,7 @@ def create_job(
             "orientation": orientation, "pixel_size_um": pixel_size_um, "inputs": inputs,
             "tasks": tasks, "job_dir": job_dir,
             "registration": registration}.items() if value is not None}
-        if given or settings or fresh:
+        if given or settings or not resume:
             raise ValueError("create_job takes a JobSpec as it is: set "
                              f"{sorted({*given, *settings})} on the spec instead")
         spec = images
@@ -505,7 +511,7 @@ def create_job(
             "nonlinear": nonlinear, "inputs": supplied,
             "job_dir": None if job_dir is None else os.path.abspath(
                 os.path.expanduser(os.fspath(job_dir))),
-            "resume": not fresh,
+            "resume": resume,
         })
     _check_model_fits(spec, model)
     imported: dict[str, Any] | None = None

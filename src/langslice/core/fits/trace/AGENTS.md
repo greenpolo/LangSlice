@@ -32,7 +32,17 @@ yellow.
   the base prompt (`profile_prompt`) and join the call key; an untested
   profile marks its request and result `untested` (`profile_marks`).
 It keeps the call-key folders and attempts, takes the image model as an
-argument, and leaves fitting to the tools layer.
+argument, and leaves fitting to the tools layer. A running attempt holds a
+lock on its call key's `.call.lock`: another process asking the same call
+meanwhile is refused `IMAGE_CALL_IN_PROGRESS`, and an attempt whose process
+died releases it, so the call is made again as the next attempt. An
+attempt's folder holds
+`request.json` (what was sent: the geometry, and each attached picture's
+role and PNG SHA-256 in the order sent), `prompt.txt`, `base_prompt.txt`,
+`prompt_diff.txt`, `raw_reply.png` (the model's answer, kept as received)
+and `extracted_lines.png` (the lines a fit reads); the pictures sent are not
+kept: `_canvas_and_placement` and `lines.smooth_border_overlay` draw them
+again from the section and the request.
 
 Atlas labels and grayscale references use the same position, plane, cutting
 angles and orientation. Reflection is explicit, never guessed from a
@@ -75,19 +85,21 @@ residual alone is never exported.
   `atlas_margin`). `reply_on_grid` (the trace-reply export) reads the
   canvas-to-render map from the same matrix.
 - `lines.py` — the yellow lines of a trace: `smooth_border_overlay`
-  and `border_overlay` draw them on a section, `extract_thinned_lines`
+  draws them on a section, `extract_thinned_lines`
   (`yellow_mask`, `thin`) reads the model's lines off a raw reply. It fits
   nothing and calls no model.
 - `prompts.py` — the prompt functions; the OpenAI-GPT or Gemini wording is
   selected by `canonical_provider(provider)` (`core/connections.py`).
-- `request.py` — `SegmentationGenerationRequest` / `GeneratedSegmentation`, the
+- `request.py` — `BorderTraceRequest` / `GeneratedSegmentation`, the
   request and reply of the one-call-in, one-image-out transport
   (`providers/image_calls.py`). `mode` (default `"edit"`) is the edit-vs-generate
   semantic each transport translates its own way; `size_tier` is the
   output tier the transport passes on. A door resolves a provider name to
   this call once (`providers.connections.resolve_image_model`) and passes it in
-  as the `ImageModel`; a model call without one is refused, so the core never
-  imports the transport.
+  as the `ImageModel` (defined here: provider, model, profile and `call`, an
+  `ImageCall` protocol the providers' calls implement); a model call without
+  one is refused, so the core, the job and the tools never import a provider,
+  not even for a type.
 - `frames.py` — canvas and aspect facts only (`image_model_family`,
   `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
 

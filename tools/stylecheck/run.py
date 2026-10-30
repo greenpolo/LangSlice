@@ -80,7 +80,7 @@ def run_checks(
             violations.extend(run(project, config))
 
     # the descriptions a model reads are judged by the text snapshot
-    stubs = find_stubs(project, config)
+    stubs = find_stubs(project)
     violations = drop_stub_docstring_findings(violations, stubs)
 
     selected = [
@@ -115,7 +115,7 @@ def internal_violations(project: Project, config: Config) -> list[Violation]:
         When a check raises an exception.
     """
     violations = _checked(project, config, Scope())
-    stubs = find_stubs(project, config)
+    stubs = find_stubs(project)
     return drop_stub_docstring_findings(violations, stubs)
 
 

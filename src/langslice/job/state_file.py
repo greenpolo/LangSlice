@@ -11,11 +11,11 @@ may share one job folder; they take turns under its write lock
 (:meth:`langslice.job.job.Job.writing`).
 
 The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next to
-the state's own fields. A checkpoint of format 3 is read through the job's
-upgrade (:data:`UPGRADABLE_FORMAT`: its appearance recipes made into section
-image files, :class:`langslice.core.sections.images.Migration`); any other
-format is refused, never guessed at: a newer one asks for a newer LangSlice, an
-older one (a pre-release LangSlice's) for a new job.
+the state's own fields. A checkpoint of an older format is read through the
+job's upgrade, the table of migrations
+(:class:`langslice.job.migrations.FolderMigration`); any other format is
+refused, never guessed at: a newer one asks for a newer LangSlice, an older
+one the table does not read (a pre-release LangSlice's) for a new job.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import json
 import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
 from langslice.core.stack.json_reads import (
@@ -45,24 +45,23 @@ from langslice.core.stack.rows import (
 from langslice.core.stack.section import FLAT, Section
 from langslice.core.stack.stack import Stack
 
-#: A reader of a format-3 state's fields that returns them as format 4.
-Upgrade = Callable[[dict[str, Any]], dict[str, Any]]
+#: A reader of a state's fields of its format (the first argument) that
+#: returns them as the current format.
+Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 
 #: The key a job-folder file carries its format version under.
 FORMAT_KEY = "format_version"
 #: The checkpoint's format. Every path on a section record (a deformation's
-#: ``record``, an image correction's ``artifact_dir`` and ``artifact_paths``)
+#: ``record``, a border trace's ``artifact_dir`` and ``artifact_paths``)
 #: is relative to the job folder (:func:`state_paths`), and every section
 #: carries its own cutting angles (``Section.angles``). A
 #: state whose sections share one angle also writes it as the stack's
 #: ``cutting_angles_deg``; one whose sections differ (a registration
 #: supplied per section) writes the stack's as null. Every section's made
 #: images are entries (``Section.images``) naming files under the job
-#: folder; the stack has no ``appearance``.
-STATE_FORMAT_VERSION = 4
-#: The older format a job's upgrade reads (``Job``'s; the stack's
-#: ``appearance`` recipes and display properties).
-UPGRADABLE_FORMAT = 3
+#: folder; the stack has no ``appearance``. A section's border trace is
+#: under ``border_trace``, its files in ``sections/<name>/border_trace/``.
+STATE_FORMAT_VERSION = 5
 
 
 def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
@@ -83,6 +82,30 @@ def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
+
+
+def json_object(text: str) -> JsonObject | None:
+    """Return the JSON object a text holds; None for any other JSON value.
+
+    Parameters
+    ----------
+    text
+        One JSON value written as text.
+
+    Returns
+    -------
+    JsonObject or None
+        The object.
+
+    Raises
+    ------
+    ValueError
+        When the text is not JSON.
+    """
+    data = cast("object", json.loads(text))  # json.loads: any JSON value
+    if not isinstance(data, dict):
+        return None
+    return cast("JsonObject", data)  # a JSON object: text keys, JSON values
 
 
 #: The stack's own keys, in the order the state file writes them.
@@ -126,7 +149,27 @@ def stack_to_json(state: Stack) -> dict[str, JsonValue]:
         for key in OPTIONAL_ROW_KEYS:
             if not row[key]:
                 del row[key]
-    data: dict[str, JsonValue] = {
+    fields = stack_fields(state)
+    data = {key: fields.get(key) for key in STACK_KEYS}
+    data["slices"] = list[JsonValue](rows)
+    data[ANGLES_KEY] = angles
+    return data
+
+
+def stack_fields(state: Stack) -> dict[str, JsonValue]:
+    """Return the stack's own fields in their JSON form, without its sections.
+
+    Parameters
+    ----------
+    state
+        The stack read.
+
+    Returns
+    -------
+    dict
+        :data:`STACK_KEYS` but ``slices``.
+    """
+    return {
         "image_folder": state.image_folder,
         "atlas": state.atlas,
         "plane": state.plane,
@@ -135,12 +178,25 @@ def stack_to_json(state: Stack) -> dict[str, JsonValue]:
         "spec": to_jsonable(state.spec),
         "interval_breaks": list[JsonValue](state.interval_breaks),
         "notes": list[JsonValue](state.notes),
-        "slices": list[JsonValue](rows),
         "submitted": state.submitted,
         "debrief": state.debrief,
-        ANGLES_KEY: angles,
     }
-    return data
+
+
+def set_stack_fields(state: Stack, fields: JsonObject) -> None:
+    """Put some of the stack's own fields back, from their JSON form.
+
+    Parameters
+    ----------
+    state
+        The stack written, in place.
+    fields
+        Keys of :data:`STACK_KEYS` but ``slices``, as
+        :func:`stack_fields` gives them.
+    """
+    read = stack_from_json(fields)
+    for key in fields:
+        setattr(state, key, getattr(read, key))
 
 
 def _rows(data: JsonObject) -> tuple[JsonObject, ...]:
@@ -182,7 +238,6 @@ def stack_from_json(data: JsonObject) -> Stack:
     Returns
     -------
     Stack
-        The stack.
 
     Raises
     ------
@@ -266,7 +321,7 @@ def state_paths(
     """*data* (a state's fields) with every stored path passed through *convert*.
 
     The paths a state holds: each section's deformation ``record`` and its
-    image correction's ``artifact_dir`` and ``artifact_paths``. Everything
+    border trace's ``artifact_dir`` and ``artifact_paths``. Everything
     else is returned as it is (the input is not changed).
     """
     slices = []
@@ -278,7 +333,7 @@ def state_paths(
         held = row.get("deformation")
         if isinstance(held, dict) and isinstance(held.get("record"), str):
             row["deformation"] = {**held, "record": convert(held["record"])}
-        correction = row.get("image_correction")
+        correction = row.get("border_trace")
         if isinstance(correction, dict):
             correction = dict(correction)
             if isinstance(correction.get("artifact_dir"), str):
@@ -288,7 +343,7 @@ def state_paths(
                 correction["artifact_paths"] = {
                     key: convert(value) if isinstance(value, str) else value
                     for key, value in paths.items()}
-            row["image_correction"] = correction
+            row["border_trace"] = correction
         slices.append(row)
     return {**data, "slices": slices} if "slices" in data else dict(data)
 
@@ -314,10 +369,32 @@ def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
     return convert
 
 
+def older_format(version: int) -> ValueError:
+    """Return the refusal of an older checkpoint no migration reads.
+
+    Parameters
+    ----------
+    version
+        The checkpoint's format.
+
+    Returns
+    -------
+    ValueError
+        Its message asks for a new job.
+    """
+    return ValueError(
+        "This checkpoint was made by an older pre-release LangSlice "
+        f"(format {version}; this version reads format "
+        f"{STATE_FORMAT_VERSION}). Start a new job: open it fresh "
+        "(`--no-resume`, resume=False) or remove the job folder."
+    )
+
+
 def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[str, Any]:
-    """A checkpoint's state fields, without the version key; ``ValueError``
-    for any format but :data:`STATE_FORMAT_VERSION`, or
-    :data:`UPGRADABLE_FORMAT` read through *upgrade*."""
+    """A checkpoint's state fields, without the version key, read through
+    *upgrade* (the job's migrations, which refuse an older format they do
+    not read); ``ValueError`` without it for any format but
+    :data:`STATE_FORMAT_VERSION`, and for a newer one."""
     version = data.get(FORMAT_KEY, 0)
     if not isinstance(version, int) or isinstance(version, bool) or version < 0:
         raise ValueError(f"Unreadable checkpoint format_version {version!r}")
@@ -325,18 +402,16 @@ def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[
         raise ValueError(
             f"This checkpoint was written by a newer LangSlice (format {version}; this "
             f"version reads format {STATE_FORMAT_VERSION}). Update LangSlice to open it.")
-    if version == UPGRADABLE_FORMAT and upgrade is not None:
-        return upgrade({key: value for key, value in data.items() if key != FORMAT_KEY})
-    if version < STATE_FORMAT_VERSION:
-        raise ValueError(
-            f"This checkpoint was made by an older pre-release LangSlice (format {version}; "
-            f"this version reads format {STATE_FORMAT_VERSION}). Start a new job: open it "
-            "fresh (`--fresh`, resume=False) or remove the job folder.")
-    return {key: value for key, value in data.items() if key != FORMAT_KEY}
+    fields = {key: data[key] for key in data if key != FORMAT_KEY}
+    if upgrade is not None:
+        return dict(upgrade(version, fields))
+    if version != STATE_FORMAT_VERSION:
+        raise older_format(version)
+    return fields
 
 
 def read_checkpoint(path: str, upgrade: Upgrade | None = None) -> dict[str, Any] | None:
-    """A checkpoint's state fields (:func:`current_state`, a format-3 one
+    """A checkpoint's state fields (:func:`current_state`, an older one
     through *upgrade*); ``None`` if there is no file."""
     if not os.path.exists(path):
         return None

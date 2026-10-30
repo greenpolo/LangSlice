@@ -34,7 +34,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.settings.tool_table import (
     GROUPS,
     TOOLS,
@@ -44,6 +43,7 @@ from langslice.job.settings.tool_table import (
     positions_on,
 )
 from langslice.tools import (
+    affine_fit,
     atlas,
     damage,
     deformable,
@@ -51,20 +51,19 @@ from langslice.tools import (
     files,
     history,
     images,
+    landmark_warp,
     landmarks,
     look,
     masks,
     notes,
     positions,
     registrations,
+    status,
     submit,
     traces,
     transforms,
+    zoom,
 )
-from langslice.tools import (
-    status as views,
-)
-from langslice.tools import zoom as tools_zoom
 
 __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on", "verbs_for"]
 
@@ -116,23 +115,23 @@ class Verb:
 
 #: The operation each tool calls.
 _FUNCTIONS: dict[str, Callable[..., Any]] = {
-    "look": look.look,
-    "zoom": tools_zoom.zoom,
-    "make_image": images.make_image,
-    "grep_atlas": atlas.grep_atlas,
-    "grep_atlas_view": atlas.grep_atlas_view,
-    "status": views.status,
-    "list_files": files.list_files,
-    "search_files": files.search_files,
-    "read_file": files.read_file,
+    "look": look.look_pictures,
+    "zoom": zoom.zoom_picture,
+    "make_image": images.make_section_image,
+    "grep_atlas": atlas.search_regions,
+    "grep_atlas_view": atlas.draw_regions,
+    "status": status.stack_status,
+    "list_files": files.list_folder,
+    "search_files": files.search_folder,
+    "read_file": files.read_folder_file,
     "position_sections": positions.position_sections,
     "interactive_transform": transforms.interactive_transform,
     "mark_damage": damage.mark_damage,
     "make_mask": masks.make_mask,
-    "elastix_affine": transforms.elastix_affine,
+    "elastix_affine": affine_fit.elastix_affine,
     "fireants_syn": deformable.fireants_syn,
     "set_landmarks": landmarks.set_landmarks,
-    "landmark_triangulation": landmarks.landmark_triangulation,
+    "landmark_triangulation": landmark_warp.landmark_triangulation,
     "trace_borders": traces.trace_borders,
     "note": notes.add_note,
     "undo": history.undo,
@@ -158,30 +157,6 @@ VERBS: dict[str, Verb] = {
                limits=_LIMITS.get(name, {}))
     for name, tool in TOOLS.items()
 }
-
-#: The tools the job's own ``transform.max_parallel`` also caps.
-_TRANSFORM_TOOLS = ("interactive_transform", "elastix_affine")
-
-
-def check_section_count(job: Any, name: str, count: int) -> None:
-    """Refuse (``TOO_MANY_SECTIONS``, with ``max_sections`` and ``requested``) a
-    call of tool *name* naming *count* sections when that is more than its
-    ``limits["sections"]`` (:data:`VERBS`), or, for the transform tools, more
-    than the door lets one call take (``Job.picture_cap``) or the job lets one
-    transform call take (``Job.transform_cap``); a cap that is None is no cap.
-    The message says why the cap holds."""
-    cap = VERBS[name].limits.get("sections")
-    reason = f" ({deformable.SECTION_CAP_REASON})"
-    if name in _TRANSFORM_TOOLS:
-        held = [value for value in (job.picture_cap, job.transform_cap) if value is not None]
-        cap = min(held) if held else None
-        reason = " here"
-    if cap is not None and count > cap:
-        raise Refused(RefusalCode.TOO_MANY_SECTIONS,
-                      max_sections=cap, requested=count,
-                      message=f"{name} takes at most {cap} sections per call{reason}; "
-                      f"{count} were named. Nothing was done: split them over calls.")
-
 
 def verbs_for(spec: Any = None) -> dict[str, Verb]:
     """Every verb a job of *spec* can have: :data:`VERBS`, then one verb per

@@ -1,18 +1,9 @@
-"""A border trace's yellow lines: drawn on the photograph, read back off a reply."""
+"""A border trace's yellow lines, read back off a reply."""
 
 import numpy as np
 from PIL import Image
 
 from langslice.core.fits.trace import lines as borders
-
-
-def test_lines_replace_only_their_own_pixels_of_the_photograph():
-    photo = Image.fromarray(np.full((40, 60, 3), (70, 80, 90), dtype=np.uint8))
-    mask = np.zeros((40, 60), dtype=bool)
-    mask[6:34, 30] = True
-    drawn = np.asarray(borders.border_overlay(photo, mask))
-    assert (drawn[mask] == (255, 255, 0)).all()
-    np.testing.assert_array_equal(drawn[~mask], np.asarray(photo)[~mask])
 
 
 def test_a_letterboxed_reply_is_cropped_before_resampling():

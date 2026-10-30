@@ -211,12 +211,9 @@ the angles in a caption (empty for the flat plane).
   is the working copy itself; `preprocess="none"` the copy in gray), written
   once as the file every reader reads, like any made image; `opening_entry`, `ensure_opening` (every section without one,
   on threads, outside undo: `Job.open` and `Job.load`). `summary(state, settings)`:
-  `status`'s `section_images`. `Migration(ws, layout)`: a format-3 state's fields as
-  format 4 (each `appearance` recipe, a section's override honoured, made into
-  a file and an entry; `preprocessed` without a recipe the opening image;
-  display properties dropped; a mask's `channel` named `section_image`), one
-  memo across the checkpoint and its history steps (`seed` takes a format-4
-  state's entries). `Look` is the render's look type.
+  `status`'s `section_images`. `Look` is the render's look type. A format-3
+  state's `appearance` recipes are made into files by the job's migration
+  (`job/migrations.py`, `state_3_to_4`) through `make` and `write_file`.
 - `sections/channels.py` — raw channels drawn together: `composite` (each channel
   stretched between its automatic limits, `auto_limits`, per section: on a
   dark background black at its background median and full colour at its
@@ -285,7 +282,7 @@ the angles in a caption (empty for the flat plane).
   (`deformation.py`: the saved fit's folder and key, its `linear_key`,
   steps, summary; `LandmarkWarp` for a landmark warp; `kept_linear` and no
   key or steps for a format-3 folder's `keep_linear` marker, which names no
-  saved fit), `image_correction` a
+  saved fit), `border_trace` a
   `BorderTrace` (`trace.py`), `landmarks` (`landmarks.py`: `Landmarks`,
   `Pair`, `Endpoint`; None before the first pair), and `images` / `masks` /
   `layers` (`images.py`: `ImageRef`, `MaskRef`, `LayerRef`). Section and
@@ -316,7 +313,7 @@ the angles in a caption (empty for the flat plane).
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
   status rows (`frozen`, `damage_by_user` and `registration`, the number of
-  the registration the section holds, are set by `tools.status.status`): rows
+  the registration the section holds, are set by `tools.status.stack_status`): rows
   with a field outside `ROW_FIELDS`, such as
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
@@ -409,9 +406,10 @@ the angles in a caption (empty for the flat plane).
   so a zoom of the picture is not stale for drawing a registration the
   section does not hold. `redraw(recipe, window, ws, state)` draws a recipe at a window,
   from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
-  another version of LangSlice saved is `UNREADABLE_RECIPE` (the zoom crops
-  the saved picture). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
-  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  another version of LangSlice saved is `UNREADABLE_RECIPE`, one showing a
+  section the stack no longer holds `SECTION_GONE` (the zoom crops the saved
+  picture for either). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_IMAGE`,
+  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `BAD_ARGS`,
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
   `atlas.borders.HIGHLIGHT_WIDTH` times as thick, the other borders faint,
@@ -467,7 +465,7 @@ the angles in a caption (empty for the flat plane).
   naming its number, nothing drawn over it, the sheet captioned; `recipe`
   (renderer `sheet`: each tile's `picture`, `box` on the sheet and the
   picture's `size`), `tile_under` (the tile holding most of a box) and
-  `to_tile` (a sheet box in the tile picture's pixels), which `tools.zoom.zoom`
+  `to_tile` (a sheet box in the tile picture's pixels), which `tools.zoom.zoom_picture`
   reads; `MAX_TILES` (16) per sheet.
 - `pictures/grid.py` and `geometry.pixel_frames.source_frame` — the coordinate grid every
   zoom carries. `source_frame(recipe)` is where a zoom's pixels lie in the
@@ -501,7 +499,8 @@ the angles in a caption (empty for the flat plane).
   back to the section's.
 - `pictures/sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
-  `MAX_IMAGES_PER_CALL` (what the agent tools and MCP set `Job.picture_cap` to), `resolution_level`, `opening_edge`, `picture_edge`.
+  `MAX_IMAGES_PER_CALL` (what the agent tools and MCP set `Job.picture_cap` to), `resolution_level`, `opening_edge`, `picture_edge`,
+  `clamp_resolution` (a tool's `resolution` held between `MIN_RESOLUTION` and the driver model's largest image, with the note the reply gives).
 - `pictures/layers.py` — a placement picture's layers and frame record (and a
   deformation-fit picture's), the on-demand coordinate map, and the
   per-call picture notes (below).
@@ -520,11 +519,7 @@ the angles in a caption (empty for the flat plane).
   `sections.reading.prepared_size`, so `registration.json` is rewritten on every
   write without decoding images; memoized on `Workspace.frame_cache` by
   everything it depends on (one frame per section, least recently used out
-  past `FRAME_CACHE_SECTIONS`). `share_frames(state, workspace)` computes
-  every placed section's frame and keeps it for the workspaces the process
-  makes after it forks (`_SHARED_FRAMES`; the agent CLI's warm process,
-  `doors/agent_cli/warm.py`): a later workspace takes one only at the same image
-  folder and settings text (`_scope`: `ImageSettings.settings_text`), key and atlas object. A section with no pixel size (neither the file
+  past `FRAME_CACHE_SECTIONS`). A section with no pixel size (neither the file
   nor the host gives one) is mapped at the scale its placement pictures draw
   it at, `core.fits.affine.calibrate` on its working frame (uncalibrated: the
   image width mapped onto the atlas plane's width at its CURRENT position,
@@ -643,10 +638,13 @@ composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
 `core.fits.deformable.render.drawn_border_coverage` (exactly the lines drawn), a
 frame whose `pixel_to_atlas_um` is the record's linear placement on the
-picture, and, when the field was drawn, a residual layer `residual.tif`
-(`RESIDUAL_LAYER`, `(2, rows, cols)` float32, `(drow, dcol)` picture
-pixels) the frame names under `residual`; `coordinate_map` applies it
-(beside the `view.json`, or `folder=` for a record).
+picture, the record's folder (`deformation`, relative to the job folder)
+and, when the field was drawn, `residual`: the size the record's grid was
+resized to and the box of it shown (`grid_size`, `box`, as
+`resampled_record` takes them). `coordinate_map` draws the residual again
+from the record, found in the job folder above the `view.json` (or above
+`folder=` for a frame passed as a record), exactly as the picture was drawn
+with it; a picture saved with a `residual.tif` beside it reads that.
 
 Which pictures a call returned, and of what, is noted while it runs:
 `pictures.drawn.collecting()` (the job's saving hook, `Job.views.shown`, runs every
@@ -655,7 +653,7 @@ tool call inside it) and
 extra=, recipe=, caption=)`; `note_for` finds a picture's note by
 identity; `annotate(image, recipe=, caption=)` sets fields on the note a
 renderer already made for that image (its frame and panel kept). `draw_canvas`
-and the `look` renderers note theirs; `tools.deformable.pictures` notes
+and the `look` renderers note theirs; `tools.fit_pictures.draw_fits` notes
 the deformation fits (`fireants_syn`, a landed trace; through `core.pictures.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door

@@ -47,7 +47,7 @@ const Generator = (() => {
     return new Set(data.tools.filter(t => t.runs_in.includes(key)).map(t => t.name));
   }
 
-  // The names the job's `--disable` takes: the tools of this run switched off
+  // The names the job's `--disabled` takes: the tools of this run switched off
   // whole, then the options switched off of the tools still on (a name a kept
   // property already switches off left out).
   function offNames(data, form) {

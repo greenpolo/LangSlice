@@ -1,9 +1,8 @@
 """Tests of the tool stubs, whose docstrings the docstring rules leave alone.
 
 A stub is a function passed as the second positional argument of
-``ToolSpec(...)``, or a function named in the ``STUBS`` table of the
-module that renders tool descriptions. Its docstring findings are dropped; every other finding on
-it, and every finding on other functions, is kept.
+``ToolSpec(...)``. Its docstring findings are dropped; every other finding
+on it, and every finding on other functions, is kept.
 """
 
 from __future__ import annotations
@@ -77,74 +76,23 @@ def _violation(rule: str, symbol: str, line: int) -> Violation:
 
 def test_a_function_passed_second_to_toolspec_is_a_stub() -> None:
     """Find the stubs of ``ToolSpec`` calls, by name or by attribute."""
-    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}), CONFIG)
+    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}))
     assert stubs == [
         Stub(PLUGIN, "fit_stub", *FIT_STUB_DOCSTRING),
         Stub(PLUGIN, "plane_stub", 10, 10),
     ]
 
 
-def test_the_renderer_stubs_are_the_functions_of_its_table() -> None:
-    """Treat only the functions listed in ``STUBS`` as stubs.
-
-    The gaming case of the review: a helper put in the renderer module
-    to escape the docstring rules is checked like any code.
-    """
-    relpath = "src/langslice/doors/declarations.py"
-    source = '''
-    def place(job):
-        """Place the sections."""
-
-    def look(job):
-        """Look at a section."""
-
-    def helper(name):
-        """helper with no proper docstring"""
-
-    def undocumented(job):
-        return job
-
-    STUBS: dict[str, object] = {
-        stub.__name__: stub for stub in (place, look, undocumented)
-    }
-    FULL = helper("x")
-    '''
-    config = dataclasses.replace(
-        CONFIG, docs_renderer_module="langslice.doors.declarations"
-    )
-    stubs = find_stubs(snippet_project({relpath: source}), config)
-    assert [stub.symbol for stub in stubs] == ["place", "look"]
-
-
-def test_the_renderer_without_a_table_has_no_stubs() -> None:
-    """Find no stub in a renderer module that lists none."""
-    relpath = "src/langslice/doors/declarations.py"
-    source = '''
-    def place(job):
-        """Place the sections."""
-    '''
-    config = dataclasses.replace(
-        CONFIG, docs_renderer_module="langslice.doors.declarations"
-    )
-    assert find_stubs(snippet_project({relpath: source}), config) == []
-
-
-def test_the_real_declarations_stubs_are_the_tools() -> None:
-    """Find the declared verbs in the real renderer, and no helper."""
+def test_the_native_descriptions_are_no_stubs() -> None:
+    """Find no stub in the native tools' descriptions, which are data."""
     project = load_project(REPOSITORY, CONFIG)
-    stubs = find_stubs(project, CONFIG)
-    declared = {
-        stub.symbol
-        for stub in stubs
-        if stub.path == "src/langslice/tools/descriptions/render.py"
-    }
-    assert {"look", "trace_borders", "submit"} <= declared
-    assert not declared & {"base_prompt", "model_doc", "declare", "summary"}
+    paths = {stub.path for stub in find_stubs(project)}
+    assert not any("tools/descriptions" in path for path in paths)
 
 
 def test_the_docstring_findings_of_a_stub_are_dropped() -> None:
     """Drop every docstring rule, at the def line or inside the docstring."""
-    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}), CONFIG)
+    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}))
     first, last = FIT_STUB_DOCSTRING
     violations = [_violation(rule, "fit_stub", 2) for rule in DOCSTRING_RULES]
     violations.append(_violation("ruff:E501", "fit_stub", first + 2))
@@ -154,7 +102,7 @@ def test_the_docstring_findings_of_a_stub_are_dropped() -> None:
 
 def test_the_other_findings_of_a_stub_are_kept() -> None:
     """Keep complexity, names, and line rules outside the docstring."""
-    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}), CONFIG)
+    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}))
     _, last = FIT_STUB_DOCSTRING
     violations = [
         _violation("cognitive-complexity", "fit_stub", 2),
@@ -169,7 +117,7 @@ def test_the_other_findings_of_a_stub_are_kept() -> None:
 
 def test_the_docstring_findings_of_other_functions_are_kept() -> None:
     """Keep docstring findings on a body or on a stub passed by keyword."""
-    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}), CONFIG)
+    stubs = find_stubs(snippet_project({PLUGIN: PLUGIN_SOURCE}))
     violations = [
         _violation(rule, "body", BODY_DEF_LINE) for rule in DOCSTRING_RULES
     ]
@@ -184,7 +132,7 @@ def test_the_docstring_findings_of_other_functions_are_kept() -> None:
 def test_the_engine_plugins_tool_stubs_are_found() -> None:
     """Find the five engine plugin stubs in the real package."""
     project = load_project(REPOSITORY, CONFIG)
-    stubs = find_stubs(project, CONFIG)
+    stubs = find_stubs(project)
     engine_stubs = sorted(
         stub.symbol
         for stub in stubs
