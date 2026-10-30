@@ -586,7 +586,7 @@ def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, m
     done: Future[dict[str, Any]] = Future()
     done.set_result({})
     job.image_jobs["s0.png"] = ("fingerprint", done)
-    monkeypatch.setattr(job, "settle_image_corrections", lambda: settled.append("one") or True)
+    monkeypatch.setattr(job, "settle_border_traces", lambda: settled.append("one") or True)
 
     async def body(client: Any) -> Any:
         return await client.call_tool("start_job", {"image_folder": str(second)})

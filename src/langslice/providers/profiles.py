@@ -36,8 +36,8 @@ from langslice.providers.connections import (
 
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import (
+        BorderTraceRequest,
         GeneratedSegmentation,
-        SegmentationGenerationRequest,
     )
 
 #: The name a custom profile gets when the caller gives none.
@@ -72,12 +72,12 @@ def _read_prompt(prompt: str | None, prompt_file: str | os.PathLike[str] | None)
 
 
 def _wrapped_call(function: Callable[..., Any], provider: str, model: str | None,
-                  ) -> Callable[[SegmentationGenerationRequest], GeneratedSegmentation]:
+                  ) -> Callable[[BorderTraceRequest], GeneratedSegmentation]:
     """A caller's own edit function as an ``ImageCall``: it may answer with a
     ``GeneratedSegmentation`` or with the edited picture itself (a PIL image
     or an array)."""
 
-    def call(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
+    def call(request: BorderTraceRequest) -> GeneratedSegmentation:
         from PIL import Image
 
         from langslice.core.fits.trace.request import GeneratedSegmentation
@@ -121,7 +121,7 @@ def image_model(
       with a ``call`` attribute (and optionally ``provider`` and ``model``), or
       a plain function: the model of the caller's own. ``call(request)`` takes
       a
-      :class:`~langslice.core.fits.trace.request.SegmentationGenerationRequest`
+      :class:`~langslice.core.fits.trace.request.BorderTraceRequest`
       (``prompt``, ``slice_image`` = Image 1, ``reference_images[0]`` = Image
       2) and returns the edited image (a PIL image, an array or a
       ``GeneratedSegmentation``).

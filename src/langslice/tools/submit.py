@@ -99,7 +99,7 @@ def submit(
     breaks = clean_breaks(job, interval_breaks)
     job.background.wait_all()
     if traces:
-        job.settle_image_corrections()
+        job.settle_border_traces()
     refusal = job.submit_errors(breaks)
     if refusal is not None:
         raise refusal

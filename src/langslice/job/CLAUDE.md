@@ -258,7 +258,7 @@ and macOS, `msvcrt` on Windows, released by the OS if a process dies;
 reentrant in its thread; `LOCK_TIMEOUT_S` 300 then `JobBusy`) and runs
 `Job.sync` first. `commit`, `checkpoint` and the history save take it too;
 `undo`/`redo`, `clear_stale_deformations` and the landing of image
-corrections (`settle_image_corrections`, `wait_image_job`: the calls run
+corrections (`settle_border_traces`, `wait_image_job`: the calls run
 outside it, their results land under it) are written inside it, and so
 is `Job.open`'s read and first checkpoint. A missing or unwritable folder
 is used without the lock. After a sync the section records are new
@@ -332,7 +332,7 @@ longer exist be taken over by the images it is opened with.
   the waiting thread runs that landing itself.
 - `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
   `JobLayout` (the folder, every name, `section_dir`,
-  `deformable_dir`, `masks_dir`, `images_dir`, `image_correction_dir`, `section_views_dir`,
+  `deformable_dir`, `masks_dir`, `images_dir`, `border_trace_dir`, `section_views_dir`,
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
@@ -444,7 +444,7 @@ longer exist be taken over by the images it is opened with.
   observers: `observe(fn)` calls *fn* with the state after every
   checkpoint and reload, the hosts' live views; one that raises is logged),
   `registration_numbers(ids)` (the listed registration each section holds,
-  what a saved picture records), the image-correction jobs (`start_image_job`, `settle_image_corrections`,
+  what a saved picture records), the image-correction jobs (`start_image_job`, `settle_border_traces`,
   `wait_image_job`: timeout None waits as long as it takes; the call is
   forgotten only once its reply is recorded), `background` (above), `close`
   (the background work, then the pictures), `wire_views` (a saved

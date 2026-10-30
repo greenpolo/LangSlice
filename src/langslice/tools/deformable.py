@@ -176,7 +176,7 @@ def traced_regions(
     exclude), so the atlas side drops the same ones: the call's *exclude*
     plus the trace's, and the call's *include*, else the trace's.
     """
-    held = record.image_correction
+    held = record.border_trace
     traced_in: tuple[str, ...] = ()
     traced_out: tuple[str, ...] = ()
     if held is not None:

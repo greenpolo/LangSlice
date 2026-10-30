@@ -52,7 +52,7 @@ Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 #: The key a job-folder file carries its format version under.
 FORMAT_KEY = "format_version"
 #: The checkpoint's format. Every path on a section record (a deformation's
-#: ``record``, an image correction's ``artifact_dir`` and ``artifact_paths``)
+#: ``record``, a border trace's ``artifact_dir`` and ``artifact_paths``)
 #: is relative to the job folder (:func:`state_paths`), and every section
 #: carries its own cutting angles (``Section.angles``). A
 #: state whose sections share one angle also writes it as the stack's
@@ -264,7 +264,7 @@ def state_paths(
     """*data* (a state's fields) with every stored path passed through *convert*.
 
     The paths a state holds: each section's deformation ``record`` and its
-    image correction's ``artifact_dir`` and ``artifact_paths``. Everything
+    border trace's ``artifact_dir`` and ``artifact_paths``. Everything
     else is returned as it is (the input is not changed).
     """
     slices = []

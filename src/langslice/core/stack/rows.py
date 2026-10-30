@@ -80,8 +80,8 @@ def section_to_json(section: Section) -> Row:
     transform = trace = deformation = None
     if section.transform is not None:
         transform = affine_to_json(section.transform)
-    if section.image_correction is not None:
-        trace = trace_to_json(section.image_correction)
+    if section.border_trace is not None:
+        trace = trace_to_json(section.border_trace)
     if section.deformation is not None:
         deformation = deformation_to_json(section.deformation)
     images = {name: image_to_json(ref) for name, ref in section.images.items()}
@@ -256,7 +256,7 @@ def section_from_json(row: JsonObject) -> Section:
         damage_note=_or_default(row, "damage_note", text_at, ""),
         position_mm=_position(row),
         transform=transform,
-        image_correction=trace,
+        border_trace=trace,
         deformation=deformation,
         landmarks=_named(row, "landmarks", _landmarks),
         layers=_named(row, "layers", _layers),

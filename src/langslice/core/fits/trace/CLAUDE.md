@@ -80,7 +80,7 @@ residual alone is never exported.
   nothing and calls no model.
 - `prompts.py` — the prompt functions; the OpenAI-GPT or Gemini wording is
   selected by `canonical_provider(provider)` (`core/connections.py`).
-- `request.py` — `SegmentationGenerationRequest` / `GeneratedSegmentation`, the
+- `request.py` — `BorderTraceRequest` / `GeneratedSegmentation`, the
   request and reply of the one-call-in, one-image-out transport
   (`providers/image_calls.py`). `mode` (default `"edit"`) is the edit-vs-generate
   semantic each transport translates its own way; `size_tier` is the

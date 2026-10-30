@@ -91,7 +91,7 @@ def test_openai_images_route_sends_the_edited_image_first(monkeypatch):
     monkeypatch.setattr(providers, "get_openai_image_client", lambda: fake_client)
     monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2.5-sunburst")
 
-    request = providers.SegmentationGenerationRequest(
+    request = providers.BorderTraceRequest(
         reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="warp it",
@@ -129,7 +129,7 @@ def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
     fake_client = _FakeGeminiClient()
     monkeypatch.setattr(providers.vlm_config, "get_client", lambda: fake_client)
 
-    request = providers.SegmentationGenerationRequest(
+    request = providers.BorderTraceRequest(
         reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="google it",
@@ -160,7 +160,7 @@ def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
 
 def test_unknown_provider_raises_value_error():
     providers = _providers()
-    request = providers.SegmentationGenerationRequest(
+    request = providers.BorderTraceRequest(
         reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="nope",

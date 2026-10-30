@@ -70,7 +70,7 @@ def close_job(job: Job) -> None:
     session, the end of ``serve``) and LangSlice's own agent
     (``doors.agent.engine.run``)."""
     if job.image_jobs:
-        job.settle_image_corrections()
+        job.settle_border_traces()
     job.close()
 
 
@@ -259,7 +259,7 @@ class Opened:
         return list(self.tools().names)
 
     def close(self) -> None:
-        """Finish the job's background writes (image corrections, pictures):
+        """Finish the job's background writes (border traces, pictures):
         :func:`close_job`."""
         close_job(self.job)
 

@@ -184,5 +184,5 @@ def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, mon
     assert [(call["include"], call["exclude"]) for call in seen] == [
         ((), ("R",)), (("L",), ("R",))]
     # A traced fit then reads the trace's exclusions along with the marks.
-    held = json_of(state.by_id(ID).image_correction)
+    held = json_of(state.by_id(ID).border_trace)
     assert held["exclude"] == ["R"]

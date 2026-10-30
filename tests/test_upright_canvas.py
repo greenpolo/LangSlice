@@ -147,7 +147,7 @@ def test_lines_drawn_on_the_turned_canvas_read_back_onto_the_section_borders(
     assert job is not None
     result = job()
     assert result["status"] == "ok" and result["model_border_pixels"] > 0
-    record.image_correction = trace_from_json(result)
+    record.border_trace = trace_from_json(result)
 
     grid = SimpleNamespace(record=record, image=render,
                            placement=SimpleNamespace(atlas_to_section=atlas_to_slice))

@@ -35,8 +35,8 @@ from langslice.core.connections import (
 
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import (
+        BorderTraceRequest,
         GeneratedSegmentation,
-        SegmentationGenerationRequest,
     )
 
 #: Agent models a host may offer on the ``openai-oauth`` lane (host dialogs
@@ -76,7 +76,7 @@ def openai_oauth_credentials_path() -> Path:
 
 #: One image edit: the request in (prompt, images in order, provider, model),
 #: one image out.
-ImageCall = Callable[["SegmentationGenerationRequest"], "GeneratedSegmentation"]
+ImageCall = Callable[["BorderTraceRequest"], "GeneratedSegmentation"]
 
 
 @dataclass(frozen=True)
@@ -138,7 +138,7 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
     if canonical not in CANONICAL_PROVIDERS:
         raise ValueError(f"Unknown provider: {provider}")
 
-    def call(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
+    def call(request: BorderTraceRequest) -> GeneratedSegmentation:
         from langslice.providers.image_calls import (
             generate_warped_segmentation_image,
         )

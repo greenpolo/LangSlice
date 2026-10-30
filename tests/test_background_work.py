@@ -152,7 +152,7 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     record = job.state.slices[0]
     record.position_mm = 2.0
     record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
-    record.image_correction = trace_from_json(
+    record.border_trace = trace_from_json(
         {"id": "s0.png", "status": "ok", "geometry_fingerprint": "g"})
     expected = section_inputs(job.state, record, deformation=True)
     _note_step(job, "a write elsewhere")
@@ -163,7 +163,7 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     assert landed.status == FAILED and landed.result["error"] == RefusalCode.STALE_INPUT
     assert landed.text.startswith(f"{RefusalCode.STALE_INPUT}: ")
     assert record.deformation is None and len(job.undo_stack) == depth
-    record.image_correction = trace_from_json(
+    record.border_trace = trace_from_json(
         {"id": "s0.png", "geometry_fingerprint": "g", "status": "error", "message": "no image"})
     record.position_mm = 2.0
     failed = land_trace(job, ctx, record.id, expected)

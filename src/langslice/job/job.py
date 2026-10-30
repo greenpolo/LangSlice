@@ -417,7 +417,7 @@ def emit_results(
     return state
 
 
-# --- background image corrections ---------------------------------------------------
+# --- background border traces ------------------------------------------------------
 
 
 def _job_result(
@@ -443,10 +443,10 @@ def _job_result(
 def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -> bool:
     """Record a finished correction on a section still waiting for it."""
     section = state.by_id(section_id)
-    held = None if section is None else section.image_correction
+    held = None if section is None else section.border_trace
     if (section is not None and held is not None and held.status == "running"
             and held.geometry_fingerprint == fingerprint):
-        section.image_correction = trace_from_json(result)
+        section.border_trace = trace_from_json(result)
         return True
     return False
 
@@ -506,7 +506,7 @@ class Job:
         self.observers: list[Callable[[Stack], None]] = []
         #: Image corrections still running, per section id: the geometry they
         #: were started at and their future. Nothing waits on them but
-        #: ``settle_image_corrections`` (submit, the end of a session) and a
+        #: ``settle_border_traces`` (submit, the end of a session) and a
         #: fit that reads a trace (``wait_image_job``).
         self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
         self.image_executor: ThreadPoolExecutor | None = None
@@ -748,7 +748,7 @@ class Job:
         return str(self.layout.logs_dir / "engine.log") if self.persist else None
 
     def portable(self, correction: dict[str, Any]) -> dict[str, Any]:
-        """An image correction's record with its paths relative to the job folder."""
+        """A border trace's record with its paths relative to the job folder."""
         converted = state_paths({"slices": [{"image_correction": correction}]},
                                 relative_to(self.folder))
         return converted["slices"][0]["image_correction"]
@@ -1132,13 +1132,13 @@ class Job:
             self._background = BackgroundWork(self)
         return self._background
 
-    # --- image corrections ----------------------------------------------------------
+    # --- border traces -------------------------------------------------------------
 
     def start_image_job(
         self, section_id: str, fingerprint: str, job: Callable[[], dict[str, Any]], *,
         workers: int,
     ) -> None:
-        """Run one image correction in the background."""
+        """Run one border trace in the background."""
         if self.image_executor is None:
             self.image_executor = ThreadPoolExecutor(
                 max_workers=workers, thread_name_prefix="image-correction"
@@ -1149,18 +1149,24 @@ class Job:
         running = self.image_jobs.get(section_id)
         return running is not None and running[0] == fingerprint and not running[1].done()
 
-    def settle_image_corrections(self) -> bool:
-        """Wait for every running correction, record its result, checkpoint.
+    def settle_border_traces(self) -> bool:
+        """Wait for every running border trace, record its result, checkpoint.
 
         A result lands only on a section that still holds the running record
         for the same geometry; one undone or superseded meanwhile keeps what
         it has (the reply stays on disk and is reused at that geometry).
-        Returns whether any section changed (no undo step: a landing finishes
-        the step that started it).
+
+        Returns
+        -------
+        bool
+            Whether any section changed (no undo step: a landing finishes
+            the step that started it).
         """
-        results = [(section_id, fingerprint, self.portable(_job_result(
-            section_id, fingerprint, future, None)))
-            for section_id, (fingerprint, future) in list(self.image_jobs.items())]
+        running = list(self.image_jobs.items())
+        results = [
+            (section_id, fingerprint,
+             self.portable(_job_result(section_id, fingerprint, future, None)))
+            for section_id, (fingerprint, future) in running]
         self.image_jobs.clear()
         if self.image_executor is not None:
             self.image_executor.shutdown(wait=True)
@@ -1168,7 +1174,8 @@ class Job:
         if not results:
             return False
         changed = False
-        with self.writing():  # the calls ran outside the lock; they land under it
+        # the calls ran outside the lock; they land under it
+        with self.writing():
             for section_id, fingerprint, result in results:
                 changed |= _land(self.state, section_id, fingerprint, result)
             if changed:
@@ -1179,7 +1186,7 @@ class Job:
         """Wait up to *timeout* seconds (None: as long as it takes) for one
         section's running correction.
 
-        Records its result the way :meth:`settle_image_corrections` does
+        Records its result the way :meth:`settle_border_traces` does
         (under the write lock, checkpointed, no undo step) and returns True
         once nothing is running for the section; False when the call is
         still running at the timeout. The call is forgotten only once its

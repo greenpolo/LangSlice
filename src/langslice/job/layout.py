@@ -95,7 +95,7 @@ DEFORMABLE_DIR = "deformable"
 MASKS_DIR = "masks"
 #: A section's made images (``<name>.png``, ``<name>.2.png``...; never deleted).
 IMAGES_DIR = "images"
-IMAGE_CORRECTION_DIR = "image_correction"
+BORDER_TRACE_DIR = "image_correction"
 SECTION_VIEWS_DIR = "views"
 #: The public rendering of the state (:mod:`langslice.job.public_files`, which
 #: also names each section's map files).
@@ -350,9 +350,20 @@ class JobLayout:
         """Where a section's made images live (``<name>.png``; never deleted)."""
         return self.section_dir(section_id) / IMAGES_DIR
 
-    def image_correction_dir(self, section_id: str) -> Path:
-        """Where a section's ``trace_borders`` calls live (one per call key)."""
-        return self.section_dir(section_id) / IMAGE_CORRECTION_DIR
+    def border_trace_dir(self, section_id: str) -> Path:
+        """Return the folder of a section's ``trace_borders`` calls.
+
+        Parameters
+        ----------
+        section_id
+            The section's filename.
+
+        Returns
+        -------
+        Path
+            The folder; one subfolder per call key.
+        """
+        return self.section_dir(section_id) / BORDER_TRACE_DIR
 
     def section_views_dir(self, section_id: str) -> Path:
         return self.section_dir(section_id) / SECTION_VIEWS_DIR

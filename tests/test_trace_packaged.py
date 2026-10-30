@@ -118,7 +118,7 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
                                   "top of its linear placement.")
     assert "undo removes it while it is the latest step" in work.notice
     record = job.state.by_id(ID)
-    assert record is not None and trace_to_json(record.image_correction)["status"] == "ok"
+    assert record is not None and trace_to_json(record.border_trace)["status"] == "ok"
     held = json_of(record.deformation)
     assert held is not None and len(held["steps"]) == 1
     assert held["steps"][0]["fit_section"] == deformation.TRACED_BORDERS
@@ -127,10 +127,10 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     assert job.undo()
     record = job.state.by_id(ID)
     assert record is not None and record.deformation is None
-    assert trace_to_json(record.image_correction)["status"] == "ok"  # the trace stays
+    assert trace_to_json(record.border_trace)["status"] == "ok"  # the trace stays
 
     # The prompt sent is saved with the attempt in the job folder.
-    folder = Path(job.folder) / str(trace_to_json(record.image_correction)["artifact_dir"])
+    folder = Path(job.folder) / str(trace_to_json(record.border_trace)["artifact_dir"])
     assert (folder / "prompt.txt").read_text() == "Move each yellow line onto its edge."
     assert len(stub.calls) == 1
 
@@ -146,7 +146,7 @@ def _landed_job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubMode
     assert record is not None and record.deformation is not None
     # The traced step records the trace it fitted.
     assert [step.get("trace") for step in deformation_to_json(record.deformation)["steps"]] == [
-        trace_to_json(record.image_correction)["artifact_dir"]]
+        trace_to_json(record.border_trace)["artifact_dir"]]
     return job, ctx, stub
 
 
@@ -233,7 +233,7 @@ def test_without_engine_nothing_is_asked_of_the_image_model(tmp_path, atlas, mon
     assert refused.value.code == "ENGINE_MISSING"
     assert "fireants" in refused.value.payload()["message"]
     assert stub.calls == [] and len(job.undo_stack) == depth
-    assert job.state.slices[0].image_correction is None
+    assert job.state.slices[0].border_trace is None
     with pytest.raises(Refused) as unknown:
         monkeypatch.setattr(ops_deformable, "engine_ready", lambda: True)
         traces.trace_borders(job, ctx, ID, image_model=stub.model, restrict_to=["NOPE"])
