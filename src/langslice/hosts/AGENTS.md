@@ -20,7 +20,7 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 ## Files and sub-packages
 
-- `cli.py` — the host commands `abba` (ABBA 0.24.x started from Python with
+- `cli.py` — the host commands `abba` (ABBA 0.25.x started from Python with
   the Fiji connector jar on the classpath and the passive Python viewer and
   log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`),
   `gui` (the LangSlice window on job folders: `FOLDER ...`, an image folder

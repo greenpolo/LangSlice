@@ -4,9 +4,11 @@ This independently distributed Java plugin connects an existing ABBA installatio
 with a separately installed LangSlice Python environment. Python and model accounts
 are not needed to load the plugin or open Setup.
 
-The connector targets ABBA **0.24.x** (built and tested against 0.24.1) and **Java 21**,
-the Java level ABBA 0.24 itself requires. Older ABBA versions (0.11 and earlier) are
-not supported: upstream renamed the registration and source-processor packages.
+The connector targets ABBA **0.25.x** (built and tested against 0.25.0) and **Java 21**,
+the Java level ABBA 0.25 itself requires. It also runs on ABBA 0.24.1 (tested), where a
+row ABBA refuses is reported without ABBA's own reason (ABBA keeps a list of failures
+from 0.25 on). Older ABBA versions (0.11 and earlier) are not supported: upstream renamed
+the registration and source-processor packages.
 Runtime dependencies are supplied by ABBA/Fiji and are not bundled into the plugin JAR.
 
 ## Build
@@ -45,7 +47,7 @@ direction, its coordinate rows, its serialization and that BigWarp can reopen
 it; the cutting-angle signs; and how a kept row merges with a newer one.
 
 `HostSessionSmokeTest` is opt-in and needs ABBA's cached Allen V3p1 atlas (normally
-`~/cached_atlas`; see its class comment). It runs a real headless ABBA 0.24.1:
+`~/cached_atlas`; see its class comment). It runs a real headless ABBA 0.25.0:
 
 ```bash
 java -Djava.awt.headless=true --add-opens=java.base/java.lang=ALL-UNNAMED \
@@ -59,7 +61,8 @@ It imports two synthetic sections and checks: AP positions from ABBA's own
 (position, affine step, warp step, cutting angles) read back from ABBA; that a new
 placement removes the warp before replacing the affine; that one ABBA Undo reverts
 exactly one checkpoint (angles included) and Redo restores it; that a slice changed
-outside the run is refused, kept and applied on retry; and native save. It then
+outside the run is refused, kept and applied on retry; that a registration ABBA refuses
+fails with ABBA's own reason and leaves the slice as it was; and native save. It then
 reopens the saved project in a second JVM without the connector on the classpath
 (`ReloadCheck`): both steps, the warp's landmarks, BigWarp editing, the position and
 the angles survive.
@@ -207,7 +210,9 @@ registrations. Cutting angles are applied through a small undoable action of the
 connector's own, since ABBA's own angle command cannot be undone.
 
 A slice whose registrations were changed in ABBA during the run (a registration added,
-removed or undone) is refused and named in the log. Rows ABBA could not take are kept,
+removed or undone) is refused and named in the log. When ABBA itself refuses one of the
+row's actions, the reason ABBA recorded for that slice (its failure list, the one ABBA's
+**ABBA - Wait** command reports) is added to the row's message. Rows ABBA could not take are kept,
 merged with the next checkpoint and retried; a failure never ends the run. A warp the
 worker could not convert (`"warp": {"error": …}`) is such a row: ABBA keeps the warp it
 had, and the row is named in the final message. At the end

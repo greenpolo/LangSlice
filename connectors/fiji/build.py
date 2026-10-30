@@ -21,7 +21,7 @@ java_home = args.java_home or (Path(os.environ['JAVA_HOME']) if 'JAVA_HOME' in o
 def tool(name):
     candidate = java_home / 'bin' / name if java_home else shutil.which(name)
     if not candidate:
-        raise SystemExit(f'{name} was not found. Set JAVA_HOME to a JDK 21+ installation (ABBA 0.24 runs on Java 21).')
+        raise SystemExit(f'{name} was not found. Set JAVA_HOME to a JDK 21+ installation (ABBA 0.25 runs on Java 21).')
     return str(candidate)
 classpath_file = args.classpath_file or root / 'target/test-classpath.txt'
 if not classpath_file.is_file():

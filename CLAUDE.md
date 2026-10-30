@@ -29,7 +29,7 @@ exceptions: a violation is fixed by moving code.
 | `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `gui` / `serve` commands, the LangSlice window (`gui/`), the ABBA launcher, agent viewer and log (`abba/`) | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md`, `hosts/abba/CLAUDE.md` |
 
 `connectors/` holds what is installed into someone else's program:
-`fiji/` (the Java connector for ABBA 0.24, which starts `langslice serve
+`fiji/` (the Java connector for ABBA 0.25, which starts `langslice serve
 --stdio`), `claude-desktop/` (configuration for `langslice mcp`),
 `claude-code/`, `antigravity/` and `codex/` (skills and agents over the agent CLI). `packaging/`
 and `environment.yml` hold the worker's source installation.

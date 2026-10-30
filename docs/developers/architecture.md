@@ -85,7 +85,7 @@ is independent of which interface produced the registration.
 
 ## Fiji connector and worker
 
-The Java plugin in `connectors/fiji/` targets ABBA 0.24 on Java 21. It exports
+The Java plugin in `connectors/fiji/` targets ABBA 0.25 on Java 21. It exports
 calibrated section snapshots and launches `langslice serve --stdio` in the
 selected Python environment. The worker starts no JVM. Installation and
 user workflow are in [ABBA](../abba.md).

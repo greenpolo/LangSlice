@@ -1,11 +1,11 @@
-"""``langslice abba``: ABBA 0.24.x started from Python, with the LangSlice connector.
+"""``langslice abba``: ABBA 0.25.x started from Python, with the LangSlice connector.
 
 The ONE ABBA integration is the Java Fiji connector (``connectors/fiji/``:
 the dialog under ABBA's Register menu, which starts LangSlice as its own
 Python worker). This module only starts ABBA from Python so that the
 connector's runs can also be watched with the Python viewer and log:
 
-- the JVM gets ABBA 0.24.1's Java dependencies (:data:`ABBA_JAVA_DEPENDENCIES`;
+- the JVM gets ABBA 0.25.0's Java dependencies (:data:`ABBA_JAVA_DEPENDENCIES`;
   abba-python 0.11.0's own pins are for ABBA 0.11) and the connector jar
   (:func:`connector_jar`: ``LANGSLICE_CONNECTOR_JAR``, else the connector's
   Maven build output ``connectors/fiji/target/*.jar`` of this checkout);
@@ -48,16 +48,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: ABBA 0.24.1's Java dependencies (``ch.epfl.biop:ImageToAtlasRegister:0.24.1``
-#: pom: bdv-playground 0.23.1, image-loaders 0.23.3, biop-tools 0.24.1,
+#: ABBA 0.25.0's Java dependencies (``ch.epfl.biop:ImageToAtlasRegister:0.25.0``
+#: pom: bdv-playground 0.23.1, image-loaders 0.23.4, biop-tools 0.24.2,
 #: selector 0.23.0, ijl-utilities-wrappers 0.12.1, imglib2-realtransform
-#: 4.0.6, atlas 0.23.4). ABBA 0.24 needs Java 21.
-ABBA_VERSION = "0.24.1"
+#: 4.0.6, atlas 0.23.4). ABBA 0.25 needs Java 21.
+ABBA_VERSION = "0.25.0"
 ABBA_JAVA_DEPENDENCIES: tuple[str, ...] = (
     f"ch.epfl.biop:ImageToAtlasRegister:{ABBA_VERSION}",
-    "ch.epfl.biop:bigdataviewer-biop-tools:0.24.1",
+    "ch.epfl.biop:bigdataviewer-biop-tools:0.24.2",
     "sc.fiji:bigdataviewer-playground:0.23.1",
-    "ch.epfl.biop:bigdataviewer-image-loaders:0.23.3",
+    "ch.epfl.biop:bigdataviewer-image-loaders:0.23.4",
     "ch.epfl.biop:bigdataviewer-selector:0.23.0",
     "ch.epfl.biop:ijl-utilities-wrappers:0.12.1",
     "net.imglib2:imglib2-realtransform:4.0.6",
