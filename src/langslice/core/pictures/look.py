@@ -294,7 +294,7 @@ def differs_since(state: Stack, held: dict[str, Any]) -> bool:
     return snapshot(state, ids, view_angles="view_angles" in held) != to_jsonable(held)
 
 
-#: The section fields a registration is (:mod:`langslice.job.registrations`):
+#: The section fields a registration is (``job/history.py``):
 #: a picture of a registration the section did not hold differs in them by
 #: design (:func:`changed_since`'s *besides*).
 REGISTRATION_FIELDS: tuple[str, ...] = ("flip", "rotation_deg", "transform", "deformation")

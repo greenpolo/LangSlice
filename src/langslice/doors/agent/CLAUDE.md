@@ -41,7 +41,7 @@ tool per registration method (`position_sections`,
 borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
 (zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
 previews; everything is undoable. Each registration a section holds is
-numbered (`job/registrations.py`): `look` draws a section under an earlier
+numbered (`job/history.py`): `look` draws a section under an earlier
 one without writing it, which is how two fits of a section are compared, and
 `restore_registration` puts earlier ones back on the sections named, whatever
 was written since; undo takes back only the job's last write.
@@ -409,7 +409,7 @@ keeps the transform's knob values, rebuilt on the new orientation.
 
 **Every write checkpoints and is undoable.** One tool call is one undo step,
 so a batch undoes as one; a landed piece of background work is a step of
-its own. The history (depth 50) is saved in the job folder, so a resumed
+its own. The undo steps (no cap) are saved in the job folder, so a resumed
 run can still undo the steps before it.
 
 ## Ceilings worth knowing

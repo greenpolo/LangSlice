@@ -601,7 +601,7 @@ is refused (`REGISTRATION_ELSEWHERE`) until the section is back there.
 `restore_registration`. **Needs:** `look:overlay`.
 
 **Details.** Each registration is numbered per section
-([`registrations.jsonl`](file_formats.md#registrations-sectionsnameregistrationsjsonl)).
+([`history.jsonl`](file_formats.md#section-history-sectionsnamehistoryjsonl)).
 The section's status row says which it holds (`registration`), and so does
 the reply to the write that left it. The listing gives, per number, the tool
 that made it and when, its `transform`, its `deformation` (`method`, `steps`,

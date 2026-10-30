@@ -124,7 +124,7 @@ class ContextWrites(ContextProposals):
             mark = job.pushed
             if outermost and self._step is not None and self._caller.merge_calls:
                 start, pushed, top = self._step
-                if job.pushed == pushed and job.undo_stack and job.undo_stack[-1] is top:
+                if job.pushed == pushed and job.undo_stack and job.undo_stack[-1].step == top:
                     mark = start  # nothing else wrote since the call's last write
             self._depth += 1
             try:
@@ -133,7 +133,7 @@ class ContextWrites(ContextProposals):
                 self._depth -= 1
                 job.merge_steps(mark)
                 if outermost and job.pushed > mark and job.undo_stack:
-                    self._step = (mark, job.pushed, job.undo_stack[-1])
+                    self._step = (mark, job.pushed, job.undo_stack[-1].step)
 
     def _stale(self, ids: Sequence[str], expect: Mapping[str, str] | None,
                ) -> dict[str, dict[str, Any]]:

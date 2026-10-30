@@ -34,7 +34,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from langslice.core.fits import deformation
 from langslice.core.jsonable import JsonObject
@@ -47,7 +47,6 @@ from langslice.job import recent
 from langslice.job.border_traces import JobBorderTraces
 from langslice.job.checkpoint import file_stamp, state_from_file
 from langslice.job.gates import submit_errors
-from langslice.job.history import History
 from langslice.job.host_inputs import (
     apply_host_inputs,
     changed_inputs,
@@ -74,6 +73,7 @@ from langslice.job.state_file import (
     stack_to_json,
     write_json_atomic,
 )
+from langslice.job.undo_steps import UndoFile
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -175,10 +175,10 @@ class Job(JobBorderTraces):
 
     Build one with :meth:`open` (resume or ingest, then the first
     checkpoint), or around a state already in hand
-    (``Job(state, spec, layout=...)``: an empty history, nothing read or
+    (``Job(state, spec, layout=...)``: no undo steps, nothing read or
     written until the first operation; the files as they stand on disk at
     that moment count as already seen, unless *seen* gives the stamps of
-    the state file and the history taken before they were read).
+    the state file and ``history/undo.json`` taken before they were read).
     """
 
     @classmethod
@@ -200,8 +200,9 @@ class Job(JobBorderTraces):
         is resumed (``spec.resume``) or the folder ingested, and the first
         checkpoint written; the open is a line of ``logs/events.jsonl`` and
         of the recent jobs list (:mod:`langslice.job.recent`). A resumed job
-        keeps its undo history; a fresh one starts without one (a history
-        left by an earlier job here is emptied). A job folder or checkpoint
+        keeps its undo steps; a fresh one starts without any (the steps an
+        earlier job here left are emptied) and writes each section's opening
+        history line (:mod:`langslice.job.history`). A job folder or checkpoint
         of another format (a newer LangSlice's, or an older pre-release's) is
         refused (``ValueError``). A resume whose
         spec supplies other ``inputs`` than the checkpoint was made from is
@@ -240,9 +241,8 @@ class Job(JobBorderTraces):
                     raise inputs_changed(layout.folder, changed)
             removed = _removed_settings(layout)  # this spec replaces them
             write_job_file(layout, spec=spec.to_dict())
-            history = History(layout.history_dir, migration)
-            undo: list[dict[str, Any]] = []
-            redo: list[dict[str, Any]] = []
+            undo_file = UndoFile(layout)
+            lists = undo_file.load()
             if state is not None:
                 resumed = True
                 workspace.progress(
@@ -253,14 +253,12 @@ class Job(JobBorderTraces):
                     images
                 )  # where they are now (a moved folder)
                 state.submitted = False
-                undo, redo = history.load()
             else:
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
-                if history.exists():
-                    history.load()  # read before it is emptied: never delete unread steps
-            if history.problem is not None:
-                workspace.progress(f"[job] {history.problem}")
+                lists.undo, lists.redo = [], []
+            if undo_file.notice is not None:
+                workspace.progress(f"[job] {undo_file.notice}")
             # The opening ``preprocessed`` image of every section without one,
             # outside undo: part of the job as it opens.
             section_images.ensure_opening(workspace, layout, state)
@@ -269,19 +267,17 @@ class Job(JobBorderTraces):
                 spec,
                 layout=layout,
                 results_path=results_path,
-                undo=undo,
-                redo=redo,
-                history=history,
             )
             job.lock = lock
             job.workspace = workspace
             job.upgrade = migration
-            if (
-                not undo and not redo and history.exists()
-            ) or history.upgraded:
-                # a fresh job empties a history it read, never another's; an
-                # upgraded one is written again at the current format
-                job._save_history()
+            job.undo_file = undo_file
+            job.undo_stack, job.redo_stack = lists.undo, lists.redo
+            job.next_step = lists.next_step
+            if not resumed:
+                job.record_opening()
+                if undo_file.path.exists():
+                    job._save_undo()  # a fresh job empties the steps it read, never another's
             job.checkpoint()
         _log_migrated(layout, migration, removed)
         layout.log_event("open", resumed=resumed)
@@ -302,7 +298,7 @@ class Job(JobBorderTraces):
 
         The state is the folder's checkpoint as saved (``FileNotFoundError``
         without one; a newer one is refused, ``ValueError``), with its undo
-        history; ``job.json`` and the state file are not rewritten, so a job
+        steps; ``job.json`` and the state file are not rewritten, so a job
         loaded beside a running agent changes nothing until its first write
         (the CLI and the library open a job per call this way). A folder
         holding another image folder's job is refused (``ValueError``).
@@ -314,37 +310,35 @@ class Job(JobBorderTraces):
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
-        history = History(layout.history_dir, migration)
+        undo_file = UndoFile(layout)
         # stamped before the unlocked reads: a write landing during them is
         # reloaded by the first sync, not overwritten by the first commit
         seen = (
             file_stamp(str(layout.state_file)),
-            file_stamp(str(history.index_path)),
+            file_stamp(str(undo_file.path)),
         )
         data = read_checkpoint(str(layout.state_file), migration)
         if data is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
         removed = _removed_settings(layout)
         migration.seed(data)
-        undo, redo = history.load()
         state = state_from_file(data, layout.state_file)
         job = cls(
             state,
             spec,
             layout=layout,
             results_path=results_path,
-            undo=undo,
-            redo=redo,
-            history=history,
             seen=seen,
         )
         job.persist = persist
         job.workspace = workspace
         job.upgrade = migration
+        job.undo_file = undo_file
+        job.load_undo()
         if not persist:
             job.views = DiscardedViews(layout)
             job.wire_views()
-        upgraded = migration.used or history.upgraded or bool(removed)
+        upgraded = migration.used or bool(removed)
         if (
             section_images.ensure_opening(workspace, layout, job.state)
             or upgraded
@@ -357,7 +351,7 @@ class Job(JobBorderTraces):
         return job
 
     def _write_upgrade(self, migration: FolderMigration) -> None:
-        """Write the state and history at the current format, read again under
+        """Write the state at the current format, read again under
         the job's lock first: another process may have migrated (and written
         to) the job since it was read, and its state is the one kept; and
         ``job.json`` without the settings LangSlice no longer has. Nothing
@@ -373,13 +367,11 @@ class Job(JobBorderTraces):
                 self.state.replace_with(
                     state_from_file(data, self.checkpoint_path)
                 )
-            self.undo_stack, self.redo_stack = self.history.load()
+            self.load_undo()
             made = section_images.ensure_opening(
                 self.workspace, self.layout, self.state
             )
-            if data is None or migration.used or made or self.history.upgraded:
-                if migration.used or self.history.upgraded:
-                    self._save_history()
+            if data is None or migration.used or made:
                 self.checkpoint()
             else:
                 self._state_stamp = file_stamp(self.checkpoint_path)
@@ -467,9 +459,10 @@ class Job(JobBorderTraces):
         (the step holds the state from before the write).
         """
         with self.writing():
+            before = self.snapshot()
             cleared = deformation.clear_stale(self.state)
             if cleared:
-                self.checkpoint()
+                self.amend(before)
         return cleared
 
     def emit_results(

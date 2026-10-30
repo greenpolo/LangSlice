@@ -20,6 +20,14 @@ migration         reads  what it does, to the next format
                          ``border_trace``
 ================  =====  =============================================
 
+A section's ``registrations.jsonl`` (its registrations, before the section
+history) is read as the lines of its ``history.jsonl`` by
+``lines_from_registration_list``, so the numbers an agent saw stay valid;
+the section's next write writes ``history.jsonl`` from them and removes it
+(:mod:`langslice.job.history`). An older LangSlice's undo steps
+(``history/index.json`` and ``step-*.json``) are not read: the folder opens
+with one warning and undo starts with its session.
+
 The trace folders stay where format 4 put them,
 ``sections/<name>/image_correction/``, and the paths stored to them are
 kept, so an old trace is found where it stands; new traces go under
@@ -86,6 +94,7 @@ from langslice.job.layout import JobLayout
 from langslice.job.state_file import (
     STATE_FORMAT_VERSION,
     current_state,
+    json_object,
     older_format,
     stack_from_json,
 )
@@ -121,6 +130,17 @@ REMOVED_SECTION_KEYS = ("position_source", "damaged")
 
 #: A section row's key for its border trace, before format 5 and since.
 OLD_TRACE_KEY, TRACE_KEY = "image_correction", "border_trace"
+#: A section's list of registrations, before its history.
+OLD_REGISTRATION_LIST = "registrations.jsonl"
+#: The fields of a listed registration a history line keeps as the row's.
+_LISTED_ROW_KEYS = (
+    "position_mm",
+    "cutting_angles_deg",
+    "flip",
+    "rotation_deg",
+    "transform",
+    "deformation",
+)
 
 
 class FolderMigration:
@@ -686,3 +706,46 @@ STATE_MIGRATIONS = (
     Migration("state_3_to_4", 3, state_3_to_4),
     Migration("state_4_to_5", 4, state_4_to_5),
 )
+
+
+def lines_from_registration_list(text: str) -> list[Fields]:
+    """Return a ``registrations.jsonl`` as the lines of a section history.
+
+    Each registration becomes a line holding it under its number, with the
+    position and cutting angles it was made at (the rest of the row is
+    not known); a line that does not read is left out.
+
+    Parameters
+    ----------
+    text
+        The file's text.
+
+    Returns
+    -------
+    list of dict
+        History lines, ``seq`` from 1.
+    """
+    lines: list[Fields] = []
+    for line in text.splitlines():
+        try:
+            fields = json_object(line)
+        except ValueError:
+            continue
+        if fields is None or not isinstance(fields.get("id"), int):
+            continue
+        converted: Fields = {
+            key: to_jsonable(fields.get(key)) for key in _LISTED_ROW_KEYS
+        }
+        converted.update(
+            {
+                "seq": len(lines) + 1,
+                "step": 0,
+                "by": to_jsonable(fields.get("by")),
+                "at": to_jsonable(fields.get("at")),
+                "registration": to_jsonable(fields["id"]),
+                "digest": to_jsonable(fields.get("digest")),
+                "format_version": STATE_FORMAT_VERSION,
+            }
+        )
+        lines.append(converted)
+    return lines

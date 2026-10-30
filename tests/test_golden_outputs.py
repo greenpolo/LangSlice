@@ -38,7 +38,7 @@ tolerance: every engine here gave identical output run to run):
   (``calls.json``), with a digest of each picture's pixels before JPEG;
 - every JSON and text file of the job folder (``state.json``,
   ``registration.json``, ``job.json``, each picture's ``view.json``,
-  ``views.jsonl``, each section's ``registrations.jsonl`` and
+  ``views.jsonl``, each section's ``history.jsonl`` and
   ``maps.json``, the deformation records, the exports, the reference cards,
   ``logs/events.jsonl``, the agent CLI's ``logs/calls.jsonl`` and saved
   replies, the launch prompts, ``logs/engine.log``), normalised the same
@@ -52,8 +52,9 @@ tolerance: every engine here gave identical output run to run):
   ``expected/<door>/pictures/`` for a reader to look at and for an exact
   pixel diff.
 
-Not compared: the undo steps (``history/``), the locks and counters, and
-what the children print on stderr (progress lines and library notices).
+Not compared: the undo steps (``history/undo.json``), the locks and
+counters, and what the children print on stderr (progress lines and library
+notices).
 
 The three sections and the goldens are unpublished data, so they are kept
 out of the repository, in ``tests/golden/data/`` (git-ignored) or the folder
