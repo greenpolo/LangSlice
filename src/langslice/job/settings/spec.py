@@ -267,9 +267,11 @@ class JobSpec:
     #: Where the job folder goes (``--job-dir``). None: next to the images,
     #: ``<images>/langslice`` (:func:`langslice.job.layout.locate_job_folder`).
     job_dir: str | None = None
-    #: Display-side preprocessing for everything the agent looks at: "auto"
-    #: runs :func:`langslice.core.sections.reading.adaptive_preprocess`, "none"
-    #: shows the raw section. Never written back to the user's files.
+    #: How each section's ``preprocessed`` image is made: "auto" runs
+    #: :func:`langslice.core.sections.reading.adaptive_preprocess`, "none"
+    #: takes the file in gray. It is what the agent sees first, what the image
+    #: model is shown and what every fit reads unless the agent names another
+    #: section image; never written back to the user's files.
     preprocess: str = "auto"
     #: A host's channel-blend settings (``preprocess.preview``'s
     #: ``PreprocessingSettings``: auto, or custom weights and CLAHE) for

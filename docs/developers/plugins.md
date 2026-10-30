@@ -355,7 +355,7 @@ already has some. The work's own landing is not refused.
 
 ## In-tree engines
 
-STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --tool-plugin REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm` under `~/.claude-science/conda/envs`; the SPOmiAlign and emlddmm sources from SliceBench's `comparators/src`). Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`). A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm` under `~/.claude-science/conda/envs`; the SPOmiAlign and emlddmm sources from SliceBench's `comparators/src`). Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`). A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
@@ -461,7 +461,7 @@ the layers the sections show to `exports/plugins/<tool>/` with a manifest.
 | Where | How |
 |---|---|
 | Job spec | `JobSpec.plugins`: `["module:factory", ...]`, saved in `job.json`; `JobSpec.plugin_config`: options for a factory, by reference (the factory is called with the options object when it has one) |
-| `langslice linear run` | `--tool-plugin MODULE:FACTORY` (repeatable); `--tool-plugin-config 'MODULE:FACTORY=JSON-or-file'` |
+| `langslice linear run` | `--plugins MODULE:FACTORY` (repeatable); `--plugin-config 'MODULE:FACTORY=JSON-or-file'` |
 | Python | `langslice.create_job(folder, plugins=[...], plugin_config={...})`: references, factory functions defined at module level, or `ToolSpec` objects |
 | Reopening | `open_job(folder)` and `langslice-job FOLDER VERB` read `plugins` from `job.json` and load them again |
 
@@ -470,7 +470,7 @@ when the spec is made. The plugin tools follow the native ones in every
 listing: the built-in agent's tools and job statement, `langslice-job ops` and
 `schema` (in a job folder), the job's `AGENTS.md` card, the library's `verbs`,
 and `status`' `can_change`. They are named in `disabled` like native tools
-(`--disable nudge_sections`), are absent while their task is off, and plugin
+(`--disabled nudge_sections`), are absent while their task is off, and plugin
 writers do not count toward a task's requirement that one of its own tools
 stays on. An agent CLI reply from a plugin tool is the plugin's reply as it is.
 

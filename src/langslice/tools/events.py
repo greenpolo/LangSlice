@@ -90,7 +90,7 @@ def call_id(context: object) -> str | None:
     Returns
     -------
     str or None
-        The call's ``function_call_id``, None without one.
+        The call's ``function_call_id``.
     """
     identifier: object = getattr(context, "function_call_id", None)
     return identifier if isinstance(identifier, str) else None
@@ -107,8 +107,6 @@ def reply_status(reply: object) -> object:
     Returns
     -------
     object
-        The reply's ``status``; None for a reply that is no dict or has no
-        status.
     """
     if not isinstance(reply, dict):
         return None
@@ -122,12 +120,9 @@ def target_ids(
 
     Parameters
     ----------
-    state
-        The stack the call works on.
-    name
-        The tool called.
-    args
-        The call's arguments, defaults filled.
+    state, name, args
+        The stack the call works on, the tool called and its arguments
+        with defaults filled.
 
     Returns
     -------

@@ -806,7 +806,7 @@ def init_parser() -> argparse.ArgumentParser:
 
     parser = _Parser(prog="langslice-job FOLDER init", add_help=False)
     add_flags(parser, "job")
-    add_flags(parser, "fresh")
+    add_flags(parser, "resume")
     add_flags(parser, "init", choices={"--viewer": sorted(VIEWER_LIMITS)})
     return parser
 
@@ -862,7 +862,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
                     RefusalCode.SETTINGS_CHANGED,
                     f"The job in this folder was made with other settings: {', '.join(changed)}.",
                     fix="Give init the job flags it was made with (job.json, spec) to continue "
-                    "it, or --fresh to start it over (its work is discarded).", job=str(images))
+                    "it, or --no-resume to start it over (its work is discarded).", job=str(images))
     try:
         opened = create(spec, atlas_loader=atlas_loader, emit=progress, door="cli")
     except InputsChanged as exc:

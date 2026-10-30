@@ -91,7 +91,7 @@ FIXES: dict[str, str] = {
         "on the job's atlas."
     ),
     RefusalCode.INPUTS_CHANGED: (
-        "Rerun `langslice-job {job} init` with --fresh to start a new job "
+        "Rerun `langslice-job {job} init` with --no-resume to start a new job "
         "from these inputs (the old one's work is replaced), or with the "
         "inputs the job was made from (job.json, spec.inputs) to continue it."
     ),

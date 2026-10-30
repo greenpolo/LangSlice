@@ -186,11 +186,6 @@ class FolderMigration:
         JsonObject
             The fields at the current state format: *data* itself when
             nothing changed.
-
-        Raises
-        ------
-        ValueError
-            For an older format no row of :data:`STATE_MIGRATIONS` reads.
         """
         fields = data
         if version < STATE_FORMAT_VERSION:
@@ -279,19 +274,17 @@ class FolderMigration:
 
 
 def state_3_to_4(data: Fields, folder: FolderMigration) -> Fields:
-    """Return a format-3 state's fields as format 4.
+    """Return a format-3 state's fields as format 4 (the table's row).
 
     Parameters
     ----------
-    data
-        The fields at format 3; not changed.
-    folder
-        The job folder's migration, which writes the section images.
+    data, folder
+        The fields at format 3, not changed, and the job folder's
+        migration, which writes the section images.
 
     Returns
     -------
     dict
-        The fields at format 4.
     """
     fields = dict(data)
     recipes = _old_recipes(fields.pop("appearance", None))
@@ -459,20 +452,17 @@ def _recipe_3_to_4(old: JsonObject, raw: Sequence[str]) -> JsonObject:
 
 
 def state_4_to_5(data: Fields, folder: FolderMigration) -> Fields:
-    """Return a format-4 state's fields as format 5.
+    """Return a format-4 state's fields as format 5 (the table's row).
 
     Parameters
     ----------
-    data
-        The fields at format 4; not changed.
-    folder
-        The job folder's migration; not used.
+    data, folder
+        The fields at format 4, not changed, and the job folder's
+        migration, not used.
 
     Returns
     -------
     dict
-        The fields at format 5: each section's border trace under
-        ``border_trace``, its stored paths as they were.
     """
     del folder
     fields = dict(data)
@@ -638,10 +628,8 @@ class Migration:
 
     Parameters
     ----------
-    name
-        The migration's name, as the table gives it.
-    reads
-        The state format the step reads; it returns the next one.
+    name, reads
+        The migration's name and the state format it reads.
     migrate
         The step: a state's fields at *reads* and the folder's
         migration, to the fields at the next format.

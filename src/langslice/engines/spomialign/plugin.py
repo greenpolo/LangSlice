@@ -1,6 +1,6 @@
 """SPOmiAlign as a LangSlice tool: the adapter, run in LangSlice's process.
 
-Load it with ``--tool-plugin langslice.engines.spomialign.plugin:tools`` or
+Load it with ``--plugins langslice.engines.spomialign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.spomialign.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python``
 (the ``rigid_spomialign`` interpreter), ``src`` (SPOmiAlign's ``SPOmiAlign`` folder),

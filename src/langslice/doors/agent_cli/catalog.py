@@ -90,11 +90,13 @@ def command_names() -> list[str]:
 def flags_table(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:
     """An argparse parser's options as data: per option its ``flag`` (the
     long form), ``aliases``, ``help``, ``default``, ``choices``,
-    ``takes_value`` and ``metavar``."""
+    ``takes_value`` and ``metavar``; a hidden option (an old spelling) is
+    left out."""
     formatter = parser._get_formatter()
     rows: list[dict[str, Any]] = []
     for action in parser._actions:
-        if not action.option_strings or isinstance(action, argparse._HelpAction):
+        if not action.option_strings or isinstance(action, argparse._HelpAction) or (
+                action.help == argparse.SUPPRESS):
             continue
         strings = sorted(action.option_strings, key=lambda text: (-len(text), text))
         try:

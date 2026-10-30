@@ -25,9 +25,9 @@ it leaves out, and which subagent to use.
 - Atlas (default `allen_mouse_25um`) and cutting plane (coronal, sagittal,
   horizontal).
 - Nonlinear only: an image model (`openai-oauth`, `openai-api`, `gemini-api`)
-  or none (`--image-provider none`, fits to the stain alone).
+  or none (`--nonlinear-provider none`, fits to the stain alone).
 - Section pixel size in um if the files do not carry it (`--pixel-size-um`),
-  and section thickness and interval (`--thickness`, `--interval`).
+  and section thickness and interval (`--position-thickness-um`, `--position-interval-um`).
 - An existing registration to start from (QuickNII or VisuAlign JSON/XML,
   DeepSlice CSV/JSON/XML, or a LangSlice `registration.json`): `--registration
   FILE`. With it and no `--tasks`, the placement is kept and only the
@@ -45,14 +45,14 @@ README says to install it, and stop.
 
 ```bash
 langslice-job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
-  --pixel-size-um 4.0 --image-provider none
+  --pixel-size-um 4.0 --nonlinear-provider none
 ```
 
 It prints one JSON object (`ok`, `result`, `artifacts` with the job's `card`
 and `state`, `warnings`). Report any warning to the user (for example what a
 `--registration` file did not place). A job already in the folder is
 continued; changed inputs are refused with `INPUTS_CHANGED` and other job
-settings with `SETTINGS_CHANGED`, which both name `--fresh`: ask the user
+settings with `SETTINGS_CHANGED`, which both name `--no-resume`: ask the user
 before starting over.
 
 ## 3. Launch exactly one registration subagent

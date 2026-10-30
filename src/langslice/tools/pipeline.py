@@ -9,28 +9,40 @@ then the tool's body, then each step's part after the body in reverse
 order.
 
 ``_serialize``
-    One call at a time, the job held as the tool needs it: a write under
-    the job folder's write lock, a read as the state stands.
+    One call at a time, the job held as the tool needs it: a write runs
+    whole under the job folder's write lock, the state first brought up to
+    date; a read sees the state as it stands, never waiting for another
+    process's writer; a long tool only syncs, computes outside the lock and
+    takes the lock itself to apply, re-checking its sections.
 ``_log_events``
     ``tool_start`` to the observers before; ``tool_end`` after, with the
-    pictures the call saved.
+    pictures the call saved and whether it failed. A crash is sent as the
+    refusal its exception makes and raised on; an observer's failure never
+    changes the call.
 ``_announce_work``
-    After: the reply opens with the notices of the background work that
-    finished since the last reply.
+    After: the reply opens with the notices of the background work (a fit,
+    a trace) finished since the last reply, each announced once, its
+    pictures after the reply's own.
 ``_save_pictures``
-    After: the reply's pictures saved in the job folder, their numbers
-    listed under ``pictures``.
+    After: the reply's pictures numbered at once and saved in the job
+    folder with their layers in the background, their numbers listed under
+    ``pictures``. A reply that lists ``pictures`` already was saved by its
+    operation (``look``, ``zoom``, the change tools).
 ``_name_registrations`` (writes)
     After: the registrations the write left, named.
 ``_clear_stale_deformations`` (writes)
     After: the deformations whose linear placement changed, dropped in the
-    same undo step.
+    same undo step (so ``undo`` restores both) and listed under
+    ``deformation_cleared``.
 ``_answer_refusals``
-    A refusal raised by a later step or the body becomes the reply. It sits
-    inside ``_clear_stale_deformations``, so a refused write still runs the
-    sweep, which finds nothing changed.
+    A refusal raised by a later step or the body becomes the reply, the
+    tools' one conversion of a refusal, so the steps above see a reply. It
+    sits inside ``_clear_stale_deformations``, so a refused write still runs
+    the sweep, which finds nothing changed.
 ``_strict_arguments``
-    Before: unknown or misplaced arguments refused.
+    Before: unknown or misplaced arguments refused against the signature
+    the model sees: stray top-level names (ADK and MCP drop them before a
+    tool runs) and stray keys inside typed-dict arguments.
 ``_opening_gate`` (writes)
     Before: a write refused while an opening page is unread (MCP).
 
@@ -244,14 +256,7 @@ class ToolCall:
 
 @contextlib.contextmanager
 def _serialize(call: ToolCall) -> Generator[None]:
-    """Run one call at a time, with the job held as the tool needs it.
-
-    A write runs whole under the job folder's write lock, after the state
-    is brought up to date; a read never waits for another process's writer
-    (the state as it stands); a long tool only syncs, computes outside the
-    lock and takes it itself to apply, re-checking its sections. The job
-    names the registrations the call leaves for the tool.
-    """
+    """Run one call at a time, the job held as the tool needs it."""
     job = call.box.job
     with call.box.lock, job.acting(call.name):
         if call.verb.long:
@@ -267,12 +272,7 @@ def _serialize(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _log_events(call: ToolCall) -> Generator[None]:
-    """Send ``tool_start`` before the call and ``tool_end`` after it.
-
-    ``tool_end`` names the pictures the call saved and whether it failed;
-    a crash is sent as the refusal its exception makes and raised on. An
-    observer's failure never changes the call.
-    """
+    """Send ``tool_start`` before the call and ``tool_end`` after it."""
     box = call.box
     fields: dict[str, Any] = {
         "name": call.name,
@@ -307,12 +307,7 @@ def _log_events(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _announce_work(call: ToolCall) -> Generator[None]:
-    """Open the reply with the notices of the work finished since the last.
-
-    Background work (a fit, a trace) that finished since the last reply
-    is announced once, its pictures after the reply's own
-    (:func:`with_notices`).
-    """
+    """Open the reply with the notices of the work finished since the last."""
     yield
     reply = call.reply
     if isinstance(reply, dict):
@@ -322,13 +317,7 @@ def _announce_work(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _save_pictures(call: ToolCall) -> Generator[None]:
-    """Save the pictures the reply carries and list their numbers.
-
-    A reply that already lists ``pictures`` was saved by its operation
-    (``look``, ``zoom``, the change tools' pictures) and is left as it is.
-    Otherwise the job's picture store numbers the pictures at once and
-    writes them, with their layers, in the background.
-    """
+    """Save the pictures the reply carries and list their numbers."""
     job = call.box.job
     run = call.box.run
     # a box without its run (before build_tools sets it) saves no layers
@@ -368,12 +357,7 @@ def _name_registrations(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _clear_stale_deformations(call: ToolCall) -> Generator[None]:
-    """Drop the deformations whose linear placement the write changed.
-
-    The rule is the job's: cleared in the same undo step as the write that
-    made them stale, so ``undo`` restores the placement and the deformation
-    together; the reply lists them under ``deformation_cleared``.
-    """
+    """Drop the deformations whose linear placement the write changed."""
     yield
     cleared = call.box.job.clear_stale_deformations()
     reply = call.reply
@@ -384,12 +368,7 @@ def _clear_stale_deformations(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _answer_refusals(call: ToolCall) -> Generator[None]:
-    """Answer a refusal raised by a later step or the body with its reply.
-
-    The tools' one conversion of a refusal to a reply
-    (:meth:`Refused.payload`), so the steps above it see a reply, as for
-    any call.
-    """
+    """Answer a refusal raised by a later step or the body with its reply."""
     try:
         yield
     except Refused as refused:
@@ -398,13 +377,7 @@ def _answer_refusals(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _strict_arguments(call: ToolCall) -> Generator[None]:
-    """Refuse unknown or misplaced arguments before the tool runs.
-
-    Stray top-level names (ADK and MCP check those at their own doors,
-    since both drop them before a tool runs) and stray keys inside every
-    typed-dict argument (``sections`` entries, ``cutting_angles``), against
-    the tool's signature as the model sees it.
-    """
+    """Refuse unknown or misplaced arguments before the tool runs."""
     names = list(inspect.signature(call.declared).parameters)
     given = {**dict(zip(names, call.args, strict=False)), **call.kwargs}
     refusal = argument_refusal(call.declared, given)
@@ -507,19 +480,7 @@ def declared_tool(
 
 
 def _new_pictures(reply: object) -> list[Image.Image]:
-    """Return the pictures a reply carries that no operation saved yet.
-
-    Parameters
-    ----------
-    reply
-        A tool's reply.
-
-    Returns
-    -------
-    list of PIL.Image.Image
-        The pictures under the media key, or none when the reply already
-        lists its ``pictures``.
-    """
+    """Return the pictures a reply carries that no operation saved yet."""
     if not isinstance(reply, dict):
         return []
     fields = cast("dict[str, object]", reply)  # a tool's reply: by name

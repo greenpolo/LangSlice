@@ -115,7 +115,7 @@ Your agent runs `langslice-job FOLDER init --registration FILE`. With
 imported positions, angles, mirroring and alignment are fixed on every
 section. `--tasks position,transform,nonlinear` lets the agent revise them.
 `--registration` cannot be combined with `--positions`, `--transforms`,
-`--orientation`, `--pitch`, `--yaw`, `--section-angles` or `--angles`.
+`--orientation`, `--pitch`, `--yaw`, `--section-angles` or `--transform-angles`.
 DeepSlice's CSV names no atlas; LangSlice reads it as DeepSlice's mouse
 target. The import rules are in
 [Job folder and file formats](../reference/file_formats.md).

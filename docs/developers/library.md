@@ -70,7 +70,7 @@ with langslice.create_job(
 
 Image formats are PNG, JPEG and TIFF. `create_job` creates or continues
 `<images>/langslice/`; `job_dir=` chooses another location. Changed supplied
-inputs are refused on resume; `fresh=True` starts over. Source images remain
+inputs are refused on resume; `resume=False` starts over. Source images remain
 untouched.
 
 | Argument | Meaning |
@@ -142,7 +142,7 @@ model = langslice.image_model(
 
 `{plane}` in a custom prompt is replaced with the section plane. A job's own
 base prompt can also be set in its settings,
-`nonlinear={"image_prompt": "..."}` (`langslice linear run --image-prompt
+`nonlinear={"image_prompt": "..."}` (`langslice linear run --nonlinear-image-prompt
 FILE`), for any model without a prompt of its own; it is recorded as an
 untested `custom` profile, and a profile with another prompt of its own is
 refused.

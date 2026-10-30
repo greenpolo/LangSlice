@@ -161,7 +161,7 @@ def test_create_job_from_a_folder(images):
         assert "trace_borders" not in job.verbs
     with langslice.open_job(images, image_model=Stub()) as job:
         assert "trace_borders" in job.verbs
-    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS, fresh=True).close()
+    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS, resume=False).close()
     with pytest.raises(ValueError, match="without an image model"):
         langslice.open_job(images, image_model=Stub())
 

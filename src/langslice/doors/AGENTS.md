@@ -219,7 +219,7 @@ bodies, and turned into an answer once per door:
   (before `concurrent.futures` stops taking work), so a script that never
   calls `close` keeps its `trace_borders` results and pictures. `create_job(images | JobSpec, atlas=, plane=, tasks=,
   image_model=, job_dir=, positions=, transforms=, angles=,
-  orientation=, pixel_size_um=, inputs=, registration=, fresh=, **JobSpec
+  orientation=, pixel_size_um=, inputs=, registration=, resume=, **JobSpec
   fields)`: six-number transforms become `{"kind": "interactive", "params",
   "mirrored"}` (`_transform`); `angles` in either `inputs.angles` form
   (`_angles`); `registration=` a file made elsewhere (`tasks` None is then
@@ -391,12 +391,12 @@ bodies, and turned into an answer once per door:
   flag's help text, argparse handling and group: `job` for every command,
   `plugins` and `session` for `linear run`, `fresh` for `linear run` and
   `init`, `init` for `init`), `linear.py` (`linear run`: `build_linear_spec`,
-  `spec_from_args` (`--disable NAME[,NAME...]`: the job's `disabled` list;
+  `spec_from_args` (`--disabled NAME[,NAME...]`: the job's `disabled` list;
   `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
   `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
   `--registration` with any of `REGISTRATION_CLASHES` is refused; a bad flag
   value ends the command with a message; `linear run` alone also takes
-  `--tool-plugin MODULE:FACTORY` and `--tool-plugin-config REF=JSON`,
+  `--plugins MODULE:FACTORY` and `--plugin-config REF=JSON`,
   `with_tool_plugins`, and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
   process of its own, by command, never importing the host),
   `mcp.py` (`mcp`), and the agent CLI
@@ -522,7 +522,7 @@ bodies, and turned into an answer once per door:
     `core.stack.status.with_uniform_rows`;
     concise: a reply with pictures keeps its description as `picture_note`,
     a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
-    parser `init_parser`: the job flags of `linear run`, `--fresh`,
+    parser `init_parser`: the job flags of `linear run`, `--no-resume`,
     `--notes`, `--viewer` (`add_flags`, the viewers from
     `core.pictures.opening.VIEWER_LIMITS`); `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),

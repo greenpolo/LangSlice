@@ -39,7 +39,7 @@ def add_mcp_parser(
         help="Open this saved job at startup, so its tools are listed from the "
         "first request (for hosts that do not follow tool-list changes)",
     )
-    # The same job flags as `linear run`, less --fresh and the agent session's
+    # The job flags of `linear run`, less --no-resume and the agent session's
     # (the host runs its own model); they make the job of a folder that holds
     # none (a folder's own job keeps its saved settings).
     add_flags(p, "job")

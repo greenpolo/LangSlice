@@ -572,12 +572,13 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
         _code, status = cli(capsys, str(images), "status")
         return {row["id"]: row["position_mm"] for row in status["result"]["rows"]}
 
-    # Different inputs: refused, naming --fresh; nothing rewritten.
+    # Different inputs: refused, naming --no-resume; nothing rewritten.
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(moved))
     assert code == 3 and envelope["error"]["code"] == "INPUTS_CHANGED", envelope
     assert "positions" in envelope["error"]["message"]
-    assert "--fresh" in envelope["error"]["message"] and "--fresh" in envelope["error"]["fix"]
+    assert "--no-resume" in envelope["error"]["message"]
+    assert "--no-resume" in envelope["error"]["fix"]
     spec = json.loads((job / "job.json").read_text())["spec"]
     assert spec["inputs"]["positions"] == POSITIONS
     assert positions() == POSITIONS
@@ -585,7 +586,7 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(POSITIONS))
     assert code == 0, envelope
-    # --fresh: a new job from the new inputs.
+    # --fresh (--no-resume's old spelling): a new job from the new inputs.
     code, envelope = cli(capsys, str(images), "init", *flags, "--fresh",
                          "--positions", json.dumps(moved))
     assert code == 0, envelope

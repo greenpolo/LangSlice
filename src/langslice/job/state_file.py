@@ -330,7 +330,7 @@ def older_format(version: int) -> ValueError:
         "This checkpoint was made by an older pre-release LangSlice "
         f"(format {version}; this version reads format "
         f"{STATE_FORMAT_VERSION}). Start a new job: open it fresh "
-        "(`--fresh`, resume=False) or remove the job folder."
+        "(`--no-resume`, resume=False) or remove the job folder."
     )
 
 

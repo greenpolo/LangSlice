@@ -94,7 +94,7 @@ def physical_to_json(physical: PhysicalAffine) -> Written:
 
 
 def physical_from_json(data: JsonObject) -> PhysicalAffine:
-    """Return the knobs a JSON object holds.
+    """Return the knobs a JSON object holds; one it does not give is None.
 
     Parameters
     ----------
@@ -104,7 +104,6 @@ def physical_from_json(data: JsonObject) -> PhysicalAffine:
     Returns
     -------
     PhysicalAffine
-        The knobs; one the object does not give is None.
     """
     return PhysicalAffine(
         rotation_deg=optional_at(data, "rotation_deg", number_at),
@@ -118,19 +117,7 @@ def physical_from_json(data: JsonObject) -> PhysicalAffine:
     )
 
 
-def calibration_to_json(calibration: Calibration) -> Written:
-    """Return an affine's calibration in its JSON form.
-
-    Parameters
-    ----------
-    calibration
-        The section scale the affine's millimetres are measured at.
-
-    Returns
-    -------
-    dict
-        ``{"section_um_per_px", "source"}``.
-    """
+def _calibration_json(calibration: Calibration) -> Written:
     form: Written = {
         "section_um_per_px": calibration.section_um_per_px,
         "source": calibration.source,
@@ -144,12 +131,11 @@ def calibration_from_json(data: JsonObject) -> Calibration:
     Parameters
     ----------
     data
-        A form :func:`calibration_to_json` writes.
+        ``{"section_um_per_px", "source"}``.
 
     Returns
     -------
     Calibration
-        The calibration.
     """
     return Calibration(
         section_um_per_px=_optional_number(data, "section_um_per_px"),
@@ -204,14 +190,13 @@ def affine_to_json(affine: StoredAffine) -> Written:
     Returns
     -------
     dict
-        Its declared keys that are set, in order, then its other keys.
     """
     physical = None
     if affine.physical is not None:
         physical = physical_to_json(affine.physical)
     calibration = None
     if affine.calibration is not None:
-        calibration = calibration_to_json(affine.calibration)
+        calibration = _calibration_json(affine.calibration)
     middle: list[tuple[str, Json]] = [
         ("calibration", calibration),
         ("mirrored", affine.mirrored),
@@ -251,7 +236,6 @@ def affine_from_json(data: JsonObject) -> StoredAffine:
     Returns
     -------
     StoredAffine
-        The affine.
     """
     return StoredAffine(
         kind=optional_at(data, "kind", text_at),
@@ -295,7 +279,6 @@ def deformation_to_json(deformation: DeformationRef) -> Written:
     Returns
     -------
     dict
-        Its declared keys that are set, in order, then its other keys.
     """
     warp = deformation.landmark
     if warp is None:
@@ -362,7 +345,6 @@ def deformation_from_json(data: JsonObject) -> DeformationRef:
     Returns
     -------
     DeformationRef
-        The reference.
     """
     kept_linear = optional_at(data, "keep_linear", text_at)
     key = optional_at(data, "key", text_at)
@@ -407,8 +389,6 @@ def trace_to_json(trace: BorderTrace) -> Written:
     Returns
     -------
     dict
-        Its set keys in the order the trace's record is written, then its
-        other keys.
     """
     form = set_items(
         [
@@ -461,7 +441,6 @@ def trace_from_json(data: JsonObject) -> BorderTrace:
     Returns
     -------
     BorderTrace
-        The trace.
     """
     return BorderTrace(
         id=text_at(data, "id"),
@@ -516,7 +495,6 @@ def image_to_json(image: ImageRef) -> Written:
     Returns
     -------
     dict
-        ``{"source", "file", "digest", "made"}``, then its other keys.
     """
     form = set_items(
         [
@@ -541,7 +519,6 @@ def image_from_json(data: JsonObject) -> ImageRef:
     Returns
     -------
     ImageRef
-        The entry.
     """
     return ImageRef(
         source=object_at(data, "source"),
@@ -563,7 +540,6 @@ def mask_to_json(mask: MaskRef) -> Written:
     Returns
     -------
     dict
-        Its keys in order, then its other keys.
     """
     form = set_items(
         [
@@ -592,7 +568,6 @@ def mask_from_json(data: JsonObject) -> MaskRef:
     Returns
     -------
     MaskRef
-        The entry.
     """
     return MaskRef(
         kind=text_at(data, "kind"),
@@ -618,7 +593,6 @@ def layer_to_json(layer: LayerRef) -> Written:
     Returns
     -------
     dict
-        Its keys in order, then its other keys.
     """
     form = set_items(
         [
@@ -647,7 +621,6 @@ def layer_from_json(data: JsonObject) -> LayerRef:
     Returns
     -------
     LayerRef
-        The reference.
     """
     return LayerRef(
         id=text_at(data, "id"),

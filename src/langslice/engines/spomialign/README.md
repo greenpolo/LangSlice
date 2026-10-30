@@ -14,11 +14,11 @@ A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers 
 ## Use
 
 ```bash
-langslice linear run ... --tool-plugin langslice.engines.spomialign.plugin:tools
+langslice linear run ... --plugins langslice.engines.spomialign.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["plugin:tools"])` with this folder on
-`PYTHONPATH`. Options (`--tool-plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `python` (the
+`PYTHONPATH`. Options (`--plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `python` (the
 `rigid_spomialign` interpreter; default
 `~/.claude-science/conda/envs/rigid_spomialign/bin/python`), `src`, `device`,
 `timeout_s`. RoMa's weights load from `~/.cache/torch/hub/checkpoints`.

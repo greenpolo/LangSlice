@@ -141,11 +141,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   thickness, interval, pixel size, the tasks when none is chosen) and one on
   bash quoting when a word is quoted, then a fenced `bash` block: the
   `langslice-job FOLDER init` command, one flag per line, only the fields
-  set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--thickness`, `--interval`,
-  `--pixel-size-um`, `--disable` in table order: the tools of this run off
+  set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--position-thickness-um`, `--position-interval-um`,
+  `--pixel-size-um`, `--disabled` in table order: the tools of this run off
   whole, then the options off of tools still on, a name a kept property
   already switches off left out; `--frozen {"*": [...]}`, `--damaged`
-  `{file: note}` from `file: note` lines, `--fact` for the cutting order,
+  `{file: note}` from `file: note` lines, `--facts` for the cutting order,
   `--notes`). `problems` (no message while one stands) mirror
   `tool_table.refusal` on the form: the folder, whole micrometres, `look`
   keeps a mode, each chosen task keeps a writer, each tool on keeps what it

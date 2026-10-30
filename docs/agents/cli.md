@@ -43,7 +43,7 @@ to do next. Keep its scripts in the job's `scripts/` and other work in
 `scratch/`, and run them with `langslice-job FOLDER python scripts/NAME.py`.
 
 A job made with [tool plugins](../developers/plugins.md) (`langslice linear run FOLDER
---tool-plugin MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has
+--plugins MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has
 their tools after the native ones in `ops`, `schema` and the reference card,
 and calls them by name like any other.
 

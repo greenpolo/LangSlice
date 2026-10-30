@@ -7,7 +7,7 @@ with a model LangSlice calls itself.
 
 ```bash
 langslice linear run sections/ --tasks position,transform
-langslice linear run sections/ --tasks position,transform,nonlinear --image-provider none
+langslice linear run sections/ --tasks position,transform,nonlinear --nonlinear-provider none
 langslice linear run sections/ --registration quicknii.json
 ```
 
@@ -46,12 +46,12 @@ and these of its own:
 | `--model` | The model that drives the run (default `openai-oauth/gpt-6.1-sol`). Without `--model`, the model chosen in the LangSlice window's Settings (`~/.langslice/settings.json`) is used, with its reasoning effort unless `--reasoning` is given; the run prints the model it took from there. |
 | `--reasoning` | Reasoning effort (OAuth default `medium`). |
 | `--no-debrief` | No closing call asking what tools the agent missed. |
-| `--out`, `--fresh` | Where the results JSON goes; start the job over. |
+| `--out`, `--no-resume` | Where the results JSON goes; start the job over. |
 | `--trace-dir` | A second folder for the run's trace (also `langslice mcp`). |
-| `--tool-plugin`, `--tool-plugin-config` | [Tool plugins](../developers/plugins.md). |
+| `--plugins`, `--plugin-config` | [Tool plugins](../developers/plugins.md). |
 | `--gui` | Opens the [LangSlice window](../developers/gui.md) on the job. |
 
-`--image-prompt FILE` replaces the base prompt `trace_borders` sends the
+`--nonlinear-image-prompt FILE` replaces the base prompt `trace_borders` sends the
 image model for this job; start from
 `langslice.default_prompt(provider, plane)`. The agent is shown it as the
 base it may edit per section, and its traces are recorded as an untested
@@ -59,7 +59,7 @@ profile (`custom`).
 
 An interrupted job resumes from its checkpoint. Resuming with different
 supplied inputs is refused with `INPUTS_CHANGED`, and `init` with other job
-settings than the saved job's with `SETTINGS_CHANGED`; `--fresh` starts the job
+settings than the saved job's with `SETTINGS_CHANGED`; `--no-resume` starts the job
 over. Every write is checkpointed and undoable. Calls through different
 interfaces pick up each other's saved changes. A write waits for the job
 folder's lock while another holds it (up to 300 s, then `JOB_BUSY`); a read

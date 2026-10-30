@@ -79,7 +79,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
 
     missing = build_parser().parse_args(
         ["linear", "run", str(tmp_path), "--image-prompt", str(tmp_path / "none.txt")])
-    with pytest.raises(ValueError, match="--image-prompt"):
+    with pytest.raises(ValueError, match="--nonlinear-image-prompt"):
         spec_from_args(missing, str(tmp_path))
 
 
