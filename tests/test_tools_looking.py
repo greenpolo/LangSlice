@@ -120,8 +120,8 @@ def test_look_modes_draw_their_pictures(tmp_path: Path, atlas):
 def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
     _, _, box = _synthetic(tmp_path, atlas)
     look = _tool(box, "look")
-    assert look("atlas") == {"status": "error", "error": "NO_POSITIONS",
-                             "message": "atlas mode needs positions_mm or sections"}
+    assert look("atlas") == {"status": "error", "error": "BAD_ARGS", "message":
+                             "atlas mode needs positions_mm or sections; nothing was drawn."}
     assert look("sideways")["error"] == "UNKNOWN_MODE"
     nope = look("section", sections=["nope.png", "0"])
     assert nope["error"] == "UNKNOWN_SLICE_IDS" and nope["unknown"] == ["nope.png", "0"]

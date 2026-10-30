@@ -184,7 +184,8 @@ def redraw(
         if (recipe is None or renderer != looks.RENDERER or state is None
                 or (recipe.get("args") or {}).get("mode") != "overlay"):
             raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                          "Region zoom works only on overlay pictures.")
+                          "region needs an overlay picture; give an "
+                          "overlay's picture number.")
         recipe, window = looks.overlay_region_window(workspace, state, recipe, region,
                                                      store=store)
     source = _image(picture)

@@ -59,10 +59,9 @@ class RefusalCode(TextEnum):
     ATLAS_ENDPOINT_OUTSIDE = "ATLAS_ENDPOINT_OUTSIDE"
     #: The atlas plane at a section's position cannot be drawn.
     ATLAS_RENDER_FAILED = "ATLAS_RENDER_FAILED"
-    #: A tool argument is malformed or out of range.
+    #: A tool argument, or the agent CLI's command line, is malformed or out
+    #: of range.
     BAD_ARGS = "BAD_ARGS"
-    #: The agent CLI's command line cannot be parsed.
-    BAD_ARGUMENTS = "BAD_ARGUMENTS"
     #: A zoom box is not four numbers.
     BAD_BOX = "BAD_BOX"
     #: A configured MCP plugin names an unknown rule or layer kind.
@@ -97,14 +96,13 @@ class RefusalCode(TextEnum):
     BAD_WARP = "BAD_WARP"
     #: A border trace's record could not be written or read in the job folder.
     BORDER_TRACE_IO_ERROR = "BORDER_TRACE_IO_ERROR"
-    #: A section's saved deformation cannot be read.
+    #: A section's saved deformation cannot be read (a record of a format
+    #: this version does not read, or its files are gone).
     DEFORMATION_UNREADABLE = "DEFORMATION_UNREADABLE"
     #: A call names the same section twice.
     DUPLICATE_SLICE_IDS = "DUPLICATE_SLICE_IDS"
     #: A zoom box has no area inside its picture.
     EMPTY_BOX = "EMPTY_BOX"
-    #: A plugin's registration engine ran and failed.
-    ENGINE_FAILED = "ENGINE_FAILED"
     #: A registration engine is not installed here: FireANTs on torch does
     #: not import, or a plugin engine's interpreter or source is missing.
     ENGINE_MISSING = "ENGINE_MISSING"
@@ -112,16 +110,15 @@ class RefusalCode(TextEnum):
     ENV_FAILED = "ENV_FAILED"
     #: A failed reply that names no code of its own.
     ERROR = "ERROR"
-    #: A fit's engine raised; the message is its error's first line.
+    #: A fit's engine raised or its process failed; the message says why.
     FIT_FAILED = "FIT_FAILED"
     #: A write would change a property the job froze.
     FROZEN = "FROZEN"
     #: An affine fit asked of a section that holds a deformation.
     HAS_DEFORMATION = "HAS_DEFORMATION"
-    #: A trace's image call never answered: still running or interrupted.
-    IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED = (
-        "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED"
-    )
+    #: A trace's image call at the same placement is running in another
+    #: process (an interrupted one is started again).
+    IMAGE_CALL_IN_PROGRESS = "IMAGE_CALL_IN_PROGRESS"
     #: A verb that needs the job's image model, which is not connected.
     IMAGE_MODEL_OFF = "IMAGE_MODEL_OFF"
     #: The folder's job was made from other supplied inputs.
@@ -132,7 +129,8 @@ class RefusalCode(TextEnum):
     INTERNAL = "INTERNAL"
     #: Interval breaks reported where the spacing shows no gap.
     INTERVAL_BREAKS_UNSUPPORTED = "INTERVAL_BREAKS_UNSUPPORTED"
-    #: A section lacks the position or transform the call needs.
+    #: A section's transform is missing or cannot be used (marked stale,
+    #: made on another orientation); a missing position is ``NO_POSITION``.
     INVALID_LINEAR_PLACEMENT = "INVALID_LINEAR_PLACEMENT"
     #: Another writer holds the job folder's lock.
     JOB_BUSY = "JOB_BUSY"
@@ -178,10 +176,8 @@ class RefusalCode(TextEnum):
     NO_JOB = "NO_JOB"
     #: No picture to zoom, and no saved copy to crop.
     NO_PICTURE = "NO_PICTURE"
-    #: The section has no atlas position yet.
+    #: The section has no atlas position yet, and the call needs one.
     NO_POSITION = "NO_POSITION"
-    #: An atlas picture asked without positions or sections.
-    NO_POSITIONS = "NO_POSITIONS"
     #: The section has no marked regions to draw.
     NO_REGIONS = "NO_REGIONS"
     #: A one-sided region on a section whose plane has no two sides.

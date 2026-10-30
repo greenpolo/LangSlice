@@ -108,6 +108,8 @@ def fit_record(
     weights = ops_masks.section_weights(job, record, label)
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
+    except Refused:  # no position
+        raise
     except (ValueError, OSError) as exc:
         raise Refused(
             RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}"
@@ -250,6 +252,8 @@ def warp_from_map(
         )
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
+    except Refused:  # no position
+        raise
     except (ValueError, OSError) as exc:
         raise Refused(
             RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}"

@@ -316,12 +316,12 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
     if done.returncode != 0 or not dst.exists():
         missing = _weights_missing()
         if missing:
-            raise ToolError(RefusalCode.ENGINE_FAILED,
+            raise ToolError(RefusalCode.ENGINE_MISSING,
                             "SPOmiAlign's matcher weights are not in torch's "
                             "hub cache and could not be downloaded: "
                             + ", ".join(WEIGHTS[name] for name in missing))
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        raise ToolError(RefusalCode.ENGINE_FAILED,
+        raise ToolError(RefusalCode.FIT_FAILED,
                         f"SPOmiAlign did not run: {tail[0]}")
     out = np.load(dst)
     results = []

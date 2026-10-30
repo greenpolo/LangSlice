@@ -271,7 +271,8 @@ class ContextWrites(ContextProposals):
         of it (``deformation_from_map(start="current")``), keeps its steps
         before its own. Per section: a frozen deformation
         is ``FROZEN``, a map that cannot be stored ``BAD_FIELD``, a section
-        without a position or transform ``INVALID_LINEAR_PLACEMENT``, one whose
+        without a position ``NO_POSITION``, one whose transform cannot be
+        used ``INVALID_LINEAR_PLACEMENT``, one whose
         inputs differ from *expect* (or whose placement moved since its
         proposal was made) ``STALE_INPUT``. A map is converted before the
         job's write lock is taken, so a long tool holds it only to write.

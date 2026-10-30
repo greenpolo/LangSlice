@@ -549,7 +549,7 @@ bodies, and turned into an answer once per door:
     warm child (`warm.run_script`) or this process replaced by the
     environment's python (`os.execv`; `subprocess.call` on Windows); a call
     that cannot start prints its refusal's envelope (`NO_JOB`,
-    `BAD_ARGUMENTS`, `ENV_FAILED`).
+    `BAD_ARGS`, `ENV_FAILED`).
   - `transcripts.py` — `langslice session-end --harness claude-code|antigravity`,
     the hook of the Claude Code (`SubagentStop`) and Antigravity (`Stop`)
     plugins: the hook's JSON on stdin, the transcript (`transcript_path`), the

@@ -44,6 +44,7 @@ from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
+from langslice.job.settings.needs import render
 from langslice.tools import masks as ops_masks
 from langslice.tools.fit_regions import (
     region_box,
@@ -295,7 +296,9 @@ def fit_deformable(
                 RefusalCode.DEFORMATION_UNREADABLE,
                 "The section's applied deformation record cannot be read "
                 f"({folder}); it is not replaced by a fit from the "
-                "linear placement.").payload(section_id=record.id))
+                "linear placement. Put the section back on another "
+                "registration, or undo the step that applied it."
+            ).payload(section_id=record.id))
             continue
         own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
@@ -304,6 +307,9 @@ def fit_deformable(
             trace=traced_choice)
         try:
             grid = deformation.fit_grid(state, workspace, record)
+        except Refused as refusal:  # no position
+            rows.append(refusal.payload(section_id=record.id))
+            continue
         except (ValueError, OSError) as exc:
             rows.append(Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
                                 message=str(exc)).payload(section_id=record.id))
@@ -615,9 +621,12 @@ def refuse_unknown_inputs(
     if label != ops_masks.NO_MASK:
         lacking = [record.id for record in records if label not in record.masks]
         if lacking:
+            named = ", ".join(lacking)
             raise Refused(RefusalCode.UNKNOWN_MASK, sections=lacking,
-                          message=f"No mask {label!r} on {', '.join(lacking)}; make it with "
-                          "make_mask.")
+                          message=render(
+                              f"No mask {label!r} on {named}[[?make_mask ; "
+                              "make it with make_mask||; status lists each "
+                              "section's masks]].", job.spec.switched_off))
     return image
 
 

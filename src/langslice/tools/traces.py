@@ -125,7 +125,7 @@ def _start_trace(
         if now is None or handoff.correction_fingerprint(
                 job.state, workspace, section_id) != fingerprint:
             raise Refused(RefusalCode.STALE_INPUT, id=section_id,
-                          message=_STALE_MESSAGE + " Run trace_borders again.")
+                          message=_STALE_MESSAGE + " Call it again.")
         if call is not None:
             job.start_image_job(section_id, fingerprint, call, workers=workers)
         portable = job.portable(result)
@@ -199,7 +199,7 @@ def trace_borders(
     (a bad *restrict_to*, or one that leaves no region on the plane);
     ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` (other background work runs on
     the section); ``FROZEN`` (the section's deformation is frozen);
-    ``INVALID_LINEAR_PLACEMENT`` (no position or no usable transform);
+    ``NO_POSITION``; ``INVALID_LINEAR_PLACEMENT`` (no usable transform);
     ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
     while the call was prepared).
     """

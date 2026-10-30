@@ -75,7 +75,7 @@ def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
     ws, state = stack(tmp_path)
     with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("atlas"))
-    assert caught.value.code == "NO_POSITIONS"
+    assert caught.value.code == "BAD_ARGS"
     for layers in (("opal",), ("fur",)):  # the synthetic atlas has only its template
         with pytest.raises(Refused) as caught:
             look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=layers))

@@ -97,7 +97,7 @@ def test_env_imports_langslice_installs_lists_and_rebuilds(capsys, job, tmp_path
 
 def test_env_refuses_other_arguments(capsys, job):
     code, envelope = cli(capsys, str(job), "env", "upgrade")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
     code, envelope = cli(capsys, str(job), "env", "install")
     assert code == 2
 

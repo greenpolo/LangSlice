@@ -32,7 +32,11 @@ yellow.
   the base prompt (`profile_prompt`) and join the call key; an untested
   profile marks its request and result `untested` (`profile_marks`).
 It keeps the call-key folders and attempts, takes the image model as an
-argument, and leaves fitting to the tools layer. An attempt's folder holds
+argument, and leaves fitting to the tools layer. A running attempt holds a
+lock on its call key's `.call.lock`: another process asking the same call
+meanwhile is refused `IMAGE_CALL_IN_PROGRESS`, and an attempt whose process
+died releases it, so the call is made again as the next attempt. An
+attempt's folder holds
 `request.json` (what was sent: the geometry, and each attached picture's
 role and PNG SHA-256 in the order sent), `prompt.txt`, `base_prompt.txt`,
 `prompt_diff.txt`, `raw_reply.png` (the model's answer, kept as received)

@@ -325,7 +325,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `section_points(job, workspace, section, xyz_um, frame=)` -> `SectionPoints`
   (`xy`, `off_plane_um`: each point projected onto the plane, then
   `core.maps.section_maps.file_points`). Refused: `UNKNOWN_SLICE_IDS`,
-  `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`, `BAD_ARGS`.
+  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
+  `BAD_ARGS`.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `set_transforms(job,
   {id: record})` (one undo step for the batch; a frozen affine, or a transform that turns
@@ -384,7 +385,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   under one `TRACE_WAIT_S` deadline and adding the trace's regions to the
   call's (`traced_regions`; the row's `trace_regions`, and the record keeps
   the regions each fit ran with), the record cache, the engine). Per-section
-  problems (`INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
+  problems (`NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
   `NO_TRACE`/`TRACE_*`, `BAD_SETTINGS`, `FIT_FAILED`, `RECORD_WRITE_FAILED`,
   `STALE_INPUT`) are rows, not refusals. Returns `DeformableFit`: `rows`
   (call order), `fitted` (each row with its fit and record), `traced` (per
@@ -440,7 +441,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   the section's applied deformation, which becomes the record's `parent` (its
   `step` one more) and whose key the section must still hold. The step carries
   *settings* (the call's, by the tool's names). Refused: `UNKNOWN_SLICE_IDS`,
-  `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
+  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
   deformation), `DEFORMATION_UNREADABLE`.
   `apply_warps(job, warps)`: writes them as ONE undo step under the job's
   lock, each replacing the section's deformation (step `start` `linear`) or,
@@ -455,8 +456,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   written nowhere (a script's `job.context.fit_fireants`): the record;
   `mask` through `core.fits.deformable.fit.with_section_mask`, `em` False runs
   once, `marked` adds the section's marked regions to `exclude`. Refused:
-  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `INVALID_LINEAR_PLACEMENT`,
-  `FIT_FAILED`.
+  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `NO_POSITION`,
+  `INVALID_LINEAR_PLACEMENT`, `FIT_FAILED`.
 
 - `traces.py` — (the tool's body: `trace_borders_tool`, the run's image
   model and picture size) `trace_borders(job, workspace, ref, image_model=, prompt=,
@@ -495,7 +496,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   Prepared outside the lock, started and written under it. Refused:
   `UNKNOWN_SLICE_IDS`, `SECTION_BUSY` (other background work runs on the
   section), `FROZEN` (the section's deformation is frozen),
-  `INVALID_LINEAR_PLACEMENT` (no position or no usable transform; a refusal
+  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` (no usable transform; a refusal
   raised while the trace is prepared, such as `NO_SIDES` or `BAD_ARGS` for
   regions that leave nothing on the plane, keeps its own code),
   `BORDER_TRACE_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
@@ -564,7 +565,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `NO_PICTURE`, `UNKNOWN_PICTURE`, `PICTURE_NOT_SAVED` (no saved image to
   crop, or a dry run's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_IMAGE`,
-  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`,
   `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
   `layers` names the layers tool plugins left (`"all"`: every one) to
   draw on `section` and `overlay` pictures (`BAD_ARGS` in another mode);

@@ -682,7 +682,9 @@ def overlay_region_window(
     records = _records(drawn, request.sections)
     if len(records) != 1:
         raise Refused(RefusalCode.BAD_REGION_PICTURE,
-                      "Region zoom needs a single-section overlay.")
+                      "region needs an overlay picture of one section; "
+                      "draw that section's overlay alone and give its "
+                      "picture.")
     record = records[0]
     names, image = _images_for(ws, record, request.images)
     options = _options(request, names=names, image=image,
@@ -979,8 +981,9 @@ def look(
                                    long_edge, base, base_um, record.angles)
                     for record in records]
         if not request.positions_mm:
-            raise Refused(RefusalCode.NO_POSITIONS,
-                          "atlas mode needs positions_mm or sections")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          "atlas mode needs positions_mm or sections; "
+                          "nothing was drawn.")
         return [_atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
                 for mm in request.positions_mm]
     records = _records(state, request.sections)

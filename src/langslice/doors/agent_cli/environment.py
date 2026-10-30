@@ -60,7 +60,7 @@ def command(layout: JobLayout, positional: list[str]) -> Envelope:
                                 "requirements": str(layout.folder / REQUIREMENTS)})
     if action not in ("", "install") or (action == "install" and not packages):
         return Envelope.failure(
-            RefusalCode.BAD_ARGUMENTS,
+            RefusalCode.BAD_ARGS,
             "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.")
     try:
         built = ensure(layout)
@@ -228,7 +228,7 @@ def python(folder: str, rest: list[str]) -> int:
     (:func:`langslice.doors.agent_cli.warm.script.run_script`)
     the script runs in this process with that python's import path, else this
     process becomes that python. A call that cannot start the script prints
-    the envelope of its refusal (``NO_JOB``, ``BAD_ARGUMENTS``,
+    the envelope of its refusal (``NO_JOB``, ``BAD_ARGS``,
     ``ENV_FAILED``) and returns its exit code."""
     from langslice.doors.agent_cli.envelope import emit
     from langslice.doors.call_log import log_call
@@ -240,7 +240,7 @@ def python(folder: str, rest: list[str]) -> int:
         return emit(Envelope.failure(RefusalCode.NO_JOB, str(exc)))
     if not rest or rest[0].startswith("-"):
         return emit(Envelope.failure(
-            RefusalCode.BAD_ARGUMENTS, f"python takes a script and its arguments: {PYTHON_USAGE} "
+            RefusalCode.BAD_ARGS, f"python takes a script and its arguments: {PYTHON_USAGE} "
             "(no interpreter options).", verb="python"))
     try:
         ensure(layout)

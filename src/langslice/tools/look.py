@@ -40,6 +40,7 @@ from langslice.core.pictures.sizes import (
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job import registrations as regs
 from langslice.job.pictures import has_frame
+from langslice.job.settings.needs import render
 from langslice.tools.refusal import unknown_sections
 from langslice.tools.run import as_list, pictured
 
@@ -301,7 +302,7 @@ def look_pictures(
     ``Job.picture_cap`` pictures (None: all) are saved and returned; the rest
     are ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
     ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
-    ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS``,
+    ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``,
     ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the mode:
     ``look:<mode>`` in its ``disabled`` list).
 
@@ -463,8 +464,11 @@ def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) 
     unknown = [name for name in names if name not in held]
     if unknown:
         raise Refused(RefusalCode.UNKNOWN_MASK, unknown=unknown, masks=held,
-                      message=f"No drawn section has a mask named {', '.join(unknown)}; the "
-                      f"masks: {', '.join(held) or 'none'}. Make one with make_mask.")
+                      message=render(
+                          f"No drawn section has a mask named "
+                          f"{', '.join(unknown)}; the masks: "
+                          f"{', '.join(held) or 'none'}.[[?make_mask  Make "
+                          "one with make_mask.]]", job.spec.switched_off))
 
 
 def _layer_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],

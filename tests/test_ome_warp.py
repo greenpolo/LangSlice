@@ -20,6 +20,7 @@ from langslice.core.fits.deformable import (
 )
 from langslice.core.fits.deformable.record import RECORD_VERSION
 from langslice.core.fits.deformation import RecordStore
+from langslice.core.refusal import RefusalCode, Refused
 
 SCHEMAS = Path(__file__).parent / "fixtures" / "ngff_0.6"
 H, W = 60, 80
@@ -140,12 +141,24 @@ def test_the_store_saves_a_parent_beside_its_child_and_rounds_what_it_holds(tmp_
 
 
 def test_an_older_record_format_is_refused(tmp_path: Path):
-    _record().save(tmp_path / "a")
-    meta = json.loads((tmp_path / "a" / "record.json").read_text())
+    """A record of format 1 (its arrays in ``arrays.npz``) is held but not
+    read: the store refuses it, saying what to do, and its caller answers so."""
+    key = "c" * 64
+    store = RecordStore(root=tmp_path)
+    folder = store.save("s1.tif", key, _record())
+    meta = json.loads((folder / "record.json").read_text())
     meta["version"] = 1
-    (tmp_path / "a" / "record.json").write_text(json.dumps(meta))
-    with pytest.raises(ValueError, match=r"record\.json: record format 1, not 3"):
-        DeformableRecord.load(tmp_path / "a")
+    (folder / "record.json").write_text(json.dumps(meta))
+    with pytest.raises(ValueError, match=r"record\.json: record format 1, which this "
+                       r"LangSlice does not read \(it reads 2 or 3\)"):
+        DeformableRecord.load(folder)
+    with pytest.raises(Refused) as refused:
+        store.get("s1.tif", key)
+    assert refused.value.code == RefusalCode.DEFORMATION_UNREADABLE
+    assert refused.value.message.startswith("s1.tif's deformation cannot be read (")
+    assert refused.value.message.endswith(
+        "nothing was drawn or fitted from it. Put the section back on another "
+        "registration, or undo the step that applied it.")
 
 
 def test_a_format_2_record_is_read_as_it_was_saved(tmp_path: Path):

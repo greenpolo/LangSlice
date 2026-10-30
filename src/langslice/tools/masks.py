@@ -34,6 +34,7 @@ from langslice.core.sections.images import PREPROCESSED
 from langslice.core.sections.masks import NAME_PATTERN, RESERVED_NAMES
 from langslice.core.stack.codec import Written
 from langslice.core.stack.images import MaskRef
+from langslice.job.settings.needs import render
 from langslice.tools.images import check_image
 from langslice.tools.look import show_result
 from langslice.tools.refusal import check_frozen, unknown_sections
@@ -96,7 +97,7 @@ def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     if held:  # the keys another engine's sorting takes
         raise Refused(
             RefusalCode.BAD_ARGS,
-            message=f"make_mask's sorting is the fits' EM with an "
+            message=f"sorting is the fits' EM with an "
             f"artifact class: it takes no {' or '.join(held)}; its keys are "
             f"{list(SORTING_KEYS)}.",
         )
@@ -309,13 +310,10 @@ def _from_em(
         write_mask,
     )
 
-    if section.position_mm is None:
-        raise Refused(
-            RefusalCode.NO_POSITION,
-            message=f"{section.id} has no position yet; write it first.",
-        )
     try:
         grid = deformation.fit_grid(job.state, workspace, section)
+    except Refused:  # no position
+        raise
     except (ValueError, OSError) as exc:
         raise Refused(
             RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -389,12 +387,40 @@ def read(job: Job, section: Section, name: str) -> MaskView:
     except KeyError as exc:
         raise Refused(
             RefusalCode.UNKNOWN_MASK,
-            message=f"{section.id} has no mask {name!r}; make it "
-            "with make_mask.",
+            message=render(
+                f"{section.id} has no mask {name!r}[[?make_mask ; make it "
+                "with make_mask||; status lists each section's masks]].",
+                job.spec.switched_off,
+            ),
             masks=sorted(section.masks),
         ) from exc
     except ValueError as exc:  # the file cannot be read
         raise Refused(RefusalCode.FIT_FAILED, message=str(exc)) from exc
+
+
+def stale_mask(job: Job, section_id: str, name: str) -> str:
+    """Return the ``STALE_MASK`` message, rendered for the job.
+
+    Parameters
+    ----------
+    job
+        The job (its disabled tools).
+    section_id
+        The section's filename.
+    name
+        The mask's name.
+
+    Returns
+    -------
+    str
+        What the refusal says.
+    """
+    return render(
+        f"{section_id}'s mask {name!r} was made before the section changed"
+        "[[?make_mask ; make it again with make_mask||, so it no longer fits "
+        "the section]].",
+        job.spec.switched_off,
+    )
 
 
 def section_weights(
@@ -413,8 +439,7 @@ def section_weights(
     if view.stale:
         raise Refused(
             RefusalCode.STALE_MASK,
-            message=f"{section.id}'s mask {label!r} was made before the "
-            "section changed; make it again with make_mask.",
+            message=stale_mask(job, section.id, label),
         )
     return weights_of(view)
 
