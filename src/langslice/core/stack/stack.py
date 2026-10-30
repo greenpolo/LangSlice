@@ -90,7 +90,6 @@ class Stack:
         Returns
         -------
         list of Section
-            The stack as corrected.
         """
         return sorted(self.slices, key=lambda section: section.index_corrected)
 

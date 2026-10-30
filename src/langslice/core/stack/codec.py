@@ -75,8 +75,6 @@ def physical_to_json(physical: PhysicalAffine) -> Written:
     Returns
     -------
     dict
-        ``{"rotation_deg", "scale_x", "scale_y", "translate_x_mm",
-        "translate_y_mm", "shear", "pivot"}``, each knob that is set.
     """
     form = set_items(
         [
