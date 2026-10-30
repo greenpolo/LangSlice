@@ -306,7 +306,7 @@ def test_mark_damage_refuses_unknown_regions_and_sections(tmp_path: Path):
 def test_submit_refuses_an_unplaced_stack(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"])
     result = _submit(box)
-    assert result["error"] == "MISSING_POSITIONS"
+    assert result["error"] == "MISSING_POSITIONS" and result["status"] == "refused"
     assert len(result["missing_ids"]) == 5
     assert state.submitted is False
 

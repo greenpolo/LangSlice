@@ -120,9 +120,9 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
 - A refusal is the core's `Refused(RefusalCode.X, message, **facts)`
   (`core/refusal.py`), raised, nothing written; this package re-exports
   nothing of it. `Refused.payload()` is the `{"status": ..., "error": code,
-  ...}` the tool door answers with (`status` "refused" for a gate, as the
-  opening-read gate's; the job's submit gates return theirs as a `Refused`,
-  `Job.submit_errors`, which `submit` raises); a section's row
+  ...}` the tool door answers with (`status` "refused" for a gate, the
+  opening-read gate's and the job's submit gates, which return theirs as a
+  `Refused`, `Job.submit_errors`, that `submit` raises); a section's row
   in a per-section answer is `{"id": ..., **refusal.payload()}`. A code is
   always a `RefusalCode` member (a fit's flag a `core.fits.flags.FitFlag`),
   never a string written out.

@@ -8847,7 +8847,6 @@
 {"rule": "ruff:E501", "path": "src/langslice/job/browse.py", "symbol": "walk", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/job/gates.py", "symbol": "<module>", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/job/gates.py", "symbol": "missing_deformations", "count": 2},
-{"rule": "ruff:E501", "path": "src/langslice/job/gates.py", "symbol": "missing_positions", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/gates.py", "symbol": "submit_errors", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/gates.py", "symbol": "unsupported_breaks", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/history.py", "symbol": "History.__init__", "count": 1},

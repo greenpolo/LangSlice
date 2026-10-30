@@ -104,7 +104,7 @@
   "s1.png",
   "s2.png"
  ],
- "status": "error"
+ "status": "refused"
 }
 ```
 
@@ -289,7 +289,7 @@
   "s1.png",
   "s2.png"
  ],
- "status": "error"
+ "status": "refused"
 }
 ```
 

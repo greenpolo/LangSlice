@@ -182,10 +182,11 @@ class ToolBox:
         calls = ", ".join(f"show_stack(page={page})" for page in pages)
         return Refused(
             RefusalCode.OPENING_NOT_READ,
+            f"Read every opening page before the first write: {calls}"
+            " (the pictures of the stack the job statement asks for); "
+            "nothing was written.",
             status=ReplyStatus.REFUSED,
             pages=pages,
-            detail=f"Read every opening page before the first write: {calls}"
-            " (the pictures of the stack the job statement asks for).",
         )
 
 

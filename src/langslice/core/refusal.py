@@ -330,7 +330,7 @@ class Refused(ValueError):
         reply's order. ``status`` among them is the reply's status word:
         ``error`` (the call could not run; the default) or ``refused`` (a
         gate: the call is valid but the job is not ready, as the opening
-        pages' gate).
+        pages' gate and the submit gates).
     """
 
     def __init__(

@@ -477,7 +477,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     assert not briefing.isError and not note.isError
     refused = json.loads(early.content[0].text)
     assert refused["error"] == "OPENING_NOT_READ" and refused["pages"] == [1]
-    assert "show_stack(page=1)" in refused["detail"]
+    assert "show_stack(page=1)" in refused["message"]
     # The job comes in the launching message, not in start_job's reply.
     assert briefing.content[0].text == (
         f"Job opened: {folder / 'langslice'}. 3 sections. The opening is show_stack "

@@ -710,9 +710,10 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
                          if isinstance(row, dict) and row.get("status") == ReplyStatus.ERROR]
     if not ok:
         unnamed = RefusalCode.ERROR  # a failed reply that names no code
-        code = str(reply.get("error") or unnamed)
-        message = str(reply.get("message") or reply.get("detail") or "")
-        rows = reply.get("results")
+        told = cast("dict[str, object]", reply)  # a failed reply is a dict
+        code = str(told.get("error") or unnamed)
+        message = str(told.get("message") or "")
+        rows = told.get("results")
         if not message and isinstance(rows, list):  # per-section refusals
             message = "; ".join(f"{row.get('id')}: {row.get('error')}" for row in rows
                                 if isinstance(row, dict) and row.get("error"))

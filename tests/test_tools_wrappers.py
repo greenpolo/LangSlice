@@ -213,7 +213,7 @@ def test_the_opening_gate_refuses_writes_until_every_page_is_read(tmp_path: Path
     refused = note("first")
     assert refused["status"] == "refused" and refused["error"] == "OPENING_NOT_READ"
     assert refused["pages"] == [1, 2]
-    assert "show_stack(page=1), show_stack(page=2)" in refused["detail"]
+    assert "show_stack(page=1), show_stack(page=2)" in refused["message"]
     assert _tool(box, "status")()["status"] == "ok"  # reads pass
     box.opening_read(1)
     assert note("first")["pages"] == [2]

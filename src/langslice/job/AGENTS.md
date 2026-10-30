@@ -469,8 +469,8 @@ longer exist be taken over by the images it is opened with.
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
-  gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`, or
-  None), in order and only for the tasks that are on: `MISSING_POSITIONS` (no position),
+  gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`,
+  status `refused`, or None), in order and only for the tasks that are on: `MISSING_POSITIONS` (no position),
   `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
   `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
