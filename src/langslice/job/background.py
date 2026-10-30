@@ -214,11 +214,37 @@ class BackgroundWork:
                     break
         return found
 
-    def notices(self) -> list[Work]:
-        """The work finished since the last call, each handed out once."""
+    def started(self) -> int:
+        """Return how many pieces of work this job started.
+
+        Returns
+        -------
+        int
+            The count, the number of the last work started.
+        """
         with self._lock:
-            ready = [entry.work for entry in self._entries.values()
-                     if entry.work.status != RUNNING and not entry.work.delivered]
+            return self._count
+
+    def notices(self, *, among: int | None = None) -> list[Work]:
+        """Return the work finished since the last call, each handed out once.
+
+        Parameters
+        ----------
+        among
+            Only the first *among* pieces started: a reply leaves out the
+            work its own call started (:meth:`started` before the call).
+            None: every piece.
+
+        Returns
+        -------
+        list of Work
+            The finished work not handed out yet, oldest first.
+        """
+        with self._lock:
+            entries = list(self._entries.values())[:among]
+            ready = [entry.work for entry in entries
+                     if entry.work.status != RUNNING
+                     and not entry.work.delivered]
             for work in ready:
                 work.delivered = True
         return ready

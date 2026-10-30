@@ -171,6 +171,12 @@ def _windows_fcntl() -> Iterator[None]:
         del sys.modules["fcntl"]
 
 
+#: One import at a time: torch's first import is not safe from two threads,
+#: and the import swaps ``sys.stdout`` (process-wide) while it runs, which
+#: two threads at once would leave swapped.
+_IMPORTING = threading.Lock()
+
+
 def import_fireants() -> Any:
     """Import torch and FireANTs' SyN (``RuntimeError`` with the install hint).
 
@@ -178,6 +184,7 @@ def import_fireants() -> Any:
     deterministic algorithms can run on the GPU.
     """
     os.environ.setdefault(*_CUBLAS_ENV)
+    _IMPORTING.acquire()
     try:
         import torch
         # FireANTs warns once per module that its optional fused CUDA kernels
@@ -193,6 +200,8 @@ def import_fireants() -> Any:
             "The deformable engine needs FireANTs and torch, LangSlice dependencies "
             "(reinstall LangSlice)"
         ) from exc
+    finally:
+        _IMPORTING.release()
     return torch
 
 

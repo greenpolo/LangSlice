@@ -307,12 +307,17 @@ def _log_events(call: ToolCall) -> Generator[None]:
 
 @contextlib.contextmanager
 def _announce_work(call: ToolCall) -> Generator[None]:
-    """Open the reply with the notices of the work finished since the last."""
+    """Open the reply with the notices of the work finished since the last.
+
+    The work this call started is left out: its notice comes with a later
+    reply, as the call's own reply says, however soon it finishes.
+    """
+    started = call.box.job.background.started()
     yield
     reply = call.reply
     if isinstance(reply, dict):
         fields = cast("dict[str, Any]", reply)  # a tool's reply: by name
-        call.reply = with_notices(call.box.job, fields)
+        call.reply = with_notices(call.box.job, fields, among=started)
 
 
 @contextlib.contextmanager
@@ -534,10 +539,13 @@ def registrations_named(job: Job, reply: object, mark: int) -> object:
     return fields
 
 
-def with_notices(job: Job, result: dict[str, Any]) -> dict[str, Any]:
+def with_notices(
+    job: Job, result: dict[str, Any], *, among: int | None = None
+) -> dict[str, Any]:
     """*result* opened with the notices of the background work finished
-    since they were last handed out, the work's pictures after its own."""
-    finished = job.background.notices()
+    since they were last handed out (with *among*, of the first *among*
+    pieces started only), the work's pictures after its own."""
+    finished = job.background.notices(among=among)
     if not finished:
         return result
     media = list(result.get(TOOL_MEDIA_PARTS_KEY) or [])
@@ -555,7 +563,13 @@ def with_notices(job: Job, result: dict[str, Any]) -> dict[str, Any]:
                     **({"caption": text} if text else {}),
                 }
             )
-    out = {"background": [work.notice for work in finished], **result}
+    # a reply that already opens with notices keeps them first
+    notices = [
+        *result.get("background", ()),
+        *(work.notice for work in finished),
+    ]
+    out = {"background": notices, **result}
+    out["background"] = notices
     if listed:
         out["pictures"] = listed
     if media:
