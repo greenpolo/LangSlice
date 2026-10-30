@@ -432,9 +432,11 @@ longer exist be taken over by the images it is opened with.
 - `job.py` — `Job`, assembled from one class per seam, each built on the
   one below: `checkpoint.py` `JobCheckpoint` (the state and its files,
   `checkpoint`, the observers, the registrations each step leaves,
-  `wire_views`, `background`), `undo.py` `JobUndo` (`writing` / `reading` /
+  `wire_views`), `undo.py` `JobUndo` (`writing` / `reading` /
   `sync`, `snapshot` / `commit`, `undo` / `redo`), `border_traces.py`
-  `JobBorderTraces` (the image-correction jobs); `job.py` adds `open`,
+  `JobBorderTraces` (the image-correction jobs and `background`, the
+  background work that waits for them, whose threads give way to a lock
+  holder through `_lock_abort`); `job.py` adds `open`,
   `load`, the rules and the results. Its methods: `open` (resume or ingest, the opening `preprocessed`
   image of every section without one, `core.sections.images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records

@@ -25,7 +25,6 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.stack.stack import Stack
 from langslice.job import public_files as formats
 from langslice.job import registrations as regs
-from langslice.job.background import BackgroundWork
 from langslice.job.history import UNDO_DEPTH, History
 from langslice.job.host_inputs import host_damaged_ids
 from langslice.job.layout import JobLayout
@@ -43,7 +42,6 @@ from langslice.job.state_file import (
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
-    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +170,6 @@ class JobCheckpoint:
         #: fit that reads a trace (``wait_image_job``).
         self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
         self.image_executor: ThreadPoolExecutor | None = None
-        self._background: BackgroundWork | None = None
         self._deformations: deformation.RecordStore | None = None
         #: False: nothing this job holds is written (the state, the history,
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
@@ -390,11 +387,3 @@ class JobCheckpoint:
                 root=self.layout.sections_dir, folder_of=self.layout.deformable_dir)
         return self._deformations
 
-    @property
-    def background(self) -> BackgroundWork:
-        """The job's background work (:mod:`langslice.job.background`; made on first use)."""
-        if self._background is None:
-            # the assembled Job: background work waits for its border traces
-            job = cast("Job", self)
-            self._background = BackgroundWork(job)
-        return self._background

@@ -2324,7 +2324,7 @@
 {"path": "src/langslice/job/job.py", "symbol": "Job._push", "new_path": "src/langslice/job/undo.py", "new_symbol": "JobUndo._push"},
 {"path": "src/langslice/job/job.py", "symbol": "Job._write_derived", "new_path": "src/langslice/job/checkpoint.py", "new_symbol": "JobCheckpoint._write_derived"},
 {"path": "src/langslice/job/job.py", "symbol": "Job.acting", "new_path": "src/langslice/job/checkpoint.py", "new_symbol": "JobCheckpoint.acting"},
-{"path": "src/langslice/job/job.py", "symbol": "Job.background", "new_path": "src/langslice/job/checkpoint.py", "new_symbol": "JobCheckpoint.background"},
+{"path": "src/langslice/job/job.py", "symbol": "Job.background", "new_path": "src/langslice/job/border_traces.py", "new_symbol": "JobBorderTraces.background"},
 {"path": "src/langslice/job/job.py", "symbol": "Job.checkpoint", "new_path": "src/langslice/job/checkpoint.py", "new_symbol": "JobCheckpoint.checkpoint"},
 {"path": "src/langslice/job/job.py", "symbol": "Job.commit", "new_path": "src/langslice/job/undo.py", "new_symbol": "JobUndo.commit"},
 {"path": "src/langslice/job/job.py", "symbol": "Job.deformations", "new_path": "src/langslice/job/checkpoint.py", "new_symbol": "JobCheckpoint.deformations"},

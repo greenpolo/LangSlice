@@ -16,6 +16,7 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import Refused
 from langslice.core.stack.codec import trace_from_json
 from langslice.core.stack.stack import Stack
+from langslice.job.background import BackgroundWork, in_worker
 from langslice.job.undo import JobUndo
 
 
@@ -53,6 +54,27 @@ def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -
 
 class JobBorderTraces(JobUndo):
     """Run border traces in the background and land their results."""
+
+    #: The job's background work (:attr:`background`), made on first use.
+    _background: BackgroundWork | None = None
+
+    @property
+    def background(self) -> BackgroundWork:
+        """The job's background work, made on first use.
+
+        It waits for these border traces (:mod:`langslice.job.background`).
+        """
+        if self._background is None:
+            self._background = BackgroundWork(self)
+        return self._background
+
+    def _lock_abort(self) -> Callable[[], bool] | None:
+        """Return ``gives_way`` in a thread of the background work.
+
+        Such a thread gives way to a lock holder that waits for that work
+        (``LockYielded``); any other thread waits.
+        """
+        return self.background.gives_way if in_worker() else None
 
     def start_image_job(
         self, section_id: str, fingerprint: str, job: Callable[[], dict[str, Any]], *,

@@ -45,7 +45,7 @@ from langslice.job.lock import LockYielded
 if TYPE_CHECKING:
     from PIL import Image
 
-    from langslice.job.job import Job
+    from langslice.job.border_traces import JobBorderTraces
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class _Entry:
 class BackgroundWork:
     """The background work of one job (see the module text)."""
 
-    def __init__(self, job: Job) -> None:
+    def __init__(self, job: JobBorderTraces) -> None:
         self._job = job
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}

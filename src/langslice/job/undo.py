@@ -21,10 +21,9 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
-from langslice.job.background import in_worker
 from langslice.job.checkpoint import JobCheckpoint, file_stamp, state_from_file
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.state_file import (
@@ -56,8 +55,16 @@ class JobUndo(JobCheckpoint):
         that waits for that work (:mod:`langslice.job.background`:
         ``LockYielded``).
         """
-        with self.lock.held(self.background.gives_way if in_worker() else None):
+        with self.lock.held(self._lock_abort()):
             yield self.sync()
+
+    def _lock_abort(self) -> Callable[[], bool] | None:
+        """Return what a wait for the lock asks whether to give up.
+
+        Nothing at this layer; the layer that runs background work answers
+        its ``gives_way`` in one of that work's threads.
+        """
+        return None
 
     @contextlib.contextmanager
     def reading(self) -> Iterator[None]:
