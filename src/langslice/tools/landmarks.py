@@ -538,7 +538,7 @@ def set_landmarks_tool(
     dict
         The reply (:meth:`LandmarksEdited.reply`), with its pictures.
     """
-    job, workspace = run.job, run.ctx
+    job, workspace = run.job, run.workspace
     if run.shows(view) and len(pairs) > MAX_PAIR_PICTURES:
         raise Refused(
             RefusalCode.TOO_MANY_LANDMARK_VIEWS,

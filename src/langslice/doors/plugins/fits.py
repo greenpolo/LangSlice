@@ -184,7 +184,7 @@ class ContextFits(ContextProposals):
         if record.transform:
             try:
                 return np.asarray(deformation.fit_grid(
-                    self._run.state, self._run.ctx, record).placement.atlas_to_section,
+                    self._run.state, self._run.workspace, record).placement.atlas_to_section,
                     dtype=np.float64)
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -222,7 +222,7 @@ class ContextFits(ContextProposals):
         from langslice.tools import deformable, fit_regions, warps
 
         record = self._record(section)
-        workspace = self._run.ctx
+        workspace = self._run.workspace
         label = _mask_name(mask)
         if str(metric) not in deformable.METRICS:
             raise ToolError(RefusalCode.BAD_ARGS,
@@ -284,7 +284,7 @@ class ContextFits(ContextProposals):
         record = self._record(section)
         label = _mask_name(mask)
         try:
-            fitted = elastix_fit(self._run.job, self._run.ctx, record.id,
+            fitted = elastix_fit(self._run.job, self._run.workspace, record.id,
                                  restrict_to=list(restrict_to), exclude=list(exclude),
                                  atlas_image=str(atlas_image), mask=label, marked=bool(marked),
                                  section_image=str(section_image), edges=bool(edges))

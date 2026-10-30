@@ -182,7 +182,7 @@ def build_tools(
                   verbs=verbs_for(spec), door=event_door or door,
                   observers=tuple(observer for observer in (on_event, EventLog(
                       job, event_door or door)) if observer is not None))
-    run = Run(job=job, ctx=ctx, spec=spec, box=box, level=level,
+    run = Run(job=job, workspace=ctx, spec=spec, box=box, level=level,
               traces_on=traces_on, image_model=image_model)
     box.run = run
     bodies: dict[str, Callable[..., Any]] = {

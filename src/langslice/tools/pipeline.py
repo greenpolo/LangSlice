@@ -323,7 +323,7 @@ def _save_pictures(call: ToolCall) -> Generator[None]:
     # a box without its run (before build_tools sets it) saves no layers
     atlas_of = None
     if run is not None:
-        atlas_of = functools.partial(getattr, run.ctx, "atlas")
+        atlas_of = functools.partial(getattr, run.workspace, "atlas")
     with job.views.shown(call.name, atlas_of=atlas_of) as shown:
         yield
         pictures = _new_pictures(call.reply)

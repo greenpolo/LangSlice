@@ -39,7 +39,7 @@ class Run:
     """One run, as every tool body sees it."""
 
     job: Job
-    ctx: EngineContext
+    workspace: EngineContext
     spec: JobSpec
     box: ToolBox
     #: The picture-size level the tools work at (``core.pictures.sizes``).

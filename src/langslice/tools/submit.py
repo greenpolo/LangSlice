@@ -187,7 +187,7 @@ def submit_tool(
         notes=as_list(notes),
         interval_breaks=as_list(interval_breaks),
         traces=run.traces_on,
-        workspace=run.ctx,
+        workspace=run.workspace,
     )
     run.box.submission.update(
         {

@@ -143,7 +143,7 @@ class ContextProposals(ContextFrames):
         if record.position_mm is None:
             raise ToolError(RefusalCode.NO_POSITION,
                             f"{record.id} has no position yet")
-        workspace, state = self._run.ctx, self._run.state
+        workspace, state = self._run.workspace, self._run.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, workspace, record, rendered)
         try:
@@ -242,7 +242,7 @@ class ContextProposals(ContextFrames):
         engine = to_jsonable(dict(engine_settings or {}), strict=True)
         try:
             warp = warps.warp_from_map(
-                self._run.job, self._run.ctx, record.id, native_xy,
+                self._run.job, self._run.workspace, record.id, native_xy,
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
@@ -310,7 +310,7 @@ class ContextProposals(ContextFrames):
                                 f"{name} has no position to read the file at")
             planes[name] = (float(position), float(angles[0]), float(angles[1]))
         result = import_placements(
-            Path(path), self._run.ctx, section_ids=names,
+            Path(path), self._run.workspace, section_ids=names,
             orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
             planes=planes, registered_on=registered_on)
         rows = []

@@ -223,7 +223,7 @@ def look_tool(
     sheet_edge = int(run.box.max_view_edge) if sheet else None
     looked = look_pictures(
         run.job,
-        run.ctx,
+        run.workspace,
         replace(request, long_edge=edge),
         registrations=dict(registrations or {}),
         sheet_edge=sheet_edge,

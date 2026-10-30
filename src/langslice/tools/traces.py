@@ -352,9 +352,9 @@ def trace_borders_tool(
         (the work id), the section's trace record and a ``message``.
     """
     assert run.image_model is not None  # the tool exists only when traces are on
-    options = default_options("borders", long_edge=picture_edge(run.ctx))
+    options = default_options("borders", long_edge=picture_edge(run.workspace))
     done = trace_borders(
-        run.job, run.ctx, section, image_model=run.image_model,
+        run.job, run.workspace, section, image_model=run.image_model,
         prompt=str(prompt or ""), restrict_to=as_list(restrict_to),
         options=options)
     trace = {key: done.record[key] for key in _REPLY_TRACE_KEYS

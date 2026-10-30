@@ -479,7 +479,7 @@ def make_mask_tool(
     job = run.job
     done = make_mask(
         job,
-        run.ctx,
+        run.workspace,
         str(name),
         as_list(sections),
         source=source,
@@ -494,7 +494,7 @@ def make_mask_tool(
     if done.deleted:
         result["deleted"] = True
     result["n_sections"] = len(done.made)
-    said = nissl_note(run.ctx.atlas, str(atlas_image or "nissl"))
+    said = nissl_note(run.workspace.atlas, str(atlas_image or "nissl"))
     if said and not done.deleted:
         result["atlas_image_note"] = said
     if done.deleted or not run.shows(view):
@@ -509,7 +509,7 @@ def make_mask_tool(
         sorted_on = drawn_image(section_image)
     looked = show_result(
         job,
-        run.ctx,
+        run.workspace,
         "make_mask",
         "section",
         [section.id for section in in_picture],

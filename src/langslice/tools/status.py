@@ -57,7 +57,7 @@ def status_tool(run: Run) -> dict[str, object]:
     reply: dict[str, object] = {"status": "ok", **run.rows()}
     reply["raw_channels"] = raw_channels(run)
     reply["section_images"] = section_images.summary(
-        job.state, run.ctx.settings
+        job.state, run.workspace.settings
     )
     running = [work.summary() for work in job.background.running()]
     if running:
@@ -92,7 +92,7 @@ def stack_status(job: Job) -> StackStatus:
 def raw_channels(run: Run) -> list[str] | dict[str, list[str]]:
     """The raw channels for ``status``: one list when every section shares
     them, else ``{filename: [names]}``."""
-    named = {record.id: section_images.raw_names(run.ctx, record.id)
+    named = {record.id: section_images.raw_names(run.workspace, record.id)
              for record in run.job.state.in_order()}
     distinct = {tuple(names) for names in named.values()}
     return list(next(iter(distinct))) if len(distinct) == 1 else named

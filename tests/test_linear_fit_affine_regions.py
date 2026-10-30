@@ -142,7 +142,7 @@ def test_a_script_fit_answers_as_the_tool_row_does(tmp_path: Path, monkeypatch):
         [{"id": "s0.png", "rotation_deg": 90, "scale_x": 1, "scale_y": 1,
           "translate_x_mm": 0, "translate_y_mm": 0}], view=False)
     with pytest.raises(Refused) as caught:
-        elastix_fit(box.job, box.run.ctx, "s0.png", restrict_to=["L:left"])
+        elastix_fit(box.job, box.run.workspace, "s0.png", restrict_to=["L:left"])
     assert caught.value.code == "WRONG_SIDE_PAIR"
 
     atlas = HalvesAtlas()
@@ -154,7 +154,7 @@ def test_a_script_fit_answers_as_the_tool_row_does(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(engines, "run_elastix_affine",
                         lambda *a, **k: pytest.fail("Tiny region reached Elastix"))
     with pytest.raises(Refused) as caught:
-        elastix_fit(box.job, box.run.ctx, "s0.png", restrict_to=["C"])
+        elastix_fit(box.job, box.run.workspace, "s0.png", restrict_to=["C"])
     assert caught.value.code == "REGION_TOO_SMALL"
     assert "[[" not in caught.value.message
     assert "interactive_transform" in caught.value.message
@@ -175,6 +175,6 @@ def test_a_fit_refusal_without_a_message_is_passed_on_without_one(
 
     monkeypatch.setattr(affine, "elastix_affine", refuse)
     with pytest.raises(Refused) as caught:
-        affine_fit.elastix_fit(box.job, box.run.ctx, "s0.png")
+        affine_fit.elastix_fit(box.job, box.run.workspace, "s0.png")
     assert caught.value.code == "NO_STRUCTURES"
     assert caught.value.facts == {"regions": ["C"]}

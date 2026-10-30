@@ -597,7 +597,7 @@ def elastix_affine_tool(
         The reply: ``status``, the call's ``settings``, one row per section
         (``results``) and the deformations the fit made stale.
     """
-    job, workspace = run.job, run.ctx
+    job, workspace = run.job, run.workspace
     regions = region_entries(workspace, job.state, as_list(restrict_to))
     check_atlas_image(workspace, atlas_image)
     named = as_list(sections)

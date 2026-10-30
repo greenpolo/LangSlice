@@ -98,7 +98,8 @@ class ContextPictures(ContextProposals):
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="overlay", sections=(record.id,), long_edge=edge)
         try:
-            drawn = looks.look(self._run.ctx, state, request, store=store)
+            drawn = looks.look(self._run.workspace, state, request,
+                               store=store)
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         if proposal:  # a proposal not written shows no registration the section holds
@@ -154,7 +155,8 @@ class ContextPictures(ContextProposals):
                                     positions_mm=tuple(positions), long_edge=edge,
                                     part=part)
         try:
-            drawn = looks.look(self._run.ctx, state, request, store=self._run.job.deformations)
+            drawn = looks.look(self._run.workspace, state, request,
+                               store=self._run.job.deformations)
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         images = [picture.image for picture in drawn]

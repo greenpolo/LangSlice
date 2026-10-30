@@ -89,7 +89,7 @@ def grep_atlas_tool(
         ``status`` and what :func:`search_regions` finds.
     """
     matches = search_regions(
-        run.job, run.ctx, query, section, as_list(points)
+        run.job, run.workspace, query, section, as_list(points)
     )
     return {"status": "ok", **matches}
 
@@ -480,7 +480,7 @@ def grep_atlas_view_tool(
         moved into the atlas range, and the pictures with their numbers.
     """
     done = draw_regions(
-        run.job, run.ctx, as_list(regions), as_list(positions_mm)
+        run.job, run.workspace, as_list(regions), as_list(positions_mm)
     )
     reply: dict[str, object] = {"status": "ok", "regions": done.regions}
     if done.regions_not_in_plane:

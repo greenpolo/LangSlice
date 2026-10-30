@@ -569,7 +569,7 @@ def interactive_transform_tool(
         )
     check_section_count(job, "interactive_transform", len(entries))
     _check_named_once(job, entries)
-    done = interactive_transform(job, run.ctx, entries)
+    done = interactive_transform(job, run.workspace, entries)
 
     rows = [_entry_row(entry) for entry in done.entries]
     in_picture = [entry.id for entry in done.entries if entry.refusal is None]
@@ -589,7 +589,7 @@ def interactive_transform_tool(
     if cleared:
         result["deformation_cleared"] = cleared
     looked = show_result(
-        job, run.ctx, "interactive_transform", "overlay", in_picture
+        job, run.workspace, "interactive_transform", "overlay", in_picture
     )
     return pictured(result, looked)
 

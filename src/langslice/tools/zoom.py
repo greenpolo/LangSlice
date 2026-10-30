@@ -91,7 +91,7 @@ def zoom_tool(
     try:
         number = int(picture or 0) or None
         done = zoom_picture(
-            run.job, run.ctx, as_list(box), picture=number, region=region
+            run.job, run.workspace, as_list(box), picture=number, region=region
         )
     except Refused:
         raise

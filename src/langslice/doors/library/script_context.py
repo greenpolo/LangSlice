@@ -296,7 +296,8 @@ class ScriptContext(ToolContext):
 
         job = self._run.job
         with captured() as saved:
-            with job.views.shown(SCRIPT_CALLER, atlas_of=lambda: self._run.ctx.atlas) as shown:
+            workspace = self._run.workspace
+            with job.views.shown(SCRIPT_CALLER, atlas_of=lambda: workspace.atlas) as shown:
                 for picture in pictures:
                     noted(picture)
                 shown.show(list(pictures), arguments=to_jsonable(arguments), call_id=self.call)

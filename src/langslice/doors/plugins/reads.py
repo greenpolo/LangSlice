@@ -201,7 +201,7 @@ class ContextReads:
     def _view(self, record: Section) -> SectionView:
         from langslice.core.maps.section_maps import render_sizes
 
-        workspace = self._run.ctx
+        workspace = self._run.workspace
         transform = record.transform
         affine = None
         if transform is not None:
@@ -240,19 +240,21 @@ class ContextReads:
 
     def atlas(self) -> AtlasView:
         """The job's atlas."""
-        atlas = self._run.ctx.atlas
+        atlas = self._run.workspace.atlas
         return AtlasView(
             name=str(self._run.state.atlas),
             resolution_um=tuple(float(v) for v in np.asarray(atlas.resolution, dtype=float)),
             orientation=str(getattr(atlas, "orientation", "")),
-            species=self._run.ctx.species, plane=str(self._run.state.plane),
+            species=self._run.workspace.species,
+            plane=str(self._run.state.plane),
             shape=tuple(int(v) for v in np.shape(atlas.annotation)))
 
     def channels(self, section: object) -> tuple[str, ...]:
         """The names of the section's raw channels, in file order (``red``,
         ``green``, ``blue``, or ``gray``, for a colour file; the host's names or
         ``ch1``, ``ch2``... for a multi-page file)."""
-        names, _planes = self._run.ctx.section_channels(self._record(section).id)
+        record = self._record(section)
+        names, _planes = self._run.workspace.section_channels(record.id)
         return tuple(str(name) for name in names)
 
     def image_names(self, section: object) -> tuple[str, ...]:
@@ -261,7 +263,7 @@ class ContextReads:
         the images made since (``make_image``, :meth:`add_image`)."""
         from langslice.core.sections.images import image_names
 
-        return tuple(image_names(self._run.ctx, self._record(section)))
+        return tuple(image_names(self._run.workspace, self._record(section)))
 
     def raw_plane(self, section: object, name: str) -> np.ndarray:
         """Raw channel *name* of the section, ``uint8`` ``(H, W)`` on its working
@@ -271,7 +273,8 @@ class ContextReads:
 
         record = self._record(section)
         try:
-            return np.array(raw_plane(self._run.ctx, record.id, str(name)))
+            plane = raw_plane(self._run.workspace, record.id, str(name))
+            return np.array(plane)
         except ValueError as exc:
             raise ToolError(RefusalCode.UNKNOWN_IMAGE, str(exc)) from exc
 
@@ -282,8 +285,9 @@ class ContextReads:
         from langslice.core.sections.reading import read_working_image
 
         record = self._record(section)
-        image, _factor = read_working_image(self._run.ctx.image_path(record.id))
-        width, height = self._run.ctx.working_source(record.id)[0].size
+        workspace = self._run.workspace
+        image, _factor = read_working_image(workspace.image_path(record.id))
+        width, height = workspace.working_source(record.id)[0].size
         if image.size != (width, height):
             image = image.resize((width, height))
         return np.asarray(image.convert("RGB")).copy()
@@ -291,7 +295,8 @@ class ContextReads:
     def working_grid(self, section: object) -> tuple[int, int]:
         """``(H, W)`` of the section's working grid: the shape :meth:`add_image`
         takes, the file's orientation."""
-        width, height = self._run.ctx.working_source(self._record(section).id)[0].size
+        record = self._record(section)
+        width, height = self._run.workspace.working_source(record.id)[0].size
         return height, width
 
     def mask(self, section: object, name: str) -> Any:
@@ -354,10 +359,11 @@ class ContextReads:
         from langslice.core.sections.renders import render_slice
 
         record = self._record(section)
+        workspace = self._run.workspace
         if isinstance(level, int):
             edge = int(level)
         elif level == "auto":
-            edge = picture_edge(self._run.ctx)
+            edge = picture_edge(workspace)
         elif level in PICTURE_EDGES:
             edge = PICTURE_EDGES[level][1]
         else:
@@ -373,7 +379,7 @@ class ContextReads:
                             f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
         look: Any = None
         if raw:
-            if len(names) > 1 or (names and kind_of(self._run.ctx, record, names[0]) != "raw"):
+            if len(names) > 1 or (names and kind_of(workspace, record, names[0]) != "raw"):
                 raise ToolError(RefusalCode.BAD_ARGS,
                                 "raw takes no image (the file as it is) or one "
                                 "raw channel name")
@@ -381,18 +387,18 @@ class ContextReads:
         elif len(names) == 1:
             look = {"image": names[0]}
         elif names:
-            if any(kind_of(self._run.ctx, record, name) != "raw" for name in names):
+            if any(kind_of(workspace, record, name) != "raw" for name in names):
                 raise ToolError(RefusalCode.BAD_ARGS,
                                 "several images are drawn together only when all "
                                 "are raw channels")
             look = {"overlay": names}
         try:
-            image = render_slice(self._run.ctx, record, long_edge=edge, look=look)
+            image = render_slice(workspace, record, long_edge=edge, look=look)
         except ValueError as exc:
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
-            file_size=tuple(render_sizes(self._run.ctx, record.id).file_size),  # type: ignore[arg-type]
+            file_size=tuple(render_sizes(workspace, record.id).file_size),  # type: ignore[arg-type]
             rotation_deg=int(record.rotation_deg), flip=bool(record.flip))
 
     def layers(self, section: object) -> list[LayerRef]:

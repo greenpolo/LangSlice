@@ -458,7 +458,7 @@ def restore_registration_tool(
     )
     looked = show_result(
         job,
-        run.ctx,
+        run.workspace,
         "restore_registration",
         "overlay",
         [one.id for one in in_picture],

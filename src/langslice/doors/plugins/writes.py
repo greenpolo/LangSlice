@@ -85,7 +85,7 @@ class ContextWrites(ContextProposals):
                 live = self._run.state.by_id(record.id) or record
                 # the script's array, checked by add_image
                 given = cast("object", array)
-                return ops_images.add_image(self._run.job, self._run.ctx, live, str(name),
+                return ops_images.add_image(self._run.job, self._run.workspace, live, str(name),
                                             given, note)
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
@@ -155,7 +155,7 @@ class ContextWrites(ContextProposals):
         from langslice.tools import positions
 
         self._require("position", *(["angles"] if cutting_angles is not None else []))
-        job, workspace = self._run.job, self._run.ctx
+        job, workspace = self._run.job, self._run.workspace
         with self.writing():
             out: dict[str, dict[str, Any]] = {}
             todo: list[Mapping[str, Any]] = []
@@ -330,7 +330,7 @@ class ContextWrites(ContextProposals):
         from langslice.tools import damage
 
         self._require()
-        job, workspace = self._run.job, self._run.ctx
+        job, workspace = self._run.job, self._run.workspace
         with self.writing():
             out: list[dict[str, Any]] = []
             written: list[str] = []

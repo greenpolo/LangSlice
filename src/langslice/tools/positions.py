@@ -278,7 +278,7 @@ def position_sections_tool(
     """
     job = run.job
     angles = cutting_angles if cutting_angles else None
-    done = position_sections(job, run.ctx, as_list(sections), angles)
+    done = position_sections(job, run.workspace, as_list(sections), angles)
     unknown = (
         unknown_sections(job.state, done.unknown) if done.unknown else None
     )
@@ -307,7 +307,7 @@ def position_sections_tool(
     mode = "overlay" if run.spec.off("look:positioning") else "positioning"
     looked = show_result(
         job,
-        run.ctx,
+        run.workspace,
         "position_sections",
         mode,
         in_picture,

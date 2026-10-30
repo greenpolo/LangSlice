@@ -251,9 +251,15 @@ def mark_damage_tool(
         the write changed, and the picture of the marked regions on the
         section and on the atlas.
     """
-    options = default_options("overlay", long_edge=picture_edge(run.ctx))
+    edge = picture_edge(run.workspace)
+    options = default_options("overlay", long_edge=edge)
     done = mark_damage(
-        run.job, run.ctx, section, as_list(regions), note, options=options
+        run.job,
+        run.workspace,
+        section,
+        as_list(regions),
+        note,
+        options=options,
     )
 
     result: dict[str, Any] = {

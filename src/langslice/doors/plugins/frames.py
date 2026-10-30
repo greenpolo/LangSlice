@@ -109,7 +109,7 @@ class ContextFrames(ContextReads):
         if key not in self._grids:
             try:
                 self._grids[key] = deformation.fit_grid(
-                    self._run.state, self._run.ctx, record,
+                    self._run.state, self._run.workspace, record,
                     params=list(IDENTITY_PARAMS))
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -149,7 +149,7 @@ class ContextFrames(ContextReads):
         grid = self._grid(record)
         oriented = grid.image.convert("RGB")
         placement = grid.placement
-        workspace = self._run.ctx
+        workspace = self._run.workspace
         planes: dict[str, np.ndarray] = {}
         if "annotation" in atlas:
             planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
@@ -245,7 +245,7 @@ class ContextFrames(ContextReads):
         )
         from langslice.core.space import Plane
 
-        atlas = self._run.ctx.atlas
+        atlas = self._run.workspace.atlas
         plane = cast(Plane, self._run.state.plane)
         normal = np.asarray(normal_um, dtype=np.float64)
         point = np.asarray(point_um, dtype=np.float64)
@@ -267,7 +267,7 @@ class ContextFrames(ContextReads):
         ``annotation`` or one of the atlas's images."""
         from langslice.core.atlas.images import atlas_images
 
-        offered = ("annotation", *atlas_images(self._run.ctx.atlas))
+        offered = ("annotation", *atlas_images(self._run.workspace.atlas))
         if kind not in offered:
             raise ToolError(RefusalCode.BAD_ARGS,
                             f"kind is one of {', '.join(offered)}; got {kind!r}")
@@ -289,7 +289,7 @@ class ContextFrames(ContextReads):
             native_labels,
         )
 
-        workspace = self._run.ctx
+        workspace = self._run.workspace
         values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
         if not np.isfinite(values).all():
             raise ToolError(RefusalCode.BAD_ARGS,
@@ -315,7 +315,7 @@ class ContextFrames(ContextReads):
         from langslice.core.atlas.images import atlas_images
         from langslice.core.atlas.images import atlas_volume as volume
 
-        atlas = self._run.ctx.atlas
+        atlas = self._run.workspace.atlas
         if kind == "annotation":
             return np.asarray(atlas.annotation)
         if kind not in atlas_images(atlas):
@@ -365,7 +365,7 @@ class ContextFrames(ContextReads):
 
         record = self._record(section)
         found = self._points(atlas_points, record.id, xy, frame)
-        structures = self._run.ctx.atlas.structures
+        structures = self._run.workspace.atlas.structures
         out: list[dict[str, Any] | None] = []
         for value in found.ids.tolist():
             if not value:
@@ -381,7 +381,7 @@ class ContextFrames(ContextReads):
 
     def _points(self, function: Callable[..., Any], name: str, values: Any, frame: str) -> Any:
         try:
-            return function(self._run.job, self._run.ctx, name, values, frame=frame)
+            return function(self._run.job, self._run.workspace, name, values, frame=frame)
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
 

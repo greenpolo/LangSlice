@@ -218,7 +218,7 @@ def make_image_tool(
             invert=bool(invert),
         )
         done = make_section_image(
-            job, run.ctx, str(name), ids, given, delete=bool(delete)
+            job, run.workspace, str(name), ids, given, delete=bool(delete)
         )
     except Refused:
         raise
@@ -241,7 +241,7 @@ def make_image_tool(
     spread_out: list[Section] = spread(existing, job.picture_cap)
     pictures = show_result(
         job,
-        run.ctx,
+        run.workspace,
         "make_image",
         "section",
         [section.id for section in spread_out],

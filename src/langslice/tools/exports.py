@@ -415,7 +415,7 @@ def export_maps_tool(
         section named was skipped), the sections written and skipped, the
         files written, and the time it took.
     """
-    done = export_maps(run.job, run.ctx, as_list(sections),
+    done = export_maps(run.job, run.workspace, as_list(sections),
                        full_resolution=bool(full_resolution))
     exported = bool(done.sections or not done.skipped)
     status = "ok" if exported else "error"

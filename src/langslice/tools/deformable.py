@@ -718,7 +718,7 @@ def fireants_syn_tool(
         The reply: ``status``, the call's ``settings``, one row per section
         (``results``), the status rows the write changed.
     """
-    job, workspace = run.job, run.ctx
+    job, workspace = run.job, run.workspace
     check_section_count(
         job, "fireants_syn", len(as_list(sections)),
         cap=MAX_FIREANTS_SYN_SECTIONS, reason=SECTION_CAP_REASON)
@@ -761,7 +761,7 @@ def _region_zooms(
         section = run.job.state.by_id(name)
         box = None
         if section is not None:
-            box = region_box(run.ctx, run.job.state, section, regions)
+            box = region_box(run.workspace, run.job.state, section, regions)
         window = zoom_window(box)
         if window is not None:
             zooms[name] = window

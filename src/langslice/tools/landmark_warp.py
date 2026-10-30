@@ -482,7 +482,7 @@ def landmark_triangulation_tool(
         ``BAD_ARGS`` for a resolution that is not a number of pixels.
     """
     edge, note = requested_edge(run, resolution)
-    applied = landmark_triangulation(run.job, run.ctx, section)
+    applied = landmark_triangulation(run.job, run.workspace, section)
     result = applied.reply()
     if note:
         result["resolution_note"] = note
@@ -490,7 +490,7 @@ def landmark_triangulation_tool(
         return result
     shown = show_result(
         run.job,
-        run.ctx,
+        run.workspace,
         "landmark_triangulation",
         "overlay",
         [applied.section],
