@@ -413,7 +413,7 @@ def start_correction(
                 model_border_pixels=int(mask.sum()),
             )
         except Exception as exc:
-            result.update(status="error", error=type(exc).__name__, message=str(exc))
+            result.update(Refused.from_exception(exc).payload())
         return _finish_attempt(directory, result_path, in_progress, result)
 
     return submitted, job

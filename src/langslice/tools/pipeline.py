@@ -26,7 +26,9 @@ order.
     After: the deformations whose linear placement changed, dropped in the
     same undo step.
 ``_answer_refusals``
-    A refusal raised by a later step or the body becomes the reply.
+    A refusal raised by a later step or the body becomes the reply. It sits
+    inside ``_clear_stale_deformations``, so a refused write still runs the
+    sweep, which finds nothing changed.
 ``_strict_arguments``
     Before: unknown or misplaced arguments refused.
 ``_opening_gate`` (writes)
@@ -327,8 +329,11 @@ def _save_pictures(call: ToolCall) -> Generator[None]:
     writes them, with their layers, in the background.
     """
     job = call.box.job
-    workspace = None if call.box.run is None else call.box.run.ctx
-    atlas_of = functools.partial(getattr, workspace, "atlas")
+    run = call.box.run
+    # a box without its run (before build_tools sets it) saves no layers
+    atlas_of = None
+    if run is not None:
+        atlas_of = functools.partial(getattr, run.ctx, "atlas")
     with job.views.shown(call.name, atlas_of=atlas_of) as shown:
         yield
         pictures = _new_pictures(call.reply)

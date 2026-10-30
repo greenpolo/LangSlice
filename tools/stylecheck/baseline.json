@@ -7846,7 +7846,7 @@
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/trace/trace.py", "symbol": "reply_on_grid", "count": 7},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/trace/trace.py", "symbol": "shown_labels", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/trace/trace.py", "symbol": "start_correction", "count": 16},
-{"rule": "ruff:E501", "path": "src/langslice/core/fits/trace/trace.py", "symbol": "start_correction.job", "count": 2},
+{"rule": "ruff:E501", "path": "src/langslice/core/fits/trace/trace.py", "symbol": "start_correction.job", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/core/geometry/affine.py", "symbol": "<module>", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/core/geometry/affine.py", "symbol": "affine_matrix", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/core/geometry/affine.py", "symbol": "decompose_affine", "count": 2},
