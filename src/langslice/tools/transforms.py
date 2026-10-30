@@ -519,12 +519,13 @@ def _mirror_refusal(job: Job, section_id: str) -> Refused:
     """Return the section's busy or ``FROZEN`` refusal of a transform that
     would mirror it under a frozen orientation, with the mirror's message.
     """
+    message = mirror_message(section_id)
     frozen = section_refusal(job, section_id, "orientation")
     if frozen is None:  # the caller saw its orientation frozen
-        frozen = Refused(RefusalCode.FROZEN, properties=["orientation"])
-    return Refused(
-        frozen.code, **{**frozen.facts, "message": mirror_message(section_id)}
-    )
+        return Refused(
+            RefusalCode.FROZEN, properties=["orientation"], message=message
+        )
+    return Refused(frozen.code, **{**frozen.facts, "message": message})
 
 
 # --- the tool ----------------------------------------------------------------
