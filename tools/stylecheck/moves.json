@@ -2436,7 +2436,7 @@
 {"path": "src/langslice/doors/tools/looking.py", "symbol": "bodies.grep_atlas_view", "new_path": "src/langslice/tools/atlas.py", "new_symbol": "grep_atlas_view_tool"},
 {"path": "src/langslice/tools/files.py", "symbol": "list_files", "new_path": "src/langslice/tools/files.py", "new_symbol": "list_folder"},
 {"path": "src/langslice/tools/files.py", "symbol": "search_files", "new_path": "src/langslice/tools/files.py", "new_symbol": "search_folder"},
-{"path": "src/langslice/tools/files.py", "symbol": "read_file", "new_path": "src/langslice/tools/files.py", "new_symbol": "read_job_file"},
+{"path": "src/langslice/tools/files.py", "symbol": "read_file", "new_path": "src/langslice/tools/files.py", "new_symbol": "read_folder_file"},
 {"path": "src/langslice/doors/tools/looking.py", "symbol": "bodies.list_files", "new_path": "src/langslice/tools/files.py", "new_symbol": "list_files_tool"},
 {"path": "src/langslice/doors/tools/looking.py", "symbol": "bodies.search_files", "new_path": "src/langslice/tools/files.py", "new_symbol": "search_files_tool"},
 {"path": "src/langslice/doors/tools/looking.py", "symbol": "bodies.read_file", "new_path": "src/langslice/tools/files.py", "new_symbol": "read_file_tool"},

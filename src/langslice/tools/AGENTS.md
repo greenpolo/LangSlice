@@ -224,7 +224,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   folder above it that does, and `holds`, its names; both raised by
   `browse.resolve`):
   `list_folder(job, path=".", glob="")` -> `Listing`, `search_folder(job, query,
-  path=".", glob="")` -> `Found`, `read_job_file(job, path, offset=0, limit=400)` ->
+  path=".", glob="")` -> `Found`, `read_folder_file(job, path, offset=0, limit=400)` ->
   `FileText` (the tools `list_files_tool`, `search_files_tool`, `read_file_tool` flush the
   picture store first and reply with the `text`); each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`), never

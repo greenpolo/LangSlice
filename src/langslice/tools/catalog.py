@@ -58,14 +58,12 @@ from langslice.tools import (
     notes,
     positions,
     registrations,
+    status,
     submit,
     traces,
     transforms,
+    zoom,
 )
-from langslice.tools import (
-    status as views,
-)
-from langslice.tools import zoom as tools_zoom
 
 __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on", "verbs_for"]
 
@@ -118,14 +116,14 @@ class Verb:
 #: The operation each tool calls.
 _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "look": look.look_pictures,
-    "zoom": tools_zoom.zoom_picture,
+    "zoom": zoom.zoom_picture,
     "make_image": images.make_section_image,
     "grep_atlas": atlas.search_regions,
     "grep_atlas_view": atlas.draw_regions,
-    "status": views.stack_status,
+    "status": status.stack_status,
     "list_files": files.list_folder,
     "search_files": files.search_folder,
-    "read_file": files.read_job_file,
+    "read_file": files.read_folder_file,
     "position_sections": positions.position_sections,
     "interactive_transform": transforms.interactive_transform,
     "mark_damage": damage.mark_damage,

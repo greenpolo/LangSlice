@@ -3,7 +3,7 @@
 Three tools modelled on a coding agent's file tools:
 :func:`list_files_tool`, :func:`search_files_tool` and
 :func:`read_file_tool`, each over its operation on the job
-(:func:`list_folder`, :func:`search_folder`, :func:`read_job_file`).
+(:func:`list_folder`, :func:`search_folder`, :func:`read_folder_file`).
 Every picture shown so far is written and indexed before each runs. Every
 path is relative to the job folder and kept inside it
 (:mod:`langslice.job.browse`); a path that leaves it is refused
@@ -68,7 +68,7 @@ class Found:
 
 @dataclass(frozen=True)
 class FileText:
-    """What :func:`read_job_file` answers; ``text`` is the reply.
+    """What :func:`read_folder_file` answers; ``text`` is the reply.
 
     ``kind`` is ``text``, ``picture`` or ``binary``; ``picture`` is the number
     of the indexed picture a picture file belongs to (None when it has none).
@@ -163,7 +163,7 @@ def read_file_tool(
     """
     run.job.views.flush()
     try:
-        done = read_job_file(
+        done = read_folder_file(
             run.job, str(path or ""), int(offset or 0), int(limit or 400)
         )
     except Refused:
@@ -311,7 +311,7 @@ def _dimensions(real: Path) -> str:
         return "an image"
 
 
-def read_job_file(
+def read_folder_file(
     job: Job, path: str, offset: int = 0, limit: int = browse.READ_LINES
 ) -> FileText:
     """A text file with line numbers, *limit* lines from line *offset* + 1.
