@@ -293,15 +293,31 @@ folder's maps (`coords.tif`, `labels.tif`, `residual.tif`, written by
 `core/maps/section_maps.py` (`native_points`).
 
 On disk (`save(directory)` / `load(directory)`, `docs/reference/file_formats.md`):
-`record.json` (format `RECORD_VERSION` 2, written last: a folder without it
-is incomplete) and `warp.ome.zarr` (`ome_warp.py`: a Zarr v3 store in the
-OME-Zarr 0.6 layout; the fields `(2, rows, cols)` `(dy, dx)` float16, Blosc
-zstd + shuffle, read back as `(rows, cols, 2)` float32; `warped_labels`,
-`footprint`, `left_out`, `weights` (float16) lossless; the root's `ome.scene` states section mm
--> placed atlas mm (a `bijection` of the two `displacements`) -> atlas µm (a
-`sequence`: scale, the placement's inverse affine, the plane-to-volume
-affine, the resolution), written from the record and never read back). No
-other format is read. The parent is BY REFERENCE: `record.json`'s `parent`
+`record.json` (format `RECORD_VERSION` 3, written last: a folder without it
+is incomplete; format 2 is read too) and `warp.ome.zarr` (`ome_warp.py`: a
+Zarr v3 store in the OME-Zarr 0.6 layout; `warped_labels`, `footprint`,
+`left_out`, `weights` (float16) lossless; the root's `ome.scene` states
+section mm -> placed atlas mm (a `bijection` of two `displacements`, when
+the stored fields are the whole map) -> atlas µm (a `sequence`: scale, the
+placement's inverse affine, the plane-to-volume affine, the resolution),
+written from the record and never read back). The fields are stored as
+`record.json`'s `fields` says (`fields.py`, the record's `stored_step`):
+`engine_grid`, the engine's own step on its working grid, float32 (an
+`EngineStep`), which loading carries onto the section grid
+(`WorkingGrid.field_to_section`) and composes with the parent
+(`fields.compose_forward` / `compose_inverse`) by the very functions
+`finish_fit` made the record with, so the rebuilt fields are the saved
+record's bit for bit; `landmark_mesh`, nothing (the mesh in
+`engine.native_parameters` is a `MeshStep`, rebuilt by
+`fields.mesh_fields`, the landmark tool's own fields; a mesh that
+triangulates differently is refused); `section_grid`, the fields whole as
+float16 `(2, rows, cols)` `(dy, dx)` (a map made elsewhere, whose fields are
+the whole map even with a parent; a restricted fit, whose tapered step's
+inverse `_invert_step` takes seconds; a fit whose working grid is the
+section's; every format-2 record). Loading reads the parent chain eagerly
+(each rebuild composes onto its parent's fields: about 20 ms per engine
+step, about 1 s for a landmark mesh at 1536 px). The parent is BY
+REFERENCE: `record.json`'s `parent`
 is the parent's folder name (`saved_as`), a sibling folder; `save` saves a
 parent that is not there first (one without `saved_as` is a `ValueError`),
 `load` reads the chain from the siblings. `save` rounds the fields to
@@ -310,7 +326,8 @@ float16 precision in memory first (`round_to_storage`,
 does the same for every record it holds, so a record in memory equals the
 one read back and a fit built on either is the same (SyN refinements are
 sensitive to their start: a 0.24 µm change of a soft whole-section
-refinement's start moved its result by up to 1 mm on a rat section).
+refinement's start moved its result by up to 1 mm on a rat section);
+`finish_fit` composes a step onto its parent's fields at that precision.
 `RecordStore` saves under `deformable/<key[:24]>` and deletes nothing, so
 undo and every child find their records.
 

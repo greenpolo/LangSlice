@@ -217,13 +217,14 @@ plugin warp; `<key>` the first 24 hex digits of the record's input digest)
 is a folder that nothing deletes, so undo can return to it. It holds:
 
 - `record.json`, written last (a folder without it is incomplete):
-  `version` 2, `step` (0 for a deformation on the linear placement),
+  `version` 3, `step` (0 for a deformation on the linear placement),
   `parent` (the folder name of the record this step was fitted on, a sibling
   in the same `deformable/` folder, or null), `placement` (atlas, position,
   plane, angles, `atlas_to_section`: native atlas-plane pixel centres to
   fit-grid pixel centres, `section_mm_per_px`), `section_size` (the fit
   grid, `[width, height]`: the oriented section render the fit ran on, not
-  the image file), `settings`, `field_convention`, `inverse_source`,
+  the image file), `settings`, `field_convention`, `fields` (how the
+  fields are stored, below), `inverse_source`,
   `labels`, `excluded_ids`, `engine`, `diagnostics`, `atlas` (name,
   orientation, `resolution_um`, `native_size`, `native_to_volume_index`)
   and `provenance`.
@@ -232,23 +233,40 @@ is a folder that nothing deletes, so undo can return to it. It holds:
 
 | Path | Content |
 |---|---|
-| `coordinateTransformations/field/s0` | float16 `(2, rows, cols)`: `(dy, dx)` in mm on the fit grid. A section point `p = (row, col) * section_mm_per_px` corresponds to the placed atlas point `p + field[:, row, col]`. Stored as float16 (rounding under 0.25 µm on displacements below 0.5 mm; LangSlice reads it as float32) |
-| `coordinateTransformations/inverse_field/s0` | the same for the inverse, on the placed-atlas grid: placed point `q` corresponds to section point `q + inverse_field(q)`; absent when the record has none |
+| `coordinateTransformations/field/s0` | `fields` `section_grid` only. float16 `(2, rows, cols)`: `(dy, dx)` in mm on the fit grid. A section point `p = (row, col) * section_mm_per_px` corresponds to the placed atlas point `p + field[:, row, col]`. Stored as float16 (rounding under 0.25 µm on displacements below 0.5 mm; LangSlice reads it as float32) |
+| `coordinateTransformations/inverse_field/s0` | `fields` `section_grid` only. The same for the inverse, on the placed-atlas grid: placed point `q` corresponds to section point `q + inverse_field(q)`; absent when the record has none |
+| `coordinateTransformations/step_field/s0`, `.../step_inverse_field/s0` | `fields` `engine_grid` only. float32 `(2, rows, cols)`: the engine's own forward and inverse fields of this step, `(dy, dx)` in mm on its working grid (`engine.working_grid`), as it produced them |
 | `warped_labels/s0` | uint32 `(rows, cols)`: the leaf atlas ids under the composed warp |
 | `footprint/s0` | bool `(rows, cols)`: the placed atlas footprint |
 | `left_out/s0` | bool `(rows, cols)`: the section pixels an engine's own sorting left out; absent otherwise |
 | `weights` | float16 `(rows, cols)` in [0, 1]: the engine's own tissue sorting (P(match)) on the fit grid, `make_mask(source="fit")` copies it; absent when the engine estimated none |
 
+The record's fields (forward and inverse, `(rows, cols)` on the fit grid)
+are what `fields` says:
+
+| `fields` | Stored | The fields are |
+|---|---|---|
+| `engine_grid` | the engine's step on its working grid, float32 | that step resized bilinearly onto the fit grid (OpenCV `INTER_LINEAR`, pixel centres on pixel centres) and, with a `parent`, composed with the parent's fields (forward: `u(p) = w(p) + u_parent(p + w(p))`; inverse: `v(q) = v_parent(q) + v_w(q + v_parent(q))`, both sampled bilinearly), then rounded to float16 precision |
+| `landmark_mesh` | nothing: the mesh is `engine.native_parameters` (`source_xy`, `target_xy` in fit-grid pixels, the four fixed corners first, and `simplices`) | the mesh's piecewise-affine map and its inverse on the same triangles at every fit-grid pixel, composed with the parent's as above, then rounded to float16 precision |
+| `section_grid` | the fields themselves, float16 on the fit grid | read as stored: a map made elsewhere (a tool plugin's or a script's, whose fields are the whole map even with a `parent`), a restricted fit (`settings.structures`: its tapered step's inverse takes seconds to compute), a fit whose working grid is the fit grid, and every record of format 2 |
+
+LangSlice reads formats 2 and 3; a format-2 record (written before
+`fields`) holds its fields whole, as `section_grid` does.
+
 Each group is an OME-Zarr multiscale image of one level whose `s0` scale is
 the grid's millimetres per pixel (1 on the displacement axis, `type`
-`displacement`). The root group's `ome.scene` states the whole mapping with
-the OME-NGFF 0.6 coordinate transformations, so another program can read it
-without LangSlice: coordinate systems `section` and `placed_atlas` (`y`, `x`
-in millimetres) and `atlas` (`axis0`..`axis2` in micrometres, the atlas's
-own axis order, voxel `i`'s centre at `i * resolution`); a `bijection`
-`section` -> `placed_atlas` whose forward and inverse are the
+`displacement`); a working-grid group's is a `sequence` of that `scale`
+and a `translation` to its first pixel's centre. The root group's
+`ome.scene` states the mapping with the OME-NGFF 0.6 coordinate
+transformations, so another program can read it without LangSlice:
+coordinate systems `section` and `placed_atlas` (`y`, `x` in millimetres)
+and `atlas` (`axis0`..`axis2` in micrometres, the atlas's own axis order,
+voxel `i`'s centre at `i * resolution`); when the stored fields are the
+whole deformation (`section_grid`, or `engine_grid` without a `parent`), a
+`bijection` `section` -> `placed_atlas` whose forward and inverse are the
 `displacements` of the two fields (the forward `displacements` alone when
-there is no inverse); a `sequence` `placed_atlas` -> `atlas` of a `scale`
+there is no inverse; a step to compose with its parent and a landmark
+mesh are not stated); a `sequence` `placed_atlas` -> `atlas` of a `scale`
 (mm to placed pixels), an `affine` (placed pixels to native atlas-plane
 pixels: the inverse of `atlas_to_section`), an `affine` from the 2-D plane
 into the 3-D volume (`native_to_volume_index`) and a `scale` by the

@@ -43,10 +43,11 @@ gets a ``migrated`` line when it writes the folder again):
 Two old shapes are read in the core, because the job never sees them
 first: a deformation's ``record.json`` is read by the core's record store
 when a fit, a picture or an export needs it, and record folders are
-content-addressed and never rewritten. Its reader refuses a record of
-format 1 (``arrays.npz``), so such a deformation is held but cannot be
-drawn, and reads a record's fit settings with the former ``stiffness``
-level as their ``smoothness_um``.
+content-addressed and never rewritten. Its reader reads format 2 (every
+field stored whole) beside the current 3, refuses a record of format 1
+(``arrays.npz``), so such a deformation is held but cannot be drawn, and
+reads a record's fit settings with the former ``stiffness`` level as their
+``smoothness_um``.
 """
 
 from __future__ import annotations
