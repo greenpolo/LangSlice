@@ -27,8 +27,8 @@ matter most:
 
 ### Open the LangSlice window
 
-The LangSlice window shows a job's pictures, newest first, beside a list of
-what the agent did. Ask your agent:
+The LangSlice window shows the sections the agent is working on, under their
+current registration, beside a log of what the agent did. Ask your agent:
 
 ```text
 Open the LangSlice window on /data/brains/M04.
@@ -36,14 +36,18 @@ Open the LangSlice window on /data/brains/M04.
 
 The window opens like a browser window. It shows:
 
-- the newest picture, large, with its caption; click **Follow** to keep
-  showing the newest;
-- one row per tool call, with the sections and the pictures it saved;
+- a strip along the atlas: atlas levels above a millimetre ruler, and your
+  sections below at their positions, the ones the agent is working on in
+  colour; click a section to look at it;
+- up to four sections at a time, each with the atlas borders drawn on it as
+  it is registered now, redrawn whenever the agent changes it; **Follow
+  agent** keeps them on what the agent is doing;
+- the agent's log: one row per tool call, and the pictures the agent looked
+  at (click one to enlarge it);
 - the **Sections** table: each section's position, cutting angles, mirroring
   and alignment, and the number of the registration it holds;
-- the **Undo** list: the steps that can be undone, each named by the call
-  that made it;
-- your notes and the agent's.
+- the **Steps**: the steps that can be undone, each named by the call that
+  made it, and your notes and the agent's.
 
 The window only shows the job. Nothing in it changes the registration.
 Closing it does not stop a run. See [The LangSlice window](../developers/gui.md)
@@ -119,7 +123,7 @@ Every change to the registration is one step. You can go back in two ways.
 
 - **Undo the last steps.** Ask for the last steps to be undone, for example
   "undo the last two steps". Steps are undone newest first, across the whole
-  job. Every step is kept, also after the job is closed. The window's **Undo** list
+  job. Every step is kept, also after the job is closed. The window's **Steps** view
   shows which call made each step.
 - **Put one section back.** Each registration a section has held is
   numbered and kept. Ask for a section to go back to an earlier number, for

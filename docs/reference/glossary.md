@@ -161,7 +161,8 @@ Landmark
 
 LangSlice window
   The window `langslice gui` opens, which shows a job while it runs: the
-  pictures the agent looks at, the tool it is running, and the sections'
+  sections the agent is working on under their current registration, the
+  tool it is running, the pictures it looks at, and the sections'
   placements.
 
 Launch prompt
