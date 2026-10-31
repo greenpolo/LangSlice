@@ -200,7 +200,7 @@ FLAGS: dict[str, Flag] = {
         table_default=False,
         help="What the agent may not change: JSON file or inline mapping of a "
         'filename (or "*" for every section) to a list of properties, any of '
-        "position, angles, orientation, affine, deformation; a frozen "
+        "position, angles, orientation, affine, deformation, damage; a frozen "
         "property keeps the value the supplied inputs give it",
     ),
     "--damaged": Flag(
@@ -208,6 +208,12 @@ FLAGS: dict[str, Flag] = {
         help="Notes on damaged tissue: JSON file or inline mapping of "
         "filenames to notes; notes alone do not exclude atlas regions from "
         "fits",
+    ),
+    "--damaged-regions": Flag(
+        metavar="JSON",
+        help="Damage marks: JSON file or inline mapping of filenames to "
+        'atlas region entries ("CTX", "root:right": a side of the section as '
+        "it is shown), which every fit leaves out, as mark_damage takes them",
     ),
     "--out": Flag(
         help="Results JSON path. Default: <job folder>/exports/"

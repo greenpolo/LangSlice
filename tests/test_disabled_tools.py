@@ -341,6 +341,25 @@ def test_no_text_names_what_the_job_disables(stack_folder: Path, disabled: list[
     assert not problems, "\n".join(sorted(set(problems))[:40]) + f"\n({len(problems)} in all)"
 
 
+@pytest.mark.parametrize("label", ["position", "position-open", "linear", "nonlinear"])
+def test_no_text_names_a_tool_a_task_that_is_off_leaves_out(stack_folder: Path, label: str):
+    """A task that is off takes its tools out of the run; no tool declaration
+    or schema on any door, and not the built-in agent's job statement, names
+    one of them either."""
+    spec = _base_specs(str(stack_folder))[label]
+    absent = sorted(name for name, tool in TOOLS.items() if not tool.when(spec))
+    problems: list[str] = []
+    for where, text in _model_texts(stack_folder, spec).items():
+        if not where.startswith(("declaration ", "schema ", "statement agent")):
+            continue
+        for name in absent:
+            hit = _pattern(name).search(text)
+            if hit:
+                around = text[max(0, hit.start() - 60):hit.end() + 40].replace("\n", " ")
+                problems.append(f"[{label}] {name!r} in {where}: ...{around}...")
+    assert not problems, "\n".join(sorted(problems)[:40]) + f"\n({len(problems)} in all)"
+
+
 def test_with_nothing_disabled_the_text_is_what_it_was(stack_folder: Path):
     """Marks leave no trace: a text rendered for a job that disables nothing
     is the text without its marks."""

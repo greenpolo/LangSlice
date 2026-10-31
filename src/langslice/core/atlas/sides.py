@@ -46,6 +46,8 @@ import numpy as np
 from langslice.core.refusal import RefusalCode, Refused
 
 SIDES: tuple[str, ...] = ("left", "right", "top", "bottom")
+#: The plane whose sections each lie within one hemisphere: no sides.
+UNSIDED_PLANE = "sagittal"
 #: The two names of the halves, by which way the midline runs on the picture.
 LEFT_RIGHT: tuple[str, str] = ("left", "right")
 TOP_BOTTOM: tuple[str, str] = ("top", "bottom")

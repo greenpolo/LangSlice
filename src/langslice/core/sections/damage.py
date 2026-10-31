@@ -18,12 +18,22 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from PIL import Image
 
-from langslice.core.atlas.sides import SEPARATOR, split_side
+from langslice.core.atlas.sides import (
+    SEPARATOR,
+    UNSIDED_PLANE,
+    has_sides,
+    split_side,
+)
+from langslice.core.fits.deformable.plane_images import (
+    placement_left,
+    resolve_entries,
+)
+from langslice.core.fits.deformation import fit_grid
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
 from langslice.core.refusal import RefusalCode, Refused
 
@@ -64,6 +74,105 @@ def normalized_entries(entries: Iterable[str | int]) -> list[str]:
             raise ValueError(f"Region entry {str(entry)!r} names no region")
         out.setdefault(entry_key(entry), region if side is None else f"{region}{SEPARATOR}{side}")
     return list(out.values())
+
+
+def checked_entries(
+    atlas: object, regions: Sequence[str | int], plane: str
+) -> list[str]:
+    """Check region entries against the atlas and return them normalized.
+
+    The one check of a section's damage marks, whoever gives them (the
+    agent's ``mark_damage``, a host's ``inputs.damaged_regions``).
+
+    Parameters
+    ----------
+    atlas
+        The job's atlas.
+    regions
+        Acronyms or ids, each optionally with a side (``"CTX:left"``).
+    plane
+        The stack's plane: a side on a sagittal stack is refused.
+
+    Returns
+    -------
+    list of str
+        The entries as :func:`normalized_entries` gives them.
+
+    Raises
+    ------
+    Refused
+        ``BAD_ARGS`` (a side that does not exist, an entry naming no
+        region), ``UNKNOWN_REGIONS``, ``NO_SIDES`` (a side on a sagittal
+        stack).
+    """
+    try:
+        names = normalized_entries(regions)
+    except ValueError as exc:
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
+    if not names:
+        return names
+    try:
+        resolve_entries(atlas, names)
+    except ValueError as exc:
+        raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from exc
+    if plane == UNSIDED_PLANE and has_sides(names):
+        raise Refused(
+            RefusalCode.NO_SIDES,
+            message="A sagittal section lies within one hemisphere, so a "
+            "region cannot be limited to one side.",
+        )
+    return names
+
+
+def side_pair_refusal(
+    state: Stack, workspace: Workspace, section: Section, names: Sequence[str]
+) -> Refused | None:
+    """Refuse a side the section's current placement does not have.
+
+    Sides are the section's as it is shown: ``left`` and ``right`` where its
+    placement runs the atlas midline closer to vertical, ``top`` and
+    ``bottom`` where closer to horizontal.
+
+    Parameters
+    ----------
+    state
+        The stack the section is in.
+    workspace
+        The job's workspace: its atlas and the section's files.
+    section
+        The section the entries mark.
+    names
+        Normalized region entries.
+
+    Returns
+    -------
+    Refused or None
+        ``WRONG_SIDE_PAIR`` naming the pair to use; None when every side
+        fits, or the section has no usable placement (not checked).
+    """
+    try:
+        placement = fit_grid(state, workspace, section).placement
+    except ValueError:
+        return None
+    atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+    left = placement_left(atlas, placement, names)
+    pair = getattr(left, "names", None)
+    for name in names:
+        region, side = split_side(name)
+        if side is None or pair is None or side in pair:
+            continue
+        runs = "vertically"
+        if side in ("top", "bottom"):
+            runs = "horizontally"
+        return Refused(
+            RefusalCode.WRONG_SIDE_PAIR,
+            message=(
+                f"On this section the midline runs {runs}, so its halves "
+                f"are {pair[0]!r} and {pair[1]!r}, not {side!r}: name one "
+                f'of those (e.g. "{region}:{pair[0]}").'
+            ),
+        )
+    return None
 
 
 def exclusions(

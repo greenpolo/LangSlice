@@ -88,10 +88,9 @@ class DescriptionFacts:
     prompt: str = ""
     #: What the job switches off (``JobSpec.switched_off``).
     switched_off: frozenset[str] = frozenset()
-    #: The tools the run lacks because their task is off. A tool plugin's
-    #: text renders by these as well as by ``switched_off`` (a plugin
-    #: sentence that needs ``elastix_affine`` stands only where the Linear
-    #: task is on); the native descriptions render by ``switched_off`` alone.
+    #: The tools the run lacks because their task is off. Every text renders
+    #: by these as well as by ``switched_off``: a sentence that needs
+    #: ``set_landmarks`` stands only where the Nonlinear task is on.
     absent: frozenset[str] = frozenset()
     #: The tool plugins the job loads, compared by identity: their tools are
     #: declared from their own stubs. Empty: no plugin text anywhere.
@@ -147,12 +146,11 @@ class DescriptionFacts:
             prompt = _job_prompt(spec)
 
         plugins = tuple(of_spec(spec))
-        absent: frozenset[str] = frozenset()
-        if plugins:
-            tools = tools_for(spec)
-            absent = frozenset(
-                name for name, tool in tools.items() if not tool.when(spec)
-            )
+        absent = frozenset(
+            name
+            for name, tool in tools_for(spec).items()
+            if not tool.when(spec)
+        )
         if uncapped is None:
             uncapped = door == CLI_DOOR
         return cls(

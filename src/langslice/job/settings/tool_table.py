@@ -126,7 +126,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("interactive_transform", "write", "Linear", options={"flip": "", "rotate": ""},
             when=lambda spec: spec.has("transform"), needs=_OVERLAY,
             writes=("orientation", "affine")),
-    ToolDef("mark_damage", "write", "Common"),
+    ToolDef("mark_damage", "write", "Common", writes=("damage",)),
     # The section-side mask the fits take by name (an EM sorting); useless
     # where no fit exists, and it is drawn in look's section mode.
     ToolDef("make_mask", "write", "Common",

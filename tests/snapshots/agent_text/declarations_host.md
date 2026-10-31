@@ -85,8 +85,7 @@ of a set_landmarks endpoint, on the zoom or on the whole picture alike.
 After a linear or nonlinear fit, use region on its overlay to inspect
 a particular structure closely, with only that region's border shown.
 This can reveal internal mismatches hidden at whole-section scale and
-help you decide whether to adjust the linear alignment, refine that
-region nonlinearly, or revisit the section's position.
+help you decide whether to adjust the linear alignment or refine that region nonlinearly.
 
 Earlier pictures remain available by number. Reopen or zoom a saved
 overlay to compare an intermediate registration with the current result;

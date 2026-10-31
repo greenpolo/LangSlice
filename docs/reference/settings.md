@@ -117,7 +117,8 @@ own flag:
 | `angles` | `--pitch`, `--yaw`, or `--section-angles JSON` | `{"pitch": deg, "yaw": deg}` for the whole stack, or `{filename: {"pitch": deg, "yaw": deg}}` per section (a section not named is flat). Not both forms. |
 | `orientation` | `--orientation JSON` | `{filename: {"flip": true or false, "rotation_deg": 0, 90, 180 or 270}}`. |
 | `transforms` | `--transforms JSON` | `{filename: transform}`: in-plane transforms. In the library, six numbers `[a, b, tx, c, d, ty]` or a transform record. |
-| `damaged` | `--damaged JSON` | `{filename: note}`: notes for the agent. A note excludes no region from the fits; only the agent's `mark_damage` does. |
+| `damaged` | `--damaged JSON` | `{filename: note}`: notes for the agent. A note excludes no region from the fits; marked regions do (`damaged_regions`, or the agent's `mark_damage`). |
+| `damaged_regions` | `--damaged-regions JSON` | `{filename: [region, ...]}`: the section's damage marks, which every fit leaves out, as `mark_damage` takes them: atlas acronyms or ids, each optionally one side of the section as it is shown (`"CTX:left"`, `"root:right"`). Checked when the job opens: an unknown region, an unknown side, a side on a sagittal job, or a side the section's placement does not have is refused. |
 | `pixel_size_um` | `--pixel-size-um UM or JSON` | Micrometres per pixel: one number for every file, or `{filename: um}`; a file the mapping does not name reads its own TIFF or OME tags. |
 | `channel_names` | (hosts only) | One name per page of a multi-page image. |
 
@@ -153,12 +154,15 @@ add up. The properties:
 | `orientation` | its flip and quarter turn, together | no flip, no turn |
 | `affine` | its continuous in-plane transform | the identity |
 | `deformation` | the deformation on top of its linear placement | none |
+| `damage` | its damage marks (the regions every fit leaves out) | no marks |
 
 Every write that would change a frozen property is refused, by every tool and
 every script, with `FROZEN`. A fit under a frozen `orientation` never mirrors
 the section. The cutting angles are one plane for the stack, so
 `position_sections` refuses new angles while any section has `angles` frozen.
-A section with a frozen `deformation` needs no deformation at `submit`. A tool
+A section with a frozen `deformation` needs no deformation at `submit`.
+`mark_damage` refuses other regions on a section with `damage` frozen (the
+same regions again write nothing). A tool
 that writes only properties frozen on every section is not offered, and a
 task whose properties are all frozen on every section is off.
 
@@ -170,6 +174,11 @@ Common freezes:
 - A section already aligned that must not be touched:
   `{"s_007.tif": ["orientation", "affine"]}`.
 - A section left out of the deformation: `{"s_007.tif": ["deformation"]}`.
+- A hemisection, the half of the atlas it lacks left out of every fit:
+  `inputs.damaged_regions` `{"s_007.tif": ["root:right"]}` with
+  `{"s_007.tif": ["damage", "orientation"]}`. A side is the section's as it
+  is shown under its placement, so freeze the orientation with it: a
+  mirrored section would put the mark on the other half.
 
 A refused section is not written; the other sections of a per-section call
 still are (`position_sections` and the library's `set_transforms` refuse the
@@ -282,7 +291,7 @@ placement.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `image_resolution` | `low` | `--image-resolution` | Long edge of the pictures the agent is shown: `low` 256 px opening tiles and 512 px later pictures; `medium` 384 and 768; `high` 512 and 1024; `auto` lets the agent choose each picture's size (`resolution`), from 128 px up to its model's largest image. |
+| `image_resolution` | `low` | `--image-resolution` | Long edge of the pictures the agent is shown: `low` 256 px opening tiles and 512 px later pictures; `medium` 384 and 768; `high` 512 and 1024; `auto` opens at 512 and draws later pictures at 1024 unless the agent chooses each picture's size (`resolution`), from 128 px up to its model's largest image. |
 | `preprocess` | `auto` | `--preprocess auto|none` | How each section's `preprocessed` image is made: `auto` blends the channels with local contrast enhancement; `none` takes the file as read, in gray. |
 | `force_view` | off | `--force-view` | The tools that change the registration always return their picture: their `view` argument is not offered. |
 | `host_preprocessing` | none | (hosts only) | `{"mode": "auto"}`: the automatic blend for snapshots sent one page per channel (the ABBA connector sets it); none: the file through `preprocess`. |
