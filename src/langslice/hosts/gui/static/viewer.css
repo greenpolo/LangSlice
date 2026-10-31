@@ -370,7 +370,7 @@
   .log-jump { bottom: auto; top: 186px; }
   .tray { height: 280px; }
   #tray-divider { display: none; }
-  .facts { display: none; }
+  .facts { max-width: 36%; }
   .strip-hint { display: none; }
 }
 @media (max-width: 960px) {

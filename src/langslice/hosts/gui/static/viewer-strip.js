@@ -207,10 +207,11 @@ const Strip = (() => {
     if (holder.box) set(image, holder.box);
     enqueue(image, href, rank);
   }
+  // A section's thumbnail is asked for again only when its render key changes.
   function thumbHref(row) {
     if (!info || job === null) return '';
-    const orientation = [row.flip ? 'f' : '', row.rotation_deg || 0].join('');
-    return `jobs/${job}/render/thumb/${encodeURIComponent(row.id)}?edge=${edge}&key=${encodeURIComponent(orientation)}`;
+    const key = row.render_key ?? [row.flip ? 'f' : '', row.rotation_deg || 0].join('');
+    return `jobs/${job}/render/thumb/${encodeURIComponent(row.id)}?edge=${edge}&key=${encodeURIComponent(key)}`;
   }
   function atlasHref(entry) {
     if (!info || job === null) return '';
@@ -457,10 +458,12 @@ const Strip = (() => {
   function writeTitle() {
     const parts = [`${rows.length} section${rows.length === 1 ? '' : 's'}`];
     if (info?.step_mm) parts.push(`atlas every ${info.step_mm} mm`);
-    else if (reason) parts.push(reason);
+    else if (reason) parts.push('no pictures');
     const unplaced = rows.filter(r => !placed(r)).length;
     if (unplaced && rows.length) parts.push(`${unplaced} not placed`);
     title.textContent = '· ' + parts.join(' · ');
+    // A refusal's words are long: the panels show them, the title keeps them on hover.
+    title.title = info ? '' : reason;
   }
 
   // --- interaction ------------------------------------------------------------------------------
