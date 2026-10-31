@@ -74,7 +74,7 @@ workspace carries. Every module's imports are core-only:
 - plain tables several layers share: `connections.py` and
   `pictures/media_keys.py` (the keys a tool's media travels under, read by the tool
   door, the ADK driver, MCP and the OAuth transport);
-- the host-row geometry the ABBA worker emits (`doors/abba/worker.py`):
+- the host-row geometry the ABBA follower emits (`doors/abba/checkpoints.py`):
   `maps/abba.py` (a normalized affine in ABBA's centred world
   millimetres) and `maps/abba.py` (an applied deformation as the landmark
   pairs of a SECOND ABBA step on top of the affine row:

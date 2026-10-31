@@ -299,16 +299,20 @@ def create(
     emit: Callable[[str], None] | None = None,
     image_model: ImageModel | None = None,
     door: str = "agent",
+    frozen_given: bool = False,
 ) -> Opened:
     """A job for *spec*'s image folder, as every host makes one
     (``Job.open``: the job folder beside the images or ``spec.job_dir``,
-    ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
-    with its reference card. *image_model* and *door*
-    as in :func:`open_folder`."""
+    ingest, host inputs, first checkpoint; a resume when ``spec.resume``;
+    a prepared ABBA job's saved settings as *spec*'s defaults, its freeze
+    replaced only when *frozen_given*), with its reference card.
+    *image_model* and *door* as in :func:`open_folder`."""
     folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
                                           emit=emit or log_progress)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
-    job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
+    job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path,
+                   frozen_given=frozen_given)
+    ctx.spec = job.spec
     write_card(job.layout)
     return Opened(job, ctx, image_model, door=door,
                   viewer=job_viewer(job.layout) if door == "cli" else None)

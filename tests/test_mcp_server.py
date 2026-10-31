@@ -24,9 +24,6 @@ from langslice.doors.mcp.server import build_server, initialization_options
 from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 
-#: ABBA's stack-wide angles as the connector always sends them (flat).
-FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
-
 _ATLAS = SlabAtlas()
 
 
@@ -328,29 +325,43 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
                    for page in job.pages for block in page)
 
 
+def _save_abba_job(
+    tmp_path: Path, monkeypatch: Any, folder: Path, spec: dict[str, Any], *,
+    channel: dict[str, Any] | None = None, damaged: dict[str, str] | None = None,
+) -> tuple[str, Path]:
+    """A saved ABBA job as ABBA's Claude mode wrote it (``job.json`` with
+    ``job_id`` and ``host`` format 2, the id in the index): its id and folder."""
+    from langslice.job import index
+    from langslice.job.layout import JobLayout, write_job_file
+
+    monkeypatch.setattr(index, "default_root", lambda: tmp_path / "jobs")
+    positions = {f"s{i}.png": float(i + 1) for i in range(3)}
+    inputs: dict[str, Any] = {"positions": positions, "order": sorted(positions),
+                              "pixel_size_um": 25.0, "angles": {"pitch": 0.0, "yaw": 0.0}}
+    if damaged:
+        inputs["damaged"] = damaged
+    saved = JobSpec.from_dict({**spec, "image_folder": str(folder), "inputs": inputs,
+                               "resume": False})
+    job_id = index.new_id()
+    layout = JobLayout(folder / "langslice", folder)
+    layout.ensure()
+    write_job_file(layout, job_id=job_id, spec=saved.to_dict(),
+                   host={"format": 2, "kind": "host", "params": {}})
+    index.register(tmp_path / "jobs", job_id, layout.folder, host_channel=channel)
+    return job_id, layout.folder
+
+
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.abba import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False},
-                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}},
-              "damaged": {"s0.png": "torn"},
-              "preprocessing": {"mode": "auto"}}
-    prepared = saved_jobs.prepare_saved_job(params)
-    path = Path(prepared["job_dir"])
-    assert path == folder / "langslice"  # the job folder next to the snapshots
-    record = json.loads((path / "job.json").read_text())
-    assert record["host"]["params"] == params
-    assert record["format_version"] == 1 and record["host"]["format"] == 2
-    assert record["job_id"] == prepared["job_id"]
-    entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
-    assert entry["job_folder"] == str(path)
-    assert prepared["job_id"] in prepared["prompt"]
-    job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    job_id, path = _save_abba_job(
+        tmp_path, monkeypatch, folder,
+        {"tasks": ["transform"], "transform": {"angles": False},
+         "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)},
+         "host_preprocessing": {"mode": "auto"}},
+        damaged={"s0.png": "torn"})
+    job = open_saved_job(job_id, lambda _n: _ATLAS)
     assert job.spec.tasks == ["transform"]
     # The host's damage note is kept with the section; it does not mark it
     # damaged (damaged regions do).
@@ -367,16 +378,12 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
 
 def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any):
     """DOORS-1: a second open of the same saved job keeps its writes and undo history."""
-    from langslice.doors.abba import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["position", "transform"]}}
-    prepared = saved_jobs.prepare_saved_job(params)
-    first = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    job_id, _path = _save_abba_job(tmp_path, monkeypatch, folder,
+                                   {"tasks": ["position", "transform"]})
+    first = open_saved_job(job_id, lambda _n: _ATLAS)
     tools = {tool.__name__: tool for tool in first.box.tools}
     asyncio.run(host_tool(first, tools["note"])(text="kept"))
     asyncio.run(host_tool(first, tools["position_sections"])(
@@ -384,7 +391,7 @@ def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any
     depth = len(first.job.undo_stack)
     assert depth > 0
     first.close()
-    again = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    again = open_saved_job(job_id, lambda _n: _ATLAS)
     assert "kept" in again.state.notes
     assert again.state.by_id("s0.png").position_mm == 1.5
     assert len(again.job.undo_stack) == depth
@@ -394,16 +401,20 @@ def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any
 def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypatch: Any):
     import socket
 
-    from langslice.doors.abba import saved_jobs
+    from langslice.doors.mcp.host_channel import (
+        HostChannel,
+        load_job,
+        validate_channel,
+    )
+    from langslice.job import index
 
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-
-    from langslice.doors.mcp.host_channel import HostChannel
+    monkeypatch.setattr(index, "default_root", lambda: tmp_path / "jobs")
 
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         listener.listen()
-        settings = {"address": "127.0.0.1", "port": listener.getsockname()[1], "token": "a" * 32}
+        settings = validate_channel(
+            {"address": "127.0.0.1", "port": listener.getsockname()[1], "token": "a" * 32})
         channel = HostChannel("abc", settings)
         conn, _address = listener.accept()
         with conn, conn.makefile("r") as stream:
@@ -422,31 +433,18 @@ def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypa
     assert channel.socket is None
 
     # A job id is a plain name and a channel is loopback only.
-    from langslice.doors.abba import saved_jobs
-
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
-        saved_jobs.load_job("../../outside")
+        load_job("../../outside")
     with pytest.raises(ValueError, match="loopback"):
-        saved_jobs.validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
+        validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors import credentials as setup
-    from langslice.doors.abba import saved_jobs
-    from langslice.doors.abba.contract import EngineRequest
-    from langslice.hosts.service import handle_request
-
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    monkeypatch.setattr(setup, "apply_saved_credentials", lambda: (_ for _ in ()).throw(
-        AssertionError("Saving a job must not load model credentials")))
     folder = _folder(tmp_path)
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False},
-                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}}}
-    result = handle_request(EngineRequest(id="copy", method="mcp.prepare", params=params),
-                            lambda _event: None)
-    job_id = result.result["job_id"]
+    job_id, _path = _save_abba_job(
+        tmp_path, monkeypatch, folder,
+        {"tasks": ["transform"], "transform": {"angles": False},
+         "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}})
     server = build_server(lambda _folder: (_ for _ in ()).throw(
         AssertionError("Saved jobs must not use development CLI settings")),
         atlas_loader=lambda _n: _ATLAS)
@@ -524,16 +522,12 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
 def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, monkeypatch: Any):
     """ABBA's Claude mode: the tools' start/end events and the opening pages reach the
     ABBA channel as agent events, with the saved pictures' paths, never bytes."""
-    from langslice.doors.abba import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["position", "transform"]}, "z_offset_mm": 5.7}
-    prepared = saved_jobs.prepare_saved_job(params)
-    session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    job_id, _path = _save_abba_job(tmp_path, monkeypatch, folder,
+                                   {"tasks": ["position", "transform"]})
+    session = open_saved_job(job_id, lambda _n: _ATLAS)
     sent: list[dict[str, Any]] = []
     assert session.channel is not None
     session.channel.event = sent.append  # type: ignore[method-assign]
@@ -550,7 +544,7 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
     assert all(Path(path).is_relative_to(session.job.layout.folder) for path in end["views"])
     assert "data" not in json.dumps(sent)
 
-    server = build_server(_spec_for, job_id=prepared["job_id"], atlas_loader=lambda _n: _ATLAS)
+    server = build_server(_spec_for, job_id=job_id, atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
         return await client.call_tool("show_stack", {"page": 1})
@@ -564,9 +558,6 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
     seeds = [p["event"] for p in seen if p.get("kind") == "agent_event"
              and p["event"]["kind"] == "seed"]
     assert len(seeds) == 1 and seeds[0]["page"] == 1 and seeds[0]["views"]
-    # The ABBA session's facts are kept with the job.
-    record = json.loads((Path(prepared["job_dir"]) / "job.json").read_text())
-    assert record["host"]["abba"]["z_offset_mm"] == 5.7
 
 
 # --- door parity: reply budget, parallel calls, closing, the opening at its size ---------

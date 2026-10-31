@@ -44,8 +44,11 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   The Fiji connector is the one ABBA integration; this package only follows
   its runs.
 - `service.py` — `langslice serve --stdio`: the JSON-lines engine
-  service the Fiji connector starts. The protocol models, the runtime
-  handlers, setup, saved ABBA jobs and the JVM-free snapshot worker
-  (`doors/abba/worker.py`; its checkpoints, which carry the affine and warp
-  rows, are `doors/abba/checkpoints.py`) are door-level, in `doors/abba/`. `docs/developers/architecture.md`,
+  service the Fiji connector starts (protocol 3: `setup.status`,
+  `abba.prepare`, `abba.follow`). A long request (`abba.follow`, the
+  follower that mirrors a job's checkpoints into ABBA) runs until the
+  service's input closes: a thread reads the rest of the input and sets the
+  request's stop event at its end. The protocol models, the preparation of
+  a job from ABBA's snapshots, the follower and its checkpoint rows are
+  door-level, in `doors/abba/`. `docs/developers/architecture.md`,
   `docs/abba.md`.

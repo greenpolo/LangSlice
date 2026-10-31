@@ -51,6 +51,7 @@ from langslice.job.host_inputs import (
     apply_host_inputs,
     changed_inputs,
     inputs_changed,
+    opening_spec,
 )
 from langslice.job.layout import (
     JobLayout,
@@ -189,6 +190,7 @@ class Job(JobBorderTraces):
         *,
         folder: str | os.PathLike[str] | None = None,
         results_path: str | None = None,
+        frozen_given: bool = False,
     ) -> Job:
         """Open the job folder (*folder*; default
         :func:`~langslice.job.layout.locate_job_folder`: ``spec.job_dir``, else
@@ -209,6 +211,11 @@ class Job(JobBorderTraces):
         refused (:class:`InputsChanged`, naming the keys and how to start
         fresh) before anything is written: the old checkpoint would keep the
         old inputs and drop the new ones.
+
+        A job the ABBA connector prepared opens with its saved settings as
+        the defaults of *spec* (``opening_spec``; *frozen_given*:
+        *spec*'s freeze was given explicitly and replaces the saved one), and
+        *workspace* is given the settings it opens with.
         """
         if folder is None:
             folder, _fallback = locate_job_folder(
@@ -223,6 +230,12 @@ class Job(JobBorderTraces):
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
         with lock.held():  # read and first checkpoint as one write
+            opened = opening_spec(
+                layout.folder, spec, frozen_given=frozen_given
+            )
+            if opened is not spec:
+                spec = opened
+                workspace.settings = spec.image_settings()
             state = None
             resumed = False
             if spec.resume:

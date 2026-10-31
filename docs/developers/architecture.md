@@ -90,27 +90,40 @@ calibrated section snapshots and launches `langslice serve --stdio` in the
 selected Python environment. The worker starts no JVM. Installation and
 user workflow are in [ABBA](../abba.md).
 
-Protocol version 1 uses one JSON object per line. Requests have `id`,
+Protocol version 3 uses one JSON object per line. Requests have `id`,
 `method`, `params`; responses carry the same `id` and `type` of `event`,
 `result` or `error`. Stdout is protocol-only; diagnostics go to stderr.
-The contract is `doors/abba/contract.py`, preparation and translation are in
-`doors/abba/worker.py`, and transport is in `hosts/service.py`.
+The contract is `doors/abba/contract.py`, the preparation
+`doors/abba/prepare.py`, the follower `doors/abba/follow.py`, the
+checkpoint rows `doors/abba/checkpoints.py`, and transport is in
+`hosts/service.py`.
 
 | Method | Purpose |
 |---|---|
-| `setup.status`, `setup.login`, `setup.api_key` | Offline setup status (including `tools`: what a job can switch off), OAuth and saved API keys |
-| `linear.run`, `linear.estimate` | Run the agent on snapshots; estimate cost |
-| `preprocess.preview` | Preview snapshot preprocessing |
-| `mcp.prepare` | Save a job and copy prompt for an MCP host |
+| `setup.status` | The installation: version, protocol, Python and its environment (offline) |
+| `abba.prepare` | Make a prepared job from an ABBA session's snapshots |
+| `abba.follow` | Stream a job's checkpoints as ABBA rows until the request's input closes |
 
-The request includes snapshots, pixel calibration, positions, cutting angles,
-job settings and existing-registration constraints. Only coronal Allen Mouse
+`abba.prepare` takes the snapshots, their pixel size, positions, ABBA's
+stack-wide cutting angles and slicing offset, the slices the user registered
+or warped in ABBA, the page names and the session's facts (project key,
+atlas, slice names, ABBA's median thickness and interval). It writes the job
+folder beside the snapshots with `job.json` only: ABBA's inputs, the user's
+ABBA registrations frozen, the cutting-angle estimate on, and the session's
+facts under `host`. It writes no checkpoint, and refuses once the job has
+one. Whichever way the job is then opened (`langslice-job FOLDER init`,
+`linear run`, MCP, the library), the saved settings are the defaults of
+that opening (`job.host_inputs.opening_spec`). Only coronal Allen Mouse
 V3/V3p1 ABBA sessions are accepted. Position and angle conversion uses ABBA's
 atlas offset and centred world coordinates.
 
-The first checkpoint describes the snapshots. Later checkpoints carry
-replacement `host_updates` and changed `host_angles`; a warp that cannot be
-converted is sent as `{"error": …}` and kept as a failed update. Each
+`abba.follow` reads the job folder only. Every 0.5 s it looks at
+`state.json`; when it changed, it sends one checkpoint, so several writes
+between two looks are one ABBA step. The first checkpoint is the job's whole
+state measured against ABBA with this job's own steps removed; later
+checkpoints carry replacement `host_updates` and changed `host_angles`; a
+warp that cannot be converted is sent as `{"error": …}` and kept as a failed
+update. A job that has no checkpoint yet gets one `waiting` event. Each
 checkpoint becomes an undoable ABBA step. The connector
 owns at most one affine and one BigWarp registration per section, above its
 pre-existing registrations. Deformations become thin-plate splines sampled
@@ -124,17 +137,11 @@ native registration types and reopen without LangSlice.
 
 ### MCP from ABBA
 
-`mcp.prepare` uses the same preparation and checkpoint translator as the
-built-in agent, without calling a model. Snapshots and their job remain
-under `~/.langslice/snapshots/mcp-*`; a saved job id points to them.
-`start_job(job_id=...)` opens that job. MCP opening pages must be read before
-writes are accepted.
-
-The connector listens on a loopback port with a single-use 256-bit token.
-It accepts LangSlice result events, not arbitrary Fiji commands. Closing
-the progress window disconnects live updates but leaves the MCP job usable
-and its results on disk. Each direct worker request owns its process;
-cancelling it terminates that worker and its children.
+A saved ABBA job (a job folder whose `job.json` carries a `job_id`, found
+through `~/.langslice/jobs/<id>.json`) opens with
+`start_job(job_id=...)`. MCP opening pages must be read before writes are
+accepted. Its live updates go to a loopback port with a single-use 256-bit
+token, which accepts LangSlice result events, not arbitrary Fiji commands.
 
 ## Atlas cache
 

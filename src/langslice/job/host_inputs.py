@@ -4,6 +4,12 @@ A host configures a job with ``JobSpec.inputs`` (what is already known per
 section) and ``JobSpec.frozen`` (what the agent may not change).
 :func:`apply_host_inputs` writes them into a freshly ingested stack, and
 :func:`changed_inputs` tells a resume that was made from other inputs.
+
+A host may also save a job's settings before any door opens it: the ABBA
+connector's prepared job (``job.json`` with ``host`` kind ``"abba"``). Its
+saved settings are then the defaults of every opening
+(``opening_spec`` below): what the opening door gives explicitly wins, and the
+host's inputs and its blend always stay.
 """
 
 from __future__ import annotations
@@ -11,6 +17,7 @@ from __future__ import annotations
 import copy
 import os
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, to_jsonable
@@ -18,7 +25,9 @@ from langslice.core.stack.affine import IDENTITY_PHYSICAL, StoredAffine
 from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import ROTATIONS, Section
 from langslice.core.stack.stack import Stack
+from langslice.job.layout import JobLayout, read_job_file
 from langslice.job.settings import frozen as freeze
+from langslice.job.settings.schema import SETTINGS
 from langslice.job.settings.spec import JobSpec, supplied_angles
 
 #: The transform a section with a frozen affine and none supplied carries: the
@@ -26,6 +35,16 @@ from langslice.job.settings.spec import JobSpec, supplied_angles
 #: alignment. ``kind`` ``"host"`` counts as a transform at submit and is never
 #: written back to the host.
 HOST_TRANSFORM_KIND = "host"
+#: ``job.json``'s ``host.kind`` of a job the ABBA connector prepared: its
+#: saved settings are the defaults of every opening (:func:`opening_spec`).
+PREPARED_HOST_KIND = "abba"
+#: The settings an opening of a prepared job takes from its saved ones
+#: whatever it gives: the host's inputs and its channel blend.
+HOST_SETTINGS = ("inputs", "host_preprocessing")
+#: The settings an opening keeps as it gives them, never from the saved
+#: ones: where the images and the job are, whether to resume, and the
+#: freeze (which :func:`prepared_spec` decides apart).
+OPENING_SETTINGS = ("image_folder", "job_dir", "resume", "frozen")
 
 
 def _named(spec: JobSpec, key: str) -> set[str]:
@@ -226,3 +245,116 @@ def inputs_changed(folder: str | os.PathLike[str], changed: list[str]) -> Inputs
         f"({', '.join(changed)} differ); resuming it would ignore the new "
         f"ones. Open it with the inputs it was made from, or {START_FRESH}."
     )
+
+
+def _value_at(
+    data: Mapping[str, Json], path: list[str], default: Json
+) -> Json:
+    """Return the value at *path* in nested settings, or *default*."""
+    value: Json = data
+    for key in path:
+        if not isinstance(value, Mapping) or key not in value:
+            return default
+        value = value[key]
+    return value
+
+
+def _put(data: dict[str, Json], path: list[str], value: Json) -> None:
+    """Set the value at *path* in nested settings, making the sections."""
+    target = data
+    for key in path[:-1]:
+        section = target.get(key)
+        if not isinstance(section, dict):
+            section = {}
+            target[key] = section
+        target = section
+    target[path[-1]] = value
+
+
+def prepared_spec(
+    saved: Mapping[str, Json], given_spec: JobSpec, *, frozen_given: bool
+) -> JobSpec:
+    """Return the settings of an opening of a prepared job.
+
+    Each setting of the table is the opening's where it differs from the
+    job's default, else the saved one; the host's inputs and blend
+    (:data:`HOST_SETTINGS`) are the saved ones, with the inputs the opening
+    adds (a damage note) kept beside them; where the images and the job are
+    and whether to resume are the opening's.
+
+    Parameters
+    ----------
+    saved
+        The prepared job's saved settings (``job.json``'s ``spec``).
+    given_spec
+        The settings the opening door was given.
+    frozen_given
+        Whether the opening gave its freeze explicitly (an empty one
+        included): then its ``frozen`` replaces the saved one.
+
+    Returns
+    -------
+    JobSpec
+        The settings the job opens with.
+    """
+    merged = cast("dict[str, Json]", to_jsonable(given_spec.to_dict()))
+    for row in SETTINGS:
+        if row.json_key is None or not row.json_key.startswith("spec."):
+            continue
+        path = row.json_key.removeprefix("spec.").split(".")
+        if path[0] in (*HOST_SETTINGS, *OPENING_SETTINGS):
+            continue
+        default = to_jsonable(row.default)
+        if _value_at(merged, path, default) == default:
+            _put(merged, path, _value_at(saved, path, default))
+
+    # the host's own settings, and the inputs the opening adds
+    given_inputs = to_jsonable(given_spec.inputs or {})
+    inputs: dict[str, Json] = dict(cast("JsonObject", given_inputs))
+    host_inputs = _value_at(saved, ["inputs"], None)
+    if isinstance(host_inputs, Mapping):
+        inputs.update(host_inputs)
+    merged["inputs"] = inputs or None
+    blend = _value_at(saved, ["host_preprocessing"], None)
+    merged["host_preprocessing"] = blend
+    if not frozen_given:
+        merged["frozen"] = _value_at(saved, ["frozen"], {})
+    return JobSpec.from_dict(dict(merged))
+
+
+def opening_spec(
+    folder: Path, spec: JobSpec, *, frozen_given: bool
+) -> JobSpec:
+    """Return the settings a job folder opens with.
+
+    A job the ABBA connector prepared (``job.json``'s ``host.kind`` is
+    :data:`PREPARED_HOST_KIND`) opens with :func:`prepared_spec` of its
+    saved settings, before its first checkpoint and after; any other folder
+    with *spec* as given.
+
+    Parameters
+    ----------
+    folder
+        The job folder.
+    spec
+        The settings the opening door was given.
+    frozen_given
+        Whether the door gave its freeze explicitly.
+
+    Returns
+    -------
+    JobSpec
+        The settings to open with.
+    """
+    record = read_job_file(JobLayout(folder))
+    if record is None:
+        return spec
+    host = record.get("host")
+    saved = record.get("spec")
+    if not isinstance(host, dict) or not isinstance(saved, dict):
+        return spec
+    kind = cast("dict[str, object]", host).get("kind")
+    if kind != PREPARED_HOST_KIND:
+        return spec
+    settings = cast("dict[str, Json]", saved)
+    return prepared_spec(settings, spec, frozen_given=frozen_given)

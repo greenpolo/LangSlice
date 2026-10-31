@@ -493,9 +493,9 @@ the same content; plugin tool calls and replies are traced like native ones.
 ## Where plugins load
 
 A plugin is loaded, in the process that opens the job, by every door that opens
-a job naming it: the library, `langslice linear run`, the agent CLI, the MCP
-server and the ABBA worker. A host's cost estimate ignores the plugin fields. A
-plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).
+a job naming it: the library, `langslice linear run`, the agent CLI and the
+MCP server; the ABBA follower, which only reads the job folder, loads it too.
+A plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).
 
 ## The MCP adapter
 
