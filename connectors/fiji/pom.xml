@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>org.langslice</groupId><artifactId>langslice-fiji</artifactId><version>0.2.0</version>
+  <groupId>org.langslice</groupId><artifactId>langslice-fiji</artifactId><version>0.3.0</version>
   <name>LangSlice connector for ABBA</name>
-  <description>Connect an existing ABBA 0.25 session to a separate LangSlice Python environment.</description>
+  <description>Open LangSlice from ABBA 0.25 and follow its job live in the ABBA session.</description>
   <!-- ABBA 0.25.0 is built for Java 21 (pom-scijava 45.1.0, scijava.jvm.version 21). Every
        ABBA dependency below is supplied by the user's Fiji/ABBA at run time: none is bundled. -->
   <properties>
