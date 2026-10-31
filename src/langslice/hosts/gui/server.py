@@ -44,7 +44,15 @@ _FILES = {"": ("index.html", "text/html; charset=utf-8"),
           "app.js": ("app.js", "text/javascript"),
           # prompt generator (generator.py serves its choices at `generator`)
           "generator.js": ("generator.js", "text/javascript"),
-          "generator.css": ("generator.css", "text/css")}
+          "generator.css": ("generator.css", "text/css"),
+          # the window's look: tokens, the bundled JetBrains Mono (SIL OFL 1.1) and the logo
+          "tokens.css": ("tokens.css", "text/css"),
+          "jetbrains-mono-regular.woff2": ("jetbrains-mono-regular.woff2", "font/woff2"),
+          "jetbrains-mono-italic.woff2": ("jetbrains-mono-italic.woff2", "font/woff2"),
+          "jetbrains-mono-bold.woff2": ("jetbrains-mono-bold.woff2", "font/woff2"),
+          "jetbrains-mono-ofl.txt": ("jetbrains-mono-ofl.txt", "text/plain; charset=utf-8"),
+          "lockup.svg": ("lockup.svg", "image/svg+xml"),
+          "logomark.svg": ("logomark.svg", "image/svg+xml")}
 # --- Settings tab (hosts/gui/settings.py) ---
 _FILES["settings.js"] = ("settings.js", "text/javascript")
 #: The largest POST body read.
