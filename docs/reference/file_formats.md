@@ -32,7 +32,7 @@ The files most readers use are the exports (`exports/quicknii.json`,
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   views.seq             the picture and call numbers handed out
-  exports/              linear_results.json, spend.json, result.json (a saved ABBA job's result), quicknii.json, visualign.json and the section images they name (<stem>_sNNN.png), traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
+  exports/              linear_results.json, spend.json, result.json (a saved ABBA job's result), quicknii.json, visualign.json and the section images they name (<stem>_sNNN.png), traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers), dmc_brainmap/<animal>/ (a DMC-BrainMap animal folder, on request)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
@@ -524,6 +524,47 @@ the oriented section render, then the render's quarter
 turn, flip and resize of the file); the section's placement does not enter
 it, so a reply made at an earlier placement is still drawn where the model
 put it on the tissue.
+
+### `dmc_brainmap/<animal>/`
+
+Written only on request, by the library's `job.export_dmc_brainmap(channel=,
+section_image=)`; neither `submit` nor `export_maps` writes it. A
+DMC-BrainMap animal folder (written against napari-dmc-brainmap 0.2.0b2),
+`<animal>` the image folder's name, which DMC-BrainMap reads as the animal id:
+
+| File | Content |
+|---|---|
+| `params.json` | `general` (`animal_id`, `chans_imaged`: the channel) and `atlas_info` (`atlas`, `orientation`: the plane, `resolution`: the atlas plane's `[x, y]` voxels, `xyz_dict`: each axis's BrainGlobe name, voxel count and micrometres), as DMC-BrainMap's params widget writes them |
+| `sharpy_track/<channel>/<name>_downsampled.tif` | every section's image (`section_image`, by default `preprocessed`), 8-bit gray, resized to the atlas plane's `x` by `y` voxels; `<name>` as for `sections/<name>/`. Images an earlier export left that this one does not write are removed |
+| `sharpy_track/<channel>/registration.json` | SHARPy-track's registration, keyed by each image's place in the folder's natural-sorted `*.tif` listing: `imgName` every image; `atlasLocation` (`[x_angle_deg, y_angle_deg, z_mm]`), `atlasDots` and `sampleDots` (`[x, y]` pairs on the atlas plane and on the resized image) for each placed section |
+| `langslice_export.json` | `linear_only` (true), `note`, `warps_left_out` (the sections whose applied deformation was not written), `sections` (each section's file and whether it is registered), `not_registered` (each section written without a registration and why: no position, or a plane DMC-BrainMap refuses), `channel`, `section_image`, `job_folder`, `written_by` |
+
+DMC-BrainMap holds a linear registration only. Each section is written with
+its linear placement, and an applied deformation is left out and listed under
+`warps_left_out`: on those sections, the regions DMC-BrainMap assigns differ
+from LangSlice's own maps by what the warp moved.
+
+How the linear placement is written. DMC-BrainMap fits one projective
+transform from at least five point pairs, so the pairs (a 5 x 5 grid over the
+image, of the points that fall on DMC-BrainMap's atlas plane; a finer grid
+when fewer than five do) reproduce the section's in-plane map exactly. Its
+cutting plane is a shear of the volume held to whole voxels: a centre voxel
+along the plane's normal (`z_mm` from DMC-BrainMap's bregma voxel) and a
+whole-voxel depth shift across each half of the atlas plane (from the two
+angles). The export takes the shifts nearest the section's slopes and the
+centre voxel that agrees best with its depth, so DMC-BrainMap's depth is
+within 1.5 voxels of LangSlice's everywhere (half a voxel for the centre,
+half for the slope at the plane's edge, half for DMC-BrainMap's truncation).
+DMC-BrainMap truncates every index and rounds a cell position up onto the
+resized image; the pairs are placed half a voxel and half a resized pixel on,
+so its rounding lands on average where LangSlice's nearest voxel is. A
+section whose plane leaves the atlas volume anywhere on DMC-BrainMap's atlas
+plane (a steep cut near either end of the volume) is written as an image
+without a registration: DMC-BrainMap refuses such a plane.
+
+Showing a section in DMC-BrainMap's SHARPy-track window rewrites that
+section's pairs rounded to whole pixels, as the window stores its own
+pairs, which moves the fitted transform by a fraction of a voxel.
 
 ### `spend.json`
 

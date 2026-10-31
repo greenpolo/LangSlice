@@ -407,7 +407,13 @@ file's own pixels. A section without a placement raises `ValueError` saying
 why. `job.export_stack()` writes what `submit` writes after its step, without
 submitting (the QuickNII and VisuAlign exports, `registration.json`, the
 image-model trace replies; no per-section maps) and returns the files
-written. `langslice.load_atlas(name)` loads a cached
+written. `job.export_dmc_brainmap(channel="dapi",
+section_image="preprocessed")` writes the job as a DMC-BrainMap animal folder,
+`exports/dmc_brainmap/<animal>/`, linear placements only (each applied
+deformation is left out and listed in its `langslice_export.json`), and
+returns a `langslice.tools.dmc_export.DmcExported`: `folder`, `files`,
+`registered`, `skipped` (each section written without a registration and
+why) and `warps_left_out`. `langslice.load_atlas(name)` loads a cached
 BrainGlobe atlas. The handle exposes `folder`, `imported`, `image_model`
 and, for lower-level work, `job`, `state` and `workspace`.
 

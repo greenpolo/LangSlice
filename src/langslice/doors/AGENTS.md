@@ -208,7 +208,7 @@ bodies, and turned into an answer once per door:
   layers, a deformation's none); its docstring is the how-to the card points
   to), `section_maps(section, full_resolution=)` (a section's maps in
   memory, `tools.exports.section_maps`), `export_stack()` (what `submit`
-  writes after its step, `tools.exports.export_stack`), `close` (image-model calls settled, pictures flushed), a
+  writes after its step, `tools.exports.export_stack`), `export_dmc_brainmap(channel=, section_image=)` (a DMC-BrainMap animal folder, `tools.dmc_export`), `close` (image-model calls settled, pictures flushed), a
   context manager. A method's reply is `library_reply`: a `Reply` (a dict
   of JSON values, `plain`; its status rows `core.stack.status.with_uniform_rows`;
   the pictures' files under `artifacts` as the CLI lists them,

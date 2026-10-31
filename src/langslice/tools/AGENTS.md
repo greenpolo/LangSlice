@@ -328,6 +328,19 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   section without a placement or an unreadable record or file.
   `applied_record(job, state, record)`: the section's applied deformation
   record, None when linear.
+- `dmc_export.py` — `export_dmc_brainmap(job, workspace, channel=,
+  section_image=)` (the library's `job.export_dmc_brainmap`; not a verb, not
+  written at submit: it writes an image per section): a DMC-BrainMap animal
+  folder `exports/dmc_brainmap/<animal>/` from the stack as it stands
+  (`params.json`, `sharpy_track/<channel>/<name>_downsampled.tif` and its
+  `registration.json` through `job.dmc_brainmap`, `langslice_export.json`:
+  `linear_only`, `warps_left_out`, `not_registered`); images an earlier
+  export left are removed (DMC numbers images by their place). A section
+  without a position, or whose plane DMC refuses, is written as an image
+  without a registration; an applied deformation is never written.
+  `BAD_ARGS` for a channel DMC does not offer (`DMC_CHANNELS`) or an atlas
+  whose axes it cannot read. Returns `DmcExported`. A job that persists
+  nothing writes nothing.
 - `points.py` — section points and atlas points through a section's current
   registration, writing nothing (a script's `job.context.to_atlas_um`,
   `from_atlas_um`, `plane_distance_um`, `region_at`): `atlas_points(job,

@@ -64,6 +64,7 @@ from langslice.doors.jobs import Opened, open_folder
 from langslice.doors.library.replies import Reply, library_reply
 from langslice.doors.library.script_context import ScriptContext
 from langslice.job.settings.spec import JobSpec
+from langslice.tools.dmc_export import DmcExported, export_dmc_brainmap
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +234,36 @@ class JobHandle:
         from langslice.tools.exports import export_stack
 
         return [path for path, _kind in export_stack(self._opened.job, self._opened.ctx).files]
+
+    def export_dmc_brainmap(
+        self, *, channel: str = "dapi", section_image: str = "preprocessed",
+    ) -> DmcExported:
+        """Write the job as a DMC-BrainMap animal folder.
+
+        The folder is ``exports/dmc_brainmap/<animal>/``: ``params.json``,
+        the section images resized to the atlas plane under
+        ``sharpy_track/<channel>/``, their ``registration.json`` and
+        ``langslice_export.json``. Linear only: each section's deformation
+        is left out and named in the record's ``warps_left_out``.
+
+        Parameters
+        ----------
+        channel : {"dapi", "green", "n3", "cy3", "cy5"}
+            The DMC channel folder the registration is written to.
+        section_image
+            The section image written: ``preprocessed``, a raw channel or a
+            made image.
+
+        Returns
+        -------
+        DmcExported
+            The folder, the files and the sections registered, skipped and
+            written without their deformation.
+        """
+        return export_dmc_brainmap(
+            self._opened.job, self._opened.ctx,
+            channel=channel, section_image=section_image,
+        )
 
     def wait(self, timeout: float | None = None) -> Reply:
         """Wait for the job's background work (a fit or trace a tool started and
