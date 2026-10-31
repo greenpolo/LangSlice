@@ -13,19 +13,29 @@ direction vectors pointing toward the top-right and bottom-left corners.
 (``registration.json``'s ``pixel_to_atlas_um``), so any plane and cutting angle
 is represented; :mod:`langslice.job.imports.readers` reads it back through the
 inverses here.
+
+QuickNII and VisuAlign make ``u`` and ``v`` perpendicular when they read a
+file, and Nutil and PyNutil use them as written, so a sheared anchoring means
+different placements in different programs. The export therefore writes the
+nearest perpendicular anchoring (:func:`perpendicular_anchoring`), which every
+reader takes as written, and ``visualign.json`` carries the shear it drops in
+its markers, with the deformation (:func:`markers_on_anchoring`).
 """
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
+import numpy.typing as npt
 
 from langslice import __version__
 from langslice.core.atlas.images import AUGMENTED_AP_OFFSET_MM, AUGMENTED_ATLAS
+from langslice.core.maps.section_maps import marker_grid
 
 #: The QuickNII ``.cutlas`` target of a BrainGlobe atlas. QuickNII and
 #: VisuAlign ship the Allen CCFv3 at 25 um only
@@ -273,27 +283,214 @@ def anchoring_from_pixel_map(
     return AnchoringVector(*(round(float(value), 6) for value in (*o, *u, *v)))
 
 
-def job_export(
-    sections: Sequence[dict[str, Any]], atlas: dict[str, Any], *, name: str = "",
-) -> dict[str, Any]:
-    """QuickNII / VisuAlign JSON of a job's placed sections.
+#: A section whose perpendicular anchoring moves no corner of its image by
+#: more than this many pixels from its exact one needs no markers for the
+#: difference (the rounding of the written numbers moves it far less).
+SHEAR_TOLERANCE_PX = 0.01
+#: Steps of the marker grid of a section without a deformation: its markers
+#: carry the shear alone, an affine change any markers around the image
+#: reproduce exactly, so a few do.
+SHEAR_MARKER_DIVISIONS = 2
 
-    Each of *sections* gives ``filename``, ``width``, ``height``, ``nr``,
-    ``pixel_to_atlas_um`` and optionally ``markers`` (VisuAlign's ``[x_overlay,
-    y_overlay, x_image, y_image]`` in the image's pixels, from
-    :func:`langslice.core.maps.section_maps.residual_markers`).
+
+def perpendicular_anchoring(anchoring: AnchoringVector) -> AnchoringVector:
+    """Make an anchoring's ``u`` and ``v`` perpendicular, as near as can be.
+
+    QuickNII and VisuAlign make ``u`` and ``v`` perpendicular when they
+    read a file (``u`` kept, ``v`` turned to it: QuickNII's
+    ``SliceData.unpack``, VisuAlign's ``Slice.recompose``), so they show
+    a sheared anchoring as another placement. The anchoring returned here
+    lies in the same plane, has the same image centre, and of all
+    anchorings with perpendicular axes it is the nearest over the image
+    (least squares); those programs read it as written.
+
+    Parameters
+    ----------
+    anchoring
+        The exact anchoring, sheared or not, in QuickNII voxels.
+
+    Returns
+    -------
+    AnchoringVector
+        The perpendicular anchoring, rounded as the export writes it.
+
+    Raises
+    ------
+    ValueError
+        When ``u`` is zero or ``v`` is parallel to it.
+
+    Notes
+    -----
+    In the plane's basis ``e1 = u / |u|`` and ``e2`` (the part of ``v``
+    perpendicular to ``e1``, normalized), ``u = (u1, 0)`` and ``v = (v1,
+    v2)``. New axes along ``r1 = (cos a, sin a)`` and ``r2 = (-sin a, cos
+    a)`` with lengths ``r1 . u`` and ``r2 . v`` miss ``u`` and ``v`` by
+    ``|u|^2 + |v|^2 - (r1 . u)^2 - (r2 . v)^2``, least at ``tan 2a = -2 v1
+    v2 / (u1^2 + v2^2 - v1^2)``. A point at image fractions ``(s, t)``
+    moves by ``(u' - u)(s - 1/2) + (v' - v)(t - 1/2)``, whose mean square
+    over the image is that miss over 12.
     """
-    slices = [
-        SliceExport(
-            filename=os.path.basename(str(entry["filename"])),
-            anchoring=to_target_grid(
-                anchoring_from_pixel_map(entry["pixel_to_atlas_um"], int(entry["width"]),
-                                         int(entry["height"]), atlas),
-                str(atlas["name"]), atlas["resolution_um"]),
-            width=int(entry["width"]), height=int(entry["height"]), nr=int(entry["nr"]),
-            markers=list(entry.get("markers") or []),
-        )
-        for entry in sections
-    ]
-    return export_to_dict(QUINTExport(target=_resolve_target(str(atlas["name"])),
+    values = np.asarray(anchoring.to_list(), dtype=np.float64)
+    origin, u, v = values[:3], values[3:6], values[6:]
+    u1 = float(np.linalg.norm(u))
+    if u1 == 0.0:
+        raise ValueError("the anchoring's u is zero")
+    e1 = u / u1
+    v1 = _dot(v, e1)
+    across = v - v1 * e1
+    v2 = float(np.linalg.norm(across))
+    if v2 <= 1e-9 * float(np.linalg.norm(v)):
+        raise ValueError("the anchoring's v is parallel to its u")
+    e2 = across / v2
+
+    # the axes turned by a, each as long as the old axis along it
+    angle = 0.5 * math.atan2(-2.0 * v1 * v2, u1 * u1 + v2 * v2 - v1 * v1)
+    r1 = math.cos(angle) * e1 + math.sin(angle) * e2
+    r2 = math.cos(angle) * e2 - math.sin(angle) * e1
+    new_u = _dot(r1, u) * r1
+    new_v = _dot(r2, v) * r2
+    new_origin = origin + (u + v - new_u - new_v) / 2.0
+    numbers = np.concatenate([new_origin, new_u, new_v])
+    values = cast("list[float]", numbers.tolist())
+    return AnchoringVector(*(round(value, 6) for value in values))
+
+
+def _dot(a: npt.NDArray[np.float64], b: npt.NDArray[np.float64]) -> float:
+    """Return the dot product of two vectors."""
+    return (a @ b).item()
+
+
+def anchoring_pixel_map(
+    source: AnchoringVector,
+    target: AnchoringVector,
+    width: int,
+    height: int,
+) -> np.ndarray:
+    """Map an image point under one anchoring to the point under another.
+
+    Parameters
+    ----------
+    source, target
+        Two anchorings of one image in one plane.
+    width, height
+        The image's size in pixels, which the anchorings divide.
+
+    Returns
+    -------
+    numpy.ndarray, shape (3, 3)
+        On ``[x, y, 1]`` in continuous pixel coordinates (top-left corner
+        at 0): the point ``target`` takes to the atlas point ``source``
+        takes ``(x, y)`` to.
+    """
+    old = np.asarray(source.to_list(), dtype=np.float64)
+    new = np.asarray(target.to_list(), dtype=np.float64)
+    new_axes = np.column_stack([new[3:6] / width, new[6:] / height])
+    old_affine = np.column_stack([old[3:6] / width, old[6:] / height,
+                                  old[:3] - new[:3]])
+    change = np.linalg.pinv(new_axes) @ old_affine
+    return np.vstack([change, [0.0, 0.0, 1.0]])
+
+
+def markers_on_anchoring(
+    markers: Sequence[Sequence[float]],
+    exact: AnchoringVector,
+    anchoring: AnchoringVector,
+    size: tuple[int, int],
+) -> list[list[float]]:
+    """Carry VisuAlign markers from one anchoring onto another.
+
+    Parameters
+    ----------
+    markers
+        ``[x, y, nx, ny]`` rows against *exact* (continuous pixels: the
+        section point ``(nx, ny)`` shows the point ``(x, y)`` of the
+        anchored plane); empty for a section without a deformation.
+    exact
+        The anchoring the markers were made against, sheared or not.
+    anchoring
+        The anchoring they are written with.
+    size
+        The image's ``(width, height)`` in pixels.
+
+    Returns
+    -------
+    list of list of float
+        The rows with ``(x, y)`` moved so that *anchoring* takes them where
+        *exact* took them. With no *markers*, a coarse identity grid
+        (:data:`SHEAR_MARKER_DIVISIONS`) so moved, or no rows when the two
+        anchorings differ by less than :data:`SHEAR_TOLERANCE_PX` anywhere
+        on the image.
+    """
+    width, height = size
+    change = anchoring_pixel_map(exact, anchoring, width, height)
+    rows = np.asarray(markers, dtype=np.float64).reshape(-1, 4)
+    if not len(rows):
+        corners = np.array([[0.0, 0.0, 1.0], [width, 0.0, 1.0],
+                            [0.0, height, 1.0], [width, height, 1.0]])
+        moved = corners @ change.T
+        if np.abs(moved - corners).max() <= SHEAR_TOLERANCE_PX:
+            return []
+        grid_x, grid_y = marker_grid((width, height),
+                                     divisions=SHEAR_MARKER_DIVISIONS)
+        rows = np.column_stack([grid_x, grid_y, grid_x, grid_y])
+    points = np.column_stack([rows[:, :2], np.ones(len(rows))])
+    rows[:, :2] = (points @ change.T)[:, :2]
+    return [list(map(float, row)) for row in rows]
+
+
+def job_export(
+    sections: Sequence[dict[str, Any]],
+    atlas: dict[str, Any],
+    *,
+    name: str = "",
+    write_markers: bool = False,
+) -> dict[str, Any]:
+    """Write a job's placed sections as QuickNII / VisuAlign JSON.
+
+    Every anchoring is the section's exact one made perpendicular
+    (:func:`perpendicular_anchoring`), which QuickNII and VisuAlign show as
+    written. With *write_markers* (``visualign.json``) each section's
+    markers carry what that drops, so the file reproduces LangSlice's
+    mapping in every reader; without them (``quicknii.json``) the file
+    holds the perpendicular placement only.
+
+    Parameters
+    ----------
+    sections
+        One row per section: ``filename``, ``width``, ``height``, ``nr``,
+        ``pixel_to_atlas_um`` and optionally ``markers`` (VisuAlign's
+        ``[x, y, nx, ny]`` against the exact anchoring, from
+        :func:`langslice.core.maps.section_maps.residual_markers`).
+    atlas
+        The atlas record of ``registration.json`` (name, orientation,
+        shape, resolution).
+    name
+        The series name written into the file.
+    write_markers
+        Whether to write markers (VisuAlign) or none (QuickNII).
+
+    Returns
+    -------
+    dict
+        The JSON document.
+    """
+    atlas_name = cast("str", atlas["name"])
+    slices: list[SliceExport] = []
+    resolution = cast("list[float]", atlas["resolution_um"])
+    for entry in sections:
+        size = cast("tuple[int, int]", (entry["width"], entry["height"]))
+        exact = to_target_grid(
+            anchoring_from_pixel_map(entry["pixel_to_atlas_um"], *size, atlas),
+            atlas_name, resolution)
+        anchoring = perpendicular_anchoring(exact)
+        markers: list[list[float]] = []
+        if write_markers:
+            given = cast("list[list[float]]", entry.get("markers") or [])
+            markers = markers_on_anchoring(given, exact, anchoring, size)
+        filename = cast("str", entry["filename"])
+        slices.append(SliceExport(
+            filename=os.path.basename(filename), anchoring=anchoring,
+            width=size[0], height=size[1], nr=cast("int", entry["nr"]),
+            markers=markers))
+    return export_to_dict(QUINTExport(target=_resolve_target(atlas_name),
                                       slices=slices, name=name))

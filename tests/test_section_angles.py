@@ -194,13 +194,20 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
     """``registration.json`` and ``quicknii.json``: each section on its own
     plane, as a single-angle job at that angle would place it."""
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import anchoring_from_pixel_map, to_target_grid
+    from langslice.job.quint import (
+        anchoring_from_pixel_map,
+        perpendicular_anchoring,
+        to_target_grid,
+    )
 
     document = json.loads((job_folder / "registration.json").read_text())
     assert document["cutting_angles_deg"] is None
     quicknii = json.loads((job_folder / "exports" / "quicknii.json").read_text())
     facts = atlas_facts(job.workspace.atlas)
-    anchorings = {entry["filename"]: entry["anchoring"] for entry in quicknii["slices"]}
+    # in the stack's order, each naming its section's image copy
+    anchorings = {section["id"]: entry["anchoring"]
+                  for section, entry in zip(document["sections"], quicknii["slices"],
+                                            strict=True)}
     normals = []
     for entry in document["sections"]:
         supplied = SECTION_ANGLES[entry["id"]]
@@ -209,9 +216,9 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
         frame = _single_angle_frame(job, entry["id"])
         expected = frame.pixel_to_atlas_um()
         np.testing.assert_allclose(entry["pixel_to_atlas_um"], expected, rtol=0, atol=1e-6)
-        anchoring = to_target_grid(
+        anchoring = perpendicular_anchoring(to_target_grid(
             anchoring_from_pixel_map(expected, frame.file_size[0], frame.file_size[1], facts),
-            str(facts["name"]), facts["resolution_um"]).to_list()
+            str(facts["name"]), facts["resolution_um"])).to_list()
         np.testing.assert_allclose(anchorings[entry["id"]], anchoring, rtol=0, atol=1e-5)
         u, v = np.asarray(anchoring[3:6]), np.asarray(anchoring[6:9])
         normal = np.cross(u, v)

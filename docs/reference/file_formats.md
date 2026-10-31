@@ -32,7 +32,7 @@ The files most readers use are the exports (`exports/quicknii.json`,
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   views.seq             the picture and call numbers handed out
-  exports/              linear_results.json, spend.json, result.json (a saved ABBA job's result), quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
+  exports/              linear_results.json, spend.json, result.json (a saved ABBA job's result), quicknii.json, visualign.json and the section images they name (<stem>_sNNN.png), traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
@@ -435,15 +435,39 @@ unset. `LANGSLICE_SETTINGS` names another file, or `off` for none.
 
 Written at `submit` and by `export_maps`. Both are QuickNII-format JSON (`name`, `target`,
 `aligner`, `slices`: `filename`, `anchoring`, `width`, `height`, `nr`,
-`markers`), one slice per placed section, `width`/`height` the image file's
-pixels and `nr` that index + 1.
+`markers`), one slice per placed section in the stack's order, `width`/`height`
+the image file's pixels.
 
+- **The image copies.** Beside the two files, one PNG per placed section,
+  which the files' `filename` names (QuickNII and VisuAlign open the images
+  in the file's own folder, and read PNG and JPEG only): the section's
+  `preprocessed` image (8-bit gray, what every picture draws when it names no
+  image) at the working copy's size (at most 3072 pixels on the long side,
+  under VisuAlign's 16 megapixels), in the file's own orientation. QuickNII
+  and VisuAlign scale an image to the slice's `width` and `height`, so these
+  stay the image file's. A copy is named `<stem>_sNNN.png`, NNN the section
+  number zero-padded to three digits, or `<stem>.png` when the stem already
+  carries that `_sNNN`. A copy an earlier export named and this one does
+  not is removed. The copies are listed with kind `quint_image`.
+- **`nr`, the section number.** The `_sNNN` number in each section's
+  filename (`_s` then digits) when every section of the stack has exactly one
+  and no two share it; otherwise the section's place in the stack's order,
+  from 1. Nutil pairs a segmentation named `..._sNNN...` with the slice whose
+  `filename` contains that `_sNNN`; PyNutil pairs it with the slice whose
+  `nr` is that number.
 - `quicknii.json`: the linear anchoring of every section, `markers` empty.
   The anchoring `o, u, v` is taken from the section's exact
   `pixel_to_atlas_um` (any plane, any cutting angle): the image's top-left
   corner and its two corner-to-corner vectors, converted to QuickNII voxel
   space (x left to right, y posterior to anterior, z inferior to superior;
-  voxel edges). Allen mouse jobs at any supported resolution export to
+  voxel edges), then made perpendicular: QuickNII and VisuAlign make `u`
+  and `v` perpendicular when they read a file (`u` kept, `v` turned to it)
+  while Nutil and PyNutil use them as written, so the export writes the
+  perpendicular anchoring nearest the exact one (same plane, same image
+  centre, least squares over the image), which all four read alike. It
+  lacks the section's shear (on two sections sheared by 3 and 4 degrees,
+  the image corners moved about 200 µm). Allen mouse jobs at any
+  supported resolution export to
   `ABA_Mouse_CCFv3_2017_25um.cutlas` with its anchoring rescaled to that
   target's voxels (voxel-edge coordinates scale with the voxel size; the
   volumes span the same millimetres). `ccfv3augmented_mouse_25um` (the Allen
@@ -455,15 +479,27 @@ pixels and `nr` that index + 1.
   in position and in nothing else. The rat target is DeepSlice's name
   (`WHS_Rat_v4_39um.cutlas`); for other atlases the QuickNII target is
   assumed to share the BrainGlobe voxel grid (untested). `target` is the
-  `.cutlas` name for known atlases.
-- `visualign.json`: the same, plus VisuAlign markers of each applied
-  deformation: `[x, y, nx, ny]` on a regular grid (1/36 of the long edge, at
-  least 32 px), in the image's continuous pixel coordinates (top-left corner
-  at 0). A section point `(nx, ny)` corresponds to the point `(x, y)` of the
-  linearly anchored plane: the direction of VisuAlign's triangulation as the
-  QUINT team's reference code reads it (`triangulate` on `(nx, ny)`, mapped to
-  `(x, y)`). Each marker reproduces the section's maps exactly at its own
-  point.
+  `.cutlas` name for known atlases. PyNutil ignores `target` and reads the
+  anchoring as voxels of the atlas it is given: `allen_mouse_25um` for every
+  Allen and augmented job.
+- `visualign.json`: the same anchoring, plus VisuAlign markers `[x, y, nx,
+  ny]` in the image's continuous pixel coordinates (top-left corner at 0):
+  the section point `(nx, ny)` corresponds to the point `(x, y)` of the
+  anchored plane (the direction of VisuAlign's triangulation as the QUINT
+  team's reference code reads it: `triangulate` on `(nx, ny)`, mapped to
+  `(x, y)`). A section with an applied deformation gets a marker per point
+  of a grid of 36 steps along the long edge (at least 32 px apart), from 1
+  px outside the image on every side, each point moved off the grid by up
+  to 0.2 of a step (the outline's points along the outline only; the same
+  movement every time), so no edge of the readers' triangles runs through
+  the pixel centres (where a point on an edge falls in no triangle in their
+  arithmetic). Each marker takes its section point through the deformation
+  and the shear the perpendicular anchoring drops, exactly; between markers
+  the readers interpolate linearly, which follows a FireANTs warp within
+  about 4 to 8 µm (median) and 18 to 36 µm (95th percentile) on the
+  sections measured. A section without a deformation whose anchoring was
+  sheared gets a few markers (a grid of 2 steps along the long edge),
+  which carry the shear exactly; one with neither gets none.
 
 ### `traces/<name>.npz`
 
@@ -515,8 +551,9 @@ cutting angles, orientation and affine transforms. Tasks default to
 | DeepSlice CSV, JSON or XML | Section anchorings and dimensions; CSV assumes the mouse target (also for jobs on `ccfv3augmented_mouse_25um`, read on the Allen grid) |
 | LangSlice `registration.json` | Each section's `pixel_to_atlas_um` and source image size |
 
-Matching tries the basename first, then the stem ignoring case, then a
-unique QuickNII `_sNNN` section number. Ambiguous matches are refused.
+Matching tries the basename first, then the stem ignoring case, then the
+stem without a final `_sNNN` (the image copies a LangSlice export names),
+then a unique QuickNII `_sNNN` section number. Ambiguous matches are refused.
 The import report names placed sections, unmatched entries, missing sections,
 refused placements and warnings. Missing placements must be resolved before
 submission. A file that places no section is refused.

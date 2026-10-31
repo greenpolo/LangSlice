@@ -540,7 +540,11 @@ the angles in a caption (empty for the flat plane).
   pictures' labels layer), and the residual `(drow, dcol)` such that
   `coords = pixel_to_atlas_um @ [p + d, 1]`; computed in `BLOCK_ROWS`
   blocks. `residual_markers(frame, warp)`: VisuAlign `[x, y, nx, ny]`
-  markers on a grid of 1/36 of the long edge.
+  markers on `marker_grid(size, divisions=)`'s points (36 steps along the
+  long edge, at least `MARKER_MIN_SPACING_PX` apart, from
+  `MARKER_MARGIN_PX` outside the image, each moved off the grid by up to
+  `MARKER_JITTER` of a step with the fixed `MARKER_SEED`, so no edge of
+  the readers' triangles runs through the pixel-centre lattice).
   `render_sizes(workspace, id)` (`RenderSizes`: the file, working copy and
   unturned render sizes and the file-to-render scale, header-only when it
   can) is the one place those sizes are found; `_section_frame` and the

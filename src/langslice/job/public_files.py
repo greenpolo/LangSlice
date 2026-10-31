@@ -50,7 +50,7 @@ from langslice.job.layout import (
     JobLayout,
     job_folder_for,
 )
-from langslice.job.state_file import write_json_atomic
+from langslice.job.state_file import json_object, write_json_atomic
 
 if TYPE_CHECKING:
     from langslice.core.maps.section_maps import SectionFrame, SectionMaps
@@ -464,10 +464,41 @@ def write_trace_reply(
     return path
 
 
+def quint_copies(exports_dir: Path) -> list[str]:
+    """Return the image filenames the folder's ``quicknii.json`` names.
+
+    Parameters
+    ----------
+    exports_dir
+        The job's exports folder.
+
+    Returns
+    -------
+    list of str
+        The ``filename`` of each slice (its last path component): the PNG
+        copies an export wrote beside it. Empty when there is no readable
+        file.
+    """
+    try:
+        text = (exports_dir / QUICKNII_FILE).read_text(encoding="utf-8")
+        document = json_object(text) or {}
+    except (OSError, ValueError):
+        return []
+    slices = document.get("slices")
+    if not isinstance(slices, list):
+        return []
+    names: list[str] = []
+    for entry in slices:
+        name = entry.get("filename") if isinstance(entry, dict) else None
+        if isinstance(name, str) and Path(name).name:
+            names.append(Path(name).name)
+    return names
+
+
 def derived_files(layout: JobLayout, state: Stack) -> list[tuple[Path, str]]:
     """``(path, kind)`` of every derived file the job folder holds now:
-    ``registration.json``, the exports, each section's maps and its
-    exported trace reply."""
+    ``registration.json``, the exports and the image copies they name, each
+    section's maps and its exported trace reply."""
     found: list[tuple[Path, str]] = []
     top = layout.folder / REGISTRATION_FILE
     if top.exists():
@@ -475,6 +506,9 @@ def derived_files(layout: JobLayout, state: Stack) -> list[tuple[Path, str]]:
     for name, kind in ((QUICKNII_FILE, "quicknii"), (VISUALIGN_FILE, "visualign")):
         if (layout.exports_dir / name).exists():
             found.append((layout.exports_dir / name, kind))
+    exports = layout.exports_dir
+    copies = [exports / name for name in quint_copies(exports)]
+    found += [(path, "quint_image") for path in copies if path.is_file()]
     for record in state.in_order():
         folder = layout.section_dir(record.id)
         found += [(folder / name, kind) for kind, name in SECTION_FILES.items()

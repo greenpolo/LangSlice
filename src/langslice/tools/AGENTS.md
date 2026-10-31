@@ -307,7 +307,10 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   whose record or file cannot be read, is `skipped` with its reason), then
   `exports/quicknii.json` and `exports/visualign.json` for every placed
   section (`job.quint.job_export`, markers from
-  `core.maps.section_maps.residual_markers`), then `registration.json`. With its maps,
+  `core.maps.section_maps.residual_markers`) with the PNG copies they name
+  beside them (`job.quint_images`, kind `quint_image`: each section's
+  `preprocessed` image, its number and copy name in the files' `nr` and
+  `filename`), then `registration.json`. With its maps,
   a section whose last trace holds a reply gets `exports/traces/<name>.npz`
   (`core.fits.trace.trace.reply_on_grid` on the maps' grid,
   written by `job.public_files.write_trace_reply`, kind `trace_reply`; one left

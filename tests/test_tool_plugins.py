@@ -1841,10 +1841,10 @@ def tools():
 def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_step(
         make, images: Path, tmp_path: Path):
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
         Given,
+        exact_export,
         export_rows,
         knobs,
         params_for,
@@ -1863,7 +1863,7 @@ def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_st
     state.by_id("s2.png").rotation_deg = 90
     ctx.render_cache.clear()
     file = tmp_path / "deepslice.json"
-    file.write_text(json.dumps(job_export(export_rows(ctx, given), atlas_facts(atlas))))
+    file.write_text(json.dumps(exact_export(export_rows(ctx, given), atlas_facts(atlas))))
 
     depth = len(box.job.undo_stack)
     reply = call(box, "place_from_file", path=str(file))
@@ -1904,10 +1904,10 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
         render_sizes,
     )
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
         Given,
+        exact_export,
         knobs,
         params_for,
         pixel_map,
@@ -1935,7 +1935,7 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
                      "nr": index + 1, "markers": [],
                      "pixel_to_atlas_um": pixel_map(ctx, g) @ np.linalg.inv(to_oriented)})
     file = tmp_path / "oriented.json"
-    file.write_text(json.dumps(job_export(rows, atlas_facts(atlas))))
+    file.write_text(json.dumps(exact_export(rows, atlas_facts(atlas))))
     reply = call(box, "read_file_registration", path=str(file), on="oriented")
     assert reply["status"] == "ok" and not reply["refused"], reply
     found = {row["id"]: row for row in reply["placements"]}
@@ -1953,10 +1953,10 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
 def test_a_registration_read_at_the_stack_plane_projects_onto_it(
         make, images: Path, tmp_path: Path):
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
         Given,
+        exact_export,
         export_rows,
         knobs,
     )
@@ -1967,7 +1967,7 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
                    knobs(2.0 * i, 1.0, 1.0, 0.0, 0.0, 0.0)) for i in range(3)]
     state, ctx, box = box_of(images, ref, atlas=atlas, inputs={"pixel_size_um": 25.0})
     file = tmp_path / "deepslice.json"
-    file.write_text(json.dumps(job_export(export_rows(ctx, given), atlas_facts(atlas))))
+    file.write_text(json.dumps(exact_export(export_rows(ctx, given), atlas_facts(atlas))))
     depth = len(box.job.undo_stack)
     reply = call(box, "place_from_file", path=str(file), at_stack=True)
     assert reply["status"] == "ok", reply
@@ -1985,10 +1985,10 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
 def test_a_registration_read_without_a_pixel_size_gives_no_numbers(
         make, images: Path, tmp_path: Path):
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import job_export
     from tests.test_import_registrations import (
         DeepAtlas,
         Given,
+        exact_export,
         export_rows,
         knobs,
         make_workspace,
@@ -2007,7 +2007,7 @@ def test_a_registration_read_without_a_pixel_size_gives_no_numbers(
     given = [Given("s0.png", 1.0, 0.0, 0.0, 0, False, knobs(0.0, 1.0, 1.0, 0.0, 0.0, 0.0))]
     state, _ctx, box = box_of(images, ref, atlas=atlas)  # no pixel size
     file = tmp_path / "x.json"
-    file.write_text(json.dumps(job_export(
+    file.write_text(json.dumps(exact_export(
         export_rows(make_workspace(images, atlas), given), atlas_facts(atlas))))
     reply = call(box, "read_registration_file", path=str(file))
     row = reply["read"]["placements"][0]

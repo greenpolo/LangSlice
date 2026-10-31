@@ -4,8 +4,10 @@ DeepSlice, an earlier LangSlice job) as LangSlice placements.
 Round trips: sections are given varied placements (positions, quarter turns,
 flips, rotations, anisotropic scale, shear, cutting angles, per section when
 the file can carry them), drawn through the job's own geometry
-(``core.maps.section_maps.section_frame``), exported by the job's own writers
-(``job.quint.job_export``, ``job.public_files.registration_document``), read back
+(``core.maps.section_maps.section_frame``), written with each section's exact
+anchoring (:func:`exact_export`, the anchoring the export computes before it
+makes ``u`` and ``v`` perpendicular, as DeepSlice's sheared files are) or by
+``job.public_files.registration_document``, read back
 by ``job.imports.readers`` and inverted by ``core.maps.imported``; the recovered
 placement must be the one given. The DeepSlice files under
 ``tests/fixtures/deepslice/`` were written by DeepSlice 1.2.8's own writers
@@ -49,7 +51,16 @@ from langslice.job.imports import placements as imports_placements
 from langslice.job.imports import readers as imports
 from langslice.job.layout import JobLayout
 from langslice.job.public_files import registration_document
-from langslice.job.quint import job_export
+from langslice.job.quint import (
+    QUINTExport,
+    SliceExport,
+    anchoring_from_pixel_map,
+    export_to_dict,
+    perpendicular_anchoring,
+    quicknii_points_to_atlas_um,
+    quicknii_target,
+    to_target_grid,
+)
 from langslice.job.settings.spec import JobSpec
 from tests.deformable_synthetic import CTX, STR, SyntheticAtlas
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
@@ -133,6 +144,36 @@ def pixel_map(workspace: Workspace, given: Given) -> np.ndarray:
     cutting angles."""
     state = state_of(workspace, [given])
     return section_frame(state, workspace, state.slices[0]).pixel_to_atlas_um()
+
+
+def exact_export(rows: list[dict[str, Any]], atlas: dict[str, Any]) -> dict[str, Any]:
+    """A QuickNII / VisuAlign document of *rows* (``job_export``'s rows) with
+    each section's exact anchoring, shear included, and its markers as given."""
+    slices = []
+    for row in rows:
+        size = (int(row["width"]), int(row["height"]))
+        exact = to_target_grid(
+            anchoring_from_pixel_map(row["pixel_to_atlas_um"], *size, atlas),
+            str(atlas["name"]), atlas["resolution_um"])
+        slices.append(SliceExport(filename=row["filename"], anchoring=exact, width=size[0],
+                                  height=size[1], nr=int(row["nr"]),
+                                  markers=list(row.get("markers") or [])))
+    return export_to_dict(QUINTExport(target=quicknii_target(str(atlas["name"])),
+                                      slices=slices))
+
+
+def perpendicular_pixel_map(matrix: Any, size: tuple[int, int],
+                            atlas: dict[str, Any]) -> np.ndarray:
+    """The file pixel -> atlas map ``quicknii.json`` holds for a section
+    whose exact map is *matrix*: its anchoring made perpendicular, on the
+    atlas's own grid."""
+    exact = anchoring_from_pixel_map(matrix, *size, atlas)
+    values = np.asarray(perpendicular_anchoring(exact).to_list())
+    origin, u, v = values[:3], values[3:6], values[6:]
+    corner, right, down = quicknii_points_to_atlas_um(
+        np.stack([origin, origin + u, origin + v]), atlas)
+    col, row = (right - corner) / size[0], (down - corner) / size[1]
+    return np.column_stack([row, col, corner + (row + col) / 2.0])
 
 
 def export_rows(workspace: Workspace, sections: list[Given],
@@ -308,7 +349,7 @@ def write_export(path: Path, document: dict[str, Any]) -> Path:
 def test_quicknii_json_round_trip_with_per_section_angles(stack: Path, tmp_path: Path):
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas)
-    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
+    document = exact_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
     result = imports_placements.import_placements(
         write_export(tmp_path / "quicknii.json", document), workspace)
     assert result.source.format == "quicknii-json"
@@ -339,7 +380,7 @@ def test_quicknii_on_a_downsampled_copy_carries_over(stack: Path, tmp_path: Path
             SWAP @ pixel_center_map(small, size) @ SWAP)
         row["width"], row["height"] = small
         row["filename"] = "copies/" + row["filename"].replace(".png", ".PNG")
-    path = write_export(tmp_path / "small.json", job_export(rows, atlas_facts(atlas)))
+    path = write_export(tmp_path / "small.json", exact_export(rows, atlas_facts(atlas)))
     result = imports_placements.import_placements(path, workspace)
     for given in PER_SECTION:
         placement = _by_section(result)[given.section_id]
@@ -356,7 +397,7 @@ def test_allen_target_grid_round_trip(stack: Path, tmp_path: Path):
     reading it back undoes the grid change."""
     atlas = DeepAtlas("allen_mouse_50um")
     workspace = make_workspace(stack, atlas)
-    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
+    document = exact_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
     assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
     result = imports_placements.import_placements(write_export(tmp_path / "allen.json", document),
                                        workspace)
@@ -375,7 +416,7 @@ def test_visualign_markers_come_back_on_the_file(stack: Path, tmp_path: Path):
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas)
     markers = {ID0: [[10.5, 20.5, 12.0, 19.0], [100.0, 80.0, 98.5, 83.25]]}
-    document = job_export(export_rows(workspace, PER_SECTION, markers), atlas_facts(atlas))
+    document = exact_export(export_rows(workspace, PER_SECTION, markers), atlas_facts(atlas))
     result = imports_placements.import_placements(
         write_export(tmp_path / "visualign.json", document), workspace)
     assert result.source.format == "visualign-json"
@@ -449,7 +490,7 @@ def deepslice_case(stack: Path, folder: Path) -> tuple[Workspace, dict[str, Any]
     rows = export_rows(workspace, DEEPSLICE_SECTIONS)
     for row in rows:
         row["filename"] = row["filename"].replace(".png", "_10x_A.png")
-    return workspace, job_export(rows, atlas_facts(atlas))
+    return workspace, exact_export(rows, atlas_facts(atlas))
 
 
 @pytest.mark.parametrize("name", ["deepslice.json", "deepslice.xml", "deepslice.csv"])
@@ -519,7 +560,7 @@ def test_matching_rules_in_order():
 def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas)
-    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
+    document = exact_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
     path = write_export(tmp_path / "q.json", document)
     found = imports_placements.registration_inputs(path, workspace)
     inputs = found.inputs
@@ -594,7 +635,7 @@ def test_augmented_atlas_shares_the_allen_target_with_a_fixed_offset(stack: Path
     allen, augmented = BareCCFAtlas("allen_mouse_25um"), BareCCFAtlas("ccfv3augmented_mouse_25um")
     on_allen = make_workspace(stack, allen)
     on_augmented = make_workspace(stack, augmented)
-    document = job_export(export_rows(on_allen, PER_SECTION), atlas_facts(allen))
+    document = exact_export(export_rows(on_allen, PER_SECTION), atlas_facts(allen))
     assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
     path = write_export(tmp_path / "allen25.json", document)
     first = _by_section(imports_placements.import_placements(path, on_allen))
@@ -616,7 +657,7 @@ def test_augmented_export_import_round_trip_is_the_identity(stack: Path, tmp_pat
     onto the augmented atlas as the placements it was made from."""
     augmented = BareCCFAtlas("ccfv3augmented_mouse_25um")
     workspace = make_workspace(stack, augmented)
-    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(augmented))
+    document = exact_export(export_rows(workspace, PER_SECTION), atlas_facts(augmented))
     assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
     result = imports_placements.import_placements(write_export(tmp_path / "aug.json", document),
                                                   workspace)
@@ -628,6 +669,6 @@ def test_augmented_export_import_round_trip_is_the_identity(stack: Path, tmp_pat
     allen = BareCCFAtlas("allen_mouse_25um")
     shifted = [Given(g.section_id, g.position_mm - 0.35, g.pitch_deg, g.yaw_deg,
                      g.rotation_deg, g.flip, g.knobs) for g in PER_SECTION]
-    reference = job_export(export_rows(make_workspace(stack, allen), shifted), atlas_facts(allen))
+    reference = exact_export(export_rows(make_workspace(stack, allen), shifted), atlas_facts(allen))
     for ours, theirs in zip(document["slices"], reference["slices"], strict=True):
         np.testing.assert_allclose(ours["anchoring"], theirs["anchoring"], atol=2e-3)

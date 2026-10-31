@@ -5,10 +5,14 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 #: QuickNII / DeepSlice section numbers: ``_s`` then digits (DeepSlice's
 #: ``number_sections``, non-legacy).
 SECTION_NUMBER = re.compile(r"_s(\d+)")
+#: The section number a LangSlice export adds to the name of its image copy
+#: (``<stem>_sNNN.png``, :mod:`langslice.job.quint_images`).
+COPY_NUMBER = re.compile(r"_s\d+$")
 
 
 class AmbiguousMatch(ValueError):
@@ -29,25 +33,46 @@ def section_number(filename: str) -> int | None:
     return int(found[0]) if len(found) == 1 else None
 
 
+def _stem(name: str) -> str:
+    return Path(base_name(name)).stem.casefold()
+
+
+def _same_name(name: str, section_id: str) -> bool:
+    return base_name(name) == section_id
+
+
+def _same_stem(name: str, section_id: str) -> bool:
+    return _stem(name) == _stem(section_id)
+
+
+def _is_copy(name: str, section_id: str) -> bool:
+    return COPY_NUMBER.sub("", _stem(name)) == _stem(section_id)
+
+
+def _same_number(name: str, section_id: str) -> bool:
+    number = section_number(name)
+    return number is not None and number == section_number(section_id)
+
+
+#: The matching rules, tried in this order (the module text of
+#: :mod:`langslice.job.imports.readers` says each).
+RULES = (
+    ("exact", _same_name),
+    ("stem", _same_stem),
+    ("export copy", _is_copy),
+    ("section number", _same_number),
+)
+
+
 def match_sections(names: Sequence[str], section_ids: Iterable[str],
                    ) -> dict[int, tuple[str, str]]:
     """Entry index -> ``(section id, rule)`` (see the module text for the
     rules). :class:`AmbiguousMatch` when an entry matches two sections under
     its rule, or two entries match one section."""
     ids = list(section_ids)
-
-    def stem(name: str) -> str:
-        return os.path.splitext(base_name(name))[0].casefold()
-
-    rules = (
-        ("exact", lambda name, sid: base_name(name) == sid),
-        ("stem", lambda name, sid: stem(name) == stem(sid)),
-        ("section number", lambda name, sid: section_number(name) is not None
-         and section_number(name) == section_number(sid)),
-    )
     matched: dict[int, tuple[str, str]] = {}
     for index, name in enumerate(names):
-        for rule, test in rules:
+        for rule, test in RULES:
             hits = [sid for sid in ids if test(name, sid)]
             if len(hits) > 1:
                 raise AmbiguousMatch(f"{name!r} matches several sections by {rule}: {hits}")

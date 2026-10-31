@@ -11,8 +11,8 @@ When a registration run submits, the job folder holds three result files:
 | File | What it is | Open it with |
 |---|---|---|
 | `registration.json` | Each section's placement in the atlas, in a readable form | A text editor, or a script |
-| `exports/quicknii.json` | Each section's linear placement (position, angles, in-plane alignment) | QuickNII, ABBA |
-| `exports/visualign.json` | The same, plus each section's warp as VisuAlign markers | VisuAlign, then the QUINT workflow (Nutil) |
+| `exports/quicknii.json` | Each section's linear placement (position, angles, in-plane alignment), without shear | QuickNII, ABBA |
+| `exports/visualign.json` | The same, plus VisuAlign markers that carry each section's warp and shear | VisuAlign, Nutil, PyNutil |
 
 The job folder is the `langslice` folder inside your image folder.
 
@@ -87,17 +87,54 @@ exists. The full formats are in
 
 </details>
 
-## Use QuickNII, VisuAlign or ABBA
+## Use QuickNII, VisuAlign, Nutil, PyNutil or ABBA
 
 - **QuickNII and VisuAlign.** `quicknii.json` and `visualign.json` are in
-  the QUINT JSON format (a plain-text data format) that QuickNII, VisuAlign and DeepSlice write. They
-  name your image files as they are. ABBA's QuickNII export saves JPEG
-  images because, in its own words, that is "the format QuickNII reads".
-  Sections in TIFF files may need JPEG or PNG copies. For the Allen mouse atlas, at any
-  resolution, the target is `ABA_Mouse_CCFv3_2017_25um.cutlas`. The markers
-  in `visualign.json` carry each section's warp, so VisuAlign shows the
-  sections as LangSlice left them. From VisuAlign, the QUINT workflow
-  (Nutil) counts objects per region.
+  the QUINT JSON format (a plain-text data format) that QuickNII, VisuAlign
+  and DeepSlice write. Beside them, the `exports` folder holds a PNG copy
+  of each section, named with its section number, for example
+  `M04_B_07_s013.png`, and the files name these copies. QuickNII and
+  VisuAlign read PNG and JPEG only and look for the images next to the
+  file, so open the files where they are. Each copy is the gray image the
+  agent looked at, at LangSlice's working size (at most 3072 pixels on the
+  long side). For the Allen mouse atlas, at any resolution, the target is
+  `ABA_Mouse_CCFv3_2017_25um.cutlas`.
+- **Shear.** LangSlice's in-plane alignment can shear a section a little
+  (its two image axes not quite at right angles). QuickNII and VisuAlign
+  cannot show shear: they straighten the axes when they open a file. So
+  both files hold the nearest placement without shear, which every program
+  reads the same way, and the markers in `visualign.json` add back the
+  shear together with the warp. `visualign.json` therefore reproduces
+  LangSlice's placement in VisuAlign, Nutil and PyNutil.
+  `quicknii.json` alone lacks the shear: on two sections sheared by 3 and
+  4 degrees, it moved the image corners by about 200 µm from where
+  LangSlice put them, less toward the middle. Use `visualign.json` for
+  counting.
+- **How close the markers come.** VisuAlign draws a warp as straight
+  pieces between markers, about 900 per section. A FireANTs warp bends on
+  a finer scale, so between markers the file follows it approximately:
+  typically within 4 to 8 µm, and within 18 to 36 µm for 95% of the tissue,
+  on the sections we measured. `coords.tif` and `labels.tif` are exact.
+- **Nutil and PyNutil.** From VisuAlign, the QUINT workflow (Nutil) counts
+  objects per region; PyNutil reads `visualign.json` directly. PyNutil
+  ignores the atlas named in the file: it places the sections in whatever
+  atlas you load. LangSlice writes every Allen mouse job on the 25 µm grid,
+  so load `allen_mouse_25um` in PyNutil, also for jobs on
+  `allen_mouse_10um` or `ccfv3augmented_mouse_25um`. Another atlas is
+  written on its own grid: load the job's atlas. PyNutil triangulates the
+  markers itself, which takes about half a minute per section.
+- **Name your segmentations by section number.** Nutil and PyNutil pair a
+  segmentation image with a section by the `_sNNN` in its filename. Give
+  each segmentation the same `_sNNN` as the section's copy, for example
+  `M04_B_07_s013_seg.png` for `M04_B_07_s013.png`, with no other `_s`
+  before it in the name: Nutil reads the first `_s` it finds. The number is
+  the one already in your filenames when every image has a `_sNNN` of its
+  own; otherwise it is the section's place in LangSlice's order, counting
+  from 1. For PyNutil's table of cell coordinates, put that number in the
+  `section number` column. A segmentation can have any resolution, as long
+  as it keeps the image's proportions. A section paired with the wrong
+  number is counted with another section's registration, and no program
+  warns.
 - **ABBA.** ABBA imports the linear placement from `quicknii.json` with
   **ABBA - Import QuickNII Project**. ABBA's own dialog warns that this import
   is not exact. ABBA has no VisuAlign import, so the warps do not come
