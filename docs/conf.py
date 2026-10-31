@@ -12,7 +12,12 @@ extensions = [
 myst_enable_extensions = ["colon_fence", "deflist", "tasklist"]
 myst_heading_anchors = 6
 
-exclude_patterns = ["requirements.txt", "_build", "_extra", "_includes"]
+exclude_patterns = [
+    "requirements.txt", "_build", "_extra", "_includes",
+    # Reference for agents and developers: kept at these paths in the repository (code, the connectors' skills
+    # and the CLAUDE.md guides cite them) and read on GitHub; the site carries only what a user needs.
+    "agents/index.md", "agents/cli.md", "agents/mcp.md", "agents/builtin.md", "reference/*", "developers/*",
+]
 templates_path = ["_templates"]
 html_extra_path = ["_extra"]  # llms.txt at the site root
 

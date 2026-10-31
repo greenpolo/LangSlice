@@ -1,6 +1,6 @@
 # Job settings
 
-A {term}`job` is made with settings: which atlas, which {term}`tasks <task>` the
+A job is made with settings: which atlas, which tasks the
 agent does, what you already know about the sections, what the agent may not
 change, and which tools it gets. They are saved in the job folder's
 `job.json` (under `spec`) and hold for the whole job.
@@ -121,7 +121,7 @@ own flag:
 | `pixel_size_um` | `--pixel-size-um UM or JSON` | Micrometres per pixel: one number for every file, or `{filename: um}`; a file the mapping does not name reads its own TIFF or OME tags. |
 | `channel_names` | (hosts only) | One name per page of a multi-page image. |
 
-Flags marked JSON take inline {term}`JSON` or the path of a JSON file. Any other key is
+Flags marked JSON take inline JSON or the path of a JSON file. Any other key is
 refused. What is supplied is a starting point: the agent may change it unless
 [`frozen`](#frozen) says it may not.
 
@@ -261,7 +261,7 @@ mark, a mirrored section can be told only from an oblique cutting angle.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `nonlinear.provider` | `openai-oauth` (library: `none`) | `--nonlinear-provider` | The {term}`image model`'s access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). |
+| `nonlinear.provider` | `openai-oauth` (library: `none`) | `--nonlinear-provider` | The image model's access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). |
 | `nonlinear.image_model` | the provider's | `--nonlinear-image-model` | Which image model of that provider. |
 | `nonlinear.image_prompt` | LangSlice's | `--nonlinear-image-prompt FILE` | The base prompt `trace_borders` sends, in place of LangSlice's own; `{plane}` in it becomes the section plane. Its traces are recorded as an untested profile. |
 | `nonlinear.require_deformation` | off | `--nonlinear-require-deformation` | `submit` is refused until every section has a deformation at its current placement. |

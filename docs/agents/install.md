@@ -4,13 +4,12 @@ Instructions for an AI agent installing LangSlice on the user's computer and
 connecting it to the user's app. Run every step. Stop and tell the user when
 a check fails. Ask before replacing anything that already exists.
 
-LangSlice installs from source into a conda environment named `langslice`.
-It is not on PyPI or conda-forge.
+LangSlice installs from PyPI into a conda environment named `langslice`
+(Python 3.11).
 
 ## 1. Check the prerequisites
 
 ```bash
-git --version
 conda --version
 ```
 
@@ -18,37 +17,37 @@ conda --version
   <https://github.com/conda-forge/miniforge>, following its README for the
   user's operating system, then open a new shell. On Windows, use the
   Miniforge Prompt for the commands below.
-- No `git`: download <https://github.com/greenpolo/LangSlice/archive/refs/heads/main.zip>
-  instead of cloning, and extract it.
 - Disk: the environment downloads several gigabytes (PyTorch among them).
   Atlases download on first use into `~/.brainglobe/`: `allen_mouse_25um`
   takes about 600 MB, and the Nissl image LangSlice borrows for it
   (`ccfv3augmented_mouse_25um`) about 1.3 GB.
 - A GPU is optional. Deformable fits run on the CPU without one, slower.
 
-## 2. Get the source
+## 2. Create the environment
+
+If `conda env list` already shows an environment named `langslice`, ask the
+user before removing or replacing it. To install beside it, use another name,
+such as `langslice-2`, below.
+
+```bash
+conda create -n langslice python=3.11 -y
+conda run -n langslice python -m pip install "langslice[registration,mcp]"
+```
+
+The environment holds LangSlice with its registration engines, the MCP
+server and the worker the ABBA connector starts.
+
+## 3. Or install from the source
+
+For the version on GitHub, instead of step 2:
 
 ```bash
 git clone https://github.com/greenpolo/LangSlice.git
 cd LangSlice
-```
-
-Keep this folder: an update reinstalls LangSlice from it (step 7).
-
-## 3. Create the environment
-
-In the folder that holds `environment.yml`:
-
-```bash
 conda env create -f environment.yml
 ```
 
-If `conda env list` already shows an environment named `langslice`, ask the
-user before removing or replacing it. To install beside it, add
-`-n langslice-2` and use that name below.
-
-The environment holds LangSlice with its registration engines, the MCP
-server and the worker the ABBA connector starts.
+Keep the folder: an update reinstalls LangSlice from it (step 7).
 
 ## 4. Verify
 
@@ -201,15 +200,14 @@ plugin's `setup` skill again, restart the app and check again.
 
 ## 7. After an update
 
-In the LangSlice folder:
-
 ```bash
-git pull
-conda run -n langslice python -m pip install ".[registration,mcp]"
+conda run -n langslice python -m pip install -U "langslice[registration,mcp]"
 ```
 
-pip rebuilds and reinstalls LangSlice from the folder. The plugins are
-installed from GitHub, so update them too:
+From the source instead, in the LangSlice folder: `git pull`, then
+`conda run -n langslice python -m pip install ".[registration,mcp]"`.
+
+The plugins are installed from GitHub, so update them too:
 
 - Claude Code: `claude plugin marketplace update langslice`, then
   `claude plugin update langslice@langslice`.

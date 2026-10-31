@@ -27,23 +27,19 @@ then assign cells and signal to brain regions.
 :::{admonition} Before you start
 :class: important
 
-- **Best tested on coronal sections of the Allen mouse atlas.** LangSlice
-  also takes sagittal and horizontal sections and the other atlases of
-  [BrainGlobe](https://brainglobe.info), which are less tested.
-- **You need a computer and one AI app.** LangSlice installs on Windows, Mac
-  or Linux. You talk to it through one of three AI apps: Codex (ChatGPT),
-  Antigravity (Gemini) or Claude Code (Claude). No graphics card is needed.
-- **Your AI provider sees your sections.** The agent looks at pictures of
-  your sections, so they are sent to OpenAI, Google or Anthropic, whichever
-  runs your app. If you switch on the optional image model, its provider sees
-  them too. Your original image files stay on your computer, unchanged.
-- **It uses your AI plan.** A registration counts against your AI plan's
-  usage limits.
-- **You check the result.** The agent works on its own, and its placements
-  can be wrong. You review every section before you use it.
+- **Best tested on coronal sections and the Allen mouse atlas.** Sagittal and
+  horizontal sections and the other [BrainGlobe](https://brainglobe.info)
+  atlases work, less tested.
+- **You need one AI app:** Codex (ChatGPT), Antigravity (Gemini) or Claude
+  Code (Claude), on Windows, macOS or Linux. No graphics card is needed.
+- **Your AI provider sees your sections.** Pictures of them go to OpenAI,
+  Google or Anthropic, whichever runs your app. Your image files stay on your
+  computer, unchanged.
+- **A registration uses your AI plan's** usage limits.
+- **Check every result.** The agent can be wrong.
 :::
 
-**New here?** Start with [Getting started](getting-started/index.md).
+**New here?** Start with [Install LangSlice](getting-started/install.md).
 
 ## Cite LangSlice
 
@@ -51,7 +47,8 @@ Baughman, N. (2026). *LangSlice: VLM-driven registration of histological brain
 sections to BrainGlobe atlases* (version 0.1.0) [Computer software].
 <https://github.com/greenpolo/LangSlice>
 
-[Cite and get help](help.md) has the citation in other formats.
+GitHub's **Cite this repository** button gives it as BibTeX. Questions and
+problems go to [GitHub issues](https://github.com/greenpolo/LangSlice/issues).
 
 % The left bar of every page lists these, one group per caption.
 
@@ -59,68 +56,23 @@ sections to BrainGlobe atlases* (version 0.1.0) [Computer software].
 :caption: Get started
 :hidden:
 
-Overview <getting-started/index>
 getting-started/install
 getting-started/connect
-```
-
-```{toctree}
-:caption: Guides
-:hidden:
-
-how-to/prepare-images
-Tell the agent what you know <how-to/tell-the-agent>
-how-to/check-and-correct
-how-to/export-results
-Refine an existing registration <how-to/refine-existing>
+register
 abba
-```
-
-```{toctree}
-:caption: Concepts
-:hidden:
-
-concepts/how-registration-works
-What the AI decides <concepts/what-the-ai-decides>
-concepts/your-data
-concepts/plans-and-usage
 ```
 
 ```{toctree}
 :caption: Reference
 :hidden:
 
-reference/tools
-reference/settings
-reference/file_formats
-reference/glossary
-```
-
-```{toctree}
-:caption: Help
-:hidden:
-
+tools
 troubleshooting
-help
 ```
 
 ```{toctree}
-:caption: For agents
+:caption: For AI agents
 :hidden:
 
-Overview <agents/index>
-Install <agents/install>
-agents/cli
-agents/mcp
-agents/builtin
-```
-
-```{toctree}
-:caption: For developers
-:hidden:
-
-developers/library
-developers/plugins
-developers/architecture
-developers/gui
+Install LangSlice <agents/install>
 ```

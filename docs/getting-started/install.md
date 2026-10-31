@@ -52,59 +52,31 @@ The Start menu with **Miniforge Prompt** highlighted.
 Terminal after the reopen, with `(base)` at the start of the line.
 :::
 
-## Step 2: Download LangSlice
+## Step 2: Install LangSlice
 
-1. Go to <https://github.com/greenpolo/LangSlice>.
-2. Click the green **Code** button, then **Download ZIP**.
-3. Unzip the file. You get a folder named `LangSlice-main`.
-4. Move that folder somewhere it can stay, such as your **Documents**
-   folder. Later steps use it.
+In the terminal (**Miniforge Prompt** on Windows, **Terminal** on macOS and
+Linux), run these three commands, one at a time:
 
-:::{admonition} Screenshot to come
-The GitHub page with the **Code** menu open and **Download ZIP** marked.
-:::
+```bash
+conda create -n langslice python=3.11 -y
+conda activate langslice
+pip install "langslice[registration,mcp]"
+```
 
-## Step 3: Open a terminal in the LangSlice folder
+The first makes the LangSlice environment, the second switches to it, and the
+third downloads LangSlice and every package it needs. Text scrolls past for
+several minutes.
 
-1. Open a terminal, the window where you type commands: **Miniforge
-   Prompt** on Windows, **Terminal** on macOS and Linux.
-2. Type `cd` followed by a space. Do not press **Enter** yet.
-3. Drag the `LangSlice-main` folder from your file browser onto the terminal
-   window. Its location appears after `cd `.
-4. Press **Enter**.
-
-To check that you are in the right folder, type `dir` (Windows) or `ls`
-(macOS, Linux) and press **Enter**. The list includes `environment.yml`.
-
-## Step 4: Create the LangSlice environment
+## Step 3: Check that LangSlice runs
 
 In the same terminal, run:
 
 ```bash
-conda env create -f environment.yml
-```
-
-Conda downloads Python and every package LangSlice needs, then installs
-LangSlice. Text scrolls past for several minutes. When it is done, the last
-lines are:
-
-```text
-# To activate this environment, use
-#
-#     $ conda activate langslice
-```
-
-## Step 5: Check that LangSlice runs
-
-Run these two commands:
-
-```bash
-conda activate langslice
 langslice version
 ```
 
-The line where you type now starts with `(langslice)`, and LangSlice prints
-its version:
+The line where you type starts with `(langslice)`, and LangSlice prints its
+version:
 
 ```text
 langslice 0.1.0
@@ -144,12 +116,10 @@ mouse brain atlas at 25 µm, is about 600 MB. Later registrations reuse it.
 <details>
 <summary>Under the hood: what the environment holds</summary>
 
-`environment.yml` creates a conda environment named `langslice` with
-Python 3.11. It then installs LangSlice from the downloaded folder with pip.
-The install includes LangSlice's optional parts for registration (HDF5
-reading) and MCP (the connection AI apps use). The
-environment includes the registration engines: Elastix for in-plane fits and
-FireANTs, on PyTorch, for deformations.
+The environment is a conda environment named `langslice` with Python 3.11.
+pip installs LangSlice into it with its optional parts for registration (HDF5
+reading) and MCP (the connection AI apps use). It includes the registration
+engines: Elastix for in-plane fits and FireANTs, on PyTorch, for deformations.
 
 On Linux, about 9 GB of the environment is PyTorch and its graphics-card
 libraries. FireANTs runs on an NVIDIA graphics card when PyTorch finds one,
@@ -157,6 +127,21 @@ and on the processor otherwise. The PyTorch that installs on Windows and
 macOS runs on the processor.
 
 </details>
+
+## Install from the source code instead
+
+To install the version on GitHub, for example to try a change before it is
+released:
+
+1. Go to <https://github.com/greenpolo/LangSlice>, click the green **Code**
+   button, then **Download ZIP**, and unzip it. You get a folder named
+   `LangSlice-main`. Move it somewhere it can stay.
+2. In a terminal, type `cd` and a space, drag the `LangSlice-main` folder onto
+   the terminal window, and press **Enter**.
+3. Run `conda env create -f environment.yml`. It makes the same `langslice`
+   environment from the folder.
+
+Then check it as in step 3.
 
 ## Next
 

@@ -1,6 +1,6 @@
 # Tools and options
 
-The registration {term}`agent` works only through LangSlice's {term}`tools <tool>`.
+The registration agent works only through LangSlice's tools.
 This page lists every tool, what it does, its arguments, the parts of it a
 job can switch off, and what it needs while it is on. You do not call these
 tools yourself; your agent does. Read this page to know what the agent could
@@ -8,14 +8,14 @@ do in a run, and to choose what to switch off in the
 [job settings](settings.md#disabled).
 
 Every way into LangSlice gives the agent the same tools under the same names:
-the {term}`MCP` server, the {term}`agent CLI`, the Python library and the
+the MCP server, the agent CLI, the Python library and the
 built-in agent (`langslice linear run`). The exact arguments of a tool in a
 given job are printed by `langslice-job FOLDER schema TOOL`, and the job
 folder's `TOOLS.md` lists them all.
 
 ## Summary
 
-The code groups the tools under the {term}`task` that brings them. Common
+The code groups the tools under the task that brings them. Common
 tools are in every run.
 
 One table per group. "Off" says whether the tool can be switched off; an
@@ -327,7 +327,7 @@ picture (the reply's `sheet` and `box`, the box in that picture's pixels);
 
 ### `make_image`
 
-Makes, replaces or deletes a named {term}`section image`: a grayscale picture
+Makes, replaces or deletes a named section image: a grayscale picture
 of each section that `look` draws and every fit reads by name. A section has
 two kinds of section image. **Raw** images are the planes of the image file
 (`red`, `green`, `blue` for a colour file, `gray`, or the channel names a host
@@ -518,7 +518,7 @@ missing keeps the surrounding anatomy safe.
 
 ### `make_mask`
 
-Makes, replaces or deletes a named {term}`mask` of sections: a weight from 0
+Makes, replaces or deletes a named mask of sections: a weight from 0
 to 1 per section pixel, saved as `sections/<stem>/masks/<name>.npz`. A fit
 that takes the mask by name leaves out the pixels under 0.5. The mask sorts
 the section's pixels into tissue that matches the atlas image, artifact and
@@ -582,7 +582,7 @@ section alone.
 
 ### `restore_registration`
 
-Puts sections back on a {term}`registration <registration number>` they
+Puts sections back on a registration they
 held before: orientation, transform and deformation together. Each
 registration a section holds gets a number, kept whatever is written after
 it. Undo is one history for the whole job; this tool returns single sections
@@ -847,7 +847,7 @@ and says that `logs/engine.log` holds the whole error. The same holds for
 
 ### `set_landmarks`
 
-Adds, updates and deletes {term}`landmark` pairs of one section: each pair is
+Adds, updates and deletes landmark pairs of one section: each pair is
 a point on the atlas and the point on the section that corresponds to it. It
 applies no deformation; `landmark_triangulation` does.
 
@@ -982,7 +982,7 @@ undo restores the registration before an application.
 
 ### `trace_borders`
 
-Asks the {term}`image model` to draw the placed atlas borders onto the
+Asks the image model to draw the placed atlas borders onto the
 section's anatomy, then fits a FireANTs deformation to the drawn lines. The
 model receives two images in the same frame: the section's `preprocessed`
 image, turned upright and cropped to the placed atlas plus 15%, and the same

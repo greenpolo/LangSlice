@@ -9,8 +9,8 @@ rules and the MCP server entry in Codex's own folder.
 
 ## Install
 
-LangSlice itself must be installed first (the conda environment of
-`environment.yml`, [install guide](https://langslice.readthedocs.io/en/latest/getting-started/install.html)).
+LangSlice itself must be installed first (the conda environment named
+`langslice`, [install guide](https://langslice.readthedocs.io/en/latest/getting-started/install.html)).
 
 1. Add the marketplace: in the Codex app, Plugins > Add > Add a marketplace,
    source `greenpolo/LangSlice`; or in a terminal,

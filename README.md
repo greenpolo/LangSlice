@@ -29,26 +29,27 @@ exports. Coronal sections of the Allen mouse atlas are the most tested case.
 
 ## Install
 
-Download and extract the source, open a terminal in the folder with
-`environment.yml`, then:
+In a terminal with conda ([Miniforge](https://conda-forge.org/download/)):
 
 ```bash
-conda env create -f environment.yml
+conda create -n langslice python=3.11 -y
 conda activate langslice
+pip install "langslice[registration,mcp]"
 langslice login        # ChatGPT sign-in; or set OPENAI_API_KEY / GEMINI_API_KEY (see .env.example)
 ```
 
-On Windows, run the same `conda env create` and `conda activate` commands in
-Miniforge Prompt or PowerShell with conda initialized. Python 3.11 on Windows
-is tested in CI. Atlases are downloaded by BrainGlobe on first use into the
-user's `.brainglobe` folder. Python 3.11 is required; the environment
-includes the deformable engine (FireANTs on torch), the Claude Desktop server and the
-worker the ABBA connector starts.
+From the source instead: download and extract it, open a terminal in the
+folder with `environment.yml`, and run `conda env create -f environment.yml`.
+On Windows, run the commands in Miniforge Prompt. Python 3.11 is required.
+Atlases are downloaded by BrainGlobe on first use into the user's
+`.brainglobe` folder. The environment includes the deformable engine
+(FireANTs on torch), the MCP server and the worker the ABBA connector starts.
 
 ## Use LangSlice
 
-- **[Getting started](https://github.com/greenpolo/LangSlice/blob/main/docs/getting-started/index.md):** install LangSlice and
-  connect the AI app you already use (Codex, Antigravity or Claude Code).
+- **[Getting started](https://github.com/greenpolo/LangSlice/blob/main/docs/getting-started/install.md):** install LangSlice,
+  connect the AI app you already use (Codex, Antigravity or Claude Code) and
+  [register a brain](https://github.com/greenpolo/LangSlice/blob/main/docs/register.md).
 - **[Agents, CLI and MCP](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/index.md):** Claude Code, Antigravity or Codex
   through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
@@ -57,7 +58,7 @@ worker the ABBA connector starts.
 - **[Python](https://github.com/greenpolo/LangSlice/blob/main/docs/developers/library.md):** coding agents can open a job and write their
   own workflows using the same tools.
 
-[Tools and options](https://github.com/greenpolo/LangSlice/blob/main/docs/reference/tools.md) ·
+[Tools](https://github.com/greenpolo/LangSlice/blob/main/docs/tools.md) ·
 [Tool plugins](https://github.com/greenpolo/LangSlice/blob/main/docs/developers/plugins.md) ·
 [File formats](https://github.com/greenpolo/LangSlice/blob/main/docs/reference/file_formats.md) ·
 [Architecture](https://github.com/greenpolo/LangSlice/blob/main/docs/developers/architecture.md) ·

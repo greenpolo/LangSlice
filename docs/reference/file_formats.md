@@ -1,6 +1,6 @@
 # Job folder and file formats
 
-Every job keeps everything in one {term}`job folder`: `langslice/` beside the
+Every job keeps everything in one job folder: `langslice/` beside the
 section images. The job stores its settings in `job.json` and its working
 state in `state.json`. `registration.json`, the maps, the exports and the
 pictures are derived from the state and never read back, so editing one does

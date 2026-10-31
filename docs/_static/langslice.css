@@ -346,7 +346,7 @@ kbd,
 }
 
 .ls-nav ul ul,
-.bd-sidebar-secondary .section-nav ul ul {
+.bd-sidebar-secondary .section-nav li > ul {
   margin-left: 1.4ch;
 }
 
@@ -825,6 +825,45 @@ span.highlighted,
 dialog#pst-primary-sidebar-modal,
 dialog#pst-secondary-sidebar-modal {
   background: var(--ls-ground);
+}
+
+/* ---- Tools page: under each group, one card per tool. A link to a tool (tools.html#fireants-syn) lands
+   on its card and edges it in pink. ---- */
+section#tools > section {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.75rem;
+}
+
+section#tools > section > :not(section) {
+  grid-column: 1 / -1;
+}
+
+section#tools > section > section {
+  margin: 0;
+  padding: 0.85rem 1rem 0.1rem;
+  border: 1px solid var(--ls-line);
+}
+
+section#tools > section > section:target {
+  border-color: var(--ls-pink);
+}
+
+.bd-article section#tools > section > section > h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.bd-article section#tools > section > section > h3 code.literal {
+  color: var(--ls-name);
+  font-weight: 700;
+}
+
+section#tools > section > section p {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
 /* ---- Front page ---- */
