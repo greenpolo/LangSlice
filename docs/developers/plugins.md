@@ -60,7 +60,7 @@ another version is refused. The same names are importable from
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
 | `task` | `position`, `transform`, `nonlinear` or `None`: the tool exists only while that task is on; `angles`: while the agent may write the cutting angles, as `position_sections` does (the position task on, or the transform task leaving the angles to the agent) |
-| `writes` | The section properties it may write (`position`, `angles`, `orientation`, `affine`, `deformation`). A write outside this set is refused; a tool that writes only properties frozen on every section is not offered |
+| `writes` | The section properties it may write (`position`, `angles`, `orientation`, `affine`, `deformation`, `damage`). A write outside this set is refused; a tool that writes only properties frozen on every section is not offered |
 | `long` | Computes outside the job's write lock and applies under it (see [long tools](#long-tools-and-stale_input)) |
 | `limits` | The most one call takes: `{"sections": 4}` refuses a longer `sections` argument (`TOO_MANY_SECTIONS`); `{"pictures": 2}` sends at most two pictures |
 | `needs` | What the tool needs while it is on: groups of names, one of each on (`(("look:overlay",),)`), as for native tools |
@@ -83,7 +83,7 @@ tools' texts keep naming a tool of a task that is off, as their text snapshot pi
 The checks run when the factory is called: a name that clashes (with a native
 tool, another plugin tool, or `script`, the name a script's writes are
 recorded under), an unknown
-`task`, `planes` that are no plane, `atlases` that are not name patterns, `writes` outside the five properties, `writes` on a read tool, a bad
+`task`, `planes` that are no plane, `atlases` that are not name patterns, `writes` outside the six properties, `writes` on a read tool, a bad
 limit, a stub with no docstring, another API version. Each is refused with one
 line.
 

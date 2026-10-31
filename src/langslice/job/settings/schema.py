@@ -373,6 +373,15 @@ SETTINGS: tuple[Setting, ...] = (
         flags=("--damaged",),
     ),
     Setting(
+        name="inputs.damaged_regions",
+        type="dict[str, list[str]] | None",
+        default=None,
+        doors=CODE_DOORS,
+        json_key="spec.inputs.damaged_regions",
+        keyword="inputs",
+        flags=("--damaged-regions",),
+    ),
+    Setting(
         name="out",
         type="str | None",
         default=None,

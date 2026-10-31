@@ -59,7 +59,7 @@ described in [Job folder and file formats](../reference/file_formats.md).
 ## What you can lock
 
 You can give LangSlice what you already know and stop the agent from changing
-it. Each section has five properties you can lock (*freeze*):
+it. Each section has six properties you can lock (*freeze*):
 
 | Property | What it is |
 |---|---|
@@ -68,6 +68,7 @@ it. Each section has five properties you can lock (*freeze*):
 | Orientation | Mirroring and quarter turns, together |
 | Affine | The in-plane rotation, scale, shear and shift |
 | Deformation | The deformation on top of the linear placement |
+| Damage | The damage marks: the atlas regions every fit leaves out |
 
 A locked property is refused for every change, from every tool and every
 route, scripts included. A stage you switch off locks its properties on every

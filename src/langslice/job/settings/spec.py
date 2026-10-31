@@ -17,6 +17,7 @@ import math
 from dataclasses import asdict, dataclass, field
 from typing import Any, cast
 
+from langslice.core.atlas.sides import UNSIDED_PLANE, split_side
 from langslice.core.space import Plane
 from langslice.core.workspace import ImageSettings
 from langslice.job.settings import frozen as freeze
@@ -36,7 +37,7 @@ from langslice.job.settings.schema import (
 #: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
     "order", "positions", "angles", "orientation", "transforms", "damaged",
-    "pixel_size_um", "channel_names",
+    "damaged_regions", "pixel_size_um", "channel_names",
 )
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
@@ -252,6 +253,56 @@ class NonlinearSpec:
         return canonical_provider(str(self.provider or "")) != "none"
 
 
+def supplied_damaged_regions(
+    value: object, plane: str
+) -> dict[str, list[str]]:
+    """Read ``inputs.damaged_regions``: ``{filename: [region entry, ...]}``.
+
+    The host's damage marks per section: atlas region acronyms or ids, each
+    optionally one side as the section is shown (``"root:right"``), as
+    ``mark_damage`` takes them. The atlas checks the names when the job
+    opens; here the shape and the sides.
+
+    Parameters
+    ----------
+    value
+        ``inputs.damaged_regions`` as given (None or empty: none).
+    plane
+        The job's plane: a side on a sagittal job is refused.
+
+    Returns
+    -------
+    dict
+        Filename -> its entries, as given.
+
+    Raises
+    ------
+    ValueError
+        For another shape, an unknown side, or a side on a sagittal job.
+    """
+    if value is None or value == {}:
+        return {}
+    shape = "inputs.damaged_regions must be {filename: [region, ...]}"
+    if not isinstance(value, dict):
+        raise ValueError(shape)
+    marks: dict[str, list[str]] = {}
+    entries = cast("dict[object, object]", value)
+    for name, regions in entries.items():
+        if not isinstance(regions, (list, tuple)):
+            raise ValueError(shape)
+        listed = [str(entry) for entry in cast("list[object]", regions)]
+        sides = [split_side(entry)[1] for entry in listed]
+        one_sided = any(side is not None for side in sides)
+        if plane == UNSIDED_PLANE and one_sided:
+            raise ValueError(
+                f"inputs.damaged_regions[{name!r}]: a sagittal section lies "
+                "within one hemisphere, so a region cannot be limited to one "
+                "side"
+            )
+        marks[str(name)] = listed
+    return marks
+
+
 @dataclass
 class JobSpec:
     """One whole ``langslice linear`` run, host-agnostic."""
@@ -328,9 +379,11 @@ class JobSpec:
     #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
     #: ``channel_names`` (one name per page of a host's multi-page snapshot)
     #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
-    #: ``damaged`` supplies notes, not region exclusions. What is supplied
-    #: is a starting point: the agent may change it unless ``frozen`` says
-    #: it may not.
+    #: ``damaged`` supplies notes, not region exclusions;
+    #: ``damaged_regions`` (``{filename: [region, ...]}``,
+    #: :func:`supplied_damaged_regions`) supplies the marked regions
+    #: themselves. What is supplied is a starting point: the agent may
+    #: change it unless ``frozen`` says it may not.
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True
@@ -373,6 +426,8 @@ class JobSpec:
                 )
             supplied_angles(self.inputs.get("angles"))
             supplied_pixel_sizes(self.inputs.get("pixel_size_um"))
+            marks = self.inputs.get("damaged_regions")
+            supplied_damaged_regions(marks, self.plane)
         if not isinstance(self.disabled, (list, tuple)) or not all(
                 isinstance(name, str) for name in self.disabled):
             raise ValueError("disabled must be a list of tool and option names")

@@ -54,7 +54,10 @@ agent.
 
 A damage note does not remove anything from the fits by itself. The agent
 decides which atlas regions are missing and marks them. Marked regions are
-left out of every fit.
+left out of every fit. From the library you can supply the marks yourself
+(`inputs.damaged_regions`, such as `{"M04_s07.tif": ["root:right"]}` for a
+section that holds only one hemisphere) and fix them (`damage` below). A side
+is the section's left or right as it is shown under its placement.
 
 Name sections by filename in every note. "Section 7" is ambiguous: the agent
 knows the sections only by filename.
@@ -79,7 +82,7 @@ spacing from the anatomy and records its estimates in its notes.
 
 ### Fixed values
 
-A section has five properties the agent could change. You can fix any of
+A section has six properties the agent could change. You can fix any of
 them, for every section or for named ones.
 
 | Property | What it is | Fixed at, when you give no value |
@@ -89,6 +92,7 @@ them, for every section or for named ones.
 | `orientation` | Mirroring and quarter turns, together | Not mirrored, not turned |
 | `affine` | The in-plane alignment: rotation, scale, shear and shift | The section as the file shows it |
 | `deformation` | The nonlinear warp on top of the alignment | No warp |
+| `damage` | The damage marks, the atlas regions every fit leaves out | No marks |
 
 For example:
 

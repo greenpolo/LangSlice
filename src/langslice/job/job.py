@@ -50,6 +50,7 @@ from langslice.job.gates import submit_errors
 from langslice.job.host_inputs import (
     apply_host_inputs,
     changed_inputs,
+    check_damaged_regions,
     inputs_changed,
     opening_spec,
 )
@@ -269,6 +270,7 @@ class Job(JobBorderTraces):
             else:
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
+                check_damaged_regions(state, spec, workspace)
                 lists.undo, lists.redo = [], []
             if lists.notice is not None:
                 workspace.progress(f"[job] {lists.notice}")

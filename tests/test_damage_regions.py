@@ -187,3 +187,68 @@ def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, mon
     # A traced fit then reads the trace's exclusions along with the marks.
     held = json_of(state.by_id(ID).border_trace)
     assert held["exclude"] == ["R"]
+
+
+# --- the host's marks -----------------------------------------------------------------
+
+
+def test_a_hosts_damage_regions_are_the_sections_marks(tmp_path: Path):
+    """``inputs.damaged_regions`` writes the section's marks at job start,
+    normalized as ``mark_damage`` stores them; every fit then leaves them out."""
+    from langslice.job.host_inputs import check_damaged_regions
+
+    given = {ID: [" root:Right ", "root:right", "C"]}
+    state, ctx, box = _box(tmp_path, inputs={"damaged_regions": given})
+    record = state.by_id(ID)
+    assert record.damaged_regions == ["root:right", "C"] and record.damaged
+    assert record.damage_note == ""
+    assert exclusions(record) == ((), ("root:right", "C"))
+    check_damaged_regions(state, box.job.spec, ctx)  # the atlas has them
+    # Unfrozen, the agent may change them as any mark.
+    assert damage.mark_damage(box.job, ctx, ID, ["R"]).written
+
+
+def test_a_hosts_damage_regions_are_checked_as_the_agents_are(tmp_path: Path):
+    from langslice.job.host_inputs import check_damaged_regions
+
+    state, ctx, box = _box(tmp_path, inputs={"damaged_regions": {ID: ["nope"]}})
+    with pytest.raises(ValueError, match="damaged_regions"):
+        check_damaged_regions(state, box.job.spec, ctx)
+    with pytest.raises(ValueError, match="Unknown side"):
+        JobSpec(image_folder=str(tmp_path), inputs={"damaged_regions": {ID: ["R:up"]}})
+    with pytest.raises(ValueError, match="sagittal"):
+        JobSpec(image_folder=str(tmp_path), plane="sagittal",
+                inputs={"damaged_regions": {ID: ["root:left"]}})
+    with pytest.raises(ValueError, match="damaged_regions must be"):
+        JobSpec(image_folder=str(tmp_path), inputs={"damaged_regions": {ID: "R"}})
+
+
+def test_frozen_damage_refuses_a_change_of_the_marks(tmp_path: Path):
+    """A frozen ``damage`` keeps the host's marks (none when it supplied none):
+    ``mark_damage`` refuses other regions with FROZEN and writes nothing."""
+    inputs = {"damaged_regions": {ID: ["root:right"]}}
+    folder = tmp_path / "given"
+    folder.mkdir()
+    state, ctx, box = _box(folder, inputs=inputs)
+    box.job.spec.frozen = {ID: ["damage"]}
+    with pytest.raises(Refused) as refused:
+        damage.mark_damage(box.job, ctx, ID, ["R"])
+    assert refused.value.code == "FROZEN"
+    assert state.by_id(ID).damaged_regions == ["root:right"]
+    assert box.job.undo_stack == []
+    # The same marks again change nothing, so they are not refused.
+    assert not damage.mark_damage(box.job, ctx, ID, ["root:right"]).written
+    # Frozen with none supplied: the section keeps none.
+    empty = tmp_path / "none"
+    empty.mkdir()
+    state, ctx, box = _box(empty)
+    box.job.spec.frozen = {ID: ["damage"]}
+    with pytest.raises(Refused) as refused:
+        damage.mark_damage(box.job, ctx, ID, ["R"])
+    assert refused.value.code == "FROZEN" and state.by_id(ID).damaged_regions == []
+
+
+def test_damage_frozen_on_every_section_takes_mark_damage_off(tmp_path: Path):
+    spec = JobSpec(image_folder=str(tmp_path), frozen={"*": ["damage"]})
+    assert spec.off("mark_damage")
+    assert not JobSpec(image_folder=str(tmp_path), frozen={ID: ["damage"]}).off("mark_damage")
