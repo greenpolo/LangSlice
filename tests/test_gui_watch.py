@@ -6,13 +6,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.hosts.gui.watch import JobList, JobWatcher
+from langslice.hosts.gui.render import render_key
+from langslice.hosts.gui.watch import IDLE_S, JobList, JobWatcher
 from langslice.job.state_file import write_checkpoint, write_json_atomic
 
 
@@ -282,3 +284,85 @@ def test_a_real_finished_job_folder(tmp_path: Path) -> None:
     snap = _snap(watcher)
     assert len([i for i in snap["items"] if i["kind"] == "picture"]) == len(lines)
     assert snap["sections"]
+
+
+def _start(name: str, call: str, *targets: str) -> dict:
+    return {"kind": "tool_start", "name": name, "execution_id": call, "door": "cli",
+            "target_ids": list(targets), "args": {}, "at": "2026-10-28T10:00:00+00:00"}
+
+
+def test_the_focus_follows_the_latest_followed_call(tmp_path: Path) -> None:
+    folder = _job(tmp_path)
+    _state(folder, [2.1, None, 2.4])
+    events = folder / "logs" / "events.jsonl"
+    watcher = JobWatcher(folder)
+    # Before any followed call: every section, in stack order (the opening).
+    assert _snap(watcher)["focus"] == {"sections": ["s000.png", "s001.png", "s002.png"],
+                                       "tool": None, "call": None, "at": None}
+    _append(events, _start("look", "c1", "s001.png"))
+    assert _snap(watcher)["focus"] == {"sections": ["s001.png"], "tool": "look", "call": "c1",
+                                       "at": "2026-10-28T10:00:00+00:00"}
+    # A read that is not followed, and a followed call with no targets, keep it.
+    _append(events, _start("status", "c2", "s000.png"), _start("note", "c3"))
+    assert _snap(watcher)["focus"]["sections"] == ["s001.png"]
+    # A write: its targets in order, without repeats.
+    _append(events, _start("position_sections", "c4", "s002.png", "s000.png", "s002.png"))
+    focus = _snap(watcher)["focus"]
+    assert (focus["sections"], focus["tool"], focus["call"]) == (
+        ["s002.png", "s000.png"], "position_sections", "c4")
+    # A plugin's tool, which the tool table does not list, counts as a write.
+    _append(events, _start("stalign_lddmm", "c5", "s001.png"), _start("zoom", "c6", "s000.png"))
+    assert _snap(watcher)["focus"]["sections"] == ["s000.png"]
+
+
+def test_idle_after_ten_minutes_without_a_change(tmp_path: Path) -> None:
+    folder = _job(tmp_path)
+    _state(folder, [2.1])
+    now = time.time()
+    hours = JobWatcher(folder, clock=lambda: now + 3 * 3600)
+    status = _snap(hours)["status"]
+    assert status["word"] == "Idle" and status["sentence"].startswith("No activity for 3 h. ")
+    assert _snap(JobWatcher(folder, clock=lambda: now + 120))["status"]["word"] == "Waiting"
+    assert _snap(JobWatcher(folder, clock=lambda: now + IDLE_S + 1))["status"]["sentence"] \
+        .startswith("No activity for 10 min.")
+    days = JobWatcher(folder, clock=lambda: now + 4 * 86400)
+    assert _snap(days)["status"]["sentence"].startswith("No activity for 4 days.")
+    # A call still running is Running, however long ago it started.
+    _append(folder / "logs" / "events.jsonl", _start("fireants_syn", "f1", "s000.png"))
+    assert _snap(JobWatcher(folder, clock=lambda: now + 3 * 3600))["status"]["word"] == "Running"
+    _state(folder, [2.1], submitted=True)
+    assert _snap(JobWatcher(folder, clock=lambda: now + 3 * 3600))["status"]["word"] == "Submitted"
+
+
+def test_rows_carry_their_render_key_and_a_numeric_position(tmp_path: Path) -> None:
+    folder = _job(tmp_path)
+    _state(folder, [2.1, None])
+    watcher = JobWatcher(folder)
+    rows = _snap(watcher)["sections"]
+    state = watcher.current_stack()
+    assert state is not None
+    assert [(r["id"], r["position_mm"], r["render_key"]) for r in rows] == [
+        ("s000.png", 2.1, render_key(state, "s000.png")),
+        ("s001.png", None, render_key(state, "s001.png"))]
+    # The raw fallback: a position that is no number is null, and no key.
+    write_json_atomic(str(folder / "state.json"), {
+        "format_version": 99, "slices": [{"id": "a.png", "index_corrected": 0,
+                                          "position_mm": "4.5"}]})
+    raw = _snap(JobWatcher(folder))
+    assert [(r["position_mm"], r["render_key"]) for r in raw["sections"]] == [(None, None)]
+    assert JobWatcher(folder).current_stack() is None
+
+
+def test_a_job_is_named_by_its_images_folder_with_the_path_beside_it(tmp_path: Path) -> None:
+    folder = _job(tmp_path)  # <tmp>/images/langslice
+    elsewhere = tmp_path / "jobs" / "brain7"
+    elsewhere.mkdir(parents=True)
+    write_json_atomic(str(elsewhere / "job.json"), {
+        "format_version": 1, "image_folder": str(tmp_path / "scans"),
+        "spec": {"atlas": "allen_mouse_25um"}})
+    listing = JobList([folder, elsewhere, tmp_path / "later" / "langslice"],
+                      recent=None).listing()
+    assert [(j["name"], j["path"]) for j in listing] == [
+        ("images", str(tmp_path / "images")), ("brain7", str(tmp_path / "scans")),
+        ("later", str(tmp_path / "later"))]
+    assert all(j["changed_at"] == j["changed"] for j in listing)
