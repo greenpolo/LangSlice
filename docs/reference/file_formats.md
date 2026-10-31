@@ -441,7 +441,7 @@ session's slices, sorted and joined by newlines:
 
 ```text
 ~/.langslice/abba/<project key>/
-  section_0001.tif ...  the calibrated 25 µm snapshots, the job's images (one TIFF page per channel)
+  section_0001.tif ...  the calibrated snapshots, the job's images (one TIFF page per channel)
   langslice/            the job folder
   abba_project.json     atlas, slice_names (all the session's slices at creation), sections (snapshot to slice name), created_at, keys (sessions that continued this folder)
   abba_sections.json    snapshot filename to ABBA slice name, the job's sections
@@ -466,7 +466,7 @@ once by the worker's `abba.prepare` before any checkpoint:
 | `abba.existing_warp` | the snapshots whose slices carried a spline or BigWarp step not LangSlice's |
 | `abba.angles_deg` | ABBA's stack-wide cutting angles, `pitch_deg` and `yaw_deg` |
 | `abba.z_offset_mm` | ABBA's atlas offset along the slicing axis |
-| `abba.pixel_size_um` | the snapshots' pixel size |
+| `abba.pixel_size_um` | the snapshots' pixel size, one for the job: ABBA's image frame at 3072 pixels on its long side, in 0.01 µm steps, or the sections' finest source pixel when that is coarser |
 | `abba.thickness_um`, `abba.interval_um` | the medians of ABBA's slice thicknesses and position gaps (0: none) |
 | `abba.prepared_at` | when it was prepared (UTC, ISO 8601) |
 

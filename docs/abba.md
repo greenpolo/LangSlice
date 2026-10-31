@@ -35,9 +35,13 @@ Sign in to an AI provider, if you need one, in the LangSlice window's
 1. In ABBA, import your sections and select the ones to register. With none
    selected, every section is used.
 2. Choose **Register ‣ LangSlice…** (also **Plugins ‣ LangSlice ‣ Open
-   LangSlice…**). The first time, the connector exports one 25 µm snapshot per
+   LangSlice…**). The first time, the connector exports one snapshot per
    section and prepares the job with ABBA's positions, cutting angles and
-   pixel size. ABBA itself does not change.
+   pixel size. ABBA itself does not change. The snapshots have the detail
+   LangSlice works at when you start a job from the image files: each shows
+   ABBA's image frame at 3072 pixels on its long side (about 4 µm per pixel
+   for the Allen mouse atlas), or at your images' own pixel size when theirs
+   is coarser.
 3. The LangSlice window opens on the **Prompt generator**. Its **From ABBA**
    block shows the atlas, plane, pixel size and the snapshot file for each
    ABBA slice; these are fixed by ABBA. Thickness and interval are filled in
@@ -109,7 +113,8 @@ applied, and what it refused with ABBA's own reason.
 
 - Coronal sessions of ABBA's Allen Mouse V3 or V3p1 atlas only.
 - One cutting angle for the whole stack, as in ABBA.
-- The agent works on 25 µm snapshots, not on your full-resolution images.
+- The agent works on the snapshots, at most 3072 pixels across, not on your
+  full-resolution images; a zoom cannot show more detail than a snapshot has.
 
 ## Troubleshooting
 

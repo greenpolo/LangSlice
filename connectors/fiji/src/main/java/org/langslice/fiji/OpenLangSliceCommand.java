@@ -23,8 +23,6 @@ import javax.swing.*;
 public final class OpenLangSliceCommand implements Command {
     /** The worker protocol this connector speaks (setup.status, abba.prepare, abba.follow). */
     static final int PROTOCOL_VERSION = 3;
-    /** Snapshot pixel size in µm: the atlas's own 25 µm grid. */
-    static final double SNAPSHOT_PIXEL_UM = 25.0;
     /** A window process that ends sooner than this did not open. */
     static final Duration WINDOW_START = Duration.ofSeconds(3);
 
@@ -164,8 +162,9 @@ public final class OpenLangSliceCommand implements Command {
             channelNames.add(name == null ? "" : name);
         }
         int[] protocol = ProjectJob.protocolDefaults(selection, hadJob);
-        FijiLog.line("LangSlice: exporting " + selection.size() + " calibrated snapshots to " + folder);
-        JsonObject request = host.export(selection, pages, channelNames, SNAPSHOT_PIXEL_UM, protocol[1], protocol[0]);
+        double pixelUm = host.snapshotPixelUm(selection, pages);
+        FijiLog.line("LangSlice: exporting " + selection.size() + " calibrated snapshots at " + pixelUm + " µm per pixel to " + folder);
+        JsonObject request = host.export(selection, pages, channelNames, pixelUm, protocol[1], protocol[0]);
         try (WorkerClient worker = new WorkerClient(prefix)) {
             worker.request("abba.prepare", request, null, Duration.ofMinutes(10));
         }

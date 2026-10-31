@@ -274,6 +274,13 @@ public final class ConnectorSmokeTest {
         require(AbbaHostSession.exportedNames(Arrays.asList(0, 2), Arrays.asList("DAPI", "", "DAPI")).toString().equals("[\"DAPI\",\"DAPI (2)\"]")
                 && AbbaHostSession.exportedNames(Arrays.asList(0, 1, 2), Arrays.asList("x", "x", "")).toString().equals("[\"x\",\"x (2)\",\"ch3\"]"),
                 "channel_names follow the exported pages, never empty or repeated");
+        // The snapshot pixel size: the frame at 3072 px on its long side, in 0.01 µm steps, never finer than the sources.
+        require(AbbaHostSession.snapshotPixelUm(11.4, 0.00075488) == 3.72, "A fine source: 11.4 mm at 3072 px is 3.72 µm");
+        require(AbbaHostSession.snapshotPixelUm(11.4, 0.025) == 25.0, "A 25 µm source stays 25 µm");
+        require(AbbaHostSession.snapshotPixelUm(6.0, Double.POSITIVE_INFINITY) == 1.96, "No source pixel: the frame alone");
+        for (double longMm : new double[]{7.9, 11.4, 13.2, 9.333})
+            require(2 * Math.ceil(longMm / 2 / (AbbaHostSession.snapshotPixelUm(longMm, 0) / 1000)) <= AbbaHostSession.WORKING_EDGE,
+                    "A snapshot is never longer than the working copy: " + longMm);
         delete(folder);
     }
 
