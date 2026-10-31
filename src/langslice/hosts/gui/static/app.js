@@ -70,7 +70,52 @@ const Ui = (() => {
   function mm(value, digits = 2) {
     return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '';
   }
-  return { el, store, drag, ago, middle, mm };
+  // The pictures the server draws for the viewer load through one queue. A job draws one
+  // picture at a time and the browser keeps six connections to the server, so at most three
+  // load at once (the polls keep theirs), the lowest rank first: the focus panels, then the
+  // strip. `add(rank, start)` queues `start()` and returns `done`, which the caller calls when
+  // that load ends (or to drop it while it waits). Ranks are read when a place frees, after
+  // the current task, so a burst of requests is ordered by rank rather than by arrival.
+  const loads = (() => {
+    const MAX = 3;
+    let waiting = [];
+    const running = new Set();
+    let pumping = false;
+    function pump() {
+      pumping = false;
+      while (running.size < MAX && waiting.length) {
+        let best = 0;
+        for (let i = 1; i < waiting.length; i++) if (waiting[i].rank() < waiting[best].rank()) best = i;
+        const [item] = waiting.splice(best, 1);
+        running.add(item);
+        item.start();
+      }
+    }
+    function later() { if (!pumping) { pumping = true; setTimeout(pump, 0); } }
+    function add(rank, start) {
+      const item = { rank, start };
+      waiting.push(item);
+      later();
+      return () => {
+        if (running.delete(item)) later();
+        else waiting = waiting.filter(other => other !== item);
+      };
+    }
+    // Why a picture did not load: the answer's status and the server's words (409 and 503
+    // carry `{"error"}`, a 404 nothing).
+    async function explain(url) {
+      try {
+        const r = await fetch(url, { cache: 'no-store' });
+        if (r.ok) { await r.arrayBuffer(); return { ok: true, status: r.status, error: '' }; }
+        const answer = await r.json().catch(() => ({}));
+        return { ok: false, status: r.status, error: String(answer.error || '') };
+      } catch {
+        return { ok: false, status: 0, error: '' };
+      }
+    }
+    return { add, explain };
+  })();
+  return { el, store, drag, ago, middle, mm, loads };
 })();
 
 (() => {

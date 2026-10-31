@@ -85,9 +85,8 @@ const Strip = (() => {
     job = index;
     info = null; reason = ''; plane = null; rows = []; all = []; slots = new Map();
     aspect = null; aspectAsked = ''; layout = null; view = { zoom: 1, center: null }; edge = 64; edgeChosen = false;
+    releaseAll();
     for (const layer of Object.values(layers)) layer.replaceChildren();
-    queue = [];
-    flight.clear();
     marks = new Map();
     atlas = [];
     hideTip();
@@ -108,7 +107,7 @@ const Strip = (() => {
     rows = value || [];
     const ids = new Set(rows.map(r => r.id));
     for (const [id, mark] of marks) {
-      if (!ids.has(id)) { for (const part of mark.parts()) { finish(part); part.remove(); } marks.delete(id); }
+      if (!ids.has(id)) { for (const part of mark.parts()) { release(part); part.remove(); } marks.delete(id); }
     }
     for (const row of rows) {
       let mark = marks.get(row.id);
@@ -158,54 +157,52 @@ const Strip = (() => {
   }
 
   function buildAtlas() {
-    for (const entry of atlas) if (entry.next) finish(entry.next);
+    for (const entry of atlas) release(entry.next);
     layers.atlas.replaceChildren();
     atlas = (info?.atlas || []).map(entry => ({ k: entry.k, position: entry.position_mm, img: null, next: null, href: '' }));
   }
 
   // --- pictures -------------------------------------------------------------------------------
-  // The strip's pictures load two at a time, the focus's sections first, so the focus
-  // panels' pictures never wait behind sixty thumbnails.
-  const LOADING = 2;
-  let queue = [];
-  const flight = new Set();
-  function enqueue(image, href, rank) { queue.push({ image, href, rank }); pump(); }
-  function pump() {
-    while (flight.size < LOADING && queue.length) {
-      let best = 0;
-      for (let i = 1; i < queue.length; i++) if (queue[i].rank() < queue[best].rank()) best = i;
-      const [item] = queue.splice(best, 1);
-      if (!item.image.isConnected) continue;  // replaced before its turn
-      flight.add(item.image);
-      item.image.addEventListener('load', () => finish(item.image), { once: true });
-      item.image.addEventListener('error', () => finish(item.image), { once: true });
-      item.image.setAttribute('href', item.href);
-    }
-  }
-  function finish(image) { if (flight.delete(image)) pump(); }
-  // A new picture fades in over the one it replaces, which goes when the new one has loaded.
+  // The strip's pictures load through the window's queue (Ui.loads) after the focus panels':
+  // the focus's sections first, then the atlas row, then the other sections, and only those
+  // in view. A new picture fades in over the one it replaces, which goes when the new one has
+  // loaded; one the server is still drawing (503) is asked for again after a pause.
+  const release = image => image?.release?.();
   function picture(holder, layer, href, cls, rank, id) {
     if (holder.href === href) return;
     holder.href = href;
-    if (holder.next) { finish(holder.next); holder.next.remove(); holder.next = null; }
+    if (holder.next) { release(holder.next); holder.next.remove(); holder.next = null; }
     if (!href) { holder.img?.remove(); holder.img = null; return; }
     const image = svgEl('image', { class: cls + ' entering', preserveAspectRatio: 'xMidYMid meet' });
     if (id) image.dataset.id = id;
     image.addEventListener('load', () => {
+      release(image);
       if (holder.next !== image) return;
       holder.img?.remove();
       holder.img = image;
       holder.next = null;
       requestAnimationFrame(() => image.classList.remove('entering'));
     }, { once: true });
-    image.addEventListener('error', () => {
-      if (holder.next === image) holder.next = null;
+    image.addEventListener('error', async () => {
+      const answer = await Ui.loads.explain(href);
+      release(image);
+      if (holder.next !== image) return;
+      holder.next = null;
       image.remove();
+      holder.tries = holder.tried === href ? holder.tries + 1 : 1;
+      holder.tried = href;
+      if ((answer.ok || answer.status === 503) && holder.tries < 6) {
+        setTimeout(() => { if (holder.href === href) { holder.href = ''; place(); } }, answer.ok ? 0 : 3000);
+      }
     }, { once: true });
     holder.next = image;
     layer.append(image);
     if (holder.box) set(image, holder.box);
-    enqueue(image, href, rank);
+    image.release = Ui.loads.add(rank, () => image.setAttribute('href', href));
+  }
+  function releaseAll() {
+    for (const mark of marks.values()) release(mark.thumb.next);
+    for (const entry of atlas) release(entry.next);
   }
   // A section's thumbnail is asked for again only when its render key changes.
   function thumbHref(row) {
@@ -226,11 +223,13 @@ const Strip = (() => {
     aspectAsked = href;
     const probe = new Image();
     probe.onload = () => {
+      probe.release();
       if (aspectAsked !== href || !probe.naturalHeight) return;
       aspect = Math.min(2.4, Math.max(0.45, probe.naturalWidth / probe.naturalHeight));
       relayout();
     };
-    probe.src = href;
+    probe.onerror = () => probe.release();
+    probe.release = Ui.loads.add(() => 0.5, () => { probe.src = href; });
   }
 
   // --- layout ---------------------------------------------------------------------------------
@@ -332,7 +331,8 @@ const Strip = (() => {
     const top = TOP + spare / 2;
     const yAxis = top + thA + (L.withAtlas ? RULER : RULER - 4);
     const rowY = r => yAxis + GAP + th / 2 + r * rowStep;
-    const wanted = Math.min(384, Math.max(64, Math.ceil((Math.max(tw, th) * dpr() * 1.25) / 64) * 64));
+    // Small pictures: 128 px, 256 once the strip draws them large.
+    const wanted = Math.max(tw, th) * dpr() > 150 ? 256 : 128;
     if (!edgeChosen) { edge = wanted; edgeChosen = true; }
     else if (wanted > edge) scheduleRefresh(wanted);
     set(clipRect, { x: L.axisLeft - tw / 2 - 1, y: 0, width: L.axisRight - L.axisLeft + tw + 2, height: L.H });
@@ -341,7 +341,7 @@ const Strip = (() => {
       const x = toX(entry.position);
       entry.box = { x: x - tw / 2, y: top, width: tw, height: thA };
       const visible = x > L.axisLeft - tw && x < L.axisRight + tw;
-      if (visible) picture(entry, layers.atlas, atlasHref(entry), 'atlas-thumb', () => 1);
+      if (visible) picture(entry, layers.atlas, atlasHref(entry), 'atlas-thumb', () => 2);
       for (const image of [entry.img, entry.next]) if (image) { set(image, entry.box); image.style.display = visible ? '' : 'none'; }
     }
     // The axis, its ruler and its ends.
@@ -370,7 +370,8 @@ const Strip = (() => {
       }
       mark.thumb.box = { x: cx - tw / 2, y: cy - th / 2, width: tw, height: th };
       const layer = placed(row) ? layers.thumbs : layers.loose;
-      picture(mark.thumb, layer, thumbHref(row), 'thumb', () => (all.includes(id) ? 0 : 2), id);
+      const inView = !placed(row) || (cx > L.axisLeft - tw && cx < L.axisRight + tw);
+      if (inView) picture(mark.thumb, layer, thumbHref(row), 'thumb', () => (all.includes(id) ? 1 : 3), id);
       for (const image of [mark.thumb.img, mark.thumb.next]) {
         if (!image) continue;
         if (image.parentNode !== layer) layer.append(image);

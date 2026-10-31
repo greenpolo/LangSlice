@@ -385,8 +385,9 @@ const AgentLog = (() => {
     const url = large(edge);
     box.large = url;
     const sharper = new Image();
-    sharper.onload = () => { if (box.large === url && $('lightbox').open) image.src = url; };
-    sharper.src = url;
+    sharper.onload = () => { sharper.release(); if (box.large === url && $('lightbox').open) image.src = url; };
+    sharper.onerror = () => sharper.release();
+    sharper.release = Ui.loads.add(() => 0, () => { sharper.src = url; });
   }
   function showBox() {
     const picture = box.list?.[box.index];

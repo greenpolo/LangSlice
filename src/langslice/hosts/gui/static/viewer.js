@@ -174,9 +174,10 @@ const Viewer = (() => {
     zoomable(p);
     return p;
   }
-  // A load no longer wanted is stopped, freeing its connection.
+  // A load no longer wanted is stopped, freeing its place in the queue and its connection.
   function drop(img) {
     img.onload = img.onerror = null;
+    img.release?.();
     img.removeAttribute('src');
   }
   function clearPanel(p) {
@@ -241,8 +242,13 @@ const Viewer = (() => {
     const url = renderUrl(p.id, edge);
     if (url === p.url) return;
     p.url = url;
+    p.tries = 0;
     load(p, url);
   }
+  // A panel's picture loads through the shared queue, ahead of the strip's (in panel order).
+  // The old picture stays, tagged `updating`, until the new one has loaded. A picture that
+  // does not come says why: the server's refusal (409), or, while the server is still
+  // drawing it (503), a short wait and another try.
   function load(p, url) {
     if (p.pending) drop(p.pending);
     const img = new Image();
@@ -253,6 +259,7 @@ const Viewer = (() => {
     p.updating.hidden = !p.img;
     if (!p.img) { p.message.textContent = 'Drawing the section…'; p.message.hidden = false; }
     img.onload = () => {
+      img.release();
       if (p.pending !== img) return;
       p.pending = null;
       p.updating.hidden = p.message.hidden = true;
@@ -266,32 +273,28 @@ const Viewer = (() => {
       if (old) setTimeout(() => old.remove(), 200);
     };
     img.onerror = async () => {
-      if (p.pending !== img) return;
+      if (p.pending !== img) { img.release(); return; }
+      const answer = await Ui.loads.explain(url);
+      img.release();
+      if (p.pending !== img || p.url !== url) return;
       p.pending = null;
-      const text = await failure(url);
-      if (p.url !== url) return;
+      p.tries += 1;
+      if ((answer.ok || answer.status === 503) && p.tries < 6) {
+        // Drawn meanwhile, or still being drawn: try again (a 503 after a pause).
+        if (!p.img) p.message.textContent = 'Still drawing the section…';
+        setTimeout(() => { if (p.url === url && !p.pending) load(p, url); }, answer.ok ? 0 : 3000);
+        return;
+      }
       p.updating.hidden = true;
       p.img?.remove();
       p.img = null;
       p.open.disabled = true;
-      p.message.textContent = text;
+      p.message.textContent = answer.error
+        || (answer.status === 404 ? 'No picture of this section is available from this LangSlice.'
+          : answer.status === 0 ? 'LangSlice is not reachable.' : 'The picture could not be drawn.');
       p.message.hidden = false;
     };
-    img.src = url;
-  }
-  // Why a picture did not come: the server's refusal, or what the answer means.
-  async function failure(url) {
-    try {
-      const r = await fetch(url, { cache: 'no-store' });
-      if (r.ok) return 'The picture could not be shown.';
-      const answer = await r.json().catch(() => ({}));
-      if (answer.error) return answer.error;
-      if (r.status === 404) return 'No picture of this section is available from this LangSlice.';
-      if (r.status === 503) return 'Drawing this section took too long; it is drawn again when the section changes.';
-      return 'The picture could not be drawn.';
-    } catch {
-      return 'LangSlice is not reachable.';
-    }
+    img.release = Ui.loads.add(() => p.slot / 10, () => { img.src = url; });
   }
   // Wheel zooms about the pointer, dragging pans, a double-click resets: the picture is
   // transformed in the page; nothing is drawn again while zooming.
