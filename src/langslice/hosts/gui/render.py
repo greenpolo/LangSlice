@@ -38,7 +38,6 @@ from typing import TypeVar, cast
 
 from PIL import Image
 
-from langslice.core.atlas.images import default_image
 from langslice.core.fits.deformation import RecordStore
 from langslice.core.pictures.captions import view_angles_label
 from langslice.core.pictures.jpeg import encode_jpeg
@@ -185,8 +184,6 @@ class _Opened:
     axis: Axis
     step_mm: float
     positions_mm: tuple[float, ...]
-    #: The atlas image the thumbnails show (its default, the Nissl).
-    atlas_image: str
     #: ``job.json``'s size and time when it was read.
     stamp: tuple[int, int] | None
 
@@ -621,15 +618,13 @@ def _open_job(
         min_mm, max_mm = workspace.position_range
         low, high = workspace.axis_ends
         step_mm = strip_step(min_mm, max_mm, workspace.brain_scale)
-        atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
-        image = default_image(atlas)
     except Exception as exc:  # noqa: BLE001 - an atlas not downloaded or unreadable
         raise RenderError(
             ATLAS_FAILED.format(atlas=spec.atlas, reason=exc)
         ) from exc
     axis = Axis(low, high, round(min_mm, 4), round(max_mm, 4))
     positions = atlas_positions(min_mm, max_mm, step_mm)
-    return _Opened(workspace, store, axis, step_mm, positions, image, stamp)
+    return _Opened(workspace, store, axis, step_mm, positions, stamp)
 
 
 def _drawn_safely(draw: Callable[[], Image.Image], key: _Key) -> Image.Image:
@@ -655,11 +650,10 @@ def _overlay_picture(
 def _atlas_picture(
     opened: _Opened, state: Stack, position_mm: float, edge: int
 ) -> Image.Image:
+    # The template, look's own atlas default: a borrowed Nissl would add
+    # over a gigabyte to the window for thumbnails a few dozen pixels tall.
     request = LookRequest(
-        mode="atlas",
-        positions_mm=(position_mm,),
-        atlas_layers=(opened.atlas_image,),
-        long_edge=edge,
+        mode="atlas", positions_mm=(position_mm,), long_edge=edge
     )
     return _content(look(opened.workspace, state, request)[0])
 
