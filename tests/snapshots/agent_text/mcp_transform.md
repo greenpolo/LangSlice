@@ -20,8 +20,7 @@ Draw pictures of sections and the atlas. Writes nothing.
         image it was drawn with; zoom takes the number.
 
         Use positioning mode to compare sections with candidate atlas planes
-        along the slicing axis. Use overlays to assess in-plane alignment and
-        deformation against internal anatomy.
+        along the slicing axis. Use overlays to assess in-plane alignment against internal anatomy.
 
         Args:
             mode: "section": each section alone, as oriented, the whole
@@ -101,14 +100,12 @@ Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
         has changed since (the reply then says `stale`). The new picture has its
         own number, so it can be zoomed again. A dashed green grid on it is
         labelled with the pixel numbers of the whole picture the zoom was cut
-        from, and those numbers are the coordinates of a further zoom's box and
-        of a set_landmarks endpoint, on the zoom or on the whole picture alike.
+        from, and those numbers are the coordinates of a further zoom's box.
 
-        After a linear or nonlinear fit, use region on its overlay to inspect
+        After a linear fit, use region on its overlay to inspect
         a particular structure closely, with only that region's border shown.
         This can reveal internal mismatches hidden at whole-section scale and
-        help you decide whether to adjust the linear alignment, refine that
-        region nonlinearly, or revisit the section's position.
+        help you decide whether to adjust the linear alignment.
 
         Earlier pictures remain available by number. Reopen or zoom a saved
         overlay to compare an intermediate registration with the current result;
@@ -385,15 +382,13 @@ Mark the atlas regions a section has lost, so that every fit leaves them out.
         over other anatomy, such as a whole hemisphere, the olfactory bulb or the
         cortex: the fits leave them out, and the anatomy around them fits
         cleanly. Tissue that is intact but shifted near its place is not damage;
-        left unmarked, the warp fits it. Tissue shifted further is not
-        damage either: move it with landmarks. A marked region is never fitted, so
+        left unmarked, the warp fits it. A marked region is never fitted, so
         intact tissue inside a mark goes unfitted too. When most of a large
         region is missing, marking the whole region keeps the anatomy around it
         safe. Small tears, bubbles, stains, low contrast and folds within an
         intact outline are not damage and are not marked. A section is damaged
         exactly when it has marked regions. The marked
-        regions are left out of elastix_affine, fireants_syn and the image model's
-        trace automatically, and they move with the registration because they
+        regions are left out of elastix_affine automatically, and they move with the registration because they
         are named by atlas region. One undoable write.
 
         Args:
@@ -482,7 +477,7 @@ Fit sections' in-plane affine transforms automatically with elastix.
         small amounts and does not turn it over. The section's marked damage
         regions are left out of the atlas automatically. A section that holds a
         deformation is refused with HAS_DEFORMATION: undo the deformation
-        first, or fit a warp on it. Each fit is written as the
+        first. Each fit is written as the
         section's transform, one undoable write for the call.
 
         Use restrict_to when a few clearly recognizable, surviving regions

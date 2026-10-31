@@ -1631,9 +1631,11 @@ def test_a_plugin_sentence_naming_a_tool_of_a_task_that_is_off_is_dropped(make, 
         spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=tasks, disabled=disabled)
         text = declaration("tasked", _variant(spec)).doc
         assert ("It also fits transforms." in text) is named, (tasks, disabled, text)
-    # the native declarations keep their pinned wording whatever the tasks
-    spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=["position"])
-    assert "elastix_affine" in declaration("mark_damage", _variant(spec)).doc
+    # the native declarations render by the same tools
+    for tasks, named in ((["position", "transform"], True), (["position"], False)):
+        spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=tasks)
+        doc = declaration("mark_damage", _variant(spec)).doc
+        assert ("elastix_affine" in doc) is named, (tasks, doc)
 
 
 def test_atlas_and_plane_patterns_are_checked_and_recorded(make, images: Path):

@@ -77,8 +77,8 @@ is dropped. The provenance records the two fields.
 
 A plugin's description is also rendered by the tools the job's tasks leave out: a
 sentence written `[[?elastix_affine ...]]` in a plugin's stub stands only where the
-Linear task is on and `elastix_affine` is not disabled or frozen away. (The native
-tools' texts keep naming a tool of a task that is off, as their text snapshot pins.)
+Linear task is on and `elastix_affine` is not disabled or frozen away. The native
+tools' texts render the same way.
 
 The checks run when the factory is called: a name that clashes (with a native
 tool, another plugin tool, or `script`, the name a script's writes are

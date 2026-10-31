@@ -271,7 +271,7 @@ FITS_REFINE = (
     "not correct a large offset."
 )
 INSPECT_OVERLAY = (
-    "- After each automatic fit or manual adjustment, inspect the returned "
+    "- After each {fit}manual adjustment, inspect the returned "
     "overlay against surviving internal anatomy. Refine each slice's "
     "alignment, damaged slices included, until no further improvement is "
     "possible with the available transforms. Keep changes only if they "
@@ -581,7 +581,8 @@ def _method(spec: JobSpec, names: Collection[str]) -> list[str]:
     if spec.has("transform") and fits:
         method.append(FITS_REFINE)
     if spec.has("transform") and not spec.off("interactive_transform"):
-        method.append(INSPECT_OVERLAY)
+        fit = "automatic fit or " if fits else ""
+        method.append(INSPECT_OVERLAY.format(fit=fit))
     if spec.has("nonlinear"):
         method += _deformation_method(names)
     if "elastix_affine" in names or "fireants_syn" in names:
