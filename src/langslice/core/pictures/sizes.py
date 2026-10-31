@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 #: is each tile of the opening strips (every section, every atlas section
 #: beneath it or in the atlas reference;
 #: :mod:`langslice.core.pictures.opening`); *later* is each picture a tool
-#: returns (each panel of a multi-panel picture). "auto" opens at 256 and lets
+#: returns (each panel of a multi-panel picture). "auto" opens at 512 and lets
 #: the agent pass ``resolution`` per call (:data:`MIN_RESOLUTION` up to the
-#: driver model's own largest image, which the door passes in), 512 when it
+#: driver model's own largest image, which the door passes in), 1024 when it
 #: does not. The only other bound is the source: nothing is upsampled past
 #: the pixels it is drawn from (a section's working copy, the atlas plane at
 #: its own voxel size), so a small snapshot stays small. Never a working frame
@@ -28,7 +28,7 @@ PICTURE_EDGES: dict[str, tuple[int, int]] = {
     "low": (256, 512),
     "medium": (384, 768),
     "high": (512, 1024),
-    "auto": (256, 512),
+    "auto": (512, 1024),
 }
 #: The level that lets the agent choose each picture's size.
 AUTO_RESOLUTION = "auto"

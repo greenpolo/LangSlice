@@ -154,7 +154,8 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     look = tools["look"]
     assert "resolution" in inspect.signature(look).parameters
     plain = look("section", sections=["s0.tif"])
-    assert _widths(plain) == [512] and "resolution_note" not in plain
+    default = PICTURE_EDGES["auto"][1]
+    assert _widths(plain) == [default] and "resolution_note" not in plain
     chosen = look("section", sections=["s0.tif"], resolution=1200)
     assert _widths(chosen) == [1200] and "resolution_note" not in chosen
     # The cap is the driver model's largest image: the
@@ -167,7 +168,7 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     refused = look("section", sections=["s0.tif"], resolution="large")
     assert refused["error"] == "BAD_ARGS"
     # A change tool's picture is the level's later size: it takes no resolution.
-    assert _widths(tools["interactive_transform"]([_entry()])) == [512]
+    assert _widths(tools["interactive_transform"]([_entry()])) == [default]
     # The cap is the driver model's own: Claude's for the MCP host.
     claude = build_tools(state, ctx, spec, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
     assert claude.max_view_edge == CLAUDE_MAX_VIEW_EDGE == 2000

@@ -54,10 +54,13 @@ The 3 sections of the stack follow in 1 strip, in their current order, left to r
 Strip 1 of 1: s0.png, s1.png, s2.png
 - <ROOT>/langslice/views/000001_opening/view.jpg
 
-Atlas reference strip: the atlas at 6 positions, every 0.05 mm from 0.00 to 0.25 mm, at the stack's cutting angles, in 1 strip, each atlas section labelled 'atlas <position> mm' above it.
+Atlas reference strips: the atlas at 6 positions, every 0.05 mm from 0.00 to 0.25 mm, at the stack's cutting angles, in 2 strips, each atlas section labelled 'atlas <position> mm' above it.
 
-Atlas strip 1 of 1: 0.00 to 0.25 mm
+Atlas strip 1 of 2: 0.00 to 0.10 mm
 - <ROOT>/langslice/views/000002_opening/view.jpg
+
+Atlas strip 2 of 2: 0.15 to 0.25 mm
+- <ROOT>/langslice/views/000003_opening/view.jpg
 
 Open every one of these pictures before any write.
 

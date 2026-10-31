@@ -247,10 +247,10 @@ A host's controls, all plain `JobSpec` fields:
 - **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`):
   `core.pictures.sizes.PICTURE_EDGES` gives each level an opening tile size and a
   later-picture size (low 256/512, medium 384/768, high 512/1024; `auto`
-  opens at 256 and declares `look`'s `resolution`, 128 up to the driver
-  model's largest image). Only what the agent is SHOWN changes: a whole
-  picture is never upsampled past its source (a zoom, and a change tool's
-  picture zoomed to its `restrict_to` regions, is drawn at the picture size,
+  opens at 512, draws later pictures at 1024 unless the agent asks, and
+  declares `look`'s `resolution`, 128 up to the driver model's largest
+  image). Only what the agent is SHOWN changes: a whole picture is never
+  upsampled past its source (a zoom, and a change tool's picture zoomed to its `restrict_to` regions, is drawn at the picture size,
   its section read from the image file at the file's own resolution
   (`core/sections/native.py`), and says when that enlarges its source), and fits,
   calibration and the
