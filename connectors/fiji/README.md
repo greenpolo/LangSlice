@@ -201,9 +201,11 @@ placement (flip, quarter turn, affine) and a warp, and for the stack new cutting
 angles (`host_angles`). Each slice carries at most two LangSlice steps on top of the
 registrations it had when the run started: a **LangSlice affine** step (ABBA's
 `AffineRegistration`) and on top of it a **LangSlice warp** step (ABBA's BigWarp
-thin-plate spline, `BigWarpSource2DRegistration`; at most 1089 landmarks, its measured
-difference from LangSlice's deformation written in the log and kept in the step's
-parameters). A replacement deletes the newest
+thin-plate spline, `BigWarpSource2DRegistration`; at most 1089 landmarks, placed where
+the spline would otherwise stray most from LangSlice's deformation over the region the
+atlas overlaps; its measured difference there, as ABBA draws the section, is written in
+the log (median, 99th percentile, maximum) and kept in the step's parameters
+(`langslice_max_error_mm`, `langslice_p99_error_mm`)). A replacement deletes the newest
 steps (the warp first, then the affine when the placement changed) and appends new
 ones; it is done only while LangSlice's steps are still the slice's newest
 registrations. Cutting angles are applied through a small undoable action of the
