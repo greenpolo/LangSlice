@@ -85,6 +85,11 @@ public final class E2EFollowCheck {
             }
         }
         require(python.waitFor() == 0 && finalState.get() != null, "the driver ended cleanly");
+        // The warps take the worker tens of seconds to convert: wait until it says ABBA has the saved state.
+        Path stateFile = jobFolder.resolve("state.json");
+        long driverEnded = System.nanoTime();
+        require(awaitCaughtUp(follower, stateFile, Duration.ofSeconds(300)), "the follower caught up with the job");
+        System.out.printf("E2E caught up %.1f s after the driver ended%n", (System.nanoTime() - driverEnded) / 1e9);
         JsonObject expected = finalState.get();
         require(expected.get("submitted").getAsBoolean(), "the job was submitted");
         AbbaHostSession reader = new AbbaHostSession(mp, folder, found.key);
@@ -120,7 +125,10 @@ public final class E2EFollowCheck {
         again.load();
         require(names(again).equals(names) && close(geometry(reopened, again), geometry), "the saved project holds the job's steps");
         int before = appliedLines.size();
+        long attached = System.nanoTime();
         Follower resumed = Follower.ensure(reopened, env, folder);
+        require(awaitCaughtUp(resumed, stateFile, Duration.ofSeconds(120)), "the attach caught up with the job");
+        System.out.printf("E2E resync caught up %.1f s after attaching%n", (System.nanoTime() - attached) / 1e9);
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
         while (System.nanoTime() < deadline && lines(applied).size() == before) Thread.sleep(200);
         List<String> after = awaitStable(applied);
@@ -136,6 +144,17 @@ public final class E2EFollowCheck {
         System.out.println("E2E_PASS");
         imagej.context().dispose();
         System.exit(0);
+    }
+
+    /** True once the follower has applied everything up to the job's saved state (its {@code idle} event). */
+    static boolean awaitCaughtUp(Follower follower, Path stateFile, Duration timeout) throws Exception {
+        long saved = Files.getLastModifiedTime(stateFile).to(java.util.concurrent.TimeUnit.NANOSECONDS);
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (follower.caughtUpTo() == saved) return true;
+            Thread.sleep(200);
+        }
+        return false;
     }
 
     /** null once ABBA shows the job's positions, angles and steps; else what still differs after *timeout*. */

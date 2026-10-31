@@ -1,14 +1,18 @@
 """``abba.follow``: a job's checkpoints streamed into ABBA as rows.
 
 The Fiji connector starts one follower per job it attached to ABBA and
-keeps the request open while ABBA is. The follower reads the job folder
-only: every :data:`POLL_S` it looks at ``state.json`` (size and
+keeps the request open while ABBA is. The follower changes nothing of the
+job: every :data:`POLL_S` it looks at ``state.json`` (size and
 modification time) and, when it changed, reads the state as last saved
 (never waiting for a writer) and sends one ``checkpoint`` event of ABBA
 rows, so the writes that land between two looks are one ABBA step. The
 first checkpoint is the job's whole state measured against ABBA with this
 job's own steps removed (:func:`baseline_rows`), so it brings ABBA in line
-with the job. Before the job has a checkpoint (prepared, not opened) it sends
+with the job. The first look after a checkpoint that finds the state as it
+was sends ``idle`` with the state file's modification time
+(``state_mtime_ns``): everything up to that state has been sent, so a
+connector that has applied the events before it shows the job as saved
+then. Before the job has a checkpoint (prepared, not opened) it sends
 ``waiting`` once and keeps looking. It ends when *stop* is set: the
 connector closed the request's input.
 """
@@ -18,7 +22,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from langslice.doors.abba.checkpoints import (
     Emit,
@@ -31,6 +35,9 @@ from langslice.doors.jobs import Opened, open_folder
 from langslice.job.checkpoint import file_stamp
 from langslice.job.layout import JobLayout, read_job_file
 from langslice.job.state_file import stack_to_json
+
+if TYPE_CHECKING:
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +102,21 @@ def _send_changes(
     job = opened.job
     tracker = HostCheckpoints(host_facts(opened.spec), emit)
     tracker.attach(job, opened.ctx)
+    try:
+        _follow(job, tracker, layout, stop)
+    finally:
+        tracker.close()
+
+
+def _follow(
+    job: Job,
+    tracker: HostCheckpoints,
+    layout: JobLayout,
+    stop: threading.Event,
+) -> None:
+    """Check the job's state every :data:`POLL_S` until *stop*."""
     seen = None
+    told = None
     while not stop.is_set():
         stamp = file_stamp(str(layout.state_file))
         if stamp != seen:
@@ -107,6 +128,9 @@ def _send_changes(
                     tracker.previous = baseline_rows(current, angles)
                 if current != tracker.previous:
                     tracker(job.state)
+        elif stamp is not None and stamp != told:
+            told = stamp
+            tracker.emit({"kind": "idle", "state_mtime_ns": stamp[2]})
         if stop.wait(POLL_S):
             return
         _abba_angles(layout)  # the job is still ABBA's

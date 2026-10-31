@@ -358,8 +358,11 @@ bodies, and turned into an answer once per door:
   `thickness_um`, `interval_um`, `prepared_at`); no checkpoint, no index
   entry; refused once the job has a `state.json`; every door then opens it
   through `job.host_inputs.opening_spec`), `abba/follow.py` (`follow`: the
-  job opened without writing, `doors.jobs.open_folder(persist=False)`;
-  `waiting` once while it has no checkpoint; every `POLL_S` (0.5 s) a look
+  job opened without writing (its kept warp rows aside),
+  `doors.jobs.open_folder(persist=False)`;
+  `waiting` once while it has no checkpoint; `idle` (`state_mtime_ns`)
+  once per state when a look finds it unchanged after a checkpoint; every
+  `POLL_S` (0.5 s) a look
   at `state.json`'s stamp, and on a change the state read under
   `Job.reading` and one `checkpoint` event, the first measured against
   `baseline_rows` (ABBA with this job's steps removed: no position, flip,
@@ -370,8 +373,19 @@ bodies, and turned into an answer once per door:
   a section (`_host_updates(..., frozen=spec.frozen_for)`); with the
   `nonlinear` task `warp` rows from `core/maps/abba.py`, each logged with
   its measured atlas-side `median_error_mm` / `p95_error_mm` /
-  `p99_error_mm` / `max_error_mm` over the `region`; `host_angles` on a
-  stack-wide angle change),
+  `p99_error_mm` / `max_error_mm` over the `region` and how long it took;
+  the sections one checkpoint changed converted side by side
+  (`_side_by_side`: a spawn `ProcessPoolExecutor` of `MAX_CONVERSIONS` (4)
+  made on first use, each process started with its share of the threads,
+  `warp_workers.started_with_threads`; one section converted in the
+  follower; a process that dies is that row's failure), each row kept in
+  memory and in `logs/abba_warps/<conversion_digest>.json` (the section,
+  record key, linear key, stored numbers, snapshot size, calibration and
+  `CODE_DIGEST` of `CONVERSION_MODULES`), so an unchanged deformation is
+  never converted twice, also across followers; `close` ends the
+  processes; `host_angles` on a stack-wide angle change),
+  `abba/warp_workers.py` (`WarpInput`, `convert_warp` -> `ConvertedWarp`:
+  the pairs, errors, `seconds`, `peak_mb` from `/proc/self/status`),
   `credentials.py` (`setup_status`: version, `PROTOCOL_VERSION` (3), the
   Python and its environment; saved credentials, login;
   `load_credentials`: `.env`, then the keys saved by setup, an explicit

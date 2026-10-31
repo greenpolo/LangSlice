@@ -125,13 +125,17 @@ that opening (`job.host_inputs.opening_spec`). Only coronal Allen Mouse
 V3/V3p1 ABBA sessions are accepted. Position and angle conversion uses ABBA's
 atlas offset and centred world coordinates.
 
-`abba.follow` reads the job folder only. Every 0.5 s it looks at
+`abba.follow` changes nothing of the job (it writes only its kept warp rows,
+below). Every 0.5 s it looks at
 `state.json`; when it changed, it sends one checkpoint, so several writes
 between two looks are one ABBA step. The first checkpoint is the job's whole
 state measured against ABBA with this job's own steps removed; later
 checkpoints carry replacement `host_updates` and changed `host_angles`; a
 warp that cannot be converted is sent as `{"error": …}` and kept as a failed
-update. A job that has no checkpoint yet gets one `waiting` event. Each
+update. A job that has no checkpoint yet gets one `waiting` event; the
+first look that finds the state unchanged after a checkpoint sends `idle`
+with the state file's modification time, so the connector knows when ABBA
+shows the job as saved. Each
 checkpoint becomes an undoable ABBA step. The connector
 owns at most one affine and one BigWarp registration per section, above its
 pre-existing registrations. Deformations become thin-plate splines through
@@ -143,6 +147,17 @@ measured over that region at points not used to place the pairs and
 reported (median, 99th percentile and maximum); it never withholds a warp.
 When the first grids already fold, even 33×33 to 9×9 grids over the
 snapshot are tried, and a spline folding at every one is refused.
+
+A conversion takes 10 to 80 s per section, so the follower converts the
+sections one checkpoint changed side by side, in up to four spawned
+processes (`doors/abba/warp_workers.py`), each started with its share of the
+machine's threads; one section is converted in the follower itself. A
+converted row is kept in memory and in the job folder
+(`logs/abba_warps/<digest>.json`, named by the section, its deformation
+record, its placement, its snapshot and the conversion code), so an
+unchanged deformation is never converted twice, also by a follower started
+again after ABBA was reopened. The checkpoint is sent once all of its
+sections are converted.
 
 The connector names its steps `LangSlice affine [<project key>]` and
 `LangSlice warp [<project key>]`. Updates replace this job's steps only while

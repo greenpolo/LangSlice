@@ -43,6 +43,7 @@ The files most readers use are the exports (`exports/quicknii.json`,
                         a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
                         abba_applied.jsonl (a job followed in ABBA: what each checkpoint did there);
+                        abba_warps/ (the follower's converted ABBA warp rows, one file per deformation and placement);
                         env.lock, held while env/ is made
   trace/                agent transcripts: the built-in agent's trace (also when it is sent elsewhere), a coding agent's session copied in by its harness plugin, and its launch check (<harness>_<session>.launch.json)
   env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends

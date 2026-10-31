@@ -16,6 +16,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 #: Long verbs (the FireANTs fit) run in the calling process, as one call.
@@ -29,7 +31,9 @@ def call(
     argv = [sys.executable, "-m", "langslice.doors.agent_cli.main", str(folder), verb, *flags]
     if args is not None:
         argv += ["--args", json.dumps(args)]
+    started = time.perf_counter()
     done = subprocess.run(argv, capture_output=True, text=True, env=ENVIRONMENT, check=False)
+    seconds = time.perf_counter() - started
     try:
         reply = json.loads(done.stdout)
     except json.JSONDecodeError:
@@ -37,7 +41,10 @@ def call(
     result = reply.get("result")
     brief = ({key: result.get(key) for key in ("status", "message")}
              if isinstance(result, dict) else {})
-    print(f"DRIVER {verb}: ok={reply.get('ok')} {json.dumps(brief)[:300]}", flush=True)
+    # When the call ended, to set against abba_applied.jsonl's "at": how long ABBA took.
+    ended = datetime.now(UTC).isoformat(timespec="milliseconds")
+    print(f"DRIVER {verb}: ok={reply.get('ok')} {seconds:.1f} s, ended {ended} "
+          f"{json.dumps(brief)[:300]}", flush=True)
     if not reply.get("ok"):
         sys.exit(f"DRIVER {verb} failed: {json.dumps(reply.get('error'))[:2000]}")
     return reply
@@ -77,8 +84,10 @@ def main() -> None:
         "sections": [{"id": ids[0], "rotation_deg": 10.0, "scale_x": 1.1, "translate_x_mm": 0.2}],
         "view": False})
     call(folder, "interactive_transform", args={
-        "sections": [{"id": ids[1], "flip": True, "rotate_quarter": 90}], "view": False})
-    call(folder, "fireants_syn", args={"sections": [ids[0]], "view": False})
+        "sections": [{"id": ids[1], "flip": True, "rotate_quarter": 90, "scale_x": 1.0}],
+        "view": False})
+    # Both sections in one call: the follower converts their warps side by side.
+    call(folder, "fireants_syn", args={"sections": ids, "view": False})
     call(folder, "interactive_transform", args={
         "sections": [{"id": ids[1], "translate_y_mm": -0.1}], "view": False})
     call(folder, "undo")

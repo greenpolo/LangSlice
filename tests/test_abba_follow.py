@@ -12,6 +12,8 @@ from __future__ import annotations
 import copy
 import io
 import json
+import os
+import shutil
 import threading
 from pathlib import Path
 from typing import Any
@@ -24,13 +26,20 @@ import langslice
 from langslice.core.stack.codec import deformation_to_json
 from langslice.doors.abba.checkpoints import (
     ABBA_MIXED_ANGLES,
+    WARP_CACHE_DIR,
     HostCheckpoints,
     HostFacts,
     _host_updates,
+    baseline_rows,
+    conversion_digest,
 )
 from langslice.doors.abba.contract import AbbaFollowRequest, AbbaPrepareRequest
 from langslice.doors.abba.follow import follow
 from langslice.doors.abba.prepare import prepare_job
+from langslice.doors.abba.warp_workers import (
+    THREAD_VARIABLES,
+    started_with_threads,
+)
 from langslice.hosts.service import run_stdio
 from tests.fakes import SlabAtlas
 
@@ -154,9 +163,15 @@ def test_a_prepared_job_is_followed_from_its_first_opening(tmp_path, monkeypatch
         # a registered slice: its in-plane registration is ABBA's, no row for it
         assert rows["s2.png"] == {"id": "s2.png", "position_mm": 3.0}
 
-        # nothing changed: no checkpoint
+        # nothing changed: no checkpoint, and once that everything up to
+        # this state was sent
         following.ticks.look()
         assert len(following.checkpoints) == 1
+        [idle] = [event for event in following.events if event["kind"] == "idle"]
+        state = job_folder / "state.json"
+        assert idle == {"kind": "idle", "state_mtime_ns": state.stat().st_mtime_ns}
+        following.ticks.look()
+        assert following.events[-1] == idle
 
         # several writes between two looks are one checkpoint
         job = langslice.open_job(str(job_folder), atlas_loader=lambda _n: _ATLAS)
@@ -415,6 +430,7 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
         raise ValueError("the thin-plate spline folds at every grid")
 
     tracker._warp_cache.clear()
+    shutil.rmtree(job.job.layout.logs_dir / WARP_CACHE_DIR, ignore_errors=True)
     monkeypatch.setattr(tracker, "_warp_row", folds)
     assert tracker._warp(job.state, record, key) == {
         "error": "its deformation could not be converted "
@@ -438,3 +454,65 @@ def test_a_moved_placement_removes_the_warp_step(warped):
     tracker(job.state)
     moved = _row(events[-1], ID0)
     assert moved["position_mm"] == pytest.approx(0.11) and moved["warp"] is None
+
+
+@pytest.mark.slow
+def test_several_warps_are_converted_side_by_side_and_never_again(
+        warped, monkeypatch):
+    """Two sections fitted in one call are converted at once, in the
+    conversion processes; a follower started again (ABBA reopened) sends
+    the same rows from the job folder without converting anything."""
+    from langslice.core.stack.rows import ANGLES_KEY
+    from langslice.job.state_file import stack_to_json
+    from tests.synthetic_stack import ID0, ID1
+
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
+    job, tracker, events, facts = warped
+    assert job.fireants_syn(sections=[ID0, ID1], view=False)["status"] == "ok"
+    tracker(job.state)
+    first = {name: _row(events[-1], name)["warp"] for name in (ID0, ID1)}
+    assert all("source_mm" in warp for warp in first.values())
+    logged = [e["message"] for e in events if e.get("kind") == "log"]
+    assert any(m.startswith("2 deformations converted for ABBA") for m in logged)
+    assert sum("converted in" in m for m in logged[-3:]) == 2
+    assert len(list((job.job.layout.logs_dir / WARP_CACHE_DIR).glob("*.json"))) >= 2
+
+    seen: list = []
+    again = HostCheckpoints(facts, seen.append)
+    again.attach(job.job, job.workspace)
+    current = stack_to_json(job.state)
+    angles = current[ANGLES_KEY]
+    again.previous = baseline_rows(current, {"pitch_deg": angles["pitch"],
+                                             "yaw_deg": angles["yaw"]})
+
+    def never(*_args):
+        raise AssertionError("a kept warp was converted again")
+
+    monkeypatch.setattr(again, "_warp_row", never)
+    monkeypatch.setattr(again, "_side_by_side", never)
+    again(job.state)
+    for name in (ID0, ID1):
+        assert _row(seen[-1], name)["warp"] == first[name]
+    assert sum("converted before" in e.get("message", "") for e in seen) == 2
+    tracker.close()
+
+
+def test_a_kept_warp_is_named_by_everything_its_rows_come_from():
+    key = ("s0.png", "record", "linear")
+    base = conversion_digest(key, (1, 0, 0, 0, 1, 0), (40, 30), 25.0)
+    assert base == conversion_digest(key, (1, 0, 0, 0, 1, 0), (40, 30), 25.0)
+    for other in (conversion_digest(("s0.png", "other", "linear"),
+                                    (1, 0, 0, 0, 1, 0), (40, 30), 25.0),
+                  conversion_digest(key, (1, 0, 0, 0, 1, 0.1), (40, 30), 25.0),
+                  conversion_digest(key, (1, 0, 0, 0, 1, 0), (41, 30), 25.0),
+                  conversion_digest(key, (1, 0, 0, 0, 1, 0), (40, 30), 20.0)):
+        assert other != base
+
+
+def test_conversion_processes_start_with_their_share_of_threads(monkeypatch):
+    monkeypatch.setenv("OMP_NUM_THREADS", "7")
+    monkeypatch.delenv("MKL_NUM_THREADS", raising=False)
+    with started_with_threads(3):
+        assert all(os.environ[name] == "3" for name in THREAD_VARIABLES)
+    assert os.environ["OMP_NUM_THREADS"] == "7"
+    assert "MKL_NUM_THREADS" not in os.environ

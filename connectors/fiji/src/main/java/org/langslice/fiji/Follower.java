@@ -41,6 +41,8 @@ final class Follower {
     private volatile boolean stopped;
     private volatile Thread thread;
     private int applied;
+    /** The {@code state.json} modification time (ns) of the last {@code idle} event: ABBA shows the job as it was then. */
+    private volatile long caughtUp = -1;
     /** Set for a follower of a live ABBA session (not in tests). */
     private MultiSlicePositioner mp;
     private AbbaHostSession host;
@@ -118,6 +120,9 @@ final class Follower {
         }
     }
 
+    /** The {@code state.json} modification time (ns) ABBA has caught up to; -1 before the first {@code idle}. */
+    long caughtUpTo() { return caughtUp; }
+
     boolean alive() { Thread running = thread; return running != null && running.isAlive() && !stopped; }
 
     /** Ends the worker (stdin closes; it is terminated if it does not finish) and waits for the follower to end. */
@@ -151,6 +156,9 @@ final class Follower {
             JsonArray rows = payload.has("host_updates") && payload.get("host_updates").isJsonArray() ? payload.getAsJsonArray("host_updates") : new JsonArray();
             JsonObject angles = payload.has("host_angles") && payload.get("host_angles").isJsonObject() ? payload.getAsJsonObject("host_angles") : null;
             applyLive(rows, angles);
+        } else if (kind.equals("idle") && payload.has("state_mtime_ns")) {
+            // Every checkpoint before this event has been applied (events are handled in order).
+            caughtUp = payload.get("state_mtime_ns").getAsLong();
         } else if (kind.equals("log") && payload.has("message")) {
             out.line(payload.get("message").getAsString());
         } else if (kind.equals("waiting")) {

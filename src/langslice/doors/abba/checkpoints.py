@@ -8,18 +8,38 @@ job's snapshots and calibration through :class:`HostFacts`.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import math
+import multiprocessing
+import os
+import time
 from collections.abc import Callable
+from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from PIL import Image
 
+from langslice.core.fits.deformation import linear_key
+from langslice.core.geometry import thin_plate
 from langslice.core.jsonable import JsonValue
+from langslice.core.maps import abba as abba_maps
+from langslice.core.maps import section_maps, tps_landmarks
+from langslice.core.maps.section_maps import section_frame, stored_params
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.stack.rows import ANGLES_KEY
+from langslice.doors.abba.warp_workers import (
+    MAX_CONVERSIONS,
+    ConvertedWarp,
+    WarpInput,
+    convert_warp,
+    started_with_threads,
+    thread_share,
+)
 from langslice.job.state_file import serialized_mixed_angles, stack_to_json
 
 if TYPE_CHECKING:
@@ -30,6 +50,20 @@ if TYPE_CHECKING:
     from langslice.job.settings.spec import JobSpec
 
 logger = logging.getLogger(__name__)
+
+#: The job folder's converted warp rows, one file per conversion
+#: (``logs/abba_warps/<digest>.json``, :func:`conversion_digest`): a follower
+#: started again (ABBA reopened, the menu entry chosen again) sends a
+#: deformation it converted before without converting it again.
+WARP_CACHE_DIR = "abba_warps"
+#: The modules whose code makes a warp row.
+CONVERSION_MODULES = (abba_maps, tps_landmarks, thin_plate, section_maps)
+#: The warp row's fields a kept row must hold.
+ROW_FIELDS = frozenset({
+    "source_mm", "target_mm", "max_error_mm", "p99_error_mm",
+    "p95_error_mm", "median_error_mm", "region", "points"})
+#: A converted row's key: the section, its record key and its linear key.
+WarpKey: TypeAlias = tuple[str, str, str]
 
 #: Where a tracker sends its checkpoints and log lines (one event each).
 Emit = Callable[[dict[str, JsonValue]], None]
@@ -237,8 +271,12 @@ class HostCheckpoints:
         #: None: the next checkpoint is ingestion.
         self.previous: dict[str, Any] | None = None
         #: (section, record key, linear key) -> the warp row (failures are
-        #: not kept: the next checkpoint tries again).
-        self._warp_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+        #: not kept: the next checkpoint tries again); the job folder's
+        #: ``logs/abba_warps/`` keeps them across followers.
+        self._warp_cache: dict[WarpKey, dict[str, JsonValue]] = {}
+        #: The conversion processes, started for the first checkpoint that
+        #: converts more than one warp (:meth:`close` ends them).
+        self._pool: ProcessPoolExecutor | None = None
 
     def attach(self, job: Job, workspace: Workspace) -> None:
         """Read deformation records and section frames through *job* and *workspace*.
@@ -251,6 +289,12 @@ class HostCheckpoints:
             Its workspace, for the sections' frames.
         """
         self.job, self.workspace = job, workspace
+
+    def close(self) -> None:
+        """End the conversion processes, if any were started."""
+        if self._pool is not None:
+            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool = None
 
     @property
     def warps(self) -> bool:
@@ -300,7 +344,6 @@ class HostCheckpoints:
         placement moved under it; ``{"error": reason}`` when they cannot be
         made), ``None`` when it was cleared, undone or kept linear, and
         whenever the placement changed."""
-        from langslice.core.fits.deformation import linear_key
         from langslice.job.public_files import applied_deformation
         from langslice.job.state_file import stack_from_json
 
@@ -313,79 +356,287 @@ class HostCheckpoints:
             return held.key or None
 
         warps: dict[str, dict[str, Any] | None] = {}
+        changed: list[tuple[Section, str]] = []
         for record in now.in_order():
             old = before.by_id(record.id)
             moved = old is None or linear_key(now, record) != linear_key(before, old)
             key = applied(now, record)
             had = applied(before, old) if old is not None else None
             if key is not None and (key != had or moved):
-                warps[record.id] = self._warp(now, record, key)
+                changed.append((record, key))
             elif key is None and (had is not None or moved):
                 warps[record.id] = None
+        warps.update(self._convert(now, changed))
         return warps
 
     def _warp(
-        self, state: Stack, section: Section, key: str,
-    ) -> dict[str, Any]:
-        """The warp row of *section*'s applied deformation *key*, its measured
-        error logged; ``{"error": reason}``, with a log message, when its
-        record cannot be read or its thin-plate spline folds at every grid
-        (the connector keeps that row as a failed update and names it; the
-        warp ABBA holds is left as it is)."""
-        from langslice.core.fits.deformation import linear_key
+        self, state: Stack, section: Section, key: str
+    ) -> dict[str, JsonValue]:
+        """Return the warp row of *section*'s deformation *key*.
 
-        cache_key = (section.id, key, linear_key(state, section))
-        if cache_key in self._warp_cache:
-            return self._warp_cache[cache_key]
-        try:
-            row = self._warp_row(state, section, key)
-        except (OSError, ValueError) as exc:
+        :meth:`_convert` for one section.
+        """
+        return self._convert(state, [(section, key)])[section.id]
+
+    def _convert(
+        self, state: Stack, changed: list[tuple[Section, str]]
+    ) -> dict[str, dict[str, JsonValue]]:
+        """Return the warp rows of the *changed* deformations, by section.
+
+        Each row is logged with its measured error and how long it took;
+        ``{"error": reason}``, with a log message, when a record cannot be
+        read or its thin-plate spline folds at every grid (the connector
+        keeps that row as a failed update and names it; ABBA keeps the
+        warp it holds). A row converted before for the same record and
+        placement (this follower's memory, then the job folder's
+        ``logs/abba_warps/``) is not converted again; one section is
+        converted here, several side by side in up to
+        :data:`MAX_CONVERSIONS` processes.
+        """
+        rows, pending = self._known(state, changed)
+        if len(pending) == 1:
+            section, key, cache_key = pending[0]
+            try:
+                converted = self._warp_row(state, section, key)
+            except (OSError, ValueError) as exc:
+                rows[section.id] = self._failed(section, exc)
+            else:
+                rows[section.id] = self._landed(section, cache_key, converted)
+        elif pending:
+            started = time.perf_counter()
+            outcomes = self._side_by_side(
+                state, [(section, key) for section, key, _ in pending]
+            )
+            for section, _key, cache_key in pending:
+                outcome = outcomes[section.id]
+                rows[section.id] = (
+                    self._failed(section, outcome)
+                    if isinstance(outcome, Exception)
+                    else self._landed(section, cache_key, outcome)
+                )
+            seconds = time.perf_counter() - started
+            at_once = min(len(pending), MAX_CONVERSIONS)
             self.emit({"kind": "log", "message": (
-                f"{section.id}: its deformation is not sent to ABBA "
-                f"({exc}).")})
-            return {"error": f"its deformation could not be converted ({exc})"}
-        else:
-            median_um = cast(float, row["median_error_mm"]) * 1000
-            p99_um = cast(float, row["p99_error_mm"]) * 1000
-            max_um = cast(float, row["max_error_mm"]) * 1000
-            self.emit({"kind": "log", "message": (
-                f"{section.id}: deformation sent to ABBA as "
-                f"{row['points']} landmarks; over the {row['region']}, "
-                "ABBA's thin-plate spline places the section "
-                f"{median_um:.1f} um from it at the median, within "
-                f"{p99_um:.1f} um at 99% of points and {max_um:.1f} um "
-                "at most.")})
-        self._warp_cache[cache_key] = row
-        return row
+                f"{len(pending)} deformations converted for ABBA in "
+                f"{seconds:.1f} s, up to {at_once} at once.")})
+        return rows
+
+    def _known(
+        self, state: Stack, changed: list[tuple[Section, str]]
+    ) -> tuple[
+        dict[str, dict[str, JsonValue]], list[tuple[Section, str, WarpKey]]
+    ]:
+        """Split *changed* into rows converted before and those to convert."""
+        rows: dict[str, dict[str, JsonValue]] = {}
+        pending: list[tuple[Section, str, WarpKey]] = []
+        for section, key in changed:
+            cache_key = (section.id, key, linear_key(state, section))
+            row = self._warp_cache.get(cache_key) or self._stored(
+                section, cache_key
+            )
+            if row is None:
+                pending.append((section, key, cache_key))
+            else:
+                self._warp_cache[cache_key] = row
+                rows[section.id] = row
+        return rows, pending
 
     def _warp_row(
-        self, state: Stack, section: Section, key: str,
-    ) -> dict[str, Any]:
-        from langslice.core.maps.abba import warp_world_landmarks
-        from langslice.core.maps.section_maps import (
-            section_frame,
-            stored_params,
-        )
+        self, state: Stack, section: Section, key: str
+    ) -> ConvertedWarp:
+        """Convert one section's deformation in this process."""
+        return convert_warp(self._warp_input(state, section, key))
 
+    def _warp_input(
+        self, state: Stack, section: Section, key: str
+    ) -> WarpInput:
+        """Read what converting *section*'s deformation *key* needs."""
         if self.job is None or self.workspace is None:
-            raise ValueError("the job's deformation records are not available here")
-        warp = self.job.deformations.get(section.id, key)
-        if warp is None:
+            raise ValueError(
+                "the job's deformation records are not available here"
+            )
+        record = self.job.deformations.get(section.id, key)
+        if record is None:
             raise ValueError("its deformation record cannot be read")
         frame = section_frame(state, self.workspace, section)
-        size = self.facts.geometry[section.id]
-        landmarks = warp_world_landmarks(
-            frame, warp, stored_params(section), size=size,
-            pixel_size_um=self.facts.calibration)
-        atlas = landmarks.accuracy.atlas
+        return WarpInput(
+            section.id,
+            frame,
+            record,
+            stored_params(section),
+            self.facts.geometry[section.id],
+            self.facts.calibration,
+        )
+
+    def _side_by_side(
+        self, state: Stack, changed: list[tuple[Section, str]]
+    ) -> dict[str, ConvertedWarp | Exception]:
+        """Convert several sections' deformations in the processes."""
+        outcomes: dict[str, ConvertedWarp | Exception] = {}
+        futures: dict[str, Future[ConvertedWarp]] = {}
+        pool = self._processes()
+        with started_with_threads(thread_share(MAX_CONVERSIONS)):
+            for section, key in changed:
+                try:
+                    item = self._warp_input(state, section, key)
+                except (OSError, ValueError) as exc:
+                    outcomes[section.id] = exc
+                else:
+                    futures[section.id] = pool.submit(convert_warp, item)
+        for name, future in futures.items():
+            try:
+                outcomes[name] = future.result()
+            except (OSError, ValueError) as exc:
+                outcomes[name] = exc
+            except BrokenProcessPool as exc:
+                # A process died (out of memory, killed): a failed row,
+                # which the next checkpoint converts again.
+                self.close()
+                outcomes[name] = ValueError(
+                    f"its conversion process ended ({exc})"
+                )
+        return outcomes
+
+    def _processes(self) -> ProcessPoolExecutor:
+        """Return the conversion processes, made on first use."""
+        if self._pool is None:
+            self._pool = ProcessPoolExecutor(
+                max_workers=MAX_CONVERSIONS,
+                mp_context=multiprocessing.get_context("spawn"),
+            )
+        return self._pool
+
+    def _failed(
+        self, section: Section, exc: Exception
+    ) -> dict[str, JsonValue]:
+        """Log a conversion that failed and return its error row."""
+        self.emit({"kind": "log", "message": (
+            f"{section.id}: its deformation is not sent to ABBA ({exc}).")})
+        return {"error": f"its deformation could not be converted ({exc})"}
+
+    def _landed(
+        self, section: Section, cache_key: WarpKey, converted: ConvertedWarp
+    ) -> dict[str, JsonValue]:
+        """Log a conversion that ran, keep its row and return it."""
         applied = section.deformation
-        held = None if applied is None else applied.record
-        return {"source_mm": landmarks.source_mm.T.tolist(),
-                "target_mm": landmarks.target_mm.T.tolist(),
-                "record": held or key,
-                "max_error_mm": atlas.max_mm,
-                "p99_error_mm": atlas.p99_mm,
-                "p95_error_mm": atlas.p95_mm,
-                "median_error_mm": atlas.median_mm,
-                "region": landmarks.region,
-                "points": len(landmarks.source_mm)}
+        record = None if applied is None else applied.record
+        row: dict[str, JsonValue] = {
+            "source_mm": [list(axis) for axis in converted.source_mm],
+            "target_mm": [list(axis) for axis in converted.target_mm],
+            "record": record or cache_key[1],
+            "max_error_mm": converted.max_error_mm,
+            "p99_error_mm": converted.p99_error_mm,
+            "p95_error_mm": converted.p95_error_mm,
+            "median_error_mm": converted.median_error_mm,
+            "region": converted.region,
+            "points": converted.points,
+        }
+        memory = (
+            ""
+            if converted.peak_mb is None
+            else f", its process at most {converted.peak_mb:.0f} MB"
+        )
+        self.emit({"kind": "log", "message": (
+            f"{section.id}: deformation sent to ABBA as "
+            f"{converted.points} landmarks; over the {converted.region}, "
+            "ABBA's thin-plate spline places the section "
+            f"{converted.median_error_mm * 1000:.1f} um from it at the "
+            f"median, within {converted.p99_error_mm * 1000:.1f} um at 99% "
+            f"of points and {converted.max_error_mm * 1000:.1f} um at most "
+            f"(converted in {converted.seconds:.1f} s{memory}).")})
+        self._warp_cache[cache_key] = row
+        self._store(section, cache_key, row)
+        return row
+
+    # --- the job folder's converted rows ---------------------------------
+
+    def _cache_file(
+        self, section: Section, cache_key: WarpKey
+    ) -> Path | None:
+        """Return where *section*'s row is kept, None without a job."""
+        if self.job is None:
+            return None
+        digest = conversion_digest(
+            cache_key,
+            stored_params(section),
+            self.facts.geometry[section.id],
+            self.facts.calibration,
+        )
+        return self.job.layout.logs_dir / WARP_CACHE_DIR / f"{digest}.json"
+
+    def _stored(
+        self, section: Section, cache_key: WarpKey
+    ) -> dict[str, JsonValue] | None:
+        """Return a row converted before, None when there is none."""
+        path = self._cache_file(section, cache_key)
+        if path is None:
+            return None
+        try:
+            stored = cast("JsonValue", json.loads(path.read_text("utf-8")))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(stored, dict) or not ROW_FIELDS <= stored.keys():
+            return None
+        self.emit({"kind": "log", "message": (
+            f"{section.id}: deformation sent to ABBA as "
+            f"{stored['points']} landmarks, converted before.")})
+        return stored
+
+    def _store(
+        self, section: Section, cache_key: WarpKey, row: dict[str, JsonValue]
+    ) -> None:
+        """Keep *row* in the job folder for a later follower."""
+        path = self._cache_file(section, cache_key)
+        if path is None:
+            return
+        partial = path.with_suffix(f".{os.getpid()}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            partial.write_text(json.dumps(row), encoding="utf-8")
+            partial.replace(path)
+        except OSError:
+            logger.warning("Could not keep the converted warp in %s", path)
+
+
+def conversion_digest(
+    cache_key: WarpKey,
+    params: tuple[float, ...],
+    size: tuple[int, int],
+    calibration: float,
+) -> str:
+    """Name one conversion's inputs and the code that converts.
+
+    Parameters
+    ----------
+    cache_key
+        The section's filename, its record key and its linear key.
+    params
+        Its six stored numbers.
+    size
+        The snapshot's width and height in pixels.
+    calibration
+        The snapshot's micrometres per pixel.
+
+    Returns
+    -------
+    str
+        24 hexadecimal digits.
+    """
+    text = json.dumps(
+        [list(cache_key), list(params), list(size), calibration, CODE_DIGEST]
+    )
+    return hashlib.sha256(text.encode()).hexdigest()[:24]
+
+
+def _code_digest() -> str:
+    """Digest the code that makes a warp row (:data:`CONVERSION_MODULES`)."""
+    digest = hashlib.sha256()
+    for module in CONVERSION_MODULES:
+        if module.__file__ is not None:
+            digest.update(Path(module.__file__).read_bytes())
+    return digest.hexdigest()
+
+
+#: The digest of the code that makes a warp row; a change to it makes every
+#: kept row a new conversion.
+CODE_DIGEST = _code_digest()

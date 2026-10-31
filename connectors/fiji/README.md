@@ -112,6 +112,12 @@ Several LangSlice writes between two of the worker's reads arrive as one checkpo
 so one ABBA Undo step may hold several LangSlice steps. A LangSlice `undo` is a change
 like any other and arrives as a forward step that puts the section back.
 
+A deformation takes the worker 10 to 80 s to convert into the warp step's landmarks,
+so the sections one checkpoint changed are converted side by side (up to four at a
+time, each in a process of its own) and the checkpoint arrives once all are done; the
+time each took is in Fiji's log. A converted warp is kept in the job folder
+(`logs/abba_warps/`), so attaching again sends it without converting it again.
+
 A checkpoint may carry, per section, a position, a new placement (flip, quarter turn,
 affine) and a warp, and for the stack new cutting angles (`host_angles`). Each section
 carries at most two steps of this job on top of its own registrations:
@@ -197,7 +203,10 @@ opened. Three methods:
   and position gaps (0 when ABBA gives none; no interval when the project folder
   already had a job, whose positions may be the agent's).
 - `abba.follow`: `{job_folder}`; streams `checkpoint` (`host_updates`, `host_angles`),
-  `log` (`message`) and `waiting` events until stdin closes, then answers `{}`.
+  `log` (`message`), `waiting` and `idle` (`state_mtime_ns`: everything up to the job's
+  state saved then has been sent; once per state) events until stdin closes, then
+  answers `{}`. The connector notes the last `idle` (`Follower.caughtUpTo`); the
+  end-to-end check waits for it.
 
 ## Tests
 

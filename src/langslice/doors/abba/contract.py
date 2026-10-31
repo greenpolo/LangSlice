@@ -54,7 +54,7 @@ class EngineLogEvent(EngineBaseModel):
 
 
 class EngineDataEvent(EngineBaseModel):
-    """Host events: checkpoints, logs and waiting, never credentials."""
+    """Host events: checkpoints, logs, waiting and idle, never credentials."""
 
     kind: Literal["data"] = "data"
     payload: dict[str, object]
