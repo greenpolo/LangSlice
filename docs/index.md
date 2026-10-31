@@ -39,7 +39,7 @@ then assign cells and signal to brain regions.
 - **Check every result.** The agent can be wrong.
 :::
 
-**New here?** Start with [Install LangSlice](getting-started/install.md).
+**New here?** Start with [Installation](getting-started/install.md).
 
 ## Cite LangSlice
 
@@ -57,7 +57,6 @@ problems go to [GitHub issues](https://github.com/greenpolo/LangSlice/issues).
 :hidden:
 
 getting-started/install
-getting-started/connect
 register
 abba
 ```

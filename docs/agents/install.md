@@ -64,8 +64,8 @@ second prints one JSON object with `"ok": true` and the list of verbs.
 Install the plugin for the app the user uses. Each gives the main session
 three skills (`setup`, `register-brain`, `abba`) and two registration agents
 (`register`, which uses only LangSlice's MCP tools, and `register-scripting`,
-which uses a shell and `langslice-job`). The user-facing steps for each app's
-GUI, with screenshots, are in [Connect your AI app](../getting-started/connect.md).
+which uses a shell and `langslice-job`). The user-facing steps for each app
+are in [Installation](../getting-started/install.md).
 
 Then run the plugin's `setup` skill (`skills/setup/SKILL.md` in the plugin,
 or ask the app "Set up LangSlice."). In every app it first finds `langslice`

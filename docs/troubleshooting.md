@@ -3,16 +3,6 @@
 Messages from a registration usually reach you through your agent, which may
 reword them.
 
-## The terminal does not know `conda`
-
-On Windows, open **Miniforge Prompt** from the Start menu and run the command
-there. On macOS and Linux, close the terminal and open a new one. If it still
-says `conda: command not found`, run this once, then open a new terminal:
-
-```bash
-~/miniforge3/bin/conda init "$(basename "$SHELL")"
-```
-
 ## The terminal does not know `langslice`
 
 Run `conda activate langslice` in that terminal. Once your AI app has set
@@ -23,10 +13,7 @@ LangSlice up, `langslice` works in every new terminal without it.
 The app says LangSlice's server failed to start, or its agent has no
 LangSlice tools, asks permission before every tool, or stops a tool after a
 minute. In a new conversation, send **Set up LangSlice.**, then quit the app
-completely and open it again. Setup is step 3 of each app's page:
-[Codex](getting-started/connect-codex.md),
-[Antigravity](getting-started/connect-antigravity.md),
-[Claude Code](getting-started/connect-claude-code.md).
+completely and open it again (see [Installation](getting-started/install.md)).
 
 ## The first registration waits a long time before anything happens
 

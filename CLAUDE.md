@@ -106,8 +106,9 @@ and `environment.yml` hold the worker's source installation.
 
 `docs/` (built by Sphinx with MyST, `docs/conf.py`, warnings are errors;
 `docs/_extra/llms.txt` is copied to the site root). The site is the bare
-minimum a user needs: `index.md` (the front page), `getting-started/`
-(install, connect an AI app and its three app pages), `register.md`,
+minimum a user needs, written as concisely as other scientific software's
+docs (ABBA, DeepSlice, Lightning Pose): `index.md` (the front page),
+`getting-started/install.md` (install and connect an AI app), `register.md`,
 `abba.md`, `tools.md` (one card per tool), `troubleshooting.md` and
 `agents/install.md`. The front page's toctrees, one per caption, list every
 page; the left bar of every page shows them grouped by caption
