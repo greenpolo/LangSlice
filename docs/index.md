@@ -14,28 +14,23 @@
 section in a brain atlas and draws the atlas region borders on it. You can
 then assign cells and signal to brain regions.**
 
-% Picture: a finished LangSlice registration in which the agent chose every
-% section's position and in-plane alignment (tasks position and transform,
-% nothing supplied or frozen; no deformation). Made from a copy of the job
-% folder of SliceBench run deepslice_gt_joint_sol61_med_20261005_ISH_Calb1,
-% section 0253_71662493 (Allen ISH image 71662493, Calb1, from the DeepSlice
-% ground-truth series), atlas allen_mouse_25um: `look(mode="overlay",
-% sections=["0253_71662493.png"], resolution=2000)` through
-% langslice.open_job on the copy, then cropped to the section (caption strip
-% and scale bar off) and resized to 1200 px wide in gray. The copy's job.json
-% and state.json had settings the current code no longer reads removed. The
-% original run folder was not modified.
+% Picture: one LangSlice registration typed in the logo's characters (built by
+% figure-factory/projects/langslice-readme/scripts/build_ascii_card.py, which
+% records the steps). Section M04_C_07 of the Walsh lab LSD_910 series (DAPI),
+% atlas allen_mouse_25um: the agent's placement from a 2026-10-08 LangSlice run
+% plus a FireANTs SyN fit (detail fine, other settings default) run through
+% langslice.open_job on a copy of that job; labels from job.section_maps. Left
+% of the atlas midline the DAPI image as character density; right of it the
+% atlas regions, borders in pink, acronyms written in.
 
-```{figure} img/front_registered_section.png
-:alt: A coronal mouse section through the dorsal hippocampus with atlas region outlines drawn over it. The outlines follow the dentate gyrus and CA1 cell layers, the corpus callosum, the midline and the outer edge of the cortex.
+```{figure} img/front_ascii_section.png
+:alt: A coronal mouse brain section drawn in text characters. The left hemisphere shows the tissue as character density in lavender; the right hemisphere is tinted by atlas region, with pink strokes along region borders and region abbreviations such as RSP, CA1, DG, CA3, TH and HY written into the regions.
 :width: 100%
 
-A coronal mouse section placed by LangSlice in the Allen mouse brain atlas
-(CCFv3), with the atlas region borders drawn in black. The agent chose the
-section's position and aligned it in-plane. Check every result the same way:
-the outlines should follow the anatomy you can see in the tissue. Section
-image: Allen Mouse Brain Atlas, in situ hybridization for Calb1, image
-71662493, © Allen Institute for Brain Science, mouse.brain-map.org.
+One coronal section of a mouse brain, typed out in text. Left: the section's
+DAPI image. Right: the same section as LangSlice registered it to the Allen
+mouse brain atlas (CCFv3), with the region borders in pink and the regions
+named.
 ```
 
 :::{admonition} Before you start
