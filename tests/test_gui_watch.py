@@ -248,7 +248,7 @@ def test_the_job_list_reads_given_folders_and_recent_jobs(tmp_path: Path) -> Non
     listing = jobs.listing()
     assert [(j["index"], Path(j["folder"]), j["given"]) for j in listing] == [
         (0, given, True), (1, other, False)]
-    assert listing[1]["name"] == "other"
+    assert listing[1]["name"] == f"{tmp_path.name}/other"
     assert jobs.get(1) is not None and jobs.get(2) is None
 
 
@@ -353,7 +353,7 @@ def test_rows_carry_their_render_key_and_a_numeric_position(tmp_path: Path) -> N
     assert JobWatcher(folder).current_stack() is None
 
 
-def test_a_job_is_named_by_its_images_folder_with_the_path_beside_it(tmp_path: Path) -> None:
+def test_a_job_is_named_by_its_images_folder_and_the_one_above(tmp_path: Path) -> None:
     folder = _job(tmp_path)  # <tmp>/images/langslice
     elsewhere = tmp_path / "jobs" / "brain7"
     elsewhere.mkdir(parents=True)
@@ -362,7 +362,8 @@ def test_a_job_is_named_by_its_images_folder_with_the_path_beside_it(tmp_path: P
         "spec": {"atlas": "allen_mouse_25um"}})
     listing = JobList([folder, elsewhere, tmp_path / "later" / "langslice"],
                       recent=None).listing()
+    above = tmp_path.name
     assert [(j["name"], j["path"]) for j in listing] == [
-        ("images", str(tmp_path / "images")), ("brain7", str(tmp_path / "scans")),
-        ("later", str(tmp_path / "later"))]
-    assert all(j["changed_at"] == j["changed"] for j in listing)
+        (f"{above}/images", str(tmp_path / "images")),
+        ("jobs/brain7", str(tmp_path / "scans")),
+        (f"{above}/later", str(tmp_path / "later"))]

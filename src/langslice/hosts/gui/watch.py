@@ -230,13 +230,14 @@ class Picture:
 
 
 def _job_name(folder: Path) -> str:
-    """Name a job by its images folder (the folder ``langslice/`` sits in).
-
-    A job folder made elsewhere (``init --job-dir``) gives its own name.
+    """Name a job by its images folder (the folder ``langslice/`` sits in)
+    and the folder above it, ``M01/images``: an images folder's own name is
+    often a generic one. A job folder made elsewhere (``init --job-dir``)
+    gives its own name and the folder above it.
     """
-    if folder.name == JOB_DIRNAME:
-        return folder.parent.name
-    return folder.name
+    named = folder.parent if folder.name == JOB_DIRNAME else folder
+    above = named.parent.name
+    return f"{above}/{named.name}" if above else named.name
 
 
 def _duration(seconds: float) -> str:
@@ -792,7 +793,7 @@ class JobList:
             changed = watcher.last_change()
             out.append({"index": n, "name": header["name"], "path": header["path"],
                         "folder": header["folder"], "atlas": header["atlas"],
-                        "changed": changed, "changed_at": changed,
+                        "changed_at": changed,
                         "status": watcher.status()["word"],
                         "given": watcher.folder in self.given})
         return out
