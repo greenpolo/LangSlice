@@ -4,64 +4,123 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LangSlice</title>
+  <link rel="icon" href="logomark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="app.css">
   <script src="app.js" defer></script>
+  <link rel="stylesheet" href="viewer.css">
+  <script src="viewer-strip.js" defer></script>
+  <script src="viewer.js" defer></script>
+  <script src="viewer-log.js" defer></script>
 </head>
 <body>
   <header class="bar">
-    <strong class="brand">LangSlice</strong>
-    <nav class="tabs" aria-label="Sections of the window">
-      <button data-tab="viewer" class="active">Agent viewer</button>
+    <span class="lockup"><img src="lockup.svg" alt="LangSlice"></span>
+    <nav class="tabs" aria-label="Parts of the window">
+      <button data-tab="viewer" class="active" aria-current="page">Agent viewer</button>
       <button data-tab="prompt">Prompt generator</button>
     </nav>
-    <span id="job-title" class="job-title"></span>
-    <button data-tab="settings" class="settings-tab">Settings</button>
+    <div class="bar-end">
+      <div class="picker" id="picker">
+        <button id="picker-button" class="picker-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="picker-list">
+          <span id="picker-dot" class="dot"></span><span id="picker-name" class="picker-name">Looking for jobs…</span><span class="caret" aria-hidden="true">⌄</span>
+        </button>
+        <div id="picker-list" class="picker-list" role="listbox" tabindex="-1" aria-label="Jobs" hidden></div>
+      </div>
+      <button data-tab="settings" class="settings-tab">Settings</button>
+    </div>
   </header>
 
   <div id="tab-viewer" class="tab viewer">
-    <aside class="jobs" aria-label="Jobs">
-      <h2>Jobs</h2>
-      <ul id="job-list"><li class="muted">Looking for jobs…</li></ul>
-    </aside>
-    <main class="watch">
-      <div class="statusline">
-        <span id="word" class="word">Starting</span>
-        <span id="sentence" class="sentence"></span>
-        <span id="facts" class="facts"></span>
-      </div>
-      <div class="columns">
-        <section class="left" aria-label="Pictures and tables">
-          <div class="picture-pane">
-            <div class="picture-head">
-              <span id="picture-label" class="picture-label">No pictures yet</span>
-              <span class="picture-nav">
-                <select id="section-filter" aria-label="Show pictures of one section"><option value="">All sections</option></select>
-                <button id="previous" title="Earlier picture">←</button>
-                <span id="picture-count">0 / 0</span>
-                <button id="next" title="Later picture">→</button>
-                <button id="follow" class="active" title="Follow the newest picture">Follow</button>
-              </span>
+    <div class="statusline" id="statusline">
+      <span id="status-dot" class="dot"></span>
+      <span id="word" class="word">Starting</span>
+      <span id="sentence" class="sentence"></span>
+      <span id="facts" class="facts"></span>
+    </div>
+    <p id="no-jobs" class="empty-state" hidden><span>No jobs yet: write one with the Prompt generator, or open a job folder with <code>langslice gui FOLDER</code>.</span></p>
+    <div id="viewer-body" class="viewer-body">
+      <section id="focus-area" class="focus-area" aria-label="Agent focus">
+        <div class="focus-head">
+          <h2 class="focus-title"><span class="focus-name">Agent focus</span><span id="focus-count" class="focus-count"></span></h2>
+          <div class="focus-controls">
+            <div class="switch" role="group" aria-label="What the left area shows">
+              <button data-view="focus" aria-pressed="true">Focus</button><button data-view="sections" aria-pressed="false">Sections</button><button data-view="steps" aria-pressed="false">Steps</button>
             </div>
-            <div class="picture-frame" id="picture-frame"><img id="picture" alt=""><span id="picture-empty" class="muted">The pictures the agent sees appear here as they are saved.</span></div>
-            <p id="caption" class="caption"></p>
+            <button id="follow-agent" class="follow" aria-pressed="true" title="Show the sections of the agent's latest call (f)">Follow agent</button>
+            <span class="pager">
+              <button id="page-previous" aria-label="Previous page of sections" title="Previous page ([)">←</button><button id="page-next" aria-label="Next page of sections" title="Next page (])">→</button>
+            </span>
           </div>
-          <section class="panel">
-            <h3>Sections <span id="sections-count" class="muted"></span></h3>
-            <p id="sections-note" class="muted small"></p>
-            <div class="table-wrap"><table id="sections"><thead><tr><th>#</th><th>Section</th><th>Position (mm)</th><th>Angles (pitch, yaw)</th><th>Flipped</th><th>Transform</th><th>Deformation</th><th>Damaged</th><th>Registration</th></tr></thead><tbody></tbody></table></div>
-          </section>
-          <div class="panel-row">
-            <section class="panel"><h3>Undo <span id="undo-count" class="muted"></span></h3><ol id="undo" class="steps"></ol><h3>Redo <span id="redo-count" class="muted"></span></h3><ol id="redo" class="steps"></ol></section>
-            <section class="panel"><h3>Notes</h3><div id="notes"></div><h3>Spend</h3><div id="spend" class="muted">No spend recorded yet.</div></section>
+        </div>
+        <section id="strip" class="strip" aria-label="Positioning">
+          <div class="strip-head">
+            <button id="strip-toggle" class="strip-toggle" aria-expanded="true" aria-controls="strip-body" title="Show or hide the positioning strip"><span class="strip-mark" aria-hidden="true"></span><span class="strip-name">Positioning</span></button>
+            <span id="strip-title" class="strip-title"></span>
+            <span id="strip-hint" class="strip-hint">wheel to zoom · drag to pan · double-click for the whole axis</span>
+          </div>
+          <div id="strip-body" class="strip-body">
+            <svg id="strip-svg" class="strip-svg" role="img" aria-label="Sections along the cutting axis"></svg>
+            <div id="strip-tip" class="strip-tip" hidden></div>
+            <p id="strip-empty" class="empty-state" hidden></p>
           </div>
         </section>
-        <section class="activity" aria-label="Activity">
-          <h3>Activity</h3>
-          <div id="activity"><p class="muted">Waiting for the run.</p></div>
+        <div id="strip-divider" class="divider divider-row" role="separator" aria-orientation="horizontal" aria-label="Resize the positioning strip" tabindex="0"></div>
+        <div class="views">
+          <div id="view-focus" class="panels" aria-live="off"></div>
+          <div id="view-sections" class="sections-view" hidden>
+            <p id="sections-note" class="sections-note" hidden></p>
+            <table id="sections" class="sections-table">
+              <thead><tr><th class="num">#</th><th>Section</th><th class="num">Position (mm)</th><th>Angles (pitch, yaw)</th><th>Flipped</th><th>Turned</th><th>Transform</th><th>Deformation</th><th>Damage</th><th class="num">Registration</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="view-steps" class="steps-view" hidden>
+            <section class="steps-block">
+              <h3>Undo <span id="undo-count" class="count"></span></h3>
+              <ol id="undo" class="steps"></ol>
+              <h3>Redo <span id="redo-count" class="count"></span></h3>
+              <ol id="redo" class="steps"></ol>
+            </section>
+            <section class="steps-block">
+              <h3>Notes</h3>
+              <div id="notes" class="notes"></div>
+              <h3>Spend</h3>
+              <p id="spend" class="spend"></p>
+            </section>
+          </div>
+          <p id="focus-empty" class="empty-state" hidden></p>
+        </div>
+      </section>
+      <div id="log-divider" class="divider divider-column" role="separator" aria-orientation="vertical" aria-label="Resize the agent log" tabindex="0"></div>
+      <aside id="log" class="log" aria-label="Agent log">
+        <div class="log-head">
+          <h2 class="log-title">Agent log</h2>
+          <button id="log-expand" class="log-expand" aria-expanded="false">Whole log</button>
+          <span id="log-status" class="log-status"></span>
+        </div>
+        <div id="log-scroll" class="log-scroll">
+          <p id="log-trace-note" class="log-trace-note" hidden>The agent's own words are not in this job folder, only its tool calls: a coding agent keeps its reasoning in its own app.</p>
+          <div id="log-items" class="log-items"></div>
+          <p id="log-empty" class="empty-state" hidden>No activity yet.</p>
+        </div>
+        <button id="log-jump" class="log-jump" hidden>↓ Latest activity</button>
+        <div id="tray-divider" class="divider divider-row" role="separator" aria-orientation="horizontal" aria-label="Resize the tool images" tabindex="0"></div>
+        <section id="tray" class="tray" aria-label="Tool images">
+          <div class="tray-head">
+            <div class="tray-titles">
+              <h3 class="tray-title"><span>Tool images</span><span id="tray-tool" class="tray-tool"></span></h3>
+              <p id="tray-caption" class="tray-caption"></p>
+            </div>
+            <div class="tray-nav">
+              <button id="tray-previous" aria-label="Earlier tool images">←</button><span id="tray-count" class="tray-count">0/0</span><button id="tray-next" aria-label="Later tool images">→</button>
+              <button id="tray-follow" class="follow" aria-pressed="true" title="Show the newest tool images">Follow</button>
+            </div>
+          </div>
+          <div id="tray-grid" class="tray-grid"></div>
         </section>
-      </div>
-    </main>
+      </aside>
+    </div>
   </div>
 
   <!-- prompt generator: generator.js fills this tab -->
@@ -75,7 +134,18 @@
   <script src="settings.js" defer></script>
   <!-- end Settings tab -->
 
-  <footer><span id="connection">Connecting…</span><span>Closing this window does not stop the run.</span></footer>
-  <dialog id="lightbox"><button id="close-lightbox" aria-label="Close">×</button><img id="large" alt=""><p id="large-caption"></p></dialog>
+  <footer class="footer"><span id="connection">Connecting…</span><span>Closing this window does not stop the run.</span></footer>
+  <dialog id="lightbox" class="lightbox" aria-label="Picture">
+    <div class="lightbox-head">
+      <span id="lightbox-label" class="lightbox-label"></span>
+      <span class="lightbox-nav">
+        <span id="lightbox-count" class="lightbox-count"></span>
+        <button id="lightbox-previous" aria-label="Previous picture" title="Previous picture (←)">←</button><button id="lightbox-next" aria-label="Next picture" title="Next picture (→)">→</button>
+        <button id="lightbox-close" aria-label="Close" title="Close (Esc)">×</button>
+      </span>
+    </div>
+    <div class="lightbox-frame"><img id="lightbox-image" alt=""></div>
+    <p id="lightbox-caption" class="lightbox-caption"></p>
+  </dialog>
 </body>
 </html>
