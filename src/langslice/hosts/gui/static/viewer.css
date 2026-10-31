@@ -5,7 +5,6 @@
 
 .tab.viewer { display: flex; flex-direction: column; }
 #no-jobs { flex: 1; display: flex; align-items: center; justify-content: center; }
-#no-jobs code { margin: 0 1ch; }
 
 /* The status line. */
 .statusline {

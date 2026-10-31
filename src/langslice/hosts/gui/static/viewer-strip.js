@@ -457,6 +457,7 @@ const Strip = (() => {
     refreshTimer = setTimeout(() => { if (wanted > edge) { edge = wanted; place(); } }, 400);
   }
   function writeTitle() {
+    if (!rows.length) { title.textContent = ''; title.title = ''; return; }
     const parts = [`${rows.length} section${rows.length === 1 ? '' : 's'}`];
     if (info?.step_mm) parts.push(`atlas every ${info.step_mm} mm`);
     else if (reason) parts.push('no pictures');
