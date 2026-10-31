@@ -58,6 +58,12 @@ problems go to [GitHub issues](https://github.com/greenpolo/LangSlice/issues).
 
 getting-started/install
 register
+```
+
+```{toctree}
+:caption: Integrations
+:hidden:
+
 abba
 ```
 
@@ -67,11 +73,4 @@ abba
 
 tools
 troubleshooting
-```
-
-```{toctree}
-:caption: For AI agents
-:hidden:
-
-Install LangSlice <agents/install>
 ```

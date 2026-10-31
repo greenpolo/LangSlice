@@ -17,8 +17,9 @@ completely and open it again (see [Installation](getting-started/install.md)).
 
 ## The first registration waits a long time before anything happens
 
-LangSlice is downloading the atlas, about 600 MB for the Allen mouse atlas at
-25 µm. It does this once per atlas.
+LangSlice is downloading the atlas: about 2 GB for the Allen mouse atlas at
+25 µm, with the Nissl image it borrows for that atlas. It does this once per
+atlas.
 
 ## A second registration took over the first one's job
 

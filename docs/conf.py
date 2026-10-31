@@ -7,6 +7,7 @@ copyright = "LangSlice contributors"
 extensions = [
     "myst_parser",
     "sphinx_copybutton",
+    "sphinx_design",  # the Installation page's tab per AI app
 ]
 
 myst_enable_extensions = ["colon_fence", "deflist", "tasklist"]
@@ -14,9 +15,10 @@ myst_heading_anchors = 6
 
 exclude_patterns = [
     "requirements.txt", "_build", "_extra", "_includes",
-    # Reference for agents and developers: kept at these paths in the repository (code, the connectors' skills
-    # and the CLAUDE.md guides cite them) and read on GitHub; the site carries only what a user needs.
-    "agents/index.md", "agents/cli.md", "agents/mcp.md", "agents/builtin.md", "reference/*", "developers/*",
+    # Reference for agents and developers: kept at these paths in the repository (code, the connectors' skills,
+    # the CLAUDE.md guides and the Installation page's message for an agent cite them) and read on GitHub; the
+    # site carries only what a user needs.
+    "agents/*", "reference/*", "developers/*",
 ]
 templates_path = ["_templates"]
 html_extra_path = ["_extra"]  # llms.txt at the site root

@@ -493,6 +493,34 @@ ul.bd-breadcrumbs li.breadcrumb-item.breadcrumb-home + li.breadcrumb-item::befor
   overflow-wrap: anywhere;
 }
 
+/* Copy buttons (sphinx-copybutton): a black square on the block's edge; copied is a state, so pink. The message for
+   an agent on the Installation page shows its button always: copying it is what that block is for. */
+html[data-theme] .bd-article div.highlight button.copybtn {
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-radius: 0;
+  color: var(--ls-muted);
+}
+
+html[data-theme] .bd-article div.highlight button.copybtn:hover:not(.success) {
+  background: var(--ls-wash);
+  border-color: var(--ls-tract);
+  color: var(--ls-pink);
+}
+
+html[data-theme] .bd-article div.highlight button.copybtn.success {
+  border-color: var(--ls-pink);
+  color: var(--ls-pink);
+}
+
+.bd-article .ls-copy-box button.copybtn {
+  opacity: 1;
+}
+
+.bd-article .ls-copy-box div.highlight pre {
+  padding-right: 3rem;
+}
+
 /* syntax: the same colour roles */
 html[data-theme] body .highlight { background: var(--ls-ground); }
 html[data-theme] body .highlight .c,
@@ -661,6 +689,76 @@ button.copybtn svg {
 
 .bd-article figure figcaption .caption-number {
   color: var(--ls-name);
+}
+
+/* Screenshots of the AI apps: drawn dark already, so the theme neither backs them with white nor dims them. */
+html[data-theme] .bd-content .bd-article img.ls-shot {
+  display: block;
+  margin: 0.75rem 0 0.5rem;
+  background: none;
+  filter: none;
+  border: 1px solid var(--ls-line);
+  border-radius: 0;
+}
+
+/* Tabs (sphinx-design; one per AI app on the Installation page): a row of names on a hairline. The open tab is
+   named in off-white over a pink edge, as where you are; the others are the page's furniture. */
+html[data-theme] .bd-content .sd-tab-set {
+  margin: 1.25rem 0 1.5rem;
+}
+
+html[data-theme] .bd-content .sd-tab-set > label {
+  position: relative;
+  z-index: 1;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--ls-muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.6;
+  margin: 0 2.5ch -1px 0;
+  padding: 0.35rem 0;
+  transform: none;
+}
+
+html[data-theme] .bd-content .sd-tab-set > input:checked + label {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid var(--ls-pink);
+  border-radius: 0;
+  color: var(--ls-name);
+  font-weight: 700;
+  transform: none;
+}
+
+html[data-theme] .bd-content .sd-tab-set > input:not(:checked, :focus-visible) + label:hover {
+  color: var(--ls-pink);
+  text-decoration: none;
+}
+
+html[data-theme] .bd-content .sd-tab-set > input:focus-visible + label {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid var(--ls-pink);
+  border-radius: 0;
+  color: var(--ls-name);
+  outline: 1px solid var(--ls-pink);
+  outline-offset: 2px;
+}
+
+html[data-theme] .bd-content .sd-tab-set .sd-tab-content {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--ls-line);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1.1rem 0 0;
+}
+
+html[data-theme] .bd-content .sd-tab-set .sd-tab-content > :last-child {
+  margin-bottom: 0;
 }
 
 /* Glossary and definition lists. */

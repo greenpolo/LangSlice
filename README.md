@@ -47,7 +47,7 @@ Atlases are downloaded by BrainGlobe on first use into the user's
 
 ## Use LangSlice
 
-- **[Getting started](https://github.com/greenpolo/LangSlice/blob/main/docs/getting-started/install.md):** install LangSlice,
+- **[Getting started](https://langslice.readthedocs.io/en/latest/getting-started/install.html):** install LangSlice,
   connect the AI app you already use (Codex, Antigravity or Claude Code) and
   [register a brain](https://github.com/greenpolo/LangSlice/blob/main/docs/register.md).
 - **[Agents, CLI and MCP](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/index.md):** Claude Code, Antigravity or Codex

@@ -6,7 +6,6 @@ Rules for an agent setting up a registration: never register sections yourself; 
 
 ## Docs
 
-- [Install LangSlice (for agents)](https://langslice.readthedocs.io/en/latest/agents/install.html): install, verification, connecting Codex, Antigravity and Claude Code
 - [Register a brain](https://langslice.readthedocs.io/en/latest/register.html): what the user prepares, what to tell the agent, checking, the result files
 - [Tools](https://langslice.readthedocs.io/en/latest/tools.html): every registration tool in one line
 - [ABBA](https://langslice.readthedocs.io/en/latest/abba.html): the Fiji connector
@@ -14,6 +13,7 @@ Rules for an agent setting up a registration: never register sections yourself; 
 
 ## Reference (in the repository)
 
+- [Install LangSlice (for an agent)](https://raw.githubusercontent.com/greenpolo/LangSlice/main/docs/agents/install.md): find or install conda, install LangSlice, connect Codex, Claude Code or Antigravity
 - [The agent CLI](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/cli.md): jobs, launch prompts, verbs, replies, background runs, the job's Python environment
 - [The MCP server](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/mcp.md): `langslice mcp`, `start_job`
 - [The built-in agent](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/builtin.md): `langslice linear run`, its own flags, spend, logs
