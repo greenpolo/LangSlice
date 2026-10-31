@@ -1,13 +1,15 @@
-/* The LangSlice window's tokens: the docs' look (docs/_static/langslice.css, the ASCII card's)
-   toned down for a tool that stays open for hours. One monospace face; black where pictures sit,
-   as in a fluorescence image; the window's own furniture a shade above it; the logo's colours,
-   each keeping one job:
-     off-white  names (headings, the chosen tab, a section's name)
+/* The LangSlice window's tokens: the docs' look (docs/_static/langslice.css, after the ASCII
+   card: language, microscopy and anatomy), toned down for a tool that stays open for hours:
+   smaller type, plainer furniture, the same family. One monospace face for every word, told
+   apart by colour; true black everywhere, as in a fluorescence image (panels are black with a
+   1 px edge, never a tinted fill); square corners; no glow, gradients or shadows; no all-caps
+   labels. The logo's colours each keep one job:
+     off-white  names (headings, bold text, the chosen tab, a section's name)
      lavender   what can be followed or clicked (links, buttons, a running call)
-     violet     literal text (paths, commands, tool names in code)
-     pink       boundaries and state (keyboard focus, where you are), used sparingly
+     violet     literal text (paths, commands, tool names, numbers in code)
+     pink       boundaries and state only (keyboard focus, where you are), used sparingly
    The four focus colours are the ABBA viewer's: they tie a focus panel to its handle in the
-   positioning strip. No glow, no gradients, no shadows. Every other file uses these names only. */
+   positioning strip. Every other file uses these names only. */
 
 @font-face {
   font-family: "JetBrains Mono";
@@ -34,30 +36,25 @@
 :root {
   color-scheme: dark;
 
-  /* Grounds, darkest first. */
-  --ground: #000000;       /* behind every picture */
-  --chrome: #07080e;       /* bars, the page */
-  --panel: #0b0c15;        /* panels and cards */
-  --raised: #11131f;       /* panel headers, inputs, a hovered row */
-  --pressed: #181b2c;      /* a selected row, a pressed button */
+  /* Grounds. */
+  --ground: #000000;       /* the page, every panel, behind every picture */
+  --wash: #0a0b14;         /* a hovered row or button, only */
+  --selected: #11131f;     /* a chosen row, a pressed button, the on side of a switch */
 
   /* Lines. */
-  --line: #262a40;         /* hairlines between panels, table rules */
-  --tract: #3e4260;        /* stronger rules, scrollbars, dashed leaders */
+  --line: #262a40;         /* 1 px edges of panels, inputs, tables */
+  --tract: #3e4260;        /* stronger rules, scrollbars, dashed leaders, tree lines */
 
   /* Text. */
   --name: #dce3ff;         /* the logo's off-white */
-  --text: #c3cae6;
-  --muted: #8890b8;
-  --faint: #5d6488;
+  --text: #c3cae6;         /* 12.8:1 on black */
+  --muted: #8890b8;        /* captions, the window's own furniture, 6.6:1 */
+  --faint: #5d6488;        /* greyed choices, placeholders */
 
   /* The logo's colours. */
   --lavender: #8fa0f5;
   --violet: #a98bf0;
   --pink: #ff3daa;
-  --lavender-wash: rgba(143, 160, 245, 0.10);
-  --violet-wash: rgba(169, 139, 240, 0.10);
-  --pink-wash: rgba(255, 61, 170, 0.10);
 
   /* Status words. */
   --running: var(--lavender);
@@ -78,33 +75,32 @@
     "DejaVu Sans Mono", monospace;
   --size-xs: 11px;
   --size-sm: 12px;
-  --size-md: 13px;
+  --size-md: 13px;          /* the window's body text */
   --size-lg: 15px;
-  --size-xl: 18px;
+  --size-xl: 17px;
   --leading: 1.55;
   --leading-prose: 1.7;
 
-  /* Spacing and shape. */
+  /* Spacing. Corners are square everywhere. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
-  --radius-sm: 3px;
-  --radius: 6px;
+  --rule: 2px;             /* the left edge of a note or a tool row, a tab's underline */
   --bar-height: 44px;
   --footer-height: 26px;
 }
 
 html {
-  background: var(--chrome);
-  scrollbar-color: var(--tract) var(--chrome);
+  background: var(--ground);
+  scrollbar-color: var(--tract) var(--ground);
 }
 
 body {
   margin: 0;
-  background: var(--chrome);
+  background: var(--ground);
   color: var(--text);
   font-family: var(--mono);
   font-size: var(--size-md);

@@ -5,8 +5,9 @@ One ``ThreadingHTTPServer`` on 127.0.0.1, every path under a random token
 another site cannot reach it through a rebound name), a strict
 Content-Security-Policy and ``no-store``. GET endpoints:
 
-- ``""``, ``app.css``, ``app.js``, ``settings.js``, ``generator.js``,
-  ``generator.css``: the page (``static/``);
+- ``""`` (``index.html``) and every other file directly in ``static/`` whose
+  name :data:`STATIC_NAME` matches (the page's scripts, styles, fonts and
+  logo), its type from its extension (:data:`STATIC_TYPES`);
 - ``jobs``: the job list (:meth:`JobList.listing`);
 - ``generator``: the prompt generator's choices (:func:`.generator.payload`);
   ``generator?job=<n>`` adds ``prefill``, the form as that job's
@@ -39,22 +40,13 @@ from langslice.hosts.gui.settings import POSTS, Settings, SettingsError
 from langslice.hosts.gui.watch import JobList
 
 STATIC = Path(__file__).with_name("static")
-_FILES = {"": ("index.html", "text/html; charset=utf-8"),
-          "app.css": ("app.css", "text/css"),
-          "app.js": ("app.js", "text/javascript"),
-          # prompt generator (generator.py serves its choices at `generator`)
-          "generator.js": ("generator.js", "text/javascript"),
-          "generator.css": ("generator.css", "text/css"),
-          # the window's look: tokens, the bundled JetBrains Mono (SIL OFL 1.1) and the logo
-          "tokens.css": ("tokens.css", "text/css"),
-          "jetbrains-mono-regular.woff2": ("jetbrains-mono-regular.woff2", "font/woff2"),
-          "jetbrains-mono-italic.woff2": ("jetbrains-mono-italic.woff2", "font/woff2"),
-          "jetbrains-mono-bold.woff2": ("jetbrains-mono-bold.woff2", "font/woff2"),
-          "jetbrains-mono-ofl.txt": ("jetbrains-mono-ofl.txt", "text/plain; charset=utf-8"),
-          "lockup.svg": ("lockup.svg", "image/svg+xml"),
-          "logomark.svg": ("logomark.svg", "image/svg+xml")}
+#: A file of ``static/`` the page may load: a plain name, no folder.
+STATIC_NAME = re.compile(r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt)")
+#: Each static file's type, by extension.
+STATIC_TYPES = {"html": "text/html; charset=utf-8", "css": "text/css",
+                "js": "text/javascript", "woff2": "font/woff2", "svg": "image/svg+xml",
+                "txt": "text/plain; charset=utf-8"}
 # --- Settings tab (hosts/gui/settings.py) ---
-_FILES["settings.js"] = ("settings.js", "text/javascript")
 #: The largest POST body read.
 MAX_BODY = 16 * 1024
 # --- end Settings tab ---
@@ -141,9 +133,9 @@ class GuiServer:
         resource = parsed.path[len(prefix):]
         try:
             query = parse_qs(parsed.query)
-            if resource in _FILES:
-                name, mime = _FILES[resource]
-                return (STATIC / name).read_bytes(), mime
+            if resource == "" or STATIC_NAME.fullmatch(resource):
+                name = resource or "index.html"
+                return (STATIC / name).read_bytes(), STATIC_TYPES[name.rsplit(".", 1)[1]]
             if resource == "jobs":
                 return self._json({"jobs": self.jobs.listing()})
             if resource == "generator":  # prompt generator
