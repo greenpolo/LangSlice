@@ -1,5 +1,6 @@
-/* The ABBA agent log's palette and type (hosts/abba/static/chat.css),
-   with the ABBA comparison window's blue-grey picture panels. */
+/* The window's palette and type. --bg, --panel, --line, --text, --muted,
+   --accent and --mono are from the ABBA log, kept after its deletion; the
+   blue-grey picture panels are the ABBA comparison window's. */
 :root {
   color-scheme: dark;
   --bg: #181818;

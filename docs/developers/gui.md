@@ -14,6 +14,7 @@ langslice gui                       # the jobs opened recently on this computer
 langslice gui ~/data/brain1         # an image folder (its langslice/ job folder) ...
 langslice gui ~/data/brain1/langslice  # ... or the job folder itself
 langslice linear run ~/data/brain1 --gui   # start a run and open the window on it
+langslice gui ~/data/brain1 --tab prompt   # open on the prompt generator, filled in from the job
 ```
 
 LangSlice serves the window from this computer only and opens it as a browser
@@ -26,8 +27,9 @@ until the window has been closed for five seconds.
 ## What it shows
 
 The window has three tabs: **Agent viewer**, **Prompt generator** and
-**Settings** (top right). The first time the window opens with no
-connection chosen, it opens on Settings.
+**Settings** (top right). It opens on the agent viewer, or on the prompt
+generator with `--tab prompt`. The first time the window opens with no
+connection chosen and no `--tab`, it opens on Settings.
 
 ## The agent viewer
 
@@ -87,7 +89,18 @@ blank, the agent decides or asks you about.
   on. Turning a tool or one of its options off takes it away from the agent.
   The tools of a task you did not choose are greyed; so are the options that
   something you said in *What you already know* leaves nothing to do. Some
-  tools cannot be turned off.
+  tools cannot be turned off. Below the warp's tools, **Image model**: the
+  provider and model that draw a section's borders when the agent traces
+  them (`--nonlinear-provider`, `--nonlinear-image-model`). It offers the
+  providers a job accepts (your ChatGPT account, an OpenAI or Gemini API key,
+  or none, which leaves the warp to fit each section to its stain alone) and
+  the models LangSlice lists for each, says whether this computer has the
+  provider's key or sign-in, and is greyed unless the run warps with border
+  tracing on. Not set, the job uses LangSlice's default.
+
+With `--tab prompt` and a folder, the form starts from that folder's job
+(its `job.json`): its folder, atlas, plane, sizes, tasks, tools turned off,
+what is kept on every section, damage notes, facts and notes.
 
 The message on the right updates as you type, and **Copy** puts it on the
 clipboard. It is a short request and the job's `langslice-job FOLDER init`
@@ -115,10 +128,34 @@ Each line of the command is one of `init`'s settings (`langslice-job schema
 init` lists them all): `--tasks` what to do, `--disabled` the tools and
 options turned off, `--frozen` what stays as it is on every section,
 `--damaged` the damage notes, `--facts` the cutting order and `--notes` your
-notes. A choice of tools the job would refuse (a task with none of the tools
-that do it, a tool without the pictures it needs, `look` with no kind of
-picture) shows in red instead of a message, with what to turn back on. The
-command is written for bash; on Windows the agent adjusts its quoting.
+notes; `--nonlinear-provider` and `--nonlinear-image-model` appear only when
+you choose an image model. A choice of tools the job would refuse (a task
+with none of the tools that do it, a tool without the pictures it needs,
+`look` with no kind of picture) shows in red instead of a message, with what
+to turn back on. The command is written for bash; on Windows the agent
+adjusts its quoting.
+
+## From ABBA
+
+A job prepared in ABBA (its `job.json` names ABBA as its host; see
+[ABBA](../abba.md)) opens on the prompt generator with a **From ABBA** block
+at the top:
+
+- the snapshot folder, the atlas (and ABBA's name for it), the cutting plane
+  and the snapshot pixel size, as fixed text. ABBA set them and the job holds
+  them, so their fields below are greyed and the message leaves them out;
+- **Keep the N sections' existing ABBA registrations (their positions may
+  still move)**, ticked, when ABBA had registered some sections. Ticked, the
+  message adds nothing and the job keeps them as ABBA prepared it; unticked,
+  the command carries `--frozen '{}'`, which lets the agent redo their
+  alignment and warps too. A box ticked under *What you already know* writes
+  `--frozen` with the kept property on every section, and, while the
+  registrations are kept, those sections' own entries beside it;
+- each snapshot file with its ABBA slice name and whether ABBA had registered
+  or warped it, so a damaged section can be named by its file.
+
+Thickness and interval start from ABBA's slice spacing, when it had one;
+check them.
 
 ## Settings
 

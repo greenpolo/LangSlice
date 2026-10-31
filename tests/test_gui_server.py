@@ -60,6 +60,9 @@ def test_only_get(server: GuiServer) -> None:
     prefix = f"/{server.token}/"
     for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD"):
         assert _get(server, prefix + "jobs", method=method)[0] == 405
+        assert _get(server, prefix + "generator?job=0", method=method)[0] == 405
+    status, body, _ = _get(server, prefix + "generator?job=0")
+    assert status == 200 and json.loads(body)["prefill"] is None  # no job.json
 
 
 def test_jobs_snapshot_and_pictures(server: GuiServer) -> None:

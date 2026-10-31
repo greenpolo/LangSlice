@@ -8247,7 +8247,7 @@
 {"rule": "ruff:E501", "path": "src/langslice/hosts/abba/viewer_overview.py", "symbol": "native_key_style", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/abba/viewer_overview.py", "symbol": "native_position_x", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/cli.py", "symbol": "add_abba_parser", "count": 2},
-{"rule": "ruff:E501", "path": "src/langslice/hosts/cli.py", "symbol": "add_gui_parser", "count": 3},
+{"rule": "ruff:E501", "path": "src/langslice/hosts/cli.py", "symbol": "add_gui_parser", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/cli.py", "symbol": "run_abba", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/cli.py", "symbol": "run_gui", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/__init__.py", "symbol": "<module>", "count": 1},

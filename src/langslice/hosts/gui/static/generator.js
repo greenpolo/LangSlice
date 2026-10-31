@@ -9,6 +9,29 @@
 const Generator = (() => {
   const SEP = ':';
   const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+  const ORDERED = 'The file names sort in the order the sections were cut.';
+
+  // The form as the page starts it: the default atlas and tasks, nothing else.
+  function startForm(data) {
+    return { folder: '', atlas: data.default_atlas, plane: '', thickness: '', interval: '', pixelSize: '',
+             tasks: data.tasks.filter(t => t.default).map(t => t.name), off: [], ordered: false,
+             damaged: '', keep: {}, notes: '', imageProvider: '', imageModel: '',
+             abba: null, keepRegistrations: true, frozen: {} };
+  }
+
+  // The form started from a job's own settings (`prefill`, GET generator?job=n):
+  // a job prepared in ABBA carries `abba`, which fixes the folder, atlas, plane
+  // and pixel size, and keeps its registered sections unless unticked.
+  function prefilled(data, prefill) {
+    const form = startForm(data);
+    if (!prefill) return form;
+    const tasks = data.tasks.map(t => t.name).filter(name => (prefill.tasks || []).includes(name));
+    return { ...form, folder: prefill.folder || '', atlas: prefill.atlas || '', plane: prefill.plane || '',
+             thickness: prefill.thickness || '', interval: prefill.interval || '', pixelSize: prefill.pixel_size || '',
+             tasks, off: [...(prefill.off || [])], ordered: (prefill.facts || []).includes(ORDERED),
+             damaged: prefill.damaged || '', keep: { ...(prefill.keep || {}) }, notes: prefill.notes || '',
+             frozen: { ...(prefill.frozen || {}) }, abba: prefill.abba || null };
+  }
 
   // A word for a POSIX shell: as it is when it needs no quoting, else in
   // single quotes, or in double quotes when it holds a single quote and
@@ -42,9 +65,29 @@ const Generator = (() => {
     const chosen = chosenTasks(data, form);
     return chosen.length ? chosen : data.tasks.filter(t => t.default).map(t => t.name);
   }
+  // The tools a run of this form has: its tasks', without the image model's
+  // when the form says there is none.
   function present(data, form) {
-    const key = runTasks(data, form).join(',');
-    return new Set(data.tools.filter(t => t.runs_in.includes(key)).map(t => t.name));
+    const key = runTasks(data, form).join(','), none = form.imageProvider === 'none';
+    return new Set(data.tools.filter(t => t.runs_in.includes(key) && !(none && t.image_model)).map(t => t.name));
+  }
+
+  // Whether the image-model choice applies: the run warps, and a tool that
+  // calls the image model is not switched off (whatever provider is chosen).
+  function imageModelApplies(data, form) {
+    const tasks = runTasks(data, form);
+    if (!tasks.includes('nonlinear')) return false;
+    const key = tasks.join(','), off = new Set(form.off || []), held = keptOff(data, form);
+    return data.tools.some(t => t.image_model && t.runs_in.includes(key)
+      && !(t.disableable && off.has(t.name)) && !held.has(t.name));
+  }
+  // The image-model flags: [setting, value] pairs, none when nothing is chosen.
+  function imageModelFlags(data, form) {
+    const provider = String(form.imageProvider || '').trim(), model = String(form.imageModel || '').trim();
+    if (!provider || !imageModelApplies(data, form)) return [];
+    const out = [['nonlinear.provider', provider]];
+    if (model && provider !== 'none') out.push(['nonlinear.image_model', model]);
+    return out;
   }
 
   // The names the job's `--disabled` takes: the tools of this run switched off
@@ -92,7 +135,7 @@ const Generator = (() => {
     if (blank(cleanPath(form.folder))) out.push('Enter the folder that holds the section images.');
     if (!blank(form.thickness) && !wholeNumber(form.thickness)) out.push('Section thickness is a whole number of micrometres (µm).');
     if (!blank(form.interval) && !wholeNumber(form.interval)) out.push('Section interval is a whole number of micrometres (µm).');
-    if (!blank(form.pixelSize) && !positiveNumber(form.pixelSize)) out.push('Pixel size is a number of micrometres per pixel, above 0.');
+    if (!form.abba && !blank(form.pixelSize) && !positiveNumber(form.pixelSize)) out.push('Pixel size is a number of micrometres per pixel, above 0.');
     const off = new Set(offNames(data, form)), here = present(data, form);
     const look = data.tools.find(t => t.name === 'look');
     if (look && look.options.length && look.options.every(o => isOff(off, o.name))) {
@@ -133,13 +176,25 @@ const Generator = (() => {
 
   function leftOut(data, form) {
     const out = [];
+    const fixed = Boolean(form.abba);  // ABBA's job already holds these
     if (!chosenTasks(data, form).length) out.push('what to do (place, align, warp)');
-    if (blank(form.atlas)) out.push('the atlas');
-    if (blank(form.plane)) out.push('the cutting plane');
+    if (!fixed && blank(form.atlas)) out.push('the atlas');
+    if (!fixed && blank(form.plane)) out.push('the cutting plane');
     if (blank(form.thickness)) out.push('the section thickness');
     if (blank(form.interval)) out.push('the section interval');
-    if (blank(form.pixelSize)) out.push('the pixel size (when the image files do not record it)');
+    if (!fixed && blank(form.pixelSize)) out.push('the pixel size (when the image files do not record it)');
     return out;
+  }
+
+  // The job's `--frozen`, or null for none: the kept properties on every
+  // section, and a job prepared in ABBA's own per-section freezes (its
+  // registered sections) while they are kept; unticked, `{}` frees them.
+  function frozenFlag(data, form) {
+    const keep = kept(data, form), saved = form.frozen || {};
+    const freed = Boolean(form.abba) && !form.keepRegistrations && Object.keys(saved).length > 0;
+    const sections = freed ? {} : saved;
+    if (keep.length) return JSON.stringify({ '*': keep, ...sections });
+    return freed ? '{}' : null;
   }
 
   // The properties kept on every section (the job's `--frozen "*"`): each
@@ -160,18 +215,20 @@ const Generator = (() => {
     const flag = (setting, value) => args.push([data.flags[setting], shellQuote(value)]);
     const tasks = chosenTasks(data, form);
     if (tasks.length) flag('tasks', tasks.join(','));
-    if (!blank(form.atlas)) flag('atlas', form.atlas.trim());
-    if (!blank(form.plane)) flag('plane', form.plane.trim());
+    const fixed = Boolean(form.abba);  // ABBA's job already holds these
+    if (!fixed && !blank(form.atlas)) flag('atlas', form.atlas.trim());
+    if (!fixed && !blank(form.plane)) flag('plane', form.plane.trim());
     if (!blank(form.thickness)) flag('position.thickness_um', String(form.thickness).trim());
     if (!blank(form.interval)) flag('position.interval_um', String(form.interval).trim());
-    if (!blank(form.pixelSize)) flag('inputs.pixel_size_um', String(form.pixelSize).trim());
+    if (!fixed && !blank(form.pixelSize)) flag('inputs.pixel_size_um', String(form.pixelSize).trim());
     const off = offNames(data, form);
     if (off.length) flag('disabled', off.join(','));
-    const keep = kept(data, form);
-    if (keep.length) flag('frozen', JSON.stringify({ '*': keep }));
+    for (const [setting, value] of imageModelFlags(data, form)) flag(setting, value);
+    const frozen = frozenFlag(data, form);
+    if (frozen !== null) flag('frozen', frozen);
     const damaged = damagedMap(form.damaged);
     if (Object.keys(damaged).length) flag('inputs.damaged', JSON.stringify(damaged));
-    if (form.ordered) flag('facts', 'The file names sort in the order the sections were cut.');
+    if (form.ordered) flag('facts', ORDERED);
     if (!blank(form.notes)) flag('notes', String(form.notes).trim());
     return { text: 'langslice-job ' + args.map(words => words.join(' ')).join(' \\\n  '),
              quoted: args.some(words => words.some(word => /^['"]/.test(word))) };
@@ -196,7 +253,8 @@ const Generator = (() => {
     return { text, problems: stops, warnings: notes };
   }
 
-  return { shellQuote, cleanPath, offNames, present, keptOff, problems, warnings, leftOut, command, message };
+  return { shellQuote, cleanPath, startForm, prefilled, offNames, present, keptOff, imageModelApplies,
+           problems, warnings, leftOut, command, message };
 })();
 
 if (typeof module !== 'undefined') module.exports = Generator;
@@ -207,10 +265,10 @@ if (typeof document !== 'undefined') (() => {
   const root = document.getElementById('tab-prompt');
   if (!root) return;
   let data = null;
-  const form = { folder: '', atlas: '', plane: '', thickness: '', interval: '', pixelSize: '',
-                 tasks: [], off: [], ordered: false, damaged: '', keep: {}, notes: '' };
+  const form = {};  // Generator.startForm / prefilled, filled in by build()
   const toolBoxes = [];  // [{tool, box, row, optionBoxes}]
-  let output, problemList, warningList, copyButton, copied, aboutAtlas, keepBoxes;
+  const fixedControls = [];  // the inputs a job prepared in ABBA fixes
+  let output, problemList, warningList, copyButton, copied, aboutAtlas, keepBoxes, imageRow;
 
   function field(labelText, control, help) {
     const wrap = make('label', 'gen-field');
@@ -258,6 +316,7 @@ if (typeof document !== 'undefined') (() => {
     s.append(make('h3', '', title));
     return s;
   }
+  function fixed(control) { fixedControls.push(control); return control; }
 
   function atlasSelect() {
     const box = make('select');
@@ -287,6 +346,50 @@ if (typeof document !== 'undefined') (() => {
     return d;
   }
 
+  // A job prepared in ABBA: what ABBA fixed, the snapshots' slice names, and
+  // whether the sections ABBA already registered stay as they are.
+  function abbaSection() {
+    const abba = form.abba;
+    const s = section('From ABBA');
+    const facts = make('dl', 'gen-facts');
+    const plane = form.plane ? form.plane[0].toUpperCase() + form.plane.slice(1) : '';
+    for (const [term, value] of [
+      ['Images', form.folder],
+      ['Atlas', form.atlas + (abba.atlas ? ` (in ABBA: ${abba.atlas})` : '')],
+      ['Cutting plane', plane],
+      ['Snapshot pixel size', form.pixelSize ? `${form.pixelSize} µm per pixel` : 'not recorded'],
+    ]) facts.append(make('dt', '', term), make('dd', '', value));
+    s.append(facts, make('p', 'gen-help', 'ABBA set these when it exported the snapshots; the job already holds them, so the message leaves them out.'));
+    const registered = abba.registered || [];
+    if (registered.length && Object.keys(form.frozen).length) {
+      const n = registered.length;
+      const keepRegs = check(`Keep the ${n} section${n === 1 ? '' : 's'}’ existing ABBA registrations (their positions may still move)`, 'keepRegistrations',
+        'Untick to let the agent redo their alignment and warps too.');
+      s.append(keepRegs.wrap);
+    }
+    const names = Object.entries(abba.sections || {});
+    if (names.length) {
+      const d = make('details', 'gen-slices');
+      d.open = names.length <= 12;
+      d.append(make('summary', '', `Snapshot files and their ABBA slices (${names.length})`));
+      const wrap = make('div', 'gen-slice-wrap'), table = make('table', 'gen-slice-table');
+      const head = make('tr');
+      for (const title of ['File', 'ABBA slice', 'In ABBA']) head.append(make('th', '', title));
+      table.append(head);
+      const warped = new Set(abba.existing_warp || []), done = new Set(registered);
+      for (const [file, slice] of names) {
+        const tr = make('tr');
+        const status = warped.has(file) ? 'registered, warped' : done.has(file) ? 'registered' : '';
+        tr.append(make('td', '', file), make('td', '', slice), make('td', 'gen-help', status));
+        table.append(tr);
+      }
+      wrap.append(table);
+      d.append(wrap, make('p', 'gen-help', 'Name a damaged section below by its file name.'));
+      s.append(d);
+    }
+    return s;
+  }
+
   function toolsPanel() {
     const d = make('details', 'gen-advanced');
     d.append(make('summary', '', 'Advanced: the tools the registration agent may use'));
@@ -297,7 +400,7 @@ if (typeof document !== 'undefined') (() => {
       for (const tool of data.tools.filter(t => t.group === group.name)) {
         const row = make('div', 'gen-tool');
         const label = make('label', 'gen-check'), cb = make('input');
-        cb.type = 'checkbox'; cb.checked = true; cb.dataset.name = tool.name;
+        cb.type = 'checkbox'; cb.checked = !form.off.includes(tool.name); cb.dataset.name = tool.name;
         if (!tool.disableable) { cb.disabled = true; cb.title = 'Every run needs this tool.'; }
         cb.onchange = () => { setOff(tool.name, !cb.checked); update(); };
         const words = make('span');
@@ -310,7 +413,7 @@ if (typeof document !== 'undefined') (() => {
           const opts = make('div', 'gen-options');
           for (const option of tool.options) {
             const ol = make('label', 'gen-check'), ob = make('input');
-            ob.type = 'checkbox'; ob.checked = true; ob.dataset.name = option.name;
+            ob.type = 'checkbox'; ob.checked = !form.off.includes(option.name); ob.dataset.name = option.name;
             ob.onchange = () => { setOff(option.name, !ob.checked); update(); };
             ol.append(ob, make('span', '', option.label));
             opts.append(ol); optionBoxes.push(ob);
@@ -321,13 +424,47 @@ if (typeof document !== 'undefined') (() => {
         toolBoxes.push({ tool, box: cb, row, optionBoxes });
       }
       d.append(box);
+      if (group.task === 'nonlinear' && !imageRow) d.append(imageModelPanel());
     }
+    if (!imageRow) d.append(imageModelPanel());
     return d;
   }
   function setOff(name, off) {
     const names = new Set(form.off);
     if (off) names.add(name); else names.delete(name);
     form.off = [...names];
+  }
+
+  // The image model the warp's border tracing asks (`--nonlinear-provider`,
+  // `--nonlinear-image-model`): the providers and models LangSlice lists.
+  function imageModelPanel() {
+    const box = make('fieldset', 'gen-group gen-image');
+    box.append(make('legend', '', 'Image model'));
+    const tracer = data.tools.find(t => t.image_model);
+    box.append(make('p', 'gen-help', `The model that draws a section’s borders for ${tracer ? `“${tracer.label}”` : 'the warp'}. Applies when warping to fit.`));
+    const provider = make('select');
+    const fallback = data.image_models.find(p => p.default);
+    provider.append(new Option(`Not set: LangSlice’s default${fallback ? ` (${fallback.label})` : ''}`, ''));
+    for (const p of data.image_models) provider.append(new Option(p.label, p.provider));
+    provider.value = form.imageProvider;
+    const model = make('select');
+    const hint = make('span', 'gen-help');
+    function models() {
+      const chosen = data.image_models.find(p => p.provider === form.imageProvider);
+      model.replaceChildren(new Option(chosen && chosen.default_model ? `The provider’s default (${chosen.default_model})` : 'The provider’s default', ''));
+      for (const name of chosen ? chosen.models : []) model.append(new Option(name, name));
+      model.value = form.imageModel;
+      if (!chosen || chosen.provider === 'none') hint.textContent = chosen ? 'The warp fits each section to its stain alone.' : '';
+      else hint.textContent = chosen.connected ? 'Set up on this computer.' : 'Not set up on this computer yet: Settings connects it.';
+    }
+    provider.onchange = () => { form.imageProvider = provider.value; form.imageModel = ''; models(); update(); };
+    model.onchange = () => { form.imageModel = model.value; update(); };
+    models();
+    const row = make('div', 'gen-row gen-row-2');
+    row.append(field('Provider', provider), field('Model', model));
+    box.append(row, hint);
+    imageRow = { box, provider, model };
+    return box;
   }
 
   function outputPanel() {
@@ -363,10 +500,11 @@ if (typeof document !== 'undefined') (() => {
     if (!data) return;
     const here = Generator.present(data, form), off = new Set(form.off), keptOff = Generator.keptOff(data, form);
     const KEPT = 'Off: you said what this would change stays as it is.';
+    const noImageModel = form.imageProvider === 'none';
     for (const { tool, box, row, optionBoxes } of toolBoxes) {
       const inRun = here.has(tool.name);
       row.classList.toggle('gen-absent', !inRun);
-      row.title = inRun ? '' : 'Not in this run: its task is not chosen.';
+      row.title = inRun ? '' : (noImageModel && tool.image_model ? 'Not in this run: you chose no image model.' : 'Not in this run: its task is not chosen.');
       for (const ob of optionBoxes) {
         const held = keptOff.has(ob.dataset.name);
         ob.disabled = !inRun || held || (tool.disableable && off.has(tool.name));
@@ -375,8 +513,14 @@ if (typeof document !== 'undefined') (() => {
       }
       if (tool.disableable) box.disabled = !inRun || keptOff.has(tool.name);
     }
+    const imageOn = Generator.imageModelApplies(data, form);
+    imageRow.box.classList.toggle('gen-absent', !imageOn);
+    imageRow.box.title = imageOn ? '' : 'Not in this run: warping to fit is not chosen, or its border tracing is off.';
+    imageRow.provider.disabled = !imageOn;
+    imageRow.model.disabled = !imageOn || !form.imageProvider || noImageModel;
     const tasks = new Set(form.tasks);
     for (const [prop, item] of Object.entries(keepBoxes)) item.box.disabled = !tasks.has(data.keep[prop]);
+    for (const control of fixedControls) control.disabled = Boolean(form.abba);
     const atlas = data.atlases.find(a => a.name === form.atlas);
     aboutAtlas.textContent = atlas ? atlas.about : 'The agent picks the atlas, or asks you.';
     const made = Generator.message(data, form);
@@ -387,27 +531,31 @@ if (typeof document !== 'undefined') (() => {
     copyButton.disabled = !made.text;
   }
 
-  function build() {
-    form.atlas = data.default_atlas;
-    form.tasks = data.tasks.filter(t => t.default).map(t => t.name);
+  function build(prefill) {
+    Object.assign(form, Generator.prefilled(data, prefill));
     const page = make('div', 'gen-page'), main = make('div', 'gen-form');
-    main.append(make('p', 'gen-intro', 'Fill in what you know, copy the message, and paste it into your agent app. Only the image folder is needed: anything left blank, the agent decides or asks you about.'));
+    main.append(make('p', 'gen-intro', form.abba
+      ? 'ABBA prepared this job: its snapshots, positions and cutting angles are in it. Add what you know, copy the message, and paste it into your agent app.'
+      : 'Fill in what you know, copy the message, and paste it into your agent app. Only the image folder is needed: anything left blank, the agent decides or asks you about.'));
+    if (form.abba) main.append(abbaSection());
 
+    const fixedHelp = form.abba ? 'Set by ABBA.' : undefined;
     const where = section('Images');
-    where.append(field('Folder of section images (required)', input('folder', { placeholder: 'e.g. C:\\Users\\me\\brain1 or /home/me/brain1' })), folderHelp());
+    where.append(field('Folder of section images (required)', fixed(input('folder', { placeholder: 'e.g. C:\\Users\\me\\brain1 or /home/me/brain1' })), fixedHelp));
+    if (!form.abba) where.append(folderHelp());
     main.append(where);
 
     const atlas = section('Atlas');
     aboutAtlas = make('p', 'gen-help gen-about');
-    atlas.append(field('Atlas', atlasSelect()), aboutAtlas,
-      field('Cutting plane', select('plane', data.planes.map(p => [p, p[0].toUpperCase() + p.slice(1)]), 'Not set: the agent decides')));
+    atlas.append(field('Atlas', fixed(atlasSelect())), aboutAtlas,
+      field('Cutting plane', fixed(select('plane', data.planes.map(p => [p, p[0].toUpperCase() + p.slice(1)]), 'Not set: the agent decides')), fixedHelp));
     main.append(atlas);
 
     const cut = section('Sections');
     const row = make('div', 'gen-row');
-    row.append(field('Thickness (µm)', input('thickness', { placeholder: 'e.g. 40', mode: 'numeric' })),
+    row.append(field('Thickness (µm)', input('thickness', { placeholder: 'e.g. 40', mode: 'numeric' }), form.abba && form.thickness ? 'ABBA’s, from its slice spacing: check it.' : undefined),
       field('Interval (µm)', input('interval', { placeholder: 'e.g. 120', mode: 'numeric' }), 'From one kept section to the next: every third 40 µm section is 120 µm.'),
-      field('Pixel size (µm per pixel)', input('pixelSize', { placeholder: 'e.g. 0.65', mode: 'decimal' }), 'Only if the image files do not record it.'));
+      field('Pixel size (µm per pixel)', fixed(input('pixelSize', { placeholder: 'e.g. 0.65', mode: 'decimal' })), form.abba ? 'ABBA’s snapshots.' : 'Only if the image files do not record it.'));
     cut.append(row);
     main.append(cut);
 
@@ -445,12 +593,20 @@ if (typeof document !== 'undefined') (() => {
     update();
   }
 
+  // The job the window was opened on (`#tab=prompt&job=<n>`, langslice gui
+  // FOLDER --tab prompt): the form starts from its job.json.
+  function startJob() {
+    const job = new URLSearchParams(location.hash.slice(1)).get('job');
+    return job !== null && /^[0-9]+$/.test(job) ? job : null;
+  }
+
   async function load() {
     try {
-      const r = await fetch('generator', { cache: 'no-store' });
+      const job = startJob();
+      const r = await fetch(job === null ? 'generator' : `generator?job=${job}`, { cache: 'no-store' });
       if (!r.ok) throw new Error(String(r.status));
       data = await r.json();
-      build();
+      build(data.prefill || null);
     } catch {
       root.replaceChildren(make('p', 'gen-intro', 'The prompt generator could not load its choices from LangSlice. Close the window and open it again.'));
     }

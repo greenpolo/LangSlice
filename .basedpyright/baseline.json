@@ -43272,66 +43272,10 @@
                 }
             },
             {
-                "code": "reportUnknownParameterType",
-                "range": {
-                    "startColumn": 19,
-                    "endColumn": 29,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportMissingTypeArgument",
-                "range": {
-                    "startColumn": 31,
-                    "endColumn": 57,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportPrivateUsage",
                 "range": {
                     "startColumn": 40,
                     "endColumn": 57,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportUnknownVariableType",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 5,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportUnknownMemberType",
-                "range": {
-                    "startColumn": 8,
-                    "endColumn": 29,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportUnknownMemberType",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 18,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportUnknownMemberType",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 18,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportUnknownMemberType",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 18,
                     "lineCount": 1
                 }
             },

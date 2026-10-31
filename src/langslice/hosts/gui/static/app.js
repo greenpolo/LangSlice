@@ -20,6 +20,10 @@ for (const button of document.querySelectorAll('[data-tab]')) {
     for (const tab of document.querySelectorAll('.tab')) tab.hidden = tab.id !== 'tab-' + button.dataset.tab;
   };
 }
+// The tab the window was opened on (`langslice gui --tab prompt`: `#tab=prompt&job=<n>`,
+// the job generator.js starts its form from).
+const startTab = new URLSearchParams(location.hash.slice(1)).get('tab');
+for (const button of document.querySelectorAll('[data-tab]')) if (button.dataset.tab === startTab) button.click();
 
 // --- jobs -------------------------------------------------------------------
 function ago(seconds) {
