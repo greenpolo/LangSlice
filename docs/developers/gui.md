@@ -33,31 +33,56 @@ connection chosen and no `--tab`, it opens on Settings.
 
 ## The agent viewer
 
-The agent viewer lists the jobs on the left: the folders given on the command
-line and the jobs opened recently on this computer
-(`~/.langslice/recent_jobs.jsonl`; `LANGSLICE_RECENT_JOBS` names another file,
-or `off`). It shows the most recently changed job, and new jobs as they
-appear. For the chosen job:
+The agent viewer is laid out like the viewer LangSlice once had inside ABBA:
+what the agent is working on, on the left, and the agent's log on the right.
 
-- **Status line.** Running, Waiting, Submitted or Failed, with the tool running
-  now or the last one, and the atlas, plane, model and door when known.
-- **Picture pane.** The newest saved picture, large, with its caption; earlier
-  and later pictures, one section's pictures only, and a click to enlarge.
-  *Follow* returns to the newest.
-- **Activity.** One row per tool call with its sections and the pictures it
-  saved (a click shows one in the pane); a failed call is red. When the job
-  folder holds LangSlice's agent trace, the agent's text and its reasoning
-  summaries appear between the calls. A coding agent's own reasoning is not
-  in the job folder while it runs, so it is not shown. Each row's inputs are
-  under **Details**.
-- **Sections.** Order, filename, position, cutting angles, flip, transform,
-  deformation method, damage and registration number. A job saved by an older
-  LangSlice is read as every other way in opens it; one whose state this
-  LangSlice cannot read (a newer one's) is shown from its raw fields.
-- **Undo** and **Redo.** The steps that can be undone and redone, each named by
-  the call that made it.
-- **Notes** (yours from the job's settings, and the run's) and **Spend**
-  (tokens and the dollar estimate, when the run records them).
+- **Job.** The job picker at the top right lists the folders given on the
+  command line and the jobs opened recently on this computer
+  (`~/.langslice/recent_jobs.jsonl`; `LANGSLICE_RECENT_JOBS` names another
+  file, or `off`), newest first. Each is named by its images folder and the
+  folder above it (`M01/images`), with its path beside it. The window shows
+  the most recently changed job until you pick one; the address then names
+  it (`#job=<n>`).
+- **Status line.** Running, Waiting, Idle (nothing changed for ten minutes),
+  Submitted or Failed, with the tool running now or the last one and its
+  sections, and the atlas, plane, model and door when known.
+- **Positioning strip.** The atlas along its cutting axis: thumbnails of the
+  atlas template at regular steps over a millimetre ruler, and below them
+  every placed section as a thumbnail with a handle and a dashed line up to
+  its position, in up to three rows. The sections the agent is working on
+  are drawn in their panel's colour, with a pink bar along the axis spanning
+  them; sections not placed yet are grouped at the right end. Point at a
+  section for its name and position, and click it to look at it. The wheel
+  zooms, dragging pans and a double-click shows the whole axis. The divider
+  below the strip sets its height.
+- **Focus.** The sections the agent's latest call worked on (a change,
+  `look` or `zoom`; before the first, every section), four to a page (the
+  arrows, or `[` and `]`). Each panel shows its section under its current
+  registration with the atlas borders, drawn by the window from the job
+  folder, and drawn again whenever that section's registration changes; a
+  section not placed yet is shown alone. Its title gives the section, its
+  position and cutting angles, and tags for its transform, its deformation
+  and damage. The wheel zooms, dragging pans and **open** shows it large.
+  **Follow agent** (on to start with; `f`) keeps the panels on the agent's
+  latest call. Clicking a section in the strip, the table or the log puts it
+  in focus and stops following.
+- **Sections.** Order, filename, position, cutting angles, flipped, turned,
+  transform, deformation method, damage and registration number; click a
+  row to put that section in focus. A job saved by an older LangSlice is
+  read as every other way in opens it; one whose state this LangSlice cannot
+  read (a newer one's) is shown from its raw fields.
+- **Steps.** The steps that can be undone and redone, each named by the call
+  that made it; your notes from the job's settings and the run's; and the
+  spend (tokens and the dollar estimate, when the run records them).
+- **Agent log.** One row per tool call, with its sections and whether it is
+  running, done or failed; open a row for its inputs. When the job folder
+  holds LangSlice's agent trace, the agent's text and its reasoning
+  summaries appear between the calls. A coding agent keeps its own
+  reasoning in its app, so only its tool calls appear. **Tool images**,
+  under the log, shows the pictures each call saved, four at a time; the
+  arrows go through the calls, **Follow** returns to the newest, and a click
+  enlarges a picture (then the arrow keys go through every picture of the
+  job).
 
 The viewer is read-only: nothing in it changes the job.
 
@@ -73,7 +98,8 @@ blank, the agent decides or asks you about.
   adds are taken off.
 - **Atlas** and **cutting plane.** Every atlas BrainGlobe describes, grouped
   into mouse, rat and other, starting on `allen_mouse_25um`, with
-  BrainGlobe's own description beneath it.
+  BrainGlobe's own description beneath it; the plane is one of three
+  buttons, and **Let the agent decide** leaves it to the agent.
 - **Sections.** Thickness and interval in micrometres (whole numbers), and the
   pixel size, needed only when the image files do not record it.
 - **What to do.** Place along the atlas, align in the plane, warp to fit
@@ -102,8 +128,8 @@ With `--tab prompt` and a folder, the form starts from that folder's job
 (its `job.json`): its folder, atlas, plane, sizes, tasks, tools turned off,
 what is kept on every section, damage notes, facts and notes.
 
-The message on the right updates as you type, and **Copy** puts it on the
-clipboard. It is a short request and the job's `langslice-job FOLDER init`
+The form is a column of numbered cards. The message beside it updates as
+you type and is shown whole, and **Copy** puts it on the clipboard. It is a short request and the job's `langslice-job FOLDER init`
 command, holding only what you set:
 
 ````text
@@ -160,23 +186,18 @@ check them.
 ## Settings
 
 Only you set these, in the window; no agent tool reads or changes them.
+Three cards, in this order:
 
 - **Connections.** How LangSlice reaches a model: your ChatGPT account (the
   **Sign in with ChatGPT** button opens the sign-in page in your browser), or
-  an OpenAI, Claude (Anthropic) or Gemini API key pasted into its row. Each row
-  says whether it is signed in, has a key saved, or has a key set in the
-  environment. Choose one with its round button. Keys are saved on this
+  an OpenAI, Claude (Anthropic) or Gemini API key pasted into its card. Each
+  card says whether it is signed in, has a key saved, or has a key set in the
+  environment. Click a card to choose it. Keys are saved on this
   computer in `~/.langslice/provider_credentials.json`, the sign-in in
   `~/.langslice/openai_auth.json` (`LANGSLICE_OPENAI_AUTH` names another
   file); a saved key is never shown again, and saving a new one replaces it.
   A key set in the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GEMINI_API_KEY`) wins over a saved one.
-- **Registration runs in.** *This app* (your agent app runs registration) or
-  *LangSlice, using the connection below* (LangSlice's own agent runs it). It
-  is greyed until the chosen connection is signed in or has a key, and then
-  starts at LangSlice. The choice is saved in the settings file, but nothing
-  in LangSlice reads it yet: it changes neither your agent app nor
-  `langslice linear run`.
 - **Agent model.** The model and reasoning effort for the chosen connection,
   starting at LangSlice's default where it has one (the ChatGPT account's
   `gpt-6.1-sol`, also offered for the OpenAI API key). The Claude and Gemini
@@ -184,6 +205,12 @@ Only you set these, in the window; no agent tool reads or changes them.
   started without `--model` uses the chosen connection's saved model, and its
   saved effort unless `--reasoning` is given; with nothing saved it uses its
   own default model.
+- **Registration runs in.** *This app* (your agent app runs registration) or
+  *LangSlice, using the connection above* (LangSlice's own agent runs it). It
+  is greyed until the chosen connection is signed in or has a key, and then
+  starts at LangSlice. The choice is saved in the settings file, but nothing
+  in LangSlice reads it yet: it changes neither your agent app nor
+  `langslice linear run`.
 
 The choices are saved in `~/.langslice/settings.json`
 ([file formats](../reference/file_formats.md#settings-langslicesettingsjson)); `LANGSLICE_SETTINGS` names another file, or
@@ -196,7 +223,11 @@ address, reachable only from this computer. The agent viewer watches the job fol
 (`logs/events.jsonl`, `views.jsonl`, `trace/`, `state.json`,
 `history/undo.json`, `job.json`, `exports/spend.json`; see
 [file formats](../reference/file_formats.md)) four times a second while a page looks at the
-job, and serves only the folders it lists. The prompt generator's choices
+job, and serves only the folders it lists. The focus panels and the strip's
+thumbnails are drawn by the window itself, with LangSlice's own picture code,
+from the job's settings, images, state and saved deformations, without
+opening the job: nothing is written to the folder. The pictures are kept in
+memory and drawn again only when a section's registration changes. The prompt generator's choices
 (the tools, the tasks, the atlases) come from the installed LangSlice, so a
 tool a newer version renames or removes is never offered. The viewer and the
 prompt generator only read; the Settings tab's changes are the only requests

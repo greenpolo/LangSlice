@@ -10,9 +10,9 @@ that are replaced whole (``state.json``, ``history/undo.json``, ``job.json``,
 
 Everything a client needs comes back from :meth:`JobWatcher.snapshot` as plain
 JSON: the activity items since a cursor, the sections table, undo and redo,
-notes, spend and a status word. :class:`JobList` is the set of jobs a GUI
-serves: the folders it was given and the jobs ``~/.langslice/recent_jobs.jsonl``
-names.
+notes, spend, a status word and the agent's focus (:mod:`.focus`).
+:class:`JobList` is the set of jobs a GUI serves: the folders it was given
+and the jobs ``~/.langslice/recent_jobs.jsonl`` names.
 """
 
 from __future__ import annotations
@@ -21,11 +21,17 @@ import json
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+from langslice.core.jsonable import JsonObject, to_jsonable
+from langslice.core.stack.stack import Stack
+from langslice.core.stack.status import stack_angles_entry, status_rows
+from langslice.hosts.gui.focus import Focus, started_focus
+from langslice.hosts.gui.render import render_key
 from langslice.job.history import SectionHistories
 from langslice.job.layout import (
     EVENTS_FILE,
@@ -40,13 +46,18 @@ from langslice.job.layout import (
     UNDO_FILE,
     VIEWS_INDEX,
     JobLayout,
+    held_image_folder,
 )
+from langslice.job.migrations import viewer_stack
 from langslice.job.settings.tool_table import TOOLS
 
 #: How often a watched job's files are looked at, at most.
 POLL_S = 0.25
 #: A job whose files changed this recently is Running.
 RECENT_S = 30.0
+#: A job with no tool running whose files changed longer ago than this is
+#: Idle: its run ended (or hangs) without a submission.
+IDLE_S = 600.0
 #: The tools whose call is no undo step (``job.settings.tool_table`` kind
 #: ``read``); any other (a write, a plugin tool, a tool of an older version)
 #: may be one.
@@ -197,12 +208,6 @@ def _view_folder(path: str) -> str:
     return path[: -len(PICTURE) - 1] if path.endswith("/" + PICTURE) else path.rstrip("/")
 
 
-def humanized(name: str) -> str:
-    """A tool's name as the page shows it: ``position_sections`` -> ``Position sections``."""
-    words = str(name or "tool").replace("_", " ").strip()
-    return words[:1].upper() + words[1:]
-
-
 def _sections_words(ids: list[Any], limit: int = 3) -> str:
     names = [str(i) for i in ids if i not in (None, "")]
     if len(names) <= limit:
@@ -218,12 +223,41 @@ class Picture:
     folder: Path
 
 
+def _job_name(folder: Path) -> str:
+    """Name a job by its images folder (the folder ``langslice/`` sits in)
+    and the folder above it, ``M01/images``: an images folder's own name is
+    often a generic one. A job folder made elsewhere (``init --job-dir``)
+    gives its own name and the folder above it.
+    """
+    named = folder.parent if folder.name == JOB_DIRNAME else folder
+    above = named.parent.name
+    return f"{above}/{named.name}" if above else named.name
+
+
+def _duration(seconds: float) -> str:
+    """*seconds* in the largest whole unit: ``12 min``, ``3 h``, ``4 days``."""
+    minutes = seconds / 60.0
+    if minutes < 60:
+        return f"{max(1, int(minutes))} min"
+    hours = minutes / 60.0
+    if hours < 48:
+        return f"{int(hours)} h"
+    return f"{int(hours / 24)} days"
+
+
+def _number(value: object) -> float | None:
+    """*value* when it is a number (not a boolean), else None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 @dataclass
 class JobWatcher:
     """One job folder, watched (see the module text)."""
 
     folder: Path
-    clock: Any = time.time
+    clock: Callable[[], float] = time.time
     generation: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -256,6 +290,11 @@ class JobWatcher:
         self.rows: list[dict[str, Any]] = []
         self.rows_note = ""
         self.rows_stale = False
+        #: The stack the table shows; None while no state this LangSlice
+        #: reads is there. Replaced whole, never changed in place.
+        self.stack: Stack | None = None
+        #: The latest followed call's targets; None before the first.
+        self.followed: Focus | None = None
         self.polled_at = 0.0
         self._histories: SectionHistories | None = None
 
@@ -331,7 +370,7 @@ class JobWatcher:
             item = {
                 "kind": "tool", "phase": "start" if kind == "tool_start" else "end",
                 "key": key, "name": str(record.get("name") or "tool"),
-                "label": humanized(str(record.get("name") or "tool")),
+                "label": str(record.get("name") or "tool"),
                 "sections": [str(s) for s in record.get("target_ids") or []],
                 "failed": bool(record.get("failed")), "status": record.get("status"),
                 "step": record.get("step"), "door": record.get("door"), "at": at,
@@ -340,6 +379,7 @@ class JobWatcher:
             }
             if kind == "tool_start":
                 self.open_tools[key] = item
+                self.followed = started_focus(record) or self.followed
             else:
                 self.open_tools.pop(key, None)
                 self._label_step(item, record.get("step"))
@@ -432,8 +472,8 @@ class JobWatcher:
             pass
         self._append({
             "kind": "picture", "number": number, "path": _view_folder(path),
-            "tool": str(record.get("tool") or ""), "label": humanized(str(record.get("tool")
-                                                                      or "picture")),
+            "tool": str(record.get("tool") or ""),
+            "label": str(record.get("tool") or "picture"),
             "call": record.get("call"), "sections": [str(s) for s in
                                                      record.get("sections") or []],
             "mode": record.get("mode"), "caption": _short(caption, 4000),
@@ -443,16 +483,10 @@ class JobWatcher:
         """The sections table from ``state.json``: the status rows when this
         LangSlice reads the state, else the raw section fields."""
         data = self.state.value
-        self.rows, self.rows_note = [], ""
+        self.rows, self.rows_note, self.stack = [], "", None
         if not isinstance(data, dict):
             return
         try:
-            from langslice.core.stack.status import (
-                stack_angles_entry,
-                status_rows,
-            )
-            from langslice.job.migrations import viewer_stack
-
             fields = cast("dict[str, Any]", data)
             state = viewer_stack(fields, JobLayout(self.folder))
             if self._histories is None:
@@ -469,6 +503,7 @@ class JobWatcher:
                         number = None
                 angles = row.get("cutting_angles_deg") or (
                     stack_angles_entry(state) if not state.mixed_angles else None)
+                key = None if record is None else render_key(state, record.id)
                 self.rows.append({
                     "order": order, "id": row["id"], "position_mm": row.get("position_mm"),
                     "angles": angles, "flip": row.get("flip"),
@@ -476,8 +511,11 @@ class JobWatcher:
                     "transform": (row.get("transform") or {}).get("kind"),
                     "deformation": (row.get("deformation") or {}).get("method"),
                     "damaged": bool(row.get("damaged")), "registration": number,
+                    "render_key": key,
                 })
+            self.stack = state
         except Exception as exc:  # a state this version does not read
+            self.rows, self.stack = [], None
             self.rows_note = ("This job's state is not one this LangSlice reads (an older "
                               "or newer format); the table shows its raw fields.")
             if not isinstance(exc, ValueError):
@@ -487,6 +525,7 @@ class JobWatcher:
                              key=lambda s: (s.get("index_corrected") is None,
                                             s.get("index_corrected") or 0))
             for order, s in enumerate(ordered, 1):
+                position = cast("JsonObject", s).get("position_mm")
                 transform = _dict(s.get("transform"))
                 deformation = _dict(s.get("deformation"))
                 steps = _list(deformation.get("steps"))
@@ -496,12 +535,13 @@ class JobWatcher:
                     method = last.get("method") or ("trace_borders" if last.get("trace")
                                                     else "fireants_syn")
                 self.rows.append({
-                    "order": order, "id": s.get("id"), "position_mm": s.get("position_mm"),
+                    "order": order, "id": s.get("id"),
+                    "position_mm": _number(position),
                     "angles": s.get("cutting_angles_deg") or data.get("cutting_angles_deg"),
                     "flip": s.get("flip"), "rotation_deg": s.get("rotation_deg"),
                     "transform": transform.get("kind"), "deformation": method,
                     "damaged": bool(s.get("damaged_regions") or s.get("damaged")),
-                    "registration": None,
+                    "registration": None, "render_key": None,
                 })
 
     def peek(self) -> None:
@@ -536,18 +576,44 @@ class JobWatcher:
                 continue
         return latest
 
+    def current_stack(self) -> Stack | None:
+        """Return the job's stack as the sections table shows it, read now.
+
+        Safe from any thread: the stack is replaced whole when the state
+        changes, never changed in place.
+
+        Returns
+        -------
+        Stack or None
+            The stack ``state.json`` holds (an older format migrated in
+            memory); None while the folder holds no state this LangSlice
+            reads.
+        """
+        self.poll()
+        with self._lock:
+            return self.stack
+
+    def _focus(self) -> Focus:
+        """Return the sections the agent works on (call with the lock held).
+
+        The latest followed call's targets (:mod:`.focus`); before one,
+        every section in stack order.
+        """
+        if self.followed is not None:
+            return self.followed
+        if self.stack is None:
+            return Focus(())
+        return Focus(tuple(section.id for section in self.stack.in_order()))
+
     def header(self) -> dict[str, Any]:
         job = _dict(self.job.value)
         spec = _dict(job.get("spec"))
-        image_folder = job.get("image_folder") or spec.get("image_folder")
-        if image_folder:
-            # job.json stores the default image folder relative to the job folder.
-            image_folder = str((self.folder / str(image_folder)).resolve())
-        name = (Path(str(image_folder)).name if image_folder else
-                (self.folder.parent.name if self.folder.name == JOB_DIRNAME
-                 else self.folder.name))
+        images = held_image_folder(self.folder, job)
+        if images is None and self.folder.name == JOB_DIRNAME:
+            images = self.folder.parent
+        path = None if images is None else str(images)
         return {
-            "name": name, "folder": str(self.folder), "image_folder": image_folder,
+            "name": _job_name(self.folder), "path": path, "folder": str(self.folder),
             "atlas": spec.get("atlas"), "plane": spec.get("plane"),
             "tasks": spec.get("tasks"),
             "model": self.session.get("model") or spec.get("model"),
@@ -556,14 +622,17 @@ class JobWatcher:
 
     def status(self) -> dict[str, str]:
         state = _dict(self.state.value)
-        recent = self.clock() - self.last_change() < RECENT_S
+        latest = self.last_change()
+        quiet_s = self.clock() - latest
         if state.get("submitted"):
             word = "Submitted"
         elif self.trace_error or (self.summary is not None
                                   and not self.summary.get("submitted")):
             word = "Failed"
-        elif self.open_tools or recent:
+        elif self.open_tools or quiet_s < RECENT_S:
             word = "Running"
+        elif latest and quiet_s >= IDLE_S:
+            word = "Idle"
         else:
             word = "Waiting"
         if self.open_tools:
@@ -582,6 +651,8 @@ class JobWatcher:
                 sentence = "Last: " + last["label"] + (f" on {words}" if words else "")
         if word == "Submitted":
             sentence = "The registration was submitted. " + sentence
+        elif word == "Idle":
+            sentence = f"No activity for {_duration(quiet_s)}. {sentence}"
         return {"word": word, "sentence": sentence}
 
     def undo(self) -> dict[str, list[str]]:
@@ -628,6 +699,7 @@ class JobWatcher:
                 "generation": self.generation, "reset": reset,
                 "cursor": len(self.items), "items": self.items[start:],
                 "header": self.header(), "status": self.status(),
+                "focus": to_jsonable(asdict(self._focus())),
                 "state_version": self.state_version,
             }
             if reset or state_version != self.state_version:
@@ -712,8 +784,10 @@ class JobList:
         for n, watcher in enumerate(watchers):
             watcher.peek()
             header = watcher.header()
-            out.append({"index": n, "name": header["name"], "folder": header["folder"],
-                        "atlas": header["atlas"], "changed": watcher.last_change(),
+            changed = watcher.last_change()
+            out.append({"index": n, "name": header["name"], "path": header["path"],
+                        "folder": header["folder"], "atlas": header["atlas"],
+                        "changed_at": changed,
                         "status": watcher.status()["word"],
                         "given": watcher.folder in self.given})
         return out

@@ -8,6 +8,8 @@ never stops a run.
 
 from __future__ import annotations
 
+import errno
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -20,18 +22,28 @@ def serve(folders: list[Path], *, port: int = 0, window: bool = True,
           tab: str = "viewer", say: Callable[[str], None] = print) -> None:
     """Serve the GUI for *folders* and the recent jobs until Ctrl-C, or until
     its app window has been closed for ``LINGER_S``; the window opens on
-    *tab* (:data:`.window.TABS`)."""
+    *tab* (:data:`.window.TABS`). A port that cannot be served ends with
+    one sentence (``SystemExit``); the address is written at once, also
+    when the output is a file."""
     from langslice.hosts.gui.server import GuiServer
     from langslice.hosts.gui.watch import JobList
     from langslice.hosts.gui.window import Opened, open_window, start_address
     from langslice.job.recent import recent_file
 
     jobs = JobList(folders, recent=recent_file())
-    server = GuiServer(jobs, port=port)
+    try:
+        server = GuiServer(jobs, port=port)
+    except OSError as exc:
+        in_use = exc.errno == errno.EADDRINUSE
+        reason = "is in use" if in_use else f"cannot be used ({exc.strerror})"
+        raise SystemExit(f"Port {port} {reason}: choose another with --port, "
+                         "or leave --port out.") from None
     server.start()
     address = start_address(server.url, tab, folders=bool(folders))
     say(f"LangSlice GUI at {address}")
+    sys.stdout.flush()
     opened = open_window(address, say=say) if window else Opened("none")
+    sys.stdout.flush()
     closed_at: float | None = None
     try:
         while True:
