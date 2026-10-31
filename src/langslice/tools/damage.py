@@ -5,7 +5,9 @@ A section is damaged exactly when it has marked regions
 and note; the fits and the image model's trace read them
 (:func:`langslice.core.sections.damage.exclusions`). A host's note
 (``inputs.damaged``, ``{filename: note}``) is the section's ``damage_note``
-alone: it stays first in the note, and the agent marks the regions. The
+alone: it stays first in the note, and the agent marks the regions. A host
+may also supply the regions themselves and freeze them (the ``damage``
+property): then a change of them is refused. The
 tool's function (``mark_damage_tool``) adds its row and the picture of the
 marked regions.
 """
@@ -14,18 +16,20 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image
 
+from langslice.core.atlas.sides import has_sides
 from langslice.core.pictures import drawn as pictures_drawn
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.pictures.options import default_options
 from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import (
+    checked_entries,
     damage_picture,
-    normalized_entries,
+    side_pair_refusal,
 )
 from langslice.tools.refusal import check_frozen, unknown_sections
 from langslice.tools.run import as_list
@@ -84,39 +88,6 @@ def _joined_note(user: str, agent: str) -> str:
     return "; ".join(dict.fromkeys(parts))
 
 
-def _check_sides(
-    job: Job, workspace: Workspace, record: Section, names: Sequence[str]
-) -> None:
-    """Refuse a one-sided entry whose side the section's current placement does
-    not have (the picture's check, made before the write); a section without a
-    usable placement is not checked."""
-    from langslice.core.atlas.sides import split_side
-    from langslice.core.fits.deformable.plane_images import placement_left
-    from langslice.core.fits.deformation import fit_grid
-
-    try:
-        placement = fit_grid(job.state, workspace, record).placement
-    except ValueError:
-        return
-    atlas = workspace.atlas  # pyright: ignore[reportAny]  # BrainGlobe's, untyped
-    left = placement_left(atlas, placement, names)
-    pair = getattr(left, "names", None)
-    for name in names:
-        side = split_side(name)[1]
-        if side is not None and pair is not None and side not in pair:
-            runs = (
-                "vertically" if side in ("top", "bottom") else "horizontally"
-            )
-            raise Refused(
-                RefusalCode.WRONG_SIDE_PAIR,
-                message=(
-                    f"On this section the midline runs {runs}, so its halves are "
-                    f"{pair[0]!r} and {pair[1]!r}, not {side!r}: name one of those "
-                    f'(e.g. "{split_side(name)[0]}:{pair[0]}").'
-                ),
-            )
-
-
 def mark_damage(
     job: Job,
     workspace: Workspace,
@@ -130,7 +101,7 @@ def mark_damage(
 
     *regions* are atlas region entries (acronyms or ids, ``"CTX:left"`` for one
     side), checked against the atlas and stored normalized
-    (:func:`langslice.core.sections.damage.normalized_entries`). They replace
+    (:func:`langslice.core.sections.damage.checked_entries`). They replace
     the section's regions; empty clears them and the agent's note. A note the
     host gave stays first, the agent's after it, and clearing leaves the host's
     note. The same mark again writes nothing (``written`` False).
@@ -140,48 +111,35 @@ def mark_damage(
     (:func:`langslice.core.sections.damage.damage_picture`); a picture that
     fails is ``render_failed``, the write standing.
 
-    Refused (nothing written): ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY``; ``BAD_ARGS`` (regions
+    Refused (nothing written): ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY``;
+    ``FROZEN`` (other regions on a section whose ``damage`` the job froze); ``BAD_ARGS`` (regions
     not a list, or a side that does not exist); ``UNKNOWN_REGIONS``;
     ``NO_SIDES`` (a side on a sagittal stack); ``WRONG_SIDE_PAIR`` (a side the
     section's placement does not have: ``left``/``right`` where its midline runs
     horizontally, ``top``/``bottom`` where it runs vertically), and the other
     side refusals of :func:`langslice.core.atlas.sides.native_left`.
     """
-    from langslice.core.atlas.sides import has_sides
-    from langslice.core.fits.deformable.plane_images import resolve_entries
-
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
         raise Refused(
             RefusalCode.BAD_ARGS,
             message="regions must be a list of acronyms or ids",
         )
-    try:
-        names = normalized_entries(regions)
-    except ValueError as exc:
-        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
-    if names:
-        try:
-            resolve_entries(workspace.atlas, names)
-        except ValueError as exc:
-            raise Refused(
-                RefusalCode.UNKNOWN_REGIONS, message=str(exc)
-            ) from exc
-        if job.state.plane == "sagittal" and has_sides(names):
-            raise Refused(
-                RefusalCode.NO_SIDES,
-                message="A sagittal section lies within one "
-                "hemisphere, so a region cannot be limited to one side.",
-            )
+    atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+    names = checked_entries(atlas, regions, job.state.plane)
+
     with job.writing():
         state = job.state
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [str(section)])
-        check_frozen(
-            job, [record.id]
-        )  # no frozen property: refused only while work runs on it
+        check_frozen(job, [record.id])  # refused while work runs on it
         if has_sides(names):
-            _check_sides(job, workspace, record, names)
+            sides = side_pair_refusal(state, workspace, record, names)
+            if sides is not None:
+                raise sides
+        if names != list(record.damaged_regions):
+            # a change of the marks: refused where the job froze them
+            check_frozen(job, [record.id], "damage")
         by_user = record.id in job.host_damaged
         user = _user_note(job, record)
         agent = str(note or "").strip() if names else ""
@@ -194,6 +152,7 @@ def mark_damage(
                 after[1],
             )
             job.commit(before)
+
         result = {
             "id": record.id,
             "regions": list(record.damaged_regions),

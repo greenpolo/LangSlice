@@ -82,8 +82,8 @@ untouched.
 | `angles` | `{"pitch": degrees, "yaw": degrees}`, or `{filename: {"pitch": ..., "yaw": ...}}` |
 | `orientation` | Per filename: a `rotation_deg` quarter turn and `flip` boolean; rotation then left-right flip |
 | `pixel_size_um` | Source pixel size in µm: one number for every file, or `{filename: um}` (a file it does not name uses its metadata); otherwise file metadata, else uncalibrated (image width mapped onto the atlas plane's width) |
-| `inputs` | Other `JobSpec.inputs`, including `order`, `damaged`, `channel_names` |
-| `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`; see [freezing](../reference/settings.md#frozen) |
+| `inputs` | Other `JobSpec.inputs`, including `order`, `damaged`, `damaged_regions`, `channel_names` |
+| `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`, `damage`; see [freezing](../reference/settings.md#frozen) |
 | `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](../reference/tools.md#switching-tools-and-options-off) |
 | `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one |
 | `plugins`, `plugin_config` | [Tool plugins](plugins.md) to add to the job's toolbox: `module:factory` references, factory functions defined at module level, or `ToolSpec` objects; options for a factory by reference. Loading runs their code. The references are saved with the job, so reopening it loads the same plugins |

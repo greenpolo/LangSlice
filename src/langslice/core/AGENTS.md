@@ -369,7 +369,11 @@ the angles in a caption (empty for the flat plane).
   `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the
   `(restrict_to, exclude)` every fit and the image model's trace run with,
   the marked regions added to *exclude* except an entry *restrict_to* names
-  exactly; `normalized_entries`, `entry_key`. `damage_picture(ws, state,
+  exactly; `normalized_entries`, `entry_key`; `checked_entries(atlas,
+  regions, plane)` (the one check of marks, the agent's or a host's:
+  `BAD_ARGS`, `UNKNOWN_REGIONS`, `NO_SIDES`) and `side_pair_refusal(state,
+  workspace, section, names)` (`WRONG_SIDE_PAIR` for a side the current
+  placement lacks). `damage_picture(ws, state,
   record, store=)`: the marked regions hatched (`HATCH_COLOR`, the
   deformable pictures' excluded-region ink) on the section under its
   current registration (`pictures.placement.draw_canvas`, mode `overlay`, the warp
