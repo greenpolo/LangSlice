@@ -94,10 +94,13 @@ const Ui = (() => {
   }
   // The job the address named when the window opened, kept until the job list arrives.
   let named = addressJob();
+  // The job goes into the address once it was named (by the address or the person): the
+  // newest job, shown until then, is no choice to keep (a reload of the prompt generator
+  // would start its form from it).
   function writeAddress() {
     const params = new URLSearchParams();
     params.set('tab', tab);
-    const job = current ?? named;
+    const job = chosen ? current : named;
     if (job !== null) params.set('job', String(job));
     const hash = '#' + params.toString();
     if (location.hash !== hash) history.replaceState(null, '', hash);
