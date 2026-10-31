@@ -904,6 +904,16 @@ button.copybtn svg {
   padding: 0.9rem 0;
 }
 
+/* the words your search matched: pink text, no box */
+span.highlighted,
+.bd-article span.highlighted {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--ls-pink);
+  padding: 0;
+}
+
 #search-results ul.search li p.context {
   color: var(--ls-muted);
   font-size: 0.8125rem;
