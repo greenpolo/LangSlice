@@ -36,8 +36,8 @@ from langslice.core.space import Plane, atlas_space_context, slice_axis_ends
 
 logger = logging.getLogger(__name__)
 
-#: A host's channel-blend settings as it gave them (``preprocess.preview``'s:
-#: a mode, CLAHE and its strength, one weight per channel).
+#: A host's channel-blend settings as it gave them (``{"mode": "auto"}``,
+#: :func:`~langslice.core.sections.reading.host_preprocess`).
 HostPreprocessing = Mapping[str, str | bool | float | Sequence[float]]
 
 
@@ -178,9 +178,8 @@ class Workspace:
             settings = self.settings.host_preprocessing
             if settings is not None:
                 # A host's snapshot, one page per channel: the default
-                # appearance is the host's blend of the pages (what
-                # ``preprocess.preview`` shows), drawn at working size. The
-                # pages stay readable as channels.
+                # appearance is the automatic blend of the pages, drawn at
+                # working size. The pages stay readable as channels.
                 pages, factor = read_working_pages(self.image_path(slice_id))
                 blended = host_preprocess(pages, settings).convert("L")
                 cached = (normalize_image(blended), factor)

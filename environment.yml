@@ -1,7 +1,7 @@
 # Run from the root of a downloaded LangSlice source archive or checkout:
 # conda env create -f environment.yml
 # One environment for everything: the agent, the deformable engine, the Claude
-# Desktop server and the ABBA connector's worker and launcher.
+# Desktop server and the ABBA connector's worker.
 name: langslice
 channels:
   - conda-forge
@@ -9,4 +9,4 @@ dependencies:
   - python=3.11
   - pip
   - pip:
-      - ".[registration,mcp,abba]"
+      - ".[registration,mcp]"

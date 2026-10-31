@@ -1,12 +1,8 @@
-"""Multi-channel host snapshots: one blend for the preview and for the agent."""
+"""Multi-channel host snapshots: the automatic blend the agent sees first."""
 
 from __future__ import annotations
 
-import copy
-import io
-import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -16,30 +12,14 @@ from PIL import Image
 
 from langslice.core.sections.reading import (
     adaptive_preprocess,
+    custom_appearance,
     host_preprocess,
     normalize_image,
     read_pages,
 )
-from langslice.doors.abba.worker import run_linear
-from langslice.hosts.service import run_stdio
-
-
-@pytest.fixture(autouse=True)
-def _fake_states_are_their_json(monkeypatch):
-    """The fake states these runs hand back are their JSON form already
-    (``SimpleNamespace(to_dict=...)``); a real stack is written as it is."""
-    from langslice.job import state_file
-
-    def as_json(state):
-        if isinstance(state, SimpleNamespace):
-            return state.to_dict()
-        return state_file.stack_to_json(state)
-
-    for module in ("langslice.doors.abba.checkpoints", "langslice.doors.abba.worker"):
-        monkeypatch.setattr(f"{module}.stack_to_json", as_json)
-
-#: ABBA's stack-wide angles as the connector always sends them (flat).
-FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
+from langslice.doors.abba.contract import AbbaPrepareRequest
+from langslice.doors.abba.prepare import prepare_job
+from langslice.doors.jobs import read_spec
 
 
 def _tissue(shape=(120, 160)) -> np.ndarray:
@@ -79,39 +59,29 @@ def test_auto_weights_the_channel_that_lights_the_tissue():
     broad, sparse = _two_channels()
     blended = np.asarray(host_preprocess([broad, sparse]))[..., 0].astype(float)
     only_broad = np.asarray(
-        host_preprocess([broad, sparse], {"mode": "custom", "channel_weights": [1, 0]})
-    )[..., 0].astype(float)
+        custom_appearance([broad, sparse], channel_weights=[1, 0]))[..., 0].astype(float)
     only_sparse = np.asarray(
-        host_preprocess([broad, sparse], {"mode": "custom", "channel_weights": [0, 1]})
-    )[..., 0].astype(float)
+        custom_appearance([broad, sparse], channel_weights=[0, 1]))[..., 0].astype(float)
     assert np.corrcoef(blended.ravel(), only_broad.ravel())[0, 1] > 0.95
     assert np.corrcoef(blended.ravel(), only_sparse.ravel())[0, 1] < 0.5
 
 
-def test_custom_weights_clahe_and_strength_change_the_picture():
-    broad, sparse = _two_channels()
-    base = {"mode": "custom", "channel_weights": [1, 1]}
-    even = np.asarray(host_preprocess([broad, sparse], base))
-    plain = np.asarray(host_preprocess([broad, sparse], {**base, "clahe": False}))
-    strong = np.asarray(host_preprocess([broad, sparse], {**base, "clahe_strength": "high"}))
-    assert not np.array_equal(even, plain)
-    assert not np.array_equal(even, strong)
-    # Weights are relative: doubling both changes nothing.
-    doubled = np.asarray(host_preprocess([broad, sparse], {**base, "channel_weights": [2, 2]}))
-    assert np.array_equal(even, doubled)
-    assert even.shape == (*broad.shape, 3)
-
-
-@pytest.mark.parametrize("settings, message", [
-    ({"mode": "custom", "channel_weights": [1]}, "Expected 2"),
-    ({"mode": "custom", "channel_weights": [1, -1]}, "non-negative"),
-    ({"mode": "custom", "channel_weights": [0, 0]}, "above zero"),
-    ({"mode": "custom", "clahe_strength": "max"}, "strength"),
-    ({"mode": "fancy"}, "mode"),
+@pytest.mark.parametrize("settings", [
+    {"mode": "custom", "channel_weights": [1, 1]},
+    {"mode": "fancy"},
 ])
-def test_bad_settings_are_refused(settings: dict[str, Any], message: str):
-    with pytest.raises(ValueError, match=message):
+def test_a_blend_other_than_the_automatic_one_is_refused(settings: dict[str, Any]):
+    with pytest.raises(ValueError, match="channel blend must be"):
         host_preprocess(list(_two_channels()), settings)
+
+
+def test_an_automatic_blend_saved_with_the_dialogs_keys_is_the_automatic_one():
+    """Jobs an ABBA dialog made saved the automatic mode with its other keys."""
+    pages = list(_two_channels())
+    saved = {"mode": "auto", "clahe": True, "clahe_strength": "medium",
+             "channel_weights": None}
+    assert np.array_equal(np.asarray(host_preprocess(pages, saved)),
+                          np.asarray(host_preprocess(pages)))
 
 
 def test_pages_must_share_one_size():
@@ -127,144 +97,41 @@ def test_a_multi_page_tiff_reads_one_array_per_page(tmp_path: Path):
     assert np.array_equal(pages[1], _two_channels()[1])
 
 
-# --- preprocess.preview ----------------------------------------------------
+# --- a prepared ABBA job's snapshots ----------------------------------------
 
 
-def _request(*lines: dict[str, Any]) -> list[dict[str, Any]]:
-    output = io.StringIO()
-    run_stdio(input_stream=io.StringIO("\n".join(json.dumps(x) for x in lines) + "\n"),
-              output_stream=output)
-    return [json.loads(line) for line in output.getvalue().splitlines() if line.strip()]
+def _prepare(folder: Path, names: list[str], **extra: Any) -> Path:
+    request = AbbaPrepareRequest.model_validate({
+        "image_folder": str(folder), "pixel_size_um": 25,
+        "positions_mm": {name: 4.0 + 0.1 * index for index, name in enumerate(names)},
+        "angles_deg": {"pitch_deg": 0.0, "yaw_deg": 0.0},
+        "abba": {"project_key": "k", "atlas": "Allen Mouse V3p1", "sections": {}},
+        **extra})
+    return prepare_job(request)
 
 
-def test_preview_writes_exactly_the_blend_and_refuses_bad_settings(tmp_path: Path):
-    path = tmp_path / "snap.tif"
-    tifffile.imwrite(path, np.stack(_two_channels()))
-    settings = {"mode": "custom", "clahe": True, "clahe_strength": "low",
-                "channel_weights": [0.7, 0.3]}
-    out = tmp_path / "preview" / "snap.png"
-    [message] = _request({"id": "p", "method": "preprocess.preview", "params": {
-        "image_path": str(path), "preprocessing": settings, "output_path": str(out)}})
-    assert message["result"] == {"output_path": str(out), "width": 160, "height": 120}
-    written = np.asarray(Image.open(out))
-    expected = np.asarray(host_preprocess(read_pages(path), settings).convert("L"))
-    assert np.array_equal(written, expected)
-    [refused] = _request({"id": "q", "method": "preprocess.preview", "params": {
-        "image_path": str(tmp_path / "x.tif"), "output_path": str(tmp_path / "x.png"),
-        "preprocessing": {"mode": "custom", "channel_weights": [-1]}}})
-    assert refused["error"]["code"] == "validation_error"
+def test_multi_page_snapshots_open_on_the_automatic_blend(tmp_path: Path):
+    """The blend is the DEFAULT appearance; the pages stay raw channels."""
+    from langslice.doors.jobs import context
+    from tests.fakes import SlabAtlas
 
-
-# --- linear.run staging and host updates -----------------------------------
-
-
-@pytest.fixture
-def snapshots(tmp_path: Path):
     tifffile.imwrite(tmp_path / "a.tif", np.stack(_two_channels()))
     tifffile.imwrite(tmp_path / "b.tif", np.stack(_two_channels()[::-1]))
-    return {"image_folder": str(tmp_path), "pixel_size_um": 25, "angles_deg": FLAT,
-            "positions_mm": {"a.tif": 4.0, "b.tif": 4.2},
-            "spec": {"tasks": ["position", "transform"]}}
-
-
-def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
-    """Replace the engine: record the spec, then write each step as a checkpoint."""
-    from langslice.doors.agent import engine
-
-    async def run(spec, *, on_write, on_event, emit, **_):
-        seen["spec"] = spec
-        rows = [{"id": name, "position_mm": value, "index_corrected": index,
-                 "flip": False, "rotation_deg": 0,
-                 "transform": (spec.inputs.get("transforms") or {}).get(name)}
-                for index, (name, value) in enumerate(sorted(spec.inputs["positions"].items()))]
-        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0}, "slices": rows}
-        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
-        on_write(state)
-        for step in steps:
-            step(rows)
-            on_write(state)
-        return state
-
-    monkeypatch.setattr(engine, "run", run)
-
-
-def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkeypatch):
-    """The host blend is the DEFAULT appearance; the pages stay raw channels."""
-    from langslice.doors.agent.engine import build_context
-    from tests.fakes import SlabAtlas
-
-    seen: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [], seen)
-    settings = {"mode": "custom", "channel_weights": [1, 3]}
-    run_linear({**snapshots, "preprocessing": settings}, lambda event: None)
-    spec = seen["spec"]
-    folder = Path(snapshots["image_folder"])
-    # Nothing is staged: the run reads the snapshots themselves.
-    assert Path(spec.image_folder) == folder
-    assert not (folder / "agent_view").exists()
-    assert spec.host_preprocessing["channel_weights"] == [1, 3]
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: SlabAtlas())
+    job_folder = _prepare(tmp_path, ["a.tif", "b.tif"], channel_names=["DAPI", "tdTomato"])
+    spec = read_spec(job_folder)
+    assert spec.host_preprocessing == {"mode": "auto"}
+    ctx = context(spec, job_folder, atlas_loader=lambda _n: SlabAtlas())
     shown = np.asarray(ctx.working_source("a.tif")[0].convert("L"))
-    preview = np.asarray(host_preprocess(read_pages(folder / "a.tif"), settings).convert("L"))
-    assert np.array_equal(shown, preview)
+    blend = np.asarray(host_preprocess(read_pages(tmp_path / "a.tif")).convert("L"))
+    assert np.array_equal(shown, blend)
     names, planes = ctx.section_channels("a.tif")
-    assert names == ("ch1", "ch2")
+    assert names == ("DAPI", "tdTomato")
     broad, sparse = _two_channels()
     assert np.array_equal(planes[0], broad) and np.array_equal(planes[1], sparse)
-    # Weights that do not fit the pages are refused before the engine runs.
-    refused: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [], refused)
-    with pytest.raises(ValueError, match="Expected 2"):
-        run_linear({**snapshots, "preprocessing": {"mode": "custom", "channel_weights": [1]}},
-                   lambda event: None)
-    assert "spec" not in refused
 
 
-def test_host_channel_names_name_the_raw_channels(snapshots, monkeypatch):
-    from langslice.doors.agent.engine import build_context
-    from tests.fakes import SlabAtlas
-
-    seen: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [], seen)
-    run_linear({**snapshots, "channel_names": ["DAPI", "tdTomato"]}, lambda event: None)
-    ctx = build_context(seen["spec"], emit=lambda _m: None, atlas_loader=lambda _n: SlabAtlas())
-    assert ctx.section_channels("b.tif")[0] == ("DAPI", "tdTomato")
-
-
-def test_single_page_snapshots_without_settings_keep_the_automatic_path(tmp_path, monkeypatch):
+def test_single_page_snapshots_keep_the_automatic_path(tmp_path: Path):
     Image.fromarray(_tissue()).save(tmp_path / "a.tif")
-    seen: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [], seen)
-    run_linear({"image_folder": str(tmp_path), "pixel_size_um": 25, "angles_deg": FLAT,
-                "positions_mm": {"a.tif": 4.0}, "spec": {"tasks": ["position"]}},
-               lambda event: None)
-    assert Path(seen["spec"].image_folder) == tmp_path
-    assert seen["spec"].preprocess == "auto"
-    assert seen["spec"].host_preprocessing is None
-
-
-def test_checkpoints_carry_the_rows_since_the_previous_one(
-    snapshots, monkeypatch,
-):
-    def move(value):
-        def step(rows):
-            rows[0]["position_mm"] = value
-        return step
-
-    def turn_locked(rows):
-        rows[1]["transform"] = {"params": [1, 0, .1, 0, 1, 0]}
-
-    seen: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [move(4.1), move(4.3), turn_locked], seen)
-    events: list[dict[str, Any]] = []
-    run_linear(
-        {**snapshots, "spec": {"frozen": {"b.tif": ["orientation", "affine"]}},
-         "damaged": {"a.tif": "torn"}}, events.append,
-    )
-    assert seen["spec"].frozen == {"b.tif": ["orientation", "affine"]}
-    assert seen["spec"].inputs["damaged"] == {"a.tif": "torn"}
-    checkpoints = [event for event in events if event["kind"] == "checkpoint"]
-    assert checkpoints[0]["initial"] and checkpoints[0]["host_updates"] == []
-    assert checkpoints[2]["host_updates"] == [{"id": "a.tif", "position_mm": 4.3}]
-    # A section with a frozen affine: its transform is never sent back to the host.
-    assert checkpoints[3]["host_updates"] == []
+    spec = read_spec(_prepare(tmp_path, ["a.tif"]))
+    assert spec.preprocess == "auto"
+    assert spec.host_preprocessing is None

@@ -20,13 +20,11 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 ## Files and sub-packages
 
-- `cli.py` — the host commands `abba` (ABBA 0.25.x started from Python with
-  the Fiji connector jar on the classpath and the passive Python viewer and
-  log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`),
-  `gui` (the LangSlice window on job folders: `FOLDER ...`, an image folder
-  standing for its `langslice/` job folder; `--port`, `--no-window`) and
-  `serve` (the engine service), registered with the `langslice` command by
-  module path.
+- `cli.py` — the host commands `gui` (the LangSlice window on job folders:
+  `FOLDER ...`, an image folder standing for its `langslice/` job folder;
+  `--port`, `--no-window`, `--tab viewer|prompt`, the prompt generator filled
+  in from the first folder's job) and `serve` (the engine service),
+  registered with the `langslice` command by module path.
 
 - `gui/` — the LangSlice window (`langslice gui`, `linear run --gui`): a
   loopback page with the agent viewer, which learns everything by watching
@@ -37,15 +35,12 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   and the generator are read-only. Only `cli.py` imports it.
   `gui/CLAUDE.md`, `docs/developers/gui.md`.
 
-- `abba/` — `launch.py` (what `langslice abba` starts, and
-  the listener of the connector's run messages), the ABBA agent viewer
-  (`viewer_follow.py`, `viewer_compare.py`, `viewer_overview.py`) and activity log
-  (`log.py` + `static/`): `abba/CLAUDE.md`.
-  The Fiji connector is the one ABBA integration; this package only follows
-  its runs.
 - `service.py` — `langslice serve --stdio`: the JSON-lines engine
-  service the Fiji connector starts. The protocol models, the runtime
-  handlers, setup, saved ABBA jobs and the JVM-free snapshot worker
-  (`doors/abba/worker.py`; its checkpoints, which carry the affine and warp
-  rows, are `doors/abba/checkpoints.py`) are door-level, in `doors/abba/`. `docs/developers/architecture.md`,
+  service the Fiji connector starts (protocol 3: `setup.status`,
+  `abba.prepare`, `abba.follow`). A long request (`abba.follow`, the
+  follower that mirrors a job's checkpoints into ABBA) runs until the
+  service's input closes: a thread reads the rest of the input and sets the
+  request's stop event at its end. The protocol models, the preparation of
+  a job from ABBA's snapshots, the follower and its checkpoint rows are
+  door-level, in `doors/abba/`. `docs/developers/architecture.md`,
   `docs/abba.md`.

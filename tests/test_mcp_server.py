@@ -24,9 +24,6 @@ from langslice.doors.mcp.server import build_server, initialization_options
 from langslice.job.settings.spec import JobSpec
 from tests.fakes import SlabAtlas
 
-#: ABBA's stack-wide angles as the connector always sends them (flat).
-FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
-
 _ATLAS = SlabAtlas()
 
 
@@ -297,7 +294,7 @@ def test_the_server_advertises_that_its_tool_list_changes():
 
 def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
     from langslice.doors.mcp.pages import PAGE_BYTES
-    from langslice.doors.mcp.server import briefing, open_job
+    from langslice.doors.mcp.server import arm_opening, open_job
 
     folder = _folder(tmp_path, n=36)
     rng = np.random.default_rng(17)
@@ -306,7 +303,7 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
     job = open_job(_spec_for(str(folder)), atlas_loader=lambda _n: _ATLAS)
     for index, record in enumerate(reversed(job.state.in_order())):
         record.index_corrected = index
-    briefing(job)
+    arm_opening(job)
     sizes = [page_size(page) for page in job.pages]
     print(f"show_stack serialized page bytes: {sizes}")
     assert all(size <= PAGE_BYTES for size in sizes)
@@ -328,140 +325,20 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
                    for page in job.pages for block in page)
 
 
-def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.abba import saved_jobs
-    from langslice.doors.mcp.server import host_tool, open_saved_job
-
-    folder = _folder(tmp_path)
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False},
-                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}},
-              "damaged": {"s0.png": "torn"},
-              "preprocessing": {"mode": "auto"}}
-    prepared = saved_jobs.prepare_saved_job(params)
-    path = Path(prepared["job_dir"])
-    assert path == folder / "langslice"  # the job folder next to the snapshots
-    record = json.loads((path / "job.json").read_text())
-    assert record["host"]["params"] == params
-    assert record["format_version"] == 1 and record["host"]["format"] == 2
-    assert record["job_id"] == prepared["job_id"]
-    entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
-    assert entry["job_folder"] == str(path)
-    assert prepared["job_id"] in prepared["prompt"]
-    job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
-    assert job.spec.tasks == ["transform"]
-    # The host's damage note is kept with the section; it does not mark it
-    # damaged (damaged regions do).
-    first = job.state.in_order()[0]
-    assert first.damage_note == "torn" and not first.damaged
-    assert Path(job.ctx.image_folder).name != "agent_view"  # snapshots are read as they are
-    assert job.spec.host_preprocessing["mode"] == "auto"
-    submit = next(tool for tool in job.box.tools if tool.__name__ == "submit")
-    result = asyncio.run(host_tool(job, submit)(summary="done", notes=[], interval_breaks=[]))
-    assert result and job.state.submitted
-    assert (path / "state.json").exists()
-    assert (path / "exports" / "linear_results.json").exists()
-
-
-def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any):
-    """DOORS-1: a second open of the same saved job keeps its writes and undo history."""
-    from langslice.doors.abba import saved_jobs
-    from langslice.doors.mcp.server import host_tool, open_saved_job
-
-    folder = _folder(tmp_path)
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["position", "transform"]}}
-    prepared = saved_jobs.prepare_saved_job(params)
-    first = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
-    tools = {tool.__name__: tool for tool in first.box.tools}
-    asyncio.run(host_tool(first, tools["note"])(text="kept"))
-    asyncio.run(host_tool(first, tools["position_sections"])(
-        sections=[{"id": "s0.png", "position_mm": 1.5}], view=False))
-    depth = len(first.job.undo_stack)
-    assert depth > 0
-    first.close()
-    again = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
-    assert "kept" in again.state.notes
-    assert again.state.by_id("s0.png").position_mm == 1.5
-    assert len(again.job.undo_stack) == depth
-    again.close()
-
-
-def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypatch: Any):
-    import socket
-
-    from langslice.doors.abba import saved_jobs
-
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-
-    from langslice.doors.mcp.host_channel import HostChannel
-
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        listener.listen()
-        settings = {"address": "127.0.0.1", "port": listener.getsockname()[1], "token": "a" * 32}
-        channel = HostChannel("abc", settings)
-        conn, _address = listener.accept()
-        with conn, conn.makefile("r") as stream:
-            assert json.loads(stream.readline()) == {"token": "a" * 32}
-            channel.event({"kind": "checkpoint", "host_updates": [{"id": "s0", "position_mm": 1}]})
-            event = json.loads(stream.readline())
-            assert event["id"] == "abc" and event["type"] == "event"
-            assert event["event"]["payload"]["host_updates"][0]["position_mm"] == 1
-            channel.send({"type": "result", "result": {"output_dir": "out"}})
-            assert json.loads(stream.readline())["type"] == "result"
-        channel.close()
-        channel.event({"kind": "checkpoint"})
-    # A refused localhost connection is a non-fatal offline job.
-    channel = HostChannel("abc", settings)
-    channel.event({"kind": "checkpoint"})
-    assert channel.socket is None
-
-    # A job id is a plain name and a channel is loopback only.
-    from langslice.doors.abba import saved_jobs
-
-    with pytest.raises(ValueError, match="Invalid LangSlice job id"):
-        saved_jobs.load_job("../../outside")
-    with pytest.raises(ValueError, match="loopback"):
-        saved_jobs.validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
-
-
-def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors import credentials as setup
-    from langslice.doors.abba import saved_jobs
-    from langslice.doors.abba.contract import EngineRequest
-    from langslice.hosts.service import handle_request
-
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    monkeypatch.setattr(setup, "apply_saved_credentials", lambda: (_ for _ in ()).throw(
-        AssertionError("Saving a job must not load model credentials")))
-    folder = _folder(tmp_path)
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False},
-                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}}}
-    result = handle_request(EngineRequest(id="copy", method="mcp.prepare", params=params),
-                            lambda _event: None)
-    job_id = result.result["job_id"]
-    server = build_server(lambda _folder: (_ for _ in ()).throw(
-        AssertionError("Saved jobs must not use development CLI settings")),
-        atlas_loader=lambda _n: _ATLAS)
+def test_start_job_takes_a_folder_only_and_names_one_when_none_is_open():
+    """``start_job`` has one argument, ``image_folder``; called with no job open
+    and no folder, it answers NO_FOLDER naming that argument."""
+    server = build_server(_spec_for, atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
-        first = await client.call_tool("start_job", {"job_id": job_id})
-        tools = {tool.name for tool in (await client.list_tools()).tools}
-        repeat = await client.call_tool("start_job", {"job_id": job_id})
-        return first, tools, repeat
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        return tools["start_job"].inputSchema, await client.call_tool("start_job", {})
 
-    first, tools, repeat = _session(server, body)
-    assert not first.isError and not repeat.isError
-    assert all(isinstance(block, TextContent) for block in first.content)
-    assert "position_sections" not in tools
-    assert {"interactive_transform", "elastix_affine", "show_stack", "submit"} <= tools
+    schema, reply = _session(server, body)
+    assert set(schema["properties"]) == {"image_folder"}
+    refusal = json.loads(reply.content[0].text)
+    assert refusal["error"] == "NO_FOLDER"
+    assert refusal["message"] == "Name a job: start_job(image_folder=...)."
 
 
 def _init(folder: Path, *flags: str) -> Any:
@@ -519,54 +396,6 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     assert not _session(server(), again).isError
     saved = json.loads((job_dir / "state.json").read_text())
     assert any("checked s0" in line for line in saved["notes"])
-
-
-def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, monkeypatch: Any):
-    """ABBA's Claude mode: the tools' start/end events and the opening pages reach the
-    ABBA channel as agent events, with the saved pictures' paths, never bytes."""
-    from langslice.doors.abba import saved_jobs
-    from langslice.doors.mcp.server import host_tool, open_saved_job
-
-    folder = _folder(tmp_path)
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
-              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["position", "transform"]}, "z_offset_mm": 5.7}
-    prepared = saved_jobs.prepare_saved_job(params)
-    session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
-    sent: list[dict[str, Any]] = []
-    assert session.channel is not None
-    session.channel.event = sent.append  # type: ignore[method-assign]
-    view = next(tool for tool in session.box.tools if tool.__name__ == "look")
-    asyncio.run(host_tool(session, view)(mode="section", sections=["s1.png"]))
-    events = [payload["event"] for payload in sent if payload["kind"] == "agent_event"]
-    kinds = [event["kind"] for event in events]
-    assert kinds == ["tool_start", "tool_end"]
-    start, end = events
-    assert start["name"] == "look" and start["target_ids"] == ["s1.png"]
-    assert end["execution_id"] == start["execution_id"]
-    session.job.views.flush()
-    assert end["views"] and all(Path(path).is_file() for path in end["views"])
-    assert all(Path(path).is_relative_to(session.job.layout.folder) for path in end["views"])
-    assert "data" not in json.dumps(sent)
-
-    server = build_server(_spec_for, job_id=prepared["job_id"], atlas_loader=lambda _n: _ATLAS)
-
-    async def body(client: Any) -> Any:
-        return await client.call_tool("show_stack", {"page": 1})
-
-    from langslice.doors.mcp import host_channel
-
-    seen: list[dict[str, Any]] = []
-    monkeypatch.setattr(host_channel.HostChannel, "event",
-                        lambda self, payload: seen.append(payload))
-    _session(server, body)
-    seeds = [p["event"] for p in seen if p.get("kind") == "agent_event"
-             and p["event"]["kind"] == "seed"]
-    assert len(seeds) == 1 and seeds[0]["page"] == 1 and seeds[0]["views"]
-    # The ABBA session's facts are kept with the job.
-    record = json.loads((Path(prepared["job_dir"]) / "job.json").read_text())
-    assert record["host"]["abba"]["z_offset_mm"] == 5.7
 
 
 # --- door parity: reply budget, parallel calls, closing, the opening at its size ---------

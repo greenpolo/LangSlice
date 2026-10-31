@@ -9,6 +9,8 @@ Content-Security-Policy and ``no-store``. GET endpoints:
   ``generator.css``: the page (``static/``);
 - ``jobs``: the job list (:meth:`JobList.listing`);
 - ``generator``: the prompt generator's choices (:func:`.generator.payload`);
+  ``generator?job=<n>`` adds ``prefill``, the form as that job's
+  ``job.json`` holds it (:func:`.generator.prefill`);
 - ``jobs/<n>/snapshot?since=&gen=&sv=``: :meth:`JobWatcher.snapshot`;
 - ``jobs/<n>/picture/<number>``: a saved ``view.jpg`` by its picture number,
   read from disk, never by path;
@@ -26,6 +28,7 @@ import json
 import re
 import secrets
 import threading
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -136,7 +139,7 @@ class GuiServer:
             if resource == "jobs":
                 return self._json({"jobs": self.jobs.listing()})
             if resource == "generator":  # prompt generator
-                return self._json(generator.payload())
+                return self._generator(query)
             if match := _SNAPSHOT.fullmatch(resource):
                 watcher = self.jobs.get(int(match[1]))
                 if watcher is None:
@@ -157,6 +160,24 @@ class GuiServer:
         except OSError:
             return 404
         return 404
+
+    def _generator(
+        self, query: dict[str, list[str]]
+    ) -> int | tuple[bytes, str]:
+        """Answer ``generator``, with a listed job's form for ``job=<n>``.
+
+        The prompt generator's choices; with ``job=<n>``, also ``prefill``:
+        the form as that job's ``job.json`` holds it (null without one). An
+        index the list does not hold is 404.
+        """
+        data = generator.payload()
+        if "job" in query:
+            watcher = self.jobs.get(_int(query, "job", -1))
+            if watcher is None:
+                return 404
+            form = generator.prefill(watcher.folder)
+            data["prefill"] = asdict(form) if form is not None else None
+        return self._json(data)
 
     # --- Settings tab (hosts/gui/settings.py) ---
     def post(self, raw_path: str, headers: Any,

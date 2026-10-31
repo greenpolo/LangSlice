@@ -75,7 +75,7 @@ plugin cannot set.
 | `assets/` | Codex | LangSlice's logo, copies of `assets/logo/` files: `logo.svg` (light theme), `logo-dark.svg` (dark theme), `icon.svg` (the composer) |
 | `skills/setup` (`langslice:setup`) | main session, once | finds `langslice`, puts its folder on PATH, copies the agents and the rules into `~/.codex/`, adds the MCP server to `config.toml` |
 | `skills/register-brain` (`langslice:register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
-| `skills/abba` (`langslice:abba`) | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
+| `skills/abba` (`langslice:abba`) | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands, how to reach a running Fiji, moving files between ABBA and a job |
 | `agents/register.toml` | registers one brain | LangSlice's MCP tools only; no shell |
 | `agents/register_scripting.toml` | registers one brain | the `langslice-job` CLI plus Python-library scripts in the job folder, workspace-write sandbox |
 | `rules/langslice.rules` | sandboxing | allows `langslice-job` commands outside the sandbox, forbids `curl` |

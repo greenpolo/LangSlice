@@ -17,7 +17,7 @@ Import-linter enforces the boundaries without exceptions.
 | `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports; the job's settings (`settings/`: the form `JobSpec`, the table of every setting, what is frozen, the tool table, the needs marks) and the registry of loaded plugins |
 | `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
 | `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command, the Python library and the worker contract |
-| `hosts` | JSON-lines service, ABBA launcher, viewer and log, the LangSlice window (`langslice gui`) |
+| `hosts` | JSON-lines service (what the Fiji connector starts), the LangSlice window (`langslice gui`) |
 | `providers` | Model access, beside the layers; receives no task logic |
 
 `core`, `job` and `tools` import no provider or model SDK. Image models are
@@ -85,32 +85,57 @@ is independent of which interface produced the registration.
 
 ## Fiji connector and worker
 
-The Java plugin in `connectors/fiji/` targets ABBA 0.25 on Java 21. It exports
-calibrated section snapshots and launches `langslice serve --stdio` in the
-selected Python environment. The worker starts no JVM. Installation and
-user workflow are in [ABBA](../abba.md).
+The Java plugin in `connectors/fiji/` targets ABBA 0.25 on Java 21. Its menu
+entry, **Register › LangSlice…**, is a shortcut: it keeps one job per ABBA
+project in `~/.langslice/abba/<project key>/` (the key is computed from the
+atlas name and the session's slice names, since ABBA keeps no accessor for
+its project file), exports calibrated section snapshots there and has the
+worker prepare the job the first time, starts the follower on it, and starts
+`langslice gui <job folder> --tab prompt` (`--tab viewer` once the job has a
+checkpoint). The run itself is the user's agent app, from the message the
+window's prompt generator writes. Worker and window run in the selected
+Python environment (`langslice serve --stdio`); the worker starts no JVM.
+Installation and user workflow are in [ABBA](../abba.md); the connector's own
+details in `connectors/fiji/README.md`.
 
-Protocol version 1 uses one JSON object per line. Requests have `id`,
+Protocol version 3 uses one JSON object per line. Requests have `id`,
 `method`, `params`; responses carry the same `id` and `type` of `event`,
 `result` or `error`. Stdout is protocol-only; diagnostics go to stderr.
-The contract is `doors/abba/contract.py`, preparation and translation are in
-`doors/abba/worker.py`, and transport is in `hosts/service.py`.
+The contract is `doors/abba/contract.py`, the preparation
+`doors/abba/prepare.py`, the follower `doors/abba/follow.py`, the
+checkpoint rows `doors/abba/checkpoints.py`, and transport is in
+`hosts/service.py`.
 
 | Method | Purpose |
 |---|---|
-| `setup.status`, `setup.login`, `setup.api_key` | Offline setup status (including `tools`: what a job can switch off), OAuth and saved API keys |
-| `linear.run`, `linear.estimate` | Run the agent on snapshots; estimate cost |
-| `preprocess.preview` | Preview snapshot preprocessing |
-| `mcp.prepare` | Save a job and copy prompt for an MCP host |
+| `setup.status` | The installation: version, protocol, Python and its environment (offline) |
+| `abba.prepare` | Make a prepared job from an ABBA session's snapshots |
+| `abba.follow` | Stream a job's checkpoints as ABBA rows until the request's input closes |
 
-The request includes snapshots, pixel calibration, positions, cutting angles,
-job settings and existing-registration constraints. Only coronal Allen Mouse
+`abba.prepare` takes the snapshots, their pixel size, positions, ABBA's
+stack-wide cutting angles and slicing offset, the slices the user registered
+or warped in ABBA, the page names and the session's facts (project key,
+atlas, slice names, ABBA's median thickness and interval). It writes the job
+folder beside the snapshots with `job.json` only: ABBA's inputs, the user's
+ABBA registrations frozen, the cutting-angle estimate on, and the session's
+facts under `host`. It writes no checkpoint, and refuses once the job has
+one. Whichever way the job is then opened (`langslice-job FOLDER init`,
+`linear run`, MCP, the library), the saved settings are the defaults of
+that opening (`job.host_inputs.opening_spec`). Only coronal Allen Mouse
 V3/V3p1 ABBA sessions are accepted. Position and angle conversion uses ABBA's
 atlas offset and centred world coordinates.
 
-The first checkpoint describes the snapshots. Later checkpoints carry
-replacement `host_updates` and changed `host_angles`; a warp that cannot be
-converted is sent as `{"error": …}` and kept as a failed update. Each
+`abba.follow` changes nothing of the job (it writes only its kept warp rows,
+below). Every 0.5 s it looks at
+`state.json`; when it changed, it sends one checkpoint, so several writes
+between two looks are one ABBA step. The first checkpoint is the job's whole
+state measured against ABBA with this job's own steps removed; later
+checkpoints carry replacement `host_updates` and changed `host_angles`; a
+warp that cannot be converted is sent as `{"error": …}` and kept as a failed
+update. A job that has no checkpoint yet gets one `waiting` event; the
+first look that finds the state unchanged after a checkpoint sends `idle`
+with the state file's modification time, so the connector knows when ABBA
+shows the job as saved. Each
 checkpoint becomes an undoable ABBA step. The connector
 owns at most one affine and one BigWarp registration per section, above its
 pre-existing registrations. Deformations become thin-plate splines through
@@ -123,24 +148,33 @@ reported (median, 99th percentile and maximum); it never withholds a warp.
 When the first grids already fold, even 33×33 to 9×9 grids over the
 snapshot are tried, and a spline folding at every one is refused.
 
-Updates replace LangSlice's steps only while they remain the newest
-registrations. External edits cause that section's update to be refused;
-failed updates remain available for retry. Saved projects contain ABBA's
-native registration types and reopen without LangSlice.
+A conversion takes 10 to 80 s per section, so the follower converts the
+sections one checkpoint changed side by side, in up to four spawned
+processes (`doors/abba/warp_workers.py`), each started with its share of the
+machine's threads; one section is converted in the follower itself. A
+converted row is kept in memory and in the job folder
+(`logs/abba_warps/<digest>.json`, named by the section, its deformation
+record, its placement, its snapshot and the conversion code), so an
+unchanged deformation is never converted twice, also by a follower started
+again after ABBA was reopened. The checkpoint is sent once all of its
+sections are converted.
 
-### MCP from ABBA
+The connector names its steps `LangSlice affine [<project key>]` and
+`LangSlice warp [<project key>]`. Updates replace this job's steps only while
+they remain the newest registrations. A section edited in ABBA (a step
+added, removed or undone with ABBA's Undo) is refused; its rows are kept and
+retried with later checkpoints. Each applied checkpoint is a line of the
+job's `logs/abba_applied.jsonl`.
 
-`mcp.prepare` uses the same preparation and checkpoint translator as the
-built-in agent, without calling a model. Snapshots and their job remain
-under `~/.langslice/snapshots/mcp-*`; a saved job id points to them.
-`start_job(job_id=...)` opens that job. MCP opening pages must be read before
-writes are accepted.
-
-The connector listens on a loopback port with a single-use 256-bit token.
-It accepts LangSlice result events, not arbitrary Fiji commands. Closing
-the progress window disconnects live updates but leaves the MCP job usable
-and its results on disk. Each direct worker request owns its process;
-cancelling it terminates that worker and its children.
+**Attach.** Each time the follower starts (the first use, the menu entry
+again, ABBA reopened), the connector removes this job's steps from the top
+of each section and takes what remains as the section's baseline; the
+removal happens inside the first checkpoint's undo step, and that checkpoint
+is the job's whole state. One ABBA undo step therefore puts ABBA where the
+job is, and nothing about earlier Java objects needs to survive a restart. A
+section with this job's step under another step is refused and left as it
+is. Saved projects contain ABBA's native registration types and reopen
+without LangSlice.
 
 ## Atlas cache
 

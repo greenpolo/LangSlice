@@ -57,8 +57,8 @@ from PIL import Image
 
 from langslice.core.jsonable import JsonObject
 from langslice.core.sections.reading import (
-    HOST_CLAHE_CLIP,
-    HOST_CLAHE_TILE,
+    AUTO_CLAHE_CLIP,
+    AUTO_CLAHE_TILE,
     adaptive_preprocess,
     coverage_weights,
     custom_appearance,
@@ -79,8 +79,8 @@ MAX_NAME = 32
 #: The kinds of section image.
 RAW, MADE = "raw", "made"
 #: CLAHE clip limit and tile grid of the automatic path (the opening recipe's).
-DEFAULT_CLAHE_CLIP = HOST_CLAHE_CLIP["medium"]
-DEFAULT_CLAHE_TILES = HOST_CLAHE_TILE[0]
+DEFAULT_CLAHE_CLIP = AUTO_CLAHE_CLIP
+DEFAULT_CLAHE_TILES = AUTO_CLAHE_TILE[0]
 #: Accepted CLAHE ranges (0 clip = no CLAHE).
 MAX_CLAHE_CLIP = 40.0
 MAX_CLAHE_TILES = 32
@@ -243,14 +243,8 @@ def opening_words(source: Mapping[str, Any]) -> str:
     if kind == "adaptive":
         return "automatic channel weights by tissue coverage, CLAHE clip 4 on 8x8 tiles"
     if kind == "host":
-        settings = dict(source.get("settings") or {})
-        if settings.get("mode") != "custom":
-            return ("the host's automatic blend: channel weights by tissue coverage, "
-                    "CLAHE clip 4 on 8x8 tiles")
-        weights = ", ".join(f"{float(v):g}" for v in settings.get("channel_weights") or [])
-        clahe = (f"CLAHE clip {HOST_CLAHE_CLIP[str(settings.get('clahe_strength'))]:g} on "
-                 "8x8 tiles" if settings.get("clahe", True) else "no CLAHE")
-        return f"the host's blend: channel weights {weights} (one per page), {clahe}"
+        return ("the host's automatic blend: channel weights by tissue coverage, "
+                "CLAHE clip 4 on 8x8 tiles")
     return "the file as read, in gray, unenhanced"
 
 

@@ -35,9 +35,10 @@ def test_save_both_keys_preserves_them_and_never_returns_secrets(isolated_home: 
     }
     if os.name == "posix":
         assert path.stat().st_mode & 0o777 == 0o600
-    status = setup.setup_status()
-    assert status["protocol_version"] == 2
+    status = setup.connections()
+    assert status["providers"]["openai-api"]["configured"]
     assert "test-private" not in json.dumps(status)
+    assert "test-private" not in json.dumps(setup.setup_status())
     assert list(path.parent.glob(".provider_credentials-*")) == []
 
 
@@ -67,7 +68,7 @@ def test_unknown_or_unreadable_saved_entries_are_skipped(
     monkeypatch.setenv("GEMINI_API_KEY", "")
     setup.apply_saved_credentials()
     assert os.environ["GEMINI_API_KEY"] == "saved-gemini"
-    assert setup.setup_status()["providers"]["gemini-api"]["configured"]
+    assert setup.connections()["providers"]["gemini-api"]["configured"]
     setup.save_api_key("openai-api", "new")
     assert json.loads(path.read_text()) == {"future-api": "f", "gemini-api": "saved-gemini",
                                             "openai-api": "new"}
@@ -90,7 +91,7 @@ def test_corrupt_settings_report_generic_error_and_are_not_overwritten(isolated_
     path = isolated_home / ".langslice" / "provider_credentials.json"
     path.parent.mkdir()
     path.write_text("sensitive malformed input")
-    status = setup.setup_status()
+    status = setup.connections()
     assert status["credentials_error"]
     assert "sensitive" not in json.dumps(status)
     with pytest.raises(ValueError):
@@ -103,7 +104,7 @@ def test_oauth_presence_does_not_refresh_or_expose_token(isolated_home: Path) ->
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps({"tokens": {"access_token": "private-oauth-token"}}))
     original = path.read_text()
-    status = setup.setup_status()
+    status = setup.connections()
     oauth = status["providers"]["openai-oauth"]
     assert {key: oauth[key] for key in ("configured", "source", "validated")} == {
         "configured": True, "source": "saved", "validated": False,
@@ -116,13 +117,13 @@ def test_a_codex_login_is_not_a_langslice_login(isolated_home: Path) -> None:
     path = isolated_home / ".codex" / "auth.json"
     path.parent.mkdir()
     path.write_text(json.dumps({"tokens": {"access_token": "codex-token"}}))
-    assert setup.setup_status()["providers"]["openai-oauth"]["configured"] is False
+    assert setup.connections()["providers"]["openai-oauth"]["configured"] is False
 
 
 def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
                                                       monkeypatch: pytest.MonkeyPatch) -> None:
-    """A script's ``langslice.open_job`` gets the keys saved by the setup
-    dialog (``setup.api_key``) the way every CLI command does, through one
+    """A script's ``langslice.open_job`` gets the keys saved by the LangSlice
+    window's Settings tab (``setup.save_api_key``) the way every CLI command does, through one
     shared loader (review finding 13); an explicit environment key wins."""
     import dataclasses
 
@@ -145,20 +146,15 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     assert os.environ["OPENAI_API_KEY"] == "from-the-environment"
 
 
-def test_status_lists_every_image_model_choice_with_its_connection(
+def test_an_image_model_is_connected_by_its_key_or_login_offline(
     isolated_home: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The dialog's image-model choices, connected or not, from offline presence checks."""
-    choices = setup.setup_status()["image_models"]
-    assert [c["provider"] for c in choices] == ["openai-oauth", "gemini-api", "openai-api",
-                                                "none"]
-    connected = {c["provider"]: c["connected"] for c in choices}
-    assert connected == {"openai-oauth": False, "gemini-api": False, "openai-api": False,
-                         "none": True}
+    providers = ("openai-oauth", "gemini-api", "openai-api", "none")
+    assert not any(setup.image_model_connected(name) for name in providers)
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     path = isolated_home / ".langslice" / "openai_auth.json"
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps({"tokens": {"access_token": "token"}}))
-    connected = {c["provider"]: c["connected"] for c in setup.setup_status()["image_models"]}
-    assert connected["gemini-api"] and connected["openai-oauth"]
-    assert not connected["openai-api"]
+    connected = {name: setup.image_model_connected(name) for name in providers}
+    assert connected == {"openai-oauth": True, "gemini-api": True, "openai-api": False,
+                         "none": False}

@@ -44,6 +44,34 @@ MAC_APPS = (
     "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "Brave Browser.app/Contents/MacOS/Brave Browser",
 )
+#: The tabs the window can open on (``langslice gui --tab``).
+TABS = ("viewer", "prompt")
+
+
+def start_address(url: str, tab: str, *, folders: bool) -> str:
+    """Make the address the window opens on *tab*.
+
+    Parameters
+    ----------
+    url
+        The server's page.
+    tab
+        One of :data:`TABS`.
+    folders
+        Whether folders were given: the prompt generator then starts from
+        the first one's job (index 0 of the job list).
+
+    Returns
+    -------
+    str
+        *url* for the agent viewer; for the prompt generator, *url* with a
+        fragment naming the tab and the job.
+    """
+    if tab == "viewer":
+        return url
+    if folders:
+        return url + "#tab=prompt&job=0"
+    return url + "#tab=prompt"
 
 
 def candidates(platform: str, env: dict[str, str], home: Path) -> list[Path]:

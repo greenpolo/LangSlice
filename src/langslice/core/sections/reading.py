@@ -104,24 +104,26 @@ def adaptive_preprocess(image: Image.Image) -> Image.Image:
     """Adaptive preprocessing for VLM input: CLAHE + weighted blend + brightness.
 
     The image's three planes through :func:`_blend_channels` at the
-    automatic clip (``HOST_CLAHE_CLIP["medium"]``), weighted toward the
+    automatic clip (:data:`AUTO_CLAHE_CLIP`), weighted toward the
     STRUCTURAL channel by :func:`coverage_weights` (DAPI-blue, YFP-green,
     whatever lights the whole tissue; sparse tracer channels get little
     weight), brightness boost toward 90.
     """
     arr = np.asarray(normalize_image(image), dtype=np.uint8)
     planes = [arr[:, :, k] for k in range(3)]
-    return _blend_channels(planes, coverage_weights(planes), clahe_clip=HOST_CLAHE_CLIP["medium"])
+    return _blend_channels(planes, coverage_weights(planes), clahe_clip=AUTO_CLAHE_CLIP)
 
 
 # --- host preprocessing: N exported channels -> the one image shown ---
 
-#: CLAHE clip limit per user-chosen strength in custom host preprocessing.
-#: "medium" is the automatic path's own clip (:func:`adaptive_preprocess`).
-HOST_CLAHE_CLIP: dict[str, float] = {"low": 2.0, "medium": 4.0, "high": 8.0}
-#: CLAHE tile grid for host preprocessing, the automatic path's own.
-HOST_CLAHE_TILE = (8, 8)
-HOST_PREPROCESS_MODES = ("auto", "custom")
+#: The automatic path's CLAHE clip limit (:func:`adaptive_preprocess`, a
+#: host's blend): enough local contrast to show cell-poor borders without
+#: amplifying the background's noise.
+AUTO_CLAHE_CLIP = 4.0
+#: The automatic path's CLAHE tile grid.
+AUTO_CLAHE_TILE = (8, 8)
+#: The one mode a host's blend takes (``JobSpec.host_preprocessing``).
+HOST_PREPROCESS_AUTO = "auto"
 
 
 #: Smallest long edge a section's working copy may have: the largest picture a
@@ -252,55 +254,12 @@ def _page_channel(page: np.ndarray) -> np.ndarray:
     return np.asarray(image, dtype=np.uint8)[..., 0]
 
 
-def host_preprocess_settings(
-    settings: Mapping[str, object] | None, n_pages: int
-) -> dict[str, object]:
-    """Validated host preprocessing settings for an image of *n_pages* pages.
-
-    ``{"mode": "auto"}`` (also for ``None``) or ``{"mode": "custom", "clahe":
-    bool, "clahe_strength": "low"|"medium"|"high", "channel_weights": [w, ...]}``
-    with one finite, non-negative weight per page, not all zero (absent means
-    equal weights). Custom-only keys are ignored in auto mode.
-    """
-    values = dict(settings or {})
-    mode = values.get("mode", "auto")
-    if mode not in HOST_PREPROCESS_MODES:
-        raise ValueError(f"Preprocessing mode must be one of {HOST_PREPROCESS_MODES}")
-    if mode == "auto":
-        return {"mode": "auto"}
-    clahe = values.get("clahe", True)
-    if not isinstance(clahe, bool):
-        raise ValueError("Preprocessing clahe must be true or false")
-    strength = values.get("clahe_strength", "medium")
-    if strength not in HOST_CLAHE_CLIP:
-        raise ValueError(f"CLAHE strength must be one of {tuple(HOST_CLAHE_CLIP)}")
-    raw = values.get("channel_weights")
-    if raw is None:
-        weights = [1.0] * n_pages
-    else:
-        if not isinstance(raw, (list, tuple)) or any(
-            isinstance(value, bool) or not isinstance(value, (int, float)) for value in raw
-        ):
-            raise ValueError("Channel weights must be a list of numbers")
-        weights = [float(value) for value in raw]
-        if len(weights) != n_pages:
-            raise ValueError(
-                f"Expected {n_pages} channel weight(s), one per page; got {len(weights)}"
-            )
-        if any(not math.isfinite(value) or value < 0 for value in weights):
-            raise ValueError("Channel weights must be finite and non-negative")
-        if sum(weights) <= 0:
-            raise ValueError("At least one channel weight must be above zero")
-    return {"mode": "custom", "clahe": clahe, "clahe_strength": strength,
-            "channel_weights": weights}
-
-
 def _blend_channels(
     channels: list[np.ndarray],
     weights: list[float],
     *,
     clahe_clip: float | None,
-    tile: tuple[int, int] = HOST_CLAHE_TILE,
+    tile: tuple[int, int] = AUTO_CLAHE_TILE,
     target_brightness: float = 90.0,
     max_boost: float = 3.0,
 ) -> Image.Image:
@@ -338,15 +297,15 @@ def host_preprocess(
     """The one grayscale image the agent is shown, from a host's exported pages.
 
     *pages* are the pages of one snapshot (one per exported channel, see
-    :func:`read_pages`); *settings* as :func:`host_preprocess_settings`.
+    :func:`read_pages`); *settings* None or ``{"mode": "auto"}`` (other keys
+    a host sent beside the mode are ignored; another mode is refused,
+    ``ValueError``).
 
-    - auto, one page: exactly :func:`adaptive_preprocess` on that page read
-      the way a single image file is read.
-    - auto, several pages: the same method over N channels — per-channel
-      CLAHE blended by squared tissue coverage (the channel lighting most of
-      the tissue dominates) with the brightness boost.
-    - custom: per-channel CLAHE at the chosen strength (or none), blended by
-      the user's weights, with the same brightness boost.
+    - one page: exactly :func:`adaptive_preprocess` on that page read the
+      way a single image file is read.
+    - several pages: the same method over N channels — per-channel CLAHE
+      blended by squared tissue coverage (the channel lighting most of the
+      tissue dominates) with the brightness boost.
 
     Returned as 8-bit RGB with three equal channels, the form
     :func:`adaptive_preprocess` returns.
@@ -356,19 +315,16 @@ def host_preprocess(
     shapes = {np.asarray(page).shape[:2] for page in pages}
     if len(shapes) != 1:
         raise ValueError(f"All pages must share one size; got {sorted(shapes)}")
-    chosen = host_preprocess_settings(settings, len(pages))
-    if chosen["mode"] == "auto" and len(pages) == 1:
+    mode = HOST_PREPROCESS_AUTO if settings is None else settings.get("mode")
+    if mode not in (None, HOST_PREPROCESS_AUTO):
+        raise ValueError(
+            f"A host's channel blend must be {{'mode': 'auto'}}; got {settings!r}. "
+            "Open the job with host_preprocessing set to it, or to null.")
+    if len(pages) == 1:
         return adaptive_preprocess(_page_image(pages[0]))
 
     channels = [_page_channel(page) for page in pages]
-    if chosen["mode"] == "custom":
-        clip = HOST_CLAHE_CLIP[str(chosen["clahe_strength"])] if chosen["clahe"] else None
-        return _blend_channels(
-            channels, list(chosen["channel_weights"]),  # type: ignore[arg-type]
-            clahe_clip=clip,
-        )
-
-    return _blend_channels(channels, coverage_weights(channels), clahe_clip=4.0)
+    return _blend_channels(channels, coverage_weights(channels), clahe_clip=AUTO_CLAHE_CLIP)
 
 
 def coverage_weights(channels: list[np.ndarray]) -> list[float]:
@@ -740,8 +696,8 @@ def custom_appearance(
     planes: list[np.ndarray],
     *,
     channel_weights: list[float] | None = None,
-    clahe_clip: float = HOST_CLAHE_CLIP["medium"],
-    clahe_tiles: int = HOST_CLAHE_TILE[0],
+    clahe_clip: float = AUTO_CLAHE_CLIP,
+    clahe_tiles: int = AUTO_CLAHE_TILE[0],
     n4: bool = False,
     denoise: bool = False,
 ) -> Image.Image:

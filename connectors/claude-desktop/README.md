@@ -22,9 +22,8 @@ For a coding agent that also writes scripts and uses a shell, use the
 
 ## Jobs prepared in ABBA
 
-Choose **Claude** in LangSlice Registration, configure the job and copy its
-prompt into the MCP conversation. Keep ABBA's progress window open for
-live updates. The agent calls `start_job(job_id=...)`, which answers with the job
-statement (a copied prompt has no launching agent to carry it), reads every opening
-page and works through the registration tools. Closing the ABBA window
-leaves the MCP job and its results available on disk.
+ABBA's **Register › LangSlice…** opens the LangSlice window on the job it
+prepared; its prompt generator writes the message to paste into the
+conversation, and the job then starts like any other (`start_job` with the
+job's folder). While ABBA is open, every write appears in ABBA
+([ABBA](../../docs/abba.md)).

@@ -25,8 +25,7 @@ text. The app sends those to its provider (OpenAI, Google or Anthropic) as
 part of the conversation, under your account. LangSlice itself sends
 nothing in this route.
 
-**Through LangSlice's own agent** (`langslice linear run`, and the agent built
-into the ABBA connector). LangSlice sends the same kind of content directly
+**Through LangSlice's own agent** (`langslice linear run`). LangSlice sends the same kind of content directly
 to the provider you set up:
 
 | How you connected | Where it goes |
@@ -90,7 +89,8 @@ the job's image model to `none` (see [Job settings](../reference/settings.md)).
 - **The LangSlice window.** It is served to your own computer only, and other
   computers cannot reach it.
 - **The ABBA connection.** The ABBA connector talks to LangSlice on your
-  computer only.
+  computer only, through files and a program it starts, with no network
+  port.
 - **Your sign-in and API keys.** They are kept in a `.langslice` folder in
   your home folder, never in a job folder.
 

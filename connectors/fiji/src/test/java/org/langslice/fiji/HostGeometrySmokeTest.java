@@ -106,23 +106,6 @@ public final class HostGeometrySmokeTest {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length == 2 && args[0].equals("--render-setup")) {
-            javax.swing.SwingUtilities.invokeAndWait(() -> {
-                try {
-                    java.lang.reflect.Constructor<SetupDialog> constructor = SetupDialog.class.getDeclaredConstructor(Runnable.class);
-                    constructor.setAccessible(true);
-                    SetupDialog dialog = constructor.newInstance((Runnable) null);
-                    java.awt.Container panel = dialog.getContentPane();
-                    java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
-                            panel.getWidth(), panel.getHeight(), java.awt.image.BufferedImage.TYPE_INT_RGB);
-                    java.awt.Graphics2D graphics = image.createGraphics();
-                    panel.printAll(graphics); graphics.dispose();
-                    javax.imageio.ImageIO.write(image, "png", new java.io.File(args[1]));
-                    dialog.dispose();
-                } catch (Exception failure) { throw new RuntimeException(failure); }
-            });
-            return;
-        }
         // Includes unequal scales, shear and translation: order mistakes cannot
         // hide behind isotropic or identity test transforms.
         AffineTransform3D affine = new AffineTransform3D();

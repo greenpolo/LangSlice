@@ -1,10 +1,7 @@
 # Worker distribution
 
 The Fiji connector starts the separately installed LangSlice Python worker.
-The worker does not require Java, Maven, or `abba-python`. The optional
-`langslice[abba]` extra (`abba-python`) is only for `langslice abba`, which starts
-ABBA from Python so that the connector's runs can be followed in LangSlice's agent
-viewer and log.
+The worker does not require Java or Maven.
 
 ## Install from source
 
@@ -17,8 +14,8 @@ conda env create -f environment.yml
 
 The environment installs Python 3.11 and then installs LangSlice and all its
 Python dependencies from `pyproject.toml`. It is a regular installation, not an
-editable development checkout. Authentication is performed from Fiji's setup
-window after selecting this environment; command-line login is also available.
+editable development checkout. Sign in from the Settings tab of the LangSlice
+window (`langslice gui`), or with `langslice login`.
 
 `environment.yml` is a source installation recipe. It creates an isolated
 conda environment and installs the Python package and its dependencies with

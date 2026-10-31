@@ -1,7 +1,7 @@
 """The status table: one row per section, as data for the doors.
 
 Not a picture: the rows every write answers with, ``status`` returns whole, and
-the opening and MCP briefing print as text (:func:`status_text`).
+the opening and the job statement print as text (:func:`status_text`).
 """
 
 from __future__ import annotations

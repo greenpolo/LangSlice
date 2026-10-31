@@ -1,6 +1,6 @@
-"""The commands that drive a host: ``abba`` (ABBA started from Python with the
-LangSlice connector), ``gui`` (the LangSlice window: the agent viewer on job
-folders) and ``serve`` (the engine service the Fiji connector starts).
+"""The commands that drive a host: ``gui`` (the LangSlice window: the agent
+viewer and the prompt generator on job folders) and ``serve`` (the engine
+service the Fiji connector starts).
 
 The ``langslice`` command (:mod:`langslice.doors.commands.parser`) registers
 them by module path and loads this module only when it builds its parser
@@ -10,66 +10,33 @@ them by module path and loads this module only when it builds its parser
 from __future__ import annotations
 
 import argparse
+from typing import cast
 
 
-def add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser(
-        "abba",
-        help="Start ABBA (0.25.x, from Python) with the LangSlice connector; its runs "
-        "can be watched in the Python agent viewer and log",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument(
-        "--abba-atlas",
-        default="Adult Mouse Brain - Allen Brain Atlas V3p1",
-        help="Atlas name passed to ABBA",
-    )
-    p.add_argument(
-        "--connector-jar",
-        default=None,
-        metavar="JAR",
-        help="The LangSlice Fiji connector jar (default: $LANGSLICE_CONNECTOR_JAR, else "
-        "connectors/fiji/target/*.jar of this checkout)",
-    )
-    p.add_argument(
-        "--no-viewer",
-        action="store_true",
-        help="Do not open the agent viewer that follows the connector's runs",
-    )
-    p.add_argument(
-        "--no-log",
-        action="store_true",
-        help="Do not open the agent activity log in a browser window",
-    )
-
-
-def run_abba(args: argparse.Namespace) -> None:
-    from langslice.hosts.abba.launch import connector_jar, run_abba_session
-
-    try:
-        jar = connector_jar(args.connector_jar)
-    except FileNotFoundError as exc:
-        raise SystemExit(str(exc)) from exc
-    run_abba_session(abba_atlas=args.abba_atlas, jar=jar, viewer=not args.no_viewer,
-                     log=not args.no_log)
-
-
-def add_gui_parser(subparsers: argparse._SubParsersAction) -> None:
+def add_gui_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = subparsers.add_parser(
         "gui",
-        help="Open the LangSlice window: the agent viewer on job folders as their runs "
-        "write them",
+        help="Open the LangSlice window: the agent viewer on job folders as "
+        "their runs write them",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
         "folders", nargs="*", metavar="FOLDER",
-        help="Job folders (or image folders with a langslice/ job folder) to show, besides "
-        "the recently opened jobs",
+        help="Job folders (or image folders with a langslice/ job folder) to "
+        "show, besides the recently opened jobs",
     )
     p.add_argument("--port", type=int, default=0,
                    help="Serve on this local port (0: any free port)")
     p.add_argument("--no-window", action="store_true",
-                   help="Do not open a window; print the address and keep serving")
+                   help="Do not open a window; print the address and keep "
+                   "serving")
+    p.add_argument(
+        "--tab",
+        choices=("viewer", "prompt"),
+        default="viewer",
+        help="The tab the window opens on; prompt opens the prompt "
+        "generator, filled in from the first FOLDER's job",
+    )
 
 
 def run_gui(args: argparse.Namespace) -> None:
@@ -86,7 +53,8 @@ def run_gui(args: argparse.Namespace) -> None:
         if not (folder / JOB_FILE).exists() and (folder / JOB_DIRNAME / JOB_FILE).exists():
             folder = folder / JOB_DIRNAME
         folders.append(folder)
-    serve(folders, port=args.port, window=not args.no_window)
+    tab = cast("str", args.tab)
+    serve(folders, port=args.port, window=not args.no_window, tab=tab)
 
 
 def add_serve_parser(subparsers: argparse._SubParsersAction) -> None:

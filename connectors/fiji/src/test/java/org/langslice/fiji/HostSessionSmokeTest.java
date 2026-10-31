@@ -25,16 +25,19 @@ import java.util.*;
  * It then starts a second JVM WITHOUT the connector's classes ({@link ReloadCheck}) to reopen the saved project.
  * Requires the Allen V3p1 XML, HDF5 and ontology already downloaded by ABBA (normally ~/cached_atlas).
  * Checks: AP positions from ABBA's own toAtlasZ against ABBA's atlas coordinate images read at the slice, a tilted
- * session's angles_deg, existing_warp, live checkpoints (position, affine step, warp step, cutting angles),
- * the affine-then-warp replace/remove order, one checkpoint = one Undo (angles included), refusal and retry
- * after an outside change, ABBA's own reason for a refused registration, and save then reload without LangSlice with
- * the warp step intact.
+ * session's export (angles_deg, existing_warp, registered, the abba block), live checkpoints (position, affine step,
+ * warp step, cutting angles), the affine-then-warp replace/remove order, one checkpoint = one Undo (angles included),
+ * refusal and retry after an outside change, ABBA's own reason for a refused registration, save then reload without
+ * LangSlice with the warp step intact, and attach: this job's steps (by project key) removed and the job applied again
+ * in one Undo step, another key's step and the user's own kept, a section with this job's step under another refused.
  */
 public final class HostSessionSmokeTest {
     // ImageJ 1.x classes must be patched before any is loaded (ij1-patcher); Fiji's launcher does this itself.
     static { net.imagej.patcher.LegacyInjector.preinit(); }
 
     static final String S1 = "section_0001.tif", S2 = "section_0002.tif";
+    /** This job's project key, and another job's. */
+    static final String KEY = "0123456789ab", OTHER = "fedcba987654";
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) throw new IllegalArgumentException("Supply an existing ABBA Allen V3p1 atlas cache folder");
@@ -145,7 +148,7 @@ public final class HostSessionSmokeTest {
         require(Math.abs(probed - converted) < 0.02, "toAtlasZ agrees with the coordinate probe within one 20 um voxel: " + probed + " vs " + converted);
 
         // 2. A user's own BigWarp step on section two is reported as existing_warp.
-        AbbaHostSession foreign = new AbbaHostSession(mp, output.resolve("unused"));
+        AbbaHostSession foreign = new AbbaHostSession(mp, output.resolve("unused"), OTHER);
         BigWarpSource2DRegistration userWarp = foreign.prepareWarp(warp(.03));
         userWarp.setRegistrationName("Big Warp");
         RegisterSliceAction user = new RegisterSliceAction(mp, two, userWarp, SourcesProcessorHelper.Identity(), SourcesProcessorHelper.Identity());
@@ -154,31 +157,34 @@ public final class HostSessionSmokeTest {
 
         // 3. A tilted session is accepted: its angles travel as the job's stack-wide angles.
         mp.getReslicedAtlas().setRotateX(-Math.toRadians(3)); mp.getReslicedAtlas().setRotateY(Math.toRadians(2));
-        AbbaHostSession host = new AbbaHostSession(mp, output.resolve("snapshots"));
-        JsonObject spec = JsonParser.parseString("{\"tasks\":[\"position\",\"transform\",\"nonlinear\"]}").getAsJsonObject();
-        Map<SliceSources, String> damaged = new HashMap<>(); damaged.put(one, "torn");
-        JsonObject request = host.prepare(spec, sections, Arrays.asList(0), Arrays.asList("ramp"), 25.0, damaged, true);
-        System.out.println("PREPARE " + request.get("angles_deg") + " z_offset_mm=" + request.get("z_offset_mm")
-                + " positions=" + request.get("positions_mm") + " existing_warp=" + request.get("existing_warp"));
+        AbbaHostSession host = new AbbaHostSession(mp, output.resolve("snapshots"), KEY);
+        JsonObject request = host.export(sections, Arrays.asList(0), Arrays.asList("ramp"), 25.0, 40, 400);
+        System.out.println("EXPORT " + request.get("angles_deg") + " z_offset_mm=" + request.get("z_offset_mm")
+                + " positions=" + request.get("positions_mm") + " existing_warp=" + request.get("existing_warp") + " abba=" + request.get("abba"));
         require(Math.abs(request.getAsJsonObject("angles_deg").get("pitch_deg").getAsDouble() - 3) < 1e-9
                 && Math.abs(request.getAsJsonObject("angles_deg").get("yaw_deg").getAsDouble() + 2) < 1e-9, "angles_deg carries ABBA's tilt");
         require(request.get("z_offset_mm").getAsDouble() == mp.getReslicedAtlas().getZOffset(), "z_offset_mm is ABBA's getZOffset");
         require(Math.abs(request.getAsJsonObject("positions_mm").get(S1).getAsDouble() - 5.0) < 1e-9
                 && Math.abs(request.getAsJsonObject("positions_mm").get(S2).getAsDouble() - 5.4) < 1e-9, "positions_mm = toAtlasZ");
         require(request.getAsJsonArray("existing_warp").toString().equals("[\"" + S2 + "\"]"), "existing_warp names the user's warped slice only");
-        require(!request.has("locked") && !request.has("nonlinear_skip") && !request.has("keep_warp"), "Old locked/nonlinear_skip/keep_warp keys are no longer sent");
-        require(request.getAsJsonObject("spec").getAsJsonObject("frozen").toString().equals("{\"" + S2 + "\":[\"orientation\",\"affine\",\"deformation\"]}"),
-                "Registered slices freeze orientation and affine when overwriting is off; a warped one also its deformation");
+        require(request.getAsJsonArray("registered").toString().equals("[\"" + S2 + "\"]"), "registered names the slices that carry registrations");
+        require(!request.has("spec") && !request.has("damaged") && !request.has("preprocessing"), "No spec, damage or preprocessing: the generator sets them");
         require(request.getAsJsonArray("channel_names").toString().equals("[\"ramp\"]"), "channel_names sent");
-        require(request.getAsJsonObject("damaged").get(S1).getAsString().equals("torn"), "User damage reaches the request");
+        JsonObject abba = request.getAsJsonObject("abba");
+        require(abba.get("project_key").getAsString().equals(KEY) && abba.get("atlas").getAsString().equals(mp.getAtlas().getName())
+                && abba.getAsJsonObject("sections").get(S1).getAsString().equals(one.getName())
+                && abba.getAsJsonObject("sections").get(S2).getAsString().equals(two.getName())
+                && abba.get("thickness_um").getAsInt() == 40 && abba.get("interval_um").getAsInt() == 400, "The abba block: " + abba);
+        require(JsonParser.parseString(Files.readString(output.resolve("snapshots").resolve(AbbaHostSession.SECTIONS_FILE))).equals(abba.get("sections")),
+                "abba_sections.json is the sections map");
         require(Files.isRegularFile(output.resolve("snapshots").resolve(S1)), "Snapshot exported");
-        require(one.getNumberOfRegistrations() == 0 && two.getNumberOfRegistrations() == 1, "Preparing changes nothing in ABBA");
-        AbbaHostSession pages = new AbbaHostSession(mp, output.resolve("pages"));
-        pages.prepare(spec, sections, Arrays.asList(0, 0), Arrays.asList("ramp"), 25.0, new HashMap<>(), true);
+        require(one.getNumberOfRegistrations() == 0 && two.getNumberOfRegistrations() == 1, "Exporting changes nothing in ABBA");
+        AbbaHostSession pages = new AbbaHostSession(mp, output.resolve("pages"), KEY);
+        pages.export(sections, Arrays.asList(0, 0), Arrays.asList("ramp"), 25.0, 0, 0);
         ImagePlus multi = new ij.io.Opener().openImage(output.resolve("pages").resolve(S1).toString());
         require(multi.getStackSize() == 2, "One page per exported channel");
-        java.awt.image.BufferedImage shown = pages.exportPreview(one, Arrays.asList(0), 25.0, output.resolve("preview.tif"));
-        require(shown.getWidth() == multi.getWidth(), "Preview snapshot shares the run framing");
+        host.attach();
+        require(!host.syncPending() && !host.hasPending(), "A fresh attach has nothing to remove or refuse");
 
         // 4. Checkpoint 1, live: angles, position, affine step and warp step on section one.
         double z0 = one.getSlicingAxisPosition();
@@ -188,7 +194,7 @@ public final class HostSessionSmokeTest {
         require(report.failed.isEmpty() && report.angles, "Checkpoint 1 applied: " + report.summary());
         anglesAre(mp, 4, -1, "host_angles reach ABBA");
         require(Math.abs(mp.toAtlasZ(one.getSlicingAxisPosition()) - 5.2) < 1e-6, "position_mm reaches ABBA through fromAtlasZ");
-        require(names(host, one).equals(Arrays.asList(AbbaHostSession.AFFINE_NAME, AbbaHostSession.WARP_NAME)), "Affine step then warp step: " + names(host, one));
+        require(names(host, one).equals(Arrays.asList(host.affineName, host.warpName)), "Affine step then warp step: " + names(host, one));
         List<Registration<SourceAndConverter<?>[]>> active = host.activeRegistrations(one);
         warpReadsBack(active.get(1), .05, "Checkpoint 1 warp");
         // ABBA reports a registration's transform as its pull-back (fixed to moving): the inverse of affine_mm.
@@ -199,27 +205,27 @@ public final class HostSessionSmokeTest {
         JsonObject second = row(S1); second.add("affine_mm", affine(-.2, .15, .95)); second.add("warp", JsonNull.INSTANCE);
         report = host.applyCheckpoint(rows(second), null);
         require(report.failed.isEmpty(), "Checkpoint 2 applied: " + report.summary());
-        require(names(host, one).equals(Collections.singletonList(AbbaHostSession.AFFINE_NAME)) && one.getNumberOfRegistrations() == 1,
+        require(names(host, one).equals(Collections.singletonList(host.affineName)) && one.getNumberOfRegistrations() == 1,
                 "Warp removed, affine replaced: " + names(host, one));
         require(Math.abs(((AffineTransform3D) host.activeRegistrations(one).get(0).getTransformAsRealTransform()).inverse().get(0, 3) + .2) < 1e-12, "New affine in place");
 
         // 6. A warp alone goes on top of the kept affine.
         JsonObject third = row(S1); third.add("warp", warp(.08));
         report = host.applyCheckpoint(rows(third), null);
-        require(report.failed.isEmpty() && names(host, one).equals(Arrays.asList(AbbaHostSession.AFFINE_NAME, AbbaHostSession.WARP_NAME)),
+        require(report.failed.isEmpty() && names(host, one).equals(Arrays.asList(host.affineName, host.warpName)),
                 "Warp added on the kept affine: " + names(host, one));
         warpReadsBack(host.activeRegistrations(one).get(1), .08, "Checkpoint 3 warp");
 
         // 7. One ABBA Undo reverts exactly one checkpoint (here: the warp), Redo restores it.
         mp.cancelLastAction(); mp.waitForTasks();
-        require(names(host, one).equals(Collections.singletonList(AbbaHostSession.AFFINE_NAME)), "Undo reverts checkpoint 3 only: " + names(host, one));
+        require(names(host, one).equals(Collections.singletonList(host.affineName)), "Undo reverts checkpoint 3 only: " + names(host, one));
         // While ABBA's state differs from LangSlice's, a change to that slice is refused, reported and kept.
         JsonObject fourth = row(S1); fourth.add("warp", warp(.02));
         report = host.applyCheckpoint(rows(fourth), null);
         require(report.failed.containsKey(S1) && report.failed.get(S1).contains("changed in ABBA") && host.hasPending(),
                 "Outside change is refused and kept: " + report.summary());
         mp.redoAction(); mp.waitForTasks();
-        require(names(host, one).equals(Arrays.asList(AbbaHostSession.AFFINE_NAME, AbbaHostSession.WARP_NAME)), "Redo restores checkpoint 3");
+        require(names(host, one).equals(Arrays.asList(host.affineName, host.warpName)), "Redo restores checkpoint 3");
         report = host.applyCheckpoint(null, null);
         require(report.failed.isEmpty() && !host.hasPending(), "The kept row is retried and applied: " + report.summary());
         warpReadsBack(host.activeRegistrations(one).get(1), .02, "Retried warp");
@@ -261,8 +267,53 @@ public final class HostSessionSmokeTest {
         expected.addProperty("rotate_y", mp.getReslicedAtlas().getRotateY());
         expected.addProperty("amplitude", .02);
         expected.addProperty("ap_probe", probed); expected.addProperty("ap_converted", converted);
-        System.out.println("HOST_SESSION_PASS toAtlasZ=probe (" + converted + " vs " + probed + "), tilted prepare, existing_warp, live position/affine/warp/angles,"
-                + " warp-before-affine replace, one-checkpoint undo/redo, outside-change refusal + retry, ABBA failure reason, native save");
+        expected.addProperty("affine_name", host.affineName); expected.addProperty("warp_name", host.warpName);
+
+        // 12. Attach = resync. Another job's step on section two stays: it is the section's own.
+        AbbaHostSession other = new AbbaHostSession(mp, output.resolve("other"), OTHER);
+        other.adopt(sections); other.attach();
+        JsonObject otherRow = row(S2); otherRow.add("affine_mm", affine(.05, .05, 1.0));
+        report = other.applyCheckpoint(rows(otherRow), null);
+        require(report.failed.isEmpty() && names(host, two).equals(Arrays.asList("Big Warp", other.affineName)), "Another job's step: " + names(host, two));
+        // A new attach of this job (another JVM, the menu entry again) finds its two steps on section one and removes them
+        // in the same undo step as the job's full state is applied again.
+        AbbaHostSession again = new AbbaHostSession(mp, output.resolve("snapshots"), KEY);
+        again.load();
+        require(again.slices.get(S1) == one && again.slices.get(S2) == two, "load() finds the sections by ABBA slice name");
+        again.attach();
+        require(again.syncPending() && names(host, one).equals(Arrays.asList(host.affineName, host.warpName)), "attach() changes nothing by itself");
+        JsonObject full = row(S1); full.addProperty("position_mm", 5.2); full.add("affine_mm", affine(.1, .1, 1.0)); full.add("warp", warp(.06));
+        report = again.applyCheckpoint(rows(full), null);
+        require(report.failed.isEmpty() && report.synced.equals(Collections.singletonList(S1)) && report.applied.equals(Collections.singletonList(S1)),
+                "The first checkpoint removes this job's steps and applies the job: " + report.toJson() + " synced " + report.synced);
+        require(names(host, one).equals(Arrays.asList(host.affineName, host.warpName)) && one.getNumberOfRegistrations() == 2,
+                "Exactly this job's steps were replaced: " + names(host, one));
+        warpReadsBack(host.activeRegistrations(one).get(1), .06, "Resynced warp");
+        require(names(host, two).equals(Arrays.asList("Big Warp", other.affineName)), "Another key's step and the user's own stay: " + names(host, two));
+        mp.cancelLastAction(); mp.waitForTasks();
+        require(names(host, one).equals(Arrays.asList(host.affineName, host.warpName)), "One Undo reverts the whole sync: " + names(host, one));
+        warpReadsBack(host.activeRegistrations(one).get(1), .02, "Undo brings the earlier steps back");
+        mp.redoAction(); mp.waitForTasks();
+        warpReadsBack(host.activeRegistrations(one).get(1), .06, "Redo brings the sync back");
+        // This job's step under a step of someone else's: the section is refused and nothing is removed.
+        JsonObject userTransform = new JsonObject(); userTransform.add("affine_mm", affine(.02, 0, 1.0));
+        Registration<SourceAndConverter<?>[]> userAffine = foreign.prepareRegistration(userTransform);
+        userAffine.setRegistrationName("User affine");
+        foreign.appendRegistration(one, userAffine);
+        mp.waitForTasks();
+        AbbaHostSession buried = new AbbaHostSession(mp, output.resolve("snapshots"), KEY);
+        buried.load(); buried.attach();
+        require(!buried.syncPending() && buried.pendingReasons().containsKey(S1) && buried.pendingReasons().get(S1).contains("changed in ABBA"),
+                "A buried step of this job: the section is refused: " + buried.pendingReasons());
+        JsonObject moved = row(S1); moved.addProperty("position_mm", 5.3);
+        report = buried.applyCheckpoint(rows(moved), null);
+        require(report.failed.containsKey(S1) && report.failed.get(S1).contains("changed in ABBA")
+                && names(host, one).equals(Arrays.asList(host.affineName, host.warpName, "User affine"))
+                && Math.abs(mp.toAtlasZ(one.getSlicingAxisPosition()) - 5.2) < 1e-6, "Its rows are refused and kept; nothing changed: " + names(host, one));
+        require(names(host, two).equals(Arrays.asList("Big Warp", other.affineName)), "The other section is untouched");
+        System.out.println("HOST_SESSION_PASS toAtlasZ=probe (" + converted + " vs " + probed + "), tilted export, existing_warp, live position/affine/warp/angles,"
+                + " warp-before-affine replace, one-checkpoint undo/redo, outside-change refusal + retry, ABBA failure reason, native save,"
+                + " attach: this job's steps resynced in one undo step, another key's and the user's kept, a buried step refused");
         return expected;
     }
 

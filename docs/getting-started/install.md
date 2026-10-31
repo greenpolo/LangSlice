@@ -147,8 +147,7 @@ mouse brain atlas at 25 µm, is about 600 MB. Later registrations reuse it.
 `environment.yml` creates a conda environment named `langslice` with
 Python 3.11. It then installs LangSlice from the downloaded folder with pip.
 The install includes LangSlice's optional parts for registration (HDF5
-reading), MCP (the connection AI apps use) and ABBA (starting ABBA from
-Python). The
+reading) and MCP (the connection AI apps use). The
 environment includes the registration engines: Elastix for in-plane fits and
 FireANTs, on PyTorch, for deformations.
 

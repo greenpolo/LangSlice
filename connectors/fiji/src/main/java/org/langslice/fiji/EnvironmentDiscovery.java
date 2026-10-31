@@ -9,8 +9,6 @@ import java.util.prefs.Preferences;
 /** Discover prefixes without requiring a terminal's activated conda environment. */
 public final class EnvironmentDiscovery {
     private static final Preferences PREFS = Preferences.userNodeForPackage(EnvironmentDiscovery.class);
-    /** Set by {@code langslice abba} to the environment that started ABBA: that session's worker. */
-    static final String PROPERTY = "langslice.environment";
     /** Where conda and mamba installers put their base environment, relative to the home folder. */
     private static final List<String> CONDA_ROOTS = Arrays.asList("miniforge3", "miniconda3", "anaconda3", "mambaforge", "micromamba");
     private EnvironmentDiscovery() {}
@@ -18,28 +16,16 @@ public final class EnvironmentDiscovery {
         Path windows = prefix.resolve("python.exe");
         return Files.isRegularFile(windows) ? windows : prefix.resolve("bin/python");
     }
+    /** The environment the user saved in the environment dialog, or null. */
     public static Path saved() {
         String value = PREFS.get("environment", "");
-        return value.isEmpty() ? null : Paths.get(value);
-    }
-    /** The environment that started this ABBA ({@link #PROPERTY}) when it has Python, else null. */
-    static Path launcher() {
-        String value = System.getProperty(PROPERTY, "").trim();
         if (value.isEmpty()) return null;
-        try {
-            Path launcher = Paths.get(value).toAbsolutePath().normalize();
-            return Files.isRegularFile(python(launcher)) ? launcher : null;
-        } catch (InvalidPathException invalid) { return null; }
-    }
-    /** The environment this session's runs use: the launcher's, else the saved one. */
-    public static Path current() {
-        Path launcher = launcher();
-        return launcher != null ? launcher : saved();
+        try { return Paths.get(value); } catch (InvalidPathException invalid) { return null; }
     }
     public static void save(Path prefix) { PREFS.put("environment", prefix.toAbsolutePath().normalize().toString()); }
     public static List<Path> discover() {
         Set<Path> candidates = new LinkedHashSet<>();
-        Path remembered = current();
+        Path remembered = saved();
         if (remembered != null) candidates.add(remembered);
         Path home = Paths.get(System.getProperty("user.home"));
         Path registry = home.resolve(".conda/environments.txt");
@@ -80,9 +66,14 @@ public final class EnvironmentDiscovery {
         for (String name : CONDA_ROOTS) roots.add(home.resolve(name));
         return roots;
     }
-    /** conda run supplies activation variables, particularly DLL paths on Windows. */
-    static List<String> command(Path prefix) {
-        if (!Files.isDirectory(prefix.resolve("conda-meta"))) return new ArrayList<>(Arrays.asList(python(prefix).toString(), "-u", "-m", "langslice", "serve", "--stdio"));
+    /**
+     * {@code python -u -m langslice ARGS} in the environment *prefix* (the worker: {@code serve --stdio}; the
+     * window: {@code gui FOLDER}). conda run supplies activation variables, particularly DLL paths on Windows.
+     */
+    static List<String> command(Path prefix, String... args) {
+        List<String> python = new ArrayList<>(Arrays.asList(python(prefix).toString(), "-u", "-m", "langslice"));
+        python.addAll(Arrays.asList(args));
+        if (!Files.isDirectory(prefix.resolve("conda-meta"))) return python;
         Path base = prefix.getParent() != null && "envs".equals(prefix.getParent().getFileName().toString())
                 ? prefix.getParent().getParent() : prefix;
         Set<Path> executables = new LinkedHashSet<>();
@@ -98,11 +89,14 @@ public final class EnvironmentDiscovery {
         }
         for (Path root : bases) for (String relative : Arrays.asList("bin/conda", "Scripts/conda.exe", "_conda.exe")) executables.add(root.resolve(relative));
         for (Path executable : executables) {
-            if (Files.isRegularFile(executable)) return new ArrayList<>(Arrays.asList(executable.toString(), "run", "--no-capture-output", "--prefix", prefix.toString(), python(prefix).toString(), "-u", "-m", "langslice", "serve", "--stdio"));
+            if (Files.isRegularFile(executable)) {
+                List<String> conda = new ArrayList<>(Arrays.asList(executable.toString(), "run", "--no-capture-output", "--prefix", prefix.toString()));
+                conda.addAll(python);
+                return conda;
+            }
         }
-        if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win") && Files.isDirectory(prefix.resolve("conda-meta"))) {
+        if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win"))
             throw new IllegalArgumentException("Conda could not be found to activate this environment. Install Miniforge in its standard location or set CONDA_EXE to the conda executable, then restart Fiji.");
-        }
-        return new ArrayList<>(Arrays.asList(python(prefix).toString(), "-u", "-m", "langslice", "serve", "--stdio"));
+        return python;
     }
 }

@@ -1117,9 +1117,7 @@ def test_the_cli_flag_names_plugins_and_their_options(make, images: Path):
     assert "plugins" not in parser.parse_args(["mcp"]).__dict__
 
 
-def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(
-        make, images: Path, tmp_path: Path):
-    from langslice.doors.abba.worker import prepare_linear
+def test_the_mcp_server_loads_a_jobs_plugins(make, images: Path):
     from langslice.doors.mcp.server import open_folder
 
     ref = make("greeter", """
@@ -1140,29 +1138,6 @@ def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(
         assert "hi" in session.box.names
     finally:
         session.close()
-    Image.new("L", (80, 40)).save(tmp_path / "section_0001.tif")
-    params = {"image_folder": str(tmp_path), "pixel_size_um": 25,
-              "positions_mm": {"section_0001.tif": 4.0},
-              "angles_deg": {"pitch_deg": 0.0, "yaw_deg": 0.0},
-              "spec": {"tasks": ["position"], "plugins": [ref]}}
-    assert prepare_linear(params).spec.plugins == [ref]
-
-
-def test_a_cost_estimate_of_a_spec_with_plugins_loads_nothing(make, tmp_path: Path):
-    from langslice.doors.agent.cost import estimate
-
-    marker = tmp_path / "ran.txt"
-    ref = make("costly", f'''
-        from pathlib import Path
-        Path({str(marker)!r}).write_text("ran")
-        def tools():
-            return []
-    ''')
-    try:
-        estimate({"plugins": [ref], "tasks": ["position"]}, 3, model="gpt-5.6-luna")
-    except Exception:  # noqa: BLE001 - whatever the estimate says, no code ran
-        pass
-    assert not marker.exists()
 
 
 # --- provenance ---------------------------------------------------------------------------------

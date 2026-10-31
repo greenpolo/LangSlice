@@ -10,7 +10,6 @@ replayed.
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import logging
 import os
@@ -247,46 +246,32 @@ async def run(
     *,
     emit: Callable[[str], None] | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
-    on_write: Callable[[Stack], None] | None = None,
     on_event: LiveCallback | None = None,
-    on_open: Callable[[Job, EngineContext], None] | None = None,
 ) -> Stack:
     """Run one linear job and return the final stack state.
 
-    *on_write* is a host adapter that wants to watch the run live (the ABBA
-    worker's checkpoint rows,
-    :func:`langslice.doors.abba.checkpoints.checkpoint_callback`): it is called
-    once with the state as opened, then again after every checkpoint the job
-    writes (and every reload of a state file changed on disk,
-    :meth:`langslice.job.job.Job.observe`), through to the final result.
-    *on_open* is called once with the opened job and its context, before the
-    first *on_write* (the worker reads applied deformation records and section
-    frames through them).
+    A job the ABBA connector prepared runs with its saved settings as
+    *spec*'s defaults (:meth:`langslice.job.job.Job.open`).
     """
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+    spec = ctx.spec = job.spec
     write_card(job.layout)
     state = job.state
-    if on_open is not None:
-        on_open(job, ctx)
-    if on_write is not None:
-        on_write(state)
 
     box = build_tools(state, ctx, spec, job=job, on_event=on_event)
-    watch = job.observe(on_write) if on_write is not None else contextlib.nullcontext()
-    with watch:
-        try:
-            tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
-        finally:
-            # Background border traces finish and are recorded even when
-            # the session ends without a submit; the pictures are written
-            # (close_job, as every door ends a job).
-            close_job(job)
-        ctx.progress(
-            f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
-            + ("submitted" if state.submitted else "no submission")
-        )
-        if not state.submitted:
-            state.notes.append(f"session: no submission within {turns} turns")
+    try:
+        tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
+    finally:
+        # Background border traces finish and are recorded even when
+        # the session ends without a submit; the pictures are written
+        # (close_job, as every door ends a job).
+        close_job(job)
+    ctx.progress(
+        f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
+        + ("submitted" if state.submitted else "no submission")
+    )
+    if not state.submitted:
+        state.notes.append(f"session: no submission within {turns} turns")
 
-        return job.emit_results(ctx.progress)
+    return job.emit_results(ctx.progress)

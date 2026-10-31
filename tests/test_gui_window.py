@@ -115,3 +115,30 @@ def test_linear_run_gui_starts_the_command_on_the_job_folder(
     assert started[0][-2:] == ["gui", str(tmp_path / "langslice")]
     open_gui(SimpleNamespace(image_folder=str(tmp_path), job_dir=str(tmp_path / "job")))
     assert started[1][-1] == str(tmp_path / "job")
+
+
+def test_the_window_opens_on_the_tab_asked_for() -> None:
+    url = "http://127.0.0.1:5000/token/"
+    assert window.start_address(url, "viewer", folders=True) == url
+    assert window.start_address(url, "prompt", folders=True) == url + "#tab=prompt&job=0"
+    assert window.start_address(url, "prompt", folders=False) == url + "#tab=prompt"
+
+
+def test_gui_tab_reaches_serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    import langslice.hosts.gui as gui
+    from langslice.hosts.cli import add_gui_parser, run_gui
+
+    job = tmp_path / "images" / "langslice"
+    job.mkdir(parents=True)
+    (job / "job.json").write_text("{}")
+    parser = argparse.ArgumentParser()
+    add_gui_parser(parser.add_subparsers())
+    calls: list[tuple[list[Path], str]] = []
+    monkeypatch.setattr(gui, "serve", lambda folders, **kw: calls.append((folders, kw["tab"])))
+    run_gui(parser.parse_args(["gui", str(tmp_path / "images"), "--tab", "prompt"]))
+    run_gui(parser.parse_args(["gui"]))
+    assert calls == [([job], "prompt"), ([], "viewer")]
+    with pytest.raises(SystemExit):
+        parser.parse_args(["gui", "--tab", "settings"])

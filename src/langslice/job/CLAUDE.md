@@ -122,12 +122,10 @@ LangSlice, so a job travels with its images:
 |---|---|---|
 | `langslice linear run FOLDER` | `FOLDER` | `FOLDER/langslice/` |
 | `langslice mcp`, `start_job(image_folder=...)` | that folder (or the named job folder's) | `<folder>/langslice/`, or the named job folder |
-| `langslice mcp`, `start_job(job_id=...)` | the saved job's | the index entry's job folder |
-| ABBA worker `linear.run` (Fiji connector) | the connector's snapshot folder, a fresh `~/.langslice/snapshots/abba-*` folder per run | `<snapshots>/langslice/` (or the spec's `job_dir`, or the read-only fallback); the result's `output_dir` names the one used |
-| ABBA Claude mode (`mcp.prepare`) | `~/.langslice/snapshots/mcp-*/` | `<snapshots>/langslice/` (id in the index) |
+| ABBA's `Register › LangSlice…` (Fiji connector, `abba.prepare`) | the ABBA project's snapshots, `~/.langslice/abba/<project key>/` | `~/.langslice/abba/<project key>/langslice/`, prepared (below) |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
-`Job.open`, `engine.build_context` and the saved ABBA job preparation):
+`Job.open` and `engine.build_context`):
 
 - **An explicit folder.** `JobSpec.job_dir` (`--job-dir PATH` on `linear
   run`, `mcp` and `init`) puts the job folder exactly there, same
@@ -142,7 +140,7 @@ Two exceptions, both from `layout.locate_job_folder` (used by
   the image folder; no file remains after the check), the
   job folder is `~/.langslice/jobs/<id>/`, same layout. The id is the
   image folder's path hashed (`index.folder_id`), so a reopen finds it
-  again; a saved ABBA job uses its own id. Said once through the
+  again. Said once through the
   progress/emit log (`[job] ... cannot be created or written; the job
   folder is ...`) and recorded in the id's index entry under `fallback`
   (`image_folder`, `reason`).
@@ -153,9 +151,9 @@ Inside (`layout.py`, names as constants):
 job.lock             the write lock (lock.py), held while a writer syncs and commits
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; the user's "notes" (every door
-                     gives them to the agent); the agent CLI's "viewer"; a saved
-                     ABBA job's job_id and its own fields under "host" (kind,
-                     params)
+                     gives them to the agent); the agent CLI's "viewer"; under
+                     "host" a prepared ABBA job's facts (format 3, kind
+                     "abba", "abba": the session)
 state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/undo.json    the undo and redo steps (undo_steps.py)
@@ -182,7 +180,7 @@ views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets
 views.jsonl          append-only index of every saved picture
 views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
-                     the path), spend.json (the agent run's spend account), result.json (a saved host job's final result),
+                     the path), spend.json (the agent run's spend account),
                      quicknii.json and visualign.json (with the maps) and
                      the section images they name (<stem>_sNNN.png),
                      traces/<stem>.npz (each traced section's image-model reply
@@ -206,7 +204,6 @@ trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
                      `langslice session-end` (`doors/commands/transcripts.py`); the
                      agent's file tools never show or open it (`browse.HIDDEN`)
 env/                 the job's own Python environment (`ENV_DIR`; `doors/agent_cli/environment.py`)
-prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/reference_card.py`) and rewritten when stale
 TOOLS.md             every verb of the job, its description and arguments (by `init`, `launch`)
@@ -241,9 +238,24 @@ spec: `job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--no-resume`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
-agent CLI's `init` answers `INPUTS_CHANGED` (exit 3). ABBA's Claude mode
-(`prepare_saved_job`) never resumes (`prepare_linear` sets `resume` False),
-so it is never refused.
+agent CLI's `init` answers `INPUTS_CHANGED` (exit 3).
+
+**A job the ABBA connector prepared.** `abba.prepare`
+(`doors/abba/prepare.py`) writes `job.json` (the settings with ABBA's
+inputs, the user's ABBA registrations frozen, and `host` with `kind`
+`abba`, `host_inputs.PREPARED_HOST_KIND`) and no checkpoint. Every open of
+such a folder, before its first checkpoint and after, goes through
+`host_inputs.opening_spec` inside `Job.open`: `prepared_spec(saved,
+given_spec, frozen_given=)` takes each setting of the table from the
+opening where it differs from the job's default, else from the saved
+settings; `inputs` and `host_preprocessing` are always the saved ones (an
+input the opening adds, a damage note, kept beside them); `frozen` is the
+opening's only when it gave one explicitly (`frozen_given`: the agent CLI's
+`init --frozen`, even `'{}'`); the image folder, `job_dir` and `resume` are
+the opening's. `Job.open` gives the workspace the settings it opened with
+(`Workspace.settings`), and the doors go on with `job.spec`. So `init`,
+`linear run`, MCP and `create_job` all open a prepared job with ABBA's
+inputs, and a start over (`--no-resume`) keeps them.
 
 **Opening a job without writing.** `Job.open` writes `job.json` and a
 first checkpoint. `Job.load(spec, workspace, folder=)` opens an
@@ -394,12 +406,11 @@ longer exist be taken over by the images it is opened with.
   `recent_file` (`LANGSLICE_RECENT_JOBS`, `RECENT_ENV`: another file, or
   `off`; the test suite sets it off); past `KEEP_BYTES` rewritten with the
   newest line of each of the newest `KEEP_JOBS` folders. Never fails an open.
-- `index.py` — saved host jobs by id: `~/.langslice/jobs/<id>.json`
-  (`job_id`, `job_folder`, `host_channel`, `created_at`, and `fallback`
-  when the job folder is under `~/.langslice/jobs/` because the image
-  folder could not be written; owner-only). `folder_id` (an image folder's
-  stable id). The channel token stays here, not in a folder that may be
-  shared. `register`, `lookup` (refuses a newer entry).
+- `index.py` — job folders kept under `~/.langslice/jobs/` because their
+  image folder could not be written: `~/.langslice/jobs/<id>.json`
+  (`job_id`, `job_folder`, `created_at`, `fallback`; owner-only).
+  `folder_id` (an image folder's stable id), `register`, `lookup`
+  (refuses a newer entry).
 - `state_file.py` — `state.json`, and the one place a `Stack` becomes JSON
   and comes back: `stack_to_json` (the stack's fields, one row per section,
   the cutting angles once on the stack while every section shares them,

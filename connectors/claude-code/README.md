@@ -47,7 +47,7 @@ it points at this folder. To try it from a checkout:
 | --- | --- | --- |
 | skill `langslice:register-brain` | main session | prepares the job from the user's choices (tasks, atlas, image model or none, `--registration FILE`, pixel size), launches one subagent, then checks `status`, `registration.json`, the exports and the pictures, and handles export. It never registers itself. |
 | skill `langslice:setup` | main session, once | puts `langslice`'s folder on PATH and allows LangSlice's MCP tools in `~/.claude/settings.json` |
-| skill `langslice:abba` | main session | ABBA's own 0.24.x commands (import, state, export), how to reach a running Fiji, moving files between ABBA and a job |
+| skill `langslice:abba` | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands (import, state, wait, export), how to reach a running Fiji, moving files between ABBA and a job |
 | agent `langslice:register` | registers one brain | only LangSlice's MCP tools (`mcp__plugin_langslice_langslice__*`), whose replies carry the pictures; no shell, no file writes, no web |
 | agent `langslice:register-scripting` | registers one brain | Bash, Read, Write, Edit and the web: the `langslice-job` command line plus scripts with the LangSlice Python library, and packages installed in the job's own environment (`langslice-job FOLDER env`) |
 | MCP server `plugin:langslice:langslice` | the `register` agent | `langslice mcp`, started with the session; its tools are also listed in the main session, which leaves them to the subagent |
