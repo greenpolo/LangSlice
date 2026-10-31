@@ -550,7 +550,7 @@ SETTINGS: tuple[Setting, ...] = (
         doors=HOST_DOORS,
         json_key="spec.host_preprocessing",
         keyword="host_preprocessing",
-        door_defaults={"abba": "the request's preprocessing, else auto"},
+        door_defaults={"abba": "auto for snapshots sent one page per channel"},
     ),
     Setting(
         name="transform.max_parallel",

@@ -11,7 +11,7 @@ table's order.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -331,6 +331,7 @@ def add_flags(
     group: FlagGroup,
     *,
     choices: Mapping[str, Sequence[str]] | None = None,
+    suppress: Collection[str] = (),
 ) -> None:
     """Add one group's flags to a command's parser, in the table's order.
 
@@ -343,19 +344,37 @@ def add_flags(
     choices
         The values of a flag that the command knows and the table does not,
         by spelling (``--viewer``'s viewers belong to the pictures).
+    suppress
+        The spellings whose value is absent from the parsed arguments when
+        the flag is not given, so the command can tell an explicit value
+        (``--frozen '{}'``) from none; their help is kept.
     """
     known = choices or {}
     for spelling, flag, row in group_flags(group):
-        listed = known.get(spelling)
-        if listed is None and flag.checked:
-            listed = row.choices
-        values = None if listed is None else list(listed)
+        values = _values(known.get(spelling), flag, row)
         dest = flag.dest or spelling.removeprefix("--").replace("-", "_")
         default = row.default if flag.table_default else None
-        _add(parser, spelling, flag, dest, default, values)
+        action = _add(parser, spelling, flag, dest, default, values)
+        if spelling in suppress:
+            action.default = argparse.SUPPRESS
         if spelling == row.flags[0]:
             for alias in row.aliases:  # read, never listed, never a default
                 _add(parser, alias, flag, dest, argparse.SUPPRESS, values)
+
+
+def _values(
+    listed: Sequence[str] | None, flag: Flag, row: Setting
+) -> list[str] | None:
+    """Return the values argparse accepts for a flag; None: any.
+
+    *listed* is what the command knows; else a checked flag takes its
+    setting's choices.
+    """
+    if listed is None and flag.checked:
+        listed = row.choices
+    if listed is None:
+        return None
+    return list(listed)
 
 
 def _add(
@@ -365,20 +384,21 @@ def _add(
     dest: str,
     default: object,
     values: list[str] | None,
-) -> None:
+) -> argparse.Action:
     """Add one spelling of a flag to *parser*, as :func:`add_flags` does.
 
     A spelling without a default (``argparse.SUPPRESS``) has no help either.
+    Returns the parser's action for it.
     """
     hidden = default is argparse.SUPPRESS
     text = argparse.SUPPRESS if hidden else flag.help
     if flag.action in SWITCHES:
-        parser.add_argument(
+        return parser.add_argument(
             spelling, dest=dest, action=flag.action, default=default, help=text
         )
-    elif flag.action == "append":  # each parse appends to its own list
+    if flag.action == "append":  # each parse appends to its own list
         empty: object = default if hidden else []
-        parser.add_argument(
+        return parser.add_argument(
             spelling,
             dest=dest,
             action=flag.action,
@@ -386,13 +406,12 @@ def _add(
             metavar=flag.metavar,
             help=text,
         )
-    else:
-        parser.add_argument(
-            spelling,
-            dest=dest,
-            default=default,
-            type=flag.type,
-            choices=values,
-            metavar=flag.metavar,
-            help=text,
-        )
+    return parser.add_argument(
+        spelling,
+        dest=dest,
+        default=default,
+        type=flag.type,
+        choices=values,
+        metavar=flag.metavar,
+        help=text,
+    )

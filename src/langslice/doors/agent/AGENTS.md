@@ -17,7 +17,7 @@ The method spans the layers; each package has its own guide:
 | `tools/` | one operation per verb, `tools/catalog.py` (`VERBS`, `enabled(spec)`) | `tools/CLAUDE.md` |
 | `tools/descriptions/` | the declarations (`render.py`), the job statement (`statement.py`) | `tools/CLAUDE.md` |
 | `doors/` | the toolbox (`doors/tools/`), MCP, the agent CLI, the library | `doors/CLAUDE.md` |
-| `doors/agent/` | this driver: engine, session, ADK plugins, models, media parts, trace, cost | here |
+| `doors/agent/` | this driver: engine, session, ADK plugins, models, media parts, trace, spend | here |
 
 ## One environment, not a pipeline
 
@@ -86,12 +86,12 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   runs, the session waits for the first piece to finish
   (`BackgroundWork.wait_any`) and the finished work's notices and pictures
   are the next message), and
-  `run(spec, emit=, atlas_loader=, on_write=, on_event=, on_open=)`:
-  `Job.open`, the job folder's card, the toolbox, the session, `close_job`
-  (image corrections settled, pictures written) even without a submit,
-  `Job.emit_results`. *on_write* is called with the opened state and after
-  every checkpoint or reload (`Job.observe`); *on_open* gets the job and
-  context first. No post pass: the session is the whole run.
+  `run(spec, emit=, atlas_loader=, on_event=)`:
+  `Job.open` (a job the ABBA connector prepared opens with its saved
+  settings as the spec's defaults; the run goes on with `job.spec`), the job
+  folder's card, the toolbox, the session, `close_job` (image corrections
+  settled, pictures written) even without a submit, `Job.emit_results`. No
+  post pass: the session is the whole run.
 - `session.py` — `build_agent` (the ADK `LlmAgent`; `reasoning` set on any
   resolved model exposing `reasoning_effort`), `build_plugins`,
   `run_agent_session` (the loop: nudges when the model answers without a
@@ -174,13 +174,6 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   lines of the job's `logs/events.jsonl` on every door, observer or not
   (`tools.events.EventLog`). `plain` (`tools/events.py`) copies JSON
   content without media bytes.
-- `cost.py` — `estimate(spec, n_slices)` (the sections whose orientation and
-  affine are frozen cost no transform work): the pre-run usage-window
-  estimate the worker's `linear.estimate` serves, from measured runs only
-  (`_RATES`; a single run or a neighbouring setting gets a widened band).
-  Medium, high and auto picture sizes and a Nonlinear-only run get no
-  number, with the reason in `basis`. Imports no engine, so a host prices a
-  spec without the agent framework.
 
 ## The tools
 
@@ -217,7 +210,7 @@ still running and what this run lets the agent change.
 
 ## Host controls
 
-The ABBA dialog's controls, all plain `JobSpec` fields:
+A host's controls, all plain `JobSpec` fields:
 
 - **Per-task notes** (`position.notes`, `transform.notes`, `nonlinear.notes`):
   `langslice.tools.descriptions.statement.task_notes` renders each verbatim under "<task> notes from the

@@ -273,8 +273,7 @@ class JobSpec:
     #: model is shown and what every fit reads unless the agent names another
     #: section image; never written back to the user's files.
     preprocess: str = "auto"
-    #: A host's channel-blend settings (``preprocess.preview``'s
-    #: ``PreprocessingSettings``: auto, or custom weights and CLAHE) for
+    #: A host's channel blend (``{"mode": "auto"}``, the only one) for
     #: snapshots exported one page per channel. Set, every section's DEFAULT
     #: appearance is :func:`langslice.core.sections.reading.host_preprocess`
     #: over its raw pages; the pages themselves stay readable as channels.

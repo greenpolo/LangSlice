@@ -1,18 +1,38 @@
-"""The host-row tracker: ABBA-world affine and warp rows per checkpoint."""
+"""The host-row tracker: ABBA-world affine and warp rows per checkpoint.
+
+:class:`HostCheckpoints` turns each state of a job made from an ABBA
+session into the rows ABBA applies (one row per section that changed: its
+position, orientation, affine and, with the ``nonlinear`` task, warp) and,
+when the stack-wide cutting angles changed, ABBA's new angles. It reads the
+job's snapshots and calibration through :class:`HostFacts`.
+"""
 from __future__ import annotations
 
 import logging
 import math
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
-from langslice.job.state_file import stack_to_json
+from PIL import Image
+
+from langslice.core.jsonable import JsonValue
+from langslice.core.sections.discovery import discover_slices
+from langslice.core.stack.rows import ANGLES_KEY
+from langslice.job.state_file import serialized_mixed_angles, stack_to_json
 
 if TYPE_CHECKING:
     from langslice.core.stack.section import Section
     from langslice.core.stack.stack import Stack
-    from langslice.doors.abba.worker import Emit, PreparedLinear
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
+    from langslice.job.settings.spec import JobSpec
+
 logger = logging.getLogger(__name__)
+
+#: Where a tracker sends its checkpoints and log lines (one event each).
+Emit = Callable[[dict[str, JsonValue]], None]
 #: Why an ABBA door refuses a job whose sections carry different cutting
 #: angles: ABBA shows one atlas angle for the whole stack (its
 #: ``ReslicedAtlas`` rotations). Jobs made from an ABBA session have one.
@@ -21,18 +41,148 @@ ABBA_MIXED_ANGLES = (
     "cannot show: ABBA uses one atlas angle for the whole stack. Open the job in "
     "LangSlice outside ABBA (the command line or Claude) instead."
 )
+#: The keys of a public event that never reach a host: picture bytes and the
+#: model's private reasoning.
+PRIVATE_EVENT_KEYS = frozenset(
+    {"data", "thought_signature", "encrypted_content"})
+
+
+@dataclass(frozen=True)
+class HostFacts:
+    """What the tracker needs of a job made from an ABBA session."""
+
+    #: The snapshot folder: the job's images.
+    folder: Path
+    #: The job's settings (what is frozen per section, its tasks).
+    spec: JobSpec
+    #: Each snapshot's ``(width, height)`` in pixels, by filename.
+    geometry: dict[str, tuple[int, int]]
+    #: The snapshots' micrometres per pixel.
+    calibration: float
+
+
+def snapshot_sizes(folder: Path) -> dict[str, tuple[int, int]]:
+    """Return each snapshot's size in pixels.
+
+    Parameters
+    ----------
+    folder
+        The snapshot folder, read as every job reads its images.
+
+    Returns
+    -------
+    dict
+        ``(width, height)`` by filename.
+    """
+    sizes: dict[str, tuple[int, int]] = {}
+    for path in discover_slices(str(folder)):
+        with Image.open(path) as image:
+            sizes[Path(path).name] = image.size
+    return sizes
+
+
+def host_facts(spec: JobSpec) -> HostFacts:
+    """Read the facts of the job *spec* describes.
+
+    Parameters
+    ----------
+    spec
+        The job's settings; its images are the snapshots and its
+        ``inputs.pixel_size_um`` their calibration.
+
+    Returns
+    -------
+    HostFacts
+        The snapshots' folder and sizes, the calibration and the spec.
+
+    Raises
+    ------
+    ValueError
+        When the job gives no single pixel size for its snapshots.
+    """
+    folder = Path(spec.image_folder)
+    calibration: object = spec.inputs.get("pixel_size_um")
+    if isinstance(calibration, bool):
+        calibration = None
+    if not isinstance(calibration, float | int):
+        raise ValueError(
+            "The job gives no pixel size for its ABBA snapshots "
+            "(inputs.pixel_size_um).")
+    return HostFacts(folder, spec, snapshot_sizes(folder), float(calibration))
+
+
+def public_event(value: object) -> object:
+    """Return event data without picture bytes or private reasoning.
+
+    Parameters
+    ----------
+    value
+        A tool event as the toolbox emits it, or any part of one.
+
+    Returns
+    -------
+    object
+        The same structure in JSON values; a key of
+        :data:`PRIVATE_EVENT_KEYS` and a value JSON cannot hold are dropped.
+    """
+    if isinstance(value, dict):
+        fields = cast("dict[object, object]", value)
+        return {str(key): public_event(item) for key, item in fields.items()
+                if key not in PRIVATE_EVENT_KEYS}
+    if isinstance(value, list | tuple):
+        parts = cast("list[object] | tuple[object, ...]", value)
+        return [public_event(item) for item in parts]
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    return None
 
 
 def refuse_mixed_angles(state: Any) -> None:
     """Raise ``ValueError`` (:data:`ABBA_MIXED_ANGLES`) when *state* (a
     ``Stack`` or its JSON form) has sections that differ in cutting
     angle; nothing for a single-angle job."""
-    from langslice.job.state_file import serialized_mixed_angles
-
     mixed = (serialized_mixed_angles(state) if isinstance(state, dict)
              else bool(state.mixed_angles))
     if mixed:
         raise ValueError(ABBA_MIXED_ANGLES)
+
+
+def baseline_rows(
+    current: dict[str, JsonValue], abba_angles: dict[str, float],
+) -> dict[str, JsonValue]:
+    """Return the state ABBA shows once a job's own steps are removed.
+
+    Every section of *current* unplaced (no position), unflipped and
+    unturned, without an affine or a deformation, on ABBA's stack-wide
+    angles: the first checkpoint measured against it carries the job's
+    whole state.
+
+    Parameters
+    ----------
+    current
+        The job's state in its JSON form (``stack_to_json``).
+    abba_angles
+        ABBA's cutting angles, ``{"pitch_deg", "yaw_deg"}``.
+
+    Returns
+    -------
+    dict
+        A state in the same JSON form.
+    """
+    sections = current["slices"]
+    assert isinstance(sections, list)  # stack_to_json's form
+    rows: list[JsonValue] = []
+    for row in sections:
+        assert isinstance(row, dict)
+        unplaced: dict[str, JsonValue] = {
+            "position_mm": None, "flip": False, "rotation_deg": 0,
+            "transform": None, "deformation": None}
+        rows.append({**row, **unplaced})
+    angles: dict[str, JsonValue] = {
+        "pitch": abba_angles["pitch_deg"], "yaw": abba_angles["yaw_deg"]}
+    return {**current, "slices": rows, ANGLES_KEY: angles}
 
 
 def _host_updates(
@@ -89,63 +239,61 @@ def _host_updates(
 def _stack_angles(data: dict[str, Any]) -> dict[str, float]:
     """A serialized state's stack-wide angles as ``{"pitch_deg", "yaw_deg"}``
     (one angle for the stack: :func:`refuse_mixed_angles` ran first)."""
-    from langslice.core.stack.rows import ANGLES_KEY
-
     angles = data[ANGLES_KEY]
     return {"pitch_deg": float(angles["pitch"]), "yaw_deg": float(angles["yaw"])}
 
 
 class HostCheckpoints:
-    """The per-job delta tracker the run calls after every checkpoint
-    (``engine.run(on_write=...)``, the MCP door's ``job.observe``); the first
-    checkpoint is ingestion.
+    """The per-job delta tracker called with the job's state after every
+    checkpoint (the follower, ``abba.follow``; the MCP door's
+    ``job.observe``).
 
     Every checkpoint refuses a state whose sections differ in cutting angle
     (:func:`refuse_mixed_angles`) before emitting anything: ABBA shows one
-    angle for the whole stack. Rows (``host_updates``) are
-    :func:`_host_updates`' linear rows plus, in a job with the ``nonlinear``
-    task, each section's ``warp`` (:meth:`_warps`; a section whose
-    deformation is frozen has none); ``host_angles`` is added when the
-    stack-wide angles changed since the previous checkpoint.
+    angle for the whole stack. With no :attr:`previous` the checkpoint is
+    ingestion (``initial`` True, no rows); otherwise rows (``host_updates``)
+    are :func:`_host_updates`' linear rows plus, in a job with the
+    ``nonlinear`` task, each section's ``warp`` (:meth:`_warps`; a section
+    whose deformation is frozen has none), and ``host_angles`` is added when
+    the stack-wide angles differ from the previous checkpoint's.
 
-    :meth:`attach` hands it the opened job and its workspace (the engine's
-    ``on_open``; the MCP door after opening): the warp rows read applied
-    deformation records and section frames through them, and the job keeps
-    the ABBA session's facts (``job.json``, ``host.abba``).
+    :meth:`attach` hands it the opened job and its workspace: the warp rows
+    read applied deformation records and section frames through them.
     """
 
-    def __init__(self, prepared: PreparedLinear, emit: Emit) -> None:
-        self.prepared = prepared
+    def __init__(self, facts: HostFacts, emit: Emit) -> None:
+        self.facts = facts
         self.emit = emit
-        self.job: Any = None
-        self.workspace: Any = None
+        self.job: Job | None = None
+        self.workspace: Workspace | None = None
+        #: The state the next checkpoint is measured against (JSON form);
+        #: None: the next checkpoint is ingestion.
         self.previous: dict[str, Any] | None = None
         #: (section, record key, linear key) -> the warp row (failures are
         #: not kept: the next checkpoint tries again).
         self._warp_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
 
-    def attach(self, job: Any, workspace: Any) -> None:
-        self.job, self.workspace = job, workspace
-        if not self.prepared.abba or not getattr(job, "persist", True):
-            return
-        from langslice.job.layout import read_job_file, write_job_file
+    def attach(self, job: Job, workspace: Workspace) -> None:
+        """Read deformation records and section frames through *job* and *workspace*.
 
-        try:
-            held = read_job_file(job.layout) or {}
-            host = dict(held.get("host") or {})
-            host["abba"] = dict(self.prepared.abba)
-            write_job_file(job.layout, host=host)
-        except (OSError, ValueError):
-            logger.warning("Could not record the ABBA session in the job file", exc_info=True)
+        Parameters
+        ----------
+        job
+            The opened job whose states are checkpointed.
+        workspace
+            Its workspace, for the sections' frames.
+        """
+        self.job, self.workspace = job, workspace
 
     @property
     def warps(self) -> bool:
-        return self.prepared.spec.has("nonlinear")
+        """Whether rows carry warps: the job has the ``nonlinear`` task."""
+        return self.facts.spec.has("nonlinear")
 
     def __call__(self, state: Stack) -> None:
         current = stack_to_json(state)
         # Before anything reaches ABBA: a stack with an angle per section
-        # cannot be shown there (the run's own final call raises it too).
+        # cannot be shown there.
         refuse_mixed_angles(current)
         payload: dict[str, Any] = {"kind": "checkpoint"}
         if self.previous is None:
@@ -164,9 +312,9 @@ class HostCheckpoints:
     # --- rows -----------------------------------------------------------------------
 
     def _rows(self, current: dict[str, Any], previous: dict[str, Any]) -> list[dict[str, Any]]:
-        prepared = self.prepared
-        rows = _host_updates(current, previous, prepared.geometry, prepared.calibration,
-                             prepared.spec.frozen_for)
+        facts = self.facts
+        rows = _host_updates(current, previous, facts.geometry, facts.calibration,
+                             facts.spec.frozen_for)
         if not self.warps:
             return rows
         by_id = {row["id"]: row for row in rows}
@@ -255,8 +403,8 @@ class HostCheckpoints:
         frame = section_frame(state, self.workspace, section)
         report: dict[str, Any] = {}
         source, target = warp_world_landmarks(
-            frame, warp, stored_params(section), size=self.prepared.geometry[section.id],
-            pixel_size_um=self.prepared.calibration, diagnostics=report)
+            frame, warp, stored_params(section), size=self.facts.geometry[section.id],
+            pixel_size_um=self.facts.calibration, diagnostics=report)
         applied = section.deformation
         held = None if applied is None else applied.record
         return {"source_mm": source.T.tolist(), "target_mm": target.T.tolist(),
@@ -264,8 +412,3 @@ class HostCheckpoints:
                 "max_error_mm": float(report["max_error_mm"]),
                 "p99_error_mm": float(report["p99_error_mm"]),
                 "points": int(report["points"])}
-
-
-def checkpoint_callback(prepared: PreparedLinear, emit: Emit) -> HostCheckpoints:
-    """The per-job delta tracker shared by ADK and MCP (:class:`HostCheckpoints`)."""
-    return HostCheckpoints(prepared, emit)

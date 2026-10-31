@@ -14,7 +14,7 @@ import sys
 import threading
 from collections.abc import Callable
 from contextlib import redirect_stdout
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import partial
 from io import TextIOWrapper
 from pathlib import Path
@@ -33,11 +33,10 @@ from langslice.core.pictures.opening import (
 )
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import Stack
-from langslice.doors.abba.checkpoints import checkpoint_callback
-from langslice.doors.abba.saved_jobs import load_job
-from langslice.doors.abba.worker import (
-    PreparedLinear,
-    prepare_linear,
+from langslice.doors.abba.checkpoints import (
+    HostCheckpoints,
+    HostFacts,
+    host_facts,
     public_event,
 )
 from langslice.doors.agent.engine import EngineContext, build_context
@@ -50,7 +49,7 @@ from langslice.doors.jobs import (
     provider_connected,
     read_spec,
 )
-from langslice.doors.mcp.host_channel import HostChannel
+from langslice.doors.mcp.host_channel import HostChannel, load_job
 from langslice.doors.mcp.pages import (
     describe_blocks,
     opening_pages,
@@ -59,6 +58,7 @@ from langslice.doors.mcp.pages import (
 )
 from langslice.doors.reference_card import write_card
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.host_inputs import opening_spec
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
@@ -126,7 +126,7 @@ class Session:
     notes: str = ""
     #: Sends the host (ABBA) its live update after every checkpoint.
     host_update: Callable[[Stack], None] | None = None
-    prepared: PreparedLinear | None = None
+    prepared: HostFacts | None = None
     channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -170,13 +170,19 @@ def open_job(
     job folder next to the images (``<images>/langslice``), or *folder*, a
     saved job's (the same place, as its index names it). The nonlinear
     task's image-model tool is offered only when that model is connected
-    (:func:`langslice.doors.jobs.image_model_off`)."""
+    (:func:`langslice.doors.jobs.image_model_off`). A job the ABBA
+    connector prepared opens with its saved settings as *spec*'s defaults
+    (``opening_spec``)."""
+    ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
+    assert ctx.job_folder is not None  # build_context sets it
+    job_folder = Path(ctx.job_folder)
+    spec = opening_spec(job_folder, spec, frozen_given=False)
     off = image_model_off(spec, provider_connected(spec))
     reason = refusal(spec, image_model=not off)
     if reason is not None:
         raise ValueError(f"{reason} (the job's image model is not connected here)")
-    ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
-    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+    job = Job.open(spec, ctx, folder=job_folder, results_path=ctx.results_path)
+    spec = ctx.spec = job.spec
     write_card(job.layout)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = HostTrace(trace_dir, ctx.image_folder) if trace_dir else None
@@ -233,17 +239,17 @@ def opened_reply(session: Session) -> list[ContentBlock]:
 
 
 def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Session:
-    """A saved ABBA job (:mod:`langslice.doors.abba.saved_jobs`), by id."""
-    folder, record = load_job(job_id)
-    prepared = prepare_linear(record["params"])
-    session = open_job(replace(prepared.spec, resume=True), atlas_loader, folder)
-    session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
+    """A saved ABBA job (:func:`langslice.doors.mcp.host_channel.load_job`), by id."""
+    saved = load_job(job_id)
+    facts = host_facts(read_spec(saved.folder))
+    session = open_job(facts.spec, atlas_loader, saved.folder)
+    session.job_id, session.job_dir, session.prepared = job_id, saved.folder, facts
     session.notes = read_notes(session.job.layout)
-    session.channel = HostChannel(job_id, record.get("host_channel"))
+    session.channel = HostChannel(job_id, saved.channel)
     channel = session.channel
     session.events.target = lambda event: channel.event(
         {"kind": "agent_event", "event": public_event(event)})
-    checkpoints = checkpoint_callback(prepared, session.channel.event)
+    checkpoints = HostCheckpoints(facts, session.channel.event)
     checkpoints.attach(session.job, session.ctx)
     session.host_update = checkpoints
     session.host_update(session.state)

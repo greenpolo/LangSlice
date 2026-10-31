@@ -285,7 +285,7 @@ placement.
 | `image_resolution` | `low` | `--image-resolution` | Long edge of the pictures the agent is shown: `low` 256 px opening tiles and 512 px later pictures; `medium` 384 and 768; `high` 512 and 1024; `auto` lets the agent choose each picture's size (`resolution`), from 128 px up to its model's largest image. |
 | `preprocess` | `auto` | `--preprocess auto|none` | How each section's `preprocessed` image is made: `auto` blends the channels with local contrast enhancement; `none` takes the file as read, in gray. |
 | `force_view` | off | `--force-view` | The tools that change the registration always return their picture: their `view` argument is not offered. |
-| `host_preprocessing` | none | (hosts only) | A host's channel blend for snapshots sent one page per channel (the ABBA connector). |
+| `host_preprocessing` | none | (hosts only) | `{"mode": "auto"}`: the automatic blend for snapshots sent one page per channel (the ABBA connector sets it); none: the file through `preprocess`. |
 
 None of these changes your image files. Picture size changes only what the
 agent sees. `preprocessed` is the image the agent sees first, the one the

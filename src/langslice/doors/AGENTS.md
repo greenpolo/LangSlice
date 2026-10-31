@@ -344,39 +344,54 @@ bodies, and turned into an answer once per door:
   the saved pictures' paths.
 - `abba/`, `credentials.py`, `user_settings.py` — what the MCP door, the
   CLI and the engine service share (the service itself is
-  `hosts/service.py`): `abba/contract.py` (the engine contract's Pydantic
-  models, `export_schema_bundle`),
-  `credentials.py` (offline setup status, saved credentials, login;
+  `hosts/service.py`, protocol 3): `abba/contract.py` (the engine contract's
+  Pydantic models: the three methods `setup.status`, `abba.prepare`,
+  `abba.follow`, their requests `AbbaPrepareRequest` / `AbbaFollowRequest`,
+  `export_schema_bundle`), `abba/prepare.py` (`prepare_job`: an ABBA
+  session's calibrated snapshots become a prepared job, `job.json` beside
+  them with ABBA's inputs (BrainGlobe AP positions, the stack-wide
+  `inputs.angles`, the pixel size, `channel_names`), the `registered`
+  slices' `orientation` and `affine` and the `existing_warp` slices'
+  `deformation` frozen, `transform.angles` on, the automatic blend for
+  multi-page snapshots, and the session's facts under `host` (format 3,
+  kind `abba`: `project_key`, `atlas`, `sections`, `registered`,
+  `existing_warp`, `angles_deg`, `z_offset_mm`, `pixel_size_um`,
+  `thickness_um`, `interval_um`, `prepared_at`); no checkpoint, no index
+  entry; refused once the job has a `state.json`; every door then opens it
+  through `job.host_inputs.opening_spec`), `abba/follow.py` (`follow`: the
+  job opened without writing, `doors.jobs.open_folder(persist=False)`;
+  `waiting` once while it has no checkpoint; every `POLL_S` (0.5 s) a look
+  at `state.json`'s stamp, and on a change the state read under
+  `Job.reading` and one `checkpoint` event, the first measured against
+  `baseline_rows` (ABBA with this job's steps removed: no position, flip,
+  turn, affine or deformation, ABBA's angles); ends when the service's stop
+  event is set, the connector having closed its input), `abba/checkpoints.py`
+  (`HostFacts` / `host_facts(spec)`: the snapshots' sizes and calibration;
+  `HostCheckpoints`: ABBA-world linear rows, no row for a property frozen on
+  a section (`_host_updates(..., frozen=spec.frozen_for)`); with the
+  `nonlinear` task `warp` rows from `core/maps/abba.py`, each logged with
+  its measured `max_error_mm` / `p99_error_mm`; `host_angles` on a
+  stack-wide angle change; `public_event`, the event data a host may see),
+  `credentials.py` (`setup_status`: version, `PROTOCOL_VERSION` (3), the
+  Python and its environment; saved credentials, login;
   `load_credentials`: `.env`, then the keys saved by setup, an explicit
   environment setting winning, an unknown or unreadable entry skipped with a
   warning; `image_model_connected(provider)`: provider not `none` and its
-  key or login present, nothing contacted; `image_model_choices()` /
-  `IMAGE_MODEL_CHOICES`: the dialog's image models, each `connected` or not,
-  with the models to offer; keys of `openai-api`, `gemini-api` and
-  `anthropic-api`, the last never an image model (`_IMAGE_KEY_PROVIDERS`),
-  `~/.langslice/anthropic_api_key` counted as its saved key; `connections()`:
-  every connection's presence for the LangSlice window), `settings.py` (the
+  key or login present, nothing contacted; keys of `openai-api`,
+  `gemini-api` and `anthropic-api`, the last never an image model
+  (`_IMAGE_KEY_PROVIDERS`), `~/.langslice/anthropic_api_key` counted as its
+  saved key; `connections()`: every connection's presence for the LangSlice
+  window), `settings.py` (the
   user's settings file, `~/.langslice/settings.json` or `LANGSLICE_SETTINGS`
   (`off`: none; the test suite's): the chosen `connection`, `runs_in` (read by
   nothing yet), an `agent` model and effort per connection; `agent_models()`
   the models offered and LangSlice's defaults; `agent_choice()`, which
   `commands/linear.py`'s `apply_saved_agent_choice` gives `linear run` when it has
-  neither `--model` nor `--reasoning`), `saved_jobs.py` (saved ABBA jobs,
-  `prepare_saved_job` for the engine method `mcp.prepare`: the job folder
-  next to the snapshots, the id index, the host channel, the copy prompt) and
-  `abba_worker.py` (the JVM-free snapshot worker of the Fiji connector:
-  `prepare_linear` (snapshots, BrainGlobe AP positions, `angles_deg` as the
-  stack-wide `inputs.angles`, `z_offset_mm` / `existing_warp` kept as the
-  job's `host.abba`, `damaged`, `channel_names`, `preprocessing`; what the
-  agent may not change is the host's `spec.frozen`, its names checked against
-  the snapshots, and no host row is ever emitted for a property frozen on a
-  section, `_host_updates(..., frozen=spec.frozen_for)`), `checkpoint_callback` (a
-  `HostCheckpoints` tracker: ABBA-world linear rows; with the `nonlinear`
-  task `warp` rows from `core/maps/abba.py`, each logged with its measured
-  `max_error_mm` / `p99_error_mm`; `host_angles` on a stack-wide angle
-  change), `run_linear` (ends with a checkpoint of the final state),
-  `public_event`, `preview_preprocess`). ABBA shows one atlas angle per
-  stack, so the tracker refuses a state whose sections differ in cutting
+  neither `--model` nor `--reasoning`). A saved ABBA job (`job.json` with
+  `job_id` and `host` format 2, kind `host`) is opened by id through
+  `mcp/host_channel.py` `load_job` (the index entry) with its loopback
+  channel. ABBA shows one atlas angle
+  per stack, so the tracker refuses a state whose sections differ in cutting
   angle (`refuse_mixed_angles`, `ABBA_MIXED_ANGLES`), which also fails the
   MCP door's opening of such a saved ABBA job.
 - `commands/` and `agent_cli/` — the `langslice` and `langslice-job`
@@ -389,7 +404,9 @@ bodies, and turned into an answer once per door:
   table gives each setting's spellings, default and choices, `FLAGS` each
   flag's help text, argparse handling and group: `job` for every command,
   `plugins` and `session` for `linear run`, `fresh` for `linear run` and
-  `init`, `init` for `init`), `linear.py` (`linear run`: `build_linear_spec`,
+  `init`, `init` for `init`; `suppress=` leaves a flag's value out of the
+  parsed arguments when it is not given, so `init` tells `--frozen '{}'`
+  from no `--frozen`), `linear.py` (`linear run`: `build_linear_spec`,
   `spec_from_args` (`--disabled NAME[,NAME...]`: the job's `disabled` list;
   `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
   `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
@@ -480,7 +497,10 @@ bodies, and turned into an answer once per door:
     a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
     parser `init_parser`: the job flags of `linear run`, `--no-resume`,
     `--notes`, `--viewer` (`add_flags`, the viewers from
-    `core.pictures.opening.VIEWER_LIMITS`); `--registration`'s report under `result.registration`,
+    `core.pictures.opening.VIEWER_LIMITS`); a job the ABBA connector prepared
+    takes the flags given over its saved settings, `--frozen` given, even
+    `'{}'`, replacing its saved freeze (`job.host_inputs.opening_spec`, also
+    what its `SETTINGS_CHANGED` comparison is made against); `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or
