@@ -1,271 +1,344 @@
 'use strict';
-// The LangSlice window: tabs, the job list and the agent viewer, fed by GET
-// polling of the local server (snapshot every 300 ms, jobs every 2 s).
-const $ = id => document.getElementById(id);
-const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+// The LangSlice window's shell: the tabs and the address (`#tab=<tab>&job=<n>`, which
+// always names what the window shows), the job picker, the polling of the local
+// server (the job list every 2 s; the shown job's snapshot every 300 ms, and its
+// positioning strip when its sections change), the status line and the keyboard. The
+// agent viewer's parts are viewer-strip.js (Strip), viewer.js (Viewer) and
+// viewer-log.js (AgentLog); they start when the page has loaded.
 
-let jobs = [], current = null, chosenByUser = false;
-let view = null;  // the viewer's state for the current job
-
-function freshView(index) {
-  return { index, gen: 0, cursor: 0, sv: -1, pictures: [], byNumber: new Map(), byPath: new Map(),
-           rows: new Map(), claims: new Map(), groups: new Map(), shown: -1, follow: true,
-           filter: '', sections: new Set() };
-}
-
-// --- tabs -------------------------------------------------------------------
-for (const button of document.querySelectorAll('[data-tab]')) {
-  button.onclick = () => {
-    for (const other of document.querySelectorAll('[data-tab]')) other.classList.toggle('active', other === button);
-    for (const tab of document.querySelectorAll('.tab')) tab.hidden = tab.id !== 'tab-' + button.dataset.tab;
-  };
-}
-// The tab the window was opened on (`langslice gui --tab prompt`: `#tab=prompt&job=<n>`,
-// the job generator.js starts its form from).
+// The tab the address names when the window opens (`langslice gui --tab prompt`:
+// `#tab=prompt&job=<n>`). settings.js reads it too, so it stays a global.
 const startTab = new URLSearchParams(location.hash.slice(1)).get('tab');
-for (const button of document.querySelectorAll('[data-tab]')) if (button.dataset.tab === startTab) button.click();
 
-// --- jobs -------------------------------------------------------------------
-function ago(seconds) {
-  if (!seconds) return 'no files yet';
-  const s = Date.now() / 1000 - seconds;
-  if (s < 60) return 'just now';
-  if (s < 3600) return Math.round(s / 60) + ' min ago';
-  if (s < 86400) return Math.round(s / 3600) + ' h ago';
-  return Math.round(s / 86400) + ' d ago';
-}
-function renderJobs() {
-  const list = $('job-list'); list.replaceChildren();
-  if (!jobs.length) { list.append(el('li', 'muted', 'No jobs yet.')); return; }
-  for (const job of jobs) {
-    const li = el('li'), b = el('button');
-    b.classList.toggle('active', job.index === current);
-    b.title = job.folder;
-    b.append(el('span', 'job-name', job.name), el('span', 'job-meta', [job.status, job.atlas, ago(job.changed)].filter(Boolean).join(' · ')));
-    b.onclick = () => { chosenByUser = true; select(job.index); };
-    li.append(b); list.append(li);
+// Small helpers the viewer's scripts share.
+const Ui = (() => {
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  };
+  // Per-browser layout choices (divider positions); a page without storage keeps defaults.
+  const store = {
+    get(key) { try { return localStorage.getItem('langslice.' + key); } catch { return null; } },
+    set(key, value) { try { localStorage.setItem('langslice.' + key, String(value)); } catch { /* not kept */ } },
+  };
+  // A draggable divider: `move(dx, dy)` from where the drag started; arrow keys nudge it.
+  function drag(divider, { start, move, end }) {
+    divider.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      divider.setPointerCapture(event.pointerId);
+      divider.classList.add('dragging');
+      const x0 = event.clientX, y0 = event.clientY;
+      start?.();
+      const onMove = e => move(e.clientX - x0, e.clientY - y0);
+      const onUp = () => {
+        divider.classList.remove('dragging');
+        divider.removeEventListener('pointermove', onMove);
+        divider.removeEventListener('pointerup', onUp);
+        divider.removeEventListener('pointercancel', onUp);
+        end?.();
+      };
+      divider.addEventListener('pointermove', onMove);
+      divider.addEventListener('pointerup', onUp);
+      divider.addEventListener('pointercancel', onUp);
+    });
+    divider.addEventListener('keydown', event => {
+      const step = event.shiftKey ? 40 : 10;
+      const d = { ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0] }[event.key];
+      if (!d) return;
+      event.preventDefault();
+      start?.(); move(d[0], d[1]); end?.();
+    });
   }
-}
-async function pollJobs() {
-  try {
-    const r = await fetch('jobs', { cache: 'no-store' });
-    if (r.ok) {
-      jobs = (await r.json()).jobs;
-      if (!chosenByUser && jobs.length) {
-        const newest = jobs.reduce((a, b) => (b.changed > a.changed ? b : a));
-        if (current === null || (newest.index !== current && newest.changed > (jobs.find(j => j.index === current)?.changed || 0) + 5)) select(newest.index);
+  function ago(seconds) {
+    if (!seconds) return 'no files yet';
+    const s = Date.now() / 1000 - seconds;
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' d ago';
+  }
+  // A long text cut in the middle (a path keeps its end, where the job's own folder is).
+  function middle(text, max) {
+    if (text.length <= max || max < 8) return text;
+    const head = Math.ceil((max - 1) * 0.35);
+    return text.slice(0, head) + '…' + text.slice(text.length - (max - 1 - head));
+  }
+  // A number of millimetres as the window writes it.
+  function mm(value, digits = 2) {
+    return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '';
+  }
+  return { el, store, drag, ago, middle, mm };
+})();
+
+(() => {
+  const $ = id => document.getElementById(id);
+  const { el } = Ui;
+  const TABS = ['viewer', 'prompt', 'settings'];
+  const SNAPSHOT_MS = 300, JOBS_MS = 2000, STRIP_MS = 1500;
+
+  let tab = TABS.includes(startTab) ? startTab : 'viewer';
+  let jobs = null;       // the job list; null until the server first answers
+  let current = null;    // the index of the job shown
+  let chosen = false;    // the person (or the address) named the job; else the newest is shown
+  let watch = null;      // the shown job's snapshot cursor
+  let strip = null;      // the shown job's strip requests
+
+  // --- the tabs and the address ------------------------------------------------------
+  const addressed = () => new URLSearchParams(location.hash.slice(1));
+  function addressJob() {
+    const value = addressed().get('job');
+    return value !== null && /^[0-9]+$/.test(value) ? Number(value) : null;
+  }
+  // The job the address named when the window opened, kept until the job list arrives.
+  let named = addressJob();
+  function writeAddress() {
+    const params = new URLSearchParams();
+    params.set('tab', tab);
+    const job = current ?? named;
+    if (job !== null) params.set('job', String(job));
+    const hash = '#' + params.toString();
+    if (location.hash !== hash) history.replaceState(null, '', hash);
+  }
+  function showTab(name) {
+    tab = name;
+    for (const button of document.querySelectorAll('[data-tab]')) {
+      const on = button.dataset.tab === name;
+      button.classList.toggle('active', on);
+      if (on) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+    }
+    for (const box of document.querySelectorAll('.tab')) box.hidden = box.id !== 'tab-' + name;
+    $('picker').classList.toggle('off', name !== 'viewer');
+    closePicker();
+    writeAddress();
+    if (name === 'viewer') Viewer.shown();
+  }
+  for (const button of document.querySelectorAll('[data-tab]')) {
+    button.addEventListener('click', () => showTab(button.dataset.tab));
+  }
+  window.addEventListener('hashchange', () => {
+    const named = addressed().get('tab');
+    if (TABS.includes(named) && named !== tab) showTab(named);
+    const job = addressJob();
+    if (job !== null && job !== current && jobs?.some(j => j.index === job)) { chosen = true; select(job); }
+  });
+
+  // --- the job picker -------------------------------------------------------------------
+  const changedOf = job => Number(job?.changed_at ?? job?.changed ?? 0) || 0;
+  const pathOf = job => String(job?.path ?? job?.folder ?? '');
+  let active = null;  // the option the keyboard is on
+  function renderPicker() {
+    const job = jobs?.find(j => j.index === current);
+    $('picker-name').textContent = job ? job.name : jobs ? 'No jobs' : 'Looking for jobs…';
+    $('picker-dot').className = 'dot ' + (job ? job.status : 'none');
+    $('picker-button').title = job ? pathOf(job) : '';
+    $('picker-button').disabled = !jobs?.length;
+    if (!$('picker-list').hidden) renderList();
+  }
+  function ordered() { return [...(jobs || [])].sort((a, b) => changedOf(b) - changedOf(a)); }
+  function renderList() {
+    const list = $('picker-list');
+    list.replaceChildren();
+    const width = Math.max(200, list.clientWidth - 2 * 12 - 20);
+    const chars = Math.floor(width / 6.7);
+    for (const job of ordered()) {
+      const option = el('div', 'job-option');
+      option.id = 'job-option-' + job.index;
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(job.index === current));
+      option.classList.toggle('active', job.index === active);
+      option.title = pathOf(job);
+      option.append(el('span', 'dot ' + job.status), el('span', 'job-option-name', job.name),
+        el('span', 'job-option-word word-' + job.status, job.status),
+        el('span', 'job-option-path', Ui.middle(pathOf(job), chars)),
+        el('span', 'job-option-facts', [job.atlas, Ui.ago(changedOf(job))].filter(Boolean).join(' · ')));
+      option.addEventListener('click', () => { choose(job.index); closePicker(true); });
+      list.append(option);
+    }
+    if (!list.children.length) list.append(el('p', 'picker-none', 'No jobs yet.'));
+    if (active !== null) list.setAttribute('aria-activedescendant', 'job-option-' + active);
+    else list.removeAttribute('aria-activedescendant');
+  }
+  function openPicker() {
+    if (!jobs?.length) return;
+    active = current;
+    $('picker-list').hidden = false;
+    $('picker-button').setAttribute('aria-expanded', 'true');
+    renderList();
+    $('picker-list').focus();
+    document.getElementById('job-option-' + active)?.scrollIntoView({ block: 'nearest' });
+  }
+  function closePicker(refocus) {
+    if ($('picker-list').hidden) return;
+    $('picker-list').hidden = true;
+    $('picker-button').setAttribute('aria-expanded', 'false');
+    if (refocus) $('picker-button').focus();
+  }
+  $('picker-button').addEventListener('click', () => ($('picker-list').hidden ? openPicker() : closePicker(true)));
+  $('picker-list').addEventListener('keydown', event => {
+    const list = ordered();
+    let i = list.findIndex(j => j.index === active);
+    if (event.key === 'ArrowDown') i = Math.min(list.length - 1, i + 1);
+    else if (event.key === 'ArrowUp') i = Math.max(0, i - 1);
+    else if (event.key === 'Home') i = 0;
+    else if (event.key === 'End') i = list.length - 1;
+    else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (active !== null) choose(active);
+      closePicker(true);
+      return;
+    } else if (event.key === 'Escape' || event.key === 'Tab') { closePicker(event.key === 'Escape'); return; }
+    else return;
+    event.preventDefault();
+    active = list[Math.max(0, i)]?.index ?? null;
+    renderList();
+    document.getElementById('job-option-' + active)?.scrollIntoView({ block: 'nearest' });
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!event.target.closest('#picker')) closePicker(false);
+  });
+
+  // --- the job shown --------------------------------------------------------------------
+  function choose(index) { chosen = true; select(index); }
+  function select(index) {
+    if (current === index && watch) return;
+    current = index;
+    watch = { index, gen: 0, cursor: 0, sv: -1 };
+    strip = { busy: false, again: false, last: 0, timer: null, missing: false };
+    Viewer.setJob(index);
+    AgentLog.setJob(index);
+    clearStatus();
+    writeAddress();
+    renderPicker();
+    fetchStrip();
+  }
+  // The job the address names; else, until the person picks one, the most recently changed.
+  function pickJob() {
+    if (!jobs.length) return;
+    const known = index => jobs.some(j => j.index === index);
+    if (current === null && named !== null && known(named)) { chosen = true; select(named); return; }
+    named = null;
+    if (current !== null && known(current) && chosen) return;
+    const newest = jobs.reduce((a, b) => (changedOf(b) > changedOf(a) ? b : a));
+    const shown = jobs.find(j => j.index === current);
+    if (!shown || (newest.index !== current && changedOf(newest) > changedOf(shown) + 5)) select(newest.index);
+  }
+  async function pollJobs() {
+    try {
+      const r = await fetch('jobs', { cache: 'no-store' });
+      if (r.ok) {
+        jobs = (await r.json()).jobs || [];
+        pickJob();
+        renderPicker();
+        const none = !jobs.length;
+        $('no-jobs').hidden = !none;
+        $('viewer-body').hidden = none;
+        $('statusline').hidden = none;
       }
-      renderJobs();
-    }
-  } catch { /* the snapshot poll reports the connection */ }
-  setTimeout(pollJobs, 2000);
-}
-function select(index) {
-  if (current === index && view) return;
-  current = index; view = freshView(index); followActivity = true;
-  $('activity').replaceChildren(el('p', 'muted', 'Waiting for the run.'));
-  $('section-filter').replaceChildren(new Option('All sections', ''));
-  showPicture(); renderJobs();
-}
+    } catch { /* the snapshot poll reports the connection */ }
+    setTimeout(pollJobs, JOBS_MS);
+  }
 
-// --- activity -----------------------------------------------------------------
-// The activity list follows the newest entry until the user scrolls up.
-let followActivity = true;
-const activityBox = document.querySelector('.activity');
-activityBox.addEventListener('scroll', () => {
-  followActivity = activityBox.scrollHeight - activityBox.scrollTop - activityBox.clientHeight < 60;
-});
-function stick(fn) {
-  const follow = followActivity;
-  fn();
-  if (follow) activityBox.scrollTop = activityBox.scrollHeight;
-}
-function words(ids) { return (ids || []).length > 4 ? ids.slice(0, 4).join(', ') + ` and ${ids.length - 4} more` : (ids || []).join(', '); }
-function thumb(picture) {
-  const b = el('button'); b.title = picture.caption || picture.label;
-  const img = el('img'); img.src = `jobs/${view.index}/picture/${picture.number}`; img.alt = picture.label; img.loading = 'lazy';
-  b.append(img); b.dataset.number = picture.number;
-  b.onclick = () => { view.follow = false; view.filter = ''; $('section-filter').value = ''; showPicture(picture.number); };
-  return b;
-}
-function toolRow(item) {
-  let row = view.rows.get(item.key);
-  if (row) return row;
-  const root = el('div', 'item tool running');
-  const head = el('div', 'head');
-  const what = words(item.sections) || (item.args && typeof item.args === 'object' && typeof item.args.mode === 'string' ? item.args.mode : '');
-  const name = el('span', 'name', item.label), targets = el('span', 'targets', what), state = el('span', 'state', 'running');
-  head.append(name, targets, state);
-  const thumbs = el('div', 'thumbs');
-  const raw = el('details', 'raw'); raw.append(el('summary', '', 'Details'), el('pre'));
-  root.append(head, thumbs, raw);
-  row = { root, state, thumbs, raw: raw.querySelector('pre'), data: {} };
-  view.rows.set(item.key, row);
-  $('activity').append(root);
-  return row;
-}
-function addThumb(row, picture) {
-  if (row.thumbs.querySelector(`[data-number="${picture.number}"]`)) return;
-  row.thumbs.append(thumb(picture));
-}
-function render(item) {
-  const box = $('activity');
-  if (box.firstChild && box.firstChild.classList.contains('muted')) box.replaceChildren();
-  if (item.kind === 'tool') {
-    const row = toolRow(item);
-    row.data[item.phase] = { name: item.name, door: item.door, sections: item.sections, args: item.args, step: item.step, status: item.status, failed: item.failed, at: item.at };
-    row.raw.textContent = JSON.stringify(row.data, null, 1);
-    if (item.phase === 'end') {
-      row.root.classList.remove('running');
-      row.root.classList.toggle('failed', item.failed);
-      row.state.textContent = item.failed ? (item.status || 'failed') : 'done';
-      for (const path of item.views || []) {
-        view.claims.set(path, row);
-        const picture = view.byPath.get(path);
-        if (picture) { moveFromGroup(picture); addThumb(row, picture); }
+  // --- the snapshot -----------------------------------------------------------------------
+  async function pollSnapshot() {
+    const w = watch;
+    try {
+      if (w) {
+        const r = await fetch(`jobs/${w.index}/snapshot?since=${w.cursor}&gen=${w.gen}&sv=${w.sv}`, { cache: 'no-store' });
+        if (!r.ok) throw new Error(String(r.status));
+        const snap = await r.json();
+        if (w === watch) take(snap);
       }
+      $('connection').textContent = 'Connected locally';
+    } catch {
+      $('connection').textContent = 'Waiting for LangSlice…';
     }
-  } else if (item.kind === 'picture') {
-    addPicture(item);
-  } else if (item.kind === 'agent' || item.kind === 'reasoning') {
-    const root = el('div', 'item message ' + item.kind);
-    root.append(el('div', 'who', item.kind === 'agent' ? 'Agent' : 'Reasoning summary'), el('div', 'text', item.text));
-    box.append(root);
-  } else if (item.kind === 'note') {
-    box.append(el('div', 'item note' + (item.error ? ' error' : ''), item.text));
+    setTimeout(pollSnapshot, SNAPSHOT_MS);
   }
-}
-function moveFromGroup(picture) {
-  const group = view.groups.get(picture.group);
-  if (!group) return;
-  group.thumbs.querySelector(`[data-number="${picture.number}"]`)?.remove();
-  if (!group.thumbs.children.length) { group.root.remove(); view.groups.delete(picture.group); }
-}
-function addPicture(item) {
-  const picture = { ...item, group: `${item.tool}:${item.call}` };
-  view.pictures.push(picture); view.byNumber.set(picture.number, picture); view.byPath.set(picture.path, picture);
-  for (const id of picture.sections) if (!view.sections.has(id)) { view.sections.add(id); $('section-filter').append(new Option(id, id)); }
-  const claimed = view.claims.get(picture.path);
-  if (claimed) addThumb(claimed, picture);
-  else {
-    // A picture no tool event names (the opening, or a folder without events):
-    // one row per call that saved it.
-    let group = view.groups.get(picture.group);
-    if (!group) {
-      const root = el('div', 'item tool');
-      const head = el('div', 'head');
-      head.append(el('span', 'name', picture.tool === 'opening' ? 'Opening pictures' : picture.label), el('span', 'targets', ''), el('span', 'state', 'pictures'));
-      const thumbs = el('div', picture.tool === 'opening' || picture.tool === 'show_stack' ? 'thumbs wide' : 'thumbs'); root.append(head, thumbs);
-      group = { root, thumbs, targets: head.children[1], ids: [] };
-      view.groups.set(picture.group, group);
-      // The opening pictures come first, after the line saying the job opened.
-      const box = $('activity'), opening = picture.tool === 'opening' || picture.tool === 'show_stack';
-      const anchor = view.lastOpening || (box.firstChild?.classList.contains('note') ? box.firstChild : null);
-      if (opening && anchor) anchor.after(root); else if (opening) box.prepend(root); else box.append(root);
-      if (opening) view.lastOpening = root;
+  function take(snap) {
+    if (snap.reset && watch.gen !== 0) {
+      // The folder's files were replaced (a new watch): start the job's view over.
+      Viewer.setJob(watch.index);
+      AgentLog.setJob(watch.index);
     }
-    for (const id of picture.sections) if (!group.ids.includes(id)) group.ids.push(id);
-    group.targets.textContent = words(group.ids);
-    group.thumbs.append(thumb(picture));
+    watch.gen = snap.generation;
+    watch.cursor = snap.cursor;
+    AgentLog.add(snap.items || []);
+    const tables = snap.sections !== undefined;
+    if (tables) watch.sv = snap.state_version;
+    Viewer.update(tables ? snap : null, snap.focus || null);
+    if (tables) fetchStrip();
+    showStatus(snap);
   }
-  if (view.follow) showPicture();
-}
+  function clearStatus() {
+    $('status-dot').className = 'dot none';
+    $('word').textContent = '';
+    $('sentence').textContent = 'Loading the job…';
+    $('facts').textContent = '';
+    AgentLog.setStatus('');
+  }
+  function showStatus(snap) {
+    const word = snap.status?.word || '';
+    const h = snap.header || {};
+    $('status-dot').className = 'dot ' + word;
+    $('word').textContent = word;
+    $('word').className = 'word word-' + word;
+    $('sentence').textContent = snap.status?.sentence || '';
+    $('facts').textContent = [h.atlas, h.plane, h.model, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
+    AgentLog.setStatus(word);
+    Viewer.setHeader(h);
+    const job = jobs?.find(j => j.index === watch.index);
+    if (job && job.status !== word) { job.status = word; renderPicker(); }
+  }
 
-// --- picture pane ---------------------------------------------------------------
-function visible() { return view ? view.pictures.filter(p => !view.filter || p.sections.includes(view.filter)) : []; }
-function showPicture(number) {
-  const list = visible();
-  let i = list.findIndex(p => p.number === (number ?? view?.shown));
-  if (number === undefined && (view?.follow || i < 0)) i = list.length - 1;
-  const picture = list[i];
-  $('picture-count').textContent = picture ? `${i + 1} / ${list.length}` : '0 / 0';
-  $('follow').classList.toggle('active', Boolean(view?.follow));
-  if (!picture) {
-    $('picture').removeAttribute('src'); $('picture-empty').hidden = false;
-    $('picture-label').textContent = 'No pictures yet'; $('caption').textContent = ''; return;
-  }
-  view.shown = picture.number;
-  $('picture-empty').hidden = true;
-  const src = `jobs/${view.index}/picture/${picture.number}`;
-  if ($('picture').getAttribute('src') !== src) $('picture').src = src;
-  $('picture').alt = picture.caption || picture.label;
-  $('picture-label').textContent = `#${picture.number} · ${picture.label}` + (picture.sections.length ? ' · ' + words(picture.sections) : '');
-  $('caption').textContent = picture.caption;
-  for (const b of document.querySelectorAll('.thumbs button')) b.classList.toggle('shown', Number(b.dataset.number) === picture.number);
-}
-function step(delta) {
-  const list = visible(); if (!list.length) return;
-  let i = list.findIndex(p => p.number === view.shown); if (i < 0) i = list.length - 1;
-  view.follow = false; showPicture(list[Math.max(0, Math.min(list.length - 1, i + delta))].number);
-}
-$('previous').onclick = () => step(-1);
-$('next').onclick = () => step(1);
-$('follow').onclick = () => { view.follow = true; showPicture(); };
-$('section-filter').onchange = e => { view.filter = e.target.value; showPicture(); };
-$('picture-frame').onclick = () => { if (!$('picture').getAttribute('src')) return; $('large').src = $('picture').src; $('large-caption').textContent = $('caption').textContent; $('lightbox').showModal(); };
-$('close-lightbox').onclick = () => $('lightbox').close();
-
-// --- tables -------------------------------------------------------------------
-const fmt = (v, digits) => (v === null || v === undefined ? '' : typeof v === 'number' ? v.toFixed(digits) : String(v));
-function renderTables(snap) {
-  const body = document.querySelector('#sections tbody'); body.replaceChildren();
-  for (const r of snap.sections || []) {
-    const tr = el('tr'); if (r.damaged) tr.className = 'damaged';
-    const angles = r.angles && typeof r.angles === 'object' ? `${fmt(r.angles.pitch, 1)}, ${fmt(r.angles.yaw, 1)}` : '';
-    const cells = [[r.order, 'num'], [r.id], [fmt(r.position_mm, 3), 'num'], [angles], [r.flip ? 'yes' : ''], [r.transform || ''], [r.deformation || ''], [r.damaged ? 'yes' : ''], [r.registration ?? '', 'num']];
-    for (const [text, cls] of cells) tr.append(el('td', cls || '', String(text)));
-    body.append(tr);
-  }
-  $('sections-count').textContent = snap.sections?.length ? `(${snap.sections.length})` : '';
-  $('sections-note').textContent = snap.sections_note || (snap.sections?.length ? '' : 'No sections yet.');
-  const history = snap.history || { undo: [], redo: [] };
-  for (const key of ['undo', 'redo']) {
-    const list = $(key); list.replaceChildren();
-    for (const label of [...history[key]].reverse()) list.append(el('li', '', label));
-    $(key + '-count').textContent = `(${history[key].length})`;
-  }
-  const notes = $('notes'); notes.replaceChildren();
-  if (snap.notes?.user) { notes.append(el('div', 'muted small', 'Your notes'), el('p', '', snap.notes.user)); }
-  if (snap.notes?.run?.length) { notes.append(el('div', 'muted small', 'Run notes')); for (const n of snap.notes.run) notes.append(el('p', '', n)); }
-  if (!notes.children.length) notes.append(el('p', 'muted', 'No notes.'));
-  const spend = snap.spend;
-  if (spend) {
-    const t = spend.tokens || {}, parts = [];
-    const sum = (...keys) => keys.reduce((a, k) => a + (t[k] || 0), 0);
-    const input = sum('input_uncached', 'input_cached') || t.input || 0;
-    if (spend.model) parts.push(spend.model);
-    if (input) parts.push(`${input.toLocaleString()} input tokens` + (t.input_cached ? ` (${t.input_cached.toLocaleString()} cached)` : ''));
-    if (t.output) parts.push(`${t.output.toLocaleString()} output`);
-    if (t.reasoning) parts.push(`${t.reasoning.toLocaleString()} reasoning`);
-    if (typeof spend.usd_estimate === 'number') parts.push(`about $${spend.usd_estimate.toFixed(2)}`);
-    if (typeof spend.quota_used_percent === 'number') parts.push(`${spend.quota_used_percent}% of the usage window`);
-    $('spend').textContent = parts.join(' · ') || 'No spend recorded yet.';
-  } else $('spend').textContent = 'No spend recorded yet.';
-}
-
-// --- polling ------------------------------------------------------------------
-async function pollSnapshot() {
-  try {
-    if (view) {
-      const index = view.index;
-      const r = await fetch(`jobs/${index}/snapshot?since=${view.cursor}&gen=${view.gen}&sv=${view.sv}`, { cache: 'no-store' });
-      if (!r.ok) throw new Error('unavailable');
-      const snap = await r.json();
-      if (view && view.index === index) {
-        if (snap.reset && view.gen) { view = null; select(index); return; }
-        view.gen = snap.generation; view.cursor = snap.cursor;
-        stick(() => { for (const item of snap.items) render(item); });
-        if (snap.sections !== undefined) { view.sv = snap.state_version; renderTables(snap); }
-        const h = snap.header;
-        $('word').textContent = snap.status.word; $('word').className = 'word ' + snap.status.word;
-        $('sentence').textContent = snap.status.sentence;
-        $('facts').textContent = [h.atlas, h.plane, h.model, h.door && `via ${h.door}`].filter(Boolean).join(' · ');
-        $('job-title').textContent = h.name; $('job-title').title = h.folder;
+  // --- the positioning strip's data -------------------------------------------------------
+  async function fetchStrip() {
+    const w = watch, s = strip;
+    if (!w || s.missing) return;
+    if (s.busy) { s.again = true; return; }
+    const wait = s.last + STRIP_MS - Date.now();
+    if (wait > 0) {
+      if (!s.timer) s.timer = setTimeout(() => { s.timer = null; if (s === strip) fetchStrip(); }, wait);
+      return;
+    }
+    s.busy = true;
+    s.last = Date.now();
+    try {
+      const r = await fetch(`jobs/${w.index}/strip`, { cache: 'no-store' });
+      if (s !== strip) return;
+      if (r.ok) Strip.setInfo(await r.json());
+      else if (r.status === 404) { s.missing = true; Strip.setInfo(null, ''); }
+      else {
+        const answer = await r.json().catch(() => ({}));
+        Strip.setInfo(null, answer.error || '');
       }
+    } catch { /* tried again when the sections change */ }
+    finally {
+      s.busy = false;
+      if (s.again && s === strip) { s.again = false; fetchStrip(); }
     }
-    $('connection').textContent = 'Connected locally';
-  } catch { $('connection').textContent = 'Waiting for LangSlice…'; }
-  setTimeout(pollSnapshot, 300);
-}
-pollJobs();
-pollSnapshot();
+  }
+
+  // --- the keyboard -----------------------------------------------------------------------
+  document.addEventListener('keydown', event => {
+    if (tab !== 'viewer' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target.closest?.('input, textarea, select, [contenteditable], .picker-list')) return;
+    if ($('lightbox').open) return;
+    if (event.key === '[') Viewer.pageBy(-1);
+    else if (event.key === ']') Viewer.pageBy(1);
+    else if (event.key === 'f' || event.key === 'F') Viewer.toggleFollow();
+    else return;
+    event.preventDefault();
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    Viewer.init();
+    AgentLog.init();
+    showTab(tab);
+    clearStatus();
+    pollJobs();
+    pollSnapshot();
+  });
+})();
