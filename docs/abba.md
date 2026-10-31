@@ -1,104 +1,137 @@
 # ABBA
 
-The Fiji connector lets an agent register sections inside ABBA, applying
-changes as native, undoable ABBA registrations. It uses a separate Python
-environment. Supported sessions use ABBA 0.25 (0.24.1 also works), Java 21, and the Allen Mouse
-V3 or V3p1 atlas in the coronal plane; tilted cutting angles are supported.
+The Fiji connector starts a LangSlice job from the sections you selected in
+ABBA and opens the LangSlice window on it. Every change the agent saves then
+appears in ABBA, as a native ABBA registration you can undo. The registration
+itself runs in your AI app (Codex, Claude Code or Antigravity), from the
+message the LangSlice window writes for you.
+
+Supported sessions: ABBA 0.25 (0.24.1 also works) on Java 21, the Allen Mouse
+V3 or V3p1 atlas, coronal sections. Tilted cutting angles are supported.
 
 ## Install
 
-1. Install [Miniforge](https://github.com/conda-forge/miniforge#download).
-   Download and extract the LangSlice source, then run this in the folder
-   containing `environment.yml`:
+1. Install LangSlice's Python environment as in
+   [Install LangSlice](getting-started/install.md) (Miniforge, then
+   `conda env create -f environment.yml`). Keep the environment installed:
+   ABBA uses it.
+2. Build the connector with its
+   [build instructions](https://github.com/greenpolo/LangSlice/blob/main/connectors/fiji/README.md#build-and-install).
+   Copy `langslice-fiji-0.3.0.jar` into Fiji's `jars` folder, remove any older
+   `langslice-fiji` jar from it, and restart Fiji. The connector and
+   LangSlice must be updated together; a mismatch says **Update LangSlice and
+   the connector together**.
+3. The first time you use the connector, it asks for the LangSlice
+   environment folder (the folder of the environment, not its Python program
+   or the LangSlice source folder). Choose it, click **Check installation**,
+   then **Save**. **Plugins ‣ LangSlice ‣ Choose Python environment…** opens
+   the same window later.
 
-   ```bash
-   conda env create -f environment.yml
-   ```
+Sign in to an AI provider, if you need one, in the LangSlice window's
+**Settings** tab, not in Fiji.
 
-   On Windows, use Miniforge Prompt or PowerShell with conda initialized.
-   Keep the resulting `langslice` environment installed. If that name is
-   already in use, add `-n langslice-fiji` and select that environment in Setup.
+## Use
 
-2. Build the connector using its
-   [build instructions](https://github.com/greenpolo/LangSlice/blob/main/connectors/fiji/README.md#build).
-   Copy `langslice-fiji-0.2.0.jar` into Fiji's `jars` folder and restart Fiji.
-   Keep only one connector version installed. The connector is built against
-   ABBA 0.25.0 and uses ABBA's dependencies.
+1. In ABBA, import your sections and select the ones to register. With none
+   selected, every section is used.
+2. Choose **Register ‣ LangSlice…** (also **Plugins ‣ LangSlice ‣ Open
+   LangSlice…**). The first time, the connector exports one 25 µm snapshot per
+   section and prepares the job with ABBA's positions, cutting angles and
+   pixel size. ABBA itself does not change.
+3. The LangSlice window opens on the **Prompt generator**. Its **From ABBA**
+   block shows the atlas, plane, pixel size and the snapshot file for each
+   ABBA slice; these are fixed by ABBA. Thickness and interval are filled in
+   from ABBA; check them. **Keep the N sections' existing ABBA registrations**
+   is ticked: sections you already registered in ABBA keep their in-plane
+   alignment and warps (their positions may still move). Untick it to let the
+   agent redo them.
+4. Add what you know (damaged sections, notes), click **Copy** and paste the
+   message into a new chat in your AI app. The agent sets up the job and runs
+   the registration.
+5. Watch ABBA. Each change the agent saves appears as one ABBA undo step.
+   Several changes saved within half a second of each other arrive as one
+   step; the LangSlice window's **Agent viewer** lists every change on its own.
+   An undo the agent makes arrives as a new ABBA step that puts the section
+   back.
+6. Save the project with ABBA's own save command (**ABBA - Save State**). The saved project contains only ABBA's
+   own registration types, so it reopens without LangSlice, and the warp opens
+   in BigWarp like any BigWarp registration.
 
-3. Open **Plugins > LangSlice > LangSlice setup…** in Fiji, or **Setup…**
-   in the LangSlice Registration dialog. Select the environment folder
-   (not its Python executable or the source folder) and click
-   **Check installation**.
+Each section carries at most two LangSlice steps on top of its own
+registrations: `LangSlice affine [<key>]` and `LangSlice warp [<key>]`, where
+`<key>` names the project.
 
-4. Choose **Sign in with ChatGPT**, or **Save API key…** for an OpenAI or
-   Gemini image model. Save setup. Credentials stay in LangSlice's user
-   settings, outside the ABBA project; the setup check reports credential
-   presence, not validated model access.
+### Coming back to a project
 
-The connector and Python environment are installed from source. Setup is
-available before Python is installed, so either component can be installed
-first. The worker itself needs no JVM in the Python environment.
+Choosing **Register ‣ LangSlice…** again on the same project continues its
+job: no new export, and the window opens on the **Agent viewer** once the job
+has run. ABBA is brought back in line with the job first, in one undo step,
+also after ABBA was closed and the project reopened. The job is the truth:
+a LangSlice step you undid in ABBA comes back.
 
-## Configure a registration
+When your selection differs from the job's sections, or you added or removed
+sections since, one box asks: **Continue the existing job (N sections)** or
+**Start a new job with the M selected slices**. Starting a new job moves the
+old job's folder aside (it is kept, renamed with the date) and removes the old
+job's steps from the selected sections, in one ABBA undo step. Closing the box
+changes nothing.
 
-Import the images in ABBA, select the sections to process (none selected
-means all), and open **Register > LangSlice Registration…**.
+Two ABBA projects that import the same image files share one job folder; use
+**Start a new job** in the second.
 
-| Tab | Choices |
-|---|---|
-| Tasks | Positioning for order and atlas positions; Linear for in-plane alignment and optional cutting-angle estimation; Nonlinear for deformation. Each accepts notes to the agent. |
-| Slices | Notes on damaged tissue, permission to mark damaged regions, and permission to overwrite existing transforms. |
-| Preprocessing | Automatic or custom channel blending and contrast, snapshot pixel size, and a before/after preview. |
+### Editing a section while the agent works
 
-A new dialog starts from the same job defaults as `langslice linear run`
-and the MCP door. Section thickness and interval are the values you enter
-(zero means unspecified: the agent infers what the anatomy supports); until
-you enter one, ABBA's values for the selected sections are shown and sent,
-except the interval after a LangSlice run in the same ABBA session. There
-are no fixed lab protocol defaults. Nonlinear needs
-a linear placement; when Linear is off and some sections have none, the
-dialog offers to align them first or exclude them from Nonlinear.
+Avoid editing the registrations of sections the agent is working on. Adding,
+removing or undoing a step of a section in ABBA makes that section refused.
+The agent's later changes to it are kept but not applied, and Fiji's **Log**
+window names the section. To
+bring it back in line, remove any step you added on top of it and choose
+**Register ‣ LangSlice…** again.
 
-Existing registrations keep their in-plane alignment unless **Allow the
-agent to overwrite existing transforms** is enabled. Positions can still
-move. A user's existing spline or BigWarp registration is protected.
-Damage notes inform the agent; only atlas regions it marks are excluded
-from fits.
+Closing ABBA, or **Plugins ‣ LangSlice ‣ Stop following**, stops the updates
+and nothing else. The agent's run and the job go on, and the next
+**Register ‣ LangSlice…** brings ABBA up to date.
 
-Custom preprocessing exports only the channels with a weight above 0; the blend is the job's opening `preprocessed` image, and every exported page stays a raw channel the agent can draw or make images from.
-Use the preview to check contrast between anatomical regions.
+## Where the files are
 
-## Run and review
+Each ABBA project's job is in `~/.langslice/abba/<key>/`, in the
+`.langslice` folder of your home folder. It holds:
 
-With **ChatGPT**, choose the agent model and reasoning, then **Run**.
-With **Claude**, configure the [MCP server](agents/mcp.md), choose
-**Copy prompt**, and paste it into the MCP conversation. Keep ABBA's
-progress window open to receive live updates.
+- the snapshots, `section_0001.tif` and so on;
+- `langslice/`, the [job folder](reference/file_formats.md), with the exports;
+- `abba_sections.json`, which snapshot is which ABBA slice;
+- `gui.log`, the LangSlice window's last output.
 
-For Nonlinear, choose an image model or **None (fit to the stain only)**.
-The agent decides whether to use image-model tracing when it is available.
-Model calls send section images to the selected provider. The estimated
-cost appears at the bottom of the dialog.
+The job folder's `logs/abba_applied.jsonl` records each update: what ABBA
+applied, and what it refused with ABBA's own reason.
 
-Changes appear while the agent works. Each checkpoint is an ABBA undo step;
-a section has at most one LangSlice affine and one BigWarp warp above it.
-The warp can be opened in BigWarp. Avoid editing those sections'
-registrations during a run: conflicting updates are refused and can be
-retried with **Retry failed updates**. When ABBA refuses an update, the log
-gives ABBA's own reason.
+## Limits
 
-**Stop run** stops the built-in agent and keeps completed changes. In Claude
-mode, closing the window disconnects live updates; the MCP job continues
-independently. Save with ABBA's normal Save command. Saved registrations
-reopen without LangSlice installed.
+- Coronal sessions of ABBA's Allen Mouse V3 or V3p1 atlas only.
+- One cutting angle for the whole stack, as in ABBA.
+- The agent works on 25 µm snapshots, not on your full-resolution images.
 
-**Show agent log** displays activity. The [LangSlice window](developers/gui.md) (`langslice gui`) shows the same run from its job folder. Every run keeps its full agent trace
-in the job folder's `trace/`, as `langslice linear run` does. **Open agent viewer** is available when ABBA was launched with
-`langslice abba`. That optional command starts ABBA from Python and needs
-the connector jar (`--connector-jar` or `LANGSLICE_CONNECTOR_JAR`) and Java
-21, fetched on first start. An existing Fiji installation uses the connector
-directly.
+## Troubleshooting
 
-For troubleshooting, activate the environment and run `langslice version`.
-Worker protocol and checkpoint handling are described in
-[architecture](developers/architecture.md#fiji-connector-and-worker).
+**The LangSlice window does not open.** A message box shows its first output
+lines. Choose **Plugins ‣ LangSlice ‣ Choose Python environment…** and click
+**Check installation**; it shows the LangSlice version found. In a terminal
+(the window where you type commands), `conda run -n langslice langslice
+version` should print it too.
+
+**A section did not update in ABBA.** Fiji's **Log** window names it and gives the
+reason. See [Editing a section while the agent works](#editing-a-section-while-the-agent-works).
+
+<details>
+<summary>Under the hood</summary>
+
+The connector starts `langslice serve --stdio` in the chosen environment: it
+prepares the job (`abba.prepare`) and then follows it (`abba.follow`),
+reading the job's files as the agent saves them. It also starts
+`langslice gui <job folder> --tab prompt`. Nothing opens a network port. The
+worker protocol and the attach step are in
+[architecture](developers/architecture.md#fiji-connector-and-worker) and the
+connector's own
+[README](https://github.com/greenpolo/LangSlice/blob/main/connectors/fiji/README.md).
+
+</details>

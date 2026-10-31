@@ -34,10 +34,9 @@ with `langslice-job FOLDER launch --role register`'s `result.prompt`, which
 names the folder and holds the job statement. The agent calls
 `start_job(image_folder="/absolute/path/to/FOLDER")`; its reply says only that
 the job is open, its section count and the pages of its opening (the server's
-instructions are one short text, the same for every job). For a job prepared
-in ABBA, paste ABBA's copy prompt, which supplies `start_job(job_id=...)`; that
-call answers with the whole job statement, as that path has no launching
-message. The agent must read every `show_stack(page=...)` page before writing.
+instructions are one short text, the same for every job). A job prepared in
+ABBA is started the same way, from the message of the LangSlice window that
+ABBA's **Register › LangSlice…** opens. The agent must read every `show_stack(page=...)` page before writing.
 Tool replies include images directly; pages and replies have a size budget,
 and a reply reports when its images were reduced to fit.
 

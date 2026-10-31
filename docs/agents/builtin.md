@@ -78,8 +78,8 @@ has spent. Spend is reported to whoever runs LangSlice, never to the model:
   thinking tokens as output; Claude input that is not a cache read as a cache
   write) is warned at $5, $10, $20, $40 and so on, doubling. A model without a
   price in `doors/agent/spend.py` is said so once, with no estimate.
-- Each warning also reaches the live event stream as a `spend` event (the ABBA
-  agent viewer shows it) and the trace as a `spend` record. The account so
+- Each warning also reaches the live event stream as a `spend` event and the
+  trace as a `spend` record. The account so
   far is written to `exports/spend.json` in the job folder after every model
   call; the final account is written there when the session ends, also when
   it fails part-way, and is the `spend` field of the trace's `summary` and of
@@ -118,8 +118,8 @@ image edits are not covered by these request retries.
 
 `langslice login` stores OAuth credentials in
 `~/.langslice/openai_auth.json`; `LANGSLICE_OPENAI_AUTH` overrides that path.
-LangSlice uses its own login. The LangSlice window's Settings and ABBA setup
-can also save API keys in `~/.langslice/provider_credentials.json` (the
+LangSlice uses its own login. The LangSlice window's Settings can also save
+API keys in `~/.langslice/provider_credentials.json` (the
 window also the Claude key, loaded as `ANTHROPIC_API_KEY`); explicit
 environment variables take precedence. Credential presence is checked offline when deciding
 whether to offer `trace_borders`.

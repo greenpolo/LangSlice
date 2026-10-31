@@ -23,13 +23,12 @@ without an id. Inside::
     views.jsonl          append-only index of every saved picture
     views.seq            the picture and call numbers handed out (+ views.seq.lock)
     exports/             linear_results.json, spend.json (the agent run's spend),
-                         a host's result.json, quicknii.json and visualign.json
+                         quicknii.json and visualign.json
     logs/                events.jsonl (opens, plugins, every tool call's
                          tool_start / tool_end on every door), runs/ (the agent
                          CLI's background runs), calls.jsonl (the agent CLI's calls),
                          calls/ (each call's envelope), launches/ (the exact
                          launch prompts of `langslice-job FOLDER launch`)
-    prompt.txt           a saved ABBA job's copy prompt
     trace/               agent transcripts: LangSlice's own agent's trace (also
                          when --trace-dir sends it elsewhere), and a coding
                          agent's session copied in by its harness plugin
@@ -80,7 +79,6 @@ EVENTS_FILE = "events.jsonl"
 #: Under ``logs/``: the launch prompts ``langslice-job FOLDER launch`` printed,
 #: ``<six-digit number>_<role>.md`` (the exact text).
 LAUNCHES_DIR = "launches"
-PROMPT_FILE = "prompt.txt"
 #: Agent transcripts: LangSlice's own agent's trace, a coding agent's session.
 TRACE_DIR = "trace"
 #: The job's own Python environment (``langslice-job FOLDER env``).
@@ -310,10 +308,6 @@ class JobLayout:
     @property
     def spend_file(self) -> Path:
         return self.exports_dir / SPEND_FILE
-
-    @property
-    def prompt_file(self) -> Path:
-        return self.folder / PROMPT_FILE
 
     @property
     def trace_dir(self) -> Path:

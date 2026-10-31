@@ -82,8 +82,7 @@ TRACE_DIR_ENV = _TRACE_DIR_ENV
 
 def job_trace_dir(job_folder: str | Path) -> Path:
     """Where a run keeps its full agent trace when nothing else is named:
-    ``trace/`` in its job folder (``langslice linear run`` and the ABBA
-    worker's ``linear.run``)."""
+    ``trace/`` in its job folder (``langslice linear run``)."""
     return Path(job_folder) / TRACE_DIR
 
 

@@ -123,7 +123,7 @@ LangSlice, so a job travels with its images:
 | `langslice linear run FOLDER` | `FOLDER` | `FOLDER/langslice/` |
 | `langslice mcp`, `start_job(image_folder=...)` | that folder (or the named job folder's) | `<folder>/langslice/`, or the named job folder |
 | `langslice mcp`, `start_job(job_id=...)` | the saved job's | the index entry's job folder |
-| ABBA's `Register › LangSlice…` (Fiji connector, `abba.prepare`) | the connector's snapshot folder of the ABBA project | `<snapshots>/langslice/`, prepared (below) |
+| ABBA's `Register › LangSlice…` (Fiji connector, `abba.prepare`) | the ABBA project's snapshots, `~/.langslice/abba/<project key>/` | `~/.langslice/abba/<project key>/langslice/`, prepared (below) |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
 `Job.open` and `engine.build_context`):
@@ -182,7 +182,7 @@ views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets
 views.jsonl          append-only index of every saved picture
 views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
-                     the path), spend.json (the agent run's spend account), result.json (a saved host job's final result),
+                     the path), spend.json (the agent run's spend account),
                      quicknii.json and visualign.json (with the maps) and
                      the section images they name (<stem>_sNNN.png),
                      traces/<stem>.npz (each traced section's image-model reply
@@ -206,7 +206,6 @@ trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
                      `langslice session-end` (`doors/commands/transcripts.py`); the
                      agent's file tools never show or open it (`browse.HIDDEN`)
 env/                 the job's own Python environment (`ENV_DIR`; `doors/agent_cli/environment.py`)
-prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/reference_card.py`) and rewritten when stale
 TOOLS.md             every verb of the job, its description and arguments (by `init`, `launch`)

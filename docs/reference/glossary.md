@@ -8,8 +8,9 @@ two sentences.
 
 ABBA
   Aligning Big Brains & Atlases, a Fiji plugin for registering brain sections
-  to an atlas by hand and with automatic tools. LangSlice can run inside it
-  and hand its result back to ABBA.
+  to an atlas by hand and with automatic tools. LangSlice's connector starts
+  a job from the sections selected in ABBA and shows every change the agent
+  makes in ABBA.
 
 Affine
   A transform of a section's image within its own plane that rotates,
@@ -33,7 +34,7 @@ API key
   A secret code from an AI company that lets a program use its models, billed
   per use and separate from a {term}`subscription`. LangSlice reads a key
   from `OPENAI_API_KEY` or `GEMINI_API_KEY`, set on your computer or in a
-  `.env` file, or from the keys ABBA's setup saved.
+  `.env` file, or from the keys saved in the LangSlice window's Settings.
 
 Atlas
   A 3-D reference brain with its regions labelled, here a

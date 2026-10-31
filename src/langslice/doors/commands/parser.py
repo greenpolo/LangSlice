@@ -25,7 +25,6 @@ import langslice
 #: imported when the parser is built, never statically, so the doors never
 #: import a host (import-linter's layers contract).
 HOST_COMMANDS = {
-    "abba": ("langslice.hosts.cli", "add_abba_parser", "run_abba"),
     "gui": ("langslice.hosts.cli", "add_gui_parser", "run_gui"),
     "serve": ("langslice.hosts.cli", "add_serve_parser", "run_serve"),
 }
@@ -66,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
     add_run_parser(linear_sub)
 
-    # langslice abba, gui, serve (the host commands, loaded on demand)
+    # langslice gui, serve (the host commands, loaded on demand)
     for command in HOST_COMMANDS:
         _host_command(command, 0)(subparsers)
 

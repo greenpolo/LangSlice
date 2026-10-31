@@ -42,8 +42,8 @@ On Windows, run the same `conda env create` and `conda activate` commands in
 Miniforge Prompt or PowerShell with conda initialized. Python 3.11 on Windows
 is tested in CI. Atlases are downloaded by BrainGlobe on first use into the
 user's `.brainglobe` folder. Python 3.11 is required; the environment
-includes the deformable engine (FireANTs on torch), the Claude Desktop server and the ABBA
-launcher.
+includes the deformable engine (FireANTs on torch), the Claude Desktop server and the
+worker the ABBA connector starts.
 
 ## Use LangSlice
 
@@ -52,8 +52,8 @@ launcher.
 - **[Agents, CLI and MCP](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/index.md):** Claude Code, Antigravity or Codex
   through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
-- **[ABBA](https://github.com/greenpolo/LangSlice/blob/main/docs/abba.md):** register selected sections through the Fiji
-  connector and review changes in ABBA.
+- **[ABBA](https://github.com/greenpolo/LangSlice/blob/main/docs/abba.md):** start a job from the sections selected in ABBA;
+  the agent's changes appear in ABBA as it saves them.
 - **[Python](https://github.com/greenpolo/LangSlice/blob/main/docs/developers/library.md):** coding agents can open a job and write their
   own workflows using the same tools.
 

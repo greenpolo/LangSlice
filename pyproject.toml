@@ -78,9 +78,6 @@ langslice-job = "langslice.doors.agent_cli.main:main"
 registration = [
     "h5py>=3.10",
 ]
-abba = [
-    "abba-python",
-]
 mcp = [
     "mcp>=1.24,<2",
 ]
@@ -123,7 +120,7 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["core/atlas/*.json", "hosts/abba/static/*", "hosts/gui/static/*"]
+langslice = ["core/atlas/*.json", "hosts/gui/static/*"]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs

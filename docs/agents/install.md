@@ -48,7 +48,7 @@ user before removing or replacing it. To install beside it, add
 `-n langslice-2` and use that name below.
 
 The environment holds LangSlice with its registration engines, the MCP
-server and the ABBA launcher.
+server and the worker the ABBA connector starts.
 
 ## 4. Verify
 
@@ -205,7 +205,7 @@ In the LangSlice folder:
 
 ```bash
 git pull
-conda run -n langslice python -m pip install ".[registration,mcp,abba]"
+conda run -n langslice python -m pip install ".[registration,mcp]"
 ```
 
 pip rebuilds and reinstalls LangSlice from the folder. The plugins are

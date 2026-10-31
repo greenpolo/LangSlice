@@ -20,15 +20,11 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 ## Files and sub-packages
 
-- `cli.py` — the host commands `abba` (ABBA 0.25.x started from Python with
-  the Fiji connector jar on the classpath and the passive Python viewer and
-  log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`),
-  `gui` (the LangSlice window on job folders: `FOLDER ...`, an image folder
-  standing for its `langslice/` job folder; `--port`, `--no-window`,
-  `--tab viewer|prompt`, the prompt generator filled in from the first
-  folder's job) and
-  `serve` (the engine service), registered with the `langslice` command by
-  module path.
+- `cli.py` — the host commands `gui` (the LangSlice window on job folders:
+  `FOLDER ...`, an image folder standing for its `langslice/` job folder;
+  `--port`, `--no-window`, `--tab viewer|prompt`, the prompt generator filled
+  in from the first folder's job) and `serve` (the engine service),
+  registered with the `langslice` command by module path.
 
 - `gui/` — the LangSlice window (`langslice gui`, `linear run --gui`): a
   loopback page with the agent viewer, which learns everything by watching
@@ -39,12 +35,6 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   and the generator are read-only. Only `cli.py` imports it.
   `gui/CLAUDE.md`, `docs/developers/gui.md`.
 
-- `abba/` — `launch.py` (what `langslice abba` starts, and
-  the listener of the connector's run messages), the ABBA agent viewer
-  (`viewer_follow.py`, `viewer_compare.py`, `viewer_overview.py`) and activity log
-  (`log.py` + `static/`): `abba/CLAUDE.md`.
-  The Fiji connector is the one ABBA integration; this package only follows
-  its runs.
 - `service.py` — `langslice serve --stdio`: the JSON-lines engine
   service the Fiji connector starts (protocol 3: `setup.status`,
   `abba.prepare`, `abba.follow`). A long request (`abba.follow`, the

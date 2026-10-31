@@ -97,8 +97,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `LANGSLICE_RECENT_JOBS`, another file or `off`).
 - `server.py` — `GuiServer(jobs, port=, settings=)`: `ThreadingHTTPServer` on
   127.0.0.1, every path under a random token, the `Host` header checked
-  against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer; as
-  `abba_chat.ChatServer`). `answer(path, host)` (GET): the
+  against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer).
+  `answer(path, host)` (GET): the
   static files, `jobs`, `generator` (`generator.payload()`; `?job=<n>` adds
   `prefill`, `generator.prefill` of that listed job as plain data, null
   without a `job.json`, 404 for an index not listed),

@@ -26,7 +26,7 @@ exceptions: a violation is fixed by moving code.
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement, the agent CLI's fixes) | `tools/CLAUDE.md` |
 | `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the ABBA worker (`abba/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth` (`oauth/`), `none`; no task logic | |
-| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `gui` / `serve` commands, the LangSlice window (`gui/`), the ABBA launcher, agent viewer and log (`abba/`) | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md`, `hosts/abba/CLAUDE.md` |
+| `hosts/` | host code in LangSlice's own environment: the JSON-lines service (what the Fiji connector starts), `gui` / `serve` commands, the LangSlice window (`gui/`) | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md` |
 
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.25, which starts `langslice serve

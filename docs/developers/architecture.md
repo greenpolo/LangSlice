@@ -17,7 +17,7 @@ Import-linter enforces the boundaries without exceptions.
 | `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports; the job's settings (`settings/`: the form `JobSpec`, the table of every setting, what is frozen, the tool table, the needs marks) and the registry of loaded plugins |
 | `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
 | `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command, the Python library and the worker contract |
-| `hosts` | JSON-lines service, ABBA launcher, viewer and log, the LangSlice window (`langslice gui`) |
+| `hosts` | JSON-lines service (what the Fiji connector starts), the LangSlice window (`langslice gui`) |
 | `providers` | Model access, beside the layers; receives no task logic |
 
 `core`, `job` and `tools` import no provider or model SDK. Image models are
@@ -85,10 +85,18 @@ is independent of which interface produced the registration.
 
 ## Fiji connector and worker
 
-The Java plugin in `connectors/fiji/` targets ABBA 0.25 on Java 21. It exports
-calibrated section snapshots and launches `langslice serve --stdio` in the
-selected Python environment. The worker starts no JVM. Installation and
-user workflow are in [ABBA](../abba.md).
+The Java plugin in `connectors/fiji/` targets ABBA 0.25 on Java 21. Its menu
+entry, **Register › LangSlice…**, is a shortcut: it keeps one job per ABBA
+project in `~/.langslice/abba/<project key>/` (the key is computed from the
+atlas name and the session's slice names, since ABBA keeps no accessor for
+its project file), exports calibrated section snapshots there and has the
+worker prepare the job the first time, starts the follower on it, and starts
+`langslice gui <job folder> --tab prompt` (`--tab viewer` once the job has a
+checkpoint). The run itself is the user's agent app, from the message the
+window's prompt generator writes. Worker and window run in the selected
+Python environment (`langslice serve --stdio`); the worker starts no JVM.
+Installation and user workflow are in [ABBA](../abba.md); the connector's own
+details in `connectors/fiji/README.md`.
 
 Protocol version 3 uses one JSON object per line. Requests have `id`,
 `method`, `params`; responses carry the same `id` and `type` of `event`,
@@ -130,18 +138,22 @@ pre-existing registrations. Deformations become thin-plate splines sampled
 on a 9×9 to 33×33 grid, refined toward a 5 µm error target. Reported spline
 errors do not withhold a warp; a spline folding at every grid is refused.
 
-Updates replace LangSlice's steps only while they remain the newest
-registrations. External edits cause that section's update to be refused;
-failed updates remain available for retry. Saved projects contain ABBA's
-native registration types and reopen without LangSlice.
+The connector names its steps `LangSlice affine [<project key>]` and
+`LangSlice warp [<project key>]`. Updates replace this job's steps only while
+they remain the newest registrations. A section edited in ABBA (a step
+added, removed or undone with ABBA's Undo) is refused; its rows are kept and
+retried with later checkpoints. Each applied checkpoint is a line of the
+job's `logs/abba_applied.jsonl`.
 
-### MCP from ABBA
-
-A saved ABBA job (a job folder whose `job.json` carries a `job_id`, found
-through `~/.langslice/jobs/<id>.json`) opens with
-`start_job(job_id=...)`. MCP opening pages must be read before writes are
-accepted. Its live updates go to a loopback port with a single-use 256-bit
-token, which accepts LangSlice result events, not arbitrary Fiji commands.
+**Attach.** Each time the follower starts (the first use, the menu entry
+again, ABBA reopened), the connector removes this job's steps from the top
+of each section and takes what remains as the section's baseline; the
+removal happens inside the first checkpoint's undo step, and that checkpoint
+is the job's whole state. One ABBA undo step therefore puts ABBA where the
+job is, and nothing about earlier Java objects needs to survive a restart. A
+section with this job's step under another step is refused and left as it
+is. Saved projects contain ABBA's native registration types and reopen
+without LangSlice.
 
 ## Atlas cache
 

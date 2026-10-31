@@ -104,8 +104,9 @@ chose (40 µm by default). LangSlice then works on those exported images, not
 on your original scans, and its results describe the exported images.
 :::
 
-Inside ABBA, the LangSlice Registration dialog also starts from the
-sections' existing ABBA registrations. See [ABBA](../abba.md).
+Inside ABBA, **Register › LangSlice…** also starts from the sections' ABBA
+positions and cutting angles, and keeps their existing ABBA registrations
+unless you let the agent redo them. See [ABBA](../abba.md).
 
 <details>
 <summary>Under the hood: the job settings</summary>

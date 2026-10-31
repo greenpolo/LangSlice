@@ -122,8 +122,8 @@ def test_a_codex_login_is_not_a_langslice_login(isolated_home: Path) -> None:
 
 def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
                                                       monkeypatch: pytest.MonkeyPatch) -> None:
-    """A script's ``langslice.open_job`` gets the keys saved by the setup
-    dialog (``setup.api_key``) the way every CLI command does, through one
+    """A script's ``langslice.open_job`` gets the keys saved by the LangSlice
+    window's Settings tab (``setup.save_api_key``) the way every CLI command does, through one
     shared loader (review finding 13); an explicit environment key wins."""
     import dataclasses
 
