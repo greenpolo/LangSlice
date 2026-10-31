@@ -106,6 +106,50 @@ exists. The full formats are in
 Other atlases export to QuickNII targets that assume the BrainGlobe voxel
 grid; that is untested. The rat target is `WHS_Rat_v4_39um.cutlas`.
 
+## Use DMC-BrainMap
+
+DMC-BrainMap, the Carlén lab's napari plugin for mapping cells and other
+features to the atlas, can use LangSlice's registration in place of its own
+registration step. Ask your agent:
+
+```text
+Export /data/brains/M04 for DMC-BrainMap.
+```
+
+The agent writes an animal folder with LangSlice's Python library
+(`job.export_dmc_brainmap()`), at `exports/dmc_brainmap/<animal>/` in the
+job folder, where `<animal>` is the name of your image folder:
+
+| File | What it is |
+|---|---|
+| `params.json` | The atlas and cutting plane, as DMC-BrainMap's own settings file |
+| `sharpy_track/dapi/` | Each section image resized to the atlas plane, and `registration.json`, each section's position, angles and point pairs in DMC-BrainMap's format |
+| `langslice_export.json` | What was written, and what was left out |
+
+DMC-BrainMap reads the registration from the channel folder you choose in
+its results step. The folder is `dapi` unless you ask for another of
+DMC-BrainMap's channels (`green`, `n3`, `cy3`, `cy5`). DMC-BrainMap pairs
+your cell files with the section images by name, so name each section's
+segmentation after its image, the `<name>` part of `<name>_downsampled.tif`.
+Measure the cells on the same images LangSlice registered, at any size.
+
+:::{important}
+DMC-BrainMap holds only a linear placement: position, cutting angles and
+in-plane alignment. A warp LangSlice applied to a section is left out of the
+export, and `langslice_export.json` lists those sections under
+`warps_left_out`. On them, DMC-BrainMap assigns cells to regions as the
+section sat before the warp. Use LangSlice's own region maps (above) where
+the warp matters.
+:::
+
+DMC-BrainMap holds positions and angles to whole atlas voxels, so a cell
+it places can sit a voxel or so from where LangSlice's linear
+placement puts it, which can change the region of a cell right on a border.
+A section cut so steeply near the front or back of the atlas that
+DMC-BrainMap cannot hold its plane is written without a registration and
+listed under `not_registered`. The details are in
+[Job folder and file formats](../reference/file_formats.md).
+
 ## After a correction
 
 A correction changes the registration but not maps written earlier.

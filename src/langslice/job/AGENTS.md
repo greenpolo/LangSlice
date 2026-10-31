@@ -186,7 +186,9 @@ exports/             linear_results.json (the run's result; spec.out overrides
                      quicknii.json and visualign.json (with the maps),
                      traces/<stem>.npz (each traced section's image-model reply
                      on its maps' grid, with the maps),
-                     plugins/<tool>/ (copies of the layers plugins left)
+                     plugins/<tool>/ (copies of the layers plugins left),
+                     dmc_brainmap/<animal>/ (a DMC-BrainMap animal folder,
+                     only on request: tools/dmc_export.py)
 plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/);
                      the only place a plugin tool writes
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read), per
@@ -624,6 +626,19 @@ longer exist be taken over by the images it is opened with.
   grid rescaled; `ccfv3augmented_mouse_25um` to the same target on the Allen
   grid, shifted by `core.atlas.images.AUGMENTED_AP_OFFSET_MM`, in both
   directions).
+
+- `dmc_brainmap.py` — a section's linear map in DMC-BrainMap's terms
+  (napari-dmc-brainmap 0.2.0b2's SHARPy-track `registration.json`):
+  `dmc_frame` (its `xyz_dict` axes and bregma voxel for an atlas and plane,
+  as its `get_xyz` / `get_bregma`; `DMC_BREGMA` its table), `dmc_placement`
+  (from `pixel_to_atlas_um`: the whole-voxel depth shifts nearest the
+  section's slopes, their angles, the centre voxel that best matches its
+  depth, `z_mm`, and the point pairs of a 5 x 5 grid (finer when fewer than
+  five fall on the atlas plane) placed half a voxel and half a resized pixel
+  on for DMC's truncations; `ValueError` for a plane DMC refuses),
+  `dmc_depth` (DMC's sheared plane), `dmc_decimals`, `natural_key` (natsort's
+  order, which numbers DMC's images). Read back through DMC's own reader in
+  `tests/test_dmc_export.py` (replicated there; DMC is not a dependency).
 
 The frame record and the on-demand coordinate map are the core's
 (`core/pictures/layers.py`, `core/CLAUDE.md`).
