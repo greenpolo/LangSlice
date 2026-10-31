@@ -1,5 +1,6 @@
 """The Settings tab: the settings file, the POST protections, keys never sent
-back, the ChatGPT sign-in, and ``linear run``'s model unchanged without the file."""
+back, the ChatGPT sign-in, ``linear run``'s model unchanged without the file,
+and the tab's stylesheet on the window's tokens only."""
 
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ import argparse
 import http.client
 import json
 import os
+import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -21,6 +23,7 @@ from langslice.hosts.gui.settings import Settings
 from langslice.hosts.gui.watch import JobList
 
 SECRET = "sk-test-NEVER-ECHO-0123456789"
+STATIC = Path(__file__).resolve().parents[1] / "src" / "langslice" / "hosts" / "gui" / "static"
 
 
 @pytest.fixture
@@ -188,6 +191,18 @@ def test_posts_need_the_token_host_and_this_origin(server: GuiServer, home: Path
     status, answer = _request(server, "settings", body)
     assert status == 200 and json.loads(answer)["connection"] == "openai-api"
     assert store.read()["connection"] == "openai-api"
+
+
+def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
+    """settings.css names only tokens.css's custom properties and writes no
+    colour of its own; settings.js puts every text in as text, never HTML."""
+    tokens = set(re.findall(r"(--[a-z0-9-]+)\s*:",
+                            (STATIC / "tokens.css").read_text(encoding="utf-8")))
+    css = (STATIC / "settings.css").read_text(encoding="utf-8")
+    assert set(re.findall(r"var\((--[a-z0-9-]+)", css)) <= tokens
+    assert re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(", css) == []
+    script = (STATIC / "settings.js").read_text(encoding="utf-8")
+    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|setAttribute\('style'", script) == []
 
 
 def test_viewer_endpoints_stay_get_only(server: GuiServer) -> None:
