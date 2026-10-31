@@ -3,11 +3,12 @@ the form's tools come from the tool table, the people's labels never reach a
 model, and the message for a few forms, exactly. The message is built in the
 page; these tests run its pure functions under node (skipped without node)
 and check that the command it holds is one ``langslice-job FOLDER init``
-reads into a job spec."""
+reads into a job spec. The tab's stylesheet uses the window's tokens only."""
 
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -22,7 +23,8 @@ from langslice.job.settings import labels as tool_labels
 from langslice.job.settings import tool_table
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "src" / "langslice" / "hosts" / "gui" / "static" / "generator.js"
+STATIC = ROOT / "src" / "langslice" / "hosts" / "gui" / "static"
+SCRIPT = STATIC / "generator.js"
 SNAPSHOTS = ROOT / "tests" / "snapshots" / "agent_text"
 NODE = shutil.which("node")
 
@@ -100,6 +102,18 @@ def test_the_payload_lists_atlases_tasks_and_what_a_kept_property_switches_off()
     assert data["frozen_off"]["orientation"] == ["interactive_transform:flip",
                                                  "interactive_transform:rotate"]
     json.dumps(data)  # plain data
+
+
+def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
+    """generator.css names only tokens.css's custom properties and writes no
+    colour of its own; generator.js puts every text in as text, never HTML."""
+    tokens = set(re.findall(r"(--[a-z0-9-]+)\s*:",
+                            (STATIC / "tokens.css").read_text(encoding="utf-8")))
+    css = (STATIC / "generator.css").read_text(encoding="utf-8")
+    assert set(re.findall(r"var\((--[a-z0-9-]+)", css)) <= tokens
+    assert re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(", css) == []
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|setAttribute\('style'", script) == []
 
 
 def test_the_server_answers_the_generator_data(tmp_path: Path) -> None:
