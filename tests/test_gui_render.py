@@ -27,6 +27,7 @@ from langslice.hosts.gui.render import (
     JobRenderer,
     RenderBusy,
     RenderError,
+    RenderPool,
     UnknownSection,
     atlas_positions,
     edge_px,
@@ -302,3 +303,22 @@ def test_the_workspace_keeps_a_page_of_sections(
     workspace = opened.workspace
     assert len(workspace.source_cache) <= 1 and len(workspace.render_cache) <= 2
     assert len(workspace.render_scale) <= 2
+
+
+def test_jobs_not_viewed_lately_let_go_of_their_workspace(
+        made: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(render, "KEPT_JOBS", 1)
+    first, second = tmp_path / "a" / "stack", tmp_path / "b" / "stack"
+    for images in (first, second):
+        shutil.copytree(made.parent, images)
+    jobs = RenderPool(atlas_loader=LOADER)
+    try:
+        viewed = jobs.renderer(first / "langslice", JobWatcher(first / "langslice").current_stack)
+        picture = viewed.thumb(ID1, 64)
+        assert viewed._opened is not None
+        jobs.renderer(second / "langslice", JobWatcher(second / "langslice").current_stack)
+        assert viewed._opened is None  # released
+        again = jobs.renderer(first / "langslice", JobWatcher(first / "langslice").current_stack)
+        assert again is viewed and again.thumb(ID1, 64) == picture  # read again
+    finally:
+        jobs.close()

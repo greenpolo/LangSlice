@@ -94,6 +94,9 @@ MAX_THUMBNAILS = 32
 KEPT_SOURCES = 8
 KEPT_PLANES = 16
 KEPT_RENDERS = 64
+#: Jobs whose workspace and pictures are kept: the one viewed and the last
+#: few; another job's are read again when it is viewed.
+KEPT_JOBS = 3
 #: What a render of a job whose state LangSlice cannot read says.
 NO_STATE = (
     "This job has no state this LangSlice reads yet, so there is nothing "
@@ -460,6 +463,13 @@ class JobRenderer:
         draw = partial(_atlas_picture, opened, state, position_mm, edge)
         return self._picture(key, opened, draw)
 
+    def release(self) -> None:
+        """Let go of the workspace and pictures until the next drawing."""
+        with self._opening:
+            self._opened = None
+        with self._lock:
+            self._pictures.clear()
+
     def _state(self) -> Stack:
         state = self._stack()
         if state is None:
@@ -543,7 +553,8 @@ class RenderPool:
             max_workers=workers, thread_name_prefix="langslice-render"
         )
         self._atlas_loader = atlas_loader
-        self._renderers: dict[Path, JobRenderer] = {}
+        #: Least recently used first.
+        self._renderers: OrderedDict[Path, JobRenderer] = OrderedDict()
         self._lock = threading.Lock()
 
     def renderer(
@@ -562,7 +573,9 @@ class RenderPool:
         Returns
         -------
         JobRenderer
-            The same renderer for every call with *folder*.
+            The same renderer for every call with *folder*. The renderers
+            of the jobs used longest ago, past :data:`KEPT_JOBS`, let go of
+            their workspace and pictures.
         """
         with self._lock:
             known = self._renderers.get(folder)
@@ -574,7 +587,11 @@ class RenderPool:
                     atlas_loader=self._atlas_loader,
                 )
                 self._renderers[folder] = known
-            return known
+            self._renderers.move_to_end(folder)
+            idle = list(self._renderers.values())[:-KEPT_JOBS]
+        for renderer in idle:
+            renderer.release()
+        return known
 
     def close(self) -> None:
         """Stop drawing: queued pictures are dropped, none is waited for."""
