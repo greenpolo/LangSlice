@@ -21,27 +21,36 @@ import net.imglib2.realtransform.inverse.WrappedIterativeInvertibleRealTransform
 import org.scijava.plugin.PluginService;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.time.Instant;
 import java.util.*;
 
 /**
- * Calibrated snapshots and native, undoable registrations in an existing ABBA 0.25 session (0.24 works too, without
- * ABBA's own failure reasons in a refused row).
+ * One LangSlice job's sections in an existing ABBA 0.25 session (0.24 works too, without ABBA's own failure reasons
+ * in a refused row): their calibrated snapshots, and the job's state as native, undoable registrations.
  *
- * <p>Each section may carry at most two LangSlice steps, on top of whatever registrations it had
- * when the run started: LangSlice's affine step and, on top of it, LangSlice's warp step (a BigWarp
- * thin-plate spline, ABBA's own registration type, so a saved project reopens and edits without
- * LangSlice). A replacement deletes the newest steps and appends new ones; that is only done while
- * LangSlice's steps are still the newest of the section. Every checkpoint is one ABBA undo step.
+ * <p>Each section may carry at most two steps of this job, named with the project key (§ step names), on top of
+ * whatever registrations it had when the job was attached: the job's affine step and, on top of it, its warp step (a
+ * BigWarp thin-plate spline, ABBA's own registration type, so a saved project reopens and edits without LangSlice). A
+ * replacement deletes the newest steps and appends new ones; that is only done while the job's steps are still the
+ * newest of the section. Every checkpoint is one ABBA undo step. {@link #attach} forgets which Java objects were
+ * appended (they do not survive a JVM) and removes this job's steps again in the next checkpoint's undo step, so
+ * the follower's first checkpoint, the job's full state, puts ABBA where the job is in one step.
  */
 final class AbbaHostSession {
-    static final String AFFINE_NAME = "LangSlice affine";
-    static final String WARP_NAME = "LangSlice warp";
-    /** Steps whose name starts with this belong to LangSlice (this run or an earlier one). */
+    /** Steps whose name starts with this belong to LangSlice (any job, and the connector before project keys). */
     static final String OWNED_PREFIX = "LangSlice";
+    /** Why a section's rows are refused once its registrations were changed in ABBA. */
+    static final String CHANGED_IN_ABBA = "Its registrations were changed in ABBA, so LangSlice's steps are no longer "
+            + "the newest; LangSlice leaves this slice alone.";
+    /** The snapshot filename to ABBA slice name file, in the project folder. */
+    static final String SECTIONS_FILE = "abba_sections.json";
 
     final MultiSlicePositioner mp;
     final Path folder;
+    final String key;
+    final String affineName, warpName;
     final LinkedHashMap<String, SliceSources> slices = new LinkedHashMap<>();
     private final Map<String, Integer> baseline = new HashMap<>();
     private final Map<String, Registration<SourceAndConverter<?>[]>> ownedAffine = new HashMap<>(), ownedWarp = new HashMap<>();
@@ -50,32 +59,85 @@ final class AbbaHostSession {
     private final LinkedHashMap<String, JsonObject> pending = new LinkedHashMap<>();
     private final Map<String, String> pendingReasons = new LinkedHashMap<>();
     private JsonObject pendingAngles;
+    /** This job's steps {@link #attach} found on top of each section: removed in the next checkpoint's undo step. */
+    private final LinkedHashMap<String, List<Registration<SourceAndConverter<?>[]>>> stale = new LinkedHashMap<>();
+    /** Sections LangSlice leaves alone until the next attach, and why. */
+    private final Map<String, String> blocked = new LinkedHashMap<>();
     /** Whether the current checkpoint has opened its ABBA batch (opened lazily, at its first real change). */
     private boolean batchOpen;
 
-    AbbaHostSession(MultiSlicePositioner mp, Path folder) {
+    AbbaHostSession(MultiSlicePositioner mp, Path folder, String key) {
+        if (key == null || key.isEmpty() || key.contains("]")) throw new IllegalArgumentException("A project key is required.");
         this.mp = mp;
         this.folder = folder;
+        this.key = key;
+        this.affineName = affineName(key);
+        this.warpName = warpName(key);
+    }
+
+    static String affineName(String key) { return "LangSlice affine [" + key + "]"; }
+
+    static String warpName(String key) { return "LangSlice warp [" + key + "]"; }
+
+    // ---- the job's sections ---------------------------------------------------------------------
+
+    /** Takes *chosen* as the job's sections, in atlas order: section_0001.tif, ... (nothing in ABBA changes). */
+    void adopt(List<SliceSources> chosen) {
+        List<SliceSources> selected = new ArrayList<>(chosen);
+        selected.sort(Comparator.comparingDouble(SliceSources::getSlicingAxisPosition));
+        slices.clear();
+        for (int index = 0; index < selected.size(); index++) slices.put(snapshotName(index), selected.get(index));
     }
 
     /**
-     * Exports the listed slices as calibrated snapshots and builds the linear.run request.
-     * Each snapshot has one page per exported channel, in the order given. Nothing in ABBA changes.
-     *
-     * @param channelNames every channel's name (all channels, not only the exported ones), or empty
+     * The job's sections from {@link #SECTIONS_FILE}: each snapshot's ABBA slice, found by name (slices sharing a
+     * name are taken in atlas order). A slice no longer in ABBA is left out and its rows are refused.
      */
-    JsonObject prepare(JsonObject spec, List<SliceSources> chosen, List<Integer> channels, List<String> channelNames,
-            double pixelSize, Map<SliceSources, String> damaged, boolean lockRegistered) throws IOException {
-        validateSession();
+    void load() throws IOException {
+        JsonObject mapping = JsonParser.parseString(Files.readString(folder.resolve(SECTIONS_FILE), StandardCharsets.UTF_8)).getAsJsonObject();
+        List<SliceSources> available = new ArrayList<>(mp.getSlices());
+        available.sort(Comparator.comparingDouble(SliceSources::getSlicingAxisPosition));
+        slices.clear();
+        Set<SliceSources> used = Collections.newSetFromMap(new IdentityHashMap<>());
+        blocked.clear();
+        List<String> snapshots = new ArrayList<>(mapping.keySet());
+        Collections.sort(snapshots);
+        for (String snapshot : snapshots) {
+            String name = mapping.get(snapshot).getAsString();
+            SliceSources match = null;
+            for (SliceSources slice : available) if (!used.contains(slice) && name.equals(slice.getName())) { match = slice; break; }
+            if (match == null) { blocked.put(snapshot, "Its ABBA slice \"" + name + "\" is no longer in this ABBA session."); continue; }
+            used.add(match);
+            slices.put(snapshot, match);
+        }
+    }
+
+    /** The snapshot filename to ABBA slice name of the job's sections. */
+    JsonObject sectionNames() {
+        JsonObject mapping = new JsonObject();
+        slices.forEach((snapshot, slice) -> mapping.addProperty(snapshot, slice.getName()));
+        return mapping;
+    }
+
+    /**
+     * Exports *chosen* as the job's calibrated snapshots into the project folder, writes {@link #SECTIONS_FILE}, and
+     * builds the abba.prepare request. Each snapshot has one page per channel, in channel order. Nothing in ABBA changes.
+     *
+     * @param channelNames every channel's name, or empty
+     * @param thicknessUm ABBA's section thickness in µm, 0 when it gives none
+     * @param intervalUm ABBA's section interval in µm, 0 when it gives none
+     */
+    JsonObject export(List<SliceSources> chosen, List<Integer> channels, List<String> channelNames, double pixelSize,
+            int thicknessUm, int intervalUm) throws IOException {
+        validateSession(mp);
         if (!Double.isFinite(pixelSize) || pixelSize <= 0 || channels.isEmpty() || channels.stream().anyMatch(c -> c < 0))
             throw new IllegalArgumentException("Choose a positive pixel size and at least one channel.");
         mp.waitForTasks();
-        List<SliceSources> selected = new ArrayList<>(chosen);
-        selected.sort(Comparator.comparingDouble(SliceSources::getSlicingAxisPosition));
-        if (selected.isEmpty()) throw new IllegalArgumentException("Import sections before running LangSlice.");
-        for (SliceSources slice : selected) {
+        if (chosen.isEmpty()) throw new IllegalArgumentException("Import sections into ABBA before opening LangSlice.");
+        adopt(chosen);
+        for (SliceSources slice : slices.values()) {
             if (!mp.getSlices().contains(slice))
-                throw new IllegalArgumentException("A listed slice was removed from ABBA. Reopen LangSlice Registration.");
+                throw new IllegalArgumentException("A listed slice was removed from ABBA. Choose LangSlice again.");
             for (int channel : channels)
                 if (channel >= slice.getRegisteredSources().length)
                     throw new IllegalArgumentException("Channel " + (channel + 1) + " is missing from " + slice.getName());
@@ -83,28 +145,26 @@ final class AbbaHostSession {
         double[] half = frame(pixelSize);
         Files.createDirectories(folder);
         JsonObject positions = new JsonObject();
-        JsonArray warped = new JsonArray();
-        JsonObject marked = new JsonObject();
-        JsonObject mapping = new JsonObject();
-        for (int index = 0; index < selected.size(); index++) {
+        JsonArray warped = new JsonArray(), registered = new JsonArray();
+        for (Map.Entry<String, SliceSources> entry : slices.entrySet()) {
             checkInterrupted();
-            SliceSources slice = selected.get(index);
-            String name = snapshotName(index);
+            String name = entry.getKey();
+            SliceSources slice = entry.getValue();
             ImagePlus image = snapshot(slice, channels, half[0], half[1], pixelSize / 1000.0);
             try { save(image, folder.resolve(name)); } finally { image.close(); }
-            slices.put(name, slice);
-            baseline.put(name, slice.getNumberOfRegistrations());
-            boolean foreignWarp = hasForeignWarp(slice);
-            if (slice.getNumberOfRegistrations() > 0 && lockRegistered) {
-                // Their snapshot already carries the registration: the agent keeps its in-plane geometry.
-                Frozen.registered(spec, name, foreignWarp);
-            }
-            if (foreignWarp) warped.add(name);
-            if (damaged.containsKey(slice)) marked.addProperty(name, damaged.get(slice) == null ? "" : damaged.get(slice));
+            // A registered snapshot already carries its registration: prepare protects its in-plane geometry.
+            if (slice.getNumberOfRegistrations() > 0) registered.add(name);
+            if (hasForeignWarp(slice)) warped.add(name);
             positions.addProperty(name, mp.toAtlasZ(slice.getSlicingAxisPosition()));
-            mapping.addProperty(name, slice.getName());
         }
-        Files.writeString(folder.resolve("abba_sections.json"), new GsonBuilder().setPrettyPrinting().create().toJson(mapping));
+        JsonObject mapping = sectionNames();
+        Files.writeString(folder.resolve(SECTIONS_FILE), new GsonBuilder().setPrettyPrinting().create().toJson(mapping), StandardCharsets.UTF_8);
+        JsonObject abba = new JsonObject();
+        abba.addProperty("project_key", key);
+        abba.addProperty("atlas", mp.getAtlas().getName());
+        abba.add("sections", mapping);
+        abba.addProperty("thickness_um", Math.max(0, thicknessUm));
+        abba.addProperty("interval_um", Math.max(0, intervalUm));
         JsonObject request = new JsonObject();
         request.addProperty("image_folder", folder.toString());
         request.addProperty("pixel_size_um", pixelSize);
@@ -112,9 +172,9 @@ final class AbbaHostSession {
         request.addProperty("z_offset_mm", mp.getReslicedAtlas().getZOffset());
         request.add("angles_deg", anglesDeg(mp.getReslicedAtlas().getRotateX(), mp.getReslicedAtlas().getRotateY()));
         request.add("existing_warp", warped);
-        request.add("damaged", marked);
+        request.add("registered", registered);
         request.add("channel_names", exportedNames(channels, channelNames));
-        request.add("spec", spec);
+        request.add("abba", abba);
         return request;
     }
 
@@ -159,14 +219,6 @@ final class AbbaHostSession {
         return new double[]{halfX, halfY};
     }
 
-    /** One slice for the Preprocessing preview: the same framing as a run, written to file; returns its display. */
-    java.awt.image.BufferedImage exportPreview(SliceSources slice, List<Integer> channels, double pixelSize, Path file) throws IOException {
-        if (!Double.isFinite(pixelSize) || pixelSize <= 0) throw new IllegalArgumentException("Choose a positive pixel size.");
-        double[] half = frame(pixelSize);
-        ImagePlus image = snapshot(slice, channels, half[0], half[1], pixelSize / 1000.0);
-        try { save(image, file); return display(image); } finally { image.close(); }
-    }
-
     /** Registered channels in the given order, one page each, on ABBA's calibrated grid. */
     static ImagePlus snapshot(SliceSources slice, List<Integer> channels, double halfX, double halfY, double spacing) {
         if (channels.size() == 1)
@@ -201,31 +253,8 @@ final class AbbaHostSession {
         if (!saved) throw new IOException("Could not save section snapshot " + file.getFileName());
     }
 
-    /** A plain display of the exported pages: gray for one channel, coloured overlay for several. */
-    static java.awt.image.BufferedImage display(ImagePlus image) {
-        int n = image.getStackSize(), w = image.getWidth(), h = image.getHeight();
-        int[][] colors = n == 1 ? new int[][]{{255, 255, 255}} : new int[][]{{0, 255, 0}, {255, 0, 255}, {0, 160, 255}, {255, 160, 0}, {255, 255, 255}};
-        float[] red = new float[w * h], green = new float[w * h], blue = new float[w * h];
-        for (int page = 1; page <= n; page++) {
-            float[] pixels = (float[]) image.getStack().getProcessor(page).convertToFloatProcessor().getPixels();
-            float[] sorted = pixels.clone(); Arrays.sort(sorted);
-            int finite = sorted.length; while (finite > 0 && Float.isNaN(sorted[finite - 1])) finite--;
-            if (finite == 0) continue;
-            float low = sorted[(int) (0.0035 * (finite - 1))], high = sorted[(int) (0.9965 * (finite - 1))];
-            if (!(high > low)) high = low + 1;
-            int[] color = colors[(page - 1) % colors.length];
-            for (int i = 0; i < pixels.length; i++) {
-                float value = Float.isNaN(pixels[i]) ? 0 : Math.max(0, Math.min(1, (pixels[i] - low) / (high - low)));
-                red[i] += value * color[0]; green[i] += value * color[1]; blue[i] += value * color[2];
-            }
-        }
-        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
-        for (int i = 0; i < red.length; i++)
-            out.setRGB(i % w, i / w, (Math.min(255, (int) red[i]) << 16) | (Math.min(255, (int) green[i]) << 8) | Math.min(255, (int) blue[i]));
-        return out;
-    }
-
-    private void validateSession() {
+    /** LangSlice works on coronal sessions of ABBA's Allen Mouse V3 atlas with finite cutting angles. */
+    static void validateSession(MultiSlicePositioner mp) {
         String atlas = mp.getAtlas().getName();
         if (!atlas.equals("Adult Mouse Brain - Allen Brain Atlas V3p1") && !atlas.equals("Adult Mouse Brain - Allen Brain Atlas V3"))
             throw new IllegalArgumentException("LangSlice currently requires ABBA's Allen Mouse V3 atlas.");
@@ -258,9 +287,16 @@ final class AbbaHostSession {
         return type != null && (type.contains("Spline") || type.contains("BigWarp"));
     }
 
+    /** Any LangSlice step, of any job. */
     static boolean isOwned(Registration<?> registration) {
         String name = registration.getRegistrationName();
         return name != null && name.startsWith(OWNED_PREFIX);
+    }
+
+    /** A step of this job: its name ends with this project key. Another job's steps are the section's own. */
+    boolean ownedByThisJob(Registration<?> registration) {
+        String name = registration.getRegistrationName();
+        return name != null && name.startsWith(OWNED_PREFIX) && name.endsWith(" [" + key + "]");
     }
 
     boolean hasForeignWarp(SliceSources slice) {
@@ -269,16 +305,87 @@ final class AbbaHostSession {
         return false;
     }
 
+    // ---- attach -----------------------------------------------------------------------------------
+
+    /**
+     * Starts following anew: forgets every step this object appended and every kept row, takes each section's
+     * registrations minus this job's steps on top as its baseline, and marks those steps for removal in the next
+     * {@link #applyCheckpoint}'s undo step (the follower's first checkpoint, the job's full state, so ABBA reaches the
+     * job in one step). A section with this job's step under another step was changed in ABBA: nothing is removed
+     * from it and its rows are refused until it is attached again.
+     */
+    synchronized void attach() {
+        mp.waitForTasks();
+        ownedAffine.clear(); ownedWarp.clear(); transforms.clear();
+        pending.clear(); pendingReasons.clear(); pendingAngles = null;
+        stale.clear(); baseline.clear();
+        // A section whose slice left ABBA ({@link #load}) stays refused; every other one is looked at afresh.
+        Map<String, String> missing = new LinkedHashMap<>(blocked);
+        missing.keySet().removeIf(slices::containsKey);
+        blocked.clear();
+        missing.forEach(this::block);
+        for (Map.Entry<String, SliceSources> entry : slices.entrySet()) {
+            String id = entry.getKey();
+            SliceSources slice = entry.getValue();
+            if (!mp.getSlices().contains(slice)) { block(id, "The slice was removed from ABBA."); continue; }
+            slice.waitForEndOfTasks();
+            List<Registration<SourceAndConverter<?>[]>> active = activeRegistrations(slice);
+            int top = active.size();
+            while (top > 0 && ownedByThisJob(active.get(top - 1))) top--;
+            boolean buried = active.subList(0, top).stream().anyMatch(this::ownedByThisJob);
+            if (buried || active.size() != slice.getNumberOfRegistrations()) {
+                baseline.put(id, slice.getNumberOfRegistrations());
+                block(id, CHANGED_IN_ABBA);
+                continue;
+            }
+            baseline.put(id, top);
+            if (top < active.size()) stale.put(id, new ArrayList<>(active.subList(top, active.size())));
+        }
+    }
+
+    private void block(String id, String reason) {
+        blocked.put(id, reason);
+        JsonObject row = new JsonObject(); row.addProperty("id", id);
+        pending.put(id, row);
+        pendingReasons.put(id, reason);
+    }
+
+    /** Whether {@link #attach} left steps to remove in the next checkpoint. */
+    synchronized boolean syncPending() { return !stale.isEmpty(); }
+
+    /** Removes the steps {@link #attach} marked, inside the current batch; a section changed since is blocked. */
+    private void removeStale(ApplyReport report) {
+        for (Map.Entry<String, List<Registration<SourceAndConverter<?>[]>>> entry : stale.entrySet()) {
+            String id = entry.getKey();
+            SliceSources slice = slices.get(id);
+            List<Registration<SourceAndConverter<?>[]>> mine = entry.getValue();
+            slice.waitForEndOfTasks();
+            List<Registration<SourceAndConverter<?>[]>> active = activeRegistrations(slice);
+            boolean intact = active.size() == slice.getNumberOfRegistrations() && active.size() == baseline.get(id) + mine.size()
+                    && active.subList(baseline.get(id), active.size()).equals(mine);
+            if (!intact) { block(id, CHANGED_IN_ABBA); report.failed.put(id, CHANGED_IN_ABBA); continue; }
+            begin();
+            for (int i = 0; i < mine.size(); i++) deleteLast(slice);
+            if (slice.getNumberOfRegistrations() != baseline.get(id)) {
+                block(id, "Could not remove LangSlice's earlier steps; use ABBA's Undo to restore them.");
+                report.failed.put(id, pendingReasons.get(id));
+            } else report.synced.add(id);
+        }
+        stale.clear();
+    }
+
     // ---- live application -----------------------------------------------------------------------
 
     /** What one application did: rows applied and rows kept for the next attempt, with the reason. */
     static final class ApplyReport {
         final List<String> applied = new ArrayList<>();
         final LinkedHashMap<String, String> failed = new LinkedHashMap<>();
+        /** Sections whose earlier steps of this job were removed (the first checkpoint after an attach). */
+        final List<String> synced = new ArrayList<>();
         boolean angles, anglesFailed;
         String anglesReason;
 
-        boolean changedAnything() { return !applied.isEmpty() || angles; }
+        boolean changedAnything() { return !applied.isEmpty() || angles || !synced.isEmpty(); }
 
         String summary() {
             StringBuilder text = new StringBuilder();
@@ -298,15 +405,27 @@ final class AbbaHostSession {
         }
     }
 
-    boolean hasPending() { return !pending.isEmpty() || pendingAngles != null; }
+    /**
+     * Appends one line for an applied checkpoint to *logFile* ({@code <job>/logs/abba_applied.jsonl}):
+     * {@code {at, applied, failed: {id: reason}, angles, angles_failed?}}. Nothing reads it back.
+     */
+    static void appendApplied(Path logFile, ApplyReport report) throws IOException {
+        JsonObject line = new JsonObject();
+        line.addProperty("at", Instant.now().toString());
+        report.toJson().entrySet().forEach(entry -> line.add(entry.getKey(), entry.getValue()));
+        Files.createDirectories(logFile.getParent());
+        Files.writeString(logFile, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    }
 
-    /** Rows kept after a failure, and why, for the run window. */
+    synchronized boolean hasPending() { return !pending.isEmpty() || pendingAngles != null; }
+
+    /** Rows kept after a failure, and why. */
     synchronized Map<String, String> pendingReasons() { return new LinkedHashMap<>(pendingReasons); }
 
     /**
-     * Applies one checkpoint live, as ONE ABBA undo step: its stack-wide cutting angles (when present),
-     * then every row (position, affine step, warp step). Rows kept from an earlier failed attempt are merged
-     * in first and retried. A row that fails is reported and kept; it never stops the others.
+     * Applies one checkpoint live, as ONE ABBA undo step: the removals {@link #attach} left, its stack-wide cutting
+     * angles (when present), then every row (position, affine step, warp step). Rows kept from an earlier failed
+     * attempt are merged in first and retried. A row that fails is reported and kept; it never stops the others.
      */
     synchronized ApplyReport applyCheckpoint(JsonArray updates, JsonObject hostAngles) {
         ApplyReport report = new ApplyReport();
@@ -318,11 +437,12 @@ final class AbbaHostSession {
             rows.put(id, merge(rows.get(id), update));
         }
         JsonObject angles = hostAngles != null ? hostAngles : pendingAngles;
-        if (rows.isEmpty() && angles == null) return report;
+        if (rows.isEmpty() && angles == null && stale.isEmpty()) return report;
         pending.clear(); pendingReasons.clear(); pendingAngles = null;
         mp.waitForTasks();
         batchOpen = false;
         try {
+            removeStale(report);
             if (angles != null) {
                 try { applyAngles(angles); report.angles = true; }
                 catch (RuntimeException failure) {
@@ -400,9 +520,11 @@ final class AbbaHostSession {
     }
 
     private void applyRow(String id, JsonObject update) {
+        if (blocked.containsKey(id)) throw new IllegalStateException(blocked.get(id));
         SliceSources slice = slices.get(id);
         if (slice == null) throw new IllegalArgumentException("Unknown section in the worker's result.");
         if (!mp.getSlices().contains(slice)) throw new IllegalStateException("The slice was removed from ABBA.");
+        if (!baseline.containsKey(id)) throw new IllegalStateException("LangSlice has not attached this section yet.");
         // A warp the worker could not convert: the row is kept as a failed update, ABBA's warp is left as it is.
         if (update.has("warp") && update.get("warp").isJsonObject() && update.getAsJsonObject("warp").has("error"))
             throw new IllegalStateException(update.getAsJsonObject("warp").get("error").getAsString());
@@ -417,8 +539,8 @@ final class AbbaHostSession {
         JsonObject transform = transforms.containsKey(id) ? transforms.get(id).deepCopy() : new JsonObject();
         Registration<SourceAndConverter<?>[]> nextAffine = previousAffine, nextWarp = previousWarp;
         if (placement) {
-            for (String key : new String[]{"flip", "rotation_deg", "affine_mm"})
-                if (update.has(key)) transform.add(key, update.get(key).deepCopy());
+            for (String field : new String[]{"flip", "rotation_deg", "affine_mm"})
+                if (update.has(field)) transform.add(field, update.get(field).deepCopy());
             nextAffine = prepareRegistration(transform);
         }
         if (warpChange) nextWarp = update.get("warp").isJsonNull() ? null : prepareWarp(update.getAsJsonObject("warp"));
@@ -463,9 +585,7 @@ final class AbbaHostSession {
         boolean newest = owned.isEmpty() || (active.size() == slice.getNumberOfRegistrations()
                 && active.size() >= owned.size()
                 && active.subList(active.size() - owned.size(), active.size()).equals(owned));
-        if (!counted || !newest)
-            throw new IllegalStateException("Its registrations were changed in ABBA during the run, so LangSlice's steps are no longer "
-                    + "the newest; LangSlice leaves this slice alone.");
+        if (!counted || !newest) throw new IllegalStateException(CHANGED_IN_ABBA);
     }
 
     private void deleteLast(SliceSources slice) {
@@ -508,7 +628,7 @@ final class AbbaHostSession {
         parameters.put(AffineRegistration.TRANSFORM_KEY, AffineRegistration.affineTransform3DToString(affine));
         parameters.put("pz", 0);
         reg.setRegistrationParameters(MultiSlicePositioner.convertToString(mp.getContext(), parameters));
-        reg.setRegistrationName(AFFINE_NAME);
+        reg.setRegistrationName(affineName);
         if (!reg.register()) throw new IllegalStateException("ABBA could not read the affine registration.");
         return reg;
     }
@@ -546,7 +666,7 @@ final class AbbaHostSession {
         if (warp.has("max_error_mm") && warp.get("max_error_mm").isJsonPrimitive()) parameters.put("langslice_max_error_mm", warp.get("max_error_mm").getAsString());
         if (warp.has("p99_error_mm") && warp.get("p99_error_mm").isJsonPrimitive()) parameters.put("langslice_p99_error_mm", warp.get("p99_error_mm").getAsString());
         reg.setRegistrationParameters(parameters);
-        reg.setRegistrationName(WARP_NAME);
+        reg.setRegistrationName(warpName);
         if (!reg.isRegistrationDone()) throw new IllegalStateException("Warp serialization failed.");
         return reg;
     }
@@ -597,10 +717,10 @@ final class AbbaHostSession {
         return true;
     }
 
-    /** The snapshot file of the slice at *index* in the selection (atlas order): section_0001.tif, ... (one place). */
+    /** The snapshot file of the slice at *index* in the job's sections (atlas order): section_0001.tif, ... (one place). */
     static String snapshotName(int index) { return String.format(Locale.ROOT, "section_%04d.tif", index + 1); }
 
     static void checkInterrupted() {
-        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Run cancelled.");
+        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Export cancelled.");
     }
 }

@@ -48,7 +48,8 @@ public final class ReloadCheck {
         }
         List<String> names = new ArrayList<>();
         for (Registration<?> registration : active) names.add(registration.getRegistrationName());
-        require(names.equals(Arrays.asList("LangSlice affine", "LangSlice warp")) && one.getNumberOfRegistrations() == 2,
+        List<String> stepNames = Arrays.asList(expected.get("affine_name").getAsString(), expected.get("warp_name").getAsString());
+        require(stepNames.get(0).startsWith("LangSlice affine [") && names.equals(stepNames) && one.getNumberOfRegistrations() == 2,
                 "Affine and warp steps reopen in order: " + names + " / " + one.getRegistrationNames());
         require(one.getRegistrationNames().equals(Arrays.asList("AffineRegistration", "BigWarpSource2DRegistration")), "ABBA's own types: " + one.getRegistrationNames());
         RealTransform warp = ((BigWarpSource2DRegistration) active.get(1)).getRealTransform();
