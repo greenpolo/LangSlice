@@ -1,15 +1,22 @@
 """Opening the GUI (``langslice.hosts.gui.window``): the browser found on each
-platform, the app window, and both fallbacks."""
+platform, the app window, both fallbacks, a port in use, and the address
+written at once."""
 
 from __future__ import annotations
 
+import os
+import socket
 import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
 from langslice.hosts.gui import window
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def _nothing_on_path(name: str) -> str | None:
@@ -142,3 +149,34 @@ def test_gui_tab_reaches_serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert calls == [([job], "prompt"), ([], "viewer")]
     with pytest.raises(SystemExit):
         parser.parse_args(["gui", "--tab", "settings"])
+
+
+def test_a_port_in_use_ends_with_one_sentence() -> None:
+    import langslice.hosts.gui as gui
+
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        with pytest.raises(SystemExit) as ended:
+            gui.serve([], port=port, window=False, say=lambda _text: None)
+    assert str(ended.value) == (f"Port {port} is in use: choose another with --port, "
+                                "or leave --port out.")
+
+
+def test_the_address_is_written_at_once_when_the_output_is_a_file(tmp_path: Path) -> None:
+    out = tmp_path / "gui.out"
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(REPO / "src"), str(REPO))),
+           "LANGSLICE_RECENT_JOBS": "off", "LANGSLICE_SETTINGS": "off"}
+    with out.open("w") as handle:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "langslice", "gui", "--no-window", "--port", "0"],
+            stdout=handle, stderr=subprocess.DEVNULL, env=env, cwd=tmp_path)
+    try:
+        deadline = time.monotonic() + 60
+        while not out.read_text() and time.monotonic() < deadline and process.poll() is None:
+            time.sleep(0.1)
+        assert out.read_text().startswith("LangSlice GUI at http://127.0.0.1:")
+    finally:
+        process.terminate()
+        process.wait(10)
