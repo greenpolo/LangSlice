@@ -17,19 +17,21 @@ LINGER_S = 5.0
 
 
 def serve(folders: list[Path], *, port: int = 0, window: bool = True,
-          say: Callable[[str], None] = print) -> None:
+          tab: str = "viewer", say: Callable[[str], None] = print) -> None:
     """Serve the GUI for *folders* and the recent jobs until Ctrl-C, or until
-    its app window has been closed for ``LINGER_S``."""
+    its app window has been closed for ``LINGER_S``; the window opens on
+    *tab* (:data:`.window.TABS`)."""
     from langslice.hosts.gui.server import GuiServer
     from langslice.hosts.gui.watch import JobList
-    from langslice.hosts.gui.window import Opened, open_window
+    from langslice.hosts.gui.window import Opened, open_window, start_address
     from langslice.job.recent import recent_file
 
     jobs = JobList(folders, recent=recent_file())
     server = GuiServer(jobs, port=port)
     server.start()
-    say(f"LangSlice GUI at {server.url}")
-    opened = open_window(server.url, say=say) if window else Opened("none")
+    address = start_address(server.url, tab, folders=bool(folders))
+    say(f"LangSlice GUI at {address}")
+    opened = open_window(address, say=say) if window else Opened("none")
     closed_at: float | None = None
     try:
         while True:

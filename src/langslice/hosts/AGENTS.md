@@ -24,7 +24,9 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   the Fiji connector jar on the classpath and the passive Python viewer and
   log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`),
   `gui` (the LangSlice window on job folders: `FOLDER ...`, an image folder
-  standing for its `langslice/` job folder; `--port`, `--no-window`) and
+  standing for its `langslice/` job folder; `--port`, `--no-window`,
+  `--tab viewer|prompt`, the prompt generator filled in from the first
+  folder's job) and
   `serve` (the engine service), registered with the `langslice` command by
   module path.
 

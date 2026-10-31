@@ -176,7 +176,8 @@
   load().then(first => {
     update(first);
     if (first.signin.running) startPolling();
-    // First open with no connection chosen lands here.
-    if (!first.connection) document.querySelector('[data-tab="settings"]').click();
+    // First open with no connection chosen lands here, unless the address
+    // names the tab to open on (app.js's startTab).
+    if (!first.connection && !startTab) document.querySelector('[data-tab="settings"]').click();
   }).catch(() => { box.replaceChildren(mk('p', 'set-note', 'Settings could not be loaded.')); });
 })();

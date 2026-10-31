@@ -37,6 +37,21 @@
 .gen-copy { padding: 3px 16px; border-color: var(--accent); color: var(--accent); }
 .gen-copy:disabled { opacity: 0.4; cursor: default; }
 .gen-message { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; background: var(--bg); border: 1px solid var(--line); padding: 8px 10px; margin: 8px 0; max-height: calc(100vh - 250px); overflow-y: auto; user-select: all; }
+.gen-field input:disabled, .gen-field select:disabled { color: var(--muted); background: var(--bg); border-style: dashed; }
+.gen-row-2 { grid-template-columns: repeat(2, 1fr); }
+.gen-image .gen-field { margin-bottom: 4px; }
+.gen-image.gen-absent { opacity: 0.45; }
+.gen-image > .gen-help { margin-bottom: 6px; }
+.gen-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0 0 6px; font-size: 12px; }
+.gen-facts dt { color: var(--muted); }
+.gen-facts dd { margin: 0; overflow-wrap: anywhere; }
+.gen-slices { margin: 8px 0 0; }
+.gen-slices summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.gen-slice-wrap { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); margin: 6px 0 4px; }
+.gen-slice-table { border-collapse: collapse; width: 100%; font-size: 11px; }
+.gen-slice-table th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: normal; text-align: left; padding: 2px 8px; }
+.gen-slice-table td { padding: 2px 8px; border-top: 1px solid #2a2a2a; white-space: nowrap; }
+.gen-slice-table td.gen-help { display: table-cell; }
 .gen-problems, .gen-warnings { margin: 6px 0; padding-left: 18px; font-size: 11px; }
 .gen-problems { color: var(--bad); }
 .gen-warnings { color: #e0cf9e; }

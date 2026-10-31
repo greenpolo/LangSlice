@@ -6,19 +6,24 @@ to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
 generator and Settings (top right). The agent viewer is a preliminary layout in the
-ABBA log's styling (`hosts/abba/static/chat.css`'s palette and type,
-the comparison window's blue-grey picture panel); Nash designs the final one.
+ABBA log's styling (its palette and type tokens now live in `static/app.css`,
+kept after the log's deletion; the comparison window's blue-grey picture
+panel); Nash designs the final one.
 
 ## The rule
 
 The GUI is a separate process from every run (the built-in agent, an MCP
 server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
-imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`)
+imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`,
+`core.connections`, `core.stack.json_reads`)
 and the job layer (`job.settings.tool_table`, `job.settings.spec`,
-`job.settings.schema`, `job.settings.labels`, `job.layout` names, `job.migrations.viewer_stack`,
-`job.history`), and for the Settings tab the doors' setup
-(`doors.credentials`: key presence, `save_api_key`, `login_oauth`) and the
+`job.settings.schema`, `job.settings.labels`, `job.layout` names and
+`read_job_file`, `job.migrations.viewer_stack` and `without_removed_settings`,
+`job.history`), the providers' image-model lists (`providers.connections`,
+`providers.openai_api`), and for the Settings tab the doors' setup
+(`doors.credentials`: key presence, `save_api_key`, `login_oauth`;
+`image_model_connected` for the generator) and the
 user's settings file (`doors.user_settings`). Nothing imports it but
 `hosts/cli.py` (`langslice gui`); `doors/commands/linear.py`'s `--gui` starts that
 command as a process (`open_gui`). The viewer and the prompt generator are
@@ -50,8 +55,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 
 ## Files
 
-- `__init__.py` — `serve(folders, port=, window=)`: the job list
-  (the recent jobs file, `job.recent.recent_file()`), the server, the window; runs until Ctrl-C or until
+- `__init__.py` — `serve(folders, port=, window=, tab=)`: the job list
+  (the recent jobs file, `job.recent.recent_file()`), the server, the window
+  on `window.start_address` (`langslice gui --tab viewer|prompt`); runs until Ctrl-C or until
   the app window's process has been gone for `LINGER_S` (5 s); a tab or no
   window serves until Ctrl-C.
 - `watch.py` — `JobWatcher(folder)`: per job, `_Tail`s (byte offsets, an
@@ -93,7 +99,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer; as
   `abba_chat.ChatServer`). `answer(path, host)` (GET): the
-  static files, `jobs`, `generator` (`generator.payload()`),
+  static files, `jobs`, `generator` (`generator.payload()`; `?job=<n>` adds
+  `prefill`, `generator.prefill` of that listed job as plain data, null
+  without a `job.json`, 404 for an index not listed),
   `jobs/<n>/snapshot?since=&gen=&sv=`,
   `jobs/<n>/picture/<number>` (the `view.jpg` of a picture the job's
   `views.jsonl` lists, read from disk), `settings`; anything else 404.
@@ -113,9 +121,24 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   a freeze of each switches off, `JobSpec.switched_off`), the atlases
   (`core.atlas.details.descriptions()`, each with BrainGlobe's paragraph and
   `species`: Mouse, Rat or Other by name) and the default atlas, the
-  planes, and `flags`: each setting's flag as the settings table spells it
+  planes, `flags`: each setting's flag as the settings table spells it
   (`job.settings.schema.flag_spellings`, setting name -> flag), which the
-  page writes the command with.
+  page writes the command with, and `image_models` (`ImageModelChoice` per
+  provider name `core.connections.CANONICAL_PROVIDERS` holds, the one
+  `NonlinearSpec` checks `--nonlinear-provider` against: the job's default
+  first, the one with no image model last; its models from
+  `providers.connections` / `providers.openai_api`, its default model,
+  whether this computer has its key or sign-in). Each tool row also says
+  whether it calls the image model (`ToolDef.image_model`).
+  `prefill(job_folder)` -> `Prefill` (None without a readable `job.json`):
+  the form as `job.json` holds it, read through `read_job_file`,
+  `without_removed_settings` and `JobSpec.from_dict` (the image folder
+  resolved from the job folder), `notes`, and for a `host.kind == "abba"`
+  job `AbbaBlock` (`host.abba`: ABBA's atlas name, file -> slice name,
+  registered, existing warp, pixel size, thickness and interval, read with
+  `core.stack.json_reads`); an ABBA job's thickness and interval are ABBA's
+  where the spec has none; `frozen` the per-section freezes (`"*"` is
+  `keep`'s).
 - `settings.py` — `Settings(login=)`: `state()` (each connection's presence
   word from `doors.credentials.connections`, never a key or token; the saved
   choices; `runs_in` `{saved, enabled, value}`; per connection `models`,
@@ -130,13 +153,27 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `WINDOWS_PATHS`, macOS `/Applications` and `~/Applications` x `MAC_APPS`),
   `open_window` (`--app=URL`, a private `--user-data-dir`, `--window-size`;
   a browser that exits at once, or none, falls back to `webbrowser.open`,
-  then to printing the address) -> `Opened` (`app`, `tab`, `none`).
+  then to printing the address) -> `Opened` (`app`, `tab`, `none`);
+  `start_address(url, tab, folders=)`: the viewer's address as it is, the
+  prompt generator's with `#tab=prompt`, plus `&job=0` (the first folder
+  given) when folders were given.
 - `static/generator.js`, `static/generator.css` — the prompt generator tab
   (loaded by one delimited block in `index.html`). `Generator`, pure
   functions on the payload and a plain form object (`folder`, `atlas`,
   `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `ordered`,
-  `damaged`, `keep`, `notes`), exported to node for the tests: `message`
-  -> `{text, problems, warnings}`. The text is one request sentence, a
+  `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`, and from a
+  job's prefill `abba`, `keepRegistrations`, `frozen`), exported to node for
+  the tests: `startForm`, `prefilled(data, prefill)` (the form a
+  `prefill` starts), `message` -> `{text, problems, warnings}`. A form with
+  `abba` (a job prepared in ABBA) leaves the folder's atlas, plane and
+  pixel size out of the command and of the left-out sentence and never
+  checks the pixel size (the job holds them; their inputs are disabled);
+  `--frozen` is then the kept properties on `"*"` plus the job's own
+  per-section freezes while "keep the registrations" is ticked, and
+  `'{}'` (or `"*"` alone) when it is unticked. The image-model row writes
+  `--nonlinear-provider` / `--nonlinear-image-model` after `--disabled`,
+  only while the run warps and a tool that calls the image model is on;
+  provider `none` takes those tools out of the run. The text is one request sentence, a
   sentence naming what the form leaves to the agent (atlas, plane,
   thickness, interval, pixel size, the tasks when none is chosen) and one on
   bash quoting when a word is quoted, then a fenced `bash` block: the
@@ -150,8 +187,12 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `tool_table.refusal` on the form: the folder, whole micrometres, `look`
   keeps a mode, each chosen task keeps a writer, each tool on keeps what it
   needs (one sentence per needed group). The form's DOM is built in the
-  file; every text goes in by `textContent`.
-- `static/` — `index.html`, `app.css`, `app.js`: the tabs, the job list
+  file (the From ABBA block: fixed facts, the keep-registrations box, the
+  file -> slice table; the Image model fieldset after the warp's tools);
+  every text goes in by `textContent`. It loads `generator?job=<n>` when
+  the address carries `#…&job=<n>`.
+- `static/` — `index.html`, `app.css` (the palette tokens), `app.js`: the
+  tabs (the first one `#tab=` names, `startTab`), the job list
   (polled every 2 s; the most recently changed job is shown until the user
   picks one), the snapshot poll (300 ms), the picture pane (follows the
   newest, previous/next, one section's pictures, enlarge), the activity list
@@ -161,7 +202,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `settings.js` (the Settings tab: built once, updated from each answer, so a
   key being typed survives a refresh; refreshed when the tab is opened, every
   second while a sign-in runs; on the first load with no connection chosen it
-  opens the tab). Every text goes in by `textContent`.
+  opens the tab, unless the address named a tab). Every text goes in by
+  `textContent`.
 
 ## Tests
 
@@ -176,8 +218,13 @@ pinned model-facing text and `tool_labels` imported only here, the payload
 and its endpoint; under node, skipped without it: golden messages for a
 default and a filled form, read back by `init`'s parser into a `JobSpec`, a
 tool of a task not chosen left out, refused tool choices giving no message
-and refused by the spec too, warping alone), `tests/test_gui_window.py` (the candidates per platform with a
-fake `which` and filesystem, the app window, both fallbacks),
+and refused by the spec too, warping alone; the prefill of a job prepared
+in ABBA (a fixture writing `job.json` as `abba.prepare` does) and of an
+opened job, `generator?job=n`, the ABBA messages with the registrations kept
+and freed, read back by `init`; the image models are the providers `init`
+takes, and their flags), `tests/test_gui_window.py` (the candidates per platform with a
+fake `which` and filesystem, the app window, both fallbacks, the start
+address per tab, `--tab` reaching `serve`),
 `tests/test_gui_settings.py` (the settings file in a temporary home, the
 environment override, the POST checks, a key never sent back, the Claude key
 loaded for the agent only, the run location's greying, models per
