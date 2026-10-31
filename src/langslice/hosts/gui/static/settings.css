@@ -1,1 +1,113 @@
-/* The Settings tab (settings.js, hosts/gui/settings.py). */
+/* The Settings tab (settings.js, hosts/gui/settings.py): one column of three black cards,
+   Connection, Agent model and Registration runs in. tokens.css's names only: black ground,
+   1 px edges, square corners, one face; lavender for what can be clicked, violet for
+   literal text, pink for an error and for keyboard focus. */
+
+#tab-settings[hidden] { display: none !important; }
+#tab-settings { overflow-y: auto; background: var(--ground); color: var(--text); }
+#tab-settings *, #tab-settings *::before, #tab-settings *::after { box-sizing: border-box; }
+#tab-settings [hidden] { display: none !important; }
+
+.set-page {
+  display: flex; flex-direction: column; gap: var(--space-4);
+  max-width: calc(720px + 2 * var(--space-5)); margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+}
+.set-title { margin: 0; color: var(--name); font-size: var(--size-xl); font-weight: 700; line-height: 1.3; }
+.set-intro { margin: 0 0 var(--space-1); color: var(--text); max-width: 70ch; }
+.set-failed { margin: var(--space-6) auto; padding: 0 var(--space-5); }
+.set-help { margin: 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.5; }
+.set-literal { font: inherit; color: var(--violet); white-space: nowrap; }
+
+/* Cards. */
+.set-card {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  margin: 0; padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--ground);
+}
+.set-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.set-card-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: 700; line-height: 1.3; }
+.set-card-sub { color: var(--muted); }
+
+/* Radios: the native input stays (hidden), a square drawn beside it. */
+.set-native { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.set-radio {
+  flex: none; width: 16px; height: 16px; padding: 3px;
+  border: 1px solid var(--tract); background: transparent content-box;
+}
+.set-native:checked + .set-radio { border-color: var(--lavender); background-color: var(--lavender); }
+.set-native:disabled + .set-radio { border-color: var(--line); }
+.set-native:focus-visible + .set-radio { outline: 2px solid var(--pink); outline-offset: 2px; }
+.set-name { color: var(--text); }
+
+/* Connection: one card per way in; the chosen one on --selected. */
+.set-conns { display: flex; flex-direction: column; gap: var(--space-2); }
+.set-conn {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: var(--space-3) var(--space-3);
+  padding: var(--space-3) 14px; border: 1px solid var(--line); cursor: pointer;
+}
+.set-conn:hover { background: var(--wash); border-color: var(--tract); }
+.set-conn.chosen, .set-conn.chosen:hover { background: var(--selected); border-color: var(--lavender); }
+.set-conn.chosen .set-name { color: var(--name); font-weight: 700; }
+.set-pick { position: relative; display: flex; align-items: center; gap: var(--space-3); min-width: 0; cursor: pointer; }
+.set-pick:hover .set-native:not(:checked) + .set-radio { border-color: var(--lavender); }
+.set-pill {
+  justify-self: end; padding: 1px var(--space-2); white-space: nowrap;
+  font-size: var(--size-xs); color: var(--muted); border: 1px dashed var(--tract);
+}
+.set-pill.present { color: var(--name); border: 1px solid var(--tract); }
+.set-action { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding-left: 28px; }
+.set-conn > .set-message { grid-column: 1 / -1; margin-left: 28px; }
+.set-key { display: flex; gap: var(--space-2); flex: 1; min-width: 0; max-width: 480px; margin: 0; }
+.set-key .set-input {
+  flex: 1; min-width: 0; margin: 0; padding: 6px 10px;
+  font: inherit; color: var(--name); background: var(--ground); border: 1px solid var(--line); border-radius: 0;
+}
+.set-key .set-input::placeholder { color: var(--faint); opacity: 1; }
+.set-key .set-input:hover { border-color: var(--tract); }
+.set-key .set-input:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+.set-button {
+  margin: 0; padding: 6px 16px; border-radius: 0; cursor: pointer; white-space: nowrap;
+  font: inherit; color: var(--lavender); background: var(--ground); border: 1px solid var(--tract);
+}
+.set-button:hover:not(:disabled) { background: var(--wash); border-color: var(--lavender); }
+.set-button:active:not(:disabled) { background: var(--selected); }
+.set-button:disabled, .set-button:disabled:hover { color: var(--muted); background: var(--ground); border-color: var(--line); cursor: default; }
+.set-link { color: var(--lavender); font-size: var(--size-sm); text-decoration: underline; text-decoration-color: var(--tract); text-underline-offset: 0.25em; }
+.set-link:hover { color: var(--pink); text-decoration-color: var(--pink); background: none; }
+
+/* Messages: a note's lavender edge, an error's pink one. */
+.set-message { margin: 0; padding: 1px 0 1px var(--space-3); border-left: var(--rule) solid var(--lavender); color: var(--text); font-size: var(--size-sm); }
+.set-message.bad { border-left-color: var(--pink); color: var(--pink); }
+.set-message:empty { display: none; }
+
+/* Agent model. */
+.set-fields { display: grid; grid-template-columns: max-content minmax(0, 360px); align-items: center; gap: var(--space-3) var(--space-4); }
+.set-label { color: var(--text); }
+.set-select {
+  width: 100%; min-width: 0; margin: 0; padding: 6px 8px; cursor: pointer;
+  font: inherit; color: var(--name); background: var(--ground); border: 1px solid var(--line); border-radius: 0;
+}
+.set-select:hover { border-color: var(--tract); }
+.set-select option { color: var(--text); background: var(--ground); }
+
+/* Registration runs in: two choices, greyed until the chosen connection works. */
+.set-choices { display: flex; flex-direction: column; gap: var(--space-2); }
+.set-choice {
+  position: relative; display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-3) 14px; border: 1px solid var(--line); cursor: pointer;
+}
+.set-choice .set-radio { margin-top: 2px; }
+.set-choice:hover:not(.disabled) { background: var(--wash); border-color: var(--tract); }
+.set-choice.chosen, .set-choice.chosen:hover:not(.disabled) { background: var(--selected); border-color: var(--lavender); }
+.set-choice.chosen .set-name { color: var(--name); font-weight: 700; }
+.set-choice-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.set-choice.disabled { cursor: not-allowed; border-style: dashed; }
+.set-choice.disabled .set-name { color: var(--muted); }
+
+@media (max-width: 640px) {
+  .set-page { padding: var(--space-4) var(--space-4) var(--space-5); }
+  .set-action { padding-left: 0; }
+  .set-conn > .set-message { margin-left: 0; }
+  .set-fields { grid-template-columns: minmax(0, 1fr); }
+}

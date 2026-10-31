@@ -1,63 +1,270 @@
-/* The prompt generator tab (generator.js), in app.css's palette and type. */
-.tab.generator { overflow-y: auto; }
-.gen-page { display: flex; gap: 22px; align-items: flex-start; padding: 16px 20px 28px; max-width: 1240px; }
-.gen-form { flex: 1; min-width: 0; max-width: 660px; }
-.gen-intro { margin: 0 0 14px; font-size: 13px; }
-.gen-section { margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.gen-section h3 { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
-.gen-field { display: flex; flex-direction: column; gap: 3px; margin: 0 0 9px; }
-.gen-label { font-size: 12px; }
-.gen-help { display: block; color: var(--muted); font-size: 11px; }
-.gen-help.gen-inline { display: inline; margin-left: 8px; }
-.gen-about { margin: -4px 0 10px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
-.gen-field input, .gen-field textarea, .gen-field select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); padding: 4px 7px; width: 100%; }
-.gen-field textarea { resize: vertical; }
-.gen-field input:focus-visible, .gen-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.gen-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.gen-check { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 7px; cursor: pointer; }
-.gen-check input { margin: 3px 0 0; accent-color: var(--accent); flex-shrink: 0; }
-.gen-check input:disabled + span { color: var(--muted); }
-.gen-check.gen-kept span { text-decoration: line-through; }
-.gen-howto { margin: 0 0 4px; }
-.gen-howto summary, .gen-advanced > summary { cursor: pointer; color: var(--accent); }
-.gen-howto ul { margin: 6px 0 4px; padding-left: 18px; font-size: 11px; }
-.gen-howto li { margin-bottom: 3px; }
-.gen-advanced { margin-top: 4px; }
-.gen-advanced > summary { font-size: 12px; margin-bottom: 6px; }
-.gen-group { border: 1px solid var(--line); margin: 0 0 10px; padding: 6px 10px 4px; }
-.gen-group legend { color: var(--muted); font-size: 11px; padding: 0 4px; }
-.gen-tool { margin: 0 0 2px; }
-.gen-tool.gen-absent { opacity: 0.45; }
-.gen-name { color: var(--muted); font-family: var(--mono); font-size: 10px; margin-left: 8px; }
-.gen-options { margin: -3px 0 5px 22px; display: flex; flex-wrap: wrap; column-gap: 16px; }
-.gen-options .gen-check { margin-bottom: 3px; font-size: 11px; }
-.gen-output { width: 540px; flex-shrink: 0; position: sticky; top: 0; border: 1px solid var(--line); background: var(--panel); padding: 10px 12px; }
-.gen-output-head { display: flex; align-items: center; gap: 10px; }
-.gen-output-head h3 { flex: 1; margin: 0; }
-.gen-copy { padding: 3px 16px; border-color: var(--accent); color: var(--accent); }
-.gen-copy:disabled { opacity: 0.4; cursor: default; }
-.gen-message { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; background: var(--bg); border: 1px solid var(--line); padding: 8px 10px; margin: 8px 0; max-height: calc(100vh - 250px); overflow-y: auto; user-select: all; }
-.gen-field input:disabled, .gen-field select:disabled { color: var(--muted); background: var(--bg); border-style: dashed; }
-.gen-row-2 { grid-template-columns: repeat(2, 1fr); }
-.gen-image .gen-field { margin-bottom: 4px; }
-.gen-image.gen-absent { opacity: 0.45; }
-.gen-image > .gen-help { margin-bottom: 6px; }
-.gen-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0 0 6px; font-size: 12px; }
+/* The prompt generator tab (generator.js): the form as numbered black cards on the left, the
+   message to copy on the right, sticky and as tall as the window allows. tokens.css's names
+   only: black ground, 1 px edges, square corners, one face; lavender for what can be
+   clicked, violet for literal text (paths, commands, tool names), pink for a problem and for
+   keyboard focus. The tab is the scroller and a size container, so the message panel can be
+   as tall as the tab (100cqh). */
+
+#tab-prompt[hidden] { display: none !important; }
+#tab-prompt { overflow-y: auto; container-type: size; background: var(--ground); color: var(--text); }
+#tab-prompt *, #tab-prompt *::before, #tab-prompt *::after { box-sizing: border-box; }
+#tab-prompt [hidden] { display: none !important; }
+
+.gen-page {
+  display: grid;
+  grid-template-columns: minmax(0, 760px) minmax(500px, 1fr);
+  column-gap: var(--space-5);
+  align-items: start;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+}
+.gen-form { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.gen-intro { margin: 0 0 var(--space-1); max-width: 70ch; color: var(--text); }
+.gen-failed { margin: var(--space-6) auto; padding: 0 var(--space-5); max-width: 70ch; }
+
+/* Cards: black, a 1 px edge, a numbered title. */
+.gen-card { margin: 0; padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--ground); }
+.gen-card-title {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  color: var(--name); font-size: var(--size-lg); font-weight: 700; line-height: 1.3;
+}
+.gen-step {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 24px; height: 24px; border: 1px solid var(--tract);
+  color: var(--muted); font-size: var(--size-sm); font-weight: 400;
+}
+.gen-card > .gen-field + .gen-field, .gen-card > .gen-about + .gen-field { margin-top: var(--space-4); }
+.gen-abba { border-left: var(--rule) solid var(--lavender); }
+
+/* Fields. */
+.gen-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gen-label { margin: 0; color: var(--text); font-size: var(--size-md); }
+.gen-help { margin: 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.5; }
+.gen-muted { color: var(--muted); }
+.gen-path { color: var(--violet); overflow-wrap: anywhere; }
+.gen-input {
+  width: 100%; min-width: 0; margin: 0; padding: 7px 10px;
+  font: inherit; line-height: 1.4; color: var(--name);
+  background: var(--ground); border: 1px solid var(--line); border-radius: 0;
+}
+.gen-input.gen-path { color: var(--violet); }
+.gen-input::placeholder { color: var(--faint); opacity: 1; }
+.gen-input:hover:not(:disabled) { border-color: var(--tract); }
+.gen-input:disabled { color: var(--muted); border-style: dashed; cursor: not-allowed; }
+textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
+.gen-select { padding: 6px 8px; cursor: pointer; }
+.gen-select:disabled { cursor: not-allowed; }
+.gen-select optgroup { color: var(--name); font-style: normal; }
+.gen-select option { color: var(--text); background: var(--ground); }
+
+/* Text buttons: lavender, underlined as the docs' links are, pink under the pointer. */
+.gen-link {
+  align-self: flex-start; margin: 0; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--size-sm); color: var(--lavender);
+  text-decoration: underline; text-decoration-color: var(--tract); text-underline-offset: 0.25em;
+}
+.gen-link:hover { color: var(--pink); text-decoration-color: var(--pink); background: none; }
+
+/* Disclosures (how to copy a path, ABBA's slices): + and -, as the docs' section list. */
+.gen-more { margin-top: var(--space-3); }
+.gen-more > summary {
+  display: inline-flex; gap: var(--space-2); list-style: none; cursor: pointer;
+  color: var(--lavender); font-size: var(--size-sm);
+}
+.gen-more > summary::-webkit-details-marker { display: none; }
+.gen-more > summary::before { content: "+"; color: var(--muted); }
+.gen-more[open] > summary::before { content: "\2212"; }
+.gen-more > summary:hover { color: var(--pink); }
+.gen-howto { margin: var(--space-2) 0; padding-left: 2.6ch; font-size: var(--size-sm); }
+.gen-howto li { margin-bottom: var(--space-1); }
+.gen-howto li::marker { content: "- "; color: var(--muted); }
+.gen-howto strong { color: var(--name); }
+
+/* The atlas: BrainGlobe's paragraph, three lines until "more". */
+.gen-about { display: flex; flex-direction: column; gap: 2px; margin-top: var(--space-2); }
+.gen-about-text { margin: 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.55; }
+.gen-about-text.gen-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+
+/* The cutting plane: a segmented control, the chosen side named in off-white. */
+.gen-plane { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+.gen-segments { display: inline-flex; }
+.gen-segment {
+  position: relative; margin: 0; padding: 6px 18px; border-radius: 0; cursor: pointer;
+  font: inherit; color: var(--lavender); background: var(--ground); border: 1px solid var(--line);
+}
+.gen-segment + .gen-segment { margin-left: -1px; }
+.gen-segment:hover:not(:disabled) { z-index: 1; background: var(--wash); border-color: var(--tract); }
+.gen-segment.gen-on, .gen-segment.gen-on:hover:not(:disabled) { z-index: 2; color: var(--name); font-weight: 700; background: var(--selected); border-color: var(--lavender); }
+.gen-segment:focus-visible { z-index: 3; }
+.gen-segment:disabled, .gen-segment:disabled:hover { color: var(--muted); background: var(--ground); cursor: not-allowed; border-style: dashed; }
+.gen-segment.gen-on:disabled { color: var(--name); background: var(--selected); border-color: var(--tract); border-style: solid; }
+.gen-plane-note { color: var(--muted); font-size: var(--size-sm); }
+
+/* Thickness, interval, pixel size: short fields with their units. */
+.gen-units { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+.gen-unit { display: flex; align-items: stretch; border: 1px solid var(--line); background: var(--ground); cursor: text; }
+.gen-unit:hover { border-color: var(--tract); }
+.gen-unit:focus-within { outline: 2px solid var(--pink); outline-offset: 2px; }
+.gen-unit .gen-input { flex: 1; border: 0; outline: none; }
+.gen-unit-name {
+  display: flex; align-items: center; padding: 0 10px; white-space: nowrap;
+  color: var(--muted); font-size: var(--size-sm); border-left: 1px solid var(--line);
+}
+.gen-unit.gen-fixed { border-style: dashed; cursor: not-allowed; }
+
+/* Boxes and switches: the native checkbox stays (hidden), its drawing beside it. */
+.gen-native { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.gen-box {
+  flex: none; width: 16px; height: 16px; padding: 3px;
+  border: 1px solid var(--tract); background: transparent content-box;
+}
+.gen-native:checked + .gen-box,
+.gen-native:checked + .gen-task-head .gen-box { border-color: var(--lavender); background-color: var(--lavender); }
+.gen-native:disabled + .gen-box { border-color: var(--line); }
+.gen-native:disabled:checked + .gen-box { border-color: var(--tract); background-color: var(--muted); }
+.gen-switch { position: relative; flex: none; width: 28px; height: 16px; border: 1px solid var(--tract); background: var(--ground); }
+.gen-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; background: var(--faint); }
+.gen-native:checked + .gen-switch { border-color: var(--lavender); background: var(--selected); }
+.gen-native:checked + .gen-switch::after { left: 15px; background: var(--lavender); }
+.gen-native:disabled + .gen-switch { border-color: var(--line); background: var(--ground); }
+.gen-native:disabled + .gen-switch::after { background: var(--line); }
+.gen-native:disabled:checked + .gen-switch::after { background: var(--muted); }
+.gen-native:focus-visible + .gen-box,
+.gen-native:focus-visible + .gen-switch { outline: 2px solid var(--pink); outline-offset: 2px; }
+
+/* Facts: a box, the fact, its note. */
+.gen-checks { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
+.gen-check { position: relative; display: flex; align-items: flex-start; gap: var(--space-3); cursor: pointer; }
+.gen-check .gen-box { margin-top: 2px; }
+.gen-check-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gen-check-text { color: var(--text); }
+.gen-check:hover .gen-native:not(:disabled) + .gen-box { border-color: var(--lavender); }
+.gen-check:has(.gen-native:disabled) { cursor: not-allowed; }
+.gen-check:has(.gen-native:disabled) .gen-check-text { color: var(--muted); }
+.gen-abba > .gen-check { margin-top: var(--space-4); }
+
+/* What to do: the three tasks as cards, in the order a run does them. */
+.gen-tasks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.gen-task {
+  position: relative; display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3) 14px 14px; border: 1px solid var(--line); background: var(--ground); cursor: pointer;
+}
+.gen-task:hover { background: var(--wash); border-color: var(--tract); }
+.gen-task.gen-on, .gen-task.gen-on:hover { background: var(--selected); border-color: var(--lavender); }
+.gen-task:has(.gen-native:focus-visible) { outline: 2px solid var(--pink); outline-offset: 2px; }
+.gen-task .gen-native:focus-visible + .gen-task-head .gen-box { outline: none; }
+.gen-task-head { display: flex; align-items: center; gap: 10px; }
+.gen-task-label { color: var(--text); font-weight: 700; }
+.gen-task.gen-on .gen-task-label { color: var(--name); }
+.gen-task-about { color: var(--muted); font-size: var(--size-sm); line-height: 1.5; }
+
+/* From ABBA: the fixed facts and the snapshot table. */
+.gen-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-4); margin: 0 0 var(--space-3); }
 .gen-facts dt { color: var(--muted); }
 .gen-facts dd { margin: 0; overflow-wrap: anywhere; }
-.gen-slices { margin: 8px 0 0; }
-.gen-slices summary { cursor: pointer; color: var(--accent); font-size: 12px; }
-.gen-slice-wrap { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); margin: 6px 0 4px; }
-.gen-slice-table { border-collapse: collapse; width: 100%; font-size: 11px; }
-.gen-slice-table th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: normal; text-align: left; padding: 2px 8px; }
-.gen-slice-table td { padding: 2px 8px; border-top: 1px solid #2a2a2a; white-space: nowrap; }
-.gen-slice-table td.gen-help { display: table-cell; }
-.gen-problems, .gen-warnings { margin: 6px 0; padding-left: 18px; font-size: 11px; }
-.gen-problems { color: var(--bad); }
-.gen-warnings { color: #e0cf9e; }
+.gen-slice-wrap { max-height: 240px; overflow: auto; margin: var(--space-2) 0; border: 1px solid var(--line); }
+.gen-slice-table { width: 100%; border-collapse: collapse; font-size: var(--size-sm); }
+.gen-slice-table th {
+  position: sticky; top: 0; padding: 4px 10px; text-align: left; white-space: nowrap;
+  color: var(--name); font-weight: 700; background: var(--ground); border: 0; border-bottom: 1px solid var(--tract);
+}
+.gen-slice-table td { padding: 3px 10px; white-space: nowrap; border: 0; border-top: 1px solid var(--line); }
+.gen-slice-table tbody tr:first-child td { border-top: 0; }
+
+/* Advanced: the tools table. A + / - where the number would be. */
+.gen-advanced > summary { margin: 0; list-style: none; cursor: pointer; }
+.gen-advanced > summary::-webkit-details-marker { display: none; }
+.gen-advanced > summary::before, .gen-advanced > summary::after { content: none; }
+.gen-advanced[open] > summary { margin-bottom: var(--space-3); }
+.gen-advanced > summary:hover .gen-step { border-color: var(--lavender); color: var(--lavender); }
+.gen-disclosure::before { content: "+"; }
+.gen-advanced[open] .gen-disclosure::before { content: "\2212"; }
+.gen-tools { margin-top: 20px; }
+.gen-tools-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3);
+  padding-bottom: 6px; border-bottom: 1px solid var(--tract);
+}
+.gen-tools-title { color: var(--name); font-weight: 700; }
+.gen-tools-note { color: var(--muted); font-size: var(--size-sm); }
+.gen-tool {
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 15.5rem;
+  align-items: center; column-gap: var(--space-3);
+  padding: 5px var(--space-2); border-top: 1px solid var(--line); cursor: pointer; font-size: var(--size-sm);
+}
+.gen-tools-head + .gen-tool { border-top: 0; }
+.gen-tool:hover { background: var(--wash); }
+.gen-tool:has(.gen-native:disabled) { cursor: default; }
+.gen-tool-words { display: flex; flex-direction: column; min-width: 0; }
+.gen-tool-label { color: var(--text); }
+.gen-tool-note { color: var(--muted); font-size: var(--size-xs); }
+.gen-tool-note:empty { display: none; }
+.gen-tool-name { font: inherit; font-size: var(--size-xs); color: var(--violet); overflow-wrap: anywhere; }
+.gen-absent .gen-tool-label, .gen-tool.gen-absent .gen-tool-name { color: var(--muted); }
+.gen-absent .gen-tools-title { color: var(--text); }
+/* Options hang from their tool on 1 px tract lines, as the docs draw a tree. */
+.gen-option { border-top: 0; padding-left: 44px; }
+.gen-option::before {
+  content: ""; position: absolute; left: 21px; top: 0; width: 16px; height: 50%;
+  border-left: 1px solid var(--tract); border-bottom: 1px solid var(--tract);
+}
+.gen-option:not(.gen-last)::after { content: ""; position: absolute; left: 21px; top: 50%; bottom: 0; border-left: 1px solid var(--tract); }
+.gen-parent::after { content: ""; position: absolute; left: 21px; top: calc(50% + 8px); bottom: 0; border-left: 1px solid var(--tract); }
+.gen-advanced-body > .gen-help { max-width: 72ch; }
+
+/* The image model: a group like the tools', its two choices one above the other. */
+.gen-image .gen-help { margin-top: var(--space-2); }
+.gen-pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); max-width: 520px; margin-top: var(--space-3); }
+.gen-image.gen-absent .gen-label { color: var(--muted); }
+
+/* Your message: sticky, as tall as the tab allows; the message scrolls inside only when
+   longer than that. */
+.gen-output {
+  position: sticky; top: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-3); min-width: 0;
+  max-height: calc(100vh - 140px);
+  max-height: calc(100cqh - 2 * var(--space-5));
+  padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--ground);
+}
+.gen-output > * { flex: none; }
+.gen-output-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.gen-output-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: 700; line-height: 1.3; }
+.gen-copy {
+  min-width: 11ch; margin: 0; padding: 9px 30px; border-radius: 0; cursor: pointer;
+  font: inherit; font-size: var(--size-lg); font-weight: 700; line-height: 1.3;
+  color: var(--lavender); background: var(--ground); border: 1px solid var(--lavender);
+}
+.gen-copy:hover:not(:disabled) { background: var(--wash); }
+.gen-copy:active:not(:disabled) { background: var(--selected); }
+.gen-copy:disabled, .gen-copy:disabled:hover { color: var(--faint); background: var(--ground); border-color: var(--line); cursor: not-allowed; }
+.gen-copy.gen-copied { color: var(--name); border-color: var(--name); background: var(--selected); }
+.gen-problems, .gen-warnings { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .gen-problems:empty, .gen-warnings:empty { display: none; }
-@media (max-width: 900px) {
-  .gen-page { flex-direction: column; padding: 12px 16px 24px; }
-  .gen-output { width: auto; position: static; }
-  .gen-row { grid-template-columns: 1fr; }
+.gen-problems li { padding: 2px 0 2px var(--space-3); border-left: var(--rule) solid var(--pink); color: var(--pink); }
+.gen-warnings li { padding: 2px 0 2px var(--space-3); border-left: var(--rule) solid var(--lavender); color: var(--muted); }
+.gen-output > .gen-message {
+  flex: 0 1 auto; min-height: 0; overflow-y: auto; margin: 0; padding: var(--space-3) 14px;
+  font: inherit; font-size: var(--size-sm); line-height: 1.6; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: all;
+  background: var(--ground); border: 1px solid var(--line); border-left: var(--rule) solid var(--violet);
+}
+.gen-fence { color: var(--faint); }
+.gen-command { color: var(--violet); }
+.gen-message-empty {
+  margin: 0; padding: var(--space-6) var(--space-4); text-align: center;
+  color: var(--muted); border: 1px dashed var(--tract);
+}
+
+/* Narrow windows: one column, the message after the form. */
+@media (max-width: 1080px) {
+  .gen-page { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-4); max-width: 820px; }
+  .gen-output { position: static; max-height: none; }
+  .gen-output > .gen-message { overflow: visible; }
+}
+@media (max-width: 720px) {
+  .gen-page { padding: var(--space-4) var(--space-4) var(--space-5); }
+  .gen-units, .gen-tasks { grid-template-columns: minmax(0, 1fr); }
+  .gen-tool { grid-template-columns: auto minmax(0, 1fr); }
+  .gen-tool-name { grid-column: 2; }
 }
