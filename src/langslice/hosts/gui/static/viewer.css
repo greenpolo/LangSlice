@@ -293,7 +293,7 @@
 .call summary::-webkit-details-marker { display: none; }
 .call summary::before { content: "›"; color: var(--muted); width: 1ch; flex-shrink: 0; }
 .call[open] summary::before { content: "⌄"; }
-.call summary:hover, .call[open] summary { background: var(--wash); }
+.call summary:hover { background: var(--wash); }
 .call-line { cursor: default; }
 .call-line::before { content: "·"; color: var(--muted); width: 1ch; flex-shrink: 0; }
 .call-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }

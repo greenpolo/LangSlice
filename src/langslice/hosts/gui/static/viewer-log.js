@@ -209,6 +209,7 @@ const AgentLog = (() => {
 
   // --- pictures ------------------------------------------------------------------------------
   function pictureItem(item) {
+    activity = true;
     const picture = {
       number: item.number, path: item.path, tool: item.tool, call: item.call,
       sections: item.sections || [], mode: item.mode, caption: item.caption || '', label: item.label,

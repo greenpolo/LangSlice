@@ -115,31 +115,31 @@ const Viewer = (() => {
     const all = targets();
     const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
     page = Math.min(page, pages - 1);
-    const shown = all.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+    const onPage = all.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
     $('focus-count').textContent = loaded && rows.length
       ? `· ${all.length} of ${rows.length} section${rows.length === 1 ? '' : 's'} · page ${page + 1}/${pages} · read-only`
       : '· read-only';
     $('follow-agent').setAttribute('aria-pressed', String(follow));
     $('page-previous').disabled = $('page-next').disabled = pages < 2;
-    Strip.setTargets(all, shown);
+    Strip.setTargets(all, onPage);
     for (const tr of document.querySelectorAll('#sections tbody tr')) tr.classList.toggle('target', all.includes(tr.dataset.id));
     const empty = $('focus-empty');
     empty.hidden = true;
     if (mode !== 'focus') return;
-    if (!loaded || !rows.length || !shown.length) {
+    if (!loaded || !rows.length || !onPage.length) {
       empty.textContent = !loaded ? 'Loading the job…' : !rows.length ? 'This job has no sections yet.' : 'Nothing in focus.';
       empty.hidden = false;
     }
     const grid = $('view-focus');
-    grid.className = 'panels n' + Math.max(1, shown.length);
+    grid.className = 'panels n' + Math.max(1, onPage.length);
     // 1 fills the area, 2 sit side by side, 3 or 4 in a 2 x 2 grid (a fourth cell stays empty).
-    const cells = shown.length === 3 ? 4 : shown.length;
-    const wanted = panels.slice(0, shown.length);
+    const cells = onPage.length === 3 ? 4 : onPage.length;
+    const wanted = panels.slice(0, onPage.length);
     const children = [...wanted.map(p => p.root)];
-    if (cells === 4 && shown.length === 3) children.push(spacer());
+    if (cells === 4 && onPage.length === 3) children.push(spacer());
     if (grid.children.length !== children.length || children.some((c, i) => grid.children[i] !== c)) grid.replaceChildren(...children);
-    shown.forEach((id, i) => showPanel(panels[i], id));
-    for (const p of panels.slice(shown.length)) clearPanel(p);
+    onPage.forEach((id, i) => showPanel(panels[i], id));
+    for (const p of panels.slice(onPage.length)) clearPanel(p);
   }
   let blank = null;
   function spacer() { return blank || (blank = el('div', 'panel-spacer')); }

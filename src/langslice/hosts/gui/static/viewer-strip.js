@@ -274,11 +274,13 @@ const Strip = (() => {
     const basePx = (axisRight - axisLeft) / (hi - lo);
     const step = info?.step_mm || 0.5;
     const widthCap = withAtlas ? (step * basePx * 0.94) / A : HANDLES_ONLY;
-    // Stair rows: the fewest rows (at most three) in which no thumbnail overlaps its neighbour.
+    // Stair rows: the fewest rows (at most three) in which no thumbnail overlaps its
+    // neighbour; the height holds as many rows as the unplaced group uses, if more.
+    const looseRows = Math.min(MAX_ROWS, loose.length);
     const order = [...onAxis].sort((a, b) => a.position_mm - b.position_mm || a.order - b.order);
     let chosen = null;
     for (let n = 1; n <= MAX_ROWS; n++) {
-      const th = Math.max(8, Math.min(heightFor(free, n, withAtlas), widthCap));
+      const th = Math.max(8, Math.min(heightFor(free, Math.max(n, looseRows), withAtlas), widthCap));
       const tw = th * A;
       const ends = new Array(n).fill(-Infinity);
       const stair = new Map();
@@ -290,10 +292,10 @@ const Strip = (() => {
         stair.set(row.id, r);
         ends[r] = x;
       }
-      chosen = { n, th, stair };
+      chosen = { n: Math.max(n, looseRows), th, stair };
       if (clear) break;
     }
-    layout = { W, H, lo, hi, A, free, withAtlas, axisLeft, axisRight, basePx, step, looseW, n: chosen.n, stair: chosen.stair, loose };
+    layout = { W, H, lo, hi, A, free, withAtlas, axisLeft, axisRight, basePx, step, looseW, looseRows, n: chosen.n, stair: chosen.stair, loose };
     if (view.center === null) view.center = (lo + hi) / 2;
     clampView();
     place();
@@ -384,28 +386,35 @@ const Strip = (() => {
     }
     drawLoose(yAxis, tw, th, rowY);
   }
-  function loosePlace(row, tw, th, rowY) {
+  // The unplaced group's grid: as many columns as its rows need, overlapping when narrow.
+  function looseGrid(tw) {
     const L = layout;
-    const index = L.loose.indexOf(row);
-    const lr = Math.max(1, Math.min(L.loose.length, L.looseW ? Math.max(L.n, Math.min(MAX_ROWS, L.loose.length)) : MAX_ROWS));
-    const cols = Math.ceil(L.loose.length / lr);
-    const left = L.looseW ? L.W - PAD - L.looseW + 6 + tw / 2 : PAD + tw / 2;
-    const right = L.W - PAD - tw / 2 - 6;
+    const cols = Math.ceil(L.loose.length / L.looseRows);
+    const x = L.looseW ? L.W - PAD - L.looseW : PAD;
+    const left = x + 6 + tw / 2;
+    const right = (L.looseW ? L.W - PAD : L.W - PAD) - tw / 2 - 6;
     const stepX = cols > 1 ? Math.min(tw + 4, (right - left) / (cols - 1)) : 0;
-    return [left + (index % cols) * stepX, rowY(Math.floor(index / cols))];
+    return { cols, x, left, stepX, width: (cols - 1) * stepX + tw + 12 };
+  }
+  function loosePlace(row, tw, th, rowY) {
+    const index = layout.loose.indexOf(row);
+    const grid = looseGrid(tw);
+    return [grid.left + (index % grid.cols) * grid.stepX, rowY(Math.floor(index / grid.cols))];
   }
   function drawLoose(yAxis, tw, th, rowY) {
     const L = layout;
     layers.loose.querySelectorAll('.group-frame, .group-label').forEach(e => e.remove());
     if (!L.loose.length) return;
-    const lr = Math.max(1, Math.min(L.loose.length, L.looseW ? Math.max(L.n, Math.min(MAX_ROWS, L.loose.length)) : MAX_ROWS));
-    const x = L.looseW ? L.W - PAD - L.looseW : PAD;
-    const bottom = rowY(lr - 1) + th / 2 + 2;
-    const frame = svgEl('rect', { class: 'group-frame', x, y: yAxis + 3, width: (L.looseW || L.W - 2 * PAD), height: Math.max(10, bottom - yAxis - 3) });
-    const label = svgEl('text', { class: 'group-label', x: x + 4, y: yAxis - 5 });
-    label.textContent = `not placed (${L.loose.length})`;
-    layers.loose.prepend(frame);
-    layers.loose.append(label);
+    const grid = looseGrid(tw);
+    const bottom = rowY(L.looseRows - 1) + th / 2 + 2;
+    const width = L.looseW ? L.looseW : Math.min(grid.width, L.W - 2 * PAD);
+    layers.loose.prepend(svgEl('rect', { class: 'group-frame', x: grid.x, y: yAxis + 3, width, height: Math.max(10, bottom - yAxis - 3) }));
+    // Beside placed sections the group is named; alone, the strip's title counts it.
+    if (L.looseW) {
+      const label = svgEl('text', { class: 'group-label', x: grid.x + 4, y: yAxis - 7 });
+      label.textContent = `not placed (${L.loose.length})`;
+      layers.loose.append(label);
+    }
   }
   function drawRuler(yAxis) {
     const L = layout;
