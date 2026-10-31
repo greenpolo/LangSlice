@@ -174,7 +174,7 @@ const Ui = (() => {
   });
 
   // --- the job picker -------------------------------------------------------------------
-  const changedOf = job => Number(job?.changed_at ?? job?.changed ?? 0) || 0;
+  const changedOf = job => Number(job?.changed_at) || 0;
   const pathOf = job => String(job?.path ?? job?.folder ?? '');
   let active = null;  // the option the keyboard is on
   function renderPicker() {
