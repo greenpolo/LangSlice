@@ -134,9 +134,15 @@ warp that cannot be converted is sent as `{"error": …}` and kept as a failed
 update. A job that has no checkpoint yet gets one `waiting` event. Each
 checkpoint becomes an undoable ABBA step. The connector
 owns at most one affine and one BigWarp registration per section, above its
-pre-existing registrations. Deformations become thin-plate splines sampled
-on a 9×9 to 33×33 grid, refined toward a 5 µm error target. Reported spline
-errors do not withhold a warp; a spline folding at every grid is refused.
+pre-existing registrations. Deformations become thin-plate splines through
+at most 1089 landmark pairs: an even grid over the region where the atlas
+overlaps the section, then pairs added where the spline strays most from
+the deformation on the atlas side, until the budget or a 5 µm error target
+is reached; pairs that would fold the spline are left out. The error is
+measured over that region at points not used to place the pairs and
+reported (median, 99th percentile and maximum); it never withholds a warp.
+When the first grids already fold, even 33×33 to 9×9 grids over the
+snapshot are tried, and a spline folding at every one is refused.
 
 The connector names its steps `LangSlice affine [<project key>]` and
 `LangSlice warp [<project key>]`. Updates replace this job's steps only while

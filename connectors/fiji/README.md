@@ -118,8 +118,11 @@ carries at most two steps of this job on top of its own registrations:
 
 - **`LangSlice affine [<project key>]`**: ABBA's `AffineRegistration`;
 - **`LangSlice warp [<project key>]`** on top of it: ABBA's BigWarp thin-plate spline
-  (`BigWarpSource2DRegistration`; at most 1089 landmarks, its measured difference from
-  LangSlice's deformation written in Fiji's log and kept in the step's parameters).
+  (`BigWarpSource2DRegistration`; at most 1089 landmarks, placed where the spline would
+  otherwise stray most from LangSlice's deformation over the region the atlas overlaps;
+  its measured difference there, as ABBA draws the section, is written in Fiji's log
+  (median, 99th percentile, maximum) and kept in the step's parameters
+  (`langslice_max_error_mm`, `langslice_p99_error_mm`)).
 
 A replacement deletes the newest steps (the warp first, then the affine when the
 placement changed) and appends new ones, only while this job's steps are still the

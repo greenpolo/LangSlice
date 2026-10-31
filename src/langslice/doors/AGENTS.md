@@ -369,7 +369,8 @@ bodies, and turned into an answer once per door:
   `HostCheckpoints`: ABBA-world linear rows, no row for a property frozen on
   a section (`_host_updates(..., frozen=spec.frozen_for)`); with the
   `nonlinear` task `warp` rows from `core/maps/abba.py`, each logged with
-  its measured `max_error_mm` / `p99_error_mm`; `host_angles` on a
+  its measured atlas-side `median_error_mm` / `p95_error_mm` /
+  `p99_error_mm` / `max_error_mm` over the `region`; `host_angles` on a
   stack-wide angle change),
   `credentials.py` (`setup_status`: version, `PROTOCOL_VERSION` (3), the
   Python and its environment; saved credentials, login;
