@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langslice.job.state_file import stack_to_json
 
@@ -230,11 +230,16 @@ class HostCheckpoints:
                 f"({exc}).")})
             return {"error": f"its deformation could not be converted ({exc})"}
         else:
+            median_um = cast(float, row["median_error_mm"]) * 1000
+            p99_um = cast(float, row["p99_error_mm"]) * 1000
+            max_um = cast(float, row["max_error_mm"]) * 1000
             self.emit({"kind": "log", "message": (
-                f"{section.id}: deformation sent to ABBA as {row['points']} landmarks; "
-                f"ABBA's thin-plate spline differs from it by at most "
-                f"{row['max_error_mm'] * 1000:.1f} um (99% of points within "
-                f"{row['p99_error_mm'] * 1000:.1f} um).")})
+                f"{section.id}: deformation sent to ABBA as "
+                f"{row['points']} landmarks; over the {row['region']}, "
+                "ABBA's thin-plate spline places the section "
+                f"{median_um:.1f} um from it at the median, within "
+                f"{p99_um:.1f} um at 99% of points and {max_um:.1f} um "
+                "at most.")})
         self._warp_cache[cache_key] = row
         return row
 
@@ -253,17 +258,22 @@ class HostCheckpoints:
         if warp is None:
             raise ValueError("its deformation record cannot be read")
         frame = section_frame(state, self.workspace, section)
-        report: dict[str, Any] = {}
-        source, target = warp_world_landmarks(
-            frame, warp, stored_params(section), size=self.prepared.geometry[section.id],
-            pixel_size_um=self.prepared.calibration, diagnostics=report)
+        size = self.prepared.geometry[section.id]
+        landmarks = warp_world_landmarks(
+            frame, warp, stored_params(section), size=size,
+            pixel_size_um=self.prepared.calibration)
+        atlas = landmarks.accuracy.atlas
         applied = section.deformation
         held = None if applied is None else applied.record
-        return {"source_mm": source.T.tolist(), "target_mm": target.T.tolist(),
+        return {"source_mm": landmarks.source_mm.T.tolist(),
+                "target_mm": landmarks.target_mm.T.tolist(),
                 "record": held or key,
-                "max_error_mm": float(report["max_error_mm"]),
-                "p99_error_mm": float(report["p99_error_mm"]),
-                "points": int(report["points"])}
+                "max_error_mm": atlas.max_mm,
+                "p99_error_mm": atlas.p99_mm,
+                "p95_error_mm": atlas.p95_mm,
+                "median_error_mm": atlas.median_mm,
+                "region": landmarks.region,
+                "points": len(landmarks.source_mm)}
 
 
 def checkpoint_callback(prepared: PreparedLinear, emit: Emit) -> HostCheckpoints:

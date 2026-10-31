@@ -340,6 +340,7 @@ def _row(event, name):
 
 @pytest.mark.slow
 def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
+    from langslice.core.fits.deformable.geometry import sample_native
     from langslice.core.geometry.thin_plate import ThinPlateKernel
     from langslice.core.maps.abba import world_frame
     from langslice.core.maps.section_maps import (
@@ -351,16 +352,17 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
 
     pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, prepared = warped
-    # A SyN field varies on a finer scale than the 33x33 landmark cap
-    # follows, so the pairs approximate it with an error the row reports; the
-    # conversion's own exactness on a smooth field is test_abba_warp's.
+    # A SyN field varies on a finer scale than 1089 landmarks follow, so the
+    # pairs approximate it with an error the row reports; the conversion's
+    # own exactness on a smooth field is test_abba_warp's.
     assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     row = _row(events[-1], ID0)
     warp = row["warp"]
     assert set(warp) == {"source_mm", "target_mm", "record", "max_error_mm", "p99_error_mm",
-                         "points"}
-    assert 0 < warp["p99_error_mm"] <= warp["max_error_mm"]
+                         "p95_error_mm", "median_error_mm", "region", "points"}
+    assert 0 < warp["median_error_mm"] <= warp["p95_error_mm"] <= warp["p99_error_mm"]
+    assert warp["p99_error_mm"] <= warp["max_error_mm"]
     logged = [e["message"] for e in events if e.get("kind") == "log" and ID0 in e["message"]]
     assert any("deformation sent to ABBA" in m and "landmarks" in m for m in logged)
     source = np.asarray(warp["source_mm"]).T
@@ -368,7 +370,7 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     assert len(warp["source_mm"]) == 2 and source.shape == (warp["points"], 2)
     assert _row(events[-1], ID1) is None  # nothing changed there
     # ABBA's pull-back reproduces the record's own map at points off the
-    # grid, within the error the row reports.
+    # grid inside the atlas brain, within the error the row reports.
     record = job.state.by_id(ID0)
     frame = section_frame(job.state, job.workspace, record)
     deformation = job.job.deformations.current(job.state, record)
@@ -379,11 +381,13 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     width, height = prepared.geometry[ID0]
     points = rng.uniform([0, 0], [width - 1, height - 1], size=(500, 2))
     nx, ny = native_points(frame, deformation, points[None, :, 0], points[None, :, 1])
+    in_brain = sample_native(frame.annotation, np.stack([nx[0], ny[0]], axis=-1)) != 0
     homogeneous = np.column_stack([points, np.ones(len(points))])
     before = (to_world @ frame.file_to_render @ homogeneous.T).T[:, :2]
     after = (native_to_world @ np.stack([nx[0], ny[0], np.ones(len(points))])).T[:, :2]
     pullback = ThinPlateKernel(target, source, max_points=33 ** 2)
-    errors = np.linalg.norm(pullback.forward(after) - before, axis=1)
+    errors = np.linalg.norm(pullback.forward(after) - before, axis=1)[in_brain]
+    assert in_brain.sum() > 100
     assert np.percentile(errors, 99) <= warp["max_error_mm"]
     assert errors.max() <= 1.5 * warp["max_error_mm"]
 

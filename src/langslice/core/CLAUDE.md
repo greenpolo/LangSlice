@@ -21,7 +21,7 @@ workspace carries. Every module's imports are core-only:
 
 - shared foundations: `space.py`, `geometry/oblique.py`, `geometry/affine.py`,
   `sections/reading.py`, `geometry/thin_plate.py` (the thin-plate kernel `maps/abba.py`
-  validates its landmark pairs with), and the sub-packages `atlas/`
+  places and validates its landmark pairs with), and the sub-packages `atlas/`
   (`atlas/CLAUDE.md`), `fits/deformable/` (`fits/deformable/CLAUDE.md`) and
   `fits/trace/` (the image-model border route's prompts, request and line
   extraction, `fits/trace/CLAUDE.md`);
@@ -81,12 +81,19 @@ workspace carries. Every module's imports are core-only:
   `warp_world_landmarks(frame, record, params, size=, pixel_size_um=)`;
   `source` = a section point as the affine step placed it, `target` = where
   the deformation takes it, centred world mm, the frame derived from
-  `normalized_to_abba_affine` and `maps.section_maps.native_points`; a 9x9 to 33x33
-  grid, growing until the TPS pull-back is within 5 um at off-grid probes;
-  past 33x33 the pairs are sent anyway with the error measured
-  (`max_error_mm`, `p99_error_mm`, `within_tolerance`), favouring speed
-  over accuracy; the largest grid whose TPS does not fold is sent, and only
-  a TPS folding at every grid is refused).
+  `normalized_to_abba_affine` and `maps.section_maps.native_points`;
+  returns `WarpLandmarks`: at most 1089 pairs placed by
+  `maps/tps_landmarks.py` (an even start grid over the atlas overlap's
+  box, the record's footprint or the warped atlas brain, plus a coarse
+  snapshot grid; then pairs added greedily where the estimated atlas-side
+  error is largest, until the budget or 5 um; a round's pairs that fold
+  the spline are dropped near the fold, the fold check refined where the
+  deformation stretches the section); its `accuracy` measured over the
+  overlap at held-out probes on both sides (atlas side by Newton's inverse,
+  as ABBA draws the section: median, p95, p99, max); a start that folds
+  falls back to the largest even 33x33..9x9 snapshot grid that does not,
+  and only a TPS folding everywhere is refused). `geometry/thin_plate.py`
+  evaluates in cache-sized blocks with expanded squared distances.
 
 ## The layer rule
 

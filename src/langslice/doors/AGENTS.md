@@ -373,7 +373,8 @@ bodies, and turned into an answer once per door:
   section, `_host_updates(..., frozen=spec.frozen_for)`), `checkpoint_callback` (a
   `HostCheckpoints` tracker: ABBA-world linear rows; with the `nonlinear`
   task `warp` rows from `core/maps/abba.py`, each logged with its measured
-  `max_error_mm` / `p99_error_mm`; `host_angles` on a stack-wide angle
+  atlas-side `median_error_mm` / `p95_error_mm` / `p99_error_mm` /
+  `max_error_mm` over the `region`; `host_angles` on a stack-wide angle
   change), `run_linear` (ends with a checkpoint of the final state),
   `public_event`, `preview_preprocess`). ABBA shows one atlas angle per
   stack, so the tracker refuses a state whose sections differ in cutting
