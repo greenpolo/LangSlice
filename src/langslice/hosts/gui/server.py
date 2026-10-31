@@ -5,9 +5,10 @@ One ``ThreadingHTTPServer`` on 127.0.0.1, every path under a random token
 another site cannot reach it through a rebound name), a strict
 Content-Security-Policy and ``no-store``. GET endpoints:
 
-- ``""`` (``index.html``) and every other file directly in ``static/`` whose
-  name :data:`STATIC_NAME` matches (the page's scripts, styles, fonts and
-  logo), its type from its extension (:data:`STATIC_TYPES`);
+- ``""`` (``index.html``, served at that one address) and every other file
+  directly in ``static/`` whose name :data:`STATIC_NAME` matches (the page's
+  scripts, styles, fonts and logo), its type from its extension
+  (:data:`STATIC_TYPES`);
 - ``jobs``: the job list (:meth:`JobList.listing`);
 - ``generator``: the prompt generator's choices (:func:`.generator.payload`);
   ``generator?job=<n>`` adds ``prefill``, the form as that job's
@@ -133,7 +134,7 @@ class GuiServer:
         resource = parsed.path[len(prefix):]
         try:
             query = parse_qs(parsed.query)
-            if resource == "" or STATIC_NAME.fullmatch(resource):
+            if resource == "" or (STATIC_NAME.fullmatch(resource) and resource != "index.html"):
                 name = resource or "index.html"
                 return (STATIC / name).read_bytes(), STATIC_TYPES[name.rsplit(".", 1)[1]]
             if resource == "jobs":
