@@ -45,8 +45,8 @@ STATIC = Path(__file__).with_name("static")
 STATIC_NAME = re.compile(r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt)")
 #: Each static file's type, by extension.
 STATIC_TYPES = {"html": "text/html; charset=utf-8", "css": "text/css",
-                "js": "text/javascript", "woff2": "font/woff2", "svg": "image/svg+xml",
-                "txt": "text/plain; charset=utf-8"}
+                "js": "text/javascript", "woff2": "font/woff2",
+                "svg": "image/svg+xml", "txt": "text/plain; charset=utf-8"}
 # --- Settings tab (hosts/gui/settings.py) ---
 #: The largest POST body read.
 MAX_BODY = 16 * 1024
@@ -134,9 +134,11 @@ class GuiServer:
         resource = parsed.path[len(prefix):]
         try:
             query = parse_qs(parsed.query)
-            if resource == "" or (STATIC_NAME.fullmatch(resource) and resource != "index.html"):
+            if resource == "" or (STATIC_NAME.fullmatch(resource)
+                                  and resource != "index.html"):
                 name = resource or "index.html"
-                return (STATIC / name).read_bytes(), STATIC_TYPES[name.rsplit(".", 1)[1]]
+                kind = STATIC_TYPES[name.rsplit(".", 1)[1]]
+                return (STATIC / name).read_bytes(), kind
             if resource == "jobs":
                 return self._json({"jobs": self.jobs.listing()})
             if resource == "generator":  # prompt generator
