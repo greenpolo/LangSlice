@@ -183,7 +183,8 @@ views.jsonl          append-only index of every saved picture
 views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
                      the path), spend.json (the agent run's spend account), result.json (a saved host job's final result),
-                     quicknii.json and visualign.json (with the maps),
+                     quicknii.json and visualign.json (with the maps) and
+                     the section images they name (<stem>_sNNN.png),
                      traces/<stem>.npz (each traced section's image-model reply
                      on its maps' grid, with the maps),
                      plugins/<tool>/ (copies of the layers plugins left)
@@ -516,12 +517,14 @@ longer exist be taken over by the images it is opened with.
   the floating-point predictor, which ImageJ 1.x cannot read;
   `FLOAT_COMPRESSION`), `write_labels` (the uint32 ids, the uint16 Fiji
   index with the atlas colours of indexes 1-255 as its lookup table, the
-  csv), `derived_files` (the CLI's artifacts after submit), the file names
+  csv), `derived_files` (the CLI's artifacts after submit, the image
+  copies `quicknii.json` names among them, `quint_copies`), the file names
   (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`, `VISUALIGN_FILE`).
 - `imports/readers.py` — a linear registration made elsewhere, read (never
   written to the job): `read_registration` (QuickNII/VisuAlign/DeepSlice
   JSON, QuickNII/DeepSlice XML, DeepSlice CSV, a job's `registration.json`),
-  `match_sections` (exact name, then stem ignoring case, then one `_sNNN`
+  `match_sections` (exact name, then stem ignoring case, then the stem
+  without a final `_sNNN` (`export copy`: an export's image copy), then one `_sNNN`
   section number; `AmbiguousMatch` refuses doubles), `import_placements(source,
   workspace, section_ids=, orientations=)` -> `ImportResult`
   (per-section `ImportedPlacement`: position, per-section pitch and yaw,
@@ -615,15 +618,34 @@ longer exist be taken over by the images it is opened with.
   `is_hidden`): left out of every listing, search, walk and a missing path's
   `holds`, and a path in it (or a symlink into it) refused `BAD_PATH`
   whether or not it exists.
-- `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
-  placed sections, each anchoring from its exact pixel -> atlas map, so any
-  plane and cutting angle; `exports/quicknii.json` and `visualign.json`,
-  through `tools.exports`), the atlas micrometre <-> QuickNII voxel
+- `quint.py` — QUINT JSON: `job_export(rows, atlas, write_markers=)`
+  (QuickNII / VisuAlign JSON of the placed sections, each anchoring from
+  its exact pixel -> atlas map, so any plane and cutting angle, made
+  perpendicular by `perpendicular_anchoring` (the nearest anchoring with
+  `u` and `v` at right angles in the same plane, same centre: QuickNII and
+  VisuAlign orthonormalize on load, Nutil and PyNutil do not, so all four
+  then read one placement); with `write_markers` (`visualign.json`) the
+  rows' deformation markers and the dropped shear carried onto that
+  anchoring by `markers_on_anchoring` (`anchoring_pixel_map`; a section
+  without a deformation gets a coarse grid, `SHEAR_MARKER_DIVISIONS`, only
+  when the shear moves a corner more than `SHEAR_TOLERANCE_PX`);
+  `exports/quicknii.json` and `visualign.json`, through `tools.exports`),
+  the atlas micrometre <-> QuickNII voxel
   conversions and their inverses (read by `imports/readers.py`), the `.cutlas` target per
   atlas (every Allen resolution exported to the 25 um target, its voxel
   grid rescaled; `ccfv3augmented_mouse_25um` to the same target on the Allen
   grid, shifted by `core.atlas.images.AUGMENTED_AP_OFFSET_MM`, in both
   directions).
+- `quint_images.py` — the PNG copies the QUINT files name, written beside
+  them in `exports/` (QuickNII and VisuAlign open images from the file's
+  folder, PNG or JPEG only): `section_numbers` (each filename's one `_sNNN`
+  when every section of the stack has one and none repeats, else the stack order from 1: the
+  files' `nr`), `copy_filename` (`<stem>_sNNN.png`, three digits, or
+  `<stem>.png` when the stem carries that number), `write_copies` (each
+  section's `preprocessed` image at the working copy's size, unoriented;
+  the copies the previous `quicknii.json` named and this export does not
+  are removed, `public_files.quint_copies`). The files keep the image
+  file's `width` and `height`.
 
 The frame record and the on-demand coordinate map are the core's
 (`core/pictures/layers.py`, `core/CLAUDE.md`).

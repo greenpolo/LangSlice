@@ -44,9 +44,11 @@ from tests.test_import_registrations import (
     PER_SECTION,
     DeepAtlas,
     Given,
+    exact_export,
     export_rows,
     make_workspace,
     params_for,
+    perpendicular_pixel_map,
     pixel_map,
 )
 
@@ -151,6 +153,15 @@ def matrices(job_folder: Path) -> dict[str, np.ndarray]:
     return out
 
 
+def quicknii_matrices(job_folder: Path) -> dict[str, np.ndarray]:
+    """The maps the job's ``quicknii.json`` holds: each section's exact map
+    with its anchoring made perpendicular (QuickNII drops shear)."""
+    document = json.loads((job_folder / "registration.json").read_text())
+    return {entry["id"]: perpendicular_pixel_map(
+                entry["pixel_to_atlas_um"], tuple(entry["image"]["size"]), document["atlas"])
+            for entry in document["sections"]}
+
+
 def source_job(capsys: pytest.CaptureFixture[str], images: Path, atlas: DeepAtlas,
                tmp_path: Path) -> Path:
     """The source job: PER_SECTION's placements, exported."""
@@ -193,7 +204,7 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
 @pytest.mark.parametrize("export", ["quicknii", "registration"])
 def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
     source = source_job(capsys, images, atlas, tmp_path)
-    given = matrices(source)
+    given = quicknii_matrices(source) if export == "quicknii" else matrices(source)
     file = (source / "exports" / "quicknii.json" if export == "quicknii"
             else source / "registration.json")
     copy = tmp_path / f"{export}.json"
@@ -208,7 +219,9 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
     imported = result["registration"]
     assert imported["format"] == ("quicknii-json" if export == "quicknii"
                                   else "langslice-registration")
-    assert [row["match"] for row in imported["sections"]] == ["exact"] * 3
+    # quicknii.json names the export's image copies (<stem>_sNNN.png)
+    rule = "export copy" if export == "quicknii" else "exact"
+    assert [row["match"] for row in imported["sections"]] == [rule] * 3
     assert (imported["unmatched"], imported["missing"], imported["refused"]) == ([], [], {})
     assert envelope["warnings"] == []
     folder = Path(result["job_folder"])
@@ -276,7 +289,7 @@ def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_p
     rows = export_rows(workspace, PER_SECTION[:2],
                        markers={ID0: [[10.0, 20.0, 12.0, 19.0]]})
     stray = dict(rows[1], filename="elsewhere.png")
-    document = job_export([*rows, stray], atlas_facts(atlas))
+    document = exact_export([*rows, stray], atlas_facts(atlas))
     path = tmp_path / "visualign.json"
     path.write_text(json.dumps(document))
     envelope = init(capsys, images, "--pixel-size-um", str(PIXEL_SIZE_UM),
@@ -356,7 +369,7 @@ def test_the_library_creates_an_imported_job(capsys, images, atlas, tmp_path):
     import langslice
 
     source = source_job(capsys, images, atlas, tmp_path)
-    given = matrices(source)
+    given = quicknii_matrices(source)
     path = tmp_path / "quicknii.json"
     shutil.copy(source / "exports" / "quicknii.json", path)
     said: list[str] = []

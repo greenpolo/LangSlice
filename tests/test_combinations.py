@@ -53,6 +53,7 @@ from tests.synthetic_stack import (
     stub_image_model,
     write_sections,
 )
+from tests.test_import_registrations import perpendicular_pixel_map
 
 IDS = (ID0, ID1, ID2)
 STEMS = ("s0", "s1", "s2")
@@ -633,13 +634,16 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     assert result["tasks"] == ["nonlinear"]  # the imported placement kept as it is
     assert [row["id"] for row in result["registration"]["sections"]] == list(IDS)
     assert result["registration"]["format"] == "quicknii-json"
-    # The new job maps every section's file exactly as the source job did
+    # The new job maps every section's file as the source job's quicknii.json
+    # does: the source's placement with its anchoring made perpendicular
     # (QuickNII anchorings are rounded to 1e-6 voxels).
-    before = json.loads((source / "registration.json").read_text())["sections"]
+    document = json.loads((source / "registration.json").read_text())
     after = json.loads((tmp_path / "again" / "registration.json").read_text())["sections"]
-    for old, new in zip(before, after, strict=True):
+    for old, new in zip(document["sections"], after, strict=True):
         assert new["problem"] is None, new
-        assert np.allclose(new["pixel_to_atlas_um"], old["pixel_to_atlas_um"], atol=1e-3)
+        expected = perpendicular_pixel_map(old["pixel_to_atlas_um"],
+                                           tuple(old["image"]["size"]), document["atlas"])
+        assert np.allclose(new["pixel_to_atlas_um"], expected, atol=1e-3)
 
 
 def connected(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:

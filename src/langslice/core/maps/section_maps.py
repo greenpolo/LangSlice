@@ -34,7 +34,8 @@ FILE as stored (no rotation or flip applied: those are part of the mapping).
   pictures' labels layer and the deformable record's labels), and the
   residual ``d`` such that ``coords[p] = pixel_to_atlas_um @ [p + d(p), 1]``.
 - :func:`residual_markers`: VisuAlign-style ``[x, y, nx, ny]`` markers of
-  the residual on a regular grid, in the file's continuous pixel coordinates.
+  the residual on :func:`marker_grid`'s points (a grid moved slightly off
+  the pixel lattice), in the file's continuous pixel coordinates.
 """
 
 from __future__ import annotations
@@ -62,10 +63,30 @@ if TYPE_CHECKING:
 SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
 #: Rows per block when a map is computed (bounds the float64 temporaries).
 BLOCK_ROWS = 256
-#: Marker grid of :func:`residual_markers`: 1/36 of the file's long edge,
-#: 32 px at least.
+#: Marker grid of :func:`marker_grid`: the long edge in this many steps,
+#: about 900 markers on a 3:2 image. VisuAlign's mesh interpolates linearly
+#: between markers, and a FireANTs warp bends on a finer scale, so the
+#: markers reproduce it only approximately: on real sections a median of
+#: 4 to 8 um and a 95th percentile of 18 to 36 um from LangSlice's map,
+#: against 6 to 12 and 26 to 49 um with 28 steps and 2 to 5 and 12 to 24
+#: um with 48. PyNutil triangulates markers in pure Python, in time that
+#: grows with the cube of their number: 25 to 50 s a section here, 15 s
+#: with 28 steps, one to four minutes with 48.
 MARKER_DIVISIONS = 36
+#: The grid's step is never shorter than this (a small image gets fewer
+#: markers; Nutil drops a marker in the same whole pixel as another).
 MARKER_MIN_SPACING_PX = 32
+#: Each marker moves off the regular grid by up to this fraction of a step
+#: (one on the grid's outline only along it), so that no edge of the
+#: readers' triangles runs through the lattice of pixel centres, where a
+#: point on an edge falls in neither triangle in their arithmetic, and no
+#: four markers share a circle.
+MARKER_JITTER = 0.2
+#: Seed of that movement, fixed so an export is reproducible.
+MARKER_SEED = 0
+#: The grid's outline stands this many pixels outside the image, so every
+#: point of the image lies inside the markers' triangles.
+MARKER_MARGIN_PX = 1.0
 
 
 def rowcol(matrix: np.ndarray) -> np.ndarray:
@@ -515,24 +536,81 @@ def section_maps(
     )
 
 
-def residual_markers(frame: SectionFrame, warp: DeformableRecord) -> list[list[float]]:
-    """VisuAlign markers of the residual: ``[x, y, nx, ny]`` per point of a
-    regular grid over the file (1/36 of its long edge apart, 32 px at
-    least, both edges included), in the file's continuous pixel coordinates
-    (the top-left corner at 0; a pixel centre at index + 0.5).
+def marker_grid(
+    size: tuple[int, int], *, divisions: int = MARKER_DIVISIONS,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Lay out the section points of VisuAlign markers over an image.
 
-    A section point ``(nx, ny)`` corresponds to the point ``(x, y)`` of the
-    linearly anchored atlas plane (VisuAlign's direction: its triangulation
-    is built on ``(nx, ny)`` and maps them to ``(x, y)``, which the
-    anchoring then takes into the atlas)."""
-    width, height = frame.file_size
-    spacing = max(MARKER_MIN_SPACING_PX, round(max(width, height) / MARKER_DIVISIONS))
-    xs = np.unique(np.append(np.arange(0, width, spacing), width - 1)).astype(np.float64)
-    ys = np.unique(np.append(np.arange(0, height, spacing), height - 1)).astype(np.float64)
-    gx, gy = np.meshgrid(xs, ys)
-    nx, ny = native_points(frame, warp, gx, gy)
-    lx, ly = apply(np.linalg.inv(frame.file_to_native()), nx, ny)
-    markers = np.stack([lx + 0.5, ly + 0.5, gx + 0.5, gy + 0.5], axis=-1).reshape(-1, 4)
+    Parameters
+    ----------
+    size
+        The image's ``(width, height)`` in pixels.
+    divisions
+        Steps along the long edge (fewer when a step would be shorter
+        than :data:`MARKER_MIN_SPACING_PX`).
+
+    Returns
+    -------
+    x, y : numpy.ndarray
+        Flat arrays of continuous pixel coordinates (top-left corner at
+        0): a grid from :data:`MARKER_MARGIN_PX` outside the image on
+        every side, each point moved by up to :data:`MARKER_JITTER` of a
+        step (the same every call), the outline's points along it only.
+    """
+    width, height = (float(value) for value in size)
+    margin = MARKER_MARGIN_PX
+    long_edge = max(width, height) + 2.0 * margin
+    step = max(MARKER_MIN_SPACING_PX, long_edge / max(1, divisions))
+    columns = max(2, round((width + 2.0 * margin) / step) + 1)
+    rows = max(2, round((height + 2.0 * margin) / step) + 1)
+    xs = np.linspace(-margin, width + margin, columns)
+    ys = np.linspace(-margin, height + margin, rows)
+    grid_x, grid_y = np.meshgrid(xs, ys)
+
+    # off the lattice; the outline's points slide along the outline only
+    generator = np.random.default_rng(MARKER_SEED)
+    limit = MARKER_JITTER
+    step_x = (width + 2.0 * margin) / (columns - 1)
+    step_y = (height + 2.0 * margin) / (rows - 1)
+    shift_x = generator.uniform(-limit, limit, size=(rows, columns)) * step_x
+    shift_y = generator.uniform(-limit, limit, size=(rows, columns)) * step_y
+    shift_x[:, [0, -1]] = 0.0
+    shift_y[[0, -1], :] = 0.0
+    return (grid_x + shift_x).ravel(), (grid_y + shift_y).ravel()
+
+
+def residual_markers(
+    frame: SectionFrame, warp: DeformableRecord,
+) -> list[list[float]]:
+    """Make VisuAlign markers of a section's deformation.
+
+    Parameters
+    ----------
+    frame
+        The section's linear placement.
+    warp
+        Its applied deformation record.
+
+    Returns
+    -------
+    list of list of float
+        ``[x, y, nx, ny]`` per point of :func:`marker_grid`, in the file's
+        continuous pixel coordinates (the top-left corner at 0; a pixel
+        centre at index + 0.5): the section point ``(nx, ny)`` corresponds
+        to the point ``(x, y)`` of the linearly anchored atlas plane
+        (VisuAlign's direction: its triangulation is built on ``(nx, ny)``
+        and maps them to ``(x, y)``, which the anchoring then takes into
+        the atlas).
+
+    Raises
+    ------
+    ValueError
+        When a marker is not finite.
+    """
+    grid_x, grid_y = marker_grid(frame.file_size)
+    nx, ny = native_points(frame, warp, grid_x[None] - 0.5, grid_y[None] - 0.5)
+    lx, ly = apply(np.linalg.inv(frame.file_to_native()), nx.ravel(), ny.ravel())
+    markers = np.column_stack([lx + 0.5, ly + 0.5, grid_x, grid_y])
     if not np.isfinite(markers).all():
         raise ValueError(f"{frame.section_id}: the residual markers are not finite")
-    return [[float(v) for v in row] for row in markers]
+    return cast("list[list[float]]", markers.tolist())

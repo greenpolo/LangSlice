@@ -268,48 +268,66 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
 
 
 def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
+    """Both files hold each section's anchoring made perpendicular (QuickNII
+    and VisuAlign read it as written); quicknii.json has no markers, and
+    visualign.json's markers take every section point to its atlas point
+    through that anchoring: the deformation's, or the linear map's."""
+    from PIL import Image
+
+    from langslice.core.maps.section_maps import native_points, section_frame
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import atlas_um_to_quicknii_points
+    from langslice.core.sections.images import PREPROCESSED, image_plane
+    from langslice.job.quint import quicknii_points_to_atlas_um
 
     job, root, _exported = placed
     facts = atlas_facts(job.workspace.atlas)
     registration = json.loads((root / "registration.json").read_text())
     by_id = {entry["id"]: entry for entry in registration["sections"]}
-    for name in ("quicknii.json", "visualign.json"):
-        export = json.loads((root / "exports" / name).read_text())
-        assert [item["filename"] for item in export["slices"]] == [ID0, ID1, ID2]
-        for item in export["slices"]:
-            entry = by_id[item["filename"]]
+    documents = {name: json.loads((root / "exports" / name).read_text())
+                 for name in ("quicknii.json", "visualign.json")}
+    copies = ["s0_s001.png", "s1_s002.png", "s2_s003.png"]
+    for name, export in documents.items():
+        assert [item["filename"] for item in export["slices"]] == copies
+        assert [item["nr"] for item in export["slices"]] == [1, 2, 3]
+        for item, twin, section in zip(export["slices"], documents["quicknii.json"]["slices"],
+                                       (ID0, ID1, ID2), strict=True):
+            entry = by_id[section]
             assert [item["width"], item["height"]] == entry["image"]["size"]
             anchoring = np.asarray(item["anchoring"])
-            matrix = np.asarray(entry["pixel_to_atlas_um"])
-            # Pixel centres (row r, col c) sit at QuickNII fractions ((c + .5)/W, (r + .5)/H).
-            r, c = np.array([3.0, 100.0, 150.0]), np.array([5.0, 40.0, 200.0])
-            width, height = item["width"], item["height"]
-            quicknii = (anchoring[:3] + ((c + 0.5) / width)[:, None] * anchoring[3:6]
-                        + ((r + 0.5) / height)[:, None] * anchoring[6:9])
-            expected = atlas_um_to_quicknii_points(
-                (matrix @ np.stack([r, c, np.ones_like(r)])).T, facts)
-            assert np.abs(quicknii - expected).max() < 1e-4
-            if name == "quicknii.json" or item["filename"] != ID0:
+            u, v = anchoring[3:6], anchoring[6:9]
+            assert abs(u @ v) <= 1e-7 * (u @ u + v @ v)  # rounded to 1e-6 voxels
+            assert item["anchoring"] == twin["anchoring"]
+            if name == "quicknii.json":
                 assert item["markers"] == []
-    # The markers of the warped section: each destination's own map is the
-    # anchoring at its source.
-    export = json.loads((root / "exports" / "visualign.json").read_text())
-    item = export["slices"][0]
-    markers = np.asarray(item["markers"])
-    assert len(markers) > 20
-    record = job.state.by_id(ID0)
-    from langslice.core.maps.section_maps import native_points, section_frame
-
-    frame = section_frame(job.state, job.workspace, record)
-    warp = job.job.deformations.current(job.state, record)
-    nx, ny = native_points(frame, warp, markers[None, :, 2] - 0.5, markers[None, :, 3] - 0.5)
-    composed = frame.native_to_um @ np.stack([ny[0], nx[0], np.ones_like(nx[0])])
-    anchored = np.asarray(by_id[ID0]["pixel_to_atlas_um"]) @ np.stack(
-        [markers[:, 1] - 0.5, markers[:, 0] - 0.5, np.ones(len(markers))])
-    assert np.abs(composed - anchored).max() < 1e-3
-    assert np.abs(markers[:, :2] - markers[:, 2:]).max() > 0.5  # a real deformation
+    # the copies the files name: the preprocessed image, beside the files
+    for copy, section in zip(copies, (ID0, ID1, ID2), strict=True):
+        with Image.open(root / "exports" / copy) as picture:
+            assert picture.mode == "L"
+            pixels = np.asarray(picture)
+        record = job.state.by_id(section)
+        np.testing.assert_array_equal(pixels, image_plane(job.workspace, record, PREPROCESSED))
+    for item, section in zip(documents["visualign.json"]["slices"], (ID0, ID1, ID2),
+                             strict=True):
+        record = job.state.by_id(section)
+        frame = section_frame(job.state, job.workspace, record)
+        warp = job.job.deformations.current(job.state, record)
+        markers = np.asarray(item["markers"]).reshape(-1, 4)
+        if not len(markers):
+            # no deformation and no shear: the anchoring is the linear map
+            assert warp is None
+            markers = np.array([[5.5, 3.5, 5.5, 3.5], [200.5, 150.5, 200.5, 150.5]])
+        nx, ny = native_points(frame, warp, markers[None, :, 2] - 0.5,
+                               markers[None, :, 3] - 0.5)
+        composed = (frame.native_to_um @ np.stack([ny[0], nx[0], np.ones_like(nx[0])])).T
+        anchoring = np.asarray(item["anchoring"])
+        fractions = markers[:, :2] / [item["width"], item["height"]]
+        quicknii = (anchoring[:3] + fractions[:, :1] * anchoring[3:6]
+                    + fractions[:, 1:] * anchoring[6:9])
+        anchored = quicknii_points_to_atlas_um(quicknii, facts)
+        assert np.abs(composed - anchored).max() < 1e-3, section
+    warped = np.asarray(documents["visualign.json"]["slices"][0]["markers"])
+    assert len(warped) > 20
+    assert np.abs(warped[:, :2] - warped[:, 2:]).max() > 0.5  # a real deformation
 
 
 def test_quicknii_axes_reverse_brainglobe_asr():

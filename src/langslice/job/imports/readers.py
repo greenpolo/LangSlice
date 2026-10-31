@@ -37,7 +37,10 @@ first rule that finds anything wins, per entry:
    ``\\`` both separate) equals a section file's name;
 2. ``stem`` — the names without their extensions are equal, ignoring case
    (a registration made on PNG copies of TIFF scans);
-3. ``section number`` — both names carry exactly one QuickNII/DeepSlice
+3. ``export copy`` — the entry's stem, without a final ``_sNNN``, equals the
+   section file's stem, ignoring case (the PNG copies a LangSlice export
+   names, :mod:`langslice.job.quint_images`);
+4. ``section number`` — both names carry exactly one QuickNII/DeepSlice
    section number ``_sNNN`` (``_s`` then digits) and the numbers are equal.
 
 An entry that matches two sections under its rule, or two entries that
