@@ -1,0 +1,1173 @@
+/* LangSlice docs: the look of the ASCII card (figure-factory/projects/langslice-readme), on
+   pydata-sphinx-theme. Language, microscopy and anatomy: every word is set in one monospace
+   face, on the black of a fluorescence image, in the colours of the logo, and each colour keeps
+   the job it has in the card:
+     off-white  names (headings, bold text), as the card's region acronyms
+     lavender   signal you can follow (links), as the stained tissue
+     violet     literal text you type (code)
+     pink       boundaries and state (where you are, focus, hover), as the card's region borders
+   No glow, no gradients, no shadows. The page is dark in either colour mode. */
+
+/* ---- JetBrains Mono (SIL OFL 1.1, fonts/OFL.txt), subset to the characters the docs use ---- */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-ExtraBold.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---- Tokens ---- */
+:root,
+html[data-theme="light"],
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ls-ground: #000000;
+  --ls-name: #dce3ff;      /* logo off-white */
+  --ls-text: #c3cae6;      /* body text, 12.9:1 on black */
+  --ls-muted: #8890b8;     /* captions, the page's own furniture, 6.7:1 */
+  --ls-lavender: #8fa0f5;  /* logo lavender */
+  --ls-violet: #a98bf0;    /* logo violet */
+  --ls-pink: #ff3daa;      /* logo pink */
+  --ls-line: #262a40;      /* hairlines: panels, tables */
+  --ls-tract: #3e4260;     /* the card's fibre-tract colour: tree lines, rules */
+  --ls-wash: #0a0b14;      /* hover only */
+
+  --ls-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas,
+    "DejaVu Sans Mono", monospace;
+
+  --pst-font-family-base: var(--ls-mono);
+  --pst-font-family-heading: var(--ls-mono);
+  --pst-font-family-monospace: var(--ls-mono);
+  --pst-font-size-base: 0.9375rem;
+
+  --pst-color-background: var(--ls-ground);
+  --pst-color-on-background: var(--ls-ground);
+  --pst-color-surface: var(--ls-ground);
+  --pst-color-on-surface: var(--ls-line);
+  --pst-color-text-base: var(--ls-text);
+  --pst-color-text-muted: var(--ls-muted);
+  --pst-color-heading: var(--ls-name);
+  --pst-color-border: var(--ls-line);
+  --pst-color-border-muted: var(--ls-line);
+  --pst-color-shadow: transparent;
+  --pst-color-primary: var(--ls-lavender);
+  --pst-color-primary-bg: var(--ls-wash);
+  --pst-color-secondary: var(--ls-pink);
+  --pst-color-secondary-bg: var(--ls-wash);
+  --pst-color-accent: var(--ls-pink);
+  --pst-color-link: var(--ls-lavender);
+  --pst-color-link-hover: var(--ls-pink);
+  --pst-color-link-higher-contrast: var(--ls-name);
+  --pst-color-inline-code: var(--ls-violet);
+  --pst-color-inline-code-links: var(--ls-lavender);
+  --pst-color-target: var(--ls-wash);
+  --pst-color-table: var(--ls-text);
+  --pst-color-table-outer-border: transparent;
+  --pst-color-table-inner-border: var(--ls-line);
+  --pst-color-table-heading-bg: transparent;
+  --pst-color-table-row-zebra-low-bg: transparent;
+  --pst-color-table-row-zebra-high-bg: transparent;
+  --pst-color-table-row-hover-bg: var(--ls-wash);
+  --pst-color-blockquote-notch: var(--ls-tract);
+  --pst-color-info: var(--ls-lavender);
+  --pst-color-info-bg: transparent;
+  --pst-color-attention: var(--ls-pink);
+  --pst-color-attention-bg: transparent;
+  --pst-color-warning: var(--ls-pink);
+  --pst-color-warning-bg: transparent;
+  --pst-color-danger: var(--ls-pink);
+  --pst-color-danger-bg: transparent;
+  --pst-color-success: var(--ls-violet);
+  --pst-color-success-bg: transparent;
+}
+
+/* ---- Ground and type ---- */
+html {
+  background: var(--ls-ground);
+  scrollbar-color: var(--ls-tract) var(--ls-ground);
+}
+
+body {
+  background: var(--ls-ground);
+  color: var(--ls-text);
+  font-family: var(--ls-mono);
+  font-size: var(--pst-font-size-base);
+  line-height: 1.75;
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--ls-pink);
+  color: var(--ls-ground);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ls-pink) !important;
+  outline-offset: 2px;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.bd-article h1,
+.bd-article h2,
+.bd-article h3,
+.bd-article h4 {
+  color: var(--ls-name);
+  font-family: var(--ls-mono);
+  letter-spacing: 0;
+}
+
+.bd-article h1 {
+  font-size: 2.125rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0 0 1.5rem;
+}
+
+.bd-article h2 {
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 3.25rem 0 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ls-line);
+}
+
+.bd-article h3 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 2.25rem 0 0.75rem;
+}
+
+.bd-article h4 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.bd-article a.headerlink {
+  color: var(--ls-pink);
+  font-weight: 400;
+}
+
+.bd-article strong,
+.bd-article b {
+  color: var(--ls-name);
+  font-weight: 700;
+}
+
+.bd-article p,
+.bd-article li,
+.bd-article dd {
+  line-height: 1.75;
+}
+
+/* Links: lavender with a quiet underline; pink when you are on one. */
+.bd-content a,
+.bd-content a:visited {
+  color: var(--ls-lavender);
+  text-decoration: underline;
+  text-decoration-color: var(--ls-tract);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+}
+
+.bd-content a:hover {
+  color: var(--ls-pink);
+  text-decoration-color: var(--ls-pink);
+}
+
+/* Lists: plain ASCII markers, a short indent. */
+.bd-article ul,
+.bd-article ol {
+  padding-left: 2.6ch;
+}
+
+.bd-article .admonition ul,
+.bd-article .admonition ol {
+  padding-left: 2.2ch;
+}
+
+.bd-article ul > li::marker {
+  content: "- ";
+  color: var(--ls-muted);
+}
+
+.bd-article ol > li::marker {
+  color: var(--ls-muted);
+  font-weight: 700;
+}
+
+/* Inline literals: violet, no box (the whole page is already monospace). */
+.bd-article code.literal,
+.bd-article code.docutils {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ls-violet);
+  font-size: 1em;
+  font-weight: 400;
+}
+
+.bd-article a code.literal,
+.bd-article a code.docutils {
+  color: inherit;
+}
+
+kbd,
+.bd-article kbd {
+  background: none;
+  border: 1px solid var(--ls-tract);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ls-name);
+  font-family: var(--ls-mono);
+  font-size: 0.85em;
+  padding: 0 0.4ch;
+}
+
+/* ---- Top bar ---- */
+.bd-header {
+  background: var(--ls-ground) !important;
+  border-bottom: 1px solid var(--ls-line);
+  box-shadow: none !important;
+}
+
+.bd-header .navbar-brand img {
+  height: 1.875rem;
+  width: auto;
+}
+
+.bd-header .navbar-nav .nav-link,
+.bd-header .navbar-nav .dropdown-toggle {
+  color: var(--ls-muted);
+  font-family: var(--ls-mono);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  padding: 0.25rem 0.6rem;
+}
+
+.bd-header .navbar-nav .nav-link:hover,
+.bd-header .navbar-nav .dropdown-toggle:hover {
+  color: var(--ls-name);
+  text-decoration: none;
+}
+
+/* the section you are in: named in off-white, its edge pink */
+.bd-header ul.navbar-nav > li.nav-item.current > .nav-link {
+  color: var(--ls-name);
+  font-weight: 700;
+}
+
+.bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
+  border-bottom: 2px solid var(--ls-pink);
+}
+
+.bd-header .dropdown-menu {
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.25rem 0;
+}
+
+.bd-header .dropdown-menu .dropdown-item {
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+}
+
+.bd-header .dropdown-menu .dropdown-item:hover,
+.bd-header .dropdown-menu .dropdown-item:focus {
+  background: var(--ls-wash);
+  color: var(--ls-name);
+}
+
+.search-button-field {
+  background: var(--ls-ground) !important;
+  border: 1px solid var(--ls-line) !important;
+  border-radius: 0 !important;
+  color: var(--ls-muted) !important;
+  font-family: var(--ls-mono);
+  font-size: 0.8125rem;
+}
+
+.search-button-field:hover {
+  border-color: var(--ls-tract) !important;
+  color: var(--ls-name) !important;
+}
+
+.search-button__kbd-shortcut kbd {
+  border-color: var(--ls-line);
+  color: var(--ls-muted);
+}
+
+.pst-navbar-icon,
+.bd-header .navbar-icon-links .nav-link {
+  color: var(--ls-muted);
+}
+
+.pst-navbar-icon:hover,
+.bd-header .navbar-icon-links .nav-link:hover {
+  color: var(--ls-name);
+}
+
+/* ---- Trees: the section list on the left and "On this page" on the right are drawn as structure
+   trees, like the atlas's own region hierarchy ---- */
+.bd-sidebar-primary,
+.bd-sidebar-secondary {
+  background: var(--ls-ground);
+  border: 0;
+  font-family: var(--ls-mono);
+}
+
+.bd-sidebar-primary {
+  border-right: 1px solid var(--ls-line);
+}
+
+.bd-sidebar-primary .sidebar-primary-items__start {
+  padding-top: 0.5rem;
+}
+
+.bd-sidebar-primary .bd-links__title,
+.bd-sidebar-secondary .onthispage {
+  color: var(--ls-name);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.bd-sidebar-secondary .onthispage i,
+.bd-sidebar-secondary .onthispage svg {
+  display: none;
+}
+
+.bd-sidebar-primary .bd-sidenav,
+.bd-sidebar-secondary .section-nav {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.bd-sidebar-primary .bd-sidenav ul,
+.bd-sidebar-secondary .section-nav ul {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.bd-sidebar-primary .bd-sidenav li,
+.bd-sidebar-secondary .section-nav li {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 2.4ch;
+  list-style: none;
+}
+
+/* the elbow of each branch */
+.bd-sidebar-primary .bd-sidenav li::before,
+.bd-sidebar-secondary .section-nav li::before {
+  content: "";
+  position: absolute;
+  left: 0.5ch;
+  top: 0;
+  width: 1.4ch;
+  height: 0.95em;
+  border-left: 1px solid var(--ls-tract);
+  border-bottom: 1px solid var(--ls-tract);
+}
+
+/* the trunk running past a branch that has siblings below it */
+.bd-sidebar-primary .bd-sidenav li:not(:last-child)::after,
+.bd-sidebar-secondary .section-nav li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 0.5ch;
+  top: 0.95em;
+  bottom: 0;
+  border-left: 1px solid var(--ls-tract);
+}
+
+.bd-sidebar-primary .bd-sidenav a,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link,
+.bd-sidebar-secondary .section-nav a {
+  margin-left: 0;
+  display: block;
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  padding: 0.12rem 0 0.3rem;
+  border: 0;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+.bd-sidebar-primary .bd-sidenav a:hover,
+.bd-sidebar-secondary .section-nav a:hover {
+  color: var(--ls-name);
+  background: none;
+  text-decoration: none;
+}
+
+/* where you are: the branch turns pink */
+.bd-sidebar-primary .bd-sidenav li.current > a,
+.bd-sidebar-primary .bd-sidenav li.active > a,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link.active,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link[aria-current="true"] {
+  color: var(--ls-name);
+  font-weight: 700;
+  background: none;
+  box-shadow: none;
+}
+
+.bd-sidebar-primary .bd-sidenav li.current.active::before,
+.bd-sidebar-secondary .section-nav li.toc-entry:has(> a.nav-link.active)::before {
+  border-color: var(--ls-pink);
+}
+
+/* the section list's open/close mark is a plus or a minus, not an icon */
+.bd-sidebar-primary li.has-children > details > summary .toctree-toggle {
+  color: var(--ls-muted);
+  height: 1.45em;
+  top: 0.1rem;
+}
+
+.bd-sidebar-primary li.has-children > details > summary .toctree-toggle > * {
+  display: none;
+}
+
+.bd-sidebar-primary li.has-children > details > summary .toctree-toggle::before {
+  content: "+";
+  font-family: var(--ls-mono);
+  font-size: 0.875rem;
+}
+
+.bd-sidebar-primary li.has-children > details[open] > summary .toctree-toggle::before {
+  content: "-";
+}
+
+.bd-sidebar-primary li.has-children > details > summary:hover .toctree-toggle {
+  color: var(--ls-pink);
+}
+
+/* the tree speaks for itself; its heading stays for screen readers */
+nav.bd-links p.bd-links__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 960px) {
+  .bd-page-width .bd-sidebar-primary {
+    --pst-sidebar-primary-width: 16rem;
+    padding-top: 2.25rem;
+  }
+
+  /* a page with no pages under it has no tree to show (on a phone the column is also the menu, so it stays) */
+  .bd-page-width .bd-sidebar-primary:not(:has(.bd-sidenav li)) {
+    display: none;
+  }
+}
+
+.bd-sidebar-primary .bd-sidenav .toctree-toggle,
+.bd-sidebar-primary .bd-sidenav details > summary {
+  color: var(--ls-muted);
+}
+
+/* code in the trees reads as plain names there */
+.bd-sidebar-secondary .section-nav code,
+.bd-sidebar-primary .bd-sidenav code,
+.prev-next-area code,
+.bd-breadcrumbs code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: 1em;
+  font-weight: inherit;
+}
+
+.bd-sidebar-secondary .sidebar-secondary-item {
+  border: 0;
+  padding-left: 0;
+}
+
+.bd-sidebar-secondary .editthispage a {
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.bd-sidebar-secondary .editthispage a:hover {
+  color: var(--ls-pink);
+}
+
+.bd-sidebar-secondary .editthispage i,
+.bd-sidebar-secondary .editthispage svg {
+  display: none;
+}
+
+/* ---- The page itself ---- */
+.bd-main .bd-content .bd-article-container {
+  max-width: 47rem;
+}
+
+.bd-breadcrumbs {
+  font-size: 0.8125rem;
+  margin-bottom: 1rem;
+}
+
+ul.bd-breadcrumbs li.breadcrumb-item.breadcrumb-home {
+  display: none;
+}
+
+.bd-breadcrumbs .breadcrumb-item,
+.bd-breadcrumbs .breadcrumb-item a {
+  color: var(--ls-muted);
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.bd-breadcrumbs .breadcrumb-item a:hover {
+  color: var(--ls-pink);
+}
+
+ul.bd-breadcrumbs li.breadcrumb-item:not(.breadcrumb-home)::before {
+  content: "/";
+  color: var(--ls-tract);
+  font: inherit;
+  padding: 0 1ch;
+}
+
+ul.bd-breadcrumbs li.breadcrumb-item.breadcrumb-home + li.breadcrumb-item::before {
+  content: none;
+}
+
+/* Code blocks: black, edged, never wider than the page. */
+.bd-article div.highlight,
+.bd-article div[class*="highlight-"] {
+  background: var(--ls-ground);
+  border-radius: 0;
+}
+
+.bd-article div.highlight pre {
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-left: 2px solid var(--ls-violet);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ls-name);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  padding: 0.9rem 1.1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* syntax: the same colour roles */
+html[data-theme] body .highlight { background: var(--ls-ground); }
+html[data-theme] body .highlight .c,
+html[data-theme] body .highlight .c1,
+html[data-theme] body .highlight .cm,
+html[data-theme] body .highlight .ch,
+html[data-theme] body .highlight .cs,
+html[data-theme] body .highlight .cp { color: var(--ls-muted); font-style: normal; }
+html[data-theme] body .highlight .k,
+html[data-theme] body .highlight .kn,
+html[data-theme] body .highlight .kd,
+html[data-theme] body .highlight .kc,
+html[data-theme] body .highlight .kr,
+html[data-theme] body .highlight .kt,
+html[data-theme] body .highlight .ow { color: var(--ls-pink); font-weight: 400; }
+html[data-theme] body .highlight .s,
+html[data-theme] body .highlight .s1,
+html[data-theme] body .highlight .s2,
+html[data-theme] body .highlight .sa,
+html[data-theme] body .highlight .sb,
+html[data-theme] body .highlight .sd,
+html[data-theme] body .highlight .se,
+html[data-theme] body .highlight .sh,
+html[data-theme] body .highlight .si,
+html[data-theme] body .highlight .sx { color: var(--ls-lavender); font-style: normal; }
+html[data-theme] body .highlight .m,
+html[data-theme] body .highlight .mi,
+html[data-theme] body .highlight .mf,
+html[data-theme] body .highlight .mh,
+html[data-theme] body .highlight .il,
+html[data-theme] body .highlight .nv,
+html[data-theme] body .highlight .vg,
+html[data-theme] body .highlight .vi { color: var(--ls-violet); }
+html[data-theme] body .highlight .n,
+html[data-theme] body .highlight .na,
+html[data-theme] body .highlight .nb,
+html[data-theme] body .highlight .nc,
+html[data-theme] body .highlight .nf,
+html[data-theme] body .highlight .nn,
+html[data-theme] body .highlight .nt,
+html[data-theme] body .highlight .bp,
+html[data-theme] body .highlight .fm { color: var(--ls-name); font-weight: 400; }
+html[data-theme] body .highlight .o,
+html[data-theme] body .highlight .p,
+html[data-theme] body .highlight .gp,
+html[data-theme] body .highlight .w { color: var(--ls-muted); font-weight: 400; }
+html[data-theme] body .highlight .err { color: var(--ls-pink); border: 0; }
+
+/* the copy button */
+button.copybtn {
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-radius: 0;
+  color: var(--ls-muted);
+}
+
+button.copybtn:hover {
+  border-color: var(--ls-pink);
+  color: var(--ls-pink);
+}
+
+button.copybtn svg {
+  stroke: currentColor;
+}
+
+/* Notes and warnings: a black panel; the left edge says which kind. */
+.bd-article .admonition,
+.bd-article div.admonition {
+  --ls-role: var(--ls-lavender);
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-left: 2px solid var(--ls-role);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.9rem 1.2rem 0.4rem;
+  margin: 1.75rem 0;
+}
+
+.bd-article .admonition.important,
+.bd-article .admonition.warning,
+.bd-article .admonition.attention,
+.bd-article .admonition.caution,
+.bd-article .admonition.danger,
+.bd-article .admonition.error {
+  --ls-role: var(--ls-pink);
+}
+
+.bd-article .admonition.tip,
+.bd-article .admonition.hint,
+.bd-article .admonition.seealso {
+  --ls-role: var(--ls-violet);
+}
+
+.bd-article .admonition > .admonition-title {
+  background: none;
+  color: var(--ls-role);
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
+
+.bd-article .admonition > .admonition-title::before,
+.bd-article .admonition > .admonition-title::after {
+  display: none;
+}
+
+/* A picture still to be made: a dashed outline, the shape of what will go there. */
+.bd-article .admonition.admonition-screenshot-to-come {
+  --ls-role: var(--ls-muted);
+  border: 1px dashed var(--ls-tract);
+}
+
+/* Tables: no fill, a stronger line under the head. */
+.bd-article table.table {
+  border: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.bd-article table.table th {
+  color: var(--ls-name);
+  font-weight: 700;
+  border-bottom: 1px solid var(--ls-tract);
+  background: none;
+}
+
+.bd-article table.table td,
+.bd-article table.table th {
+  padding: 0.5rem 0.9rem 0.5rem 0;
+  border-color: var(--ls-line);
+  border-left: 0;
+  border-right: 0;
+}
+
+.bd-article table.table thead tr,
+.bd-article table.table thead th {
+  border-bottom: 1px solid var(--ls-tract);
+}
+
+.bd-article .table td ~ td,
+.bd-article .table td ~ th,
+.bd-article .table th ~ td,
+.bd-article .table th ~ th {
+  border-left: 0;
+}
+
+.bd-article .pst-scrollable-table-container {
+  margin-bottom: 1.5rem;
+}
+
+/* Pictures: edged so a light screenshot does not bleed into the black. */
+.bd-article figure img,
+.bd-article img.align-center,
+.bd-article p > img {
+  border: 1px solid var(--ls-line);
+}
+
+.bd-article figure figcaption,
+.bd-article figure .caption {
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  margin-top: 0.6rem;
+}
+
+.bd-article figure figcaption .caption-number {
+  color: var(--ls-name);
+}
+
+/* Glossary and definition lists. */
+.bd-article dl:not(.field-list) > dt {
+  color: var(--ls-name);
+  font-weight: 700;
+}
+
+.bd-article dl:not(.field-list) > dd {
+  margin-left: 2ch;
+  padding-left: 1.6ch;
+  border-left: 1px solid var(--ls-line);
+}
+
+.bd-article dl.glossary > dt {
+  margin-top: 1.25rem;
+}
+
+.bd-article blockquote {
+  background: none;
+  border-left: 1px solid var(--ls-tract);
+  color: var(--ls-text);
+}
+
+.bd-article hr {
+  border: 0;
+  border-top: 1px solid var(--ls-line);
+  opacity: 1;
+}
+
+/* Previous / next */
+.prev-next-area {
+  border-top: 1px solid var(--ls-line);
+  padding-top: 1.25rem;
+  margin-top: 3rem;
+}
+
+.bd-content .prev-next-area a,
+.bd-content .prev-next-area a:visited {
+  color: var(--ls-lavender);
+  text-decoration: none;
+}
+
+.prev-next-area a i,
+.prev-next-area a svg {
+  display: none;
+}
+
+.prev-next-area a .prev-next-info {
+  margin: 0;
+}
+
+.prev-next-area a p.prev-next-subtitle {
+  text-transform: none;
+}
+
+.prev-next-area a p.prev-next-subtitle {
+  color: var(--ls-muted);
+  font-size: 0.75rem;
+}
+
+.prev-next-area a p.prev-next-title {
+  color: var(--ls-name);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.prev-next-area a:hover p.prev-next-title {
+  color: var(--ls-pink);
+  text-decoration: none;
+}
+
+/* Footer */
+.bd-footer {
+  background: var(--ls-ground);
+  border-top: 1px solid var(--ls-line);
+  color: var(--ls-muted);
+  font-size: 0.75rem;
+}
+
+.bd-footer a {
+  color: var(--ls-muted);
+}
+
+/* Search */
+.search-button__search-container,
+.bd-search {
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#pst-search-dialog[open] {
+  border: 0;
+  background: transparent;
+}
+
+#pst-search-dialog[open]::backdrop {
+  background: #000;
+  opacity: 0.8;
+}
+
+/* the field shows focus with its own edge turning pink; no second ring inside it */
+.bd-search:focus-within {
+  border-color: var(--ls-pink);
+  box-shadow: none;
+}
+
+.bd-search input.form-control:focus-visible {
+  outline: none !important;
+}
+
+#pst-search-dialog[open] #search-results {
+  background: var(--ls-ground);
+  border: 1px solid var(--ls-line);
+  border-top: 0;
+}
+
+.bd-search-container ul.search li {
+  border-top-color: var(--ls-line);
+}
+
+.bd-search input.form-control {
+  background: var(--ls-ground);
+  color: var(--ls-name);
+  font-family: var(--ls-mono);
+}
+
+.bd-search input.form-control::placeholder {
+  color: var(--ls-muted);
+}
+
+#search-results h2 {
+  border-top: 0;
+  padding-top: 0;
+}
+
+#search-results ul.search li {
+  border-top: 1px solid var(--ls-line);
+  padding: 0.9rem 0;
+}
+
+#search-results ul.search li p.context {
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+}
+
+/* Side panels that open as drawers on a phone */
+.bd-sidebar-primary.bd-sidebar,
+dialog#pst-primary-sidebar-modal,
+dialog#pst-secondary-sidebar-modal {
+  background: var(--ls-ground);
+}
+
+/* ---- Front page ---- */
+
+/* The hero carries the name; the heading stays in the page for screen readers and the tab. */
+section#langslice > h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bd-main .bd-content .bd-article-container:has(.ls-hero) {
+  max-width: 82rem;
+}
+
+.ls-hero {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.48fr) 1fr;
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 4.5rem);
+  padding: clamp(1rem, 3vw, 2.5rem) 0 0.5rem;
+}
+
+.ls-hero__text {
+  min-width: 0;
+}
+
+.ls-hero__lockup {
+  display: block;
+  width: 100%;
+  max-width: 25rem;
+  height: auto;
+  margin-left: -0.4rem;
+}
+
+.ls-hero__desc {
+  margin: clamp(1.25rem, 3vw, 2.25rem) 0 0;
+  color: var(--ls-name);
+  font-size: clamp(1rem, 1.45vw, 1.3rem);
+  line-height: 1.55;
+}
+
+.ls-hero__desc span {
+  display: block;
+}
+
+.ls-hero__art {
+  margin: 0;
+  min-width: 0;
+}
+
+.ls-brain {
+  container-type: inline-size;
+}
+
+/* one character cell per column: the stage's font size makes --cols columns fill the width */
+.ls-brain__stage {
+  position: relative;
+  font-size: calc(100cqi / (var(--cols) * 0.6));
+  line-height: 1;
+  height: calc(var(--rows) * 1em);
+  overflow: hidden;
+  animation: ls-print 0.9s steps(var(--rows), end) both;
+}
+
+.ls-brain__stage pre {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--ls-mono);
+  font-size: 1em;
+  font-weight: 700;
+  line-height: 1;
+  white-space: pre;
+  overflow: visible;
+  font-variant-ligatures: none;
+}
+
+.ls-brain__chars i {
+  font-style: normal;
+}
+
+.ls-brain__chars {
+  transition: opacity 0.2s;
+}
+
+.ls-brain__lit {
+  color: var(--ls-name);
+  pointer-events: none;
+}
+
+.ls-brain.is-pointing .ls-brain__chars {
+  opacity: 0.45;
+}
+
+.ls-brain__labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ls-brain__labels span {
+  position: absolute;
+  left: calc(var(--c) * 0.6em);
+  top: calc((var(--r) + 0.5) * 1em);
+}
+
+.ls-brain__labels b {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: var(--ls-name);
+  font-size: 1.3em;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ls-brain__readout {
+  min-height: 1.75em;
+  margin-top: 0.75rem;
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+.ls-brain__readout b {
+  color: var(--ls-name);
+  margin-right: 1.5ch;
+}
+
+.ls-brain__readout span {
+  color: var(--ls-lavender);
+}
+
+@keyframes ls-print {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+/* The lead and the routes */
+.ls-lead p {
+  max-width: 62ch;
+  margin: 2.5rem 0 0;
+  color: var(--ls-name);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+}
+
+.ls-hero ~ .admonition,
+section#langslice > .admonition {
+  max-width: 62rem;
+}
+
+/* "Where do you want to go?": a tree of questions, each with the page that answers it */
+.bd-article .ls-routes dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 4ch;
+  margin: 0;
+}
+
+.bd-article .ls-routes dl > dt,
+.bd-article .ls-routes dl > dd {
+  margin: 0;
+  padding: 0.35rem 0;
+  border: 0;
+}
+
+.bd-article .ls-routes dl > dt {
+  position: relative;
+  padding-left: 3ch;
+  color: var(--ls-text);
+  font-weight: 400;
+}
+
+.bd-article .ls-routes dl > dt strong {
+  color: var(--ls-text);
+  font-weight: 400;
+}
+
+.ls-routes dl > dt::before {
+  content: "";
+  position: absolute;
+  left: 0.5ch;
+  top: 0;
+  width: 2ch;
+  height: 1.25em;
+  border-left: 1px solid var(--ls-tract);
+  border-bottom: 1px solid var(--ls-tract);
+}
+
+.ls-routes dl > dt:not(:nth-last-child(2))::after {
+  content: "";
+  position: absolute;
+  left: 0.5ch;
+  top: 1.25em;
+  bottom: 0;
+  border-left: 1px solid var(--ls-tract);
+}
+
+.ls-routes dl > dd p {
+  margin: 0;
+}
+
+.ls-routes dl > dd a {
+  font-weight: 700;
+}
+
+.ls-routes dl > dt:hover::before {
+  border-color: var(--ls-pink);
+}
+
+@media (max-width: 860px) {
+  .ls-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .ls-hero__lockup {
+    max-width: 18rem;
+  }
+
+  .ls-brain__readout {
+    text-align: left;
+  }
+
+  .ls-routes dl {
+    grid-template-columns: 1fr;
+  }
+
+  .ls-routes dl > dd {
+    padding: 0 0 0.6rem 3ch;
+  }
+
+  .ls-routes dl > dt {
+    padding-bottom: 0;
+  }
+
+  .ls-routes dl > dt::after {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ls-brain__stage {
+    animation: none;
+  }
+
+  .ls-brain__chars {
+    transition: none;
+  }
+}
