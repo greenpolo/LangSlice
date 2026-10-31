@@ -76,9 +76,10 @@ selected.
    box changes nothing.
 4. **A new job** (first use, or a new start): the connector removes this project's
    earlier LangSlice steps from the selection (none on first use), exports one
-   calibrated 25 µm snapshot per section (`section_0001.tif …`, atlas order, one TIFF
-   page per channel) into the project folder, writes `abba_sections.json` (snapshot to
-   ABBA slice name) and asks the worker to **prepare** the job (`abba.prepare`, below),
+   calibrated snapshot per section (`section_0001.tif …`, atlas order, one TIFF
+   page per channel) into the project folder (the snapshot pixel size below; several
+   sections at once, on half the processors and at most 8), writes
+   `abba_sections.json` (snapshot to ABBA slice name) and asks the worker to **prepare** the job (`abba.prepare`, below),
    then writes `abba_project.json`. ABBA itself does not change. A later use continues
    the job instead.
 5. **Follow.** The connector starts the follower on the job (below). A follower already
@@ -194,7 +195,15 @@ opened. Three methods:
   registered: [snapshot…], channel_names, abba: {project_key, atlas, sections:
   {snapshot: slice name}, thickness_um, interval_um}}`. The worker writes the prepared
   job (`job.json`, no checkpoint) and answers `{job_folder}`. From ABBA:
-  `positions_mm` is ABBA's `toAtlasZ` of each slice (BrainGlobe AP millimetres),
+  `pixel_size_um` is the snapshots' one pixel size: every snapshot is ABBA's image
+  region (`getROI()`, centred), at 3072 pixels on its long side (LangSlice's working
+  copy of an image file, so a larger snapshot would only be shrunk again), rounded up
+  to 0.01 µm; when the sections' finest level-0 source pixel is coarser, that pixel
+  instead (finer would only interpolate). Each channel is resampled (linearly) from
+  its coarsest pyramid level still at least as fine as the snapshot; ABBA's own
+  export would read the first coarser level, a quarter of the detail on a
+  four-fold pyramid. `positions_mm` is ABBA's `toAtlasZ` of each slice (BrainGlobe
+  AP millimetres),
   `z_offset_mm` is `ReslicedAtlas.getZOffset()`, `angles_deg` are the session's
   stack-wide cutting angles (pitch = −degrees(rotateX), yaw = −degrees(rotateY)),
   `registered` lists the sections that carry registrations, `existing_warp` the ones
@@ -219,8 +228,8 @@ logged and written to `abba_applied.jsonl`, stopping that closes stdin, a worker
 ignores stdin's end terminated, a prepared job's `waiting`); the window process
 (`gui JOB --tab prompt`, and one that ends at once reported with its output); the
 project key (stable, order-free), finding a folder again, candidates, continuing one,
-the start-over move; multi-page snapshots; and the menus (one Register entry and its
-callable alias; Plugins › LangSlice holds its three commands once each).
+the start-over move; multi-page snapshots and the snapshot pixel size; and the menus
+(one Register entry and its callable alias; Plugins › LangSlice holds its three commands once each).
 `HostGeometrySmokeTest` checks native affine registration geometry and serialization,
 the warp step's direction, its coordinate rows, its serialization and that BigWarp can
 reopen it, the cutting-angle signs, and how a kept row merges with a newer one.
@@ -235,9 +244,10 @@ java -Djava.awt.headless=true --add-opens=java.base/java.lang=ALL-UNNAMED \
 ```
 
 It imports two synthetic sections and checks: AP positions from ABBA's own `toAtlasZ`
-against ABBA's atlas coordinate images read at the slice; a tilted session's export
-(`angles_deg`, `existing_warp` for a user's own BigWarp step, `registered`, the `abba`
-block, `abba_sections.json`); live checkpoints (position, affine step, warp step,
+against ABBA's atlas coordinate images read at the slice; that 25 µm sources are
+exported at their own 25 µm; a tilted session's export (`angles_deg`,
+`existing_warp` for a user's own BigWarp step, `registered`, the `abba` block,
+`abba_sections.json`); live checkpoints (position, affine step, warp step,
 cutting angles) read back from ABBA; that a new placement removes the warp before
 replacing the affine; that one ABBA Undo reverts exactly one checkpoint (angles
 included) and Redo restores it; that a slice changed outside is refused, kept and

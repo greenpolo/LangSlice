@@ -8,7 +8,7 @@ import ch.epfl.biop.registration.source.mirror.MirrorXRegistration;
 import ch.epfl.biop.registration.source.affine.AffineRegistration;
 import ch.epfl.biop.registration.source.bigwarp.BigWarpSource2DRegistration;
 import ch.epfl.biop.registration.source.spline.RealTransformSourceRegistration;
-import ch.epfl.biop.source.processor.SourcesChannelsSelect;
+import ch.epfl.biop.bdv.img.imageplus.ImagePlusHelper;
 import ch.epfl.biop.source.processor.SourcesProcessorHelper;
 import com.google.gson.*;
 import ij.ImagePlus;
@@ -19,12 +19,15 @@ import ij.process.ImageProcessor;
 import net.imglib2.realtransform.*;
 import net.imglib2.realtransform.inverse.WrappedIterativeInvertibleRealTransform;
 import org.scijava.plugin.PluginService;
+import sc.fiji.bdvpg.source.importer.EmptySourceCreator;
+import sc.fiji.bdvpg.source.transform.SourceResampler;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.*;
 
 /**
  * One LangSlice job's sections in an existing ABBA 0.25 session (0.24 works too, without ABBA's own failure reasons
@@ -46,6 +49,13 @@ final class AbbaHostSession {
             + "the newest; LangSlice leaves this slice alone.";
     /** The snapshot filename to ABBA slice name file, in the project folder. */
     static final String SECTIONS_FILE = "abba_sections.json";
+    /**
+     * Long edge of a snapshot in pixels: the working copy LangSlice makes of an image file (WORKING_MAX_EDGE in
+     * src/langslice/core/sections/reading.py), so a larger snapshot would only be shrunk again.
+     */
+    static final int WORKING_EDGE = 3072;
+    /** Snapshots exported at once: half the processors, at most 8. */
+    static final int EXPORT_THREADS = Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() / 2));
 
     final MultiSlicePositioner mp;
     final Path folder;
@@ -144,14 +154,12 @@ final class AbbaHostSession {
         }
         double[] half = frame(pixelSize);
         Files.createDirectories(folder);
+        writeSnapshots(channels, half, pixelSize / 1000.0);
         JsonObject positions = new JsonObject();
         JsonArray warped = new JsonArray(), registered = new JsonArray();
         for (Map.Entry<String, SliceSources> entry : slices.entrySet()) {
-            checkInterrupted();
             String name = entry.getKey();
             SliceSources slice = entry.getValue();
-            ImagePlus image = snapshot(slice, channels, half[0], half[1], pixelSize / 1000.0);
-            try { save(image, folder.resolve(name)); } finally { image.close(); }
             // A registered snapshot already carries its registration: prepare protects its in-plane geometry.
             if (slice.getNumberOfRegistrations() > 0) registered.add(name);
             if (hasForeignWarp(slice)) warped.add(name);
@@ -176,6 +184,36 @@ final class AbbaHostSession {
         request.add("channel_names", exportedNames(channels, channelNames));
         request.add("abba", abba);
         return request;
+    }
+
+    /**
+     * Every section's snapshot, side by side on {@link #EXPORT_THREADS} threads: a section with a spline step inverts
+     * the spline at every snapshot pixel, about 25 s a section on one thread at 4 µm.
+     */
+    private void writeSnapshots(List<Integer> channels, double[] half, double spacing) throws IOException {
+        ExecutorService pool = Executors.newFixedThreadPool(Math.min(EXPORT_THREADS, slices.size()));
+        try {
+            List<Future<Void>> exports = new ArrayList<>();
+            for (Map.Entry<String, SliceSources> entry : slices.entrySet())
+                exports.add(pool.submit(() -> {
+                    ImagePlus image = snapshot(entry.getValue(), channels, half[0], half[1], spacing);
+                    try { save(image, folder.resolve(entry.getKey())); } finally { image.close(); }
+                    return null;
+                }));
+            for (Future<Void> export : exports) {
+                try { export.get(); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new CancellationException("Export cancelled.");
+                } catch (ExecutionException failed) {
+                    Throwable cause = failed.getCause();
+                    if (cause instanceof IOException) throw (IOException) cause;
+                    if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+                    if (cause instanceof Error) throw (Error) cause;
+                    throw new IOException(cause);
+                }
+            }
+        } finally { pool.shutdownNow(); }
     }
 
     /** The exported pages' names, in page order: never empty, never repeated (the worker refuses duplicates). */
@@ -208,6 +246,42 @@ final class AbbaHostSession {
         return new double[]{-Math.toRadians(pitch), -Math.toRadians(yaw)};
     }
 
+    /**
+     * The job's one snapshot pixel size in µm: ABBA's image region (every snapshot's frame) at {@link #WORKING_EDGE}
+     * pixels on its long side, in 0.01 µm steps, so a snapshot has the detail of a job started from the image files;
+     * never finer than the finest level-0 pixel of *channels* in *chosen*, which would only interpolate.
+     */
+    double snapshotPixelUm(List<SliceSources> chosen, List<Integer> channels) {
+        double[] roi = mp.getROI();
+        double halfX = Math.max(Math.abs(roi[0]), Math.abs(roi[0] + roi[2])), halfY = Math.max(Math.abs(roi[1]), Math.abs(roi[1] + roi[3]));
+        double finestMm = Double.POSITIVE_INFINITY;
+        for (SliceSources slice : chosen)
+            for (int channel : channels)
+                if (channel < slice.getRegisteredSources().length)
+                    finestMm = Math.min(finestMm, sourcePixelMm(slice.getRegisteredSources()[channel]));
+        return snapshotPixelUm(2 * Math.max(halfX, halfY), finestMm);
+    }
+
+    /** {@link #snapshotPixelUm(List, List)} from the frame's long side and the finest source pixel, both in mm. */
+    static double snapshotPixelUm(double frameLongMm, double finestSourceMm) {
+        if (!Double.isFinite(frameLongMm) || frameLongMm <= 0)
+            throw new IllegalArgumentException("ABBA's image region has no usable extent.");
+        double um = Math.ceil(frameLongMm * 1000 / WORKING_EDGE * 100) / 100;
+        // The source pixel to the nanometre, so a 25 µm source stays 25 µm.
+        if (Double.isFinite(finestSourceMm) && finestSourceMm > 0) um = Math.max(um, Math.round(finestSourceMm * 1e6) / 1000.0);
+        return um;
+    }
+
+    /** A source's level-0 pixel in ABBA's world, in mm. */
+    static double sourcePixelMm(SourceAndConverter<?> source) { return pixelMm(source.getSpimSource(), 0); }
+
+    /** A source's pixel at *level* in ABBA's world, in mm: the square root of its in-plane area. */
+    static double pixelMm(bdv.viewer.Source<?> source, int level) {
+        AffineTransform3D transform = new AffineTransform3D();
+        source.getSourceTransform(0, level, transform);
+        return Math.sqrt(Math.abs(transform.get(0, 0) * transform.get(1, 1) - transform.get(0, 1) * transform.get(1, 0)));
+    }
+
     /** Half extents of the snapshot frame: ABBA's image region, centred, on the pixel grid. */
     private double[] frame(double pixelSize) {
         double[] roi = mp.getROI();
@@ -221,18 +295,47 @@ final class AbbaHostSession {
 
     /** Registered channels in the given order, one page each, on ABBA's calibrated grid. */
     static ImagePlus snapshot(SliceSources slice, List<Integer> channels, double halfX, double halfY, double spacing) {
-        if (channels.size() == 1)
-            return SliceToImagePlus.export(slice, new SourcesChannelsSelect(channels.get(0)), -halfX, -halfY, 2 * halfX, 2 * halfY, spacing, 0, true);
+        if (channels.size() == 1) return page(slice, channels.get(0), halfX, halfY, spacing);
         List<ImageProcessor> pages = new ArrayList<>();
         Calibration calibration = null;
         for (int channel : channels) {
-            ImagePlus page = SliceToImagePlus.export(slice, new SourcesChannelsSelect(channel), -halfX, -halfY, 2 * halfX, 2 * halfY, spacing, 0, true);
+            ImagePlus page = page(slice, channel, halfX, halfY, spacing);
             try {
                 pages.add(page.getProcessor().duplicate());
                 if (calibration == null) calibration = page.getCalibration().copy();
             } finally { page.close(); }
         }
         return stack(slice.getName(), pages, calibration);
+    }
+
+    /**
+     * One registered channel resampled (linear) onto the snapshot grid, as ABBA's SliceToImagePlus.export does, but read
+     * from the source's coarsest pyramid level still at least as fine as the grid ({@link #readLevel}): ABBA's export
+     * reads the first level coarser than the grid, so a 4 µm snapshot of a 3 / 12 µm pyramid would hold 12 µm detail.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    static ImagePlus page(SliceSources slice, int channel, double halfX, double halfY, double spacing) {
+        SourceAndConverter source = slice.getRegisteredSources()[channel];
+        AffineTransform3D grid = new AffineTransform3D();
+        grid.translate(halfX, halfY, -slice.getSlicingAxisPosition());
+        grid.scale(1 / spacing);
+        SourceAndConverter<?> model = new EmptySourceCreator("model", grid.inverse(),
+                (long) (2 * halfX / spacing), (long) (2 * halfY / spacing), 1).get();
+        String name = source.getSpimSource().getName();
+        SourceAndConverter resampled = new SourceResampler(source, model, name + "_snapshot", false, false, true,
+                readLevel(source.getSpimSource(), spacing)).get();
+        ImagePlus image = ImagePlusHelper.wrap(resampled, 0, 0, 1, 1);
+        image.setTitle(name);
+        ImagePlusHelper.storeExtendedCalibrationToImagePlus(image, grid.inverse(), "mm", 0);
+        return image;
+    }
+
+    /** The coarsest pyramid level of *source* whose pixel in ABBA's world is at most *spacing* mm (level 0 when none is). */
+    static int readLevel(bdv.viewer.Source<?> source, double spacing) {
+        int chosen = 0;
+        for (int level = 1; level < source.getNumMipmapLevels(); level++)
+            if (pixelMm(source, level) <= spacing * (1 + 1e-9)) chosen = level;
+        return chosen;
     }
 
     /** Pages of different pixel types (or colour pages) become 32-bit grayscale so they share one TIFF. */
@@ -719,8 +822,4 @@ final class AbbaHostSession {
 
     /** The snapshot file of the slice at *index* in the job's sections (atlas order): section_0001.tif, ... (one place). */
     static String snapshotName(int index) { return String.format(Locale.ROOT, "section_%04d.tif", index + 1); }
-
-    static void checkInterrupted() {
-        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Export cancelled.");
-    }
 }

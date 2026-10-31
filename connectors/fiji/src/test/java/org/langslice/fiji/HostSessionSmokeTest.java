@@ -158,6 +158,7 @@ public final class HostSessionSmokeTest {
         // 3. A tilted session is accepted: its angles travel as the job's stack-wide angles.
         mp.getReslicedAtlas().setRotateX(-Math.toRadians(3)); mp.getReslicedAtlas().setRotateY(Math.toRadians(2));
         AbbaHostSession host = new AbbaHostSession(mp, output.resolve("snapshots"), KEY);
+        require(host.snapshotPixelUm(sections, Arrays.asList(0)) == 25.0, "25 µm sources are exported at their own 25 µm, not finer");
         JsonObject request = host.export(sections, Arrays.asList(0), Arrays.asList("ramp"), 25.0, 40, 400);
         System.out.println("EXPORT " + request.get("angles_deg") + " z_offset_mm=" + request.get("z_offset_mm")
                 + " positions=" + request.get("positions_mm") + " existing_warp=" + request.get("existing_warp") + " abba=" + request.get("abba"));
