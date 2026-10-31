@@ -69,7 +69,7 @@ def test_appended_lines_arrive_once_in_order(tmp_path: Path) -> None:
     second = _snap(watcher, first["cursor"])
     assert [i["kind"] for i in second["items"]] == ["tool"]
     assert second["status"]["word"] == "Running"
-    assert second["status"]["sentence"].startswith("Position sections on s000.png")
+    assert second["status"]["sentence"].startswith("position_sections on s000.png")
     assert second["header"]["door"] == "cli"
     assert _snap(watcher, second["cursor"])["items"] == []
 
@@ -206,13 +206,13 @@ def test_undo_steps_are_labelled_by_the_call_that_made_each_depth(tmp_path: Path
     watcher = JobWatcher(folder)
     snap = _snap(watcher)
     assert snap["history"] == {
-        "undo": ["Position sections (s000.png)", "Interactive transform (s001.png)"],
-        "redo": ["Note"]}
+        "undo": ["position_sections (s000.png)", "interactive_transform (s001.png)"],
+        "redo": ["note"]}
     tool = next(i for i in snap["items"] if i["kind"] == "tool")
     assert tool["args"] == "{\"sections\": ["  # a truncated argument string passes through
     _append(events, _end("redo", 3), _end("mark_damage", 4, ("s002.png",)))
     _write_undo(folder, undo=4, redo=0)
-    assert _snap(watcher)["history"]["undo"][2:] == ["Note", "Mark damage (s002.png)"]
+    assert _snap(watcher)["history"]["undo"][2:] == ["note", "mark_damage (s002.png)"]
 
 
 def _write_undo(folder: Path, *, undo: int, redo: int) -> None:

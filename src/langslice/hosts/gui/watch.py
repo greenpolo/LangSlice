@@ -208,12 +208,6 @@ def _view_folder(path: str) -> str:
     return path[: -len(PICTURE) - 1] if path.endswith("/" + PICTURE) else path.rstrip("/")
 
 
-def humanized(name: str) -> str:
-    """A tool's name as the page shows it: ``position_sections`` -> ``Position sections``."""
-    words = str(name or "tool").replace("_", " ").strip()
-    return words[:1].upper() + words[1:]
-
-
 def _sections_words(ids: list[Any], limit: int = 3) -> str:
     names = [str(i) for i in ids if i not in (None, "")]
     if len(names) <= limit:
@@ -376,7 +370,7 @@ class JobWatcher:
             item = {
                 "kind": "tool", "phase": "start" if kind == "tool_start" else "end",
                 "key": key, "name": str(record.get("name") or "tool"),
-                "label": humanized(str(record.get("name") or "tool")),
+                "label": str(record.get("name") or "tool"),
                 "sections": [str(s) for s in record.get("target_ids") or []],
                 "failed": bool(record.get("failed")), "status": record.get("status"),
                 "step": record.get("step"), "door": record.get("door"), "at": at,
@@ -478,8 +472,8 @@ class JobWatcher:
             pass
         self._append({
             "kind": "picture", "number": number, "path": _view_folder(path),
-            "tool": str(record.get("tool") or ""), "label": humanized(str(record.get("tool")
-                                                                      or "picture")),
+            "tool": str(record.get("tool") or ""),
+            "label": str(record.get("tool") or "picture"),
             "call": record.get("call"), "sections": [str(s) for s in
                                                      record.get("sections") or []],
             "mode": record.get("mode"), "caption": _short(caption, 4000),
