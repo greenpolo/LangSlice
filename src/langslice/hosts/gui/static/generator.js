@@ -253,8 +253,15 @@ const Generator = (() => {
     return { text, problems: stops, warnings: notes };
   }
 
+  // The From ABBA block's keep box, for n registered sections.
+  function keepLabel(n) {
+    return n === 1
+      ? 'Keep the 1 section’s existing ABBA registrations (its position may still move)'
+      : `Keep the ${n} sections’ existing ABBA registrations (their positions may still move)`;
+  }
+
   return { shellQuote, cleanPath, startForm, prefilled, offNames, present, keptOff, imageModelApplies,
-           problems, warnings, leftOut, command, message };
+           problems, warnings, leftOut, command, message, keepLabel };
 })();
 
 if (typeof module !== 'undefined') module.exports = Generator;
@@ -363,8 +370,9 @@ if (typeof document !== 'undefined') (() => {
     const registered = abba.registered || [];
     if (registered.length && Object.keys(form.frozen).length) {
       const n = registered.length;
-      const keepRegs = check(`Keep the ${n} section${n === 1 ? '' : 's'}’ existing ABBA registrations (their positions may still move)`, 'keepRegistrations',
-        'Untick to let the agent redo their alignment and warps too.');
+      const keepRegs = check(Generator.keepLabel(n), 'keepRegistrations',
+        n === 1 ? 'Untick to let the agent redo its alignment and warp too.'
+          : 'Untick to let the agent redo their alignment and warps too.');
       s.append(keepRegs.wrap);
     }
     const names = Object.entries(abba.sections || {});

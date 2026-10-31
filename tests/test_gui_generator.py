@@ -423,6 +423,23 @@ def test_the_message_for_a_job_prepared_in_abba(tmp_path: Path) -> None:
                            ABBA_FILES[0]: ["orientation", "affine", "deformation"]}
 
 
+def test_the_keep_box_names_one_section_in_the_singular() -> None:
+    node = NODE
+    if node is None:
+        pytest.skip("node is not installed")
+    program = (
+        "const G = require(process.argv[1]);"
+        "process.stdout.write(JSON.stringify([1, 3].map(G.keepLabel)));"
+    )
+    done = subprocess.run([node, "-e", program, str(SCRIPT)], check=True,
+                          capture_output=True, text=True)
+    one, three = json.loads(done.stdout)
+    assert one == ("Keep the 1 section\u2019s existing ABBA registrations "
+                   "(its position may still move)")
+    assert three == ("Keep the 3 sections\u2019 existing ABBA registrations "
+                     "(their positions may still move)")
+
+
 def test_a_prefill_without_abba_gives_the_message_of_the_same_form() -> None:
     prefill = {**BASE, "keep": {"angles": False, "orientation": False}, "facts": [],
                "frozen": {}, "abba": None}
