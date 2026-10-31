@@ -21,6 +21,7 @@ const Strip = (() => {
   const ROW_STEP = 0.88;        // stair rows overlap a little, as ABBA's did
   const MAX_ZOOM = 40;
   const ASPECT = { coronal: 1.4, sagittal: 1.6, horizontal: 0.8 };
+  const HANDLES_ONLY = 18;      // a stair row's height when there are no pictures
 
   let svg, body, tip, empty, title, clipRect;
   let layers = null;
@@ -246,8 +247,9 @@ const Strip = (() => {
     svg.style.visibility = none ? 'hidden' : 'visible';
     writeTitle();
     if (none || W < 40 || H < 30) { layout = null; return; }
+    // Without the server's strip there are no pictures: the rows hold handles only.
     const withAtlas = Boolean(info);
-    const A = aspect || ASPECT[plane] || 1.3;
+    const A = withAtlas ? aspect || ASPECT[plane] || 1.3 : 1;
     const free = H - TOP - BOTTOM - (withAtlas ? RULER : RULER - 4) - GAP;
     const onAxis = rows.filter(placed);
     const loose = rows.filter(r => !placed(r));
@@ -271,7 +273,7 @@ const Strip = (() => {
     const axisRight = Math.max(axisLeft + 20, W - PAD - tw3 / 2 - (looseW ? looseW + 14 : 0));
     const basePx = (axisRight - axisLeft) / (hi - lo);
     const step = info?.step_mm || 0.5;
-    const widthCap = withAtlas ? (step * basePx * 0.94) / A : Infinity;
+    const widthCap = withAtlas ? (step * basePx * 0.94) / A : HANDLES_ONLY;
     // Stair rows: the fewest rows (at most three) in which no thumbnail overlaps its neighbour.
     const order = [...onAxis].sort((a, b) => a.position_mm - b.position_mm || a.order - b.order);
     let chosen = null;
@@ -312,7 +314,7 @@ const Strip = (() => {
   function place() {
     if (!layout) return;
     const L = layout;
-    const th = Math.max(8, Math.min(heightFor(L.free, L.n, L.withAtlas), L.withAtlas ? (L.step * pxPerMm() * 0.94) / L.A : Infinity));
+    const th = Math.max(8, Math.min(heightFor(L.free, L.n, L.withAtlas), L.withAtlas ? (L.step * pxPerMm() * 0.94) / L.A : HANDLES_ONLY));
     const tw = th * L.A;
     const thA = L.withAtlas ? th : 0;
     // Room the thumbnails do not need spreads the stair rows (up to 1.2 heights apart),
@@ -372,6 +374,7 @@ const Strip = (() => {
         set(image, mark.thumb.box);
       }
       set(mark.outline, { x: cx - tw / 2, y: cy - th / 2, width: tw, height: th });
+      mark.outline.style.display = L.withAtlas ? '' : 'none';
       set(mark.handle, { cx, cy, r: radius });
     }
     // The pink bar spanning the focus's sections.
@@ -407,23 +410,26 @@ const Strip = (() => {
   function drawRuler(yAxis) {
     const L = layout;
     const px = pxPerMm();
-    const tick = [0.05, 0.1, 0.2, 0.5, 1, 2, 5].find(t => t * px >= 7) || 10;
-    const label = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20].find(t => t * px >= 46 && t >= tick) || 50;
+    // Ticks every millimetre at the whole axis, finer once zoomed; labels every few.
+    const tick = [0.1, 0.5, 1, 2, 5].find(t => t * px >= 45) || 10;
+    const label = [0.5, 1, 2, 5, 10, 20].find(t => t * px >= 90 && t >= tick) || 50;
     const from = Math.max(L.lo, toMm(L.axisLeft - 2)), to = Math.min(L.hi, toMm(L.axisRight + 2));
     const ruler = layers.ruler, ends = layers.ends;
     ruler.replaceChildren();
     ends.replaceChildren();
     ruler.append(svgEl('line', { class: 'axis', x1: toX(from), y1: yAxis, x2: toX(to), y2: yAxis }));
     const low = info?.axis?.low || '', high = info?.axis?.high || '';
-    const lowEnd = L.axisLeft - 2 + low.length * 6 + 10, highStart = L.axisRight + 2 - high.length * 6 - 10;
+    // A tick label keeps clear of the axis ends' names (6 px a character at 10 px).
+    const lowEnd = L.axisLeft - 2 + low.length * 6 + 8, highStart = L.axisRight + 2 - high.length * 6 - 8;
     const digits = label < 1 ? 1 : 0;
     for (let i = Math.ceil(from / tick - 1e-6); i * tick <= to + 1e-9; i++) {
       const mm = i * tick, x = toX(mm);
       const labelled = Math.abs(mm / label - Math.round(mm / label)) < 1e-6;
       ruler.append(svgEl('line', { class: 'tick', x1: x, y1: yAxis - (labelled ? 5 : 3), x2: x, y2: yAxis }));
-      if (labelled && x > lowEnd && x < highStart) {
+      const words = mm.toFixed(digits);
+      if (labelled && x - words.length * 3 > lowEnd && x + words.length * 3 < highStart) {
         const text = svgEl('text', { x, y: yAxis - 7, 'text-anchor': 'middle' });
-        text.textContent = mm.toFixed(digits);
+        text.textContent = words;
         ruler.append(text);
       }
     }
