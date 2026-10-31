@@ -13,6 +13,7 @@ myst_enable_extensions = ["colon_fence", "deflist", "tasklist"]
 myst_heading_anchors = 6
 
 exclude_patterns = ["requirements.txt", "_build", "_extra", "_includes"]
+templates_path = ["_templates"]
 html_extra_path = ["_extra"]  # llms.txt at the site root
 
 html_theme = "pydata_sphinx_theme"
@@ -45,8 +46,11 @@ html_theme_options = {
     "navbar_align": "left",
     "navigation_with_keys": False,
     "show_toc_level": 2,
+    # The top bar holds the logo, search and GitHub; the pages are listed in the left bar.
+    "navbar_center": [],
     "navbar_end": ["navbar-icon-links"],  # no light/dark switch: the docs have one look
-    # The front page carries its own routes, so it has no "On this page" column.
+    "primary_sidebar_end": [],
+    # The front page's hero needs the width, so it has no "On this page" column.
     "secondary_sidebar_items": {
         "**": ["page-toc", "edit-this-page"],
         "index": [],
@@ -61,5 +65,6 @@ html_context = {
     "doc_path": "docs",
     "default_mode": "dark",
 }
-# Inner pages show their section as a tree on the left; the front page has no side columns.
-html_sidebars = {"index": [], "**": ["sidebar-nav-bs"]}
+# Every page, the front page included, lists the whole site on the left, grouped by category
+# (_templates/sidebar-categories.html).
+html_sidebars = {"**": ["sidebar-categories"]}

@@ -19,10 +19,3 @@ You need:
 You will type a few commands into a **terminal**, the window where you type
 commands for the computer instead of clicking. Every command is given in
 full: copy it, paste it, and press **Enter**.
-
-```{toctree}
-:maxdepth: 1
-
-install
-connect
-```

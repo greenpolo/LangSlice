@@ -264,48 +264,9 @@ kbd,
   width: auto;
 }
 
-.bd-header .navbar-nav .nav-link,
-.bd-header .navbar-nav .dropdown-toggle {
-  color: var(--ls-muted);
-  font-family: var(--ls-mono);
-  font-size: 0.8125rem;
-  font-weight: 400;
-  padding: 0.25rem 0.6rem;
-}
-
-.bd-header .navbar-nav .nav-link:hover,
-.bd-header .navbar-nav .dropdown-toggle:hover {
-  color: var(--ls-name);
-  text-decoration: none;
-}
-
-/* the section you are in: named in off-white, its edge pink */
-.bd-header ul.navbar-nav > li.nav-item.current > .nav-link {
-  color: var(--ls-name);
-  font-weight: 700;
-}
-
-.bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
-  border-bottom: 2px solid var(--ls-pink);
-}
-
-.bd-header .dropdown-menu {
-  background: var(--ls-ground);
-  border: 1px solid var(--ls-line);
-  border-radius: 0;
-  box-shadow: none;
-  padding: 0.25rem 0;
-}
-
-.bd-header .dropdown-menu .dropdown-item {
-  color: var(--ls-muted);
-  font-size: 0.8125rem;
-}
-
-.bd-header .dropdown-menu .dropdown-item:hover,
-.bd-header .dropdown-menu .dropdown-item:focus {
-  background: var(--ls-wash);
-  color: var(--ls-name);
+/* the top bar has no section links, so search and GitHub go to its right end */
+.bd-header .navbar-header-items__end {
+  margin-left: auto;
 }
 
 .search-button-field {
@@ -337,8 +298,9 @@ kbd,
   color: var(--ls-name);
 }
 
-/* ---- Trees: the section list on the left and "On this page" on the right are drawn as structure
-   trees, like the atlas's own region hierarchy ---- */
+/* ---- The side columns: every page of the site on the left, grouped by category (the captions of the front
+   page's tables of contents), and the page's own sections on the right. A thin rail runs down each list, and
+   where you are marks it in pink, as a region border marks the card ---- */
 .bd-sidebar-primary,
 .bd-sidebar-secondary {
   background: var(--ls-ground);
@@ -350,11 +312,85 @@ kbd,
   border-right: 1px solid var(--ls-line);
 }
 
-.bd-sidebar-primary .sidebar-primary-items__start {
-  padding-top: 0.5rem;
+@media (min-width: 960px) {
+  .bd-page-width .bd-sidebar-primary {
+    --pst-sidebar-primary-width: 17rem;
+    padding: 2rem 1.25rem 2rem 1.5rem;
+  }
 }
 
-.bd-sidebar-primary .bd-links__title,
+.ls-nav,
+.bd-sidebar-secondary .section-nav {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.ls-nav p.caption {
+  margin: 1.75rem 0 0.45rem;
+  color: var(--ls-name);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.ls-nav p.caption:first-child {
+  margin-top: 0;
+}
+
+.ls-nav ul,
+.bd-sidebar-secondary .section-nav,
+.bd-sidebar-secondary .section-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ls-nav ul ul,
+.bd-sidebar-secondary .section-nav ul ul {
+  margin-left: 1.4ch;
+}
+
+.ls-nav li,
+.bd-sidebar-secondary .section-nav li {
+  margin: 0;
+  padding: 0;
+}
+
+.ls-nav a,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link {
+  display: block;
+  margin: 0;
+  padding: 0.24rem 0 0.24rem 1.5ch;
+  border-left: 1px solid var(--ls-line);
+  box-shadow: none;
+  color: var(--ls-muted);
+  text-decoration: none;
+}
+
+.ls-nav a:hover,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link:hover {
+  color: var(--ls-name);
+  border-left-color: var(--ls-tract);
+  background: none;
+  text-decoration: none;
+}
+
+/* the page you are on, and the page it sits under */
+.ls-nav li.current > a {
+  color: var(--ls-name);
+}
+
+.ls-nav a.current,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link.active,
+.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link[aria-current="true"] {
+  color: var(--ls-name);
+  font-weight: 700;
+  background: none;
+  box-shadow: none;
+  border-left: 2px solid var(--ls-pink);
+  padding-left: calc(1.5ch - 1px);
+}
+
 .bd-sidebar-secondary .onthispage {
   color: var(--ls-name);
   font-size: 0.8125rem;
@@ -367,144 +403,9 @@ kbd,
   display: none;
 }
 
-.bd-sidebar-primary .bd-sidenav,
-.bd-sidebar-secondary .section-nav {
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.bd-sidebar-primary .bd-sidenav ul,
-.bd-sidebar-secondary .section-nav ul {
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.bd-sidebar-primary .bd-sidenav li,
-.bd-sidebar-secondary .section-nav li {
-  position: relative;
-  margin: 0;
-  padding: 0 0 0 2.4ch;
-  list-style: none;
-}
-
-/* the elbow of each branch */
-.bd-sidebar-primary .bd-sidenav li::before,
-.bd-sidebar-secondary .section-nav li::before {
-  content: "";
-  position: absolute;
-  left: 0.5ch;
-  top: 0;
-  width: 1.4ch;
-  height: 0.95em;
-  border-left: 1px solid var(--ls-tract);
-  border-bottom: 1px solid var(--ls-tract);
-}
-
-/* the trunk running past a branch that has siblings below it */
-.bd-sidebar-primary .bd-sidenav li:not(:last-child)::after,
-.bd-sidebar-secondary .section-nav li:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  left: 0.5ch;
-  top: 0.95em;
-  bottom: 0;
-  border-left: 1px solid var(--ls-tract);
-}
-
-.bd-sidebar-primary .bd-sidenav a,
-.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link,
-.bd-sidebar-secondary .section-nav a {
-  margin-left: 0;
-  display: block;
-  color: var(--ls-muted);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  padding: 0.12rem 0 0.3rem;
-  border: 0;
-  box-shadow: none;
-  text-decoration: none;
-}
-
-.bd-sidebar-primary .bd-sidenav a:hover,
-.bd-sidebar-secondary .section-nav a:hover {
-  color: var(--ls-name);
-  background: none;
-  text-decoration: none;
-}
-
-/* where you are: the branch turns pink */
-.bd-sidebar-primary .bd-sidenav li.current > a,
-.bd-sidebar-primary .bd-sidenav li.active > a,
-.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link.active,
-.bd-sidebar-secondary .section-nav li.toc-entry > a.nav-link[aria-current="true"] {
-  color: var(--ls-name);
-  font-weight: 700;
-  background: none;
-  box-shadow: none;
-}
-
-.bd-sidebar-primary .bd-sidenav li.current.active::before,
-.bd-sidebar-secondary .section-nav li.toc-entry:has(> a.nav-link.active)::before {
-  border-color: var(--ls-pink);
-}
-
-/* the section list's open/close mark is a plus or a minus, not an icon */
-.bd-sidebar-primary li.has-children > details > summary .toctree-toggle {
-  color: var(--ls-muted);
-  height: 1.45em;
-  top: 0.1rem;
-}
-
-.bd-sidebar-primary li.has-children > details > summary .toctree-toggle > * {
-  display: none;
-}
-
-.bd-sidebar-primary li.has-children > details > summary .toctree-toggle::before {
-  content: "+";
-  font-family: var(--ls-mono);
-  font-size: 0.875rem;
-}
-
-.bd-sidebar-primary li.has-children > details[open] > summary .toctree-toggle::before {
-  content: "-";
-}
-
-.bd-sidebar-primary li.has-children > details > summary:hover .toctree-toggle {
-  color: var(--ls-pink);
-}
-
-/* the tree speaks for itself; its heading stays for screen readers */
-nav.bd-links p.bd-links__title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-@media (min-width: 960px) {
-  .bd-page-width .bd-sidebar-primary {
-    --pst-sidebar-primary-width: 16rem;
-    padding-top: 2.25rem;
-  }
-
-  /* a page with no pages under it has no tree to show (on a phone the column is also the menu, so it stays) */
-  .bd-page-width .bd-sidebar-primary:not(:has(.bd-sidenav li)) {
-    display: none;
-  }
-}
-
-.bd-sidebar-primary .bd-sidenav .toctree-toggle,
-.bd-sidebar-primary .bd-sidenav details > summary {
-  color: var(--ls-muted);
-}
-
-/* code in the trees reads as plain names there */
+/* code in the side lists reads as plain names there */
 .bd-sidebar-secondary .section-nav code,
-.bd-sidebar-primary .bd-sidenav code,
+.ls-nav code,
 .prev-next-area code,
 .bd-breadcrumbs code {
   background: none;
@@ -1012,6 +913,52 @@ section#langslice > h1 {
   font-style: normal;
 }
 
+/* the left hemisphere: the section's own image, with its atlas borders on it */
+.bd-article .ls-brain__photo {
+  position: absolute;
+  display: block;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+/* the theme backs every image with white and dims it in dark mode, for pictures drawn on white; the section's
+   own image is drawn for black */
+html[data-theme] .bd-content .bd-article img.ls-brain__photo {
+  background: none;
+  filter: none;
+  border-radius: 0;
+}
+
+.ls-brain__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ls-brain__lines path {
+  fill: none;
+  stroke: var(--ls-pink);
+  stroke-width: 1.25px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  transition: opacity 0.2s;
+}
+
+.ls-brain.is-pointing .ls-brain__lines path {
+  opacity: 0.3;
+}
+
+.ls-brain.is-pointing .ls-brain__lines path.is-lit {
+  opacity: 1;
+  stroke: var(--ls-name);
+  stroke-width: 2px;
+}
+
 .ls-brain__chars {
   transition: opacity 0.2s;
 }
@@ -1069,7 +1016,7 @@ section#langslice > h1 {
   to { clip-path: inset(0 0 0 0); }
 }
 
-/* The lead and the routes */
+/* The lead */
 .ls-lead p {
   max-width: 62ch;
   margin: 2.5rem 0 0;
@@ -1081,65 +1028,6 @@ section#langslice > h1 {
 .ls-hero ~ .admonition,
 section#langslice > .admonition {
   max-width: 62rem;
-}
-
-/* "Where do you want to go?": a tree of questions, each with the page that answers it */
-.bd-article .ls-routes dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: 4ch;
-  margin: 0;
-}
-
-.bd-article .ls-routes dl > dt,
-.bd-article .ls-routes dl > dd {
-  margin: 0;
-  padding: 0.35rem 0;
-  border: 0;
-}
-
-.bd-article .ls-routes dl > dt {
-  position: relative;
-  padding-left: 3ch;
-  color: var(--ls-text);
-  font-weight: 400;
-}
-
-.bd-article .ls-routes dl > dt strong {
-  color: var(--ls-text);
-  font-weight: 400;
-}
-
-.ls-routes dl > dt::before {
-  content: "";
-  position: absolute;
-  left: 0.5ch;
-  top: 0;
-  width: 2ch;
-  height: 1.25em;
-  border-left: 1px solid var(--ls-tract);
-  border-bottom: 1px solid var(--ls-tract);
-}
-
-.ls-routes dl > dt:not(:nth-last-child(2))::after {
-  content: "";
-  position: absolute;
-  left: 0.5ch;
-  top: 1.25em;
-  bottom: 0;
-  border-left: 1px solid var(--ls-tract);
-}
-
-.ls-routes dl > dd p {
-  margin: 0;
-}
-
-.ls-routes dl > dd a {
-  font-weight: 700;
-}
-
-.ls-routes dl > dt:hover::before {
-  border-color: var(--ls-pink);
 }
 
 @media (max-width: 860px) {
@@ -1154,22 +1042,6 @@ section#langslice > .admonition {
   .ls-brain__readout {
     text-align: left;
   }
-
-  .ls-routes dl {
-    grid-template-columns: 1fr;
-  }
-
-  .ls-routes dl > dd {
-    padding: 0 0 0.6rem 3ch;
-  }
-
-  .ls-routes dl > dt {
-    padding-bottom: 0;
-  }
-
-  .ls-routes dl > dt::after {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1177,7 +1049,8 @@ section#langslice > .admonition {
     animation: none;
   }
 
-  .ls-brain__chars {
+  .ls-brain__chars,
+  .ls-brain__lines path {
     transition: none;
   }
 }

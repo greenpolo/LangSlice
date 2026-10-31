@@ -33,12 +33,3 @@ Rules for a main session that sets up a registration (the connectors'
 - Run `launch` again for every launch; it reflects the job as it stands.
 - Check the result by looking at the saved pictures, not only the agent's
   summary.
-
-```{toctree}
-:hidden:
-
-install
-cli
-mcp
-builtin
-```

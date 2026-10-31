@@ -52,7 +52,7 @@ Each registration counts against your plan's usage limits.
 ```{toctree}
 :hidden:
 
-connect-codex
-connect-antigravity
-connect-claude-code
+Codex (ChatGPT) <connect-codex>
+Antigravity (Gemini) <connect-antigravity>
+Claude Code (Claude) <connect-claude-code>
 ```
