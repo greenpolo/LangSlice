@@ -327,21 +327,20 @@ bodies, and turned into an answer once per door:
 - `mcp/` — the MCP server (`server.py`; `connectors/claude-desktop/`):
   `open_job` (the job opened as the engine does, the toolbox at
   `CLAUDE_MAX_VIEW_EDGE`, `trace_borders` only when the image model is
-  connected), `Session`, `mcp_statement` (the MCP-worded statement `start_job(job_id=)` returns and `launch` embeds), `briefing`, `opened_reply` (`start_job`'s short reply for a folder job; both arm the gate through `arm_opening`) and `opening_pages` (the opening strips
+  connected), `Session`, `mcp_statement` (the MCP-worded statement
+  `launch` embeds), `opened_reply` (`start_job`'s short reply; it arms the
+  gate through `arm_opening`) and `opening_pages` (the opening strips
   at `CLAUDE_IMAGE_LIMIT`, each composed within a page's byte budget, paged
   under `PAGE_BYTES`, a strip and its text kept together), `save_page`,
   `result_blocks` (every reply through `fit_reply`; a shrunk reply says so),
   `host_tool` (each call serialized on the session's lock), `strict_arguments` (FastMCP drops unknown arguments; refused
-  first, a nested object sent as a JSON string parsed), `open_saved_job`
-  (a saved ABBA job by id), `open_folder` (the job of a named image or job
+  first, a nested object sent as a JSON string parsed), `open_folder` (the job of a named image or job
   folder as saved: `doors.jobs.find` / `read_spec`, its notes; a folder
   without one gets a new job from the server's job flags), `build_server`,
   `serve` (`initialization_options`: the capabilities advertise
   `tools.listChanged`, so a host acts on the `send_tool_list_changed` that
-  `start_job` sends when it installs a job's tools). `EventRelay` forwards a saved ABBA job's
-  tool events (and one `seed` per `show_stack` page) over its host channel
-  (`host_channel.py`) as `agent_event`s; `tool_end` events carry `views`,
-  the saved pictures' paths.
+  `start_job` sends when it installs a job's tools). `start_job` takes one
+  argument, `image_folder`; without a job open and without it, `NO_FOLDER`.
 - `abba/`, `credentials.py`, `user_settings.py` — what the MCP door, the
   CLI and the engine service share (the service itself is
   `hosts/service.py`, protocol 3): `abba/contract.py` (the engine contract's
@@ -371,7 +370,7 @@ bodies, and turned into an answer once per door:
   a section (`_host_updates(..., frozen=spec.frozen_for)`); with the
   `nonlinear` task `warp` rows from `core/maps/abba.py`, each logged with
   its measured `max_error_mm` / `p99_error_mm`; `host_angles` on a
-  stack-wide angle change; `public_event`, the event data a host may see),
+  stack-wide angle change),
   `credentials.py` (`setup_status`: version, `PROTOCOL_VERSION` (3), the
   Python and its environment; saved credentials, login;
   `load_credentials`: `.env`, then the keys saved by setup, an explicit
@@ -387,13 +386,9 @@ bodies, and turned into an answer once per door:
   nothing yet), an `agent` model and effort per connection; `agent_models()`
   the models offered and LangSlice's defaults; `agent_choice()`, which
   `commands/linear.py`'s `apply_saved_agent_choice` gives `linear run` when it has
-  neither `--model` nor `--reasoning`). A saved ABBA job (`job.json` with
-  `job_id` and `host` format 2, kind `host`) is opened by id through
-  `mcp/host_channel.py` `load_job` (the index entry) with its loopback
-  channel. ABBA shows one atlas angle
+  neither `--model` nor `--reasoning`). ABBA shows one atlas angle
   per stack, so the tracker refuses a state whose sections differ in cutting
-  angle (`refuse_mixed_angles`, `ABBA_MIXED_ANGLES`), which also fails the
-  MCP door's opening of such a saved ABBA job.
+  angle (`refuse_mixed_angles`, `ABBA_MIXED_ANGLES`).
 - `commands/` and `agent_cli/` — the `langslice` and `langslice-job`
   commands, one module per group; `langslice/cli.py` keeps the entry point
   `langslice.cli:main`, `agent_cli/main.py` is `langslice-job`'s.
@@ -530,8 +525,8 @@ bodies, and turned into an answer once per door:
     the hook of the Claude Code (`SubagentStop`) and Antigravity (`Stop`)
     plugins: the hook's JSON on stdin, the transcript (`transcript_path`), the
     job folders it names (`job_folders`: `langslice-job FOLDER` and
-    `open_job(...)`, then the MCP `start_job` calls' `image_folder` or saved
-    `job_id` under any harness's tool name, `started_jobs`, `START_JOB`;
+    `open_job(...)`, then the MCP `start_job` calls' `image_folder` under
+    any harness's tool name, `started_jobs`, `START_JOB`;
     through `jobs.find`), each given the transcript as
     `trace/<harness>_<session>.jsonl` with inline image data replaced by its
     size (`slim`) and beside it a launch check, `<harness>_<session>.launch.json` (`launch_check`: the first user message, `first_user_message`, against `logs/launches/*.md`: `verbatim`, `launch`, `similarity`, `first_difference`, lengths; or `checked: false`); a transcript that submitted (`SUBMIT_PATTERN`, or an MCP `submit`

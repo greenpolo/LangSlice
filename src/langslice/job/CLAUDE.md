@@ -122,7 +122,6 @@ LangSlice, so a job travels with its images:
 |---|---|---|
 | `langslice linear run FOLDER` | `FOLDER` | `FOLDER/langslice/` |
 | `langslice mcp`, `start_job(image_folder=...)` | that folder (or the named job folder's) | `<folder>/langslice/`, or the named job folder |
-| `langslice mcp`, `start_job(job_id=...)` | the saved job's | the index entry's job folder |
 | ABBA's `Register › LangSlice…` (Fiji connector, `abba.prepare`) | the ABBA project's snapshots, `~/.langslice/abba/<project key>/` | `~/.langslice/abba/<project key>/langslice/`, prepared (below) |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
@@ -141,7 +140,7 @@ Two exceptions, both from `layout.locate_job_folder` (used by
   the image folder; no file remains after the check), the
   job folder is `~/.langslice/jobs/<id>/`, same layout. The id is the
   image folder's path hashed (`index.folder_id`), so a reopen finds it
-  again; a saved ABBA job uses its own id. Said once through the
+  again. Said once through the
   progress/emit log (`[job] ... cannot be created or written; the job
   folder is ...`) and recorded in the id's index entry under `fallback`
   (`image_folder`, `reason`).
@@ -154,8 +153,7 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; the user's "notes" (every door
                      gives them to the agent); the agent CLI's "viewer"; under
                      "host" a prepared ABBA job's facts (format 3, kind
-                     "abba", "abba": the session), or a saved ABBA job's
-                     (format 2, kind "host", with its job_id)
+                     "abba", "abba": the session)
 state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/undo.json    the undo and redo steps (undo_steps.py)
@@ -408,12 +406,11 @@ longer exist be taken over by the images it is opened with.
   `recent_file` (`LANGSLICE_RECENT_JOBS`, `RECENT_ENV`: another file, or
   `off`; the test suite sets it off); past `KEEP_BYTES` rewritten with the
   newest line of each of the newest `KEEP_JOBS` folders. Never fails an open.
-- `index.py` — saved host jobs by id: `~/.langslice/jobs/<id>.json`
-  (`job_id`, `job_folder`, `host_channel`, `created_at`, and `fallback`
-  when the job folder is under `~/.langslice/jobs/` because the image
-  folder could not be written; owner-only). `folder_id` (an image folder's
-  stable id). The channel token stays here, not in a folder that may be
-  shared. `register`, `lookup` (refuses a newer entry).
+- `index.py` — job folders kept under `~/.langslice/jobs/` because their
+  image folder could not be written: `~/.langslice/jobs/<id>.json`
+  (`job_id`, `job_folder`, `created_at`, `fallback`; owner-only).
+  `folder_id` (an image folder's stable id), `register`, `lookup`
+  (refuses a newer entry).
 - `state_file.py` — `state.json`, and the one place a `Stack` becomes JSON
   and comes back: `stack_to_json` (the stack's fields, one row per section,
   the cutting angles once on the stack while every section shares them,

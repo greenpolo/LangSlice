@@ -1,7 +1,7 @@
-"""LangSlice tools for MCP hosts, with job folders, saved ABBA jobs and paged pictures.
+"""LangSlice tools for MCP hosts, with job folders and paged pictures.
 
-The host owns its conversation; LangSlice owns validated settings, tool gates,
-checkpoints and optional loopback-only ABBA updates. No model is called here.
+The host owns its conversation; LangSlice owns validated settings, tool gates
+and checkpoints. No model is called here.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from anyio import to_thread
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.models import InitializationOptions
+from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server
 from mcp.types import ContentBlock, TextContent, ToolAnnotations
 
@@ -33,12 +34,6 @@ from langslice.core.pictures.opening import (
 )
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import Stack
-from langslice.doors.abba.checkpoints import (
-    HostCheckpoints,
-    HostFacts,
-    host_facts,
-    public_event,
-)
 from langslice.doors.agent.engine import EngineContext, build_context
 from langslice.doors.call_log import TRACE_DIR_ENV, HostTrace
 from langslice.doors.jobs import (
@@ -49,7 +44,6 @@ from langslice.doors.jobs import (
     provider_connected,
     read_spec,
 )
-from langslice.doors.mcp.host_channel import HostChannel, load_job
 from langslice.doors.mcp.pages import (
     describe_blocks,
     opening_pages,
@@ -62,7 +56,6 @@ from langslice.job.host_inputs import opening_spec
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
-from langslice.job.state_file import stack_to_json
 from langslice.tools.catalog import VERBS
 from langslice.tools.descriptions.door_text import opening_for_mcp, read_notes
 from langslice.tools.descriptions.statement import (
@@ -88,23 +81,6 @@ INSTRUCTIONS = (
 )
 
 
-class EventRelay:
-    """The session's tool events (``tool_start`` / ``tool_end``, the
-    ``show_stack`` pages as ``seed``), forwarded to ``target`` when a host
-    listens (the ABBA channel of a saved ABBA job), dropped otherwise. The
-    tool pipeline emits them (the ``on_event`` of
-    :func:`langslice.doors.tools.toolbox.build_tools`); they carry saved
-    view paths, never image bytes."""
-
-    def __init__(self) -> None:
-        self.target: Callable[[dict[str, Any]], None] | None = None
-
-    def __call__(self, event: dict[str, Any]) -> None:
-        target = self.target
-        if target is not None:
-            target(event)
-
-
 @dataclass
 class Session:
     """One open job as this door holds it.
@@ -113,29 +89,21 @@ class Session:
     undo/redo, checkpoint, submit gates), the one
     ``langslice.doors.agent.engine.run`` opens; ``box`` is the tools over it,
     whose gates and delivery bookkeeping this door shares with the ADK agent's.
-    The rest is the door's own: the saved-job record, the host channel and its
-    update callback, the opening pages and the trace.
+    The rest is the door's own: the user's notes, the opening pages and the
+    trace.
     """
 
     job: Job
     ctx: EngineContext
     box: ToolBox
     trace: HostTrace | None
-    job_id: str = ""
-    job_dir: Path | None = None
     notes: str = ""
-    #: Sends the host (ABBA) its live update after every checkpoint.
-    host_update: Callable[[Stack], None] | None = None
-    prepared: HostFacts | None = None
-    channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     #: The job's nonlinear task names an image model this door cannot reach
     #: (:func:`langslice.doors.jobs.image_model_off`): its tools and statement
     #: are a run without one.
     image_model_off: bool = False
-    #: Tool events, forwarded to the host channel of a saved ABBA job.
-    events: EventRelay = field(default_factory=EventRelay)
 
     @property
     def spec(self) -> JobSpec:
@@ -146,12 +114,10 @@ class Session:
         return self.job.state
 
     def close(self) -> None:
-        """Let the job go: its host channel closed, its running image-model
-        calls settled and recorded, its pictures written
-        (:func:`langslice.doors.jobs.close_job`, as every door ends a job).
-        When another job replaces it and when the server stops."""
-        if self.channel is not None:
-            self.channel.close()
+        """Let the job go: its running image-model calls settled and
+        recorded, its pictures written (:func:`langslice.doors.jobs.close_job`,
+        as every door ends a job). When another job replaces it and when the
+        server stops."""
         try:
             close_job(self.job)
         except Exception:
@@ -187,19 +153,18 @@ def open_job(
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = HostTrace(trace_dir, ctx.image_folder) if trace_dir else None
     # The host is Claude: its pictures are capped at Claude's largest image.
-    events = EventRelay()
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
-                      image_model_connected=not off, on_event=events, door="mcp")
+                      image_model_connected=not off, door="mcp")
     box.answers_crashes = True  # a crash is the host's reply
-    return Session(job, ctx, box, trace, image_model_off=off, events=events)
+    return Session(job, ctx, box, trace, image_model_off=off)
 
 
 def mcp_statement(session: Session) -> str:
     """The job statement as the MCP door words it: the toolbox's tool names, its
     picture limit, the ``show_stack`` pages (drawn now when not yet), the
-    user's notes and the image-model line. ``start_job(job_id=...)`` returns it
-    (:func:`briefing`) and so does ``langslice-job FOLDER launch --role register``
-    (:mod:`langslice.doors.agent_cli.launch`), so the two cannot drift."""
+    user's notes and the image-model line. ``langslice-job FOLDER launch --role
+    register`` (:mod:`langslice.doors.agent_cli.launch`) embeds it in the
+    message that launches an MCP registration agent."""
     if not session.pages:
         session.pages = opening_pages(session)
     facts = StatementFacts.from_run(
@@ -221,13 +186,6 @@ def arm_opening(session: Session) -> int:
     return len(session.pages)
 
 
-def briefing(session: Session) -> list[ContentBlock]:
-    """The full job statement, text only (opening pictures are available
-    through show_stack); arms the opening-read gate (:func:`arm_opening`)."""
-    arm_opening(session)
-    return [TextContent(type="text", text=mcp_statement(session))]
-
-
 def opened_reply(session: Session) -> list[ContentBlock]:
     """``start_job``'s reply for a job a launching message described: the job
     opened, its sections, and the pages of its opening; arms the opening-read gate."""
@@ -236,24 +194,6 @@ def opened_reply(session: Session) -> list[ContentBlock]:
     return [TextContent(type="text", text=(
         f"Job opened: {session.job.folder}. {len(session.state.in_order())} sections. "
         f"The opening is show_stack {shown}: read every page before any write."))]
-
-
-def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Session:
-    """A saved ABBA job (:func:`langslice.doors.mcp.host_channel.load_job`), by id."""
-    saved = load_job(job_id)
-    facts = host_facts(read_spec(saved.folder))
-    session = open_job(facts.spec, atlas_loader, saved.folder)
-    session.job_id, session.job_dir, session.prepared = job_id, saved.folder, facts
-    session.notes = read_notes(session.job.layout)
-    session.channel = HostChannel(job_id, saved.channel)
-    channel = session.channel
-    session.events.target = lambda event: channel.event(
-        {"kind": "agent_event", "event": public_event(event)})
-    checkpoints = HostCheckpoints(facts, session.channel.event)
-    checkpoints.attach(session.job, session.ctx)
-    session.host_update = checkpoints
-    session.host_update(session.state)
-    return session
 
 
 def open_folder(
@@ -277,17 +217,10 @@ def open_folder(
 
 
 def finish(session: Session) -> None:
-    if session.host_update is not None:
-        session.host_update(session.state)
     session.job.emit_results(session.ctx.progress)
-    if session.job_dir is not None and session.prepared is not None:
-        result = {"state": stack_to_json(session.state), "output_dir": str(session.job_dir)}
-        if session.channel is not None:
-            session.channel.send({"type": "result", "result": result})
-            session.channel.close()
 
 
-def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
+def host_tool(session: Session, tool: Callable[..., object]) -> Callable[..., Any]:
     """Wrap one toolbox tool for MCP: same name, docstring and arguments.
 
     ``tool_context`` is ADK's and is dropped from the schema; the tools accept
@@ -299,11 +232,7 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
 
     async def run(**kwargs: Any) -> list[ContentBlock]:
         def invoke() -> object:
-            if session.host_update is None:
-                result: object = tool(**kwargs)
-            else:
-                with session.job.observe(session.host_update):
-                    result = tool(**kwargs)
+            result: object = tool(**kwargs)
             if tool.__name__ == "submit" and session.state.submitted:
                 finish(session)
             return result
@@ -380,7 +309,6 @@ def build_server(
     spec_for: Callable[[str], JobSpec],
     folder: str | None = None,
     *,
-    job_id: str | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
     sessions: dict[str, Session] | None = None,
 ) -> FastMCP:
@@ -388,10 +316,10 @@ def build_server(
     for a folder without a job (:func:`open_folder`).
 
     With *folder*, that job opens now and its tools are listed from the
-    start; otherwise ``start_job`` names the folder and the tools appear then.
-    *job_id* opens that saved job now, for hosts that list tools only once, at
-    startup (Claude Code in print mode ignores a later tool-list change).
-    *atlas_loader* is for tests and offline hosts, as in the engine.
+    start (for hosts that list tools only once, at startup: Claude Code in
+    print mode ignores a later tool-list change); otherwise ``start_job``
+    names the folder and the tools appear then. *atlas_loader* is for tests
+    and offline hosts, as in the engine.
     *sessions* holds the open job under ``"job"`` (the caller closes it when
     the server stops: :func:`serve`).
     """
@@ -424,14 +352,7 @@ def build_server(
                 raise ValueError(f"page must be between 1 and {len(session.pages)}")
             blocks = session.pages[page - 1]
             session.box.opening_read(page)
-            views = save_page(session, page, blocks)
-            # The opening pages are this door's seed: the host's viewer
-            # follows the whole stack and its log shows the saved pictures.
-            try:
-                session.events({"kind": "seed", "page": page, "views": views,
-                                "text": f"Opening pictures, page {page}"})
-            except Exception:
-                logger.warning("Could not forward the show_stack event", exc_info=True)
+            save_page(session, page, blocks)
             if session.trace is not None:
                 session.trace.write("show_stack", page=page, content=describe_blocks(blocks))
             return blocks
@@ -441,23 +362,15 @@ def build_server(
         current["job"] = session
 
     async def start_job(
-        image_folder: str = "", job_id: str = "", ctx: Context | None = None,
+        image_folder: str = "",
+        ctx: Context[ServerSession, object, object] | None = None,
     ) -> list[ContentBlock]:
         """Open the job named in the message that launched you: its image_folder (or
         its job folder). It answers with the job's section count and the pages of
         its opening, and gives you the job's tools. Read every show_stack page
-        before writing. Omit both arguments to repeat that reply. A saved ABBA
-        job's job_id (never with image_folder) answers with the whole job
-        description instead.
+        before writing. Omit the argument to repeat that reply.
         """
-        if job_id and image_folder:
-            raise ValueError("Supply job_id or image_folder, not both")
         session = current.get("job")
-        if job_id and (session is None or session.job_id != job_id):
-            session = await to_thread.run_sync(open_saved_job, job_id, atlas_loader)
-            install(session)
-            if ctx is not None:
-                await ctx.session.send_tool_list_changed()
         wanted = os.path.abspath(os.path.expanduser(image_folder)) if image_folder else None
         if wanted is not None and (session is None or wanted not in (
                 session.ctx.image_folder, str(session.job.folder))):
@@ -468,32 +381,22 @@ def build_server(
                 await ctx.session.send_tool_list_changed()
         if session is None:
             refusal = Refused(
-                RefusalCode.NO_FOLDER,
-                "Name a job: start_job(image_folder=...), or a saved ABBA "
-                "job's start_job(job_id=...).")
+                RefusalCode.NO_FOLDER, "Name a job: start_job(image_folder=...).")
             reply = json.dumps(refusal.payload())
             return [TextContent(type="text", text=reply)]
-        # A saved ABBA job (opened from ABBA's copy prompt) has no launching agent
-        # to carry its statement, so its start_job returns it; ABBA's copy-prompt
-        # dialog is scheduled for removal.
-        reply = briefing if session.job_id else opened_reply
-        blocks = await to_thread.run_sync(reply, session)
+        blocks = await to_thread.run_sync(opened_reply, session)
         if session.trace is not None:
             session.trace.write("briefing", content=describe_blocks(blocks))
         return blocks
 
     server.add_tool(start_job, structured_output=False)
-    if job_id:
-        install(open_saved_job(job_id, atlas_loader))
-    elif folder is not None:
+    if folder is not None:
         install(open_folder(os.path.abspath(os.path.expanduser(folder)), spec_for,
                             atlas_loader))
     return server
 
 
-def serve(
-    spec_for: Callable[[str], JobSpec], folder: str | None = None, job_id: str | None = None,
-) -> None:
+def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None:
     """Run the server over stdio until the host disconnects.
 
     Scientific libraries print through Python and native stdout alike, so
@@ -506,7 +409,7 @@ def serve(
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     with redirect_stdout(sys.stderr):
         sessions: dict[str, Session] = {}
-        server = build_server(spec_for, folder, job_id=job_id, sessions=sessions)
+        server = build_server(spec_for, folder, sessions=sessions)
         try:
             anyio.run(_run_stdio, server, wire)
         finally:

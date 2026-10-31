@@ -5,13 +5,10 @@
 Open the job named in the message that launched you: its image_folder (or
         its job folder). It answers with the job's section count and the pages of
         its opening, and gives you the job's tools. Read every show_stack page
-        before writing. Omit both arguments to repeat that reply. A saved ABBA
-        job's job_id (never with image_folder) answers with the whole job
-        description instead.
+        before writing. Omit the argument to repeat that reply.
         
 
 - `image_folder` (string):
-- `job_id` (string):
 
 ## look
 

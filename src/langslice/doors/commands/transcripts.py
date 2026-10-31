@@ -7,9 +7,9 @@ input (JSON) on stdin: Claude Code's ``SubagentStop``
 beside ``transcript_path``) or Antigravity's ``Stop`` (``transcriptPath``,
 ``conversationId``). The job folders the transcript worked on are the ones its
 ``langslice-job FOLDER ...`` commands and ``open_job(...)`` calls name, and the
-ones its MCP ``start_job`` calls open (:func:`started_jobs`: an
-``image_folder`` or a saved job's ``job_id``, under any harness's name for the
-tool); each gets the transcript in ``trace/<harness>_<session id>.jsonl``
+ones its MCP ``start_job`` calls open (:func:`started_jobs`: their
+``image_folder``, under any harness's name for the tool); each gets the
+transcript in ``trace/<harness>_<session id>.jsonl``
 (rewritten at each end of the session, so the copy is the latest), beside
 LangSlice's own agent's traces, with inline image data replaced by its size
 (:func:`slim`). When the transcript submitted a job (:data:`SUBMIT_PATTERN`:
@@ -54,7 +54,7 @@ FOLDER_PATTERNS = (
 #: ``call_mcp_tool`` names it under ``ToolName``).
 START_JOB = re.compile(r"(?:^|__)start_job$")
 #: The ``start_job`` arguments that name a job.
-START_JOB_KEYS = ("image_folder", "job_id")
+START_JOB_KEYS = ("image_folder",)
 #: A submit, on the command line or through the library.
 SUBMIT_PATTERN = re.compile(r"langslice-job\s+\S+\s+submit\b|\.submit\(")
 #: The MCP ``submit`` tool under any harness's name, as :data:`START_JOB`.
@@ -150,13 +150,11 @@ def job_folders(text: str, cwd: Path, also: list[str] | tuple[str, ...] = ()) ->
 
 def started_jobs(text: str) -> list[str]:
     """The folders the MCP ``start_job`` calls of a JSON-lines transcript
-    opened: each call's ``image_folder`` (an image folder or its job folder),
-    or the job folder a saved job's ``job_id`` names in the index. A call is
+    opened: each call's ``image_folder`` (an image folder or its job
+    folder). A call is
     an object one of whose strings is the tool's name (:data:`START_JOB`); its
     arguments are found anywhere in that object, also inside a string that
     holds them as JSON."""
-    from langslice.job import index
-
     found: list[str] = []
 
     def arguments(value: Any) -> None:
@@ -169,14 +167,7 @@ def started_jobs(text: str) -> list[str]:
             for key in START_JOB_KEYS:
                 named = value.get(key)
                 if isinstance(named, str) and named:
-                    if key == "job_id":
-                        try:
-                            entry = index.lookup(index.default_root(), named)
-                        except (OSError, ValueError):
-                            entry = None
-                        named = entry["job_folder"] if entry else ""
-                    if named:
-                        found.append(named)
+                    found.append(named)
             for item in value.values():
                 arguments(item)
         elif isinstance(value, list):

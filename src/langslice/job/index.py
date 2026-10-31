@@ -1,12 +1,11 @@
-"""Saved host jobs by id: a small index pointing at job folders.
+"""Job folders kept outside their image folder, by id: a small index.
 
-A saved ABBA job (ABBA's Claude mode) is opened by id
-(``start_job(job_id=...)``), so the id has to lead to a job folder.
-``~/.langslice/jobs/<id>.json`` is that pointer: the job folder's absolute
-path, plus the one thing that does not belong in a folder that may be
-shared with colleagues, the host's loopback channel token. Owner-only on
-POSIX. Everything else of the job lives in its folder (``job.json`` there,
-under ``host``).
+When an image folder cannot be written, its job folder is
+``~/.langslice/jobs/<id>/`` (:func:`langslice.job.layout.locate_job_folder`),
+the id being the image folder's path hashed (:func:`folder_id`), and
+``~/.langslice/jobs/<id>.json`` points at it and says why
+(``fallback``). Owner-only on POSIX. Everything else of the job lives in its
+folder.
 """
 
 from __future__ import annotations
@@ -14,13 +13,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-#: The index entry's format: ``job_id``, ``job_folder``, ``host_channel``,
-#: ``created_at`` and, for a job folder kept under ``~/.langslice/jobs/``,
+#: The index entry's format: ``job_id``, ``job_folder``, ``created_at`` and
 #: ``fallback``.
 INDEX_FORMAT_VERSION = 1
 _JOB_ID = re.compile(r"[0-9a-f]{12}")
@@ -29,10 +26,6 @@ _JOB_ID = re.compile(r"[0-9a-f]{12}")
 def default_root() -> Path:
     """``~/.langslice/jobs``."""
     return Path.home() / ".langslice" / "jobs"
-
-
-def new_id() -> str:
-    return uuid.uuid4().hex[:12]
 
 
 def folder_id(image_folder: str | os.PathLike[str]) -> str:
@@ -54,7 +47,7 @@ def entry_path(root: Path, job_id: str) -> Path:
 
 
 def register(
-    root: Path, job_id: str, folder: Path, *, host_channel: dict[str, Any] | None = None,
+    root: Path, job_id: str, folder: Path, *,
     created_at: str | None = None, fallback: dict[str, Any] | None = None,
 ) -> Path:
     """Write the id's entry, pointing at *folder*; owner-only. Returns its path.
@@ -64,10 +57,9 @@ def register(
     """
     path = entry_path(root, job_id)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    record = {
+    record: dict[str, object] = {
         "format_version": INDEX_FORMAT_VERSION, "job_id": job_id,
         "job_folder": str(Path(os.path.abspath(folder))),
-        "host_channel": host_channel,
         "created_at": created_at or datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if fallback is not None:

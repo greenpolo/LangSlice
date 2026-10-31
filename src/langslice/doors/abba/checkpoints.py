@@ -13,7 +13,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
@@ -41,10 +41,6 @@ ABBA_MIXED_ANGLES = (
     "cannot show: ABBA uses one atlas angle for the whole stack. Open the job in "
     "LangSlice outside ABBA (the command line or Claude) instead."
 )
-#: The keys of a public event that never reach a host: picture bytes and the
-#: model's private reasoning.
-PRIVATE_EVENT_KEYS = frozenset(
-    {"data", "thought_signature", "encrypted_content"})
 
 
 @dataclass(frozen=True)
@@ -109,34 +105,6 @@ def host_facts(spec: JobSpec) -> HostFacts:
             "The job gives no pixel size for its ABBA snapshots "
             "(inputs.pixel_size_um).")
     return HostFacts(folder, spec, snapshot_sizes(folder), float(calibration))
-
-
-def public_event(value: object) -> object:
-    """Return event data without picture bytes or private reasoning.
-
-    Parameters
-    ----------
-    value
-        A tool event as the toolbox emits it, or any part of one.
-
-    Returns
-    -------
-    object
-        The same structure in JSON values; a key of
-        :data:`PRIVATE_EVENT_KEYS` and a value JSON cannot hold are dropped.
-    """
-    if isinstance(value, dict):
-        fields = cast("dict[object, object]", value)
-        return {str(key): public_event(item) for key, item in fields.items()
-                if key not in PRIVATE_EVENT_KEYS}
-    if isinstance(value, list | tuple):
-        parts = cast("list[object] | tuple[object, ...]", value)
-        return [public_event(item) for item in parts]
-    if value is None or isinstance(value, (str, bool, int)):
-        return value
-    if isinstance(value, float) and math.isfinite(value):
-        return value
-    return None
 
 
 def refuse_mixed_angles(state: Any) -> None:
@@ -245,8 +213,7 @@ def _stack_angles(data: dict[str, Any]) -> dict[str, float]:
 
 class HostCheckpoints:
     """The per-job delta tracker called with the job's state after every
-    checkpoint (the follower, ``abba.follow``; the MCP door's
-    ``job.observe``).
+    checkpoint (the follower, ``abba.follow``).
 
     Every checkpoint refuses a state whose sections differ in cutting angle
     (:func:`refuse_mixed_angles`) before emitting anything: ABBA shows one

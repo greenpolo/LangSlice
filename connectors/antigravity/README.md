@@ -47,7 +47,7 @@ arguments tests the connection.
 | --- | --- | --- |
 | skill `register-brain` | main session | prepares the job from the user's choices, starts one registration agent with `invoke_subagent`, then checks the job and handles export; it never registers itself |
 | skill `setup` | main session | once per computer: puts `langslice`'s folder on PATH and adds LangSlice's permission rules (below) to `settings.json` |
-| skill `abba` | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
+| skill `abba` | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands, how to reach a running Fiji, moving files between ABBA and a job |
 | MCP server `langslice_mcp` | `register` | `langslice mcp`: `start_job`, `show_stack` and the job's tools, whose replies carry the pictures |
 | agent `register` | registers one brain | the LangSlice MCP tools and `view_file`; no shell, no file writes |
 | agent `register-scripting` | registers one brain | `run_command`, `view_file`, `write_to_file`, `replace_file_content` and the web: the `langslice-job` command line, scripts with the LangSlice Python library, packages installed in the job's own environment (`langslice-job FOLDER env`) |

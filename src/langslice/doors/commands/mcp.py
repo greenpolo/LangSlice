@@ -1,6 +1,6 @@
 """``langslice mcp``: the job's tools over MCP, for a host that brings its
 own model. A host opens a job folder made with ``langslice-job FOLDER init``
-as it stands, or a saved ABBA job by id."""
+as it stands."""
 
 from __future__ import annotations
 
@@ -32,13 +32,6 @@ def add_mcp_parser(
         "as saved, else a new one. Without it the host names the folder "
         "through the start_job tool",
     )
-    p.add_argument(
-        "--job",
-        default=None,
-        metavar="JOB_ID",
-        help="Open this saved job at startup, so its tools are listed from the "
-        "first request (for hosts that do not follow tool-list changes)",
-    )
     # The job flags of `linear run`, less --no-resume and the agent session's
     # (the host runs its own model); they make the job of a folder that holds
     # none (a folder's own job keeps its saved settings).
@@ -61,4 +54,4 @@ def run_mcp(args: argparse.Namespace) -> None:
     except ValueError as exc:
         raise SystemExit(f"langslice mcp: {exc}") from exc
     apply_trace_dir(args)
-    serve(lambda folder: build_linear_spec(args, folder), args.image_folder, args.job)
+    serve(lambda folder: build_linear_spec(args, folder), args.image_folder)

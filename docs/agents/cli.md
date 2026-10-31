@@ -196,7 +196,7 @@ environment's own packages, then LangSlice's.
 Claude Code and Antigravity plugins run when a registration agent's session
 ends. It reads the hook's JSON on stdin, finds the job folders the transcript
 names (its `langslice-job FOLDER ...` commands, `open_job(...)` calls and MCP
-`start_job` calls, by `image_folder` or a saved job's `job_id`) and
+`start_job` calls, by `image_folder`) and
 copies the transcript into each one's `trace/<harness>_<session id>.jsonl`,
 beside the built-in agent's traces, inline image data replaced by its size.
 When the transcript submitted the job (a `submit` command, call or MCP tool

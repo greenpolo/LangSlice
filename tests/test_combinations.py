@@ -648,7 +648,7 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
 
 def connected(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:
     """Whether the job's image model counts as connected to LangSlice (its key
-    or login present), as the MCP door and ABBA's Claude mode ask it; no credential
+    or login present), as the MCP door asks it; no credential
     is read."""
     from langslice.doors import credentials as setup
 

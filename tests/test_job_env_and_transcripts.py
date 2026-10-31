@@ -216,18 +216,15 @@ def test_an_mcp_submit_removes_the_environment(capsys, job, tmp_path, monkeypatc
     assert not (job / "env").exists()
 
 
-def test_a_start_job_by_saved_job_id_lands_in_that_job(capsys, job, tmp_path, monkeypatch):
-    from langslice.job import index
-
-    index.register(index.default_root(), "a1b2c3d4e5f6", job)
-    transcript = tmp_path / "saved.jsonl"
+def test_a_start_job_names_its_folder_and_nothing_else(capsys, job, tmp_path, monkeypatch):
+    transcript = tmp_path / "started.jsonl"
     transcript.write_text(_lines({"type": "assistant", "message": {"content": [
         {"type": "tool_use", "name": "mcp__langslice__start_job",
-         "input": {"job_id": "a1b2c3d4e5f6"}}]}}))
+         "input": {"image_folder": str(job)}}]}}))
     assert transcripts.started_jobs(transcript.read_text()) == [str(job)]
-    # A start_job of an unknown id or with no arguments names nothing.
+    # A start_job with any other argument, or none, names nothing.
     assert transcripts.started_jobs(_lines(
-        {"name": "mcp__langslice__start_job", "input": {"job_id": "no-such-job"}},
+        {"name": "mcp__langslice__start_job", "input": {"job_id": "a1b2c3d4e5f6"}},
         {"name": "mcp__langslice__start_job", "input": {}})) == []
 
 
