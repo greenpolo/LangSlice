@@ -50,12 +50,14 @@ sections to BrainGlobe atlases* (version 0.1.0) [Computer software].
 GitHub's **Cite this repository** button gives it as BibTeX. Questions and
 problems go to [GitHub issues](https://github.com/greenpolo/LangSlice/issues).
 
-% The left bar of every page lists these, one group per caption.
+% The left bar of every page lists these, one group per caption; `self` is this
+% page, listed as Overview.
 
 ```{toctree}
 :caption: Get started
 :hidden:
 
+Overview <self>
 getting-started/install
 register
 ```

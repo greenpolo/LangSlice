@@ -4,7 +4,17 @@ LangSlice runs on Windows, macOS and Linux with Python 3.11. It takes about
 15 GB of disk space, with the atlas it downloads on first use. An NVIDIA GPU
 is optional: on Linux it makes deformable fits faster.
 
-Install it [yourself](#for-humans), or [let your AI app install it](#for-agents).
+[Let your AI app install it](#for-agents), or install it [yourself](#for-humans).
+
+## For agents
+
+Send this to your agent of choice:
+
+```{code-block} text
+:class: ls-copy-box
+
+I want to install LangSlice. Read this and follow the steps: https://raw.githubusercontent.com/greenpolo/LangSlice/main/docs/agents/install.md
+```
 
 ## For humans
 
@@ -174,13 +184,3 @@ Call LangSlice's start_job tool with no arguments and tell me what it says.
 LangSlice answers that no job is named yet and asks for an image folder. If
 the app has no LangSlice tools instead, see
 [Troubleshooting](../troubleshooting.md#the-app-cannot-start-langslice).
-
-## For agents
-
-Send this to your agent of choice:
-
-```{code-block} text
-:class: ls-copy-box
-
-I want to install LangSlice. Read this and follow the steps: https://raw.githubusercontent.com/greenpolo/LangSlice/main/docs/agents/install.md
-```

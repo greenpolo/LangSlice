@@ -6,7 +6,7 @@ page instead.
 
 | Page | Read it to |
 |---|---|
-| [Install LangSlice (for agents)](install.md) | Install LangSlice from source, verify it, and connect it to Codex, Antigravity or Claude Code |
+| [Install LangSlice (for agents)](install.md) | Find conda, install LangSlice, check it, and connect it to Codex, Claude Code or Antigravity |
 | [The agent CLI: `langslice-job`](cli.md) | Create a job, write its launch prompt, call verbs and read their replies |
 | [The MCP server](mcp.md) | Serve the tools to an MCP host and open a job there |
 | [The built-in agent](builtin.md) | Run LangSlice's own agent session: model access, job settings, spend, logs |
