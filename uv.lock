@@ -1494,7 +1494,7 @@ registration = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=1.13" },
     { name = "anthropic", marker = "extra == 'dev'", specifier = ">=1.13" },
-    { name = "basedpyright", marker = "extra == 'dev'" },
+    { name = "basedpyright", marker = "extra == 'dev'", specifier = "==1.39.10" },
     { name = "brainglobe-atlasapi", specifier = ">=3.0.1" },
     { name = "brainglobe-space" },
     { name = "filelock", specifier = ">=3.12" },
