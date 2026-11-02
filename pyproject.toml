@@ -91,7 +91,8 @@ dev = [
     "mcp>=1.24,<2",
     "pytest",
     "pytest-xdist",
-    "ruff",
+    # Pinned: the style baseline counts ruff's findings, which change between versions.
+    "ruff==0.17.3",
     "basedpyright",
     # The docstring validation hook the style checker runs (tools/stylecheck).
     "numpydoc>=1.6",
