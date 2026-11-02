@@ -17,7 +17,8 @@ After a run, `langslice/exports/` in your image folder holds:
 
 QuickNII and VisuAlign open the copies from the folder that holds the file,
 so keep them together. They know the Allen mouse and Waxholm rat atlases
-only; PyNutil takes every BrainGlobe atlas.
+only, and run on Windows and macOS; PyNutil takes every BrainGlobe atlas and
+runs anywhere.
 
 ## Count cells with PyNutil (recommended)
 
@@ -61,5 +62,7 @@ and point clouds you can open in
 
 Open `exports/visualign.json` in
 [VisuAlign](https://quint-workflow.readthedocs.io/en/latest/VisuAlign.html).
-Each section shows the atlas over it, warped as LangSlice fitted it. Save
-your changes to a new file and give that file to PyNutil.
+Each section shows the atlas over it, warped as LangSlice fitted it. The
+warp arrives as a dense grid of markers, about a thousand per section. Save
+your changes with **File ‣ Save As** to a new file and give that file to
+PyNutil. [VERSO](verso.md) opens the same file.
