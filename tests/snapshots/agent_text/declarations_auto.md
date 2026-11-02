@@ -380,8 +380,7 @@ region is missing, marking the whole region keeps the anatomy around it
 safe. Small tears, bubbles, stains, low contrast and folds within an
 intact outline are not damage and are not marked. A section is damaged
 exactly when it has marked regions. The marked
-regions are left out of elastix_affine, fireants_syn and the image model's
-trace automatically, and they move with the registration because they
+regions are left out of elastix_affine and fireants_syn automatically, and they move with the registration because they
 are named by atlas region. One undoable write.
 
 Args:

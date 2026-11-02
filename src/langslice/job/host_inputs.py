@@ -21,14 +21,25 @@ from pathlib import Path
 from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, to_jsonable
+from langslice.core.refusal import Refused
+from langslice.core.sections.damage import (
+    checked_entries,
+    normalized_entries,
+    side_pair_refusal,
+)
 from langslice.core.stack.affine import IDENTITY_PHYSICAL, StoredAffine
 from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import ROTATIONS, Section
 from langslice.core.stack.stack import Stack
+from langslice.core.workspace import Workspace
 from langslice.job.layout import JobLayout, read_job_file
 from langslice.job.settings import frozen as freeze
 from langslice.job.settings.schema import SETTINGS
-from langslice.job.settings.spec import JobSpec, supplied_angles
+from langslice.job.settings.spec import (
+    JobSpec,
+    supplied_angles,
+    supplied_damaged_regions,
+)
 
 #: The transform a section with a frozen affine and none supplied carries: the
 #: host's snapshot is already registered in-plane, so the identity IS its
@@ -90,7 +101,9 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
     not name keeps the flat plane), orientation as a
     filename -> ``{"flip": bool, "rotation_deg": 0|90|180|270}`` mapping (a
     missing key leaves that part as it is), damage as a filename -> note
-    mapping, and transforms as filename -> stored transform dictionaries.
+    mapping, damage marks as a filename -> region entries mapping (the
+    section's ``damaged_regions``, normalized as ``mark_damage`` stores
+    them), and transforms as filename -> stored transform dictionaries.
     Anything the host supplies for a task that IS on is applied too — it is
     a starting point, not a constraint. A ``damaged`` note becomes the
     section's ``damage_note`` (shown in status, so the agent can mark the
@@ -174,14 +187,7 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
             record.transform = _host_affine(cast("object", value))
         state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
 
-    damaged = inputs.get("damaged") or {}
-    if damaged:
-        # A host's word on a section's damage (a note, no regions): the agent
-        # reads it in status and marks the regions it names.
-        for name, note in damaged.items():
-            record = _section(state, "damaged", cast("object", name))
-            record.damage_note = str(note or "")
-        state.notes.append(f"inputs: {len(damaged)} damage note(s) from the host")
+    _apply_damage(state, spec)
 
     frozen = spec.frozen
     if frozen:
@@ -203,6 +209,72 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
         state.notes.append(
             f"inputs: {len(held)} section(s) with a frozen property "
             "(the agent may not change it)")
+
+
+def _apply_damage(state: Stack, spec: JobSpec) -> None:
+    """Write the host's damage notes and marks onto their sections.
+
+    A note (``inputs.damaged``) is the section's ``damage_note``: the agent
+    reads it in status and marks the regions it names. Marks
+    (``inputs.damaged_regions``) are the section's ``damaged_regions``,
+    normalized as ``mark_damage`` stores them; the atlas checks their names
+    when the job opens (:func:`check_damaged_regions`).
+    """
+    inputs = spec.inputs
+    marks = supplied_damaged_regions(inputs.get("damaged_regions"), spec.plane)
+    for name, regions in marks.items():
+        record = _section(state, "damaged_regions", name)
+        record.damaged_regions = normalized_entries(regions)
+    if marks:
+        state.notes.append(
+            f"inputs: damage regions of {len(marks)} section(s) from the host")
+
+    notes = cast("dict[object, object]", inputs.get("damaged") or {})
+    for name, note in notes.items():
+        record = _section(state, "damaged", name)
+        record.damage_note = str(note or "")
+    if notes:
+        state.notes.append(
+            f"inputs: {len(notes)} damage note(s) from the host")
+
+
+def check_damaged_regions(
+    state: Stack, spec: JobSpec, workspace: Workspace
+) -> None:
+    """Check the host's damage marks against the atlas and the placements.
+
+    Every entry of ``inputs.damaged_regions`` must name a region of the
+    atlas, and a side one the section's placement has, as ``mark_damage``
+    checks the agent's (a section without a usable placement is not
+    checked for sides).
+
+    Parameters
+    ----------
+    state
+        The stack, the host's inputs written.
+    spec
+        The job's settings.
+    workspace
+        The job's workspace (its atlas, the sections' placements).
+
+    Raises
+    ------
+    ValueError
+        Naming the section and what is wrong with its marks.
+    """
+    given = spec.inputs.get("damaged_regions")
+    marks = supplied_damaged_regions(given, spec.plane)
+    atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+    for name, regions in marks.items():
+        record = _section(state, "damaged_regions", name)
+        where = f"inputs.damaged_regions[{name!r}]"
+        try:
+            names = checked_entries(atlas, regions, state.plane)
+        except Refused as refusal:
+            raise ValueError(f"{where}: {refusal.message}") from None
+        refusal = side_pair_refusal(state, workspace, record, names)
+        if refusal is not None:
+            raise ValueError(f"{where}: {refusal.message}")
 
 
 class InputsChanged(ValueError):

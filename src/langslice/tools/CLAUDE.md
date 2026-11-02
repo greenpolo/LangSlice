@@ -176,7 +176,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   options=)`: the section's marked regions (checked against the atlas,
   normalized; `UNKNOWN_REGIONS`, `BAD_ARGS`, `NO_SIDES`, `UNKNOWN_SLICE_IDS`;
   `WRONG_SIDE_PAIR` and the other side refusals for a side the section's
-  current placement does not have, checked before the write)
+  current placement does not have, checked before the write; `FROZEN` for
+  other regions on a section whose `damage` is frozen)
   and note, one undo step (the same mark again writes nothing); empty
   regions clear them and the agent's note. A section is damaged exactly
   when it has marked regions. A host's note (`inputs.damaged`, a note and
@@ -635,7 +636,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `VERBS`). The gating (`when`):
   `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`,
   `status`, the job-folder tools (`list_files`, `search_files`, `read_file`),
-  `note`, `undo`, `redo`, `mark_damage` and `submit` in every run;
+  `note`, `undo`, `redo`, `mark_damage` (unless `damage` is frozen on
+  every section) and `submit` in every run;
   `position_sections` with the `position` task or the stack's cutting angles
   left to the agent (`transform.angles`, `positions_on`);
   `interactive_transform` and `elastix_affine` with `transform`; `fireants_syn`

@@ -36,8 +36,8 @@ image it was drawn with[[?zoom ; zoom takes the number]].""",
 [[?look:positioning Use positioning mode to compare sections with candidate \
 atlas planes
 along the slicing axis. ]][[?look:overlay Use overlays to assess in-plane \
-alignment and
-deformation against internal anatomy.]]""",
+alignment[[?fireants_syn|landmark_triangulation|trace_borders  and
+deformation]] against internal anatomy.]]""",
     ),
     arguments={
         "mode": Argument(
@@ -219,12 +219,15 @@ from, and those numbers are the coordinates of a further zoom's \
 box[[?set_landmarks  and
 of a set_landmarks endpoint, on the zoom or on the whole picture alike]].""",
         """\
-[[?look:overlay After a linear or nonlinear fit, use region on its overlay to \
-inspect
+[[?look:overlay After a linear[[?fireants_syn|landmark_triangulation|~
+trace_borders  or nonlinear]] fit, use region on its overlay to inspect
 a particular structure closely, with only that region's border shown.
 This can reveal internal mismatches hidden at whole-section scale and
-help you decide whether to adjust the linear alignment, refine that
-region nonlinearly, or revisit the section's position.]]""",
+help you decide whether to adjust the linear alignment[[?fireants_syn|~
+landmark_triangulation|trace_borders [[?position_sections , refine that
+region nonlinearly, or revisit the section's position|| or refine that ~
+region nonlinearly]]||[[?position_sections  or revisit the section's ~
+position]]]].]]""",
         """\
 Earlier pictures remain available by number. [[?look:overlay Reopen or zoom \
 a saved

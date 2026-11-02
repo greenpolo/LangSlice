@@ -151,7 +151,7 @@ def _native(
         key: _slot_text(slot, facts) for key, slot in description.slots.items()
     }
     rendered = functools.partial(
-        _rendered, slots=slots, switched_off=facts.switched_off
+        _rendered, slots=slots, switched_off=facts.switched_off | facts.absent
     )
 
     # the blocks under the summary: paragraphs, arguments, returns, prompt
@@ -221,7 +221,7 @@ def is_offered(argument: Argument, facts: DescriptionFacts) -> bool:
         True when the run has the argument's fact and every name it needs.
     """
     return _has(facts, argument.offered) and is_met(
-        argument.needs, facts.switched_off
+        argument.needs, facts.switched_off | facts.absent
     )
 
 

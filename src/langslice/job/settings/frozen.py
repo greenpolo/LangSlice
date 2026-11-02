@@ -1,13 +1,14 @@
 """What the agent may not change: the properties a job freezes, per section.
 
-A section has five properties a registration sets:
+A section has six properties a registration sets:
 
 - ``position``: where it sits along the slicing axis (millimetres);
 - ``angles``: the cutting angles of its atlas plane (pitch and yaw);
 - ``orientation``: its flip and quarter turn, which go together (one choice
   of how the picture sits before the in-plane alignment);
 - ``affine``: the continuous in-plane transform, the six numbers;
-- ``deformation``: the deformation on top of the linear placement.
+- ``deformation``: the deformation on top of the linear placement;
+- ``damage``: the atlas regions marked damaged, which every fit leaves out.
 
 ``JobSpec.frozen`` names, per section, the properties that keep the value the
 job starts with: ``{"<filename>": ["orientation", "affine"], "*": ["angles"]}``
@@ -15,7 +16,8 @@ job starts with: ``{"<filename>": ["orientation", "affine"], "*": ["angles"]}``
 a frozen property keeps is the one ``JobSpec.inputs`` supplies; one that
 supplies none keeps the property's "none": the flat plane (angles), no flip
 and no turn (orientation), the host's identity transform (affine), no
-deformation. A position has no "none", so a frozen position must be supplied.
+deformation, no marked regions (damage). A position has no "none", so a
+frozen position must be supplied.
 
 A tool that writes only properties frozen on every section is not offered,
 and a task whose properties are all frozen on every section is off
@@ -31,7 +33,9 @@ from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
 #: Every property, in the order they are listed everywhere.
-PROPERTIES: tuple[str, ...] = ("position", "angles", "orientation", "affine", "deformation")
+PROPERTIES: tuple[str, ...] = (
+    "position", "angles", "orientation", "affine", "deformation", "damage",
+)
 
 #: The key of ``frozen`` that names every section.
 EVERY = "*"
@@ -50,6 +54,7 @@ WORDS: dict[str, str] = {
     "orientation": "orientation (flip and quarter turn)",
     "affine": "affine (in-plane transform)",
     "deformation": "deformation",
+    "damage": "damage marks (the regions every fit leaves out)",
 }
 
 #: How many sections a statement lists by name before it counts them.

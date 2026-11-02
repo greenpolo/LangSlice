@@ -1,0 +1,120 @@
+/* The LangSlice window's tokens: the docs' look (docs/_static/langslice.css, after the ASCII
+   card: language, microscopy and anatomy), toned down for a tool that stays open for hours:
+   smaller type, plainer furniture, the same family. One monospace face for every word, told
+   apart by colour; true black everywhere, as in a fluorescence image (panels are black with a
+   1 px edge, never a tinted fill); square corners; no glow, gradients or shadows; no all-caps
+   labels. The logo's colours each keep one job:
+     off-white  names (headings, bold text, the chosen tab, a section's name)
+     lavender   what can be followed or clicked (links, buttons, a running call)
+     violet     literal text (paths, commands, tool names, numbers in code)
+     pink       boundaries and state only (keyboard focus, where you are), used sparingly
+   The four focus colours are the ABBA viewer's: they tie a focus panel to its handle in the
+   positioning strip. Every other file uses these names only. */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("jetbrains-mono-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("jetbrains-mono-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("jetbrains-mono-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Grounds. */
+  --ground: #000000;       /* the page, every panel, behind every picture */
+  --wash: #0a0b14;         /* a hovered row or button, only */
+  --selected: #11131f;     /* a chosen row, a pressed button, the on side of a switch */
+
+  /* Lines. */
+  --line: #262a40;         /* 1 px edges of panels, inputs, tables */
+  --tract: #3e4260;        /* stronger rules, scrollbars, dashed leaders, tree lines */
+
+  /* Text. */
+  --name: #dce3ff;         /* the logo's off-white */
+  --text: #c3cae6;         /* 12.8:1 on black */
+  --muted: #8890b8;        /* captions, the window's own furniture, 6.6:1 */
+  --faint: #5d6488;        /* greyed choices, placeholders */
+
+  /* The logo's colours. */
+  --lavender: #8fa0f5;
+  --violet: #a98bf0;
+  --pink: #ff3daa;
+
+  /* Status words. */
+  --running: var(--lavender);
+  --waiting: var(--muted);
+  --submitted: var(--violet);
+  --failed: var(--pink);
+
+  /* The ABBA viewer's focus colours, panel 1 to 4. */
+  --focus-1: #6ddeb7;
+  --focus-2: #76b5ff;
+  --focus-3: #f9c76b;
+  --focus-4: #cf9cf4;
+  /* A section the agent is not working on, in the positioning strip. */
+  --idle-handle: rgba(249, 215, 107, 0.42);
+
+  /* Type: one face, a few sizes. */
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas,
+    "DejaVu Sans Mono", monospace;
+  --size-xs: 11px;
+  --size-sm: 12px;
+  --size-md: 13px;          /* the window's body text */
+  --size-lg: 15px;
+  --size-xl: 17px;
+  --leading: 1.55;
+  --leading-prose: 1.7;
+
+  /* Spacing. Corners are square everywhere. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --rule: 2px;             /* the left edge of a note or a tool row, a tab's underline */
+  --bar-height: 44px;
+  --footer-height: 26px;
+}
+
+html {
+  background: var(--ground);
+  scrollbar-color: var(--tract) var(--ground);
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--size-md);
+  line-height: var(--leading);
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--pink);
+  color: var(--ground);
+}
+
+:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}

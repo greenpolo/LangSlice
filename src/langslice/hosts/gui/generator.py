@@ -23,6 +23,8 @@ page what the choices are, so nothing in the form is written by hand twice:
 - the image models: every provider name a job spec accepts (the names the
   job spec checks ``--nonlinear-provider`` against), each with the models
   LangSlice's providers list for it;
+- the programs the person may use the results in (``INTEGRATIONS``), which
+  the message names for the main agent only, never in the command;
 - a job's own settings, to start the form from: a job prepared in ABBA, or
   any job folder with a ``job.json``.
 
@@ -91,6 +93,34 @@ NO_IMAGE_MODEL = "None (no image model)"
 
 #: ``host.kind`` of a job prepared in ABBA.
 ABBA_HOST = "abba"
+
+
+@dataclass(frozen=True)
+class Integration:
+    """A program the form offers to prepare the results for."""
+
+    #: The form's name for it.
+    name: str
+    #: The box's words.
+    label: str
+    #: How the message's request names it to the main agent.
+    words: str
+
+
+#: The programs the main agent's ``register-brain`` skill prepares results
+#: for, in the form's order. ABBA is not one: a job reaches ABBA only by
+#: starting from it.
+INTEGRATIONS: tuple[Integration, ...] = (
+    Integration(
+        name="quint",
+        label="QUINT (PyNutil, QuickNII, VisuAlign)",
+        words="the QUINT tools (PyNutil, QuickNII, VisuAlign)",
+    ),
+    Integration(name="verso", label="VERSO", words="VERSO"),
+    Integration(
+        name="dmc-brainmap", label="DMC-BrainMap", words="DMC-BrainMap"
+    ),
+)
 
 
 def species(name: str) -> str:
@@ -225,6 +255,7 @@ def payload() -> dict[str, Any]:
         "planes": list(PLANES),
         "flags": flag_spellings(),
         "image_models": [asdict(choice) for choice in image_models()],
+        "integrations": [asdict(program) for program in INTEGRATIONS],
     }
 
 

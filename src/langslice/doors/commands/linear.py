@@ -180,7 +180,8 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     transforms = load_json_arg(args.transforms, "--transforms")
     if transforms is not None:
         inputs["transforms"] = transforms
-    for key, flag in (("orientation", "--orientation"), ("damaged", "--damaged")):
+    for key, flag in (("orientation", "--orientation"), ("damaged", "--damaged"),
+                      ("damaged_regions", "--damaged-regions")):
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value

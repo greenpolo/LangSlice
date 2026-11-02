@@ -576,7 +576,7 @@ def test_the_gui_watcher_follows_real_calls_on_the_cli_and_library_doors(
     view_artifact = next(item for item in looked["artifacts"] if item["kind"] == "view")
     assert shown.resolve() == Path(view_artifact["path"]).resolve()
     assert tools[3]["step"] == 1 and tools[5]["views"]
-    assert watcher.undo()["undo"] == [f"Position sections ({ID1})"]
+    assert watcher.undo()["undo"] == [f"position_sections ({ID1})"]
     assert snapshot["status"]["word"] == "Running"  # files changed seconds ago
 
 

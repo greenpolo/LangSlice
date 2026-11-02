@@ -16,7 +16,7 @@ const Generator = (() => {
     return { folder: '', atlas: data.default_atlas, plane: '', thickness: '', interval: '', pixelSize: '',
              tasks: data.tasks.filter(t => t.default).map(t => t.name), off: [], ordered: false,
              damaged: '', keep: {}, notes: '', imageProvider: '', imageModel: '',
-             abba: null, keepRegistrations: true, frozen: {} };
+             abba: null, keepRegistrations: true, frozen: {}, integrations: [] };
   }
 
   // The form started from a job's own settings (`prefill`, GET generator?job=n):
@@ -238,6 +238,16 @@ const Generator = (() => {
     return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
   }
 
+  // The programs the person will use the results in (`data.integrations`, in
+  // its order), named for the main agent; never in the command, so the
+  // registration agent never reads them. A job prepared in ABBA has none: its
+  // results already go to ABBA.
+  function integrationWords(data, form) {
+    if (form.abba) return [];
+    const chosen = new Set(form.integrations || []);
+    return data.integrations.filter(i => chosen.has(i.name)).map(i => i.words);
+  }
+
   // The message: `{text, problems, warnings}`; `text` is empty while a
   // problem stands.
   function message(data, form) {
@@ -248,6 +258,8 @@ const Generator = (() => {
     const lines = ['Please register my brain sections with LangSlice, following its register-brain skill: create the job with the init command below, then launch the registration and check the result.'];
     const missing = leftOut(data, form);
     if (missing.length) lines.push(`The command leaves out ${joinWords(missing)}: choose ${missing.length > 1 ? 'these' : 'it'} yourself, or ask me when the images do not tell you.`);
+    const programs = integrationWords(data, form);
+    if (programs.length) lines.push(`When the registration is done, prepare the results for ${joinWords(programs)}.`);
     if (cmd.quoted) lines.push('The command is quoted for bash; if your shell is another, quote it for yours.');
     const text = lines.join(' ') + '\n\n```bash\n' + cmd.text + '\n```\n';
     return { text, problems: stops, warnings: notes };
@@ -261,89 +273,175 @@ const Generator = (() => {
   }
 
   return { shellQuote, cleanPath, startForm, prefilled, offNames, present, keptOff, imageModelApplies,
-           problems, warnings, leftOut, command, message, keepLabel };
+           problems, warnings, leftOut, integrationWords, command, message, keepLabel };
 })();
 
 if (typeof module !== 'undefined') module.exports = Generator;
 
 // --- the form -------------------------------------------------------------------
+// Numbered black cards on the left (the form), the message on the right: sticky, as tall
+// as the window allows, with the Copy button. Built once from GET generator; update()
+// redraws what depends on the form after every change. Every text goes in by textContent.
 if (typeof document !== 'undefined') (() => {
   const make = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   const root = document.getElementById('tab-prompt');
   if (!root) return;
   let data = null;
   const form = {};  // Generator.startForm / prefilled, filled in by build()
-  const toolBoxes = [];  // [{tool, box, row, optionBoxes}]
+  const toolRows = [];  // [{tool, input, row, note, options: [{option, input, row, note}]}]
+  const groupRows = [];  // [{group, list, note}]
   const fixedControls = [];  // the inputs a job prepared in ABBA fixes
-  let output, problemList, warningList, copyButton, copied, aboutAtlas, keepBoxes, imageRow;
+  const ui = {};  // the controls update() redraws
+  const KEPT = 'Off: you said what this would change stays as it is.';
+  let ids = 0, message = '', copiedTimer = 0;
 
-  function field(labelText, control, help) {
-    const wrap = make('label', 'gen-field');
-    wrap.append(make('span', 'gen-label', labelText), control);
-    if (help) wrap.append(make('span', 'gen-help', help));
+  const capital = word => (word ? word[0].toUpperCase() + word.slice(1) : '');
+  const fixed = control => { fixedControls.push(control); return control; };
+  const nextId = () => `gen-${++ids}`;
+
+  // A numbered card, `1 Images`; the From ABBA card has no number.
+  function card(step, title, cls) {
+    const box = make('section', 'gen-card' + (cls ? ' ' + cls : ''));
+    const head = make('h2', 'gen-card-title');
+    if (step) head.append(make('span', 'gen-step', String(step)));
+    head.append(make('span', '', title));
+    box.append(head);
+    return box;
+  }
+
+  // A label above its control (`target`, when the control is a wrapper), a help line under it.
+  function field(text, control, help, target = control) {
+    const wrap = make('div', 'gen-field');
+    let label;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) {
+      label = make('label', 'gen-label', text);
+      target.id = target.id || nextId();
+      label.htmlFor = target.id;
+    } else {
+      label = make('p', 'gen-label', text);
+      label.id = nextId();
+      target.setAttribute('aria-labelledby', label.id);
+    }
+    wrap.append(label, control);
+    if (help) wrap.append(make('p', 'gen-help', help));
     return wrap;
   }
-  function input(key, attrs = {}) {
-    const box = make(attrs.multiline ? 'textarea' : 'input');
-    if (!attrs.multiline) box.type = 'text';
-    if (attrs.placeholder) box.placeholder = attrs.placeholder;
-    if (attrs.rows) box.rows = attrs.rows;
-    if (attrs.mode) box.inputMode = attrs.mode;
+  function textInput(key, { placeholder, rows, mode, path } = {}) {
+    const box = make(rows ? 'textarea' : 'input', 'gen-input' + (path ? ' gen-path' : ''));
+    if (rows) box.rows = rows; else box.type = 'text';
+    if (placeholder) box.placeholder = placeholder;
+    if (mode) box.inputMode = mode;
     box.spellcheck = false;
+    box.autocomplete = 'off';
     box.value = form[key];
-    box.oninput = () => { form[key] = box.value; update(); };
+    box.addEventListener('input', () => { form[key] = box.value; update(); });
     return box;
   }
-  function select(key, choices, notSet) {
-    const box = make('select');
-    box.append(new Option(notSet, ''));
-    for (const [value, text] of choices) box.append(new Option(text, value));
-    box.value = form[key];
-    box.onchange = () => { form[key] = box.value; update(); };
-    return box;
-  }
-  function check(text, key, help, prop) {
-    const wrap = make('label', 'gen-check'), box = make('input');
-    box.type = 'checkbox';
-    if (prop) {
-      box.checked = !!form.keep[prop];
-      box.onchange = () => { form.keep = { ...form.keep, [prop]: box.checked }; update(); };
-    } else {
-      box.checked = !!form[key];
-      box.onchange = () => { form[key] = box.checked; update(); };
-    }
-    const words = make('span');
-    words.append(make('span', '', text));
-    if (help) words.append(make('span', 'gen-help', help));
-    wrap.append(box, words);
+  // A short number field with its unit beside it.
+  function unitInput(key, unit, placeholder, mode) {
+    const box = textInput(key, { placeholder, mode });
+    const wrap = make('span', 'gen-unit');
+    wrap.append(box, make('span', 'gen-unit-name', unit));
+    wrap.addEventListener('mousedown', e => { if (e.target !== box && !box.disabled) { e.preventDefault(); box.focus(); } });
     return { wrap, box };
   }
-  function section(title) {
-    const s = make('section', 'gen-section');
-    s.append(make('h3', '', title));
-    return s;
+
+  // A checkbox drawn as a box or as a switch; the native input stays, for the keyboard
+  // and screen readers.
+  function toggle(kind, checked) {
+    const input = make('input', 'gen-native');
+    input.type = 'checkbox';
+    input.checked = checked;
+    if (kind === 'switch') input.setAttribute('role', 'switch');
+    const mark = make('span', kind === 'switch' ? 'gen-switch' : 'gen-box');
+    mark.setAttribute('aria-hidden', 'true');
+    return { input, mark };
   }
-  function fixed(control) { fixedControls.push(control); return control; }
+  // A ticked fact: its box, its words, and a note under them.
+  function check(text, help, checked, onChange) {
+    const { input, mark } = toggle('box', checked);
+    const row = make('label', 'gen-check');
+    const words = make('span', 'gen-check-words');
+    words.append(make('span', 'gen-check-text', text));
+    if (help) words.append(make('span', 'gen-help', help));
+    row.append(input, mark, words);
+    input.addEventListener('change', () => { onChange(input.checked); update(); });
+    return { row, input };
+  }
 
   function atlasSelect() {
-    const box = make('select');
+    const box = make('select', 'gen-input gen-select');
     box.append(new Option('Not set: the agent chooses or asks', ''));
     for (const group of data.species) {
       const og = make('optgroup'); og.label = group;
       for (const atlas of data.atlases.filter(a => a.species === group)) {
         og.append(new Option(atlas.name + (atlas.name === data.default_atlas ? ' (default)' : ''), atlas.name));
       }
-      box.append(og);
+      if (og.children.length) box.append(og);
     }
     box.value = form.atlas;
-    box.onchange = () => { form.atlas = box.value; update(); };
+    box.addEventListener('change', () => { form.atlas = box.value; update(); });
     return box;
   }
 
+  // BrainGlobe's paragraph on the chosen atlas: three lines, until `more` opens it.
+  function atlasAbout() {
+    const wrap = make('div', 'gen-about');
+    const text = make('p', 'gen-about-text gen-clamped');
+    const more = make('button', 'gen-link', 'more');
+    more.type = 'button';
+    more.hidden = true;
+    more.setAttribute('aria-expanded', 'false');
+    const measure = () => {
+      if (text.classList.contains('gen-clamped')) more.hidden = text.scrollHeight <= text.clientHeight + 1;
+    };
+    more.addEventListener('click', () => {
+      const clamped = text.classList.toggle('gen-clamped');
+      more.textContent = clamped ? 'more' : 'less';
+      more.setAttribute('aria-expanded', String(!clamped));
+      measure();
+    });
+    if ('ResizeObserver' in window) new ResizeObserver(measure).observe(text);  // measured once shown
+    wrap.append(text, more);
+    ui.about = { text, more, words: null, measure };
+    return wrap;
+  }
+  function showAbout(words) {
+    const about = ui.about;
+    if (about.words === words) return;
+    about.words = words;
+    about.text.textContent = words;
+    about.text.classList.add('gen-clamped');
+    about.more.textContent = 'more';
+    about.more.setAttribute('aria-expanded', 'false');
+    about.measure();
+  }
+
+  // The cutting plane: one of the three, or none (the agent decides).
+  function planeControl() {
+    const wrap = make('div', 'gen-plane');
+    const group = make('div', 'gen-segments');
+    group.setAttribute('role', 'group');
+    const buttons = data.planes.map(plane => {
+      const button = fixed(make('button', 'gen-segment', capital(plane)));
+      button.type = 'button';
+      button.addEventListener('click', () => { form.plane = form.plane === plane ? '' : plane; update(); });
+      group.append(button);
+      return [plane, button];
+    });
+    const unset = make('span', 'gen-plane-note', 'Not set: the agent decides.');
+    const clear = fixed(make('button', 'gen-link', 'Let the agent decide'));
+    clear.type = 'button';
+    clear.addEventListener('click', () => { form.plane = ''; update(); });
+    wrap.append(group, unset, clear);
+    ui.plane = { group, buttons, unset, clear };
+    return wrap;
+  }
+
   function folderHelp() {
-    const d = make('details', 'gen-howto');
+    const d = make('details', 'gen-more');
     d.append(make('summary', '', 'How to copy a folder’s path'));
-    const list = make('ul');
+    const list = make('ul', 'gen-howto');
     for (const [os, how] of [
       ['Windows', 'In File Explorer, right-click the folder (on Windows 10, hold Shift first) and choose “Copy as path”.'],
       ['macOS', 'In Finder, select the folder, hold Option, right-click it and choose “Copy … as Pathname”.'],
@@ -353,110 +451,162 @@ if (typeof document !== 'undefined') (() => {
     return d;
   }
 
-  // A job prepared in ABBA: what ABBA fixed, the snapshots' slice names, and
-  // whether the sections ABBA already registered stay as they are.
-  function abbaSection() {
+  // A job prepared in ABBA: what ABBA fixed, the snapshots' slice names, and whether the
+  // sections ABBA already registered stay as they are.
+  function abbaCard() {
     const abba = form.abba;
-    const s = section('From ABBA');
+    const box = card(null, 'From ABBA', 'gen-abba');
     const facts = make('dl', 'gen-facts');
-    const plane = form.plane ? form.plane[0].toUpperCase() + form.plane.slice(1) : '';
-    for (const [term, value] of [
-      ['Images', form.folder],
-      ['Atlas', form.atlas + (abba.atlas ? ` (in ABBA: ${abba.atlas})` : '')],
-      ['Cutting plane', plane],
-      ['Snapshot pixel size', form.pixelSize ? `${form.pixelSize} µm per pixel` : 'not recorded'],
-    ]) facts.append(make('dt', '', term), make('dd', '', value));
-    s.append(facts, make('p', 'gen-help', 'ABBA set these when it exported the snapshots; the job already holds them, so the message leaves them out.'));
+    const atlas = make('dd');
+    atlas.append(make('span', 'gen-path', form.atlas));
+    if (abba.atlas) atlas.append(make('span', 'gen-muted', ` (in ABBA: ${abba.atlas})`));
+    facts.append(make('dt', '', 'Images'), make('dd', 'gen-path', form.folder),
+      make('dt', '', 'Atlas'), atlas,
+      make('dt', '', 'Cutting plane'), make('dd', '', capital(form.plane)),
+      make('dt', '', 'Snapshot pixel size'), make('dd', '', form.pixelSize ? `${form.pixelSize} µm per pixel` : 'not recorded'));
+    box.append(facts, make('p', 'gen-help', 'ABBA set these when it exported the snapshots; the job already holds them, so the message leaves them out.'));
     const registered = abba.registered || [];
     if (registered.length && Object.keys(form.frozen).length) {
       const n = registered.length;
-      const keepRegs = check(Generator.keepLabel(n), 'keepRegistrations',
-        n === 1 ? 'Untick to let the agent redo its alignment and warp too.'
-          : 'Untick to let the agent redo their alignment and warps too.');
-      s.append(keepRegs.wrap);
+      box.append(check(Generator.keepLabel(n),
+        n === 1 ? 'Untick to let the agent redo its alignment and warp too.' : 'Untick to let the agent redo their alignment and warps too.',
+        !!form.keepRegistrations, on => { form.keepRegistrations = on; }).row);
     }
     const names = Object.entries(abba.sections || {});
     if (names.length) {
-      const d = make('details', 'gen-slices');
+      const d = make('details', 'gen-more');
       d.open = names.length <= 12;
       d.append(make('summary', '', `Snapshot files and their ABBA slices (${names.length})`));
       const wrap = make('div', 'gen-slice-wrap'), table = make('table', 'gen-slice-table');
       const head = make('tr');
       for (const title of ['File', 'ABBA slice', 'In ABBA']) head.append(make('th', '', title));
-      table.append(head);
+      const thead = make('thead'); thead.append(head);
+      const body = make('tbody');
       const warped = new Set(abba.existing_warp || []), done = new Set(registered);
       for (const [file, slice] of names) {
         const tr = make('tr');
         const status = warped.has(file) ? 'registered, warped' : done.has(file) ? 'registered' : '';
-        tr.append(make('td', '', file), make('td', '', slice), make('td', 'gen-help', status));
-        table.append(tr);
+        tr.append(make('td', 'gen-path', file), make('td', '', slice), make('td', 'gen-muted', status));
+        body.append(tr);
       }
+      table.append(thead, body);
       wrap.append(table);
       d.append(wrap, make('p', 'gen-help', 'Name a damaged section below by its file name.'));
-      s.append(d);
+      box.append(d);
     }
-    return s;
+    return box;
   }
 
-  function toolsPanel() {
-    const d = make('details', 'gen-advanced');
-    d.append(make('summary', '', 'Advanced: the tools the registration agent may use'));
-    d.append(make('p', 'gen-help', 'Every tool is on unless you turn it off. A task’s tools apply only when that task is chosen above. The grey name is the tool’s own name, as the Agent viewer shows it.'));
-    for (const group of data.groups) {
-      const box = make('fieldset', 'gen-group');
-      box.append(make('legend', '', group.label));
-      for (const tool of data.tools.filter(t => t.group === group.name)) {
-        const row = make('div', 'gen-tool');
-        const label = make('label', 'gen-check'), cb = make('input');
-        cb.type = 'checkbox'; cb.checked = !form.off.includes(tool.name); cb.dataset.name = tool.name;
-        if (!tool.disableable) { cb.disabled = true; cb.title = 'Every run needs this tool.'; }
-        cb.onchange = () => { setOff(tool.name, !cb.checked); update(); };
-        const words = make('span');
-        words.append(make('span', '', tool.label), make('code', 'gen-name', tool.name));
-        if (!tool.disableable) words.append(make('span', 'gen-help gen-inline', 'always on'));
-        label.append(cb, words);
-        row.append(label);
-        const optionBoxes = [];
-        if (tool.options.length) {
-          const opts = make('div', 'gen-options');
-          for (const option of tool.options) {
-            const ol = make('label', 'gen-check'), ob = make('input');
-            ob.type = 'checkbox'; ob.checked = !form.off.includes(option.name); ob.dataset.name = option.name;
-            ob.onchange = () => { setOff(option.name, !ob.checked); update(); };
-            ol.append(ob, make('span', '', option.label));
-            opts.append(ol); optionBoxes.push(ob);
-          }
-          row.append(opts);
-        }
-        box.append(row);
-        toolBoxes.push({ tool, box: cb, row, optionBoxes });
-      }
-      d.append(box);
-      if (group.task === 'nonlinear' && !imageRow) d.append(imageModelPanel());
+  // The programs the results go to: one box each, none ticked. Only the message's request
+  // names them (Generator.integrationWords), for the agent that prepares the files.
+  function integrationsCard() {
+    const box = card(7, 'Where you’ll use the results');
+    const checks = make('div', 'gen-checks');
+    for (const program of data.integrations) {
+      checks.append(check(program.label, '', form.integrations.includes(program.name), on => {
+        form.integrations = data.integrations.map(i => i.name)
+          .filter(name => (name === program.name ? on : form.integrations.includes(name)));
+      }).row);
     }
-    if (!imageRow) d.append(imageModelPanel());
-    return d;
+    box.append(checks, make('p', 'gen-help', 'Your agent prepares the files each program opens once the registration is checked, and tells you where they are. The registration agent is not told. For ABBA, start the job from ABBA instead (Register › LangSlice…).'));
+    return box;
+  }
+
+  // The three tasks, as cards to switch on and off.
+  function taskCards() {
+    const grid = make('div', 'gen-tasks');
+    ui.tasks = data.tasks.map(task => {
+      const { input, mark } = toggle('box', form.tasks.includes(task.name));
+      const tile = make('label', 'gen-task');
+      const head = make('span', 'gen-task-head');
+      head.append(mark, make('span', 'gen-task-label', task.label));
+      tile.append(input, head, make('span', 'gen-task-about', task.about));
+      input.addEventListener('change', () => {
+        form.tasks = data.tasks.map(t => t.name).filter(n => (n === task.name ? input.checked : form.tasks.includes(n)));
+        update();
+      });
+      grid.append(tile);
+      return { tile, input };
+    });
+    return grid;
+  }
+
+  // One row of the tools table: its switch, its label (and a note), its own name.
+  function toolRow(label, name, on, cls) {
+    const { input, mark } = toggle('switch', on);
+    input.dataset.name = name;
+    const row = make('label', 'gen-tool' + (cls ? ' ' + cls : ''));
+    const words = make('span', 'gen-tool-words');
+    const note = make('span', 'gen-tool-note');
+    words.append(make('span', 'gen-tool-label', label), note);
+    row.append(input, mark, words, make('code', 'gen-tool-name', name));
+    return { row, input, note };
   }
   function setOff(name, off) {
     const names = new Set(form.off);
     if (off) names.add(name); else names.delete(name);
     form.off = [...names];
   }
+  function toolsPanel() {
+    const d = make('details', 'gen-card gen-advanced');
+    const summary = make('summary', 'gen-card-title');
+    summary.append(make('span', 'gen-step gen-disclosure'), make('span', '', 'Advanced: the tools the registration agent may use'));
+    d.append(summary);
+    const body = make('div', 'gen-advanced-body');
+    body.append(make('p', 'gen-help', 'Every tool is on unless you turn it off. A task’s tools apply only when that task is chosen above. The violet name is the tool’s own name, as the Agent viewer shows it.'));
+    for (const group of data.groups) {
+      const list = make('div', 'gen-tools');
+      list.setAttribute('role', 'group');
+      const head = make('div', 'gen-tools-head');
+      const title = make('span', 'gen-tools-title', group.label);
+      title.id = nextId();
+      list.setAttribute('aria-labelledby', title.id);
+      const note = make('span', 'gen-tools-note');
+      head.append(title, note);
+      list.append(head);
+      for (const tool of data.tools.filter(t => t.group === group.name)) {
+        const row = toolRow(tool.label, tool.name, !form.off.includes(tool.name), tool.options.length ? 'gen-parent' : '');
+        if (!tool.disableable) { row.input.disabled = true; row.input.title = 'Every run needs this tool.'; row.row.classList.add('gen-fixed'); }
+        row.input.addEventListener('change', () => { setOff(tool.name, !row.input.checked); update(); });
+        list.append(row.row);
+        const options = tool.options.map((option, i) => {
+          const o = toolRow(option.label, option.name, !form.off.includes(option.name),
+            'gen-option' + (i === tool.options.length - 1 ? ' gen-last' : ''));
+          o.input.addEventListener('change', () => { setOff(option.name, !o.input.checked); update(); });
+          list.append(o.row);
+          return { option, ...o };
+        });
+        toolRows.push({ tool, ...row, options });
+      }
+      groupRows.push({ group, list, note });
+      body.append(list);
+      if (group.task === 'nonlinear' && !ui.image) body.append(imageModelPanel());
+    }
+    if (!ui.image) body.append(imageModelPanel());
+    d.append(body);
+    return d;
+  }
 
   // The image model the warp's border tracing asks (`--nonlinear-provider`,
   // `--nonlinear-image-model`): the providers and models LangSlice lists.
   function imageModelPanel() {
-    const box = make('fieldset', 'gen-group gen-image');
-    box.append(make('legend', '', 'Image model'));
+    const box = make('div', 'gen-tools gen-image');
+    box.setAttribute('role', 'group');
+    const head = make('div', 'gen-tools-head');
+    const title = make('span', 'gen-tools-title', 'Image model');
+    title.id = nextId();
+    box.setAttribute('aria-labelledby', title.id);
+    const note = make('span', 'gen-tools-note');
+    head.append(title, note);
     const tracer = data.tools.find(t => t.image_model);
-    box.append(make('p', 'gen-help', `The model that draws a section’s borders for ${tracer ? `“${tracer.label}”` : 'the warp'}. Applies when warping to fit.`));
-    const provider = make('select');
+    const about = make('p', 'gen-help', `The model that draws a section’s borders for ${tracer ? `“${tracer.label}”` : 'the warp'}. Applies when warping to fit.`);
+    const provider = make('select', 'gen-input gen-select');
     const fallback = data.image_models.find(p => p.default);
     provider.append(new Option(`Not set: LangSlice’s default${fallback ? ` (${fallback.label})` : ''}`, ''));
     for (const p of data.image_models) provider.append(new Option(p.label, p.provider));
     provider.value = form.imageProvider;
-    const model = make('select');
-    const hint = make('span', 'gen-help');
+    const model = make('select', 'gen-input gen-select');
+    const hint = make('p', 'gen-help');
     function models() {
       const chosen = data.image_models.find(p => p.provider === form.imageProvider);
       model.replaceChildren(new Option(chosen && chosen.default_model ? `The provider’s default (${chosen.default_model})` : 'The provider’s default', ''));
@@ -465,78 +615,125 @@ if (typeof document !== 'undefined') (() => {
       if (!chosen || chosen.provider === 'none') hint.textContent = chosen ? 'The warp fits each section to its stain alone.' : '';
       else hint.textContent = chosen.connected ? 'Set up on this computer.' : 'Not set up on this computer yet: Settings connects it.';
     }
-    provider.onchange = () => { form.imageProvider = provider.value; form.imageModel = ''; models(); update(); };
-    model.onchange = () => { form.imageModel = model.value; update(); };
+    provider.addEventListener('change', () => { form.imageProvider = provider.value; form.imageModel = ''; models(); update(); });
+    model.addEventListener('change', () => { form.imageModel = model.value; update(); });
     models();
-    const row = make('div', 'gen-row gen-row-2');
-    row.append(field('Provider', provider), field('Model', model));
-    box.append(row, hint);
-    imageRow = { box, provider, model };
+    const pair = make('div', 'gen-pair');
+    pair.append(field('Provider', provider), field('Model', model));
+    box.append(head, about, pair, hint);
+    ui.image = { box, note, provider, model };
     return box;
   }
 
   function outputPanel() {
     const panel = make('aside', 'gen-output');
+    panel.setAttribute('aria-label', 'Your message');
     const head = make('div', 'gen-output-head');
-    head.append(make('h3', '', 'Your message'));
-    copyButton = make('button', 'gen-copy', 'Copy');
-    copyButton.onclick = copy;
-    copied = make('span', 'gen-help', '');
-    head.append(copied, copyButton);
-    problemList = make('ul', 'gen-problems');
-    warningList = make('ul', 'gen-warnings');
-    output = make('pre', 'gen-message');
-    panel.append(head, problemList, warningList, output,
+    ui.copy = make('button', 'gen-copy', 'Copy');
+    ui.copy.type = 'button';
+    ui.copy.addEventListener('click', copy);
+    head.append(make('h2', 'gen-output-title', 'Your message'), ui.copy);
+    ui.problems = make('ul', 'gen-problems');
+    ui.warnings = make('ul', 'gen-warnings');
+    ui.output = make('pre', 'gen-message');
+    ui.output.tabIndex = 0;
+    ui.empty = make('p', 'gen-message-empty', 'Your message appears here.');
+    panel.append(head, ui.problems, ui.warnings, ui.output, ui.empty,
       make('p', 'gen-help', 'Paste it into a new chat in your agent app (Claude Code, Codex or Antigravity) with LangSlice installed. The agent sets up the job, asks about anything left open, and starts the registration; follow it in the Agent viewer.'));
     return panel;
   }
 
+  // The message, word for word as it is copied: the request, then the command block (its
+  // fences dim, the command in violet).
+  function showMessage(text) {
+    if (text !== message) resetCopied();
+    message = text;
+    ui.output.hidden = !text;
+    ui.empty.hidden = Boolean(text);
+    ui.copy.disabled = !text;
+    const open = '\n\n```bash\n', at = text.indexOf(open), close = text.lastIndexOf('\n```');
+    if (!text || at < 0 || close <= at) { ui.output.textContent = text; return; }
+    ui.output.replaceChildren(make('span', 'gen-request', text.slice(0, at)), '\n\n',
+      make('span', 'gen-fence', '```bash'), '\n',
+      make('span', 'gen-command', text.slice(at + open.length, close)), '\n',
+      make('span', 'gen-fence', '```'), text.slice(close + '\n```'.length));
+    if (ui.output.textContent !== text) ui.output.textContent = text;  // never other words than the copy's
+  }
+
   async function copy() {
-    const text = output.textContent;
-    if (!text) return;
-    try { await navigator.clipboard.writeText(text); }
+    if (!message) return;
+    try { await navigator.clipboard.writeText(message); }
     catch {
-      const range = document.createRange(); range.selectNodeContents(output);
+      const range = document.createRange(); range.selectNodeContents(ui.output);
       const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
       document.execCommand('copy'); sel.removeAllRanges();
     }
-    copied.textContent = 'Copied';
-    setTimeout(() => { copied.textContent = ''; }, 2000);
+    ui.copy.textContent = 'Copied';
+    ui.copy.classList.add('gen-copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(resetCopied, 2000);
+  }
+  function resetCopied() {
+    clearTimeout(copiedTimer);
+    if (!ui.copy) return;
+    ui.copy.textContent = 'Copy';
+    ui.copy.classList.remove('gen-copied');
   }
 
   function update() {
     if (!data) return;
     const here = Generator.present(data, form), off = new Set(form.off), keptOff = Generator.keptOff(data, form);
-    const KEPT = 'Off: you said what this would change stays as it is.';
     const noImageModel = form.imageProvider === 'none';
-    for (const { tool, box, row, optionBoxes } of toolBoxes) {
-      const inRun = here.has(tool.name);
+    for (const { group, list, note } of groupRows) {
+      const inRun = data.tools.some(t => t.group === group.name && here.has(t.name));
+      const task = data.tasks.find(t => t.name === group.task);
+      list.classList.toggle('gen-absent', !inRun);
+      note.textContent = inRun || !task ? '' : `Not in this run: “${task.label}” is not chosen above.`;
+    }
+    for (const { tool, input, row, note, options } of toolRows) {
+      const inRun = here.has(tool.name), held = keptOff.has(tool.name);
+      const noModel = !inRun && noImageModel && tool.image_model;
       row.classList.toggle('gen-absent', !inRun);
-      row.title = inRun ? '' : (noImageModel && tool.image_model ? 'Not in this run: you chose no image model.' : 'Not in this run: its task is not chosen.');
-      for (const ob of optionBoxes) {
-        const held = keptOff.has(ob.dataset.name);
-        ob.disabled = !inRun || held || (tool.disableable && off.has(tool.name));
-        ob.parentElement.classList.toggle('gen-kept', held);
-        ob.parentElement.title = held ? KEPT : '';
+      row.title = inRun ? '' : (noModel ? 'Not in this run: you chose no image model.' : 'Not in this run: its task is not chosen.');
+      if (tool.disableable) {
+        input.disabled = !inRun || held;
+        input.checked = !held && !off.has(tool.name);
       }
-      if (tool.disableable) box.disabled = !inRun || keptOff.has(tool.name);
+      note.textContent = !tool.disableable ? 'always on' : noModel ? 'not in this run: you chose no image model' : held ? 'off: you said this stays as it is' : '';
+      const toolOff = tool.disableable && off.has(tool.name);
+      for (const o of options) {
+        const kept = keptOff.has(o.option.name);
+        o.input.disabled = !inRun || kept || toolOff;
+        o.input.checked = !kept && !toolOff && !off.has(o.option.name);  // shown off while the tool is off
+        o.row.classList.toggle('gen-absent', !inRun);
+        o.row.title = kept ? KEPT : '';
+        o.note.textContent = kept ? 'off: you said this stays as it is' : '';
+      }
     }
     const imageOn = Generator.imageModelApplies(data, form);
-    imageRow.box.classList.toggle('gen-absent', !imageOn);
-    imageRow.box.title = imageOn ? '' : 'Not in this run: warping to fit is not chosen, or its border tracing is off.';
-    imageRow.provider.disabled = !imageOn;
-    imageRow.model.disabled = !imageOn || !form.imageProvider || noImageModel;
+    const imageOff = 'Not in this run: warping to fit is not chosen, or its border tracing is off.';
+    ui.image.box.classList.toggle('gen-absent', !imageOn);
+    ui.image.box.title = imageOn ? '' : imageOff;
+    ui.image.note.textContent = imageOn ? '' : imageOff;
+    ui.image.provider.disabled = !imageOn;
+    ui.image.model.disabled = !imageOn || !form.imageProvider || noImageModel;
+    for (const { tile, input } of ui.tasks) tile.classList.toggle('gen-on', input.checked);
     const tasks = new Set(form.tasks);
-    for (const [prop, item] of Object.entries(keepBoxes)) item.box.disabled = !tasks.has(data.keep[prop]);
+    for (const [prop, item] of Object.entries(ui.keep)) item.input.disabled = !tasks.has(data.keep[prop]);
     for (const control of fixedControls) control.disabled = Boolean(form.abba);
+    for (const wrap of ui.units) wrap.classList.toggle('gen-fixed', wrap.firstChild.disabled);
+    for (const [plane, button] of ui.plane.buttons) {
+      button.classList.toggle('gen-on', form.plane === plane);
+      button.setAttribute('aria-pressed', String(form.plane === plane));
+    }
+    ui.plane.unset.hidden = Boolean(form.plane);
+    ui.plane.clear.hidden = !form.plane || Boolean(form.abba);
     const atlas = data.atlases.find(a => a.name === form.atlas);
-    aboutAtlas.textContent = atlas ? atlas.about : 'The agent picks the atlas, or asks you.';
+    showAbout(atlas ? atlas.about : 'The agent picks the atlas, or asks you.');
     const made = Generator.message(data, form);
-    problemList.replaceChildren(...made.problems.map(p => make('li', '', p)));
-    warningList.replaceChildren(...made.warnings.map(w => make('li', '', w)));
-    output.textContent = made.text;
-    output.hidden = !made.text;
-    copyButton.disabled = !made.text;
+    ui.problems.replaceChildren(...made.problems.map(p => make('li', '', p)));
+    ui.warnings.replaceChildren(...made.warnings.map(w => make('li', '', w)));
+    showMessage(made.text);
   }
 
   function build(prefill) {
@@ -545,56 +742,58 @@ if (typeof document !== 'undefined') (() => {
     main.append(make('p', 'gen-intro', form.abba
       ? 'ABBA prepared this job: its snapshots, positions and cutting angles are in it. Add what you know, copy the message, and paste it into your agent app.'
       : 'Fill in what you know, copy the message, and paste it into your agent app. Only the image folder is needed: anything left blank, the agent decides or asks you about.'));
-    if (form.abba) main.append(abbaSection());
+    if (form.abba) main.append(abbaCard());
 
     const fixedHelp = form.abba ? 'Set by ABBA.' : undefined;
-    const where = section('Images');
-    where.append(field('Folder of section images (required)', fixed(input('folder', { placeholder: 'e.g. C:\\Users\\me\\brain1 or /home/me/brain1' })), fixedHelp));
-    if (!form.abba) where.append(folderHelp());
-    main.append(where);
+    const images = card(1, 'Images');
+    images.append(field('Folder of section images (required)',
+      fixed(textInput('folder', { placeholder: 'e.g. C:\\Users\\me\\brain1 or /home/me/brain1', path: true })), fixedHelp));
+    if (!form.abba) images.append(folderHelp());
+    main.append(images);
 
-    const atlas = section('Atlas');
-    aboutAtlas = make('p', 'gen-help gen-about');
-    atlas.append(field('Atlas', fixed(atlasSelect())), aboutAtlas,
-      field('Cutting plane', fixed(select('plane', data.planes.map(p => [p, p[0].toUpperCase() + p.slice(1)]), 'Not set: the agent decides')), fixedHelp));
+    const atlas = card(2, 'Atlas');
+    atlas.append(field('Atlas', fixed(atlasSelect())), atlasAbout(), field('Cutting plane', planeControl(), fixedHelp, ui.plane.group));
     main.append(atlas);
 
-    const cut = section('Sections');
-    const row = make('div', 'gen-row');
-    row.append(field('Thickness (µm)', input('thickness', { placeholder: 'e.g. 40', mode: 'numeric' }), form.abba && form.thickness ? 'ABBA’s, from its slice spacing: check it.' : undefined),
-      field('Interval (µm)', input('interval', { placeholder: 'e.g. 120', mode: 'numeric' }), 'From one kept section to the next: every third 40 µm section is 120 µm.'),
-      field('Pixel size (µm per pixel)', fixed(input('pixelSize', { placeholder: 'e.g. 0.65', mode: 'decimal' })), form.abba ? 'ABBA’s snapshots.' : 'Only if the image files do not record it.'));
-    cut.append(row);
+    const cut = card(3, 'Sections');
+    const thickness = unitInput('thickness', 'µm', 'e.g. 40', 'numeric');
+    const interval = unitInput('interval', 'µm', 'e.g. 120', 'numeric');
+    const pixel = unitInput('pixelSize', 'µm per pixel', 'e.g. 0.65', 'decimal');
+    fixed(pixel.box);
+    ui.units = [thickness.wrap, interval.wrap, pixel.wrap];
+    const units = make('div', 'gen-units');
+    units.append(
+      field('Thickness', thickness.wrap, form.abba && form.thickness ? 'ABBA’s, from its slice spacing: check it.' : undefined, thickness.box),
+      field('Interval', interval.wrap, 'From one kept section to the next: every third 40 µm section is 120 µm.', interval.box),
+      field('Pixel size', pixel.wrap, form.abba ? 'ABBA’s snapshots.' : 'Only if the image files do not record it.', pixel.box));
+    cut.append(units);
     main.append(cut);
 
-    const todo = section('What to do');
-    for (const task of data.tasks) {
-      const wrap = make('label', 'gen-check'), box = make('input');
-      box.type = 'checkbox'; box.checked = form.tasks.includes(task.name);
-      box.onchange = () => {
-        form.tasks = data.tasks.map(t => t.name).filter(n => (n === task.name ? box.checked : form.tasks.includes(n)));
-        update();
-      };
-      const words = make('span');
-      words.append(make('span', '', task.label), make('span', 'gen-help', task.about));
-      wrap.append(box, words);
-      todo.append(wrap);
-    }
+    const todo = card(4, 'What to do');
+    todo.append(taskCards());
     main.append(todo);
 
-    const known = section('What you already know');
-    known.append(check('The file names sort in the order the sections were cut', 'ordered').wrap);
-    keepBoxes = {
-      angles: check('The sections were cut straight: do not tilt the cutting plane', '', 'Applies when placing along the atlas.', 'angles'),
-      orientation: check('Every section is the right way up and not mirrored: do not flip or turn them', '', 'Applies when aligning in the plane.', 'orientation'),
+    const known = card(5, 'What you already know');
+    const checks = make('div', 'gen-checks');
+    ui.keep = {
+      angles: check('The sections were cut straight: do not tilt the cutting plane', 'Applies when placing along the atlas.',
+        !!form.keep.angles, on => { form.keep = { ...form.keep, angles: on }; }),
+      orientation: check('Every section is the right way up and not mirrored: do not flip or turn them', 'Applies when aligning in the plane.',
+        !!form.keep.orientation, on => { form.keep = { ...form.keep, orientation: on }; }),
     };
-    known.append(keepBoxes.angles.wrap, keepBoxes.orientation.wrap,
-      field('Damaged sections', input('damaged', { multiline: true, rows: 3, placeholder: 'One per line: file name: what is wrong\ne.g. s012.tif: left cortex torn' })));
+    checks.append(check('The file names sort in the order the sections were cut', '', !!form.ordered, on => { form.ordered = on; }).row,
+      ui.keep.angles.row, ui.keep.orientation.row);
+    known.append(checks, field('Damaged sections',
+      textInput('damaged', { rows: 3, placeholder: 'One per line: file name: what is wrong\ne.g. s012.tif: left cortex torn' })));
     main.append(known);
 
-    const notes = section('Notes for the agent');
-    notes.append(field('Notes', input('notes', { multiline: true, rows: 3, placeholder: 'e.g. Injection in the right hemisphere; the olfactory bulbs were removed.' })));
-    main.append(notes, toolsPanel());
+    const notes = card(6, 'Notes for the agent');
+    const notesBox = textInput('notes', { rows: 3, placeholder: 'e.g. Injection in the right hemisphere; the olfactory bulbs were removed.' });
+    notesBox.setAttribute('aria-label', 'Notes for the agent');
+    notes.append(notesBox, make('p', 'gen-help', 'Saved with the job; the registration agent reads them.'));
+    main.append(notes);
+    if (!form.abba) main.append(integrationsCard());  // an ABBA job's results already go to ABBA
+    main.append(toolsPanel());
 
     page.append(main, outputPanel());
     root.replaceChildren(page);
@@ -615,8 +814,9 @@ if (typeof document !== 'undefined') (() => {
       if (!r.ok) throw new Error(String(r.status));
       data = await r.json();
       build(data.prefill || null);
-    } catch {
-      root.replaceChildren(make('p', 'gen-intro', 'The prompt generator could not load its choices from LangSlice. Close the window and open it again.'));
+    } catch (error) {
+      console.error(error);
+      root.replaceChildren(make('p', 'gen-intro gen-failed', 'The prompt generator could not load its choices from LangSlice. Close the window and open it again.'));
     }
   }
   load();

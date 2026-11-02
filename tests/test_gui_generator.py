@@ -3,11 +3,12 @@ the form's tools come from the tool table, the people's labels never reach a
 model, and the message for a few forms, exactly. The message is built in the
 page; these tests run its pure functions under node (skipped without node)
 and check that the command it holds is one ``langslice-job FOLDER init``
-reads into a job spec."""
+reads into a job spec. The tab's stylesheet uses the window's tokens only."""
 
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -22,7 +23,8 @@ from langslice.job.settings import labels as tool_labels
 from langslice.job.settings import tool_table
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "src" / "langslice" / "hosts" / "gui" / "static" / "generator.js"
+STATIC = ROOT / "src" / "langslice" / "hosts" / "gui" / "static"
+SCRIPT = STATIC / "generator.js"
 SNAPSHOTS = ROOT / "tests" / "snapshots" / "agent_text"
 NODE = shutil.which("node")
 
@@ -32,6 +34,9 @@ BASE: dict[str, Any] = {
     "interval": "", "pixelSize": "", "tasks": ["position", "transform"], "off": [],
     "ordered": False, "damaged": "", "keep": {}, "notes": "",
 }
+
+#: Every program the form offers to prepare the results for.
+ALL_INTEGRATIONS = ["quint", "verso", "dmc-brainmap"]
 
 REQUEST = ("Please register my brain sections with LangSlice, following its register-brain "
            "skill: create the job with the init command below, then launch the registration "
@@ -100,6 +105,18 @@ def test_the_payload_lists_atlases_tasks_and_what_a_kept_property_switches_off()
     assert data["frozen_off"]["orientation"] == ["interactive_transform:flip",
                                                  "interactive_transform:rotate"]
     json.dumps(data)  # plain data
+
+
+def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
+    """generator.css names only tokens.css's custom properties and writes no
+    colour of its own; generator.js puts every text in as text, never HTML."""
+    tokens = set(re.findall(r"(--[a-z0-9-]+)\s*:",
+                            (STATIC / "tokens.css").read_text(encoding="utf-8")))
+    css = (STATIC / "generator.css").read_text(encoding="utf-8")
+    assert set(re.findall(r"var\((--[a-z0-9-]+)", css)) <= tokens
+    assert re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(", css) == []
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|setAttribute\('style'", script) == []
 
 
 def test_the_server_answers_the_generator_data(tmp_path: Path) -> None:
@@ -245,6 +262,41 @@ def test_warping_alone_warns_and_nothing_chosen_leaves_the_tasks_to_the_agent() 
     assert warp["warnings"] and warp["text"]
     assert "--tasks" not in nothing["text"]
     assert "leaves out what to do (place, align, warp), the cutting plane" in nothing["text"]
+
+
+def test_the_payload_lists_the_programs_the_results_can_go_to() -> None:
+    rows = generator.payload()["integrations"]
+    assert [row["name"] for row in rows] == ALL_INTEGRATIONS
+    assert [row["label"] for row in rows] == [
+        "QUINT (PyNutil, QuickNII, VisuAlign)", "VERSO", "DMC-BrainMap"]
+    assert rows[0]["words"] == "the QUINT tools (PyNutil, QuickNII, VisuAlign)"
+
+
+def test_the_programs_ticked_are_named_to_the_main_agent_only() -> None:
+    """The request names the programs; the command, which the registration
+    agent's job is made from, is the same as without them."""
+    filled = {**BASE, "plane": "coronal", "thickness": "40", "interval": "120",
+              "pixelSize": "0.65", "notes": "Right striatum."}
+    plain, quint_dmc, one, every = _run([
+        filled, {**filled, "integrations": ["dmc-brainmap", "quint"]},
+        {**filled, "integrations": ["verso"]},
+        {**filled, "integrations": ALL_INTEGRATIONS}])
+    quoted = " The command is quoted for bash; if your shell is another, quote it for yours."
+    command = plain["text"].split("\n\n", 1)[1]
+    assert plain["text"] == f"{REQUEST}{quoted}\n\n{command}"
+    assert quint_dmc["text"] == (
+        f"{REQUEST} When the registration is done, prepare the results for the QUINT "
+        f"tools (PyNutil, QuickNII, VisuAlign) and DMC-BrainMap.{quoted}\n\n{command}")
+    assert one["text"] == (f"{REQUEST} When the registration is done, prepare the "
+                           f"results for VERSO.{quoted}\n\n{command}")
+    assert "QUINT tools (PyNutil, QuickNII, VisuAlign), VERSO and DMC-BrainMap." in every["text"]
+    for made in (quint_dmc, one, every):
+        assert made["text"].split("\n\n", 1)[1] == command
+        assert _command(made["text"]) == _command(plain["text"])
+    spec = _spec(_command(every["text"]))
+    assert spec.facts == []
+    assert not any(word in json.dumps(spec.to_dict())
+                   for word in ("QUINT", "VERSO", "DMC", "PyNutil"))
 
 
 # --- a job's own settings: the form started from job.json ---------------------------
@@ -395,11 +447,12 @@ def test_the_message_for_a_job_prepared_in_abba(tmp_path: Path) -> None:
     prefill = _prefill(_prepared_abba_job(tmp_path))
     assert prefill is not None
     images = prefill["folder"]
-    kept, freed, kept_straight, freed_upright, odd = _run_prefilled(prefill, [
+    kept, freed, kept_straight, freed_upright, odd, programs = _run_prefilled(prefill, [
         {}, {"keepRegistrations": False},
         {"keep": {"angles": True}},
         {"keepRegistrations": False, "keep": {"orientation": True}},
         {"pixelSize": "not a number", "atlas": "", "plane": ""},
+        {"integrations": ALL_INTEGRATIONS},
     ])
     command = (f"```bash\nlangslice-job {images} init \\\n"
                "  --tasks position,transform \\\n"
@@ -414,6 +467,7 @@ def test_the_message_for_a_job_prepared_in_abba(tmp_path: Path) -> None:
         f"\"{ABBA_FILES[0]}\":[\"orientation\",\"affine\",\"deformation\"]}}'\n```\n")
     assert freed_upright["text"].endswith("  --frozen '{\"*\":[\"orientation\"]}'\n```\n")
     assert odd["problems"] == [] and odd["text"] == kept["text"]  # fixed fields
+    assert programs["text"] == kept["text"]  # its results already go to ABBA
     for made in (kept, freed, kept_straight):
         assert "--atlas" not in made["text"] and "--pixel-size-um" not in made["text"]
     spec = _spec(_command(freed["text"]))

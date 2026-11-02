@@ -14,7 +14,7 @@ from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
 
 ## The job's settings (`settings/`)
 
-- `schema.py`: one row per setting (`SETTINGS`, 44 rows of `Setting`): its
+- `schema.py`: one row per setting (`SETTINGS`, 45 rows of `Setting`): its
   name (`atlas`, a section's `position.thickness_um`, a supplied answer's
   `inputs.positions`), its type and the job's default, the doors that may
   set it (`run`, `init`, `mcp`, `library`, `abba`), its `job.json` key, the
@@ -63,9 +63,10 @@ from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
   plugins), which `valid_names(spec)`, `check_names`, `refusal(spec)`,
   `off_names`, `catalog(spec)` read, so a job's `disabled` list can name a
   plugin tool.
-- `frozen.py`: what the agent may not change (`JobSpec.frozen`). The five
+- `frozen.py`: what the agent may not change (`JobSpec.frozen`). The six
   properties a section has (`PROPERTIES`: `position`, `angles`,
-  `orientation` (flip and quarter turn together), `affine`, `deformation`),
+  `orientation` (flip and quarter turn together), `affine`, `deformation`,
+  `damage` (the marked regions; `mark_damage` writes it)),
   the `"*"` key for every section, `clean` (validates and canonicalizes a
   freeze), `for_section` / `everywhere` / `sections_of` / `groups`,
   `TASK_PROPERTIES` (what each task writes), `derived` (what a task that is
@@ -515,7 +516,13 @@ longer exist be taken over by the images it is opened with.
   or extrapolated around supplied ones. Saved positions are preserved on
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
-  (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
+  (`apply_host_inputs`): a section is damaged when it has marked regions.
+  A host's `inputs.damaged_regions` (`{filename: [region, ...]}`,
+  `spec.supplied_damaged_regions` checks the shape and sides) become the
+  section's `damaged_regions`, normalized as `mark_damage` stores them;
+  `check_damaged_regions` (called by `Job.open` on a new stack) checks them
+  against the atlas and the section's placement as `mark_damage` checks the
+  agent's (`core.sections.damage.checked_entries`, `side_pair_refusal`). The submit
   gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`,
   status `refused`, or None), in order and only for the tasks that are on: `MISSING_POSITIONS` (no position),
   `STRICT_INTERVAL` or
