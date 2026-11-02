@@ -1,8 +1,15 @@
 # ABBA
 
-The Fiji connector starts a LangSlice job from the sections you select in
-ABBA. The registration runs in your AI app, and every change the agent saves
-appears in ABBA as an ABBA registration you can undo.
+:::{admonition} The Fiji connector is temporary
+:class: warning
+
+The Fiji connector is a stopgap. It will likely change, or be replaced,
+in future versions of LangSlice and ABBA.
+:::
+
+The Fiji connector starts a LangSlice job from the sections you select in ABBA.
+The registration runs in your AI app, and every change the agent saves
+appears in ABBA as an ABBA registration you can undo, warps included.
 
 It works with ABBA 0.25 (0.24.1 too) on Java 21, the Allen Mouse V3 or V3p1
 atlas, and coronal sections.
@@ -11,11 +18,18 @@ atlas, and coronal sections.
 
 1. [Install LangSlice](getting-started/install.md) and keep its environment:
    ABBA uses it.
-2. Build the connector with its
-   [build instructions](https://github.com/greenpolo/LangSlice/blob/main/connectors/fiji/README.md#build-and-install),
-   copy `langslice-fiji-0.3.0.jar` into Fiji's `jars` folder, remove any older
-   `langslice-fiji` jar, and restart Fiji.
-3. The first time you use it, the connector asks for the LangSlice
+2. Build the connector, with JDK 21 and [Maven](https://maven.apache.org):
+
+   ```bash
+   git clone https://github.com/greenpolo/LangSlice.git
+   cd LangSlice/connectors/fiji
+   mvn package
+   ```
+
+3. Copy `target/langslice-fiji-0.3.0.jar` into Fiji's `jars` folder, remove
+   any older `langslice-fiji` jar, and restart Fiji. Update LangSlice and the
+   connector together: a connector refuses a LangSlice of another version.
+4. The first time you use it, the connector asks for the LangSlice
    environment's folder. Choose it, click **Check installation**, then
    **Save**.
 
