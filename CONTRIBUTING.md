@@ -172,7 +172,7 @@ basedpyright.
 
 - Branch from `main`, open the PR against `main`.
 - Keep PRs focused — one logical change per PR is easier to review.
-- CI runs `ruff`, the style checker (against the base, with both baselines), `basedpyright` and the test suite on Linux and Windows, Python 3.11. The Fiji connector builds and runs discovery, menu and geometry checks on Windows; its shebang-based fake-worker subprocess check runs on Linux.
+- CI runs `ruff`, the style checker (against the base, with both baselines), `basedpyright` and the test suite on Linux and Windows, Python 3.11. The checks run in the locked environment (`uv sync --locked --extra dev --extra registration`), since basedpyright's findings change with the libraries' type stubs; the tests run on the newest versions `pip` installs. A change of `uv.lock` that moves basedpyright's findings carries the baseline's update. The Fiji connector builds and runs discovery, menu and geometry checks on Windows; its shebang-based fake-worker subprocess check runs on Linux.
 
 ## License
 

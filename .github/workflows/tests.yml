@@ -23,10 +23,14 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install LangSlice + dev extras
+      # The locked versions (uv.lock): basedpyright's findings depend on the
+      # type stubs of numpy and the other libraries, not only on its own
+      # version, so its baseline holds only in the environment it was written in.
+      - name: Install LangSlice + dev extras (locked)
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,registration]"
+          python -m pip install --upgrade pip uv
+          uv sync --locked --python "$(command -v python)" --extra dev --extra registration
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: ruff check
         run: python -m ruff check .
