@@ -70,6 +70,7 @@ register
 
 abba
 quint
+dmc-brainmap
 ```
 
 ```{toctree}

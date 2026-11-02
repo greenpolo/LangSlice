@@ -64,8 +64,8 @@ and `coords.tif` holds each pixel's atlas coordinates. To count cells per
 region, use [PyNutil](quint.md), or read `labels.tif` at each cell's pixel. The maps are at LangSlice's working size, at most 3072 pixels across,
 unless you ask for full resolution. Ask for them again after a correction.
 
-For DMC-BrainMap, ask your agent to export the brain for DMC-BrainMap. That
-export carries the linear placement only, without the warps.
+To count cells in [DMC-BrainMap](dmc-brainmap.md), export the job for it.
+That export carries the linear placement only, without the warps.
 
 ## Start from an existing registration
 
