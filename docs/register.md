@@ -55,14 +55,13 @@ The `langslice` folder holds, once the run ends:
 | File | What it is |
 |---|---|
 | `registration.json` | Each section's placement in the atlas |
-| `exports/quicknii.json`, `exports/visualign.json` | For QuickNII, VisuAlign, Nutil and PyNutil, with a PNG copy of each section beside them. `visualign.json` carries the warps. |
+| `exports/quicknii.json`, `exports/visualign.json` | For the [QUINT](quint.md) tools (PyNutil, VisuAlign), with a PNG copy of each section beside them. `visualign.json` carries the warps. |
 
 Region maps are written when you ask (“write the region maps for
 /data/brains/M04”), into `sections/<name>/`: `labels.tif` holds each pixel's
 atlas region id, `labels_fiji.tif` and `labels.csv` show the regions in Fiji,
 and `coords.tif` holds each pixel's atlas coordinates. To count cells per
-region, read `labels.tif` at each cell's pixel; your agent can write that
-script. The maps are at LangSlice's working size, at most 3072 pixels across,
+region, use [PyNutil](quint.md), or read `labels.tif` at each cell's pixel. The maps are at LangSlice's working size, at most 3072 pixels across,
 unless you ask for full resolution. Ask for them again after a correction.
 
 For DMC-BrainMap, ask your agent to export the brain for DMC-BrainMap. That
