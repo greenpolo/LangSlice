@@ -16,7 +16,7 @@ const Generator = (() => {
     return { folder: '', atlas: data.default_atlas, plane: '', thickness: '', interval: '', pixelSize: '',
              tasks: data.tasks.filter(t => t.default).map(t => t.name), off: [], ordered: false,
              damaged: '', keep: {}, notes: '', imageProvider: '', imageModel: '',
-             abba: null, keepRegistrations: true, frozen: {} };
+             abba: null, keepRegistrations: true, frozen: {}, integrations: [] };
   }
 
   // The form started from a job's own settings (`prefill`, GET generator?job=n):
@@ -238,6 +238,16 @@ const Generator = (() => {
     return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
   }
 
+  // The programs the person will use the results in (`data.integrations`, in
+  // its order), named for the main agent; never in the command, so the
+  // registration agent never reads them. A job prepared in ABBA has none: its
+  // results already go to ABBA.
+  function integrationWords(data, form) {
+    if (form.abba) return [];
+    const chosen = new Set(form.integrations || []);
+    return data.integrations.filter(i => chosen.has(i.name)).map(i => i.words);
+  }
+
   // The message: `{text, problems, warnings}`; `text` is empty while a
   // problem stands.
   function message(data, form) {
@@ -248,6 +258,8 @@ const Generator = (() => {
     const lines = ['Please register my brain sections with LangSlice, following its register-brain skill: create the job with the init command below, then launch the registration and check the result.'];
     const missing = leftOut(data, form);
     if (missing.length) lines.push(`The command leaves out ${joinWords(missing)}: choose ${missing.length > 1 ? 'these' : 'it'} yourself, or ask me when the images do not tell you.`);
+    const programs = integrationWords(data, form);
+    if (programs.length) lines.push(`When the registration is done, prepare the results for ${joinWords(programs)}.`);
     if (cmd.quoted) lines.push('The command is quoted for bash; if your shell is another, quote it for yours.');
     const text = lines.join(' ') + '\n\n```bash\n' + cmd.text + '\n```\n';
     return { text, problems: stops, warnings: notes };
@@ -261,7 +273,7 @@ const Generator = (() => {
   }
 
   return { shellQuote, cleanPath, startForm, prefilled, offNames, present, keptOff, imageModelApplies,
-           problems, warnings, leftOut, command, message, keepLabel };
+           problems, warnings, leftOut, integrationWords, command, message, keepLabel };
 })();
 
 if (typeof module !== 'undefined') module.exports = Generator;
@@ -482,6 +494,21 @@ if (typeof document !== 'undefined') (() => {
       d.append(wrap, make('p', 'gen-help', 'Name a damaged section below by its file name.'));
       box.append(d);
     }
+    return box;
+  }
+
+  // The programs the results go to: one box each, none ticked. Only the message's request
+  // names them (Generator.integrationWords), for the agent that prepares the files.
+  function integrationsCard() {
+    const box = card(7, 'Where you’ll use the results');
+    const checks = make('div', 'gen-checks');
+    for (const program of data.integrations) {
+      checks.append(check(program.label, '', form.integrations.includes(program.name), on => {
+        form.integrations = data.integrations.map(i => i.name)
+          .filter(name => (name === program.name ? on : form.integrations.includes(name)));
+      }).row);
+    }
+    box.append(checks, make('p', 'gen-help', 'Your agent prepares the files each program opens once the registration is checked, and tells you where they are. The registration agent is not told. For ABBA, start the job from ABBA instead (Register › LangSlice…).'));
     return box;
   }
 
@@ -764,7 +791,9 @@ if (typeof document !== 'undefined') (() => {
     const notesBox = textInput('notes', { rows: 3, placeholder: 'e.g. Injection in the right hemisphere; the olfactory bulbs were removed.' });
     notesBox.setAttribute('aria-label', 'Notes for the agent');
     notes.append(notesBox, make('p', 'gen-help', 'Saved with the job; the registration agent reads them.'));
-    main.append(notes, toolsPanel());
+    main.append(notes);
+    if (!form.abba) main.append(integrationsCard());  // an ABBA job's results already go to ABBA
+    main.append(toolsPanel());
 
     page.append(main, outputPanel());
     root.replaceChildren(page);

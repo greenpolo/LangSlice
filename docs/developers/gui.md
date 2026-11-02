@@ -110,6 +110,13 @@ blank, the agent decides or asks you about.
   turns); and damaged sections, one per line as `file name: what is wrong`.
 - **Notes for the agent.** Saved with the job; the registration agent reads
   them.
+- **Where you'll use the results.** QUINT (PyNutil, QuickNII, VisuAlign),
+  VERSO and DMC-BrainMap, none ticked to start with. Each one ticked is
+  named in the message's request, for your agent: once the registration is
+  checked, it prepares the files that program opens and tells you where
+  they are. The command does not change, so the registration agent is never
+  told. ABBA is not listed: a job reaches ABBA only by starting from ABBA.
+  A job prepared in ABBA has no such card.
 - **Advanced** (closed to start with): every tool the registration agent can
   use, grouped by task, each with a short description and its own name, all
   on. Turning a tool or one of its options off takes it away from the agent.
@@ -133,7 +140,7 @@ you type and is shown whole, and **Copy** puts it on the clipboard. It is a shor
 command, holding only what you set:
 
 ````text
-Please register my brain sections with LangSlice, following its register-brain skill: create the job with the init command below, then launch the registration and check the result. The command leaves out the pixel size (when the image files do not record it): choose it yourself, or ask me when the images do not tell you.
+Please register my brain sections with LangSlice, following its register-brain skill: create the job with the init command below, then launch the registration and check the result. The command leaves out the pixel size (when the image files do not record it): choose it yourself, or ask me when the images do not tell you. When the registration is done, prepare the results for the QUINT tools (PyNutil, QuickNII, VisuAlign) and DMC-BrainMap. The command is quoted for bash; if your shell is another, quote it for yours.
 
 ```bash
 langslice-job /data/brain1 init \

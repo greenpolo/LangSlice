@@ -193,6 +193,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `providers.connections` / `providers.openai_api`, its default model,
   whether this computer has its key or sign-in). Each tool row also says
   whether it calls the image model (`ToolDef.image_model`).
+  `integrations`: `INTEGRATIONS`, the programs the results can go to
+  (QUINT, VERSO, DMC-BrainMap; ABBA is not one), each `Integration`'s
+  `name`, its box's `label` and the `words` the request names it with.
   `prefill(job_folder)` -> `Prefill` (None without a readable `job.json`):
   the form as `job.json` holds it, read through `read_job_file`,
   `without_removed_settings` and `JobSpec.from_dict` (the image folder
@@ -224,7 +227,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (loaded by one delimited block in `index.html`). `Generator`, pure
   functions on the payload and a plain form object (`folder`, `atlas`,
   `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `ordered`,
-  `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`, and from a
+  `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`,
+  `integrations`, and from a
   job's prefill `abba`, `keepRegistrations`, `frozen`), exported to node for
   the tests: `startForm`, `prefilled(data, prefill)` (the form a
   `prefill` starts), `message` -> `{text, problems, warnings}`. A form with
@@ -238,7 +242,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   only while the run warps and a tool that calls the image model is on;
   provider `none` takes those tools out of the run. The text is one request sentence, a
   sentence naming what the form leaves to the agent (atlas, plane,
-  thickness, interval, pixel size, the tasks when none is chosen) and one on
+  thickness, interval, pixel size, the tasks when none is chosen), one
+  naming the programs the results go to (`integrationWords`: the ticked
+  `integrations` in the payload's order, `When the registration is done,
+  prepare the results for ...`; none for a form with `abba`; for the main
+  agent only, never in the command) and one on
   bash quoting when a word is quoted, then a fenced `bash` block: the
   `langslice-job FOLDER init` command, one flag per line, only the fields
   set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--position-thickness-um`, `--position-interval-um`,
@@ -255,7 +263,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   every text goes in by `textContent`. It loads `generator?job=<n>` when
   the address carries `#…&job=<n>`. The layout: numbered cards (1 Images, 2
   Atlas, 3 Sections, 4 What to do, 5 What you already know, 6 Notes for the
-  agent, then Advanced, closed; the From ABBA card first when there is one)
+  agent, 7 Where you'll use the results (a box per payload integration,
+  none ticked; left out for a job prepared in ABBA), then Advanced, closed;
+  the From ABBA card first when there is one)
   beside a sticky **Your message** panel (the whole message, the command in
   violet, Copy, problems in pink, warnings muted), one column below 1080 px;
   the plane as three buttons and *Let the agent decide*; the Advanced tools
@@ -351,7 +361,9 @@ and refused by the spec too, warping alone; the prefill of a job prepared
 in ABBA (a fixture writing `job.json` as `abba.prepare` does) and of an
 opened job, `generator?job=n`, the ABBA messages with the registrations kept
 and freed, read back by `init`; the image models are the providers `init`
-takes, and their flags; the tab's stylesheet uses only `tokens.css` names and
+takes, and their flags; the programs ticked named in the request only,
+the command the same as without them, none for a job prepared in ABBA; the
+tab's stylesheet uses only `tokens.css` names and
 no colour value, and its script builds no HTML from strings), `tests/test_gui_window.py` (the candidates per platform with a
 fake `which` and filesystem, the app window, both fallbacks, the start
 address per tab, `--tab` reaching `serve`, a port in use in one sentence, the
