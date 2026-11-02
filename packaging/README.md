@@ -26,8 +26,8 @@ pip.
 ```bash
 python -m pip install build
 python -m build --wheel
-python packaging/check_wheel.py dist/langslice-0.1.0-py3-none-any.whl
-python -m pip install dist/langslice-0.1.0-py3-none-any.whl
+python packaging/check_wheel.py dist/langslice-0.2.0-py3-none-any.whl
+python -m pip install dist/langslice-0.2.0-py3-none-any.whl
 langslice version
 ```
 

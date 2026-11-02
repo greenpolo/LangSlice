@@ -119,7 +119,7 @@ langslice version
 langslice-job ops
 ```
 
-The first prints `langslice 0.1.0` or a later version. The second prints one
+The first prints `langslice 0.2.0` or a later version. The second prints one
 JSON object with `"ok": true`.
 
 ## 6. Connect the app

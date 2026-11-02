@@ -46,7 +46,7 @@ new and still changing. Registration runs without it.
 ## Cite LangSlice
 
 Baughman, N. (2026). *LangSlice: VLM-driven registration of histological brain
-sections to BrainGlobe atlases* (version 0.1.0) [Computer software].
+sections to BrainGlobe atlases* (version 0.2.0) [Computer software].
 <https://github.com/greenpolo/LangSlice>
 
 GitHub's **Cite this repository** button gives it as BibTeX. Questions and
