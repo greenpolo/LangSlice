@@ -51,6 +51,7 @@ html[data-theme="dark"] {
   --ls-lavender: #8fa0f5;  /* logo lavender */
   --ls-violet: #a98bf0;    /* logo violet */
   --ls-pink: #ff3daa;      /* logo pink */
+  --ls-yellow: #f2d16b;    /* warnings only, 13:1 */
   --ls-line: #262a40;      /* hairlines: panels, tables */
   --ls-tract: #3e4260;     /* the card's fibre-tract colour: tree lines, rules */
   --ls-wash: #0a0b14;      /* hover only */
@@ -96,7 +97,7 @@ html[data-theme="dark"] {
   --pst-color-info-bg: transparent;
   --pst-color-attention: var(--ls-pink);
   --pst-color-attention-bg: transparent;
-  --pst-color-warning: var(--ls-pink);
+  --pst-color-warning: var(--ls-yellow);
   --pst-color-warning-bg: transparent;
   --pst-color-danger: var(--ls-pink);
   --pst-color-danger-bg: transparent;
@@ -600,12 +601,16 @@ button.copybtn svg {
 }
 
 .bd-article .admonition.important,
-.bd-article .admonition.warning,
 .bd-article .admonition.attention,
-.bd-article .admonition.caution,
 .bd-article .admonition.danger,
 .bd-article .admonition.error {
   --ls-role: var(--ls-pink);
+}
+
+/* Something not finished yet: the one colour outside the logo's. */
+.bd-article .admonition.warning,
+.bd-article .admonition.caution {
+  --ls-role: var(--ls-yellow);
 }
 
 .bd-article .admonition.tip,

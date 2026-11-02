@@ -27,16 +27,18 @@ then assign cells and signal to brain regions.
 :::{admonition} Before you start
 :class: important
 
-- **Best tested on coronal sections and the Allen mouse atlas.** Sagittal and
-  horizontal sections and the other [BrainGlobe](https://brainglobe.info)
-  atlases work, less tested.
-- **You need one AI app:** Codex (ChatGPT), Antigravity (Gemini) or Claude
-  Code (Claude), on Windows, macOS or Linux. No graphics card is needed.
 - **Your AI provider sees your sections.** Pictures of them go to OpenAI,
-  Google or Anthropic, whichever runs your app. Your image files stay on your
-  computer, unchanged.
-- **A registration uses your AI plan's** usage limits.
+  Google or Anthropic, whichever runs your app, and a registration counts
+  against your plan's usage limits. Your image files stay on your computer,
+  unchanged.
 - **Check every result.** The agent can be wrong.
+:::
+
+:::{admonition} In development
+:class: warning
+
+The LangSlice window (the agent viewer, the prompt generator and Settings) is
+new and still changing. Registration runs without it.
 :::
 
 **New here?** Start with [Installation](getting-started/install.md).
