@@ -318,7 +318,8 @@ def test_the_focus_follows_the_latest_followed_call(tmp_path: Path) -> None:
 def test_idle_after_ten_minutes_without_a_change(tmp_path: Path) -> None:
     folder = _job(tmp_path)
     _state(folder, [2.1])
-    now = time.time()
+    # A second on: Windows can stamp the file a few milliseconds past time.time().
+    now = time.time() + 1
     hours = JobWatcher(folder, clock=lambda: now + 3 * 3600)
     status = _snap(hours)["status"]
     assert status["word"] == "Idle" and status["sentence"].startswith("No activity for 3 h. ")
