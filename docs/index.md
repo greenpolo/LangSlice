@@ -71,6 +71,7 @@ register
 abba
 quint
 dmc-brainmap
+verso
 ```
 
 ```{toctree}
