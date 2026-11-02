@@ -68,8 +68,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   on `window.start_address` (`langslice gui --tab viewer|prompt`); runs until Ctrl-C or until
   the app window's process has been gone for `LINGER_S` (5 s); a tab or no
   window serves until Ctrl-C. The address is printed and flushed at once; a
-  `--port` in use ends with one sentence (`Port N is in use: ...`), any other
-  bind error with its reason.
+  `--port` in use ends with one sentence (`Port N is in use: ...`;
+  `server.port_in_use`, which counts Windows' WSAEACCES for a port another
+  program listens on), any other bind error with its reason.
 - `watch.py` — `JobWatcher(folder)`: per job, `_Tail`s (byte offsets, an
   unterminated last line kept for the next round, a file grown shorter starts
   the watch over: a new `generation`) on `logs/events.jsonl`, `views.jsonl` and
