@@ -433,8 +433,8 @@ def test_no_refusal_names_a_tool_without_what_it_needs():
     tools = [name for name in valid_names() if ":" not in name]
     problems: list[str] = []
     for path in sorted(root.rglob("*.py")):
-        where = str(path.relative_to(root))
-        for node in ast.walk(ast.parse(path.read_text())):
+        where = path.relative_to(root).as_posix()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not (isinstance(node, ast.Call) and getattr(
                     node.func, "id", getattr(node.func, "attr", "")) in ("Refused", "ToolError")):
                 continue

@@ -135,7 +135,7 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
     if not result_path.exists():
         return None
     try:
-        saved = cast(object, json.loads(result_path.read_text()))
+        saved = cast(object, json.loads(result_path.read_text(encoding="utf-8")))
         problem = f"a JSON {type(saved).__name__}"
     except (OSError, ValueError) as exc:
         saved, problem = None, str(exc)
@@ -403,9 +403,11 @@ def start_correction(
     # The pictures sent are not kept (the canvas and its placed borders are
     # drawn again from the request); their PNG digests are.
     sent_images = {"original": canvas, "rough_overlay": rough}
-    Path(paths["prompt"]).write_text(sent)
-    Path(paths["base_prompt"]).write_text(base_prompt)
-    Path(paths["prompt_diff"]).write_text(prompt_diff(base_prompt, sent) + "\n")
+    Path(paths["prompt"]).write_text(sent, encoding="utf-8")
+    Path(paths["base_prompt"]).write_text(base_prompt, encoding="utf-8")
+    Path(paths["prompt_diff"]).write_text(
+        prompt_diff(base_prompt, sent) + "\n", encoding="utf-8"
+    )
     request = {
         "id": section_id, "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,

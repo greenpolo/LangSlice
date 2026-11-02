@@ -18,6 +18,15 @@ from pathlib import Path
 LINGER_S = 5.0
 
 
+def _in_use(exc: OSError) -> bool:
+    """Whether binding failed because another socket holds the port. Windows
+    refuses a port another program listens on as forbidden (WSAEACCES), not
+    as in use."""
+    if sys.platform == "win32":
+        return exc.winerror in (errno.WSAEADDRINUSE, errno.WSAEACCES)
+    return exc.errno == errno.EADDRINUSE
+
+
 def serve(folders: list[Path], *, port: int = 0, window: bool = True,
           tab: str = "viewer", say: Callable[[str], None] = print) -> None:
     """Serve the GUI for *folders* and the recent jobs until Ctrl-C, or until
@@ -34,8 +43,7 @@ def serve(folders: list[Path], *, port: int = 0, window: bool = True,
     try:
         server = GuiServer(jobs, port=port)
     except OSError as exc:
-        in_use = exc.errno == errno.EADDRINUSE
-        reason = "is in use" if in_use else f"cannot be used ({exc.strerror})"
+        reason = "is in use" if _in_use(exc) else f"cannot be used ({exc.strerror})"
         raise SystemExit(f"Port {port} {reason}: choose another with --port, "
                          "or leave --port out.") from None
     server.start()

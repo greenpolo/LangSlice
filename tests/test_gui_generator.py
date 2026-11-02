@@ -148,7 +148,7 @@ def _run(forms: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "process.stdout.write(JSON.stringify(input.forms.map(f => G.message(input.data, f))));"
     )
     done = subprocess.run([node, "-e", program, str(SCRIPT)], check=True, capture_output=True,
-                          text=True, input=json.dumps({"data": generator.payload(),
+                          encoding="utf-8", input=json.dumps({"data": generator.payload(),
                                                        "forms": forms}))
     return json.loads(done.stdout)
 
@@ -438,7 +438,7 @@ def _run_prefilled(prefill: dict[str, Any],
         "c => G.message(input.data, {...start, ...c}))));"
     )
     done = subprocess.run([node, "-e", program, str(SCRIPT)], check=True, capture_output=True,
-                          text=True, input=json.dumps({"data": generator.payload(),
+                          encoding="utf-8", input=json.dumps({"data": generator.payload(),
                                                        "prefill": prefill, "changes": changes}))
     return json.loads(done.stdout)
 
@@ -454,13 +454,16 @@ def test_the_message_for_a_job_prepared_in_abba(tmp_path: Path) -> None:
         {"pixelSize": "not a number", "atlas": "", "plane": ""},
         {"integrations": ALL_INTEGRATIONS},
     ])
-    command = (f"```bash\nlangslice-job {images} init \\\n"
+    # A folder bash would split is quoted, and the message says so (a Windows path).
+    folder = shlex.quote(images)
+    command = (f"```bash\nlangslice-job {folder} init \\\n"
                "  --tasks position,transform \\\n"
                "  --position-thickness-um 40 \\\n"
                "  --position-interval-um 120")
     quoted = " The command is quoted for bash; if your shell is another, quote it for yours."
+    plain = "" if folder == images else quoted
     # The job holds its atlas, plane and pixel size: no flag, nothing left out.
-    assert kept["text"] == f"{REQUEST}\n\n{command}\n```\n"
+    assert kept["text"] == f"{REQUEST}{plain}\n\n{command}\n```\n"
     assert freed["text"] == f"{REQUEST}{quoted}\n\n{command} \\\n  --frozen '{{}}'\n```\n"
     assert kept_straight["text"] == (
         f"{REQUEST}{quoted}\n\n{command} \\\n  --frozen '{{\"*\":[\"angles\"],"
@@ -486,7 +489,7 @@ def test_the_keep_box_names_one_section_in_the_singular() -> None:
         "process.stdout.write(JSON.stringify([1, 3].map(G.keepLabel)));"
     )
     done = subprocess.run([node, "-e", program, str(SCRIPT)], check=True,
-                          capture_output=True, text=True)
+                          capture_output=True, encoding="utf-8")
     one, three = json.loads(done.stdout)
     assert one == ("Keep the 1 section\u2019s existing ABBA registrations "
                    "(its position may still move)")

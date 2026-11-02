@@ -19,6 +19,7 @@ def test_every_open_adds_the_job_to_the_list_in_a_private_home(
 ):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Windows' home
     monkeypatch.delenv(recent.RECENT_ENV, raising=False)
     images = tmp_path / "stack"
     images.mkdir()

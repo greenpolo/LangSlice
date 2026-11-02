@@ -10,6 +10,7 @@ leave none of them in ``sys.modules``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -44,12 +45,16 @@ print(json.dumps({"codes": codes, "loaded": sorted(
 
 
 def test_calls_without_a_fit_import_no_engine(tmp_path):
+    home = str(tmp_path / "home")
+    # Windows' Python needs SYSTEMROOT to start, and finds the home in USERPROFILE.
+    system = {name: os.environ[name] for name in ("SYSTEMROOT",) if name in os.environ}
     done = subprocess.run(
         [sys.executable, "-c", CALLS, str(tmp_path / "stack"), *ENGINES],
-        cwd=REPO, capture_output=True, text=True, check=True,
-        env={"HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin",
+        cwd=REPO, capture_output=True, text=True, check=False,
+        env={**system, "HOME": home, "USERPROFILE": home, "PATH": "/usr/bin:/bin",
              "LANGSLICE_RECENT_JOBS": "off", "LANGSLICE_SETTINGS": "off"},
     )
+    assert done.returncode == 0, done.stderr
     result = json.loads(done.stdout.splitlines()[-1])
     assert result["codes"] == [0, 0, 0, 0], done.stderr
     assert result["loaded"] == []

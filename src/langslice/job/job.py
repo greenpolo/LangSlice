@@ -31,6 +31,7 @@ host's inputs to a new stack.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
@@ -79,6 +80,8 @@ from langslice.job.undo_steps import UndoFile
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 
 def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
@@ -362,8 +365,23 @@ class Job(JobBorderTraces):
             # written once at the current format (a dry run, or a folder this
             # process cannot write, keeps it in memory).
             if persist and os.access(layout.folder, os.W_OK):
-                job._write_upgrade(migration)
+                job._write_upgrade_if_writable(migration)
         return job
+
+    def _write_upgrade_if_writable(self, migration: FolderMigration) -> None:
+        """:meth:`_write_upgrade`, kept in memory where the folder refuses it.
+
+        Windows' ``os.access`` reads neither a folder's permissions nor a
+        file's read-only flag, so the refusal comes from the write itself.
+        """
+        try:
+            self._write_upgrade(migration)
+        except PermissionError as exc:
+            logger.warning(
+                "%s cannot be written (%s); the job is upgraded in memory only",
+                self.layout.folder,
+                exc.strerror,
+            )
 
     def _write_upgrade(self, migration: FolderMigration) -> None:
         """Write the state at the current format, read again under

@@ -105,7 +105,7 @@ def _make(layout: JobLayout) -> bool:
     uv = shutil.which("uv")
     command = ([uv, "venv", "--quiet", "--python", sys.executable, str(folder)] if uv
                else [sys.executable, "-m", "venv", str(folder)])
-    subprocess.run(command, check=True, capture_output=True, text=True)
+    subprocess.run(command, check=True, capture_output=True)
     (_site_packages(folder) / PARENT_PTH).write_text(
         "".join(f"import site; site.addsitedir({str(path)!r})\n" for path in _parent_sites()),
         encoding="utf-8")
@@ -177,7 +177,10 @@ def _pip(folder: Path, arguments: list[str]) -> None:
     uv = shutil.which("uv")
     command = ([uv, "pip", "install", "--quiet", "--python", str(python), *arguments] if uv
                else [str(python), "-m", "pip", "install", "--quiet", *arguments])
-    done = subprocess.run(command, capture_output=True, text=True, timeout=INSTALL_TIMEOUT_S)
+    # The installer's own encoding, not the locale's: Windows' code page
+    # cannot decode every byte of uv's UTF-8.
+    done = subprocess.run(command, capture_output=True, encoding="utf-8",
+                          errors="replace", timeout=INSTALL_TIMEOUT_S)
     if done.returncode != 0:
         raise subprocess.SubprocessError(
             (done.stderr or done.stdout).strip()[-4000:] or "the install failed")

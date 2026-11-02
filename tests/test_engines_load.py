@@ -79,7 +79,19 @@ def test_each_tool_is_refused_when_its_environment_is_missing(tmp_path: Path):
             reply = tool(**arguments)
             assert reply.get("code") == "ENGINE_MISSING" or "ENGINE_MISSING" in str(
                 reply), (name, reply)
-            assert gone in str(reply)
+            # The message quotes the path as Python does: its backslashes doubled on Windows.
+            assert any(gone in text or repr(gone) in text for text in _texts(reply)), reply
+
+
+def _texts(value: object) -> list[str]:
+    """Every string in a reply, nested ones included."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _texts(item)]
+    if isinstance(value, (list, tuple)):
+        return [text for item in value for text in _texts(item)]
+    return []
 
 
 def test_nothing_of_the_engine_environments_is_imported():

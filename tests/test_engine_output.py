@@ -4,7 +4,6 @@ ran out of memory."""
 
 from __future__ import annotations
 
-import fcntl
 import os
 import subprocess
 import sys
@@ -48,6 +47,8 @@ def test_gpu_turn_reports_how_long_it_waited(tmp_path: Path, monkeypatch):
     held = threading.Event()
 
     def hold() -> None:
+        import fcntl  # POSIX only: the queue takes no lock on Windows
+
         with open(lock, "w") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             held.set()
