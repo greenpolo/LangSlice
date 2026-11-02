@@ -35,9 +35,11 @@ needs this server's ``Origin``.
 
 from __future__ import annotations
 
+import errno
 import json
 import re
 import secrets
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import asdict
@@ -96,6 +98,27 @@ HEADERS = {
 
 def _int(query: dict[str, list[str]], key: str, default: int) -> int:
     return int(query.get(key, [str(default)])[0])
+
+
+def port_in_use(exc: OSError) -> bool:
+    """Tell whether a server failed to bind because the port is taken.
+
+    Windows refuses a port another program listens on as forbidden
+    (WSAEACCES), not as in use.
+
+    Parameters
+    ----------
+    exc
+        The error binding the server's socket raised.
+
+    Returns
+    -------
+    bool
+        True when another socket holds the port.
+    """
+    if sys.platform == "win32":
+        return exc.winerror in (errno.WSAEADDRINUSE, errno.WSAEACCES)
+    return exc.errno == errno.EADDRINUSE
 
 
 class GuiServer:

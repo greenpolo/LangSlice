@@ -130,12 +130,19 @@ def _png_sha256(image: Image.Image) -> str:
     return hashlib.sha256(encoded.getvalue()).hexdigest()
 
 
+def _save_texts(paths: dict[str, str], texts: dict[str, str]) -> None:
+    """Write each text to the path of its key, in UTF-8."""
+    for key, text in texts.items():
+        Path(paths[key]).write_text(text, encoding="utf-8")
+
+
 def _saved_result(result_path: Path) -> dict[str, Any] | None:
     """The result saved under one call key, if any."""
     if not result_path.exists():
         return None
     try:
-        saved = cast(object, json.loads(result_path.read_text(encoding="utf-8")))
+        text = result_path.read_text(encoding="utf-8")
+        saved = cast(object, json.loads(text))
         problem = f"a JSON {type(saved).__name__}"
     except (OSError, ValueError) as exc:
         saved, problem = None, str(exc)
@@ -403,11 +410,8 @@ def start_correction(
     # The pictures sent are not kept (the canvas and its placed borders are
     # drawn again from the request); their PNG digests are.
     sent_images = {"original": canvas, "rough_overlay": rough}
-    Path(paths["prompt"]).write_text(sent, encoding="utf-8")
-    Path(paths["base_prompt"]).write_text(base_prompt, encoding="utf-8")
-    Path(paths["prompt_diff"]).write_text(
-        prompt_diff(base_prompt, sent) + "\n", encoding="utf-8"
-    )
+    _save_texts(paths, {"prompt": sent, "base_prompt": base_prompt,
+                        "prompt_diff": prompt_diff(base_prompt, sent) + "\n"})
     request = {
         "id": section_id, "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,

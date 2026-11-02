@@ -378,7 +378,7 @@ class Job(JobBorderTraces):
             self._write_upgrade(migration)
         except PermissionError as exc:
             logger.warning(
-                "%s cannot be written (%s); the job is upgraded in memory only",
+                "%s cannot be written (%s); the job is upgraded in memory",
                 self.layout.folder,
                 exc.strerror,
             )
