@@ -11,7 +11,7 @@ When a registration run submits, the job folder holds three result files:
 | File | What it is | Open it with |
 |---|---|---|
 | `registration.json` | Each section's placement in the atlas, in a readable form | A text editor, or a script |
-| `exports/quicknii.json` | Each section's linear placement (position, angles, in-plane alignment), without shear | QuickNII, ABBA |
+| `exports/quicknii.json` | Each section's linear placement (position, angles, in-plane alignment), without shear | QuickNII |
 | `exports/visualign.json` | The same, plus VisuAlign markers that carry each section's warp and shear | VisuAlign, Nutil, PyNutil |
 
 The job folder is the `langslice` folder inside your image folder.
@@ -135,10 +135,11 @@ exists. The full formats are in
   as it keeps the image's proportions. A section paired with the wrong
   number is counted with another section's registration, and no program
   warns.
-- **ABBA.** ABBA imports the linear placement from `quicknii.json` with
-  **ABBA - Import QuickNII Project**. ABBA's own dialog warns that this import
-  is not exact. ABBA has no VisuAlign import, so the warps do not come
-  across.
+- **ABBA.** Do not import `quicknii.json` into ABBA: ABBA reads the
+  image sizes in the file as the sizes of the PNG copies and takes one
+  cutting angle for all sections, so the sections land millimetres off and
+  out of order. A job reaches ABBA only when you start it from ABBA
+  ([ABBA](../abba.md)).
 
 Other atlases export to QuickNII targets that assume the BrainGlobe voxel
 grid; that is untested. The rat target is `WHS_Rat_v4_39um.cutlas`.

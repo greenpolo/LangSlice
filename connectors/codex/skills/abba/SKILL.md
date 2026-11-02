@@ -1,6 +1,6 @@
 ---
 name: abba
-description: Work with ABBA (Aligning Big Brains and Atlases, in Fiji) from a coding agent: import section images, save and load state, export registrations, regions and QuickNII datasets, and bring a LangSlice job's files into or out of ABBA. Use when the user mentions ABBA, Fiji, QuPath projects or QuickNII.
+description: Work with ABBA (Aligning Big Brains and Atlases, in Fiji) from a coding agent: drive a running ABBA through its MCP server (abba-mcp), import section images, save and load state, export registrations and regions, continue a LangSlice job started from ABBA, and bring an ABBA registration into LangSlice. Use when the user mentions ABBA, Fiji or QuPath projects.
 ---
 
 # ABBA from a coding agent
@@ -15,27 +15,50 @@ ABBA is open, every write to that job appears in ABBA as one ABBA Undo step;
 nothing else is needed to "send results to ABBA". Registration itself is the
 subagent's work (`register-brain` skill).
 
-## Reaching a running ABBA
+## Reaching a running ABBA: abba-mcp
 
-Fiji's own MCP server (fiji/fiji-llm, a preview): in Fiji, run
-`Help > Assistants > Manage Fiji MCP Server...`, start the server (default port
-9090, URL `http://localhost:9090/mcp`) and register it with the coding agent;
-the dialog's "Copy" selector gives the registration text (for Codex, for
-example, `codex mcp add fiji --url http://localhost:9090/mcp`).
-Fiji must be running; the tools fail while it is closed. Never give these Fiji
-tools to a registration subagent. Without the server, ABBA is driven by the
-user: give them the exact menu steps.
+abba-mcp is ABBA's MCP server, released with ABBA 0.25.0 (installation:
+https://abba-documentation.readthedocs.io/en/stable/installation/installation.html#install-assistant).
+It needs `uv`. Register `uvx abba-mcp` as a local (stdio) MCP server:
+
+```bash
+codex mcp add abba -- uvx abba-mcp
+# Fiji without a window:
+codex mcp add abba --env ABBA_MCP_HEADLESS=true -- uvx abba-mcp
+```
+
+In another client: server `abba`, command `uvx`, argument `abba-mcp`.
+
+- The first Fiji tool call downloads Java, Fiji and ABBA into `~/.abba-mcp`,
+  which takes minutes: tell the user, and call the tool again. That Fiji is
+  abba-mcp's own; it does not use or change the user's Fiji.
+- If a Fiji already answers on port 9090 running ABBA 0.25.0 (the user's own
+  Fiji, its MCP server started from **Help › Assistants › Manage Fiji MCP
+  Server…**), abba-mcp drives that one instead. A Fiji there running another
+  ABBA version is refused, with a message to close it.
+- Only the user's own Fiji has the LangSlice connector installed (ABBA's
+  **Register › LangSlice…**); the Fiji abba-mcp downloads does not.
+- Before the first command, read abba-mcp's guide with `abba_docs_read`
+  (`guides/abba.md`: the workflow and its traps; `abba_docs_search` searches
+  its docs). Commands run by title with `fiji_module_run`;
+  `fiji_module_describe` gives a command's inputs, defaults and choices.
+  ABBA's documentation for this version:
+  https://abba-documentation.readthedocs.io/en/v0.25.0/
+
+Never give these tools to a registration subagent. Without the server, ABBA
+is driven by the user: give them the exact menu steps.
 
 ## ABBA 0.25.x commands (menu path under Plugins > BIOP > Atlas)
 
-Start ABBA first (`ABBA - ABBA Start`); every command below acts on that
-ABBA session.
+Start a session first (`Open Atlas`, then `ABBA - ABBA Start`; without a
+window, `ABBA - Align Big Brains and Atlases (no GUI)`); every command below
+acts on that ABBA session.
 
 | Command | Use |
 | --- | --- |
 | `Multi Image To Atlas > Import > ABBA - Import With Bio-Formats` | image files; asks position of the first slice (mm) and spacing between slices (mm) |
 | `... > Import > ABBA - Import QuPath Project` | a `.qpproj`, same position and spacing |
-| `... > Import > ABBA - Import QuickNII Project` | a QuickNII `.json` with positions and in-plane affines; approximate, per ABBA's own warning: one slicing angle (the median) for all slices |
+| `... > Import > ABBA - Import QuickNII Project` | a QuickNII `.json` (DeepSlice writes one too) with positions and in-plane affines; approximate, per ABBA's own warning: one slicing angle (the median) for all slices. Never LangSlice's `quicknii.json` (below) |
 | `... > File > ABBA - Save State` | writes a `.abba` file; never overwrites an existing one |
 | `... > File > ABBA - Load State` | reads a `.abba` file into the current session; the images must still be where they were |
 | `... > Inspect > ABBA - Get State` | the state as JSON (compact; `full` for the state file's content), once the queued work is done or after `timeout_s` |
@@ -52,11 +75,13 @@ Names and parameters were read from the ABBA source at tag
 - Into LangSlice: export from ABBA (QuickNII dataset, or the registration
   file) and start the job from it: `langslice-job FOLDER init --registration
   FILE`.
-- Out of LangSlice: `langslice-job FOLDER export_maps` writes
-  `exports/quicknii.json` and `exports/visualign.json`. ABBA takes the
-  linear placement through `ABBA - Import QuickNII Project` with
-  `quicknii.json`; ABBA has no VisuAlign import, so `visualign.json` (the
-  deformations) is for VisuAlign itself.
+- Out of LangSlice: there is no correct way to put such a job's results into
+  ABBA. Never import its `quicknii.json` with `ABBA - Import QuickNII
+  Project`: ABBA reads the JSON's width and height (the original image's) as
+  the size of the PNG copy, so large images shrink toward a corner, and it
+  takes one median cutting angle along each image's own axes, so the
+  sections land millimetres off and out of order. To use ABBA, start the job
+  from ABBA. For other programs, see step 5 of the `register-brain` skill.
 - ABBA's coordinates differ from BrainGlobe's by a measured offset of about
   0.985 mm. Never hardcode it or convert positions by hand.
 - Save State before any bulk change.

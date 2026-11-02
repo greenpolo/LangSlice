@@ -99,8 +99,50 @@ When the subagent returns, do not trust its summary alone:
 
 ## 5. Import and export with other software
 
-`langslice-job FOLDER export_maps` writes each placed section's maps,
-`exports/quicknii.json`, `exports/visualign.json` and `registration.json`
-from the job as it stands. Starting from another program's registration is
-`init --registration FILE` (step 1). For ABBA, Fiji, QuPath or QuickNII, use
-the `abba` skill.
+Starting from another program's registration is `init --registration FILE`
+(step 1).
+
+When the user's message names software they will use the results in,
+prepare the results for it once the job is submitted and you have checked
+it (step 4), then tell the user which files to open and where they are. An
+export writes the job as it stands: after a correction, export again. The
+job folder is `langslice/` inside the image folder unless `init --job-dir`
+put it elsewhere.
+
+- **QUINT tools (PyNutil, QuickNII, VisuAlign) and VERSO.** Run
+  `langslice-job FOLDER export_maps`. In the job folder's `exports/` it
+  writes `visualign.json` (the placement and the warps: give this one to
+  PyNutil, VisuAlign and VERSO), `quicknii.json` (the placement only, for
+  QuickNII) and a PNG copy of each section beside them
+  (`<stem>_sNNN.png`). Keep these files together: the JSON files name the
+  PNGs. QuickNII and VisuAlign run on Windows and macOS only; PyNutil and
+  VERSO run anywhere.
+- **DMC-BrainMap.** The export is in LangSlice's Python library. Save this
+  script as `scripts/export_dmc.py` in the job folder:
+
+  ```python
+  import sys
+
+  import langslice
+
+  print(langslice.open_job(sys.argv[1]).export_dmc_brainmap())
+  ```
+
+  and run it with LangSlice's own Python:
+  `langslice-job FOLDER python scripts/export_dmc.py FOLDER` (the job's
+  `env/`, made on first use, imports LangSlice). It writes the animal
+  folder `exports/dmc_brainmap/<animal>/` in the job folder, named after
+  the image folder, and prints what it wrote. DMC-BrainMap holds the linear
+  placement only: when `warps_left_out` names sections, tell the user that
+  their warps are left out of this export and that PyNutil on
+  `exports/visualign.json` keeps them.
+- **ABBA.** A job started from ABBA (**Register › LangSlice…** in ABBA) is
+  already in ABBA: see the `abba` skill. For any other job there is no
+  correct way to put LangSlice's results into ABBA. Never import
+  `quicknii.json` into ABBA: ABBA misreads its image sizes and cutting
+  angles, and the sections land millimetres off and out of order. To use
+  ABBA, start the job from ABBA.
+
+The LangSlice documentation (https://langslice.readthedocs.io) has a page
+for each: QUINT, VERSO, DMC-BrainMap and ABBA. Point the user to the one
+they need.
