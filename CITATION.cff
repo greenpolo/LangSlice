@@ -22,7 +22,7 @@ identifiers:
 repository-code: "https://github.com/greenpolo/LangSlice"
 url: "https://langslice.readthedocs.io"
 license: BSD-3-Clause
-version: "0.2.0"
+version: "0.2.1"
 date-released: "2026-11-02"
 keywords:
   - neuroscience

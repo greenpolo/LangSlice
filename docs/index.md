@@ -54,7 +54,7 @@ new and still changing. Registration runs without it.
 ## Cite LangSlice
 
 Baughman, N. (2026). *LangSlice: VLM-driven registration of histological brain
-sections to BrainGlobe atlases* (version 0.2.0) [Computer software]. Zenodo.
+sections to BrainGlobe atlases* (version 0.2.1) [Computer software]. Zenodo.
 <https://doi.org/10.5281/zenodo.23900540>
 
 That DOI stands for every version; [Zenodo](https://doi.org/10.5281/zenodo.23900540)

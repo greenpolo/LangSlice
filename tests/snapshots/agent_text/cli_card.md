@@ -3,7 +3,7 @@
 # LangSlice job folder
 
 One registration job: the sections in `<ROOT>` placed in a BrainGlobe atlas.
-Written by LangSlice 0.2.0 from its code; regenerated on open, so do not edit it.
+Written by LangSlice 0.2.1 from its code; regenerated on open, so do not edit it.
 
 A registering agent's job is the message that launched it, made by
 `langslice-job <ROOT>/langslice launch --role register` (or `register-scripting`).

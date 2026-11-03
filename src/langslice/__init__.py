@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = [
     "__version__", "coordinate_map", "create_job", "default_prompt", "image_model",
     "load_atlas", "open_job",
