@@ -7,6 +7,7 @@
   <a href="https://www.python.org/downloads/"><img alt="Python 3.11" src="https://img.shields.io/badge/python-3.11-blue.svg"></a>
   <a href="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml/badge.svg"></a>
   <a href="https://langslice.readthedocs.io"><img alt="Documentation Status" src="https://readthedocs.org/projects/langslice/badge/?version=latest"></a>
+  <a href="https://doi.org/10.5281/zenodo.23900540"><img alt="DOI 10.5281/zenodo.23900540" src="https://zenodo.org/badge/DOI/10.5281/zenodo.23900540.svg"></a>
 </p>
 
 <p align="center">
@@ -66,5 +67,6 @@ Atlases are downloaded by BrainGlobe on first use into the user's
 
 ## Citation and license
 
-Cite the project metadata in [`CITATION.cff`](https://github.com/greenpolo/LangSlice/blob/main/CITATION.cff) (GitHub's "Cite this
+Cite LangSlice with its DOI, [10.5281/zenodo.23900540](https://doi.org/10.5281/zenodo.23900540)
+(all versions; Zenodo lists a DOI for each release), or the metadata in [`CITATION.cff`](https://github.com/greenpolo/LangSlice/blob/main/CITATION.cff) (GitHub's "Cite this
 repository" button). BSD-3-Clause; see [`LICENSE`](https://github.com/greenpolo/LangSlice/blob/main/LICENSE).

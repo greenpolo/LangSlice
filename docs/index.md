@@ -46,8 +46,11 @@ new and still changing. Registration runs without it.
 ## Cite LangSlice
 
 Baughman, N. (2026). *LangSlice: VLM-driven registration of histological brain
-sections to BrainGlobe atlases* (version 0.2.0) [Computer software].
-<https://github.com/greenpolo/LangSlice>
+sections to BrainGlobe atlases* (version 0.2.0) [Computer software]. Zenodo.
+<https://doi.org/10.5281/zenodo.23900540>
+
+That DOI stands for every version; [Zenodo](https://doi.org/10.5281/zenodo.23900540)
+lists a DOI for each release, to cite the exact one you used.
 
 GitHub's **Cite this repository** button gives it as BibTeX. Questions and
 problems go to [GitHub issues](https://github.com/greenpolo/LangSlice/issues).

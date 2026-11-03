@@ -14,6 +14,11 @@ authors:
     given-names: Nash
     email: nfbaughman@gmail.com
     orcid: "https://orcid.org/0009-0005-8855-3228"
+doi: "10.5281/zenodo.23900540"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23900540"
+    description: "All versions of LangSlice (Zenodo concept DOI)"
 repository-code: "https://github.com/greenpolo/LangSlice"
 url: "https://langslice.readthedocs.io"
 license: BSD-3-Clause

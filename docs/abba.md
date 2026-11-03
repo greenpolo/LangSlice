@@ -18,17 +18,15 @@ atlas, and coronal sections.
 
 1. [Install LangSlice](getting-started/install.md) and keep its environment:
    ABBA uses it.
-2. Build the connector, with JDK 21 and [Maven](https://maven.apache.org):
-
-   ```bash
-   git clone https://github.com/greenpolo/LangSlice.git
-   cd LangSlice/connectors/fiji
-   mvn package
-   ```
-
-3. Copy `target/langslice-fiji-0.3.0.jar` into Fiji's `jars` folder, remove
-   any older `langslice-fiji` jar, and restart Fiji. Update LangSlice and the
-   connector together: a connector refuses a LangSlice of another version.
+2. Download `langslice-fiji-0.3.0.jar` from the
+   [latest release](https://github.com/greenpolo/LangSlice/releases/latest).
+   To build it yourself instead, with JDK 21 and
+   [Maven](https://maven.apache.org): `git clone
+   https://github.com/greenpolo/LangSlice.git`, then `mvn package` in
+   `LangSlice/connectors/fiji`; the jar is in `target/`.
+3. Copy the jar into Fiji's `jars` folder, remove any older
+   `langslice-fiji` jar, and restart Fiji. Update LangSlice and the
+   connector together: a connector refuses a LangSlice it cannot talk to.
 4. The first time you use it, the connector asks for the LangSlice
    environment's folder. Choose it, click **Check installation**, then
    **Save**.
