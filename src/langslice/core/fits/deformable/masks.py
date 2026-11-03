@@ -103,7 +103,7 @@ EM_RIDGE = 1e-7
 #: One width for all three classes (matching, background, artifact):
 #: EM_SIGMA_SCALE x std(J), held fixed (emlddmm does not update them in its
 #: default path). DEVIATION: emlddmm's code default is (1, 2, 5) x std; on
-#: Carey (brightfield) and PL_Projections (DAPI) that flagged nothing, not
+#: Carey (brightfield) and an unpublished DAPI series that flagged nothing, not
 #: even a 0.3 mm hole. Its published runs use near-equal widths; equal widths
 #: at 0.5 x std catch holes, tears and debris and leave brightfield anatomy
 #: alone; 0.75 x std missed the hole again.

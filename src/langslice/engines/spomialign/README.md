@@ -3,8 +3,7 @@
 A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers SPOmiAlign
 (Wang et al. 2026, Brief Bioinform) to the registration agent as one tool,
 `spomialign(sections, fit, rigid, section_image, atlas_image, mask, smoothness_um, matches, view)`. Revised
-2026-10-19 after Fable's review
-(`_local/notes/2026-10-19_comparator_plugin_review/spomialign_review.md`).
+2026-10-19 after Fable's review.
 
 - `plugin.py`: the adapter, run in LangSlice's process (imports only
   `langslice.plugin_api`).
@@ -105,7 +104,7 @@ SPOmiAlign code. In LangSlice, SPOmiAlign's code is to ship inside LangSlice's o
   there is the atlas's template, the averaged Nissl, a smoother picture. The two arms
   therefore match against different Nissl images.
 
-2026-10-19 (`_local/notes/2026-10-19_comparator_plugin_review/spomialign_try/`):
+2026-10-19:
 
 - **Landmarks kept.** Rat sagittal s139 with a noisy landmark warp (the displaced
   cerebellum): `affine_warp` refused `HAS_DEFORMATION`; `warp` started from the landmark

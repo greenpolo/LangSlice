@@ -7,7 +7,7 @@ Run as ``python engine.py IN.npz OUT.npz`` with the ``rigid_spomialign`` interpr
 repo: local research use only) and its bundled RoMa are imported from
 ``comparators/src/spomialign`` (``SPOMIALIGN_SRC`` overrides). The steps are those of
 ``SPOmiAlign/roma.py::align_and_process_images`` as ``comparators/rigid/spomialign_runner.py``
-audits them (``_local/comparators/fig3_baselines_20261016/runs/spomialign/FAITHFULNESS.md``):
+audits them:
 both images resized to SPOmiAlign's 1152 x 864 grid, RoMa outdoor matches, certainty
 weighted by the source's FFT edge map, 3 x 3 grid NMS, the 5000 most confident matches;
 then the transform the mode names, fitted with SPOmiAlign's own functions. The match budget

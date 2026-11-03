@@ -197,8 +197,9 @@ The step size is fixed.
 Stain defaults, and why: with the EM section mask (now made by `make_mask`),
 mutual information
 recovered more of the human raters' own corrections than local correlation
-on Carey 2026 brightfield and LSD_910 immunofluorescence, did less harm where
-the raters moved little, and was within noise of it on pl_projections when
+on Carey 2026 brightfield and an unpublished immunofluorescence series, did
+less harm where the raters moved little, and was within noise of it on an
+unpublished DAPI series when
 the fit read the DAPI counterstain (where indicator channels were blended in, it was pulled
 toward their bright labelling). The edge channel is on by default because
 the intensity metric on its own crossed enlarged ventricles. There is no `stiff`

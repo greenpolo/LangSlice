@@ -26,7 +26,7 @@ def test_section_numbers_fall_back_to_the_stack_order():
     assert section_numbers(["a_s012.tif", "b.tif"]) == [1, 2]
     assert section_numbers(["a_s012.tif", "b_s012.tif"]) == [1, 2]
     assert section_numbers(["a_s01_s02.tif", "b_s03.tif"]) == [1, 2]
-    # LSD-style names carry numbers, but not as _sNNN: the order counts
+    # microscope export names carry numbers, but not as _sNNN: the order counts
     assert section_numbers(
         ["M03_A_07_Overlay.png", "M03_B_07_Overlay.png"]
     ) == [1, 2]

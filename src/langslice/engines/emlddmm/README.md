@@ -2,8 +2,7 @@
 
 A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers emlddmm (Tward et al. 2025,
 Nat Commun; twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece and 6ff62b0, Apache-2.0) to the
-registration agent as two tools. Design: Fable's proposal of 2026-10-19
-(`_local/notes/2026-10-19_comparator_plugin_review/emlddmm_proposal.md`), with one change Nash
+registration agent as two tools. Design: Fable's proposal of 2026-10-19, with one change Nash
 made: the slot spacing is an argument of the agent's, not a plugin setting.
 
 - `plugin.py`: the adapter, run in LangSlice's process (imports only `langslice.plugin_api`).
@@ -83,7 +82,7 @@ under the fit), `weights.npz`, `in.npz`, `out.npz`, `log.txt`.
 
 ## Checked (2026-10-19)
 
-Carey 04-0180 (copied jobs), GPU; see `_local/notes/2026-10-19_comparator_plugin_review/emlddmm_try/`.
+Carey 04-0180 (copied jobs), GPU.
 Five sections, default iterations, 34 s: on s0154 (right cortex split off the midbrain) an exact
 landmark warp survives the fit (its landmarks 4 um from their atlas points before, median 33 um
 after); without it the fit takes the same points from 229 to 113 um. The whole 20-section stack

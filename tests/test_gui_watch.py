@@ -270,7 +270,7 @@ def test_a_truncated_file_starts_the_watch_over(tmp_path: Path) -> None:
 def test_a_real_finished_job_folder(tmp_path: Path) -> None:
     source = Path(os.environ.get(
         "LANGSLICE_GUI_REPLAY_JOB",
-        "/home/walshlab/cc_sandbox/harness_cc_vs_ls_20261027/NM01_GLT1a/images/langslice"))
+        "/data/finished_run/images/langslice"))
     if not (source / "views.jsonl").is_file():
         pytest.skip("no real job folder here (LANGSLICE_GUI_REPLAY_JOB)")
     folder = tmp_path / "langslice"

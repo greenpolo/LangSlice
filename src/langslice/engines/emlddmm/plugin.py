@@ -11,7 +11,7 @@ atlases are installed), ``device`` (``auto``: the GPU when there is one, else th
 ``timeout_s``. emlddmm (Apache-2.0) runs in ``engine.py`` under that interpreter; this module
 imports only ``langslice.plugin_api``.
 
-Two tools (design: SliceBench/_local/notes/2026-10-19_comparator_plugin_review/emlddmm_proposal.md):
+Two tools:
 
 - ``emlddmm_stack``: emlddmm's joint fit of the placed sections against the 3-D atlas, one piece
   of background work over the whole stack, on the stack's current plane: each section's in-plane

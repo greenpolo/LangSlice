@@ -13,7 +13,8 @@ import numpy as np
 from PIL import Image
 
 #: The three sections: real coronal fluorescence sections (DAPI blue, two
-#: tracer channels) from the lab's M01 test brain, cut to 768 px wide.
+#: tracer channels) from an unpublished series, cut to 768 px wide; kept out
+#: of the repository (``tests/test_golden_outputs.py``).
 FRONT = "M01_001_005.png"
 MIDDLE = "M01_002_005.png"
 BACK = "M01_002_009.png"

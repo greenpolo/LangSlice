@@ -7,7 +7,7 @@ it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``
 the CPU at float64), ``threads``, ``timeout_s``. STalign (GPL-3.0) runs in ``engine.py`` under
 that interpreter; this module imports only ``langslice.plugin_api``.
 
-Two tools (design: SliceBench/_local/notes/2026-10-18_stalign_plugin_design/fable_proposal.md):
+Two tools:
 
 - ``stalign_lddmm``: STalign's 2-D fit, one piece of background work per section, building on
   the section's current registration (a landmark warp included);

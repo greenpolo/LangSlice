@@ -3,7 +3,7 @@
 A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers STalign 2.0
 (Clifton et al. 2023, Nat Commun; JEFworks-Lab main 8a84bf1f, GPL-3.0) to the
 registration agent as three tools. Design: Fable's proposal, adopted by Nash on
-2026-10-18 (`_local/notes/2026-10-18_stalign_plugin_design/fable_proposal.md`).
+2026-10-18.
 
 - `plugin.py`: the adapter, run in LangSlice's process (imports only `langslice.plugin_api`).
 - `engine.py`: the STalign calls, run in the `stalign2` environment

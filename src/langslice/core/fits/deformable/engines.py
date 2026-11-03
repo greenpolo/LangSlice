@@ -58,7 +58,8 @@ FIT_THREADS = 8
 #: Elastix's RandomSeed, and torch's seed around a FireANTs fit.
 RANDOM_SEED = 20261002
 #: The largest move of one gradient step, in FireANTs' half-resolutions (half a
-#: pixel of the level), fixed. Tuned on Carey, PL_Projections and LSD sections:
+#: pixel of the level), fixed. Tuned on Carey sections and two unpublished
+#: fluorescence series:
 #: at 0.8 close-ups of the cerebellar granular layers and the hippocampal cell
 #: layers fit at least as tightly as ANTs SyN did and fluorescent brainstem
 #: kept its shape; 3.2 tore folia across the white matter. The optimizer is
