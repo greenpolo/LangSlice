@@ -18,6 +18,10 @@
   <img alt="Two brain sections go to the LangSlice Agent, which runs on Claude, GPT or Gemini and drives DeepSlice, STalign, emlddmm, FireANTs, elastix and SPOmiAlign; out come the same sections with atlas region outlines" src="https://raw.githubusercontent.com/greenpolo/LangSlice/main/assets/readme_figure.png" width="780">
 </p>
 
+<p align="center">
+  <sub>Section images from Hertweck, C. H., Carter, C. A., McDaniel, S. S., Llorach, P., Tilton, H. E., Kodali, A., Christoffel, D. J., &amp; Walsh, J. J. (2026). Repeated stress escalates aggression and activity in fronto-limbic regions in <i>Cntnap2</i><sup>−/−</sup> mice. <i>Genes, Brain and Behavior</i>, 25(2), e70048. <a href="https://doi.org/10.1111/gbb.70048">https://doi.org/10.1111/gbb.70048</a></sub>
+</p>
+
 LangSlice gives a vision-language agent tools to register a stack of histology
 sections to a [BrainGlobe](https://brainglobe.info) atlas. The agent inspects
 the anatomy, sets positions and cutting angles, aligns sections in-plane,
