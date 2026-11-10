@@ -1153,20 +1153,6 @@ html[data-theme] .bd-content .bd-article img.ls-brain__photo {
   color: var(--ls-lavender);
 }
 
-/* the card's source line: whose section it is, as a figure's credit */
-.ls-credit p {
-  margin: 0.25rem 0 0;
-  color: var(--ls-muted);
-  font-size: 0.75rem;
-  line-height: 1.5;
-  text-align: right;
-}
-
-.ls-credit a {
-  color: inherit;
-  text-decoration: underline;
-}
-
 @keyframes ls-print {
   from { clip-path: inset(0 0 100% 0); }
   to { clip-path: inset(0 0 0 0); }
@@ -1195,8 +1181,7 @@ section#langslice > .admonition {
     max-width: 18rem;
   }
 
-  .ls-brain__readout,
-  .ls-credit p {
+  .ls-brain__readout {
     text-align: left;
   }
 }
