@@ -16,6 +16,8 @@
 
 <p align="center">
   <img alt="Two brain sections go to the LangSlice Agent, which runs on Claude, GPT or Gemini and drives DeepSlice, STalign, emlddmm, FireANTs, elastix and SPOmiAlign; out come the same sections with atlas region outlines" src="https://raw.githubusercontent.com/greenpolo/LangSlice/main/assets/readme_figure.png" width="780">
+  <br>
+  <sub>Sections: Allen Mouse Brain Connectivity Atlas, Allen Institute for Brain Science (<a href="https://connectivity.brain-map.org">connectivity.brain-map.org</a>).</sub>
 </p>
 
 LangSlice gives a vision-language agent tools to register a stack of histology
