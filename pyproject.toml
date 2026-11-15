@@ -81,14 +81,12 @@ registration = [
 mcp = [
     "mcp>=1.24,<2",
 ]
-# The comparison engines run in LangSlice's process (langslice.engines):
-# DeepSlice (deepslice_place) on CPU TensorFlow, with the Keras 2 its code
-# imports as tensorflow.keras. TensorFlow 2.21 has no wheels for Intel Macs
-# (nor has torch, so LangSlice itself installs nowhere there); the marker
-# keeps a resolver from looking for them. DeepSlice 1.2.8 pins urllib3
-# 1.26.6, which this extra therefore installs.
+# DeepSlice (langslice.engines.deepslice, deepslice_place) runs in
+# LangSlice's process: DeepSlice 1.2.8's inference is vendored there (MIT) and
+# needs only CPU TensorFlow and the Keras 2 it is written for. TensorFlow 2.21
+# has no wheels for Intel Macs (nor has torch, so LangSlice itself installs
+# nowhere there); the marker keeps a resolver from looking for them.
 engines = [
-    "deepslice==1.2.8; sys_platform != 'darwin' or platform_machine == 'arm64'",
     "tensorflow==2.21.*; sys_platform != 'darwin' or platform_machine == 'arm64'",
     "tf-keras==2.21.*; sys_platform != 'darwin' or platform_machine == 'arm64'",
 ]
@@ -134,7 +132,10 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["core/atlas/*.json", "hosts/gui/static/*"]
+langslice = [
+    "core/atlas/*.json", "hosts/gui/static/*", "engines/brainways/LICENSE",
+    "engines/deepslice/LICENSE",
+]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs

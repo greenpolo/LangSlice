@@ -12,7 +12,8 @@ LangSlice's process and imports `langslice.plugin_api` only. The **engine** is
 the method itself, usually in its own environment; the adapter calls it as a
 subprocess and exchanges files or JSON with it. The engine never imports
 LangSlice. An engine whose dependencies install beside LangSlice's can
-instead be imported by the adapter when its tool runs, as DeepSlice is (below).
+instead be vendored beside its adapter and run in LangSlice's process, as
+DeepSlice and Brainways are (below).
 
 ## A plugin module
 
@@ -56,7 +57,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -360,21 +361,24 @@ already has some. The work's own landing is not refused.
 DeepSlice ships in `langslice.engines` as the tool plugin
 `langslice.engines.deepslice.plugin:tools`, one tool, `deepslice_place`
 (Positioning, task `angles`; offered on the Allen mouse atlases and
-`ccfv3augmented_mouse_25um`, coronal jobs only): DeepSlice 1.2.8 places each
+`ccfv3augmented_mouse_25um`, coronal jobs only): DeepSlice places each
 section as the agent oriented it, votes the stack's cutting angles and, with
 an `order`, spaces the sections; `write` names the parts written as one undo
 step (`positions`, `angles`, and `transform` where the transform task and
 `elastix_affine` are on), an empty `write` proposes. It runs in LangSlice's
-process on CPU TensorFlow, imported only when the tool runs, from the
-`engines` extra (`pip install "langslice[engines]"`: `deepslice`,
-`tensorflow` and `tf-keras`); without it, or when DeepSlice's weights folder
-(`DeepSlice/metadata/weights/` in its package, where it downloads its mouse
-weights on first use) cannot be written or holds a broken file, the call is
-refused `ENGINE_MISSING`. Options (`plugin_config`): `ensemble` (true) and
-`long_edge` (3072). Its README (`src/langslice/engines/deepslice/README.md`)
-gives the reply and the files of each call.
+process: DeepSlice 1.2.8's inference (its network, its angle vote and its
+spacing) is vendored in `langslice/engines/deepslice/` under the MIT licence,
+and runs on CPU TensorFlow from the `engines` extra
+(`pip install "langslice[engines]"`: `tensorflow` and `tf-keras`), imported
+only when the tool runs. Its weights are fetched once from the EBRAINS bucket
+DeepSlice names, checked by SHA-256, into `~/.cache/langslice/deepslice`
+(`plugin_config` `cache_folder`); a call without the extra, or whose weights
+cannot be fetched, is refused `ENGINE_MISSING`. Options (`plugin_config`):
+`ensemble` (true), `long_edge` (3072), `cache_folder`; any other is refused
+when the plugin loads. Its README (`src/langslice/engines/deepslice/README.md`)
+gives the reply, the files of each call and its parity with DeepSlice.
 
-STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the four engines load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm`), found by name under `SLICEBENCH_CONDA_ENVS`, `CONDA_ENVS_PATH`, the active conda's `envs`, `~/.conda/envs` or `~/.claude-science/conda/envs` (`python.exe` on Windows, `bin/python` elsewhere); the SPOmiAlign source comes from `SPOMIALIGN_SRC` and emlddmm's from `emlddmm_src`, with no default. Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`); each engine's README gives the order. A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the in-tree engines load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm`), found by name under `SLICEBENCH_CONDA_ENVS`, `CONDA_ENVS_PATH`, the active conda's `envs`, `~/.conda/envs` or `~/.claude-science/conda/envs` (`python.exe` on Windows, `bin/python` elsewhere); the SPOmiAlign source comes from `SPOMIALIGN_SRC` and emlddmm's from `emlddmm_src`, with no default. Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`); each engine's README gives the order. A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
@@ -410,6 +414,8 @@ with `expect=`. Each call's files go in a folder of its own,
 never share one. A notice words a fit's plausibility flags as the native fits do: each code
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
 on a `DeformationProposal.summary`: `FOLDS, REGION_COMPRESSED (CA1, DG)`).
+
+Brainways ships as `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Unlike the three above it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
 
 Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
 

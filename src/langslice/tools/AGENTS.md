@@ -63,7 +63,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   unknown argument) and the signature; a plugin tool from its stub's
   docstring and signature (`argument_texts` reads its `Args`). `declare`
   binds a tool body to its declaration (ADK's `tool_context` added when the
-  body takes it), `summary`, `arguments_schema` (pydantic, unknown keys
+  body takes it, keyword-only after a keyword-only argument,
+  `context_parameter`), `summary`, `arguments_schema` (pydantic, unknown keys
   refused), `DESCRIPTIONS`, `FULL` (a caller without a job: every argument,
   the coronal base prompt for the OpenAI models).
 - `statement.py` — the job statement and `SYSTEM_PROMPT`. `STATEMENT` is

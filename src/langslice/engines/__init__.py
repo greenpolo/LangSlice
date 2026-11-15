@@ -1,4 +1,4 @@
-"""In-tree engines: the DeepSlice, STalign, SPOmiAlign and emlddmm adapters.
+"""In-tree engines: the DeepSlice, Brainways, STalign, SPOmiAlign and emlddmm adapters.
 
 Each engine is a package loaded as a tool plugin, its ``plugin.py`` the
 adapter, run in LangSlice's process and importing only
@@ -6,17 +6,22 @@ adapter, run in LangSlice's process and importing only
 exactly as any tool plugin::
 
     langslice.engines.deepslice.plugin:tools
+    langslice.engines.brainways.plugin:tools
     langslice.engines.stalign.plugin:tools
     langslice.engines.spomialign.plugin:tools
     langslice.engines.emlddmm.plugin:tools
 
 They load together in one job (the tool names do not clash) and re-import
-from a copy of this package with no ``PYTHONPATH``. DeepSlice runs in
-LangSlice's process, imported only when its tool runs, from the
-``langslice[engines]`` extra. The others run their ``engine.py`` as a
-subprocess under the engine's own interpreter, and their environments and
-sources stay outside LangSlice's venv; nothing of them is imported here. A
-missing engine is refused at tool-call time with ``ENGINE_MISSING``, never
-at load time. The code was moved here from SliceBench
-``comparators/plugins/<name>/`` (its history is in that repository).
+from a copy of this package with no ``PYTHONPATH``. DeepSlice
+(``deepslice_place``, mouse coronal jobs) and Brainways (``brainways_ap``,
+rat coronal jobs) run in LangSlice's own process: the part of each method
+the tool uses is vendored beside its adapter (DeepSlice 1.2.8 under the MIT
+licence, on TensorFlow from the ``langslice[engines]`` extra; Brainways
+0.1.16.3 under the GPL-3.0, on torch), each with its ``LICENSE``. The others
+run their ``engine.py`` as a subprocess under the engine's own interpreter,
+and their environments and sources stay outside LangSlice's venv; nothing of
+them is imported here. A missing engine is refused at tool-call time with
+``ENGINE_MISSING``, never at load time. The code was moved here from
+SliceBench ``comparators/plugins/<name>/`` (its history is in that
+repository).
 """
