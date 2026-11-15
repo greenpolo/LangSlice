@@ -1,6 +1,6 @@
 {
   "name": "langslice",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Register histology brain sections to a BrainGlobe atlas: skills for the main Codex session, among them one that sets up LangSlice's registration agents and MCP server.",
   "author": { "name": "LangSlice" },
   "homepage": "https://github.com/greenpolo/LangSlice",
