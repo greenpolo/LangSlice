@@ -28,11 +28,10 @@ jobs:
         shell: bash
         run: |
           python packaging/check_wheel.py dist/*.whl
-          # at uv.lock's versions (itk 5.4.8's Linux wheel has a broken WHEEL
-          # file that pip check and uv pip check both fail on)
+          # itk 5.4.8's Linux wheel has a broken WHEEL file that pip check and
+          # uv pip check both fail on (uv.lock pins 5.4.7)
+          python -m pip install dist/*.whl "itk!=5.4.8"
           python -m pip install uv
-          uv export --frozen --no-hashes --no-emit-project -o "$RUNNER_TEMP/constraints.txt"
-          python -m pip install dist/*.whl -c "$RUNNER_TEMP/constraints.txt"
           uv pip check --python "$(python -c 'import sys; print(sys.executable)')"
       - name: Exercise installed worker outside checkout
         shell: bash
