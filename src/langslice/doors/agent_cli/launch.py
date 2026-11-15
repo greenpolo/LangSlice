@@ -29,6 +29,7 @@ files (:mod:`langslice.doors.commands.transcripts`). ``init`` writes
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -95,9 +96,28 @@ def role_line(role: str, folder: str) -> str:
     return f"Register the brain in job folder {folder} with the langslice-job command line."
 
 
-def mcp_prompt(job_folder: Path, atlas_loader: Any = None) -> str:
+def scripting_prompt(job_folder: Path, atlas_loader: Any = None) -> str:
+    """The ``register-scripting`` prompt for the job in *job_folder*: the
+    ``register`` prompt with the paragraph on scripts after its opening's. The
+    job's own Python environment is made first when it is missing
+    (:func:`langslice.doors.agent_cli.environment.ensure`), so the interpreter
+    the prompt names is there to run."""
+    from langslice.doors.agent_cli import environment
+    from langslice.job.layout import JobLayout
+    from langslice.tools.descriptions.door_text import scripting_lines
+
+    layout = JobLayout(job_folder)
+    environment.ensure(layout)
+    python = environment.python_of(environment.env_dir(layout))
+    return mcp_prompt(job_folder, atlas_loader, scripting=scripting_lines(
+        str(layout.folder), str(python), environment.install_command(layout)))
+
+
+def mcp_prompt(job_folder: Path, atlas_loader: Any = None,
+               scripting: Sequence[str] = ()) -> str:
     """The ``register`` prompt for the job in *job_folder*; the MCP package is
-    needed (``ImportError`` when it is missing)."""
+    needed (``ImportError`` when it is missing). *scripting*: the paragraph
+    on scripts (:func:`scripting_prompt`)."""
     from langslice.doors.mcp.server import mcp_statement, open_folder
 
     def no_job(path: str) -> Any:
@@ -114,7 +134,8 @@ def mcp_prompt(job_folder: Path, atlas_loader: Any = None) -> str:
                 folder = str(session.job.folder)
         except (LookupError, OSError, ValueError):
             folder = str(session.job.folder)
-        return role_line("register", folder) + "\n\n" + mcp_statement(session)
+        return (role_line("register", folder) + "\n\n"
+                + mcp_statement(session, scripting))
     finally:
         session.close()
 

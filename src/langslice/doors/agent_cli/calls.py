@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 import time
 import typing
@@ -928,24 +929,19 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
         layout = JobLayout(find(folder))
     except NoJob as exc:
         return Envelope.failure(RefusalCode.NO_JOB, str(exc))
-    if role == "register":
-        try:
-            prompt = launches.mcp_prompt(layout.folder, atlas_loader)
-        except ImportError as exc:
-            return Envelope.failure(
-                RefusalCode.MCP_MISSING, f"The register role needs the `mcp` package ({exc}).",
-                fix="Install it in LangSlice's environment (pip install mcp), or use "
-                "--role register-scripting.")
-        except (FileNotFoundError, ValueError) as exc:
-            return Envelope.failure(RefusalCode.JOB_UNREADABLE,
-                                    str(exc), exit=EXIT_REFUSED)
-        made = launches.Launch(role=role, prompt=prompt)
-    else:
-        opened = _open(folder, persist=True, atlas_loader=atlas_loader)
-        try:
-            made = launches.cli_prompt(opened)
-        finally:
-            opened.close()
+    make = launches.mcp_prompt if role == "register" else launches.scripting_prompt
+    try:
+        prompt = make(layout.folder, atlas_loader)
+    except ImportError as exc:
+        return Envelope.failure(
+            RefusalCode.MCP_MISSING, f"The {role} role needs the `mcp` package ({exc}).",
+            fix="Install it in LangSlice's environment (pip install mcp).")
+    except (FileNotFoundError, ValueError) as exc:
+        return Envelope.failure(RefusalCode.JOB_UNREADABLE,
+                                str(exc), exit=EXIT_REFUSED)
+    except (OSError, subprocess.SubprocessError) as exc:  # the job's environment
+        return Envelope.failure(RefusalCode.ENV_FAILED, str(exc))
+    made = launches.Launch(role=role, prompt=prompt)
     saved = launches.save(layout, role, made.prompt)
     return Envelope(result={"role": role, "job_folder": str(layout.folder),
                             "prompt": made.prompt, **made.facts},

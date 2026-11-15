@@ -78,6 +78,34 @@ PARALLEL_COMMANDS = (
     "(STALE_INPUT when the section changed meanwhile: run it again for that "
     "section)."
 )
+SCRIPTS = "Scripts:"
+SCRIPT_PYTHON = (
+    "- You also have a shell and file tools, for what no tool does: write a "
+    "script and run it as `\"{python}\" SCRIPT [ARGS ...]`. That is the job's "
+    "own Python: it imports LangSlice and every package LangSlice is "
+    "installed with; `{install} PACKAGE [PACKAGE ...]` adds another."
+)
+SCRIPT_LIBRARY = (
+    "- In a script, `langslice.open_job(r\"{folder}\")` opens this job: every "
+    "tool is a method of it with the same arguments, without the tools' "
+    "limit on pictures or sections per call, and `job.context` holds the "
+    "parts for a method of your own (`help(job.context)`: the section "
+    "images and the atlas as arrays, a transform or a deformation of your "
+    "own, a preview that writes nothing, a section image you computed)."
+)
+SCRIPT_SHARED = (
+    "- The tools and your scripts work on the one job: each sees what the "
+    "other wrote, and every write of either is one undo step."
+)
+SCRIPT_PICTURES = (
+    "- A script's pictures are files (a method's reply lists them under "
+    "`artifacts`): open them with your file tool to see them."
+)
+SCRIPT_FILES = (
+    "- Keep your scripts in `{folder}/scripts/` and your other files in "
+    "`{folder}/scratch/`; `{folder}/AGENTS.md` describes the job folder's "
+    "files."
+)
 USER_NOTES = "User notes:"
 STATUS_TABLE = (
     "Status table (filename, position, spacing to the next placed section, "
@@ -209,6 +237,34 @@ def opening_for_mcp(pages: int) -> list[str]:
         The paragraph, as statement lines.
     """
     return [OPENING_PAGES.format(pages=pages) + OPENING_SHOWS]
+
+
+def scripting_lines(folder: str, python: str, install: str) -> list[str]:
+    """Return what a registration agent with a shell is told about scripts.
+
+    Parameters
+    ----------
+    folder
+        The job folder.
+    python
+        The interpreter of the job's own Python environment.
+    install
+        The command that installs packages into that environment, without
+        the packages.
+
+    Returns
+    -------
+    list of str
+        The paragraph, as statement lines.
+    """
+    return [
+        SCRIPTS,
+        SCRIPT_PYTHON.format(python=python, install=install),
+        SCRIPT_LIBRARY.format(folder=folder),
+        SCRIPT_SHARED,
+        SCRIPT_PICTURES,
+        SCRIPT_FILES.format(folder=folder),
+    ]
 
 
 def opening_for_cli(

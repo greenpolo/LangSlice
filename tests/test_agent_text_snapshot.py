@@ -207,10 +207,21 @@ def _cli_card_md(folder: Path) -> str:
 def _launch_md(folder: Path, role: str) -> str:
     """The launch prompt of *role* for the synthetic job: what a main session
     passes on as the registration subagent's whole prompt."""
+    from unittest import mock
+
+    from langslice.doors.agent_cli import environment
     from langslice.doors.agent_cli.calls import execute
 
     images = _launch_images(folder)
-    envelope = execute(str(images), "launch", ["--role", role], atlas_loader=atlas_loader())
+    # The job's environment is one machine's: its interpreter's path and the
+    # installer differ by system, so the snapshot names a fixed one and makes none.
+    python = Path("<ROOT>/langslice/env/bin/python")
+    with mock.patch.object(environment, "ensure", lambda layout: False), \
+            mock.patch.object(environment, "python_of", lambda env: python), \
+            mock.patch.object(environment, "install_command",
+                              lambda layout: f'uv pip install --python "{python.as_posix()}"'):
+        envelope = execute(str(images), "launch", ["--role", role],
+                           atlas_loader=atlas_loader())
     assert envelope.ok, envelope.error
     prompt = envelope.result["prompt"]
     return "\n".join([f"# Launch prompt: {role}", "", Normaliser(images).text(prompt), ""])

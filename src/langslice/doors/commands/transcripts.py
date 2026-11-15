@@ -13,7 +13,8 @@ transcript in ``trace/<harness>_<session id>.jsonl``
 (rewritten at each end of the session, so the copy is the latest), beside
 LangSlice's own agent's traces, with inline image data replaced by its size
 (:func:`slim`). When the transcript submitted a job (:data:`SUBMIT_PATTERN`:
-the registration agent's, never the main session's that launched it), that
+the registration agent's, never the main session's that launched it), or the
+job's own checkpoint says it is submitted (:func:`job_submitted`), that
 job's own Python environment is then removed, its package list kept
 (:func:`langslice.doors.agent_cli.environment.remove`).
 
@@ -107,9 +108,21 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
         target.write_text(slim_lines(text), encoding="utf-8", newline="\n")
         copies.append(target)
         write_launch_check(layout, text, target.with_suffix(".launch.json"))
-        if submitted:
+        if submitted or job_submitted(layout):
             jobenv.remove(layout)
     return copies
+
+
+def job_submitted(layout: Any) -> bool:
+    """Whether the job's own checkpoint (``state.json``) says it is submitted:
+    what tells a submit the transcript's text does not show (a command run
+    through a shell variable, a wrapper script or a script's ``job.submit``
+    by another name). False when the file is missing or does not read."""
+    try:
+        state = json.loads(layout.state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(state, dict) and state.get("submitted") is True
 
 
 def transcript_path(hook: dict[str, Any]) -> Path | None:

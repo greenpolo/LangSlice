@@ -1,6 +1,6 @@
 # Launch prompt: register-scripting
 
-Register the brain in job folder <ROOT>/langslice with the langslice-job command line.
+Register the brain in job folder <ROOT>. Call start_job(image_folder="<ROOT>") first: it opens the job and gives you its tools.
 
 You are an expert neuroanatomist working on a stack of 3 coronal histology sections against the allen_mouse_25um (mouse) reference atlas.
 
@@ -23,7 +23,7 @@ Run facts:
 - Picture size is yours to choose: look's resolution runs from 128 to 2000 pixels.
 - The atlas as BrainGlobe describes it: Allen Adult Mouse Brain Atlas: For many researchers working with mice, this is the "default" atlas for a variety of tasks. It is also the basis for the most commonly used common coordinate space (CCFv3). It is usually the best mouse atlas to start with, but it has some disadvantages. It has a reference image based on STP, which may not produce the best results for other imaging modalities, and you may want to try atlases based on other modalities. It also has limited annotations in some regions (alternatives such as the Enhanced and Unified Mouse Brain Atlas may be better if the Allen Adult Mouse Brain Atlas is not annotated sufficiently). (This version: 25μm resolution.)
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `make_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `export_maps`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `make_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`.
 
 Constraints:
 - `submit` is refused unless every section has a position of its own, damaged sections included.
@@ -47,28 +47,14 @@ Method:
 
 Work with the tools, then call `submit`.
 
-Opening pictures, saved as files, in reading order, each after the text that goes with it. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale when the stack has positions; when a section has none, atlas reference strips at evenly spaced positions follow.
+Opening pictures: read every page with show_stack(page=1) through show_stack(page=1) before any write. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale when the stack has positions; when a section has none, atlas reference strips at evenly spaced positions follow.
 
-The 3 sections of the stack follow in 1 strip, in their current order, left to right and strip after strip. Each section is labelled by its filename above it and drawn with any rotation and flip already applied.
-
-Strip 1 of 1: s0.png, s1.png, s2.png
-- <ROOT>/langslice/views/000001_opening/view.jpg
-
-Atlas reference strips: the atlas at 6 positions, every 0.05 mm from 0.00 to 0.25 mm, at the stack's cutting angles, in 2 strips, each atlas section labelled 'atlas <position> mm' above it.
-
-Atlas strip 1 of 2: 0.00 to 0.10 mm
-- <ROOT>/langslice/views/000002_opening/view.jpg
-
-Atlas strip 2 of 2: 0.15 to 0.25 mm
-- <ROOT>/langslice/views/000003_opening/view.jpg
-
-Open every one of these pictures before any write.
-
-Commands:
-- Every tool is a command: `langslice-job <ROOT>/langslice TOOL --args '{...}'` (or `--name value`); `langslice-job <ROOT>/langslice schema TOOL [TOOL ...]` gives their arguments and descriptions, several at once. Pictures come back as files: `picture_files` lists them first, `artifacts` again with their kinds (`view`, in the order the reply's `pictures` lists their numbers); open them to see them.
-- `--dry-run` runs a write without writing and reports what would change; the fits are only checked, not run.
-- Long tools (elastix_affine, fireants_syn, export_maps): a call answers with the result or, still running after 30 s, with its run id and state `running`; the run goes on (also when your shell ends the command, where a process may outlive it) and `wait ID` answers within 30 s with its answer or its state (wait again). `--background` answers at once with the run id; `runs` lists the runs. Do not start a fit again while its run goes on.
-- Commands may run in parallel: each write holds the job folder's lock, and a long tool re-checks each section before it applies (STALE_INPUT when the section changed meanwhile: run it again for that section).
+Scripts:
+- You also have a shell and file tools, for what no tool does: write a script and run it as `"<ROOT>/langslice/env/bin/python" SCRIPT [ARGS ...]`. That is the job's own Python: it imports LangSlice and every package LangSlice is installed with; `uv pip install --python "<ROOT>/langslice/env/bin/python" PACKAGE [PACKAGE ...]` adds another.
+- In a script, `langslice.open_job(r"<ROOT>/langslice")` opens this job: every tool is a method of it with the same arguments, without the tools' limit on pictures or sections per call, and `job.context` holds the parts for a method of your own (`help(job.context)`: the section images and the atlas as arrays, a transform or a deformation of your own, a preview that writes nothing, a section image you computed).
+- The tools and your scripts work on the one job: each sees what the other wrote, and every write of either is one undo step.
+- A script's pictures are files (a method's reply lists them under `artifacts`): open them with your file tool to see them.
+- Keep your scripts in `<ROOT>/langslice/scripts/` and your other files in `<ROOT>/langslice/scratch/`; `<ROOT>/langslice/AGENTS.md` describes the job folder's files.
 
 Status table (filename, position, spacing to the next placed section, flags):
 filename  position_mm  delta_to_next_mm  flags  transform(kind, mirrored)  deformation(methods)
