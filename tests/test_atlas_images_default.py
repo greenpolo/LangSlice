@@ -77,6 +77,7 @@ def test_other_names_are_checked_against_the_atlas():
 
 @pytest.mark.parametrize(("space", "takes"), [
     ("allen-adult-mouse-ccf-space", True),
+    ("allen_mouse-space", True),  # the 3.x atlas packages' name for the same space
     (None, True),  # an older package that names no space: the grid decides
     ("ccfv2_mouse-space", False),  # the 2011 atlas: CCFv3's grid, not its anatomy
 ])

@@ -183,6 +183,7 @@ def test_the_library_opens_a_job_without_an_agent_or_model_client(tmp_path):
         [sys.executable, "-c", _LIBRARY, str(tmp_path / "stack"), *FORBIDDEN],
         capture_output=True, text=True, timeout=300, check=False, cwd=repo,
         env={**os.environ, "HOME": str(tmp_path / "home"),
+             "USERPROFILE": str(tmp_path / "home"),
              "PYTHONPATH": os.pathsep.join([str(repo / "src"), str(repo)])},
     )
     assert done.returncode == 0, done.stderr[-3000:]

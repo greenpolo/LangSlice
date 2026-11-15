@@ -22,6 +22,19 @@ os.environ.setdefault("LANGSLICE_SETTINGS", "off")
 # (whatever harness runs the tests: Claude Code sets CLAUDECODE).
 os.environ["LANGSLICE_DETACH"] = "0"
 
+if os.name == "nt":
+    # Tests give a test its own home folder by setting HOME; Python on Windows
+    # finds the home folder through USERPROFILE instead, so setting HOME sets
+    # both.
+    _setenv = pytest.MonkeyPatch.setenv
+
+    def _setenv_home_too(self, name, value, prepend=None):
+        _setenv(self, name, value, prepend)
+        if name == "HOME":
+            _setenv(self, "USERPROFILE", value, prepend)
+
+    pytest.MonkeyPatch.setenv = _setenv_home_too
+
 
 @pytest.fixture(scope="module")
 def atlas() -> object:

@@ -41,7 +41,7 @@ here is a verbatim copy — edit one, mirror to the other.
   Allen CCFv3 atlas (no Nissl of its own): the Blue Brain Nissl template of
   `ccfv3augmented_mouse_25um` resampled onto its grid. CCFv3 means the CCFv3
   grid and, where the metadata names one, the CCFv3 coordinate space
-  (`CCFV3_SPACE`): the Allen CCFv2 atlases share the grid, not the anatomy.
+  (`CCFV3_SPACES`, BrainGlobe's earlier name and its 3.x packages'): the Allen CCFv2 atlases share the grid, not the anatomy.
 - `details.py` — BrainGlobe's own paragraph about each atlas (its "Atlas
   details" page, CC BY 4.0), kept in `brainglobe_atlas_details.json` by atlas
   name (lower case) with the page's commit; `atlas_description(name)`, which
