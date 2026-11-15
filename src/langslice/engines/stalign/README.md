@@ -6,9 +6,8 @@ registration agent as three tools. Design: Fable's proposal, adopted by Nash on
 2026-10-18.
 
 - `plugin.py`: the adapter, run in LangSlice's process (imports only `langslice.plugin_api`).
-- `engine.py`: the STalign calls, run in the `stalign2` environment
-  (`~/.claude-science/conda/envs/stalign2`, STalign installed from
-  `comparators/src/stalign2` with its C++ engine). GPL code stays in that process.
+- `engine.py`: the STalign calls, run in the `stalign2` conda environment (STalign installed
+  from SliceBench's `comparators/src/stalign2` with its C++ engine). GPL code stays in that process.
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work for
 plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
@@ -21,9 +20,12 @@ langslice linear run ... --plugins langslice.engines.stalign.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])`.
-Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python`, `device` (`auto`: the GPU at
+Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python` (default:
+the `stalign2` conda environment's interpreter, found as emlddmm's README says), `device` (`auto`: the GPU at
 float32 when there is one, else the CPU at float64 with STalign's C++ engine; the GPU result
-matched the CPU's to 0.001 atlas px on a test section), `threads` (4), `timeout_s`.
+matched the CPU's to 0.001 atlas px on a test section), `threads` (4), `timeout_s`. The
+engine takes the machine's GPU lock file (`LANGSLICE_GPU_LOCK`, else
+`~/.cache/langslice-stalign/gpu.lock`).
 
 ## The tools
 

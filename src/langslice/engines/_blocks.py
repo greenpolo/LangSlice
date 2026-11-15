@@ -41,6 +41,27 @@ def call_folder(ctx: ToolContext, name: str) -> Path:
         return folder
 
 
+def job_path(context: ToolContext, path: Path) -> str:
+    """Write a path as a reply or a record names it.
+
+    Parameters
+    ----------
+    context
+        The call's context, whose job folder the path is written against.
+    path
+        A file or folder the call made.
+
+    Returns
+    -------
+    str
+        The path relative to the job folder with ``/`` between its parts on
+        every platform, or the whole path when it lies outside the folder.
+    """
+    if path.is_relative_to(context.job_dir):
+        return path.relative_to(context.job_dir).as_posix()
+    return str(path)
+
+
 def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) -> Any:
     """The section's fit frame with *section_image* (a section image by name) and
     *atlas_image*."""

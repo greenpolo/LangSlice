@@ -35,7 +35,6 @@ iteration run), ``settings`` (JSON: what emlddmm chose), ``device``, ``peak_gpu_
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
@@ -43,13 +42,20 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
+#: The engines' shared GPU queue, ``../_gpu_queue.py``: ``-I`` leaves its
+#: folder off the path, and it goes last, so it hides no installed package.
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+if TYPE_CHECKING:  # the type checker reads it from the package
+    from langslice.engines._gpu_queue import gpu_turn
+else:
+    from _gpu_queue import gpu_turn
+
 CACHE = Path.home() / ".cache" / "langslice-emlddmm"
-#: The lock file STalign's engine takes too: one engine at a time on the GPU.
-GPU_LOCK = Path.home() / ".cache" / "langslice-stalign" / "gpu.lock"
 ATLAS_UM = 50.0
 #: The Nissl LangSlice lends every Allen CCFv3 atlas (``core/atlas/images.py``): the template of
 #: the augmented atlas, which is the CCFv3 grid extended 0.35 mm at the front.
@@ -169,29 +175,6 @@ def volume(root: str, atlas: str, image: str
     centre = (shape - 1) / 2.0 * res
     np.savez(held, I=block, x0=axes[0], x1=axes[1], x2=axes[2], centre=centre, res=res)
     return block, axes, centre, res
-
-
-class gpu_turn:
-    """One engine at a time on the GPU (a lock file shared by every process, STalign's too)."""
-
-    def __init__(self, device: str):
-        self.device = device
-        self.waited_s = 0.0
-
-    def __enter__(self):
-        self.handle = None
-        if self.device.startswith("cuda"):
-            GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-            self.handle = open(GPU_LOCK, "w", encoding="utf-8")
-            asked = time.monotonic()
-            fcntl.flock(self.handle, fcntl.LOCK_EX)
-            self.waited_s = time.monotonic() - asked
-        return self
-
-    def __exit__(self, *exc):
-        if self.handle is not None:
-            fcntl.flock(self.handle, fcntl.LOCK_UN)
-            self.handle.close()
 
 
 def _json(value) -> str:
