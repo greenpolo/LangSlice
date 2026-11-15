@@ -51,7 +51,8 @@ def _record(seed: int = 0, parent: DeformableRecord | None = None, *,
 
 
 def _attributes(path: Path) -> dict:
-    return json.loads((path / "zarr.json").read_text())["attributes"]
+    return json.loads((path / "zarr.json").read_text(
+        encoding="utf-8"))["attributes"]
 
 
 def test_a_record_round_trips_at_float16_precision(tmp_path: Path):
@@ -102,7 +103,8 @@ def test_a_record_names_its_parent_and_loads_it_from_the_sibling_folder(tmp_path
     first.save(tmp_path / "first")
     second = _record(1, parent=first, inverse=False)
     second.save(tmp_path / "second")
-    meta = json.loads((tmp_path / "second" / "record.json").read_text())
+    meta = json.loads((tmp_path / "second" / "record.json").read_text(
+        encoding="utf-8"))
     assert meta["parent"] == "first" and meta["version"] == RECORD_VERSION
     assert meta["fields"] == "section_grid"  # no engine step: stored whole
     assert not (tmp_path / "second" / "parent").exists()
@@ -111,8 +113,10 @@ def test_a_record_names_its_parent_and_loads_it_from_the_sibling_folder(tmp_path
     assert loaded.parent is not None and loaded.parent.saved_as == "first"
     assert np.array_equal(loaded.parent.field_mm, first.field_mm)
     # A chain that comes back to itself is unreadable, not endless.
-    looped = json.loads((tmp_path / "first" / "record.json").read_text())
-    (tmp_path / "first" / "record.json").write_text(json.dumps({**looped, "parent": "second"}))
+    looped = json.loads((tmp_path / "first" / "record.json").read_text(
+        encoding="utf-8"))
+    (tmp_path / "first" / "record.json").write_text(json.dumps({**looped, "parent": "second"}),
+        encoding="utf-8")
     with pytest.raises(ValueError, match="comes back to it"):
         DeformableRecord.load(tmp_path / "second")
     # A parent that is gone: the error names the parent's record.json.
@@ -146,9 +150,9 @@ def test_an_older_record_format_is_refused(tmp_path: Path):
     key = "c" * 64
     store = RecordStore(root=tmp_path)
     folder = store.save("s1.tif", key, _record())
-    meta = json.loads((folder / "record.json").read_text())
+    meta = json.loads((folder / "record.json").read_text(encoding="utf-8"))
     meta["version"] = 1
-    (folder / "record.json").write_text(json.dumps(meta))
+    (folder / "record.json").write_text(json.dumps(meta), encoding="utf-8")
     with pytest.raises(ValueError, match=r"record\.json: record format 1, which this "
                        r"LangSlice does not read \(it reads 2 or 3\)"):
         DeformableRecord.load(folder)
@@ -164,9 +168,11 @@ def test_an_older_record_format_is_refused(tmp_path: Path):
 def test_a_format_2_record_is_read_as_it_was_saved(tmp_path: Path):
     record = _record(left_out=True, weights=True)
     record.save(tmp_path / "a")
-    meta = json.loads((tmp_path / "a" / "record.json").read_text())
+    meta = json.loads((tmp_path / "a" / "record.json").read_text(
+        encoding="utf-8"))
     del meta["fields"]  # format 2 stored every field whole and had no such key
-    (tmp_path / "a" / "record.json").write_text(json.dumps({**meta, "version": 2}))
+    (tmp_path / "a" / "record.json").write_text(json.dumps({**meta, "version": 2}),
+        encoding="utf-8")
     loaded = DeformableRecord.load(tmp_path / "a")
     assert loaded.stored_step is None
     assert np.array_equal(loaded.field_mm, record.field_mm)
@@ -178,10 +184,10 @@ def _validator(schema_name: str):
     referencing = pytest.importorskip("referencing")
     resources = []
     for path in SCHEMAS.glob("*.schema"):
-        schema = json.loads(path.read_text())
+        schema = json.loads(path.read_text(encoding="utf-8"))
         resources.append((schema["$id"], referencing.Resource.from_contents(schema)))
     registry = referencing.Registry().with_resources(resources)
-    schema = json.loads((SCHEMAS / schema_name).read_text())
+    schema = json.loads((SCHEMAS / schema_name).read_text(encoding="utf-8"))
     return jsonschema.Draft202012Validator(schema, registry=registry)
 
 
@@ -294,7 +300,8 @@ def test_an_engine_step_is_stored_on_its_grid_and_rebuilt_bit_for_bit(tmp_path: 
     first.save(tmp_path / "first")
     second = _engine_record(1, parent=first)
     second.save(tmp_path / "second")
-    meta = json.loads((tmp_path / "second" / "record.json").read_text())
+    meta = json.loads((tmp_path / "second" / "record.json").read_text(
+        encoding="utf-8"))
     assert meta["fields"] == "engine_grid"
     root = zarr.open_group(str(tmp_path / "second" / ome_warp.WARP_STORE), mode="r")
     members = {name for name, _ in root.members(max_depth=None)}
@@ -327,14 +334,14 @@ def test_rebuilt_fields_are_checked_against_the_bits_they_were_made_with(
     record = _engine_record(0)
     record.save(tmp_path / "a")
     path = tmp_path / "a" / "record.json"
-    meta = json.loads(path.read_text())
+    meta = json.loads(path.read_text(encoding="utf-8"))
     assert len(meta["fields_sha256"]) == 64
     with caplog.at_level(logging.WARNING):
         DeformableRecord.load(tmp_path / "a")
     assert not caplog.records
     # Other bits: loaded as rebuilt, with a warning naming the record.
     meta["fields_sha256"] = "0" * 64
-    path.write_text(json.dumps(meta))
+    path.write_text(json.dumps(meta), encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         loaded = DeformableRecord.load(tmp_path / "a")
     assert np.array_equal(loaded.field_mm, record.field_mm)
@@ -343,13 +350,14 @@ def test_rebuilt_fields_are_checked_against_the_bits_they_were_made_with(
     # A record saved before the digest loads silently.
     caplog.clear()
     del meta["fields_sha256"]
-    path.write_text(json.dumps(meta))
+    path.write_text(json.dumps(meta), encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         DeformableRecord.load(tmp_path / "a")
     assert not caplog.records
     # Fields stored whole carry no digest.
     _record(1).save(tmp_path / "b")
-    whole = json.loads((tmp_path / "b" / "record.json").read_text())
+    whole = json.loads((tmp_path / "b" / "record.json").read_text(
+        encoding="utf-8"))
     assert "fields_sha256" not in whole
 
 
@@ -369,15 +377,18 @@ def test_a_landmark_mesh_is_rebuilt_from_record_json(tmp_path: Path):
         "source_xy": mesh.source.tolist(), "target_xy": mesh.target.tolist(),
         "simplices": mesh.simplices.tolist()}}
     record.save(tmp_path / "a")
-    assert json.loads((tmp_path / "a" / "record.json").read_text())["fields"] == "landmark_mesh"
+    assert json.loads((tmp_path / "a" / "record.json").read_text(
+        encoding="utf-8"))["fields"] == "landmark_mesh"
     loaded = DeformableRecord.load(tmp_path / "a")
     assert np.array_equal(loaded.field_mm, record.field_mm)
     assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
     # Triangles stored otherwise than this scipy makes them (one triangle's
     # vertices in another order) are the same mesh, read as stored.
-    meta = json.loads((tmp_path / "a" / "record.json").read_text())
+    meta = json.loads((tmp_path / "a" / "record.json").read_text(
+        encoding="utf-8"))
     meta["engine"]["native_parameters"]["simplices"][0].reverse()
-    (tmp_path / "a" / "record.json").write_text(json.dumps(meta))
+    (tmp_path / "a" / "record.json").write_text(json.dumps(meta),
+        encoding="utf-8")
     reordered = DeformableRecord.load(tmp_path / "a")
     assert isinstance(reordered.stored_step, MeshStep)
     assert not np.array_equal(

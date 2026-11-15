@@ -124,7 +124,8 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
     assert stored["kind"] == "elastix" and len(stored["params"]) == 6
     assert "regions" not in stored and "regions" not in row
     # One undo step back to no transform; the checkpoint holds the fit.
-    assert json.loads(Path(_ctx.checkpoint_path).read_text())["slices"][0]["transform"][
+    assert json.loads(Path(_ctx.checkpoint_path).read_text(
+        encoding="utf-8"))["slices"][0]["transform"][
         "kind"] == "elastix"
     _tool(box, "undo")()
     assert state.slices[0].transform is None

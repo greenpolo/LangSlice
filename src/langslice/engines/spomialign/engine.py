@@ -86,7 +86,7 @@ class gpu_queue:
     def __enter__(self):
         if self.device.startswith("cuda"):
             GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-            self.handle = open(GPU_LOCK, "w")
+            self.handle = open(GPU_LOCK, "w", encoding="utf-8")
             asked = time.monotonic()
             fcntl.flock(self.handle, fcntl.LOCK_EX)
             self.waited_s = time.monotonic() - asked

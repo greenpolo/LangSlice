@@ -245,7 +245,8 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
     folder = job.folder
     old = _format_three(job)
-    (folder / "state.json").write_text(json.dumps({FORMAT_KEY: 3, **old}))
+    (folder / "state.json").write_text(json.dumps({FORMAT_KEY: 3, **old}),
+        encoding="utf-8")
     for path in (folder / "sections").glob("*/images/*.png"):
         path.unlink()
     job.close()
@@ -263,7 +264,7 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
         for entry in record.images.values():
             assert (folder / entry.file).is_file()
     # Display properties are gone and the state is the current format on disk.
-    saved = json.loads((folder / "state.json").read_text())
+    saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 5 and "appearance" not in saved
     assert loaded.undo_stack  # the undo steps survived the migration
     # The opening image comes back with the same pixels it had.
@@ -283,7 +284,8 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     job, _ctx = _open(tmp_path, atlas)
     folder = job.folder
     old = _format_three(job)
-    (folder / "state.json").write_text(json.dumps({FORMAT_KEY: 3, **old}))
+    (folder / "state.json").write_text(json.dumps({FORMAT_KEY: 3, **old}),
+        encoding="utf-8")
     job.close()
 
     other_ctx = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
@@ -310,6 +312,6 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     assert len(calls) >= 2  # read again under the lock
     held = late.state.by_id("s0.png")
     assert held is not None and held.position_mm == 0.2
-    saved = json.loads((folder / "state.json").read_text())
+    saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     row = next(item for item in saved["slices"] if item["id"] == "s0.png")
     assert saved[FORMAT_KEY] == 5 and row["position_mm"] == 0.2

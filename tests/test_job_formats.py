@@ -102,12 +102,14 @@ PLACEMENT_TOOLS = ("look", "zoom")
 
 
 def _views(root: Path, tool: str) -> list[Path]:
-    entries = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
+    entries = [json.loads(line) for line in (root / "views.jsonl").read_text(
+        encoding="utf-8").splitlines()]
     return [root / entry["path"] for entry in entries if entry["tool"] == tool and entry["layers"]]
 
 
 def _content_pixels(folder: Path, count: int = 1500) -> tuple[np.ndarray, np.ndarray]:
-    frame = json.loads((folder / "view.json").read_text())["frame"]
+    frame = json.loads((folder / "view.json").read_text(
+        encoding="utf-8"))["frame"]
     x0, y0, x1, y1 = frame["content_box"]
     labels = tifffile.imread(folder / "labels.tif")
     rows, cols = np.nonzero(labels[y0:y1, x0:x1] > 0)
@@ -158,7 +160,7 @@ def test_the_map_files_are_what_the_format_says(placed):
         restored[dense == index] = uid
     assert (restored == labels).all()
     assert {row["acronym"] for row in rows} <= {"CTX", "STR", "TH", "HY", "VL"}
-    maps = json.loads((folder / "maps.json").read_text())
+    maps = json.loads((folder / "maps.json").read_text(encoding="utf-8"))
     assert maps["grid_size"] == list(working) and maps["full_resolution"] is False
 
 
@@ -183,7 +185,8 @@ def test_coordinates_are_the_matrix_after_the_residual(placed):
     folder = root / "sections" / "s0"
     coords = tifffile.imread(folder / "coords.tif")
     residual = tifffile.imread(folder / "residual.tif").astype(np.float64)
-    matrix = np.asarray(json.loads((folder / "maps.json").read_text())["pixel_to_atlas_um"])
+    matrix = np.asarray(json.loads((folder / "maps.json").read_text(
+        encoding="utf-8"))["pixel_to_atlas_um"])
     rows, cols = np.mgrid[0:coords.shape[1], 0:coords.shape[2]].astype(np.float64)
     composed = np.tensordot(matrix, np.stack([rows + residual[0], cols + residual[1],
                                               np.ones_like(rows)]), axes=1)
@@ -202,11 +205,12 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
     from langslice.core.pictures.layers import coordinate_map
 
     job, root, _exported = placed
-    registration = json.loads((root / "registration.json").read_text())
+    registration = json.loads((root / "registration.json").read_text(
+        encoding="utf-8"))
     by_id = {entry["id"]: entry for entry in registration["sections"]}
     checked = 0
     for folder in [path for tool in PLACEMENT_TOOLS for path in _views(root, tool)]:
-        view = json.loads((folder / "view.json").read_text())
+        view = json.loads((folder / "view.json").read_text(encoding="utf-8"))
         section = view["sections"][0]
         record = job.state.by_id(section)
         frame = view["frame"]
@@ -250,7 +254,8 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     # The first picture shows the first fit, the second the step on top of it.
     assert len(folders) == 2 and current.parent is not None
     for folder, warp in zip(folders, (current.parent, current), strict=True):
-        picture = json.loads((folder / "view.json").read_text())["frame"]
+        picture = json.loads((folder / "view.json").read_text(
+            encoding="utf-8"))["frame"]
         assert (root / picture["deformation"]).name == warp.saved_as
         x0, band, x1, y1 = picture["content_box"]
         rows, cols = _content_pixels(folder)
@@ -281,9 +286,11 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
 
     job, root, _exported = placed
     facts = atlas_facts(job.workspace.atlas)
-    registration = json.loads((root / "registration.json").read_text())
+    registration = json.loads((root / "registration.json").read_text(
+        encoding="utf-8"))
     by_id = {entry["id"]: entry for entry in registration["sections"]}
-    documents = {name: json.loads((root / "exports" / name).read_text())
+    documents = {name: json.loads((root / "exports" / name).read_text(
+        encoding="utf-8"))
                  for name in ("quicknii.json", "visualign.json")}
     copies = ["s0_s001.png", "s1_s002.png", "s2_s003.png"]
     for name, export in documents.items():
@@ -352,7 +359,7 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     images = tmp_path / "stack"
     shutil.copytree(root.parent, images)
     path = images / "langslice" / "registration.json"
-    before = json.loads(path.read_text())
+    before = json.loads(path.read_text(encoding="utf-8"))
     assert before["format_version"] == 1 and before["atlas"]["orientation"] == "asr"
     entry = before["sections"][2]
     assert entry["mapping"].startswith("linear (identity")
@@ -370,7 +377,7 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     job = langslice.open_job(str(images), atlas_loader=atlas_loader())
     job.position_sections(sections=[{"id": ID2, "position_mm": 0.25}], view=False)
     job.close()
-    after = json.loads(path.read_text())
+    after = json.loads(path.read_text(encoding="utf-8"))
     moved = after["sections"][2]
     assert moved["parameters"]["plane"]["position_mm"] == 0.25
     # A flat plane sits on its nearest atlas slab (50 um here), as its pictures do.
@@ -468,9 +475,11 @@ def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 def _picture_um_per_section_px(root: Path, section: str) -> float:
     """Micrometres per section-render pixel (along a column step) in the
     last placement picture of *section*."""
-    entries = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
+    entries = [json.loads(line) for line in (root / "views.jsonl").read_text(
+        encoding="utf-8").splitlines()]
     view = [e for e in entries if e["tool"] == "look" and section in e["sections"]][-1]
-    frame = json.loads((root / view["path"] / "view.json").read_text())["frame"]
+    frame = json.loads((root / view["path"] / "view.json").read_text(
+        encoding="utf-8"))["frame"]
     to_atlas = np.asarray(frame["pixel_to_atlas_um"]) @ np.asarray(frame["section_to_picture"])
     return float(np.linalg.norm(to_atlas[:, 1]))
 
@@ -506,7 +515,7 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
     assert not [r for r in caplog.records if r.exc_info], [r.getMessage() for r in caplog.records]
     root = Path(job.folder)
     sections = {e["id"]: e for e in json.loads(
-        (root / "registration.json").read_text())["sections"]}
+        (root / "registration.json").read_text(encoding="utf-8"))["sections"]}
     entry = sections[ID0]
     render = prepared_render_size(root.parent / ID0)
     file_size = entry["image"]["size"]
@@ -565,7 +574,8 @@ def test_export_maps_syncs_before_it_writes(placed, tmp_path, monkeypatch):
     assert done.sections == [ID2]
     root = Path(first.folder)
     entry = {e["id"]: e for e in json.loads(
-        (root / "registration.json").read_text())["sections"]}[ID2]
+        (root / "registration.json").read_text(
+            encoding="utf-8"))["sections"]}[ID2]
     assert entry["parameters"]["plane"]["position_mm"] == 0.25
     assert entry["maps"]["current"] is True
 
@@ -594,7 +604,8 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
         return real(workspace, frame, warp, **kwargs)
 
     monkeypatch.setattr(core_maps, "section_maps", meanwhile)
-    stamp = (Path(first.folder) / "sections" / "s1" / "maps.json").read_text()
+    stamp = (Path(first.folder) / "sections" / "s1" / "maps.json").read_text(
+        encoding="utf-8")
     done = export_maps(first.job, first.workspace, [ID0, ID1, ID2])
     first.close()
     second.close()
@@ -602,7 +613,8 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
     assert done.sections == [ID0, ID2]
     assert [row["id"] for row in done.skipped] == [ID1]
     assert "STALE_INPUT" in done.skipped[0]["reason"]
-    assert (Path(first.folder) / "sections" / "s1" / "maps.json").read_text() == stamp
+    assert (Path(first.folder) / "sections" / "s1" / "maps.json").read_text(
+        encoding="utf-8") == stamp
 
 
 def test_registration_names_the_code_that_wrote_it(placed):
@@ -613,7 +625,8 @@ def test_registration_names_the_code_that_wrote_it(placed):
     import langslice
 
     _job, root, _exported = placed
-    source = json.loads((root / "registration.json").read_text())["source"]
+    source = json.loads((root / "registration.json").read_text(
+        encoding="utf-8"))["source"]
     checkout = Path(langslice.__file__).resolve().parent
     head = subprocess.run(["git", "-C", str(checkout), "rev-parse", "HEAD"],
                           capture_output=True, text=True, check=True).stdout.strip()

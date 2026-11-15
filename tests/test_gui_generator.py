@@ -384,7 +384,7 @@ def test_the_prefill_of_an_opened_job_and_of_a_folder_without_one(tmp_path: Path
     layout = JobLayout(job_folder_for(images), image_folder=images)
     layout.folder.mkdir()
     write_job_file(layout, spec=spec.to_dict(), notes="Right striatum.")
-    (layout.folder / "state.json").write_text("{}")
+    (layout.folder / "state.json").write_text("{}", encoding="utf-8")
     prefill = _prefill(layout.folder)
     assert prefill is not None and prefill["abba"] is None
     assert (prefill["atlas"], prefill["plane"], prefill["thickness"], prefill["interval"]) == (
@@ -395,7 +395,7 @@ def test_the_prefill_of_an_opened_job_and_of_a_folder_without_one(tmp_path: Path
     assert prefill["facts"] == ["The file names sort in the order the sections were cut."]
     assert generator.prefill(tmp_path / "nothing") is None
     (tmp_path / "broken").mkdir()
-    (tmp_path / "broken" / "job.json").write_text("not json")
+    (tmp_path / "broken" / "job.json").write_text("not json", encoding="utf-8")
     assert generator.prefill(tmp_path / "broken") is None
 
 

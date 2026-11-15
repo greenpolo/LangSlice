@@ -212,7 +212,7 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
         "fireants_syn", "fireants_syn"]
     # What the engine printed went to the job's log, not the caller's stderr.
     assert "deformable fits of 1 section(s)" in (
-        box.job.layout.logs_dir / "engine.log").read_text()
+        box.job.layout.logs_dir / "engine.log").read_text(encoding="utf-8")
     _tool(box, "undo")()
     assert len(deformation_to_json(state.by_id("s1.png").deformation)["steps"]) == 1
     # A changed placement clears the deformation in the same step; undo restores both.

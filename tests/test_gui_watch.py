@@ -46,7 +46,8 @@ def _view(folder: Path, seq: int, tool: str, sections: list[str], call: int = 1)
     path = f"views/{seq:06d}_{tool}"
     (folder / path).mkdir(parents=True, exist_ok=True)
     (folder / path / "view.jpg").write_bytes(b"\xff\xd8jpeg" + bytes([seq]))
-    (folder / path / "view.json").write_text(json.dumps({"caption": f"{tool} picture {seq}"}))
+    (folder / path / "view.json").write_text(json.dumps({"caption": f"{tool} picture {seq}"}),
+        encoding="utf-8")
     return {"seq": seq, "name": f"{seq:06d}_{tool}", "path": path, "tool": tool, "call": call,
             "sections": sections, "mode": None, "layers": False}
 
@@ -259,7 +260,8 @@ def test_a_truncated_file_starts_the_watch_over(tmp_path: Path) -> None:
             {"kind": "open", "resumed": True, "at": "2026-10-28T10:00:01+00:00"})
     watcher = JobWatcher(folder)
     first = _snap(watcher)
-    events.write_text(json.dumps({"kind": "open", "at": "2026-10-28T11:00:00+00:00"}) + "\n")
+    events.write_text(json.dumps({"kind": "open", "at": "2026-10-28T11:00:00+00:00"}) + "\n",
+        encoding="utf-8")
     watcher.poll(force=True)
     snap = watcher.snapshot(since=first["cursor"], generation=first["generation"])
     assert snap["generation"] != first["generation"]
@@ -275,8 +277,8 @@ def test_a_real_finished_job_folder(tmp_path: Path) -> None:
         pytest.skip("no real job folder here (LANGSLICE_GUI_REPLAY_JOB)")
     folder = tmp_path / "langslice"
     shutil.copytree(source, folder)
-    lines = (folder / "views.jsonl").read_text().splitlines()
-    (folder / "views.jsonl").write_text("")
+    lines = (folder / "views.jsonl").read_text(encoding="utf-8").splitlines()
+    (folder / "views.jsonl").write_text("", encoding="utf-8")
     watcher = JobWatcher(folder)
     _snap(watcher)
     for line in lines:

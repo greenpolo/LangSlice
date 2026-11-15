@@ -145,7 +145,8 @@ def supplied(workspace: Any, sections: list[Given]) -> list[str]:
 
 
 def matrices(job_folder: Path) -> dict[str, np.ndarray]:
-    document = json.loads((job_folder / "registration.json").read_text())
+    document = json.loads((job_folder / "registration.json").read_text(
+        encoding="utf-8"))
     out = {}
     for entry in document["sections"]:
         assert entry["problem"] is None, entry
@@ -156,7 +157,8 @@ def matrices(job_folder: Path) -> dict[str, np.ndarray]:
 def quicknii_matrices(job_folder: Path) -> dict[str, np.ndarray]:
     """The maps the job's ``quicknii.json`` holds: each section's exact map
     with its anchoring made perpendicular (QuickNII drops shear)."""
-    document = json.loads((job_folder / "registration.json").read_text())
+    document = json.loads((job_folder / "registration.json").read_text(
+        encoding="utf-8"))
     return {entry["id"]: perpendicular_pixel_map(
                 entry["pixel_to_atlas_um"], tuple(entry["image"]["size"]), document["atlas"])
             for entry in document["sections"]}
@@ -187,7 +189,8 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
         assert result["border_trace"]["status"] == "ok", envelope
         assert result["work_status"] == "done", envelope
     envelope = ok(capsys, folder, "submit", *SUBMIT_FLAGS)
-    document = json.loads((folder / "registration.json").read_text())
+    document = json.loads((folder / "registration.json").read_text(
+        encoding="utf-8"))
     assert document["submitted"] is True, envelope
     mapping = {entry["id"]: entry["mapping"] for entry in document["sections"]}
     assert mapping == {**{name: "linear + residual" for name in ids[:-1]},
@@ -229,7 +232,8 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
     tolerance = ROUNDED_UM if export == "quicknii" else EXACT_UM
     for name, matrix in given.items():
         assert np.allclose(again[name], matrix, atol=tolerance, rtol=0), name
-    spec = json.loads((folder / "job.json").read_text())["spec"]
+    spec = json.loads((folder / "job.json").read_text(
+        encoding="utf-8"))["spec"]
     # Per-section angles arrive as the per-section form (they differ here).
     assert set(spec["inputs"]["angles"]) == {ID0, ID1, ID2}
     assert spec["inputs"]["transforms"][ID0]["kind"] == "imported"
@@ -291,7 +295,7 @@ def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_p
     stray = dict(rows[1], filename="elsewhere.png")
     document = exact_export([*rows, stray], atlas_facts(atlas))
     path = tmp_path / "visualign.json"
-    path.write_text(json.dumps(document))
+    path.write_text(json.dumps(document), encoding="utf-8")
     envelope = init(capsys, images, "--pixel-size-um", str(PIXEL_SIZE_UM),
                     "--nonlinear-provider", "none", "--registration", str(path))
     imported = envelope["result"]["registration"]
@@ -303,7 +307,7 @@ def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_p
     assert "VisuAlign nonlinear markers (1 section(s)) were not imported" in text
     assert "LangSlice's nonlinear step replaces them" in text
     folder = Path(envelope["result"]["job_folder"])
-    state = json.loads((folder / "state.json").read_text())
+    state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     held = {row["id"]: row for row in state["slices"]}
     assert held[ID2]["position_mm"] is None and held[ID2]["transform"] is None
     assert held[ID0]["deformation"] is None  # the markers are not a deformation
@@ -313,7 +317,8 @@ def test_refusals(capsys, images, atlas, tmp_path):
     workspace = make_workspace(images, atlas)
     path = tmp_path / "quicknii.json"
     path.write_text(json.dumps(job_export(export_rows(workspace, PER_SECTION),
-                                          atlas_facts(atlas))))
+                                          atlas_facts(atlas))),
+                                              encoding="utf-8")
     base = (str(images), "init", "--atlas", "synthetic_deep_50um",
             "--nonlinear-provider", "none", "--registration", str(path))
     for flags, named in ((("--positions", json.dumps({ID0: 1.0})), "--positions"),
@@ -329,7 +334,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
     twice = tmp_path / "twice.json"
     twice.write_text(json.dumps(job_export(
         [*rows, dict(rows[0], filename=rows[0]["filename"].replace(".png", ".PNG"))],
-        atlas_facts(atlas))))
+        atlas_facts(atlas))), encoding="utf-8")
     code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
                          "--nonlinear-provider", "none", "--registration", str(twice))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
@@ -338,7 +343,8 @@ def test_refusals(capsys, images, atlas, tmp_path):
     nothing = tmp_path / "nothing.json"
     nothing.write_text(json.dumps(job_export([dict(row, filename=f"x{i}.png")
                                               for i, row in enumerate(rows)],
-                                             atlas_facts(atlas))))
+                                             atlas_facts(atlas))),
+                                                 encoding="utf-8")
     code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
                          "--nonlinear-provider", "none", "--registration", str(nothing))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope

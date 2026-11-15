@@ -45,7 +45,8 @@ def _fake_login(home: Path) -> Any:
         time.sleep(0.2)
         path = home / ".langslice" / "openai_auth.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"tokens": {"access_token": "fake-token-XYZ"}}))
+        path.write_text(json.dumps({"tokens": {"access_token": "fake-token-XYZ"}}),
+            encoding="utf-8")
         return {"configured": True}
     return login
 
@@ -96,16 +97,18 @@ def test_the_file_round_trips_in_the_home_and_cleans_what_it_reads(home: Path) -
     saved = store.write({"connection": "anthropic-api", "runs_in": "app", "agent": {
         "anthropic-api": {"model": "anthropic-api/claude-opus-5-5", "reasoning": "high"},
         "nobody": {"model": "x"}}})
-    assert json.loads((home / ".langslice" / "settings.json").read_text()) == saved
+    assert json.loads((home / ".langslice" / "settings.json").read_text(
+        encoding="utf-8")) == saved
     assert store.read() == {"version": 1, "connection": "anthropic-api", "runs_in": "app",
                             "agent": {"anthropic-api": {"model": "anthropic-api/claude-opus-5-5",
                                                         "reasoning": "high"}}}
     (home / ".langslice" / "settings.json").write_text(json.dumps(
         {"connection": "skynet", "runs_in": "moon",
-         "agent": {"gemini-api": {"reasoning": "huge"}}}))
+         "agent": {"gemini-api": {"reasoning": "huge"}}}), encoding="utf-8")
     assert store.read() == {**store.empty(),
                             "agent": {"gemini-api": {"model": None, "reasoning": None}}}
-    (home / ".langslice" / "settings.json").write_text("{not json")
+    (home / ".langslice" / "settings.json").write_text("{not json",
+        encoding="utf-8")
     assert store.read() == store.empty()
 
 
@@ -114,7 +117,8 @@ def test_the_environment_names_another_file_or_none(home: Path,
     other = home / "elsewhere.json"
     monkeypatch.setenv(store.SETTINGS_ENV, str(other))
     store.write({"connection": "gemini-api"})
-    assert json.loads(other.read_text())["connection"] == "gemini-api"
+    assert json.loads(other.read_text(
+        encoding="utf-8"))["connection"] == "gemini-api"
     monkeypatch.setenv(store.SETTINGS_ENV, "off")
     assert store.settings_file() is None and store.read() == store.empty()
     with pytest.raises(ValueError):
@@ -219,7 +223,8 @@ def test_a_saved_key_is_never_sent_back(server: GuiServer, home: Path) -> None:
     assert rows["anthropic-api"]["state"] == "Key saved" and rows["anthropic-api"]["present"]
     status, raw = _request(server, "settings", method="GET")
     assert SECRET.encode() not in raw
-    saved = json.loads((home / ".langslice" / "provider_credentials.json").read_text())
+    saved = json.loads((home / ".langslice" / "provider_credentials.json").read_text(
+        encoding="utf-8"))
     assert saved == {"anthropic-api": SECRET}
     status, answer = _request(server, "settings/key", {"provider": "openai-api",
                                                        "key": "has space " + SECRET})
@@ -238,7 +243,8 @@ def test_a_saved_claude_key_loads_for_the_agent_and_runs_no_image_model(
 
 def test_the_old_claude_key_file_counts_as_saved(home: Path) -> None:
     (home / ".langslice").mkdir()
-    (home / ".langslice" / "anthropic_api_key").write_text(SECRET + "\n")
+    (home / ".langslice" / "anthropic_api_key").write_text(SECRET + "\n",
+        encoding="utf-8")
     status = setup.connections()["providers"]["anthropic-api"]
     assert status == {"configured": True, "source": "saved", "validated": False}
 

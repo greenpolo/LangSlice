@@ -57,17 +57,17 @@ def _old_folder(tmp_path: Path) -> Path:
     job.close()
     folder = images / "langslice"
 
-    record = json.loads((folder / "job.json").read_text())
+    record = json.loads((folder / "job.json").read_text(encoding="utf-8"))
     record["spec"]["max_input_tokens"] = None
     record["spec"]["transform"]["flip"] = True
     record["spec"]["tasks"] = ["reorder", *record["spec"]["tasks"]]
-    (folder / "job.json").write_text(json.dumps(record))
+    (folder / "job.json").write_text(json.dumps(record), encoding="utf-8")
     old_rows = {"damaged": True, "position_source": ""}
     for path in [folder / "state.json"]:
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         state["appearance"] = {}
         state["slices"] = [{**row, **old_rows} for row in state["slices"]]
-        path.write_text(json.dumps(state))
+        path.write_text(json.dumps(state), encoding="utf-8")
     return folder
 
 
@@ -91,16 +91,18 @@ def test_an_old_folder_opens_with_one_warning_per_removed_name(
         assert sum(name in message for message in messages) == 1, name
 
     # written once without them; the events say what was dropped
-    spec = json.loads((folder / "job.json").read_text())["spec"]
+    spec = json.loads((folder / "job.json").read_text(
+        encoding="utf-8"))["spec"]
     assert "max_input_tokens" not in spec and "flip" not in spec["transform"]
     assert "reorder" not in spec["tasks"]
     for path in [folder / "state.json"]:
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         assert "appearance" not in state
         assert all("damaged" not in row and "position_source" not in row
                    for row in state["slices"])
     events = [json.loads(line) for line in
-              (folder / "logs" / "events.jsonl").read_text().splitlines()]
+              (folder / "logs" / "events.jsonl").read_text(
+                  encoding="utf-8").splitlines()]
     migrated = [event for event in events if event["kind"] == "migrated"]
     assert len(migrated) == 1
     assert migrated[0]["settings"] == ["max_input_tokens", "transform.flip", "tasks: reorder"]
@@ -147,7 +149,7 @@ def _format_four_folder(tmp_path: Path) -> Path:
     (attempt / "raw_reply.png").write_bytes(b"png")
     reply = {"artifact_dir": str(folder / OLD_DIR),
              "artifact_paths": {"raw_reply": str(folder / OLD_DIR / "raw_reply.png")}}
-    (attempt / "result.json").write_text(json.dumps(reply))
+    (attempt / "result.json").write_text(json.dumps(reply), encoding="utf-8")
     with (folder / "views.jsonl").open("a") as handle:
         handle.write(json.dumps({"seq": 99, "recipe": {"trace": OLD_DIR}}) + "\n")
 
@@ -155,7 +157,7 @@ def _format_four_folder(tmp_path: Path) -> Path:
              "artifact_dir": OLD_DIR,
              "artifact_paths": {"raw_reply": f"{OLD_DIR}/raw_reply.png"}}
     for path in [folder / "state.json"]:
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         state["format_version"] = 4
         rows = []
         for row in state["slices"]:
@@ -165,7 +167,7 @@ def _format_four_folder(tmp_path: Path) -> Path:
                 row["image_correction"] = trace
             rows.append(row)
         state["slices"] = rows
-        path.write_text(json.dumps(state))
+        path.write_text(json.dumps(state), encoding="utf-8")
     return folder
 
 
@@ -195,13 +197,14 @@ def test_an_open_that_writes_finds_the_trace_through_its_stored_paths(tmp_path: 
     assert not (folder / "sections" / "s0" / "border_trace").exists()
     assert (folder / OLD_DIR / "result.json").read_bytes() == reply_before
     for path in [folder / "state.json"]:
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         assert state["format_version"] == STATE_FORMAT_VERSION == 5
         row = state["slices"][0]
         assert "image_correction" not in row
         assert row["border_trace"]["artifact_dir"] == OLD_DIR
     events = [json.loads(line) for line in
-              (folder / "logs" / "events.jsonl").read_text().splitlines()]
+              (folder / "logs" / "events.jsonl").read_text(
+                  encoding="utf-8").splitlines()]
     migrated = [event for event in events if event["kind"] == "migrated"]
     assert migrated[-1]["migrations"] == ["state_4_to_5"]
 

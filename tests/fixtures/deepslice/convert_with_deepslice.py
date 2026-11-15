@@ -14,7 +14,7 @@ import pandas as pd
 from DeepSlice.read_and_write import QuickNII_functions as q
 from DeepSlice.coord_post_processing import spacing_and_indexing
 src, out = sys.argv[1], sys.argv[2]
-doc = json.load(open(src))
+doc = json.load(open(src, encoding="utf-8"))
 rows = doc["slices"]
 df = pd.DataFrame({"Filenames": [r["filename"] for r in rows],
                    **{k: [r["anchoring"][i] for r in rows] for i, k in enumerate(["ox","oy","oz","ux","uy","uz","vx","vy","vz"])}})
@@ -23,7 +23,8 @@ df["height"] = [int(r["height"]) for r in rows]
 df["nr"] = spacing_and_indexing.number_sections(df["Filenames"], False)
 df["nr"] = df["nr"].astype(int)
 df = df.sort_values(by="nr").reset_index(drop=True)
-config = json.load(open(os.path.join(os.path.dirname(q.__file__), "..", "metadata", "config.json")))
+config = json.load(open(os.path.join(os.path.dirname(q.__file__), "..", "metadata", "config.json"),
+    encoding="utf-8"))
 target = config["target_volumes"]["mouse"]["name"]
 aligner = config["DeepSlice_version"]["prerelease"]
 df.to_csv(out + ".csv", index=False)

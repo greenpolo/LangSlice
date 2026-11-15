@@ -51,11 +51,13 @@ def test_connector_follows_a_job_end_to_end(tmp_path: Path) -> None:
     prefix = tmp_path / "env"
     python = prefix / "bin" / "python"
     python.parent.mkdir(parents=True)
-    python.write_text(f'#!/bin/sh\nPYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" "$@"\n')
+    python.write_text(f'#!/bin/sh\nPYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" "$@"\n',
+        encoding="utf-8")
     python.chmod(0o755)
     classes = os.pathsep.join([
         str(FIJI / "target" / "test-classes"), str(FIJI / "target" / "classes"),
-        (FIJI / "target" / "test-classpath.txt").read_text().strip(),
+        (FIJI / "target" / "test-classpath.txt").read_text(
+            encoding="utf-8").strip(),
     ])
     done = subprocess.run(
         [str(jdk / "bin" / "java"), "-Djava.awt.headless=true",

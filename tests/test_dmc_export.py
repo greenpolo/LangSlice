@@ -375,7 +375,7 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
     assert [skip.section for skip in done.skipped] == [ID2]
     assert done.warps_left_out == [ID0]
 
-    params = json.loads((folder / "params.json").read_text())
+    params = json.loads((folder / "params.json").read_text(encoding="utf-8"))
     assert params["general"] == {"animal_id": "M7", "chans_imaged": ["green"]}
     info = params["atlas_info"]
     assert (
@@ -398,7 +398,8 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
         pixels = tifffile.imread(channel / name)
         assert pixels.shape == (120, 160) and pixels.dtype == np.uint8
 
-    registration = json.loads((channel / "registration.json").read_text())
+    registration = json.loads((channel / "registration.json").read_text(
+        encoding="utf-8"))
     assert registration["imgName"] == {
         str(i): name for i, name in enumerate(images)
     }
@@ -413,7 +414,8 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
     # 0.1 mm from the front is voxel 2 of the 50 um volume; bregma voxel 3
     assert z_mm == pytest.approx((3 - 2) * 0.05)
 
-    record = json.loads((folder / "langslice_export.json").read_text())
+    record = json.loads((folder / "langslice_export.json").read_text(
+        encoding="utf-8"))
     assert record["linear_only"] is True and record["warps_left_out"] == [ID0]
     assert (
         "deformation (a warp) applied in LangSlice is left out"

@@ -227,7 +227,8 @@ def main() -> None:
     images, calls_path = Path(sys.argv[1]), Path(sys.argv[2])
     with (images.parent / "mcp-server.log").open("w") as errors:
         records = anyio.run(converse, images, errors)
-    calls_path.write_text(json.dumps(records, indent=1, sort_keys=True))
+    calls_path.write_text(json.dumps(records, indent=1, sort_keys=True),
+        encoding="utf-8")
 
 
 if __name__ == "__main__":

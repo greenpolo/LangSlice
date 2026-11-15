@@ -113,14 +113,14 @@ def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_p
               "slices": [{"id": f"s{i}.png", "index_original": i, "index_corrected": i}
                          for i in range(3)]}
     path = tmp_path / "state.json"
-    path.write_text(json.dumps(stored))
+    path.write_text(json.dumps(stored), encoding="utf-8")
     state = load_checkpoint(str(path))
     assert state is not None
     assert [record.angles for record in state.slices] == [(2.0, -1.0)] * 3
     assert not state.mixed_angles
     assert stack_to_json(state)["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
     write_checkpoint(state, str(path))
-    written = json.loads(path.read_text())
+    written = json.loads(path.read_text(encoding="utf-8"))
     assert written[FORMAT_KEY] == STATE_FORMAT_VERSION
     assert written["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
     assert all("cutting_angles_deg" not in row for row in written["slices"])
@@ -200,9 +200,11 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
         to_target_grid,
     )
 
-    document = json.loads((job_folder / "registration.json").read_text())
+    document = json.loads((job_folder / "registration.json").read_text(
+        encoding="utf-8"))
     assert document["cutting_angles_deg"] is None
-    quicknii = json.loads((job_folder / "exports" / "quicknii.json").read_text())
+    quicknii = json.loads((job_folder / "exports" / "quicknii.json").read_text(
+        encoding="utf-8"))
     facts = atlas_facts(job.workspace.atlas)
     # in the stack's order, each naming its section's image copy
     anchorings = {section["id"]: entry["anchoring"]
@@ -263,7 +265,7 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         assert str(reply) in job.export_stack() and reply.is_file()
         # Each fitted record was fitted on its section's own plane.
         for name, stem in ((ID0, "s0"), (ID1, "s1")):
-            records = [json.loads(path.read_text()) for path in
+            records = [json.loads(path.read_text(encoding="utf-8")) for path in
                        (folder / "sections" / stem / "deformable").rglob("*.json")]
             placements = [record["placement"] for record in records if "placement" in record]
             assert placements, stem
@@ -317,7 +319,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     state = load_checkpoint(str(job / "state.json"))
     assert state is not None
     assert {name: angles_to_json(state.by_id(name).angles) for name in IDS} == SECTION_ANGLES
-    saved = json.loads((job / "state.json").read_text())
+    saved = json.loads((job / "state.json").read_text(encoding="utf-8"))
     assert saved["format_version"] == 5 and saved["cutting_angles_deg"] is None
     # --section-angles and --pitch exclude each other.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
@@ -351,12 +353,14 @@ def test_cutting_angles_flatten_a_mixed_stack_and_undo_restores_it(images):
         assert refused["error"] == "UNKNOWN_ARGUMENTS" and "sections" in refused["message"]
         assert reply["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -0.5}
         assert [job.state.by_id(name).angles for name in IDS] == [(2.0, -0.5)] * 3
-        document = json.loads((Path(job.folder) / "registration.json").read_text())
+        document = json.loads((Path(job.folder) / "registration.json").read_text(
+            encoding="utf-8"))
         assert document["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -0.5}
         assert job.undo()["status"] == "ok"
         assert {name: angles_to_json(job.state.by_id(name).angles) for name in IDS} == (
             SECTION_ANGLES)
-        document = json.loads((Path(job.folder) / "registration.json").read_text())
+        document = json.loads((Path(job.folder) / "registration.json").read_text(
+            encoding="utf-8"))
         assert document["cutting_angles_deg"] is None
         assert job.redo()["status"] == "ok"
         assert [job.state.by_id(name).angles for name in IDS] == [(2.0, -0.5)] * 3

@@ -269,7 +269,8 @@ def traced_lines(
         raise Refused(RefusalCode.NO_TRACE,
                       f"{section.id}'s border trace files are missing "
                       f"({stored}); trace the section again.", id=section.id)
-    atlas_to_canvas = np.asarray(json.loads(request_path.read_text())["atlas_to_canvas"],
+    atlas_to_canvas = np.asarray(json.loads(request_path.read_text(
+        encoding="utf-8"))["atlas_to_canvas"],
                                  dtype=np.float64)
     with Image.open(lines_path) as opened:
         lines = np.asarray(opened.convert("L"), dtype=np.float32) / 255.0

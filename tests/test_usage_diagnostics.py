@@ -113,7 +113,7 @@ def test_trace_preserves_usage_only_responses_and_optional_cache_writes(tmp_path
         "input_tokens_details": {"cache_write_tokens": writes},
     })})
     trace.event(event, turn=1)
-    row = json.loads(trace.path.read_text().splitlines()[-1])
+    row = json.loads(trace.path.read_text(encoding="utf-8").splitlines()[-1])
     assert row["kind"] == "model" and row["step"] == 1
     assert row["usage_diagnostics"]["totals"]["cache_write_tokens"] == writes
     assert ("cache_write_tokens" in row["usage"]) is (writes is not None)
@@ -154,7 +154,8 @@ def test_diagnostics_survive_the_adk_session_to_trace(tmp_path, monkeypatch):
     ))
     assert llm.capture_usage_details is True  # traced sessions enable the diagnostics
     path, = tmp_path.glob("*.jsonl")
-    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows = [json.loads(line) for line in path.read_text(
+        encoding="utf-8").splitlines()]
     model, = [row for row in rows if row["kind"] == "model"]
     assert model["usage"]["cache_write_tokens"] == 0
     assert model["usage_diagnostics"]["request"]["items"]

@@ -127,11 +127,11 @@ def test_a_malformed_request_is_refused_before_anything_is_written(tmp_path: Pat
 def test_a_job_that_already_ran_is_not_prepared_again(tmp_path: Path):
     folder = _snapshots(tmp_path)
     job_folder = prepare_job(AbbaPrepareRequest.model_validate(_params(folder)))
-    (job_folder / "state.json").write_text("{}")
-    before = (job_folder / "job.json").read_text()
+    (job_folder / "state.json").write_text("{}", encoding="utf-8")
+    before = (job_folder / "job.json").read_text(encoding="utf-8")
     with pytest.raises(ValueError, match="already ran"):
         prepare_job(AbbaPrepareRequest.model_validate(_params(folder)))
-    assert (job_folder / "job.json").read_text() == before
+    assert (job_folder / "job.json").read_text(encoding="utf-8") == before
 
 
 def test_the_service_answers_prepare_with_the_job_folder(tmp_path: Path):

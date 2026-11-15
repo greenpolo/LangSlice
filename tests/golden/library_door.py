@@ -372,7 +372,8 @@ def main() -> None:
     """Run the scenario on the first folder; write calls to the second."""
     images, calls_path = Path(sys.argv[1]), Path(sys.argv[2])
     calls = run(images)
-    calls_path.write_text(json.dumps(calls, indent=1, sort_keys=True))
+    calls_path.write_text(json.dumps(calls, indent=1, sort_keys=True),
+        encoding="utf-8")
 
 
 if __name__ == "__main__":

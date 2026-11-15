@@ -153,7 +153,7 @@ def volume(root: str, atlas: str, image: str
     if held.exists():
         z = np.load(held)
         return z["I"], [z["x0"], z["x1"], z["x2"]], z["centre"], z["res"]
-    meta = json.loads((folder / "metadata.json").read_text())
+    meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     res = np.asarray(meta["resolution"], float)
     f = [max(1, int(round(ATLAS_UM / r))) for r in res]
     if image == BORROWED_NISSL:
@@ -182,7 +182,7 @@ class gpu_turn:
         self.handle = None
         if self.device.startswith("cuda"):
             GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-            self.handle = open(GPU_LOCK, "w")
+            self.handle = open(GPU_LOCK, "w", encoding="utf-8")
             asked = time.monotonic()
             fcntl.flock(self.handle, fcntl.LOCK_EX)
             self.waited_s = time.monotonic() - asked

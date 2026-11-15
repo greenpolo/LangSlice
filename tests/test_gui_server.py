@@ -33,8 +33,8 @@ def server(tmp_path: Path) -> Iterator[GuiServer]:
     (view / "view.jpg").write_bytes(b"\xff\xd8 picture one")
     (folder / "views.jsonl").write_text(json.dumps(
         {"seq": 1, "path": "views/000001_look", "tool": "look", "call": 1,
-         "sections": ["a.png"]}) + "\n")
-    (tmp_path / "secret.txt").write_text("not served")
+         "sections": ["a.png"]}) + "\n", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("not served", encoding="utf-8")
     gui = GuiServer(JobList([folder], recent=None))
     gui.start()
     yield gui
@@ -168,9 +168,9 @@ def test_what_a_job_does_not_hold_is_404(served: tuple[GuiServer, Path]) -> None
 
 def test_a_refused_render_is_409_with_its_reason(served: tuple[GuiServer, Path]) -> None:
     gui, job = served
-    record = json.loads((job / "job.json").read_text())
+    record = json.loads((job / "job.json").read_text(encoding="utf-8"))
     record["image_folder"] = str(job.parent.parent / "gone")
-    (job / "job.json").write_text(json.dumps(record))
+    (job / "job.json").write_text(json.dumps(record), encoding="utf-8")
     for path in ("strip", f"render/overlay/{ID1}", f"render/thumb/{ID1}", "render/atlas/0"):
         status, body, headers = _get(gui, f"/{gui.token}/jobs/0/{path}")
         assert (status, headers["Content-Type"]) == (409, "application/json"), path

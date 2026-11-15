@@ -141,7 +141,7 @@ class gpu_turn:
         self.handle = None
         if self.device.startswith("cuda"):
             CACHE.mkdir(parents=True, exist_ok=True)
-            self.handle = open(CACHE / "gpu.lock", "w")
+            self.handle = open(CACHE / "gpu.lock", "w", encoding="utf-8")
             asked = time.monotonic()
             fcntl.flock(self.handle, fcntl.LOCK_EX)
             self.waited_s = time.monotonic() - asked

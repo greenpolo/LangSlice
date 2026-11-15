@@ -111,7 +111,7 @@ def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(im
         record = trace_to_json(job.state.by_id(ID1).border_trace)
     assert [request.prompt for request in stub.requests] == [sent]
     attempt = images / "langslice" / record["artifact_dir"]
-    assert (attempt / "base_prompt.txt").read_text() == sent
+    assert (attempt / "base_prompt.txt").read_text(encoding="utf-8") == sent
     assert record["untested"] is True and record["prompt_edited"] is False
 
 
@@ -157,7 +157,8 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
                    for item in reply["files"])
         assert not (folder / "exports" / "traces" / "s1.npz").exists()  # not traced
 
-        grid = json.loads((folder / "sections" / "s0" / "maps.json").read_text())["grid_size"]
+        grid = json.loads((folder / "sections" / "s0" / "maps.json").read_text(
+            encoding="utf-8"))["grid_size"]
         with np.load(path) as data:
             borders, picture = data["borders"], data["reply"]
             info = json.loads(str(data["info"]))

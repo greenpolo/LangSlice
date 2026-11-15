@@ -84,7 +84,8 @@ def test_env_imports_langslice_installs_lists_and_rebuilds(capsys, job, tmp_path
     code, envelope = cli(capsys, str(job), "env", "install", str(wheel(tmp_path)))
     assert code == 0, envelope
     assert envelope["result"]["packages"] == ["lsdemo==0.1"]
-    assert (job / "scripts" / "requirements.txt").read_text() == "lsdemo==0.1\n"
+    assert (job / "scripts" / "requirements.txt").read_text(
+        encoding="utf-8") == "lsdemo==0.1\n"
     assert subprocess.run([str(python), "-c", "import lsdemo; assert lsdemo.VALUE == 42"],
                           check=False).returncode == 0
     assert not list((Path(sys.prefix) / "lib").glob("python*/site-packages/lsdemo"))
@@ -144,12 +145,13 @@ def test_a_claude_code_subagent_transcript_lands_in_its_job(capsys, job, tmp_pat
     session = tmp_path / "projects" / "sess1"
     (session / "subagents").mkdir(parents=True)
     (session / "subagents" / "agent-abc.jsonl").write_text(
-        _lines(*_claude_transcript(job, submit=True)))
+        _lines(*_claude_transcript(job, submit=True)), encoding="utf-8")
     hook = {"session_id": "sess1", "transcript_path": f"{session}.jsonl",
             "agent_id": "abc", "agent_type": "langslice:register",
             "cwd": str(tmp_path), "hook_event_name": "SubagentStop"}
     assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
-    copied = (job / "trace" / "claude-code_abc.jsonl").read_text()
+    copied = (job / "trace" / "claude-code_abc.jsonl").read_text(
+        encoding="utf-8")
     assert "<30000 bytes of inline data>" in copied
     assert "x" * 1000 not in copied and "langslice-job" in copied
     assert not (job / "env").exists()  # the session submitted: the environment is pruned
@@ -162,7 +164,8 @@ def test_an_antigravity_session_that_did_not_submit_keeps_the_environment(
     transcript.write_text(_lines(
         {"step_index": 0, "type": "USER_INPUT", "content": "Register the brain"},
         {"step_index": 1, "type": "PLANNER_RESPONSE", "tool_calls": [
-            {"name": "run_command", "args": {"CommandLine": f"langslice-job {job} status"}}]}))
+            {"name": "run_command", "args": {"CommandLine": f"langslice-job {job} status"}}]}),
+                encoding="utf-8")
     hook = {"conversationId": "conv-1", "transcriptPath": str(transcript),
             "workspacePaths": [str(job)], "terminationReason": "NO_TOOL_CALL"}
     assert _run_hook(hook, "antigravity", monkeypatch, capsys) == "{}"
@@ -189,9 +192,12 @@ def test_an_mcp_agent_transcript_lands_in_the_job_its_start_job_opened(
         capsys, job, tmp_path, monkeypatch, harness, records):
     """An MCP registration agent names its job only in start_job's arguments."""
     transcript = tmp_path / "mcp.jsonl"
-    transcript.write_text(_lines(*records(str(job.parent), str(job))))
-    found = transcripts.job_folders(transcripts._said(transcript.read_text()), tmp_path,
-                                    also=transcripts.started_jobs(transcript.read_text()))
+    transcript.write_text(_lines(*records(str(job.parent), str(job))),
+        encoding="utf-8")
+    found = transcripts.job_folders(transcripts._said(transcript.read_text(
+        encoding="utf-8")), tmp_path,
+                                    also=transcripts.started_jobs(transcript.read_text(
+                                        encoding="utf-8")))
     assert found == [job]
     if harness != "codex":  # the session-end hook is Claude Code's and Antigravity's
         hook = {"conversationId": "c-mcp", "transcriptPath": str(transcript)}
@@ -209,8 +215,10 @@ def test_an_mcp_submit_removes_the_environment(capsys, job, tmp_path, monkeypatc
     transcript = tmp_path / "mcp_submit.jsonl"
     transcript.write_text(_lines(
         {"type": "tool_use", "name": "mcp__langslice__start_job",
-         "input": {"image_folder": str(job)}}, {"calls": [submit]}))
-    assert transcripts.called(transcript.read_text(), transcripts.MCP_SUBMIT)
+         "input": {"image_folder": str(job)}}, {"calls": [submit]}),
+             encoding="utf-8")
+    assert transcripts.called(transcript.read_text(
+        encoding="utf-8"), transcripts.MCP_SUBMIT)
     hook = {"conversationId": "c-sub", "transcriptPath": str(transcript)}
     assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
     assert not (job / "env").exists()
@@ -220,8 +228,9 @@ def test_a_start_job_names_its_folder_and_nothing_else(capsys, job, tmp_path, mo
     transcript = tmp_path / "started.jsonl"
     transcript.write_text(_lines({"type": "assistant", "message": {"content": [
         {"type": "tool_use", "name": "mcp__langslice__start_job",
-         "input": {"image_folder": str(job)}}]}}))
-    assert transcripts.started_jobs(transcript.read_text()) == [str(job)]
+         "input": {"image_folder": str(job)}}]}}), encoding="utf-8")
+    assert transcripts.started_jobs(transcript.read_text(
+        encoding="utf-8")) == [str(job)]
     # A start_job with any other argument, or none, names nothing.
     assert transcripts.started_jobs(_lines(
         {"name": "mcp__langslice__start_job", "input": {"job_id": "a1b2c3d4e5f6"}},
@@ -231,7 +240,8 @@ def test_a_start_job_names_its_folder_and_nothing_else(capsys, job, tmp_path, mo
 def test_a_transcript_naming_no_job_copies_nothing_and_never_fails(
         capsys, tmp_path, monkeypatch):
     transcript = tmp_path / "t.jsonl"
-    transcript.write_text("not json\n" + _lines({"command": "langslice-job ops"}))
+    transcript.write_text("not json\n" + _lines({"command": "langslice-job ops"}),
+        encoding="utf-8")
     hook = {"transcriptPath": str(transcript), "conversationId": "c"}
     assert _run_hook(hook, "antigravity", monkeypatch, capsys) == "{}"
     assert _run_hook({"transcriptPath": str(tmp_path / "missing.jsonl")}, "antigravity",
@@ -259,16 +269,18 @@ def _hook_run(job: Path, first: dict[str, Any], tmp_path: Path, monkeypatch, cap
     transcript = tmp_path / "t.jsonl"
     transcript.write_text(_lines(first, {"type": "assistant", "message": {"content": [
         {"type": "tool_use", "name": "Bash",
-         "input": {"command": f"langslice-job {job} status"}}]}}))
+         "input": {"command": f"langslice-job {job} status"}}]}}),
+             encoding="utf-8")
     hook = {"conversationId": "c1", "transcriptPath": str(transcript)}
     assert _run_hook(hook, harness, monkeypatch, capsys) == "{}"
-    return json.loads((job / "trace" / f"{harness}_c1.launch.json").read_text())
+    return json.loads((job / "trace" / f"{harness}_c1.launch.json").read_text(
+        encoding="utf-8"))
 
 
 def _saved_launch(job: Path, text: str = PROMPT) -> None:
     folder = job / "logs" / "launches"
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "000001_register.md").write_text(text)
+    (folder / "000001_register.md").write_text(text, encoding="utf-8")
 
 
 def test_launch_check_verbatim_changed_and_unchecked(capsys, job, tmp_path, monkeypatch):
@@ -310,8 +322,10 @@ def test_an_agent_that_never_called_lands_in_the_job_its_launch_names(
     text = f"Register the brain in job folder {job}{tail.format(job=job)}\n\nThe job."
     _saved_launch(job, text)
     transcript = tmp_path / "t.jsonl"
-    transcript.write_text(_lines({"type": "user", "message": {"role": "user", "content": text}}))
+    transcript.write_text(_lines({"type": "user", "message": {"role": "user", "content": text}}),
+        encoding="utf-8")
     hook = {"conversationId": "c2", "transcriptPath": str(transcript)}
     assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
-    checked = json.loads((job / "trace" / "claude-code_c2.launch.json").read_text())
+    checked = json.loads((job / "trace" / "claude-code_c2.launch.json").read_text(
+        encoding="utf-8"))
     assert checked["verbatim"] is True

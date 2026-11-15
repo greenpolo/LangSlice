@@ -29,7 +29,8 @@ def test_every_open_adds_the_job_to_the_list_in_a_private_home(
     Job.open(JobSpec.from_dict({**spec.to_dict(), "resume": True}), _ctx(spec))
 
     listed = home / ".langslice" / "recent_jobs.jsonl"
-    entries = [json.loads(line) for line in listed.read_text().splitlines()]
+    entries = [json.loads(line) for line in listed.read_text(
+        encoding="utf-8").splitlines()]
     assert len(entries) == 2
     assert entries[0]["folder"] == str(images / "langslice")
     assert entries[0]["image_folder"] == str(images)

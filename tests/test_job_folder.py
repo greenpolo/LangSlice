@@ -75,13 +75,16 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
         "langslice", "s0.png", "s1.png", "s2.png"]
     for name in ("history", "sections", "views", "exports", "logs"):
         assert (root / name).is_dir()
-    record = json.loads((root / "job.json").read_text())
+    record = json.loads((root / "job.json").read_text(encoding="utf-8"))
     assert record["format_version"] == JOB_FORMAT_VERSION
     assert record["spec"]["image_folder"] == str(folder)
-    assert json.loads((root / "state.json").read_text())["format_version"] == STATE_FORMAT_VERSION
-    assert "open" in (root / "logs" / "events.jsonl").read_text()
+    assert json.loads((root / "state.json").read_text(
+        encoding="utf-8"))["format_version"] == STATE_FORMAT_VERSION
+    assert "open" in (root / "logs" / "events.jsonl").read_text(
+        encoding="utf-8")
     # The public rendering of the state, written with every checkpoint.
-    registration = json.loads((root / "registration.json").read_text())
+    registration = json.loads((root / "registration.json").read_text(
+        encoding="utf-8"))
     assert registration["format_version"] == 1
     assert [entry["id"] for entry in registration["sections"]] == ["s0.png", "s1.png", "s2.png"]
     # No position is inferred for a fresh section.
@@ -98,7 +101,8 @@ def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
     root = folder / "langslice"
 
     def lines(name: str) -> list[dict[str, Any]]:
-        text = (root / "sections" / name / "history.jsonl").read_text()
+        text = (root / "sections" / name / "history.jsonl").read_text(
+            encoding="utf-8")
         return [json.loads(line) for line in text.splitlines()]
 
     assert [(line["seq"], line["by"], line["step"]) for line in lines("s0")] == [(1, "host", 0)]
@@ -109,7 +113,8 @@ def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
     assert [(line["by"], line["position_mm"]) for line in lines("s0")] == [
         ("host", None), ("position_sections", 2.5)]
     assert len(lines("s1")) == 1  # untouched
-    step = json.loads((root / "history" / "undo.json").read_text())["undo"][-1]
+    step = json.loads((root / "history" / "undo.json").read_text(
+        encoding="utf-8"))["undo"][-1]
     assert step["sections"] == {"s0.png": 1} and step["by"] == "position_sections"
     for index in range(60):
         before = job.snapshot()
@@ -142,11 +147,11 @@ def test_undo_steps_that_cannot_be_read_are_never_deleted(tmp_path: Path, damage
         job.commit(before)
     undo_file = folder / "langslice" / "history" / "undo.json"
     if damage == "unreadable":
-        undo_file.write_text("{ not json")
+        undo_file.write_text("{ not json", encoding="utf-8")
     else:
-        steps = json.loads(undo_file.read_text())
+        steps = json.loads(undo_file.read_text(encoding="utf-8"))
         steps["format_version"] = 99
-        undo_file.write_text(json.dumps(steps))
+        undo_file.write_text(json.dumps(steps), encoding="utf-8")
     held = undo_file.read_bytes()
     with caplog.at_level(logging.WARNING):
         again, _ = _open(folder)
@@ -170,8 +175,9 @@ def test_an_older_langslice_s_undo_steps_are_ignored_and_left(tmp_path: Path, ca
     job, _ctx = _open(folder)
     history = folder / "langslice" / "history"
     (history / "undo.json").unlink(missing_ok=True)
-    (history / "index.json").write_text('{"format_version": 1, "undo": ["step-000001.json"]}')
-    (history / "step-000001.json").write_text("{}")
+    (history / "index.json").write_text('{"format_version": 1, "undo": ["step-000001.json"]}',
+        encoding="utf-8")
+    (history / "step-000001.json").write_text("{}", encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         _open(folder)
         again, _ = _open(folder)  # said once in a process, not per open
@@ -195,7 +201,8 @@ def test_a_record_no_line_names_is_deleted_and_an_applied_one_stays(tmp_path: Pa
     for name in ("a" * 24, "b" * 24, "c" * 24):
         (deformable / name).mkdir(parents=True)
         (deformable / name / "record.json").write_text(
-            json.dumps({"parent": "c" * 24 if name == "a" * 24 else None}))
+            json.dumps({"parent": "c" * 24 if name == "a" * 24 else None}),
+                encoding="utf-8")
     record = job.state.by_id("s0.png")
     before = job.snapshot()
     record.deformation = DeformationRef(key="a" * 64, linear_key="x", steps=(),
@@ -215,10 +222,12 @@ def test_records_stay_while_an_older_langslice_s_undo_steps_are_beside(tmp_path:
     folder = _folder(tmp_path / "stack")
     job, _ctx = _open(folder)
     (folder / "langslice" / "history" / "index.json").write_text(
-        '{"format_version": 1, "undo": ["step-000001.json"]}')
+        '{"format_version": 1, "undo": ["step-000001.json"]}',
+            encoding="utf-8")
     old = folder / "langslice" / "sections" / "s0" / "deformable" / ("d" * 24)
     old.mkdir(parents=True)
-    (old / "record.json").write_text(json.dumps({"parent": None}))
+    (old / "record.json").write_text(json.dumps({"parent": None}),
+        encoding="utf-8")
     record = job.state.by_id("s0.png")
     before = job.snapshot()
     record.position_mm = 4.0
@@ -230,13 +239,14 @@ def test_a_line_cut_short_is_skipped_and_the_next_starts_on_its_own(tmp_path: Pa
     folder = _folder(tmp_path / "stack")
     job, _ctx = _open(folder)
     path = folder / "langslice" / "sections" / "s0" / "history.jsonl"
-    whole = path.read_text()
-    path.write_text(whole + '{"seq": 2, "step": 1, "by": "pos')  # a write that died
+    whole = path.read_text(encoding="utf-8")
+    path.write_text(whole + '{"seq": 2, "step": 1, "by": "pos',
+        encoding="utf-8")  # a write that died
     record = job.state.by_id("s0.png")
     before = job.snapshot()
     record.position_mm = 4.0
     job.commit(before)
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     assert lines[1] == '{"seq": 2, "step": 1, "by": "pos'
     assert [json.loads(line)["seq"] for line in (lines[0], *lines[2:])] == [1, 2]
     assert [row.seq for row in job.histories.rows("s0.png")] == [1, 2]
@@ -254,10 +264,11 @@ def test_an_undo_step_keeps_the_notes_change_not_the_notes(tmp_path: Path):
         before = job.snapshot()
         job.state.notes.append(f"note {index} " + "x" * 200)
         job.commit(before)
-        sizes.append(len(undo_file.read_text()))
+        sizes.append(len(undo_file.read_text(encoding="utf-8")))
     steps = [b - a for a, b in zip(sizes, sizes[1:], strict=False)]
     assert max(steps) - min(steps) <= 2  # digits of the step numbers
-    assert json.loads(undo_file.read_text())["undo"][-1]["notes_before"] == {
+    assert json.loads(undo_file.read_text(
+        encoding="utf-8"))["undo"][-1]["notes_before"] == {
         "keep": opening + 5, "then": []}
     held = list(job.state.notes)
     assert job.undo() and job.undo()
@@ -284,18 +295,20 @@ def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
     folder = _folder(tmp_path / "stack")
     _open(folder)
     path = folder / "langslice" / "job.json"
-    record = json.loads(path.read_text())
+    record = json.loads(path.read_text(encoding="utf-8"))
     record["format_version"] = JOB_FORMAT_VERSION + 1
-    path.write_text(json.dumps(record))
+    path.write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match="newer LangSlice"):
         _open(folder)
-    assert json.loads(path.read_text())["format_version"] == JOB_FORMAT_VERSION + 1
+    assert json.loads(path.read_text(
+        encoding="utf-8"))["format_version"] == JOB_FORMAT_VERSION + 1
     # A checkpoint from a newer LangSlice is refused the same way.
-    path.write_text(json.dumps({**record, "format_version": JOB_FORMAT_VERSION}))
+    path.write_text(json.dumps({**record, "format_version": JOB_FORMAT_VERSION}),
+        encoding="utf-8")
     state = folder / "langslice" / "state.json"
-    saved = json.loads(state.read_text())
+    saved = json.loads(state.read_text(encoding="utf-8"))
     saved["format_version"] = STATE_FORMAT_VERSION + 1
-    state.write_text(json.dumps(saved))
+    state.write_text(json.dumps(saved), encoding="utf-8")
     with pytest.raises(ValueError, match="newer LangSlice"):
         read_checkpoint(state)
 
@@ -307,17 +320,18 @@ def test_a_checkpoint_of_an_older_format_is_refused(tmp_path: Path, version: int
     folder = _folder(tmp_path / "stack")
     _open(folder)
     path = folder / "langslice" / "state.json"
-    record = json.loads(path.read_text())
+    record = json.loads(path.read_text(encoding="utf-8"))
     record.pop("format_version")
     if version is not None:
         record["format_version"] = version
-    path.write_text(json.dumps(record))
+    path.write_text(json.dumps(record), encoding="utf-8")
     held = path.read_bytes()
     with pytest.raises(ValueError, match="older pre-release LangSlice.*Start a new job"):
         _open(folder)
     assert path.read_bytes() == held
     fresh, _ = _open(folder, resume=False)
-    assert json.loads(path.read_text())["format_version"] == STATE_FORMAT_VERSION
+    assert json.loads(path.read_text(
+        encoding="utf-8"))["format_version"] == STATE_FORMAT_VERSION
     assert fresh.state.notes[0].startswith("ingest:")
 
 
@@ -330,17 +344,17 @@ def test_saved_settings_with_an_unknown_key_are_refused_naming_it_and_the_file(t
     folder = _folder(tmp_path / "stack")
     _open(folder)
     state = folder / "langslice" / "state.json"
-    record = json.loads(state.read_text())
+    record = json.loads(state.read_text(encoding="utf-8"))
     record["slices"][0]["retired"] = 1
-    state.write_text(json.dumps(record))
+    state.write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match=r"state\.json: Unknown stack state key\(s\) "
                                          r"\['slices\.retired'\]"):
         _open(folder)
     job_file = folder / "langslice" / "job.json"
-    held = json.loads(job_file.read_text())
+    held = json.loads(job_file.read_text(encoding="utf-8"))
     held["spec"]["position"]["retired"] = False
     held["spec"]["never_a_setting"] = True
-    job_file.write_text(json.dumps(held))
+    job_file.write_text(json.dumps(held), encoding="utf-8")
     with pytest.raises(ValueError, match=r"job\.json: Unknown job setting\(s\) "
                                          r"\['never_a_setting', 'position\.retired'\]"):
         read_spec(folder / "langslice")
@@ -379,7 +393,8 @@ def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Pat
     sheet = look("positioning")[TOOL_MEDIA_PARTS_KEY]
     flush_all()
     root = tmp_path / "stack" / "langslice"
-    index = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
+    index = [json.loads(line) for line in (root / "views.jsonl").read_text(
+        encoding="utf-8").splitlines()]
     assert [entry["seq"] for entry in index] == list(range(1, len(index) + 1))
     first = root / index[0]["path"]
     assert index[0]["path"] == "sections/s0/views/000001_look_section"
@@ -397,7 +412,7 @@ def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Pat
     assert (view / "view.jpg").read_bytes() == encode_jpeg(picture)
     labels = tifffile.imread(view / "labels.tif")
     assert labels.dtype == np.uint32 and labels.shape == picture.size[::-1]
-    record = json.loads((view / "view.json").read_text())
+    record = json.loads((view / "view.json").read_text(encoding="utf-8"))
     assert record["tool"] == "look" and record["arguments"]["mode"] == "overlay"
     assert record["frame"]["plane"]["position_mm"] == pytest.approx(0.15)
     stacked = [entry for entry in index
@@ -435,7 +450,7 @@ def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[fl
     view = _overlay_view(tmp_path, angles, zoom)
     coords = coordinate_map(view / "view.json")
     labels = tifffile.imread(view / "labels.tif")
-    record = json.loads((view / "view.json").read_text())
+    record = json.loads((view / "view.json").read_text(encoding="utf-8"))
     assert coords.shape == labels.shape + (3,) and coords.dtype == np.float32
     bottom = record["frame"]["content_box"][3]  # the caption band is below the content
     assert np.isnan(coords[bottom:]).all() and np.isfinite(coords[:bottom]).all()
@@ -507,7 +522,8 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     target = tmp_path / "home" / ".langslice" / "jobs" / job_id
     assert job.folder == target and (target / "state.json").exists()
     assert len([m for m in messages if "cannot be created or written" in m]) == 1
-    entry = json.loads((tmp_path / "home" / ".langslice" / "jobs" / f"{job_id}.json").read_text())
+    entry = json.loads((tmp_path / "home" / ".langslice" / "jobs" / f"{job_id}.json").read_text(
+        encoding="utf-8"))
     assert entry["job_folder"] == str(target)
     assert entry["fallback"]["image_folder"] == str(read_only)
     before = job.snapshot()
@@ -557,7 +573,8 @@ def test_a_job_folder_moves_with_its_images(tmp_path: Path, monkeypatch: Any):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     folder = _folder(tmp_path / "stack")
     _create(folder)
-    record = json.loads((folder / "langslice" / "job.json").read_text())
+    record = json.loads((folder / "langslice" / "job.json").read_text(
+        encoding="utf-8"))
     assert record["image_folder"] == ".."
     moved = tmp_path / "elsewhere" / "renamed"
     moved.parent.mkdir()
@@ -569,7 +586,8 @@ def test_a_job_folder_moves_with_its_images(tmp_path: Path, monkeypatch: Any):
     job = langslice.open_job(str(moved / "langslice"), atlas_loader=lambda _n: _ATLAS)
     job.position_sections(sections=[{"id": "s0.png", "position_mm": 0.1}])
     job.close()
-    registration = json.loads((moved / "langslice" / "registration.json").read_text())
+    registration = json.loads((moved / "langslice" / "registration.json").read_text(
+        encoding="utf-8"))
     assert registration["image_folder"] == ".."
     again = _create(moved)  # a host opening the moved folder resumes the job
     assert again.job.state.by_id("s0.png").position_mm == 0.1
@@ -584,7 +602,8 @@ def test_an_explicit_job_folder_whose_images_moved_says_how_to_reattach(
     folder = _folder(tmp_path / "dataset")
     arm = tmp_path / "arm"
     _create(folder, job_dir=str(arm))
-    assert json.loads((arm / "job.json").read_text())["image_folder"] == str(folder)
+    assert json.loads((arm / "job.json").read_text(
+        encoding="utf-8"))["image_folder"] == str(folder)
     moved = tmp_path / "dataset-moved"
     folder.rename(moved)
     with pytest.raises(NoJob) as raised:
@@ -593,7 +612,8 @@ def test_an_explicit_job_folder_whose_images_moved_says_how_to_reattach(
     assert str(folder) in message and "--job-dir" in message and "init" in message
     # Reattached from the images' new place, the same job continues.
     again = _create(moved, job_dir=str(arm))
-    assert json.loads((arm / "job.json").read_text())["image_folder"] == str(moved)
+    assert json.loads((arm / "job.json").read_text(
+        encoding="utf-8"))["image_folder"] == str(moved)
     assert again.job.folder == arm
     # Another image folder's job is still refused while its images exist.
     with pytest.raises(ValueError, match="already holds the job of"):

@@ -108,7 +108,7 @@ def test_image_model_custom_profiles(tmp_path):
     import langslice
 
     prompt_file = tmp_path / "prompt.txt"
-    prompt_file.write_text(PROFILE_PROMPT + "\n")
+    prompt_file.write_text(PROFILE_PROMPT + "\n", encoding="utf-8")
     profile = langslice.image_model("openai-oauth", prompt_file=prompt_file, name="lab-v1")
     assert (profile.prompt, profile.profile, profile.tested) == (PROFILE_PROMPT, "lab-v1", False)
     own = langslice.image_model(Stub(), prompt=PROFILE_PROMPT, photograph_first=True)
@@ -153,7 +153,8 @@ def test_create_job_from_a_folder(images):
         assert job.job.spec.tasks == ["transform", "nonlinear"]
         assert job.job.spec.nonlinear.provider == "custom"
         assert {"elastix_affine", "trace_borders", "fireants_syn"} <= set(job.verbs)
-    record = json.loads((elsewhere / "job.json").read_text())["image_model"]
+    record = json.loads((elsewhere / "job.json").read_text(
+        encoding="utf-8"))["image_model"]
     assert record["provider"] == "custom" and record["tested"] is False
     with langslice.open_job(elsewhere) as job:  # a model of one's own is never resolved
         assert "trace_borders" not in job.verbs and "fireants_syn" in job.verbs
@@ -219,11 +220,12 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
     attempt = images / "langslice" / record["artifact_dir"]
     assert record["status"] == "ok"
     assert record["untested"] is True and record["profile"] == "lab-v1"
-    assert (attempt / "base_prompt.txt").read_text() == sent
-    assert (attempt / "prompt.txt").read_text() == edited
-    saved = json.loads((attempt / "result.json").read_text())
+    assert (attempt / "base_prompt.txt").read_text(encoding="utf-8") == sent
+    assert (attempt / "prompt.txt").read_text(encoding="utf-8") == edited
+    saved = json.loads((attempt / "result.json").read_text(encoding="utf-8"))
     assert saved["untested"] is True and saved["profile"] == "lab-v1"
-    assert json.loads((attempt / "request.json").read_text())["untested"] is True
+    assert json.loads((attempt / "request.json").read_text(
+        encoding="utf-8"))["untested"] is True
     assert record["prompt_edited"] is True
 
 

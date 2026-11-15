@@ -136,7 +136,8 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     job.undo()
     assert rows(job)[ID0]["registration"] == 3
     # The section's history on disk holds every line, each with its number.
-    text = (images / "langslice" / "sections" / Path(ID0).stem / HISTORY).read_text()
+    text = (images / "langslice" / "sections" / Path(ID0).stem / HISTORY).read_text(
+        encoding="utf-8")
     lines = [json.loads(line) for line in text.splitlines()]
     assert [line["registration"] for line in lines] == [None, None, 1, 2, 3, 2, 3]
     assert [line["by"] for line in lines][-2:] == ["restore_registration", "undo"]
@@ -214,7 +215,8 @@ def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, image
     assert affine_to_json(
         job.job.state.by_id(ID0).transform)["physical"]["scale_x"] == pytest.approx(1.1)
     assert len(job.job.undo_stack) == depth
-    on_disk = json.loads((images / "langslice" / "state.json").read_text())
+    on_disk = json.loads((images / "langslice" / "state.json").read_text(
+        encoding="utf-8"))
     held = next(row for row in on_disk["slices"] if row["id"] == ID0)
     assert held["transform"]["physical"]["scale_x"] == pytest.approx(1.1)
     job.close()
@@ -304,7 +306,8 @@ def test_an_older_registration_list_keeps_its_numbers(capsys, images):
     job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1}], view=False)
     job.close()
     folder = images / "langslice" / "sections" / Path(ID0).stem
-    lines = [json.loads(line) for line in (folder / HISTORY).read_text().splitlines()]
+    lines = [json.loads(line) for line in (folder / HISTORY).read_text(
+        encoding="utf-8").splitlines()]
     old = []
     for line in lines:
         if line["registration"] is not None and line["registration"] not in [
@@ -316,7 +319,7 @@ def test_an_older_registration_list_keeps_its_numbers(capsys, images):
                                                       "deformation")}})
     (folder / HISTORY).unlink()
     (folder / "registrations.jsonl").write_text(
-        "".join(json.dumps(entry) + "\n" for entry in old))
+        "".join(json.dumps(entry) + "\n" for entry in old), encoding="utf-8")
     job = langslice.open_job(images)
     assert rows(job)[ID0]["registration"] == 2
     listed = job.restore_registration(section=ID0)["registrations"]
@@ -325,7 +328,8 @@ def test_an_older_registration_list_keeps_its_numbers(capsys, images):
     assert back["results"][0]["written"] is True
     assert not (folder / "registrations.jsonl").exists()
     numbers = [json.loads(line)["registration"]
-               for line in (folder / HISTORY).read_text().splitlines()]
+               for line in (folder / HISTORY).read_text(
+                   encoding="utf-8").splitlines()]
     assert numbers[:2] == [1, 2] and numbers[-1] == 1
     job.close()
 

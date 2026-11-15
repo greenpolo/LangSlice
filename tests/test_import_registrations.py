@@ -522,7 +522,7 @@ def test_an_old_deepslice_xml_parses(tmp_path: Path):
            '&vx=1.7&vy=-7.3&vz=-356.9" filename="brain/images/x_s004_10x_A.png" '
            'height="-999" nr="4.0" width="-999" />\n</series>\n')
     file = tmp_path / "old.xml"
-    file.write_text(raw)
+    file.write_text(raw, encoding="utf-8")
     read = imports.read_registration(file)
     assert read.format == "quicknii-xml" and read.aligner == "DeepSlice_ver_3.0_python"
     (entry,) = read.entries

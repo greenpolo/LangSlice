@@ -51,11 +51,11 @@ def _pyproject() -> str:
 
 
 def _project(tmp_path: Path, files: dict[str, str]) -> tuple[Project, Config]:
-    (tmp_path / "pyproject.toml").write_text(_pyproject())
+    (tmp_path / "pyproject.toml").write_text(_pyproject(), encoding="utf-8")
     for name, text in files.items():
         path = tmp_path / "pkg" / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(textwrap.dedent(text))
+        path.write_text(textwrap.dedent(text), encoding="utf-8")
     config = Config.load(tmp_path / "pyproject.toml")
     return load_project(tmp_path, config), config
 

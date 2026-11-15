@@ -14,7 +14,7 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import requests
 
@@ -117,7 +117,7 @@ def _write_creds(creds: Creds) -> None:
                 "last_refresh": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
             indent=2,
-        )
+        ), encoding="utf-8"
     )
     path.chmod(0o600)
 
@@ -160,7 +160,10 @@ def load_credentials() -> Creds:
     """
     path = openai_oauth_credentials_path()
     try:
-        creds = creds_from_doc(json.loads(path.read_text()), source=str(path))
+        doc = cast("object", json.loads(path.read_text(encoding="utf-8")))
+        if not isinstance(doc, dict):
+            raise ValueError(f"{path} holds no JSON object")
+        creds = creds_from_doc(cast("dict[str, Any]", doc), source=str(path))
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             "No ChatGPT-subscription credentials found. Run `langslice login` "

@@ -95,9 +95,10 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     )
     assert result["prompt_edited"] is True
     paths = result["artifact_paths"]
-    assert Path(paths["base_prompt"]).read_text() == base
-    assert Path(paths["prompt"]).read_text() == request.prompt
-    assert "{+The left piece has shifted.+}" in Path(paths["prompt_diff"]).read_text()
+    assert Path(paths["base_prompt"]).read_text(encoding="utf-8") == base
+    assert Path(paths["prompt"]).read_text(encoding="utf-8") == request.prompt
+    assert "{+The left piece has shifted.+}" in Path(paths["prompt_diff"]).read_text(
+        encoding="utf-8")
     assert len(request.reference_images) == 1
     np.testing.assert_array_equal(request.slice_image, original)
     expected = smooth_border_overlay(
@@ -111,7 +112,8 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     folder = Path(result["artifact_dir"])
     for name in ("input_slice.png", "rough_border_overlay.png", "lines_on_original.png"):
         assert not (folder / name).exists()
-    attachments = json.loads((folder / "request.json").read_text())["attachments"]
+    attachments = json.loads((folder / "request.json").read_text(
+        encoding="utf-8"))["attachments"]
     assert [entry["sha256"] for entry in attachments] == [
         _png_sha256(request.slice_image), _png_sha256(request.reference_images[0])]
     assert stack_to_json(state) == before

@@ -79,7 +79,8 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 
 def saved(images: Path) -> dict[str, dict[str, Any]]:
     """The state as the job folder holds it, per section."""
-    data = json.loads((images / "langslice" / "state.json").read_text())
+    data = json.loads((images / "langslice" / "state.json").read_text(
+        encoding="utf-8"))
     return {item["id"]: item for item in data["slices"]}
 
 
@@ -278,7 +279,8 @@ def test_a_write_landing_while_a_job_loads_is_kept(images, monkeypatch):
     reader = langslice.open_job(images)
     assert landed
     reader.note(text="the reader's")
-    notes = json.loads((images / "langslice" / "state.json").read_text())["notes"]
+    notes = json.loads((images / "langslice" / "state.json").read_text(
+        encoding="utf-8"))["notes"]
     assert "landed during the load" in notes
     assert "the reader's" in notes
     reader.close()
@@ -309,7 +311,8 @@ def test_cli_processes_writing_at_once_all_land(images):
         assert json.loads(out.strip().splitlines()[-1])["ok"] is True
     held = saved(images)
     assert held[ID2]["position_mm"] == 0.2 and held[ID0]["position_mm"] == 0.12
-    notes = json.loads((images / "langslice" / "state.json").read_text())["notes"]
+    notes = json.loads((images / "langslice" / "state.json").read_text(
+        encoding="utf-8"))["notes"]
     assert sorted(note for note in notes if note.startswith("note ")) == [
         f"note {number}" for number in range(2)]
 
@@ -346,7 +349,8 @@ def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch:
     second.flush()
     seqs = [int(name.split("_")[0]) for name in names]
     assert len(set(seqs)) == len(seqs) == 4, names
-    entries = [json.loads(line) for line in layout.views_index.read_text().splitlines()]
+    entries = [json.loads(line) for line in layout.views_index.read_text(
+        encoding="utf-8").splitlines()]
     assert sorted(entry["seq"] for entry in entries) == sorted(seqs)
     assert len({entry["path"] for entry in entries}) == 4
     # A reopened store continues after every number handed out.

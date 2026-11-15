@@ -84,7 +84,7 @@ def test_not_cached_without_a_version_or_past_the_size_limit(cache_dir, monkeypa
 
 def test_unwritable_or_corrupt_cache_falls_back_to_building(tmp_path, monkeypatch):
     blocker = tmp_path / "file"
-    blocker.write_text("not a folder")
+    blocker.write_text("not a folder", encoding="utf-8")
     monkeypatch.setenv(disk_cache.ENV, str(blocker))
     atlas = VersionedAtlas()
     assert np.array_equal(disk_cache.cached_volume(atlas, "x", lambda: np.arange(4)), np.arange(4))

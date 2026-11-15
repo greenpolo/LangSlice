@@ -226,14 +226,16 @@ def test_a_context_write_is_one_undo_step_that_undo_reverts(images: Path):
     reply = call(box, "nudge_sections", sections=["s0.png", "s1.png", "s2.png"], dx=0.05)
     assert reply["status"] == "ok" and len(reply["written"]) == 3
     assert len(job.undo_stack) == depth + 1
-    registration = json.loads((job.layout.folder / "registration.json").read_text())
+    registration = json.loads((job.layout.folder / "registration.json").read_text(
+        encoding="utf-8"))
     shifts = [item["parameters"]["affine"]["params"][2] for item in registration["sections"]]
     assert shifts == [0.05, 0.05, 0.05]
     assert all(affine_to_json(state.by_id(f"s{i}.png").transform)["kind"] == "plugin:nudge_sections"
                for i in range(3))
     assert call(box, "undo")["status"] == "ok"
     assert all(state.by_id(f"s{i}.png").transform is None for i in range(3))
-    registration = json.loads((job.layout.folder / "registration.json").read_text())
+    registration = json.loads((job.layout.folder / "registration.json").read_text(
+        encoding="utf-8"))
     assert all((item["parameters"].get("affine") or {}).get("kind") != "plugin:nudge_sections"
                for item in registration["sections"])
 
@@ -547,7 +549,8 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
     record = state.by_id("s0.png")
     assert [item.name for item in record.layers] == ["marks", "box", "regions", "map", "shot"]
     assert record.layers[0].file.startswith("plugins/mark/layers/s0_")
-    manifest = json.loads((box.job.layout.folder / "plugins/mark/layers.json").read_text())
+    manifest = json.loads((box.job.layout.folder / "plugins/mark/layers.json").read_text(
+        encoding="utf-8"))
     assert [item["name"] for item in manifest["layers"]][:2] == ["marks", "box"]
     assert {item["tool"] for item in manifest["layers"]} == {"mark"}
     row = call(box, "status")["rows"][0]
@@ -614,6 +617,7 @@ def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
         if layer.kind == "picture":
             assert back.image.size == (4, 3)
     assert (tmp_path / "pic.png").suffix == ".png" and (tmp_path / "p.csv").read_text(
+        encoding="utf-8"
         ).splitlines()[0] == "x,y,label,value"
     assert (tmp_path / "big.npz").exists() and (tmp_path / "r.png").exists()
 
@@ -649,7 +653,8 @@ def test_export_maps_copies_the_layers_with_their_manifest(make, images: Path):
     exported = exports.export_maps(box.job, ctx, ids=["s0.png"])
     target = box.job.layout.exports_dir / "plugins" / "mark"
     assert (target / "layers.json").is_file()
-    listed_files = json.loads((target / "layers.json").read_text())["layers"]
+    listed_files = json.loads((target / "layers.json").read_text(
+        encoding="utf-8"))["layers"]
     assert {item["name"] for item in listed_files} == {"marks", "box", "regions", "map", "shot"}
     assert all((target / item["file"]).is_file() for item in listed_files)
     assert any(kind == "plugin_layer" for _path, kind in exported.files)
@@ -722,7 +727,8 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
     assert inside.mean() > 0.5
     # Within the field's float16 storage (under half a micrometre here).
     np.testing.assert_allclose(coords[inside], native_um[inside], rtol=1e-5, atol=0.5)
-    registration = json.loads((job.layout.folder / "registration.json").read_text())
+    registration = json.loads((job.layout.folder / "registration.json").read_text(
+        encoding="utf-8"))
     entry = next(item for item in registration["sections"] if item["id"] == "s0.png")
     assert entry["parameters"]["deformation"]["steps"][0]["method"] == "plugin:ripple_sections"
 
@@ -740,7 +746,8 @@ def test_a_deformation_write_is_one_undo_step_and_the_overlay_shows_it(images: P
     key = deformation_to_json(state.by_id("s0.png").deformation)["key"]
     assert call(box, "undo")["status"] == "ok"
     assert state.by_id("s0.png").deformation is None and state.by_id("s1.png").deformation is None
-    registration = json.loads((job.layout.folder / "registration.json").read_text())
+    registration = json.loads((job.layout.folder / "registration.json").read_text(
+        encoding="utf-8"))
     assert all(item["parameters"]["deformation"] is None for item in registration["sections"])
     assert call(box, "redo")["status"] == "ok"
     assert deformation_to_json(state.by_id("s0.png").deformation)["key"] == key
@@ -908,7 +915,8 @@ def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path
     assert record.provenance["start"] == "current"
     assert record.provenance["settings"] == {"amplitude_px": 0.5}
     # The record on disk names its parent, and reads back with it.
-    saved = json.loads((job.layout.resolve(chained["record"]) / "record.json").read_text())
+    saved = json.loads((job.layout.resolve(chained["record"]) / "record.json").read_text(
+        encoding="utf-8"))
     assert saved["parent"] == held["record"].rsplit("/", 1)[-1]
     rows = {row["id"]: row for row in call(box, "status")["rows"]}
     assert rows["s0.png"]["deformation"] == {
@@ -1089,7 +1097,7 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
     refused = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
     assert refused["code"] == "UNKNOWN_VERB"
     assert "langslice-job FOLDER schema nudge_sections" in refused["message"]
-    card = (Path(folder) / "AGENTS.md").read_text()
+    card = (Path(folder) / "AGENTS.md").read_text(encoding="utf-8")
     assert "`nudge_sections` (write, Linear" in card and "`section_brightness` (read" in card
 
 
@@ -1840,7 +1848,8 @@ def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_st
     state.by_id("s2.png").rotation_deg = 90
     ctx.render_cache.clear()
     file = tmp_path / "deepslice.json"
-    file.write_text(json.dumps(exact_export(export_rows(ctx, given), atlas_facts(atlas))))
+    file.write_text(json.dumps(exact_export(export_rows(ctx, given), atlas_facts(atlas))),
+        encoding="utf-8")
 
     depth = len(box.job.undo_stack)
     reply = call(box, "place_from_file", path=str(file))
@@ -1912,7 +1921,8 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
                      "nr": index + 1, "markers": [],
                      "pixel_to_atlas_um": pixel_map(ctx, g) @ np.linalg.inv(to_oriented)})
     file = tmp_path / "oriented.json"
-    file.write_text(json.dumps(exact_export(rows, atlas_facts(atlas))))
+    file.write_text(json.dumps(exact_export(rows, atlas_facts(atlas))),
+        encoding="utf-8")
     reply = call(box, "read_file_registration", path=str(file), on="oriented")
     assert reply["status"] == "ok" and not reply["refused"], reply
     found = {row["id"]: row for row in reply["placements"]}
@@ -1944,7 +1954,8 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
                    knobs(2.0 * i, 1.0, 1.0, 0.0, 0.0, 0.0)) for i in range(3)]
     state, ctx, box = box_of(images, ref, atlas=atlas, inputs={"pixel_size_um": 25.0})
     file = tmp_path / "deepslice.json"
-    file.write_text(json.dumps(exact_export(export_rows(ctx, given), atlas_facts(atlas))))
+    file.write_text(json.dumps(exact_export(export_rows(ctx, given), atlas_facts(atlas))),
+        encoding="utf-8")
     depth = len(box.job.undo_stack)
     reply = call(box, "place_from_file", path=str(file), at_stack=True)
     assert reply["status"] == "ok", reply
@@ -1985,7 +1996,8 @@ def test_a_registration_read_without_a_pixel_size_gives_no_numbers(
     state, _ctx, box = box_of(images, ref, atlas=atlas)  # no pixel size
     file = tmp_path / "x.json"
     file.write_text(json.dumps(exact_export(
-        export_rows(make_workspace(images, atlas), given), atlas_facts(atlas))))
+        export_rows(make_workspace(images, atlas), given), atlas_facts(atlas))),
+            encoding="utf-8")
     reply = call(box, "read_registration_file", path=str(file))
     row = reply["read"]["placements"][0]
     assert row["pixel_size_source"] == "imported"

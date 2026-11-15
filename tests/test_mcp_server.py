@@ -114,7 +114,8 @@ def test_every_mcp_tool_call_is_an_event_in_the_job_folder(tmp_path: Path):
 
     _session(server, body)
     lines = [json.loads(line) for line in
-             (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
+             (folder / "langslice" / "logs" / "events.jsonl").read_text(
+                 encoding="utf-8").splitlines()]
     events = [line for line in lines if line["kind"] in ("tool_start", "tool_end")]
     assert [(e["kind"], e["name"], e["door"]) for e in events] == [
         ("tool_start", "look", "mcp"), ("tool_end", "look", "mcp")]
@@ -144,7 +145,8 @@ def test_a_tool_that_crashes_is_answered_with_its_exceptions_name(tmp_path: Path
     reply = _text(_session(server, body))
     assert reply == {"status": "error", "error": "OSError", "message": "disk gone"}
     lines = [json.loads(line) for line in
-             (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
+             (folder / "langslice" / "logs" / "events.jsonl").read_text(
+                 encoding="utf-8").splitlines()]
     (end,) = [line for line in lines if line["kind"] == "tool_end"]
     assert end["failed"] is True
 
@@ -394,7 +396,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
         return await client.call_tool("status", {})
 
     assert not _session(server(), again).isError
-    saved = json.loads((job_dir / "state.json").read_text())
+    saved = json.loads((job_dir / "state.json").read_text(encoding="utf-8"))
     assert any("checked s0" in line for line in saved["notes"])
 
 
@@ -460,7 +462,7 @@ def test_a_refused_argument_is_traced(tmp_path: Path, monkeypatch):
 
     _session(server, body)
     records = [json.loads(line) for file in traces.glob("mcp_*.jsonl")
-               for line in file.read_text().splitlines()]
+               for line in file.read_text(encoding="utf-8").splitlines()]
     refused = [record for record in records if record["kind"] == "tool_result"]
     assert refused and refused[-1]["name"] == "look"
     assert "UNKNOWN_ARGUMENTS" in refused[-1]["content"][0]["text"]

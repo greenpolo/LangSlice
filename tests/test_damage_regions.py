@@ -92,7 +92,8 @@ def test_mark_damage_is_one_undo_step_and_empty_regions_clear(tmp_path: Path):
     assert row["damaged"] is True and row["damaged_regions"] == ["R"]
     assert "damaged [R]: right half missing" in status_text(state)
     assert uniform_rows([{"id": "x"}])[0]["damaged_regions"] == []
-    document = json.loads((job.folder / "registration.json").read_text())
+    document = json.loads((job.folder / "registration.json").read_text(
+        encoding="utf-8"))
     assert document["sections"][0]["parameters"]["damaged_regions"] == ["R"]
     # The same mark again writes nothing.
     assert not damage.mark_damage(job, ctx, ID, ["R"], "right half missing").written

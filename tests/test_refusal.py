@@ -81,7 +81,7 @@ def test_every_refusal_langslice_raises_says_what_to_do() -> None:
     root = Path(langslice.__file__).parent
     bare: list[str] = []
     for path in sorted(root.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call):
                 continue
             name = getattr(node.func, "id", getattr(node.func, "attr", ""))

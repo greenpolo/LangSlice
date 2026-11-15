@@ -586,7 +586,7 @@ def repo(tmp_path: Path) -> Path:
         The repository's root.
     """
     _init_repository(tmp_path)
-    (tmp_path / "README").write_text("start\n")
+    (tmp_path / "README").write_text("start\n", encoding="utf-8")
     _commit(tmp_path, "start")
     return tmp_path
 
@@ -598,9 +598,9 @@ def _commit(root: Path, message: str) -> str:
 
 
 def test_reference_is_the_file_at_the_commit(repo: Path) -> None:
-    (repo / "file").write_text("one\n")
+    (repo / "file").write_text("one\n", encoding="utf-8")
     first = _commit(repo, "add it")
-    (repo / "file").write_text("two\n")
+    (repo / "file").write_text("two\n", encoding="utf-8")
     found = reference(repo, first, "file")
     assert found.kind is ReferenceKind.AT_REF
     assert found.text == "one\n"
@@ -610,9 +610,9 @@ def test_reference_is_the_first_version_created_after_the_commit(
     repo: Path,
 ) -> None:
     before = _git(repo, "rev-parse", "HEAD")
-    (repo / "file").write_text("one\n")
+    (repo / "file").write_text("one\n", encoding="utf-8")
     _commit(repo, "create it")
-    (repo / "file").write_text("two\n")
+    (repo / "file").write_text("two\n", encoding="utf-8")
     _commit(repo, "change it in the same push")
     found = reference(repo, before, "file")
     assert found.kind is ReferenceKind.CREATED
@@ -621,7 +621,7 @@ def test_reference_is_the_first_version_created_after_the_commit(
 
 
 def test_reference_of_an_uncommitted_file_is_nothing(repo: Path) -> None:
-    (repo / "file").write_text("one\n")
+    (repo / "file").write_text("one\n", encoding="utf-8")
     found = reference(repo, "HEAD", "file")
     assert found.kind is ReferenceKind.NEW
     assert found.text is None
@@ -629,11 +629,11 @@ def test_reference_of_an_uncommitted_file_is_nothing(repo: Path) -> None:
 
 
 def test_reference_of_a_deleted_file_is_empty(repo: Path) -> None:
-    (repo / "file").write_text("one\n")
+    (repo / "file").write_text("one\n", encoding="utf-8")
     _commit(repo, "add it")
     (repo / "file").unlink()
     deleted = _commit(repo, "delete it")
-    (repo / "file").write_text("again\n")
+    (repo / "file").write_text("again\n", encoding="utf-8")
     _commit(repo, "recreate it")
     found = reference(repo, deleted, "file")
     assert found.kind is ReferenceKind.DELETED
@@ -694,13 +694,14 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(core, "MODULE_CHECKS", checks)
     monkeypatch.setattr(core, "PROJECT_CHECKS", {})
     monkeypatch.setattr(run, "EXTERNAL_TOOLS", {})
-    (tmp_path / "pyproject.toml").write_text(PYPROJECT)
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
     package = tmp_path / "pkg"
     package.mkdir()
     (package / "a.py").write_text(
-        "def f():\n    pass  # TODO\n\n\ndef g():\n    pass  # TODO\n"
+        "def f():\n    pass  # TODO\n\n\ndef g():\n    pass  # TODO\n",
+            encoding="utf-8"
     )
-    (package / "b.py").write_text("x = 1  # NOTE\n")
+    (package / "b.py").write_text("x = 1  # NOTE\n", encoding="utf-8")
     return tmp_path
 
 
@@ -709,7 +710,8 @@ def _main(root: Path, *arguments: str) -> int:
 
 
 def _read(root: Path) -> Baseline:
-    return parse_baseline((root / "baseline.json").read_text(), "test")
+    return parse_baseline((root / "baseline.json").read_text(
+        encoding="utf-8"), "test")
 
 
 def _baseline_counts(root: Path) -> dict[tuple[str, str, str], int]:
@@ -718,7 +720,8 @@ def _baseline_counts(root: Path) -> dict[tuple[str, str, str], int]:
 
 def _write_counts(root: Path, counts: dict[tuple[str, str, str], int]) -> None:
     baseline = Baseline(counts, _read(root).record)
-    (root / "baseline.json").write_text(format_baseline(baseline))
+    (root / "baseline.json").write_text(format_baseline(baseline),
+        encoding="utf-8")
 
 
 def test_cli_fails_without_a_baseline_and_groups_by_file(
@@ -780,7 +783,8 @@ def test_cli_a_new_error_in_a_baselined_definition_fails(
 ) -> None:
     _main(project_root, "--write-baseline")
     path = project_root / "pkg" / "a.py"
-    path.write_text(path.read_text() + "    x = 1  # TODO\n")
+    path.write_text(path.read_text(encoding="utf-8") + "    x = 1  # TODO\n",
+        encoding="utf-8")
     assert _main(project_root) == 1
     out = capsys.readouterr().out
     assert "[2 here, the baseline allows 1]" in out
@@ -791,7 +795,8 @@ def test_cli_moving_an_error_within_a_definition_still_passes(
 ) -> None:
     _main(project_root, "--write-baseline")
     path = project_root / "pkg" / "a.py"
-    path.write_text("# a comment\n\n" + path.read_text())
+    path.write_text("# a comment\n\n" + path.read_text(encoding="utf-8"),
+        encoding="utf-8")
     assert _main(project_root) == 0
 
 
@@ -800,7 +805,8 @@ def test_cli_prune_lowers_the_baseline(
 ) -> None:
     _main(project_root, "--write-baseline")
     path = project_root / "pkg" / "a.py"
-    path.write_text("def f():\n    pass\n\n\ndef g():\n    pass  # TODO\n")
+    path.write_text("def f():\n    pass\n\n\ndef g():\n    pass  # TODO\n",
+        encoding="utf-8")
     assert _main(project_root) == 0
     assert "1 baseline entries can shrink" in capsys.readouterr().out
     assert _main(project_root, "--prune") == 0
@@ -813,14 +819,15 @@ def test_cli_prune_with_a_path_filter_keeps_other_files(
     project_root: Path,
 ) -> None:
     _main(project_root, "--write-baseline")
-    (project_root / "pkg" / "a.py").write_text("x = 1\n")
+    (project_root / "pkg" / "a.py").write_text("x = 1\n", encoding="utf-8")
     _main(project_root, "--prune", "--paths", "pkg/b.py")
     assert len(_baseline_counts(project_root)) == 2
 
 
 def test_cli_prune_never_adds_an_entry(project_root: Path) -> None:
     _main(project_root, "--write-baseline")
-    (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n")
+    (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n",
+        encoding="utf-8")
     assert _main(project_root, "--prune") == 1
     assert ("fixture-todo", "pkg/c.py", "<module>") not in _baseline_counts(
         project_root
@@ -857,7 +864,8 @@ def test_cli_against_a_commit(
     counts = _baseline_counts(project_root)
     counts[("fixture-todo", "pkg/c.py", "<module>")] = 1
     _write_counts(project_root, counts)
-    (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n")
+    (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n",
+        encoding="utf-8")
     assert _main(project_root, "--against", created) == 1
     assert "The baseline grew" in capsys.readouterr().out
 
@@ -889,13 +897,14 @@ def test_cli_against_flags_a_raised_count_and_accepts_a_shrink(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = project_root / "pkg" / "a.py"
-    path.write_text(path.read_text() + "    x = 1  # TODO\n")
+    path.write_text(path.read_text(encoding="utf-8") + "    x = 1  # TODO\n",
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
     out = capsys.readouterr().out
     assert "pkg/a.py  fixture-todo  g: 2 (the reference allows 1)" in out
 
-    path.write_text("def f():\n    pass\n")
+    path.write_text("def f():\n    pass\n", encoding="utf-8")
     _main(project_root, "--prune")
     assert _main(project_root, "--against", committed) == 0
     assert "The baseline only shrank" in capsys.readouterr().out
@@ -924,20 +933,21 @@ def test_cli_against_adopts_a_new_check_but_not_a_check_without_hits(
     assert "1 errors entered with a new rule" in capsys.readouterr().out
 
     # fixture-long ran at the reference with no hits: its entries are new
-    (project_root / "pkg" / "c.py").write_text("x = 1\n" * 900)
+    (project_root / "pkg" / "c.py").write_text("x = 1\n" * 900,
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
     assert "pkg/c.py  fixture-long" in capsys.readouterr().out
 
 
 def _set_pyproject(root: Path, extra: str) -> None:
-    (root / "pyproject.toml").write_text(PYPROJECT + extra)
+    (root / "pyproject.toml").write_text(PYPROJECT + extra, encoding="utf-8")
 
 
 def test_cli_against_adopts_what_a_stricter_limit_reveals_only(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (project_root / "pkg" / "c.py").write_text("x = 1\n" * 9)
+    (project_root / "pkg" / "c.py").write_text("x = 1\n" * 9, encoding="utf-8")
     _commit(project_root, "a file of nine lines")
     reference_commit = _git(project_root, "rev-parse", "HEAD")
 
@@ -948,7 +958,8 @@ def test_cli_against_adopts_what_a_stricter_limit_reveals_only(
     assert "2 errors entered" in capsys.readouterr().out
 
     # a long file added with the tightening is long under the old limit too
-    (project_root / "pkg" / "d.py").write_text("x = 1\n" * 900)
+    (project_root / "pkg" / "d.py").write_text("x = 1\n" * 900,
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 1
     assert "pkg/d.py  fixture-long" in capsys.readouterr().out
@@ -994,7 +1005,7 @@ def test_cli_against_follows_a_moved_file_only_through_the_map(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     package = project_root / "pkg"
-    original = (package / "a.py").read_text()
+    original = (package / "a.py").read_text(encoding="utf-8")
     (package / "a.py").rename(package / "moved.py")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
@@ -1009,7 +1020,7 @@ def test_cli_against_follows_a_moved_file_only_through_the_map(
     assert "2 errors moved with their files" in capsys.readouterr().out
 
     # a copy: the old file keeps its errors, so none of them moved
-    (package / "a.py").write_text(original)
+    (package / "a.py").write_text(original, encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
     assert "pkg/moved.py  fixture-todo  f" in capsys.readouterr().out
@@ -1019,13 +1030,15 @@ def test_cli_against_lends_a_deleted_files_errors_to_no_other_file(
     project_root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # a module-level error in a file that goes cannot pay for a new one
-    (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n")
+    (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n",
+        encoding="utf-8")
     _init_repository(project_root)
     _main(project_root, "--write-baseline")
     reference_commit = _commit(project_root, "c.py has an error")
 
     (project_root / "pkg" / "c.py").unlink()
-    (project_root / "pkg" / "d.py").write_text("z = 3  # TODO\n")
+    (project_root / "pkg" / "d.py").write_text("z = 3  # TODO\n",
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 1
     assert "pkg/d.py  fixture-todo  <module>" in capsys.readouterr().out
@@ -1036,7 +1049,8 @@ def _write_pyright(
 ) -> None:
     folder = root / ".basedpyright"
     folder.mkdir(exist_ok=True)
-    (folder / "baseline.json").write_text(_pyright_text(entries))
+    (folder / "baseline.json").write_text(_pyright_text(entries),
+        encoding="utf-8")
 
 
 def test_cli_against_holds_the_pyright_baseline_to_only_shrinks(
@@ -1101,7 +1115,7 @@ def _write_moves(root: Path, *moves: tuple[str, str, str, str]) -> None:
     document = {
         "moves": [dict(zip(fields, move, strict=True)) for move in moves]
     }
-    (folder / "moves.json").write_text(json.dumps(document))
+    (folder / "moves.json").write_text(json.dumps(document), encoding="utf-8")
 
 
 def test_cli_against_follows_a_declared_move_once(
@@ -1109,8 +1123,10 @@ def test_cli_against_follows_a_declared_move_once(
 ) -> None:
     # g leaves pkg/a.py, which stays, for pkg/c.py under a new name
     package = project_root / "pkg"
-    (package / "a.py").write_text("def f():\n    pass  # TODO\n")
-    (package / "c.py").write_text("def h():\n    pass  # TODO\n")
+    (package / "a.py").write_text("def f():\n    pass  # TODO\n",
+        encoding="utf-8")
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n",
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
     assert "pkg/c.py  fixture-todo  h" in capsys.readouterr().out
@@ -1120,12 +1136,15 @@ def test_cli_against_follows_a_declared_move_once(
     assert "1 errors moved with their files" in capsys.readouterr().out
 
     # at most the old count, and only once the old entry is gone
-    (package / "c.py").write_text("def h():\n    pass  # TODO\n    # TODO\n")
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n    # TODO\n",
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
-    (package / "c.py").write_text("def h():\n    pass  # TODO\n")
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n",
+        encoding="utf-8")
     (package / "a.py").write_text(
-        "def f():\n    pass  # TODO\n\n\ndef g():\n    pass  # TODO\n"
+        "def f():\n    pass  # TODO\n\n\ndef g():\n    pass  # TODO\n",
+            encoding="utf-8"
     )
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
@@ -1194,7 +1213,7 @@ def test_a_module_split_into_parts_shares_its_module_level(
     module_level = "x = 1  # TODO\n\n\n"
     (package / "a.py").write_text(
         module_level + "def f():\n    pass  # TODO\n\n\n"
-        "def g():\n    pass  # TODO\n"
+        "def g():\n    pass  # TODO\n", encoding="utf-8"
     )
     _rewrite(project_root)
     reference_commit = _commit(project_root, "a module-level error")
@@ -1202,9 +1221,10 @@ def test_a_module_split_into_parts_shares_its_module_level(
     # a.py splits into c.py and d.py; only c.py keeps the module-level line
     (package / "a.py").unlink()
     (package / "c.py").write_text(
-        module_level + "def f():\n    pass  # TODO\n"
+        module_level + "def f():\n    pass  # TODO\n", encoding="utf-8"
     )
-    (package / "d.py").write_text("def g():\n    pass  # TODO\n")
+    (package / "d.py").write_text("def g():\n    pass  # TODO\n",
+        encoding="utf-8")
     _rewrite(project_root)
     _write_moves(
         project_root,
@@ -1218,7 +1238,7 @@ def test_a_module_split_into_parts_shares_its_module_level(
 
     # both parts copy it: together they may have the old count, not each
     (package / "d.py").write_text(
-        module_level + "def g():\n    pass  # TODO\n"
+        module_level + "def g():\n    pass  # TODO\n", encoding="utf-8"
     )
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 1
@@ -1239,7 +1259,7 @@ def test_a_per_file_rule_is_inherited_by_each_piece_of_a_split(
     monkeypatch.setattr(run, "EXTERNAL_TOOLS", tools)
     package = project_root / "pkg"
     unformatted = "x=1\n"
-    (package / "a.py").write_text(unformatted)
+    (package / "a.py").write_text(unformatted, encoding="utf-8")
     _init_repository(project_root)
     assert _main(project_root, "--write-baseline") == 0
     assert ("format", "pkg/a.py", "<module>") in _baseline_counts(project_root)
@@ -1249,14 +1269,14 @@ def test_a_per_file_rule_is_inherited_by_each_piece_of_a_split(
     (package / "a.py").unlink()
     parts = ("pkg/c.py", "pkg/d.py", "pkg/e.py")
     for part in parts:
-        (project_root / part).write_text(unformatted)
+        (project_root / part).write_text(unformatted, encoding="utf-8")
     _rewrite(project_root)
     _write_moves(project_root, *_split_rows(*parts))
     assert _main(project_root, "--against", reference_commit) == 0
     capsys.readouterr()
 
     # an unformatted file that no row leads to is new
-    (package / "f.py").write_text(unformatted)
+    (package / "f.py").write_text(unformatted, encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 1
     assert "pkg/f.py  format  <module>: 1" in capsys.readouterr().out
@@ -1267,22 +1287,22 @@ def test_a_countable_rule_split_three_ways_shares_one_allowance(
 ) -> None:
     package = project_root / "pkg"
     module_level = "x = 1  # TODO\n"
-    (package / "a.py").write_text(module_level)
+    (package / "a.py").write_text(module_level, encoding="utf-8")
     _rewrite(project_root)
     reference_commit = _commit(project_root, "a module-level error")
 
     (package / "a.py").unlink()
     parts = ("pkg/c.py", "pkg/d.py", "pkg/e.py")
     for part in parts:
-        (project_root / part).write_text("y = 2\n")
-    (package / "c.py").write_text(module_level)
+        (project_root / part).write_text("y = 2\n", encoding="utf-8")
+    (package / "c.py").write_text(module_level, encoding="utf-8")
     _rewrite(project_root)
     _write_moves(project_root, *_split_rows(*parts))
     assert _main(project_root, "--against", reference_commit) == 0
     capsys.readouterr()
 
     for part in parts:
-        (project_root / part).write_text(module_level)
+        (project_root / part).write_text(module_level, encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 1
     out = capsys.readouterr().out
@@ -1293,7 +1313,8 @@ def test_cli_against_follows_a_rename_inside_a_file(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = project_root / "pkg" / "a.py"
-    path.write_text(path.read_text().replace("def g", "def h"))
+    path.write_text(path.read_text(encoding="utf-8").replace("def g", "def h"),
+        encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
     assert "pkg/a.py  fixture-todo  h" in capsys.readouterr().out
@@ -1305,8 +1326,10 @@ def test_cli_against_follows_no_row_that_does_not_hold(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     package = project_root / "pkg"
-    (package / "a.py").write_text("def f():\n    pass  # TODO\n")
-    (package / "c.py").write_text("def h():\n    pass  # TODO\n")
+    (package / "a.py").write_text("def f():\n    pass  # TODO\n",
+        encoding="utf-8")
+    (package / "c.py").write_text("def h():\n    pass  # TODO\n",
+        encoding="utf-8")
     _rewrite(project_root)
 
     # the old definition was not at the reference: the row is inert
@@ -1359,7 +1382,8 @@ def test_cli_prune_against_drops_the_rows_inert_at_the_reference(
 def test_cli_against_fails_while_the_baseline_holds_a_fixed_error(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (project_root / "pkg" / "a.py").write_text("def f():\n    pass\n")
+    (project_root / "pkg" / "a.py").write_text("def f():\n    pass\n",
+        encoding="utf-8")
     assert _main(project_root) == 0
     assert _main(project_root, "--against", committed) == 1
     out = capsys.readouterr().out

@@ -42,7 +42,7 @@ def _refused(call: Any, *args: Any, code: str = "BAD_PATH", **kwargs: Any) -> Re
 def test_paths_outside_the_job_folder_are_refused(tmp_path: Path):
     job = _open(tmp_path)
     secret = tmp_path / "secret.txt"
-    secret.write_text("outside")
+    secret.write_text("outside", encoding="utf-8")
     for bad in ("..", "../secret.txt", "../../etc/passwd", str(secret), "/etc/passwd",
                 "history/../../secret.txt"):
         _refused(files.read_folder_file, job, bad)
@@ -65,10 +65,10 @@ def test_symlinks_out_of_the_folder_are_refused_and_not_walked(tmp_path: Path):
     folder = job.layout.folder
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "leak.txt").write_text("LEAKED needle")
+    (outside / "leak.txt").write_text("LEAKED needle", encoding="utf-8")
     (folder / "link_file").symlink_to(outside / "leak.txt")
     (folder / "link_dir").symlink_to(outside, target_is_directory=True)
-    (folder / "inside.txt").write_text("needle inside")
+    (folder / "inside.txt").write_text("needle inside", encoding="utf-8")
     (folder / "alias").symlink_to(folder / "inside.txt")
 
     _refused(files.read_folder_file, job, "link_file")
@@ -93,12 +93,13 @@ def test_listing_search_and_reading_are_capped_and_paged(tmp_path: Path):
     many = folder / "many"
     many.mkdir()
     for index in range(browse.LIST_ENTRIES + 7):
-        (many / f"f{index:04d}.txt").write_text("x")
+        (many / f"f{index:04d}.txt").write_text("x", encoding="utf-8")
     capped = files.list_folder(job, "many")
     assert len(capped.entries) == browse.LIST_ENTRIES and capped.hidden == 7
 
-    (folder / "a.txt").write_text("alpha\nBeta two\nalpha again\n")
-    (folder / "b.log").write_text("alpha in a log\n")
+    (folder / "a.txt").write_text("alpha\nBeta two\nalpha again\n",
+        encoding="utf-8")
+    (folder / "b.log").write_text("alpha in a log\n", encoding="utf-8")
     (folder / "bin.dat").write_bytes(b"alpha\x00\x00")
     found = files.search_folder(job, "^alpha", glob="*.txt")
     assert found.matches == ("a.txt:1: alpha", "a.txt:3: alpha again")
@@ -109,17 +110,20 @@ def test_listing_search_and_reading_are_capped_and_paged(tmp_path: Path):
     with pytest.raises(Refused) as caught:
         files.search_folder(job, "")
     assert caught.value.code == "BAD_ARGS"
-    (folder / "big.txt").write_text("hit\n" * (browse.SEARCH_MATCHES + 15))
+    (folder / "big.txt").write_text("hit\n" * (browse.SEARCH_MATCHES + 15),
+        encoding="utf-8")
     big = files.search_folder(job, "hit", path="big.txt")
     assert len(big.matches) == browse.SEARCH_MATCHES and big.hidden == 15
 
-    (folder / "long.txt").write_text("".join(f"line {n}\n" for n in range(1, 1001)))
+    (folder / "long.txt").write_text("".join(f"line {n}\n" for n in range(1, 1001)),
+        encoding="utf-8")
     first = files.read_folder_file(job, "long.txt", limit=3)
     assert "     1\tline 1" in first.text
     nxt = files.read_folder_file(job, "long.txt", offset=3, limit=2)
     assert (nxt.first_line, nxt.last_line, nxt.total_lines) == (4, 5, 1000)
     assert files.read_folder_file(job, "long.txt").last_line == browse.READ_LINES
-    (folder / "heavy.txt").write_text(("z" * 300 + "\n") * 1000)
+    (folder / "heavy.txt").write_text(("z" * 300 + "\n") * 1000,
+        encoding="utf-8")
     heavy = files.read_folder_file(job, "heavy.txt", limit=1000)
     assert len(heavy.text) < browse.TEXT_BYTES + 2000
     (folder / "blob.bin").write_bytes(bytes(range(256)) * 4)
@@ -200,9 +204,11 @@ def test_the_agent_transcripts_are_neither_listed_searched_nor_read(tmp_path: Pa
     folder = job.layout.folder
     trace = job.layout.trace_dir
     (trace / "deep").mkdir(parents=True)
-    (trace / "session.jsonl").write_text("needle in the transcript\n")
-    (trace / "deep" / "more.jsonl").write_text("needle deeper\n")
-    (folder / "notes.txt").write_text("needle outside\n")
+    (trace / "session.jsonl").write_text("needle in the transcript\n",
+        encoding="utf-8")
+    (trace / "deep" / "more.jsonl").write_text("needle deeper\n",
+        encoding="utf-8")
+    (folder / "notes.txt").write_text("needle outside\n", encoding="utf-8")
     (folder / "into_trace").symlink_to(trace / "session.jsonl")
 
     listed = files.list_folder(job)
