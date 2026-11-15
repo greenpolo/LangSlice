@@ -176,8 +176,10 @@ LangSlice repository, whose README leads to the installation guide).
 
 The list comes from conda's registry and the base environments of common conda and
 mamba installations (`CONDA_EXE`, `MAMBA_ROOT_PREFIX`, and `miniforge3`, `miniconda3`,
-`anaconda3`, `mambaforge` or `micromamba` in the home folder); the saved environment
-is listed first. When available, `conda run --prefix` supplies activation variables
+`anaconda3`, `mambaforge` or `micromamba`, in any letter case, in the home folder and
+on Windows in `%LOCALAPPDATA%\Programs`, `%LOCALAPPDATA%` and `%ProgramData%`); the
+saved environment is listed first. An environment's Python is `python.exe` (conda on
+Windows), `Scripts\python.exe` (a virtual environment on Windows) or `bin/python`. When available, `conda run --prefix` supplies activation variables
 without an open terminal; otherwise the environment's Python is invoked directly.
 Worker processes and their descendants are terminated when a request ends.
 

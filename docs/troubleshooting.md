@@ -5,8 +5,10 @@ reword them.
 
 ## The terminal does not know `langslice`
 
-Run `conda activate langslice` in that terminal. Once your AI app has set
-LangSlice up, `langslice` works in every new terminal without it.
+Run `conda activate langslice` in that terminal. On Windows, do it in
+Miniforge Prompt (in the Start menu): other terminals do not know `conda`.
+Once your AI app has set LangSlice up, `langslice` works in every new
+terminal without it.
 
 ## The app cannot start LangSlice
 
@@ -36,6 +38,30 @@ same brain. Wait for it to finish; run one registration per job at a time.
 The folder already holds a job made another way, such as with another atlas.
 Continue it as it was made, or ask your agent to start it over, which
 discards its work.
+
+## Windows: a path is too long
+
+A registration fails with a message that names a path longer than 260
+characters, or says a file in the job folder cannot be found or written.
+Windows refuses such paths unless long paths are on, and a deformation's
+files need them. In PowerShell,
+`(Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem).LongPathsEnabled`
+prints `1` when they are on. To turn them on, open PowerShell as
+administrator, run
+`Set-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem LongPathsEnabled 1`,
+and restart your AI app.
+
+## Windows: deformable fits do not use the NVIDIA GPU
+
+In Miniforge Prompt, run `conda activate langslice`, then:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+`False` means this PyTorch uses the processor only. Install its CUDA build as
+[Installation](getting-started/install.md#1-install-langslice) shows, with
+`--force-reinstall` added.
 
 ## Something else
 

@@ -14,6 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,14 +22,22 @@ jobs:
           python-version: '3.11'
       - name: Build wheel
         run: |
-          python -m pip install build
+          python -m pip install --upgrade pip build
           python -m build --wheel
       - name: Audit and install wheel
         shell: bash
         run: |
           python packaging/check_wheel.py dist/*.whl
           python -m pip install dist/*.whl
-          python -m pip check
+          python -m pip install uv
+          # itk's Linux wheels ship a WHEEL file neither pip check nor uv can
+          # read; any other finding fails the job
+          if ! out=$(NO_COLOR=1 uv pip check --python "$(python -c 'import sys; print(sys.executable)')" 2>&1); then
+            echo "$out"
+            if echo "$out" | grep -v -e 'Found 1 incompatibilit' -e 'The package `itk` is broken' -e '^Checked [0-9]* packages' -e '^Using Python' | grep -q .; then
+              exit 1
+            fi
+          fi
       - name: Exercise installed worker outside checkout
         shell: bash
         run: |
@@ -40,7 +49,7 @@ jobs:
           import sys
           result = subprocess.run(
               [sys.executable, '-m', 'langslice', 'serve', '--stdio'],
-              input=json.dumps({"id": "smoke", "method": "version", "params": {}}) + "\n",
+              input=json.dumps({"id": "smoke", "method": "setup.status", "params": {}}) + "\n",
               text=True, capture_output=True, check=True, timeout=60,
           )
           reply = json.loads(result.stdout)

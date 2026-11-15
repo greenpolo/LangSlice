@@ -1,7 +1,8 @@
 # Run from the root of a downloaded LangSlice source archive or checkout:
 # conda env create -f environment.yml
 # One environment for everything: the agent, the deformable engine, the Claude
-# Desktop server and the ABBA connector's worker.
+# Desktop server and the ABBA connector's worker. On Windows pip's PyTorch runs
+# on the processor only; docs/getting-started/install.md adds its CUDA build.
 name: langslice
 channels:
   - conda-forge

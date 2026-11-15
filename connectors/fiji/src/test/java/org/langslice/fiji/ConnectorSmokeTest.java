@@ -68,6 +68,7 @@ public final class ConnectorSmokeTest {
         EnvironmentDiscovery.save(prefix);
         require(prefix.equals(EnvironmentDiscovery.saved()), "Remember environment path with spaces");
         require(EnvironmentDiscovery.discover().get(0).equals(prefix.toAbsolutePath().normalize()), "The saved environment is listed first");
+        discoveryChecks();
         projectKeyChecks();
         menuChecks();
         snapshotChecks();
@@ -82,6 +83,31 @@ public final class ConnectorSmokeTest {
         windowChecks(prefix);
         delete(prefix);
         System.out.println("Connector smoke checks passed.");
+    }
+
+    /**
+     * Conda installs in %LOCALAPPDATA%\Programs (the graphical installer's per-user folder, named Miniforge3), in
+     * %LOCALAPPDATA% and in %ProgramData% are searched, in any letter case; a virtual environment's Scripts\python.exe
+     * is its Python.
+     */
+    static void discoveryChecks() throws IOException {
+        Path root = Files.createTempDirectory("langslice discovery ");
+        Path home = Files.createDirectories(root.resolve("home"));
+        Path local = root.resolve("local");
+        Path gui = Files.createDirectories(local.resolve("Programs/Miniforge3"));
+        Path shared = Files.createDirectories(root.resolve("data/miniconda3"));
+        Map<String, String> environment = new HashMap<>();
+        environment.put("LOCALAPPDATA", local.toString());
+        environment.put("PROGRAMDATA", root.resolve("data").toString());
+        List<Path> roots = EnvironmentDiscovery.condaRoots(home, environment);
+        require(roots.contains(gui), "A per-user install in LOCALAPPDATA\\Programs is searched: " + roots);
+        require(roots.contains(local.resolve("miniforge3")) && roots.contains(shared), "LOCALAPPDATA and ProgramData are searched: " + roots);
+        require(roots.indexOf(home.resolve("miniforge3")) < roots.indexOf(gui), "The home folder's installs come first: " + roots);
+        Path venv = root.resolve("venv");
+        Path scripts = Files.createDirectories(venv.resolve("Scripts")).resolve("python.exe");
+        Files.write(scripts, new byte[0]);
+        require(EnvironmentDiscovery.python(venv).equals(scripts), "A virtual environment's Scripts\\python.exe is its Python");
+        delete(root);
     }
 
     static void delete(Path folder) throws IOException {

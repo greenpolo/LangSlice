@@ -17,14 +17,19 @@ sandbox refuses a write.
 
 ## 1. Find `langslice`
 
-- macOS and Linux: `command -v langslice`. Windows: `where langslice`.
+- macOS and Linux: `command -v langslice`. Windows: `where.exe langslice`
+  (in PowerShell, `where` alone is `Where-Object`), or in PowerShell
+  `(Get-Command langslice).Source`.
 - If that finds nothing, look for the conda environment named `langslice`:
   - macOS and Linux: `envs/langslice/bin/langslice` under the folder
     `conda info --base` prints, then under `~/miniforge3`, `~/mambaforge`,
     `~/miniconda3` and `~/anaconda3`.
   - Windows: `%USERPROFILE%\miniforge3\envs\langslice\Scripts\langslice.exe`,
-    then the same under `mambaforge`, `miniconda3`, `anaconda3` and the
-    folder `conda info --base` prints.
+    then the same under `mambaforge`, `miniconda3` and `anaconda3`; under
+    `miniforge3` and `miniconda3` in `%LOCALAPPDATA%\Programs` (where the
+    installer's window puts a per-user install; letter case does not
+    matter), `%LOCALAPPDATA%` and `%ProgramData%`; and under the folder
+    `conda info --base` prints.
 - If none exists, tell the user to finish LangSlice's install first
   (https://langslice.readthedocs.io/en/latest/getting-started/install.html)
   and stop.
@@ -67,21 +72,29 @@ macOS and Linux:
 - Check: `"$SHELL" -ilc 'command -v langslice'` and
   `"$SHELL" -lc 'command -v langslice'` each print the path from step 1.
 
-Windows (PowerShell), with the folder in place of `FOLDER`:
+Windows, in PowerShell, with the folder in place of `FOLDER`. From Git Bash,
+pass the whole block in single quotes to `powershell.exe -NoProfile -Command`
+(it uses no single quotes itself).
 
 ```powershell
-$dir = 'FOLDER'
-$user = [Environment]::GetEnvironmentVariable('Path', 'User')
-$all = "$user;" + [Environment]::GetEnvironmentVariable('Path', 'Machine')
-if (($all -split ';') -notcontains $dir) {
-  $parts = @($user -split ';' | Where-Object { $_ }) + $dir
-  [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
+$dir = "FOLDER"
+$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment")
+$user = $key.GetValue("Path", "", "DoNotExpandEnvironmentNames")
+$seen = ([Environment]::ExpandEnvironmentVariables($user) + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")) -split ";" | ForEach-Object { $_.TrimEnd("\") }
+if ($seen -notcontains $dir.TrimEnd("\")) {
+  $parts = @($user -split ";" | Where-Object { $_ }) + $dir
+  $key.SetValue("Path", ($parts -join ";"), "ExpandString")
+  [Environment]::SetEnvironmentVariable("LANGSLICE_SETUP", $null, "User")
 }
+$key.Close()
 ```
 
 This appends the folder to the user's Path and keeps every entry already
-there. Check: `[Environment]::GetEnvironmentVariable('Path', 'User')` ends
-with the folder (or the folder was already on Path).
+there as it is written, `%VARIABLE%` entries included; the last
+`SetEnvironmentVariable` sets nothing and tells running programs that the
+environment changed. Check:
+`[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment").GetValue("Path", "", "DoNotExpandEnvironmentNames")`
+ends with the folder (or the folder was already on Path).
 
 ## 3. Copy the agents and the rules
 
