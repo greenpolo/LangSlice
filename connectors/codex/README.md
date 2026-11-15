@@ -28,7 +28,7 @@ LangSlice itself must be installed first (the conda environment named
 
    ```toml
    [mcp_servers.langslice]
-   command = "/path/to/env/bin/langslice"
+   command = "/path/to/env/bin/langslice"  # Windows: 'C:\path\to\env\Scripts\langslice.exe'
    args = ["mcp"]
    tool_timeout_sec = 3600
    default_tools_approval_mode = "approve"
