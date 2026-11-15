@@ -24,11 +24,11 @@
 .gen-failed { margin: var(--space-6) auto; padding: 0 var(--space-5); max-width: 70ch; }
 
 /* Cards: black, a 1 px edge, a numbered title. */
-.gen-card { margin: 0; padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--ground); }
+.gen-card { margin: 0; padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--panel); }
 .gen-card-title {
   display: flex; align-items: center; gap: var(--space-3);
   margin: 0 0 var(--space-4);
-  color: var(--name); font-size: var(--size-lg); font-weight: 700; line-height: 1.3;
+  color: var(--name); font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3;
 }
 .gen-step {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -47,7 +47,7 @@
 .gen-input {
   width: 100%; min-width: 0; margin: 0; padding: 7px 10px;
   font: inherit; line-height: 1.4; color: var(--name);
-  background: var(--ground); border: 1px solid var(--line); border-radius: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
 }
 .gen-input.gen-path { color: var(--violet); }
 .gen-input::placeholder { color: var(--faint); opacity: 1; }
@@ -57,7 +57,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
 .gen-select { padding: 6px 8px; cursor: pointer; }
 .gen-select:disabled { cursor: not-allowed; }
 .gen-select optgroup { color: var(--name); font-style: normal; }
-.gen-select option { color: var(--text); background: var(--ground); }
+.gen-select option { color: var(--text); background: var(--panel); }
 
 /* Text buttons: lavender, underlined as the docs' links are, pink under the pointer. */
 .gen-link {
@@ -65,7 +65,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
   font: inherit; font-size: var(--size-sm); color: var(--lavender);
   text-decoration: underline; text-decoration-color: var(--tract); text-underline-offset: 0.25em;
 }
-.gen-link:hover { color: var(--pink); text-decoration-color: var(--pink); background: none; }
+.gen-link:hover { color: var(--name); text-decoration-color: var(--name); background: none; }
 
 /* Disclosures (how to copy a path, ABBA's slices): + and -, as the docs' section list. */
 .gen-more { margin-top: var(--space-3); }
@@ -76,7 +76,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
 .gen-more > summary::-webkit-details-marker { display: none; }
 .gen-more > summary::before { content: "+"; color: var(--muted); }
 .gen-more[open] > summary::before { content: "\2212"; }
-.gen-more > summary:hover { color: var(--pink); }
+.gen-more > summary:hover { color: var(--name); }
 .gen-howto { margin: var(--space-2) 0; padding-left: 2.6ch; font-size: var(--size-sm); }
 .gen-howto li { margin-bottom: var(--space-1); }
 .gen-howto li::marker { content: "- "; color: var(--muted); }
@@ -92,21 +92,21 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
 .gen-segments { display: inline-flex; }
 .gen-segment {
   position: relative; margin: 0; padding: 6px 18px; border-radius: 0; cursor: pointer;
-  font: inherit; color: var(--lavender); background: var(--ground); border: 1px solid var(--line);
+  font: inherit; color: var(--lavender); background: var(--panel); border: 1px solid var(--line);
 }
 .gen-segment + .gen-segment { margin-left: -1px; }
 .gen-segment:hover:not(:disabled) { z-index: 1; background: var(--wash); border-color: var(--tract); }
-.gen-segment.gen-on, .gen-segment.gen-on:hover:not(:disabled) { z-index: 2; color: var(--name); font-weight: 700; background: var(--selected); border-color: var(--lavender); }
+.gen-segment.gen-on, .gen-segment.gen-on:hover:not(:disabled) { z-index: 2; color: var(--name); font-weight: var(--weight-strong); background: var(--selected); border-color: var(--lavender); }
 .gen-segment:focus-visible { z-index: 3; }
-.gen-segment:disabled, .gen-segment:disabled:hover { color: var(--muted); background: var(--ground); cursor: not-allowed; border-style: dashed; }
+.gen-segment:disabled, .gen-segment:disabled:hover { color: var(--muted); background: var(--panel); cursor: not-allowed; border-style: dashed; }
 .gen-segment.gen-on:disabled { color: var(--name); background: var(--selected); border-color: var(--tract); border-style: solid; }
 .gen-plane-note { color: var(--muted); font-size: var(--size-sm); }
 
 /* Thickness, interval, pixel size: short fields with their units. */
 .gen-units { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
-.gen-unit { display: flex; align-items: stretch; border: 1px solid var(--line); background: var(--ground); cursor: text; }
+.gen-unit { display: flex; align-items: stretch; border: 1px solid var(--line); background: var(--panel); cursor: text; }
 .gen-unit:hover { border-color: var(--tract); }
-.gen-unit:focus-within { outline: 2px solid var(--pink); outline-offset: 2px; }
+.gen-unit:focus-within { outline: 2px solid var(--lavender); outline-offset: 2px; }
 .gen-unit .gen-input { flex: 1; border: 0; outline: none; }
 .gen-unit-name {
   display: flex; align-items: center; padding: 0 10px; white-space: nowrap;
@@ -124,15 +124,15 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
 .gen-native:checked + .gen-task-head .gen-box { border-color: var(--lavender); background-color: var(--lavender); }
 .gen-native:disabled + .gen-box { border-color: var(--line); }
 .gen-native:disabled:checked + .gen-box { border-color: var(--tract); background-color: var(--muted); }
-.gen-switch { position: relative; flex: none; width: 28px; height: 16px; border: 1px solid var(--tract); background: var(--ground); }
+.gen-switch { position: relative; flex: none; width: 28px; height: 16px; border: 1px solid var(--tract); background: var(--panel); }
 .gen-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; background: var(--faint); }
 .gen-native:checked + .gen-switch { border-color: var(--lavender); background: var(--selected); }
 .gen-native:checked + .gen-switch::after { left: 15px; background: var(--lavender); }
-.gen-native:disabled + .gen-switch { border-color: var(--line); background: var(--ground); }
+.gen-native:disabled + .gen-switch { border-color: var(--line); background: var(--panel); }
 .gen-native:disabled + .gen-switch::after { background: var(--line); }
 .gen-native:disabled:checked + .gen-switch::after { background: var(--muted); }
 .gen-native:focus-visible + .gen-box,
-.gen-native:focus-visible + .gen-switch { outline: 2px solid var(--pink); outline-offset: 2px; }
+.gen-native:focus-visible + .gen-switch { outline: 2px solid var(--lavender); outline-offset: 2px; }
 
 /* Facts: a box, the fact, its note. */
 .gen-checks { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
@@ -149,14 +149,14 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
 .gen-tasks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
 .gen-task {
   position: relative; display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--space-3) 14px 14px; border: 1px solid var(--line); background: var(--ground); cursor: pointer;
+  padding: var(--space-3) 14px 14px; border: 1px solid var(--line); background: var(--panel); cursor: pointer;
 }
 .gen-task:hover { background: var(--wash); border-color: var(--tract); }
 .gen-task.gen-on, .gen-task.gen-on:hover { background: var(--selected); border-color: var(--lavender); }
-.gen-task:has(.gen-native:focus-visible) { outline: 2px solid var(--pink); outline-offset: 2px; }
+.gen-task:has(.gen-native:focus-visible) { outline: 2px solid var(--lavender); outline-offset: 2px; }
 .gen-task .gen-native:focus-visible + .gen-task-head .gen-box { outline: none; }
 .gen-task-head { display: flex; align-items: center; gap: 10px; }
-.gen-task-label { color: var(--text); font-weight: 700; }
+.gen-task-label { color: var(--text); font-weight: var(--weight-strong); }
 .gen-task.gen-on .gen-task-label { color: var(--name); }
 .gen-task-about { color: var(--muted); font-size: var(--size-sm); line-height: 1.5; }
 
@@ -168,7 +168,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
 .gen-slice-table { width: 100%; border-collapse: collapse; font-size: var(--size-sm); }
 .gen-slice-table th {
   position: sticky; top: 0; padding: 4px 10px; text-align: left; white-space: nowrap;
-  color: var(--name); font-weight: 700; background: var(--ground); border: 0; border-bottom: 1px solid var(--tract);
+  color: var(--name); font-weight: var(--weight-strong); background: var(--panel); border: 0; border-bottom: 1px solid var(--tract);
 }
 .gen-slice-table td { padding: 3px 10px; white-space: nowrap; border: 0; border-top: 1px solid var(--line); }
 .gen-slice-table tbody tr:first-child td { border-top: 0; }
@@ -186,7 +186,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
   display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3);
   padding-bottom: 6px; border-bottom: 1px solid var(--tract);
 }
-.gen-tools-title { color: var(--name); font-weight: 700; }
+.gen-tools-title { color: var(--name); font-weight: var(--weight-strong); }
 .gen-tools-note { color: var(--muted); font-size: var(--size-sm); }
 .gen-tool {
   position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 15.5rem;
@@ -225,19 +225,19 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
   display: flex; flex-direction: column; gap: var(--space-3); min-width: 0;
   max-height: calc(100vh - 140px);
   max-height: calc(100cqh - 2 * var(--space-5));
-  padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--ground);
+  padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--panel);
 }
 .gen-output > * { flex: none; }
 .gen-output-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.gen-output-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: 700; line-height: 1.3; }
+.gen-output-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3; }
 .gen-copy {
-  min-width: 11ch; margin: 0; padding: 9px 30px; border-radius: 0; cursor: pointer;
-  font: inherit; font-size: var(--size-lg); font-weight: 700; line-height: 1.3;
-  color: var(--lavender); background: var(--ground); border: 1px solid var(--lavender);
+  min-width: 11ch; margin: 0; padding: 9px 30px; border-radius: var(--radius-sm); cursor: pointer;
+  font: inherit; font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3;
+  color: var(--lavender); background: var(--panel); border: 1px solid var(--lavender);
 }
 .gen-copy:hover:not(:disabled) { background: var(--wash); }
 .gen-copy:active:not(:disabled) { background: var(--selected); }
-.gen-copy:disabled, .gen-copy:disabled:hover { color: var(--faint); background: var(--ground); border-color: var(--line); cursor: not-allowed; }
+.gen-copy:disabled, .gen-copy:disabled:hover { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: not-allowed; }
 .gen-copy.gen-copied { color: var(--name); border-color: var(--name); background: var(--selected); }
 .gen-problems, .gen-warnings { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .gen-problems:empty, .gen-warnings:empty { display: none; }
@@ -247,7 +247,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
   flex: 0 1 auto; min-height: 0; overflow-y: auto; margin: 0; padding: var(--space-3) 14px;
   font: inherit; font-size: var(--size-sm); line-height: 1.6; color: var(--text);
   white-space: pre-wrap; overflow-wrap: anywhere; user-select: all;
-  background: var(--ground); border: 1px solid var(--line); border-left: var(--rule) solid var(--violet);
+  background: var(--panel); border: 1px solid var(--line); border-left: var(--rule) solid var(--violet);
 }
 .gen-fence { color: var(--faint); }
 .gen-command { color: var(--violet); }
@@ -268,3 +268,7 @@ textarea.gen-input { display: block; resize: vertical; min-height: 4.6em; }
   .gen-tool { grid-template-columns: auto minmax(0, 1fr); }
   .gen-tool-name { grid-column: 2; }
 }
+
+/* Cards and choices: small rounded corners, as everywhere in the window. */
+.gen-card, .gen-task, .gen-slice-wrap { border-radius: var(--radius); }
+.gen-output { border-radius: var(--radius); }

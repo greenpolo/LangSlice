@@ -188,8 +188,8 @@ const AgentLog = (() => {
   function setState(call, word) {
     call.root.classList.toggle('running', word === 'running');
     call.root.classList.toggle('failed', word === 'failed');
-    // Done is the usual end and says nothing more than the row's grey rule: a dot.
-    call.state.textContent = word === 'done' ? '·' : word;
+    // Done is the usual end and says nothing more than the row's grey rule: no word.
+    call.state.textContent = word === 'done' ? '' : word;
     call.state.title = word;
   }
   function details(call) {

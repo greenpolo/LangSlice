@@ -9,8 +9,8 @@ generator and Settings (top right). The agent viewer is the arrangement of the
 viewer LangSlice had inside ABBA, on the web: a positioning strip and up to four
 focus panels showing the sections the agent works on under their current
 registration (ABBA's comparison window), beside the agent log and its tool
-images (ABBA's browser log). The window has the docs' look, toned down
-(`static/tokens.css`).
+images (ABBA's browser log). The window is a quiet dark tool: the logo keeps
+the docs' ASCII look, the rest is plain (`static/tokens.css`).
 
 ## The rule
 
@@ -277,19 +277,23 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `blob:` image (scripts set `element.style` instead); every text goes in by
   `textContent`.
   - `tokens.css` — the window's look, the only place a colour, the font, a
-    size or a spacing is written: the docs' look (`docs/_static/langslice.css`)
-    toned down: one monospace face (JetBrains Mono, bundled as
-    `jetbrains-mono-*.woff2`, SIL OFL 1.1, `jetbrains-mono-ofl.txt`), true
-    black everywhere with 1 px edges, square corners, no glow, gradients or
-    shadows, the logo's colours each with one job (off-white names, lavender
-    what can be followed, violet literal text, pink boundaries and state), and
+    size or a spacing is written: the system's sans-serif UI face for words
+    (`--sans`) and the monospace face (JetBrains Mono, bundled as
+    `jetbrains-mono-*.woff2`, SIL OFL 1.1, `jetbrains-mono-ofl.txt`) for
+    literal text only (file, section and tool names, paths, code); slate
+    grounds (`--ground`, panels and controls a step lighter in `--panel`,
+    black `--picture` behind pictures only), 1 px edges, small rounded corners
+    (`--radius`, `--radius-sm`), no glow, gradients or shadows, colours each
+    with one job (off-white names, lavender the one accent, violet literal
+    text, pink problems and keyboard focus, green Submitted), and
     the ABBA viewer's four focus colours. `lockup.svg` and `logomark.svg` are
     `assets/logo/`'s dark ones.
   - `index.html` — the top bar (the lockup, the tabs, the job picker,
     Settings), the status line, the viewer tab, the delimited prompt
     generator and Settings blocks, the footer and the lightbox.
-  - `app.css`, `app.js` — the element defaults every tab uses (black controls
-    with a 1 px edge, square corners) and the shell: the tabs (the first one
+  - `app.css`, `app.js` — the element defaults every tab uses (controls a step
+    above the page with a 1 px edge and small rounded corners; `.mono` for
+    literal text) and the shell: the tabs (the first one
     `#tab=` names, `startTab`, which `settings.js` reads); the address names
     what is shown (`#tab=…&job=n`) once a job was named; the job picker
     (keyboard-navigable, newest first by `changed_at`); the polls (jobs every

@@ -18,7 +18,7 @@
   font-size: var(--size-sm);
   white-space: nowrap;
 }
-.statusline .word { font-weight: 700; }
+.statusline .word { font-weight: var(--weight-strong); }
 .sentence { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: var(--space-1); }
 .facts { color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 48%; }
 
@@ -52,7 +52,7 @@
   padding: 6px var(--space-3) 6px var(--space-4);
 }
 .focus-title { font-size: var(--size-md); font-weight: 400; display: flex; gap: var(--space-2); min-width: 0; white-space: nowrap; }
-.focus-name { color: var(--name); font-weight: 700; }
+.focus-name { color: var(--name); font-weight: var(--weight-strong); }
 .focus-count { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .focus-controls { display: flex; align-items: center; gap: var(--space-2); font-size: var(--size-sm); }
 .switch, .pager { display: flex; }
@@ -79,7 +79,7 @@
   white-space: nowrap;
   min-width: 0;
 }
-.strip-toggle { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0 var(--space-1); color: var(--name); font-weight: 700; }
+.strip-toggle { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0 var(--space-1); color: var(--name); font-weight: var(--weight-strong); }
 .strip-toggle:hover { background: none; color: var(--name); }
 .strip-mark::before { content: "⌄"; color: var(--muted); font-weight: 400; }
 .strip.collapsed .strip-mark::before { content: "›"; }
@@ -120,12 +120,13 @@
   pointer-events: none;
   max-width: 340px;
   padding: 4px var(--space-2);
-  background: var(--ground);
+  background: var(--panel);
   border: 1px solid var(--tract);
+  border-radius: var(--radius-sm);
   font-size: var(--size-xs);
   line-height: 1.45;
 }
-.tip-name { color: var(--name); font-weight: 700; overflow-wrap: anywhere; }
+.tip-name { color: var(--name); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
 .tip-line { color: var(--muted); }
 
 /* The three views under the strip. */
@@ -146,7 +147,7 @@
 .panels.n3, .panels.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 /* Three: the first panel takes the left column's height, the other two stack beside it. */
 .panels.n3 > .panel:first-child { grid-row: span 2; }
-.panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--line); background: var(--ground); }
+.panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
 .panel.slot-1 { --mark: var(--focus-1); }
 .panel.slot-2 { --mark: var(--focus-2); }
 .panel.slot-3 { --mark: var(--focus-3); }
@@ -164,16 +165,16 @@
 }
 /* The name and position keep their room: the angles give way first (hidden whole when
    they do not fit), then the tags; a name longer than the strip is cut with an ellipsis. */
-.panel-name { color: var(--mark); font-weight: 700; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; max-width: 100%; }
+.panel-name { color: var(--mark); font-weight: var(--weight-strong); overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; max-width: 100%; }
 .panel-angles { color: var(--muted); overflow: hidden; white-space: nowrap; min-width: 0; flex: 0 1000 auto; }
 .panel-angles.clipped { visibility: hidden; }
 .panel-tags { margin-left: auto; display: flex; gap: var(--space-1); flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .panel-tags .tag { flex-shrink: 0; }
-.tag { font-size: var(--size-xs); color: var(--muted); border: 1px solid var(--line); padding: 0 5px; line-height: 1.5; }
+.tag { font-size: var(--size-xs); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0 6px; line-height: 1.6; }
 .tag.method { color: var(--violet); }
 .tag.damaged { color: var(--text); border-color: var(--pink); }
 .panel-open { font-size: var(--size-xs); padding: 0 7px; flex-shrink: 0; }
-.panel-picture { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; }
+.panel-picture { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; background: var(--picture); }
 .panel-picture.panning { cursor: grabbing; }
 .panel-picture img {
   position: absolute;
@@ -196,8 +197,9 @@
   padding: 0 6px;
   font-size: var(--size-xs);
   color: var(--muted);
-  background: var(--ground);
+  background: var(--panel);
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }
 .panel-message {
   position: absolute;
@@ -218,6 +220,8 @@
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-left: var(--rule) solid var(--pink);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
   color: var(--text);
   font-size: var(--size-sm);
   overflow-wrap: anywhere;
@@ -233,7 +237,7 @@
   z-index: 1;
   background: var(--ground);
   color: var(--name);
-  font-weight: 700;
+  font-weight: var(--weight-strong);
   text-align: left;
   padding: 6px 10px;
   border-bottom: 1px solid var(--tract);
@@ -285,14 +289,14 @@
   border-bottom: 1px solid var(--line);
 }
 .log-title { font-size: var(--size-md); }
-.log-status { margin-left: auto; font-size: var(--size-sm); font-weight: 700; white-space: nowrap; }
+.log-status { margin-left: auto; font-size: var(--size-sm); font-weight: var(--weight-strong); white-space: nowrap; }
 .log-expand { display: none; font-size: var(--size-xs); padding: 0 7px; }
 .log-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 2px var(--space-4) var(--space-4); }
 .log-scroll > .empty-state { padding-top: var(--space-6); }
 .log-trace-note { margin: var(--space-3) 0 var(--space-1); padding: 1px 0 1px var(--space-3); border-left: var(--rule) solid var(--lavender); color: var(--muted); font-size: var(--size-xs); }
 /* The agent's own words stand out from its tool rows: a message and a reasoning summary
    each sit behind a rule in the logo's colours, a summary's words in the names' off-white. */
-.msg { margin-top: var(--space-4); padding: 2px 0 2px var(--space-3); border-left: var(--rule) solid var(--lavender); }
+.msg { margin-top: var(--space-3); padding: 6px var(--space-3) 7px; border-left: var(--rule) solid var(--lavender); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--panel); }
 .msg.reasoning { border-left-color: var(--violet); }
 .msg-label { color: var(--muted); font-size: var(--size-xs); margin-bottom: 3px; }
 .msg.reasoning .msg-label { color: var(--violet); }
@@ -325,6 +329,8 @@
 .call-detail h4 { font-size: var(--size-xs); margin: var(--space-2) 0 var(--space-1); }
 .call-detail pre {
   margin: 0;
+  border-radius: var(--radius-sm);
+  background: var(--ground);
   max-height: 240px;
   overflow: auto;
   padding: 3px var(--space-2);
@@ -366,10 +372,10 @@
 .tray-count { color: var(--muted); min-width: 6ch; text-align: center; font-variant-numeric: tabular-nums; }
 .tray-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 6px; }
 .tray-grid.one { grid-template-columns: minmax(0, 1fr); }
-.tile { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0; border: 1px solid var(--line); background: var(--ground); color: var(--text); cursor: zoom-in; text-align: left; }
-.tile:hover { border-color: var(--tract); background: var(--ground); }
+.tile { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--picture); color: var(--text); cursor: zoom-in; text-align: left; }
+.tile:hover { border-color: var(--tract); background: var(--picture); }
 .tile img { flex: 1; min-height: 0; width: 100%; object-fit: contain; display: block; }
-.tile-label { flex-shrink: 0; padding: 1px 6px 2px; border-top: 1px solid var(--line); font-size: var(--size-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-label { flex-shrink: 0; padding: 2px 8px 3px; border-top: 1px solid var(--line); background: var(--panel); font-size: var(--size-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-number { color: var(--text); margin-right: 1ch; }
 .tray-text { flex-shrink: 0; max-height: 7.5em; overflow-y: auto; margin: 6px 0 0; color: var(--text); font-size: var(--size-sm); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -394,3 +400,10 @@
   .bar { gap: var(--space-3); }
   .picker-button { max-width: 26vw; }
 }
+
+/* Literal text in the monospace face, a size down so it sits with the words around it:
+   section and file names, tool names, tags. */
+.panel-name, .call-name, .call-targets, .tray-tool, .tray-caption, .tile-label, .tip-name, .tag,
+.sections-table .name, .sections-table .method { font-family: var(--mono); font-variant-ligatures: none; }
+.panel-name, .call-name { font-size: var(--size-sm); }
+.call-targets, .tray-caption, .tile-label, .tag { font-size: var(--size-xs); }
