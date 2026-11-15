@@ -29,7 +29,9 @@ jobs:
         run: |
           python packaging/check_wheel.py dist/*.whl
           python -m pip install dist/*.whl
-          python -m pip check
+          # uv's check: pip check crashes on a Linux CUDA wheel's malformed tags
+          python -m pip install uv
+          uv pip check --python "$(command -v python)"
       - name: Exercise installed worker outside checkout
         shell: bash
         run: |
