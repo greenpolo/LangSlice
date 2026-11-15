@@ -37,10 +37,11 @@ AUGMENTED_VOXEL_MM = 0.025
 #: Checked by annotation agreement (best match at 14 planes, 91 % of a mid plane).
 AUGMENTED_AP_OFFSET_MM = 0.35
 _CCFV3_EXTENT_MM = (13.2, 8.0, 11.4)
-#: BrainGlobe's name for the Allen CCFv3 coordinate space. The Allen CCFv2
-#: atlases share CCFv3's grid but not its anatomy (their borders sit 100-300 um
-#: from CCFv3's), so a grid match alone does not qualify an atlas.
-CCFV3_SPACE = "allen-adult-mouse-ccf-space"
+#: BrainGlobe's names for the Allen CCFv3 coordinate space: the earlier
+#: packages' and the 3.x packages' (``allen_mouse_25um`` 3.1). The Allen
+#: CCFv2 atlases share CCFv3's grid but not its anatomy (their borders sit
+#: 100-300 um from CCFv3's), so a grid match alone does not qualify an atlas.
+CCFV3_SPACES = frozenset({"allen-adult-mouse-ccf-space", "allen_mouse-space"})
 _borrowed: dict[tuple[str, tuple[int, ...]], np.ndarray] = {}
 
 
@@ -57,7 +58,7 @@ def _takes_borrowed_nissl(atlas: Any) -> bool:
     except Exception:  # noqa: BLE001 - not a BrainGlobe-style atlas
         return False
     space = _coordinate_space(atlas)
-    if space is not None and space != CCFV3_SPACE:
+    if space is not None and space not in CCFV3_SPACES:
         return False
     extent = np.asarray(context.shape) * np.asarray(context.resolution_um) / 1000.0
     return (context.orientation == "asr" and getattr(atlas, "atlas_name", "") != AUGMENTED_ATLAS
