@@ -54,6 +54,14 @@ public final class ConnectorSmokeTest {
         "");
 
     public static void main(String[] args) throws Exception {
+        // On Windows, java.util.prefs ignores java.util.prefs.userRoot and writes the user's own registry node:
+        // put the user's saved environment back when the test ends, pass or fail.
+        java.util.prefs.Preferences prefs = java.util.prefs.Preferences.userNodeForPackage(EnvironmentDiscovery.class);
+        String userEnvironment = prefs.get("environment", null);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (userEnvironment == null) prefs.remove("environment"); else prefs.put("environment", userEnvironment);
+            try { prefs.flush(); } catch (java.util.prefs.BackingStoreException ignored) { }
+        }));
         Path prefix = Files.createTempDirectory("langslice connector space ");
         boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
         Path python = windows ? prefix.resolve("python.exe") : prefix.resolve("bin/python");
@@ -337,7 +345,7 @@ public final class ConnectorSmokeTest {
                 if (path != null && !path.isEmpty() && path.getMenuString().startsWith("Plugins > LangSlice > ")) entries.merge(path.getMenuString(), 1, Integer::sum);
             }
             Map<String, Integer> expected = new TreeMap<>();
-            for (String item : new String[]{"Open LangSlice…", "Choose Python environment…", "Stop following"}) expected.put("Plugins > LangSlice > " + item, 1);
+            for (String item : new String[]{"Open LangSlice…", "Choose Python environment…", "Stop following", "LangSlice Job Folder"}) expected.put("Plugins > LangSlice > " + item, 1);
             require(entries.equals(expected), "Plugins>LangSlice holds each command once: " + entries);
         }
     }

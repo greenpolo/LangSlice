@@ -356,10 +356,17 @@ final class AbbaHostSession {
         if (!saved) throw new IOException("Could not save section snapshot " + file.getFileName());
     }
 
+    /**
+     * ABBA's names for its built-in Allen Mouse CCFv3 atlases: the menu commands' names, and the name ABBA 0.25's
+     * "Open Atlas" (what abba-mcp and scripts use) gives the same CCFv3.1 atlas.
+     */
+    static final java.util.Set<String> ALLEN_V3_NAMES = new java.util.HashSet<>(java.util.Arrays.asList(
+            "Adult Mouse Brain - Allen Brain Atlas V3p1", "Adult Mouse Brain - Allen Brain Atlas V3", "allen_mouse_10um_java"));
+
     /** LangSlice works on coronal sessions of ABBA's Allen Mouse V3 atlas with finite cutting angles. */
     static void validateSession(MultiSlicePositioner mp) {
         String atlas = mp.getAtlas().getName();
-        if (!atlas.equals("Adult Mouse Brain - Allen Brain Atlas V3p1") && !atlas.equals("Adult Mouse Brain - Allen Brain Atlas V3"))
+        if (!ALLEN_V3_NAMES.contains(atlas))
             throw new IllegalArgumentException("LangSlice currently requires ABBA's Allen Mouse V3 atlas.");
         double x = mp.getReslicedAtlas().getRotateX(), y = mp.getReslicedAtlas().getRotateY();
         if (!Double.isFinite(x + y)) throw new IllegalArgumentException("ABBA's atlas cutting angles are not finite.");

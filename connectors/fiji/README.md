@@ -11,7 +11,8 @@ the Java level ABBA 0.25 itself requires. It also runs on ABBA 0.24.1, where a r
 refuses is reported without ABBA's own reason (ABBA keeps a list of failures from 0.25
 on). Older ABBA versions (0.11 and earlier) are not supported. Runtime dependencies are
 supplied by ABBA/Fiji and are not bundled into the plugin JAR. LangSlice works on
-coronal sessions of ABBA's Allen Mouse V3 or V3p1 atlas.
+coronal sessions of ABBA's Allen Mouse V3 or V3p1 atlas (ABBA 0.25's `Open Atlas`, which
+abba-mcp uses, names V3p1 `allen_mouse_10um_java`).
 
 ## Build and install
 
@@ -39,6 +40,21 @@ Do not copy the Maven dependency jars into Fiji. The connector and LangSlice mus
 updated together: this version speaks worker protocol 3 and refuses any other with
 "Update LangSlice and the connector together".
 
+## With abba-mcp
+
+abba-mcp (ABBA's MCP server) starts a Fiji of its own, which does not load jars from a Fiji
+`jars` folder. [`abba-mcp/abba_mcp_langslice.py`](abba-mcp/abba_mcp_langslice.py) runs abba-mcp
+with this connector added to that Fiji: install the connector into the local Maven
+repository once (`mvn install` here), then register the server in the MCP host as
+
+```bash
+uv run --no-project --with abba-mcp==0.25.0.post2 python /path/to/abba_mcp_langslice.py
+```
+
+An assistant then runs **Open LangSlice…** (`org.langslice.fiji.OpenLangSliceCommand`) on
+the open ABBA session, reads the job folder with **LangSlice Job Folder**, and opens it with
+LangSlice's `start_job`. ABBA follows the job while the abba-mcp server stays connected.
+
 ## Menu entries
 
 - **Register › LangSlice…** in ABBA (and **Plugins › LangSlice › Open LangSlice…**):
@@ -49,6 +65,9 @@ updated together: this version speaks worker protocol 3 and refuses any other wi
 - **Plugins › LangSlice › Choose Python environment…**: the environment dialog.
 - **Plugins › LangSlice › Stop following**: detaches the follower from this ABBA
   session without closing it; ABBA keeps what it has.
+- **Plugins › LangSlice › LangSlice Job Folder**: outputs this ABBA project's job folder
+  (`job_folder`) and whether its job exists (`ready`), so an assistant driving ABBA through
+  abba-mcp can run **Open LangSlice…**, then open the job with LangSlice's `start_job`.
 
 ## What Register › LangSlice… does
 

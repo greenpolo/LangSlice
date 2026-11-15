@@ -14,7 +14,12 @@ parser.add_argument('--test', action='store_true')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent
 def run(argv):
-    result = subprocess.run(argv)
+    # The arguments after the tool go in an @argfile: the Maven classpath passes Windows' 32767-character limit.
+    argfile = root / 'target' / (Path(argv[0]).stem + '.args')
+    argfile.parent.mkdir(parents=True, exist_ok=True)
+    quoted = ('"' + arg.replace('\\', '/').replace('"', '\\"') + '"' for arg in argv[1:])
+    argfile.write_text('\n'.join(quoted) + '\n', encoding='utf-8', newline='\n')
+    result = subprocess.run([argv[0], '@' + str(argfile)] if Path(argv[0]).stem in ('javac', 'java') else argv)
     if result.returncode:
         raise SystemExit(result.returncode)
 java_home = args.java_home or (Path(os.environ['JAVA_HOME']) if 'JAVA_HOME' in os.environ else None)
