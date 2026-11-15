@@ -139,7 +139,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   on a GPU one after another in the caller, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
   candidate is a `CandidateFailure`, never an exception. A GPU fit runs in the
-  machine's one GPU queue (`engines.gpu_turn`: a file lock on `GPU_LOCK`,
+  machine's one GPU queue (`engines.gpu_turn`: a file lock (`filelock`, on
+  every system; `flock` on Linux and macOS) on `GPU_LOCK`,
   `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, the lock the
   STalign, emlddmm and SPOmiAlign engines take too; it yields a `GpuTurn`
   whose `waited_s` is how long the lock was waited for), so fits of several jobs

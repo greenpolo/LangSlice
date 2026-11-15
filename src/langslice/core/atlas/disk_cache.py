@@ -31,6 +31,8 @@ from typing import Any
 
 import numpy as np
 
+from langslice.core.shared_files import replace_file
+
 logger = logging.getLogger(__name__)
 
 #: The setting naming the cache folder; ``off`` (or ``0``, ``none``, empty)
@@ -110,7 +112,8 @@ def cached_volume(atlas: Any, name: str, build: Callable[[], np.ndarray]) -> np.
         folder.mkdir(parents=True, exist_ok=True)
         with open(temporary, "wb") as handle:
             np.save(handle, np.ascontiguousarray(array))
-        os.replace(temporary, path)
+        # another process may have it memory-mapped
+        replace_file(temporary, path)
     except OSError as exc:
         logger.warning("atlas cache: could not save %s (%s)", path, exc)
         try:

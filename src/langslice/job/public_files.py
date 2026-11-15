@@ -42,6 +42,7 @@ import numpy as np
 
 import langslice
 from langslice.core.jsonable import to_jsonable
+from langslice.core.shared_files import replace_file
 from langslice.core.stack.codec import physical_to_json
 from langslice.core.stack.landmarks_json import landmarks_to_json, pair_to_json
 from langslice.job.layout import (
@@ -461,7 +462,7 @@ def write_trace_reply(
     np.savez_compressed(temporary, borders=np.asarray(borders, dtype=bool),
                         reply=np.asarray(reply, dtype=np.uint8),
                         info=np.array(json.dumps(info, sort_keys=True)))
-    temporary.replace(path)
+    replace_file(temporary, path)
     return path
 
 

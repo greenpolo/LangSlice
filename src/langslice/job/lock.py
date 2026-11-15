@@ -17,17 +17,24 @@ and waits for that work (:mod:`langslice.job.background`).
 
 A folder that does not exist yet (a job made around a state, nothing
 written) or cannot be written (a job read off read-only media) is used
-without the lock: nothing can be written there anyway.
+without the lock: nothing can be written there anyway. A lock file that
+cannot be opened for a moment (Windows refuses one another process is
+deleting) is tried again before the folder is probed for writing.
 """
 
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+
+from filelock import BaseFileLock, FileLock, Timeout
+
+from langslice.core.shared_files import retried
+from langslice.job.layout import writable
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +60,7 @@ class FolderLock:
     def __init__(self, folder: Path, timeout: float = LOCK_TIMEOUT_S) -> None:
         self.path = Path(folder) / LOCK_FILE
         self.timeout = timeout
-        self._lock: Any = None
+        self._lock: BaseFileLock | None = None
         self._unusable = False
         #: The in-process lock taken before the folder's (reentrant).
         self._threads = threading.RLock()
@@ -114,15 +121,14 @@ class FolderLock:
                 with self.held():
                     yield True
                 return
-            from filelock import Timeout
-
             lock = self._file_lock()
             try:
-                lock.acquire(timeout=0)
+                retried(functools.partial(lock.acquire, timeout=0))
             except Timeout:
                 yield False
                 return
             except PermissionError:
+                self._unusable = self._is_unwritable()
                 with self.held():  # unwritable: held() works without the lock
                     yield True
                 return
@@ -132,12 +138,19 @@ class FolderLock:
             finally:
                 lock.release()
 
-    def _file_lock(self) -> Any:
+    def _file_lock(self) -> BaseFileLock:
         if self._lock is None:
-            from filelock import FileLock
-
             self._lock = FileLock(str(self.path), timeout=self.timeout)
         return self._lock
+
+    def _is_unwritable(self) -> bool:
+        """Tell whether the folder refuses a new file.
+
+        Only then is the lock left off for good; a lock file refused for
+        longer than a retry is tried again at the next hold.
+        """
+        folder = self.path.parent
+        return not writable(folder, folder)
 
     def _released(self) -> None:
         for callback in list(self.before_release):
@@ -153,17 +166,15 @@ class FolderLock:
             yield
             return
         lock = self._file_lock()
-        from filelock import Timeout
-
         try:
-            lock.acquire()
+            retried(lock.acquire)
         except Timeout as exc:
             raise JobBusy(f"{self.path.parent} is locked by another writer (waited "
                           f"{self.timeout:g} s)") from exc
         except PermissionError:
-            logger.warning("Cannot lock %s (not writable); working without the lock",
+            logger.warning("Cannot lock %s; working without the lock",
                            self.path)
-            self._unusable = True
+            self._unusable = self._is_unwritable()
             yield
             return
         try:

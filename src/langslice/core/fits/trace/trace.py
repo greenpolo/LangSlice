@@ -18,7 +18,7 @@ import io
 import json
 import re
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any, cast
 
 import cv2
@@ -51,6 +51,7 @@ from langslice.core.fits.trace.prompts import (
 from langslice.core.fits.trace.request import BorderTraceRequest, ImageModel
 from langslice.core.geometry.affine import pixel_center_map
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.shared_files import replace_file, retried
 from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
@@ -119,9 +120,9 @@ def prompt_diff(base: str, edited: str) -> str:
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n",
-        encoding="utf-8")
-    temporary.replace(path)
+    text = json.dumps(value, indent=2, allow_nan=False) + "\n"
+    temporary.write_text(text, encoding="utf-8", newline="\n")
+    replace_file(temporary, path)
 
 
 def _png_sha256(image: Image.Image) -> str:
@@ -134,11 +135,15 @@ def _png_sha256(image: Image.Image) -> str:
 def _save_texts(paths: dict[str, str], texts: dict[str, str]) -> None:
     """Write each text to the path of its key, in UTF-8."""
     for key, text in texts.items():
-        Path(paths[key]).write_text(text, encoding="utf-8")
+        Path(paths[key]).write_text(text, encoding="utf-8", newline="\n")
 
 
 def _saved_result(result_path: Path) -> dict[str, Any] | None:
-    """The result saved under one call key, if any."""
+    """Return the result saved under one call key, if any.
+
+    Its paths are made paths in the call key's folder where it is now
+    (:func:`_path_in_call`).
+    """
     if not result_path.exists():
         return None
     try:
@@ -152,19 +157,51 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
                       f"The saved image reply {result_path} cannot be read "
                       f"({problem}); nothing was started. The file is "
                       "damaged: tell the user.")
-    return cast("dict[str, Any]", saved)  # a saved result: by key
+    result = cast("dict[str, Any]", saved)  # a saved result: by key
+    call_directory = result_path.parent
+    directory = result.get("artifact_dir")
+    if isinstance(directory, str):
+        result["artifact_dir"] = _path_in_call(
+            directory, call_directory, levels=1)
+    paths = result.get("artifact_paths")
+    if isinstance(paths, dict):
+        named = cast("dict[str, str]", paths)  # a saved result: by key
+        result["artifact_paths"] = {
+            key: _path_in_call(path, call_directory, levels=2)
+            for key, path in named.items()}
+    return result
+
+
+def _path_in_call(path: str, call_directory: Path, *, levels: int) -> str:
+    """Return a stored path in the call key's folder where it is now.
+
+    The path's last *levels* parts are the whole of a relative path as
+    ``result.json`` stores it, and the attempt's part of an older file's
+    absolute path, written on either system.
+    """
+    written = PureWindowsPath(path)  # splits on both separators
+    return str(call_directory.joinpath(*written.parts[-levels:]))
+
+
+def _relative_in_call(path: str, call_directory: Path) -> str:
+    """Return *path* relative to the call key's folder, ``/``-separated."""
+    return Path(path).relative_to(call_directory).as_posix()
 
 
 #: The file a call key's running attempt holds a lock on (``filelock``)
 #: until its outcome is saved.
 _CLAIM = ".call.lock"
+#: How long a new attempt waits for the call key's claim, in seconds: a
+#: claim released a moment ago can still be refused briefly on Windows.
+CLAIM_WAIT_S = 1.0
 
 
 def _open_attempt(
     call_directory: Path, section_id: str, fingerprint: str,
 ) -> tuple[FileLock, Path, int] | dict[str, Any]:
     """``(claim, attempt directory, attempt)`` for a new attempt under a call
-    key, or the refusal while another attempt under it is running.
+    key, the result an attempt that held the claim meanwhile saved, or
+    the refusal while another attempt under it is running.
 
     The claim is a lock on the key's :data:`_CLAIM`, held until the
     attempt's outcome is saved. A process that dies mid-call releases it,
@@ -172,10 +209,10 @@ def _open_attempt(
     recorded transport failure.
     """
     call_directory.mkdir(parents=True, exist_ok=True)
-    claim = FileLock(str(call_directory / _CLAIM), timeout=0,
+    claim = FileLock(str(call_directory / _CLAIM), timeout=CLAIM_WAIT_S,
                      thread_local=False)
     try:
-        claim.acquire()
+        retried(claim.acquire)
     except Timeout:
         return Refused(
             RefusalCode.IMAGE_CALL_IN_PROGRESS,
@@ -186,6 +223,14 @@ def _open_attempt(
             id=section_id, geometry_fingerprint=fingerprint,
             artifact_dir=str(call_directory),
         ).payload()
+    try:
+        landed = _saved_result(call_directory / "result.json")
+    except Refused:
+        claim.release()
+        raise
+    if landed is not None and landed.get("raw_received"):  # a reply landed
+        claim.release()
+        return {**landed, "cached": True}
     attempt = 1
     for path in call_directory.iterdir():
         made = re.fullmatch(r"attempt-(\d+)", path.name)
@@ -201,8 +246,18 @@ def _finish_attempt(
     result: dict[str, Any],
 ) -> dict[str, Any]:
     """Save an attempt's outcome (its own and the call key's) and release the key."""
-    _write_json(directory / "result.json", result)
-    _write_json(result_path, result)
+    # paths relative to the call key: the file names no folder of this computer
+    call_directory = result_path.parent
+    # start_correction's paths: file name to path
+    paths = cast("dict[str, str]", result["artifact_paths"])
+    stored = {
+        **result,
+        "artifact_dir": _relative_in_call(str(directory), call_directory),
+        "artifact_paths": {key: _relative_in_call(path, call_directory)
+                           for key, path in paths.items()},
+    }
+    _write_json(directory / "result.json", stored)
+    _write_json(result_path, stored)
     claim.release()
     return dict(result)
 

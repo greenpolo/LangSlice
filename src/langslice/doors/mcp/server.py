@@ -16,7 +16,7 @@ from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from functools import partial
-from io import TextIOWrapper
+from io import FileIO, TextIOWrapper
 from pathlib import Path
 from typing import Any
 
@@ -428,8 +428,11 @@ def initialization_options(server: FastMCP) -> InitializationOptions:
     return lowlevel.create_initialization_options(NotificationOptions(tools_changed=True))
 
 
-async def _run_stdio(server: FastMCP, wire: Any) -> None:
-    out = anyio.wrap_file(TextIOWrapper(wire, encoding="utf-8", write_through=True))
+async def _run_stdio(server: FastMCP, wire: FileIO) -> None:
+    # bare newlines: Windows would write each message's end as \r\n
+    text = TextIOWrapper(wire, encoding="utf-8", newline="\n",
+                         write_through=True)
+    out = anyio.wrap_file(text)
     async with stdio_server(stdout=out) as (read_stream, write_stream):
         # FastMCP.run_stdio_async always writes to sys.stdout; the low-level
         # server takes the protocol stream explicitly.

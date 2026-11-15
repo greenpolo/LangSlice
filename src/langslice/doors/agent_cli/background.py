@@ -22,9 +22,12 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
+import threading
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -146,13 +149,30 @@ def _alive(pid: Any) -> bool:
     return True
 
 
-def _detached() -> dict[str, Any]:
-    if WINDOWS:
-        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
-            subprocess, "DETACHED_PROCESS", 0
-        )
-        return {"creationflags": flags}
-    return {"start_new_session": True}
+#: Windows: a process group of its own (``CREATE_NEW_PROCESS_GROUP``) and a
+#: console of its own with no window (``CREATE_NO_WINDOW``), so neither the
+#: process nor the console programs it starts flash a window.
+_DETACHED_FLAGS = 0x00000200 | 0x08000000
+
+
+@dataclass(frozen=True)
+class Detached:
+    """The ``subprocess.Popen`` options of a process that runs on its own.
+
+    It runs past the command that started it: a session of its own on
+    Linux and macOS; on Windows a process group and a windowless console
+    of its own.
+    """
+
+    creationflags: int
+    start_new_session: bool
+
+
+_CREATION_FLAGS = _DETACHED_FLAGS if WINDOWS else 0
+#: How this system starts a process on its own (:class:`Detached`).
+DETACHED = Detached(
+    creationflags=_CREATION_FLAGS, start_new_session=not WINDOWS
+)
 
 
 def start(
@@ -190,13 +210,17 @@ def start(
             stdin=subprocess.DEVNULL,
             stdout=out,  # noqa: S603
             stderr=subprocess.STDOUT,
-            **_detached(),
+            creationflags=DETACHED.creationflags,
+            start_new_session=DETACHED.start_new_session,
         )
     return run_id
 
 
 def begin(layout: JobLayout, run_id: str) -> None:
-    """In the background process: say it runs (its pid)."""
+    """In the background process: say it runs (its pid).
+
+    On Windows it also watches for :func:`cancel`'s request.
+    """
     record = _read(layout, run_id) or {
         "id": run_id,
         "started_at": _now(),
@@ -204,6 +228,43 @@ def begin(layout: JobLayout, run_id: str) -> None:
     }
     if record.get("state") in (None, "running"):
         _write(layout, {**record, "state": "running", "pid": os.getpid()})
+    if WINDOWS:
+        threading.Thread(
+            target=_interrupt_on_request,
+            args=(cancel_path(layout, run_id),),
+            name="langslice-cancel",
+            daemon=True,
+        ).start()
+
+
+def cancel_path(layout: JobLayout, run_id: str) -> Path:
+    """Name the file :func:`cancel` writes to end a run on Windows.
+
+    Parameters
+    ----------
+    layout
+        The job folder's layout the run belongs to.
+    run_id
+        The background run's id.
+
+    Returns
+    -------
+    Path
+        ``logs/runs/<id>.cancel``.
+    """
+    return runs_dir(layout) / f"{run_id}.cancel"
+
+
+def _interrupt_on_request(path: Path) -> None:
+    """Raise ``KeyboardInterrupt`` in the main thread once *path* exists.
+
+    The run then ends through its own cleanup, as Ctrl-C ends it.
+    """
+    while not path.exists():
+        time.sleep(POLL_S)
+    path.unlink(missing_ok=True)
+    # a raised SIGINT, unlike interrupt_main, also wakes a sleep
+    signal.raise_signal(signal.SIGINT)
 
 
 def finish(
@@ -268,22 +329,51 @@ def latest(layout: JobLayout) -> str | None:
     return str(runs[0]["id"]) if runs else None
 
 
-def cancel(layout: JobLayout, run_id: str) -> None:
-    """End the run's process (Ctrl-C on a call that waits for its own run)."""
-    import signal
+#: Windows: how long a cancelled run has to end through its own cleanup
+#: before its process tree is ended, in seconds.
+CANCEL_GRACE_S = 10.0
 
+
+def cancel(layout: JobLayout, run_id: str) -> None:
+    """End the run's process (Ctrl-C on a call that waits for its own run).
+
+    Linux and macOS: ``SIGTERM``. Windows: a request the run's own watcher
+    turns into Ctrl-C (``KeyboardInterrupt``, its cleanup runs), then, if it
+    still runs after :data:`CANCEL_GRACE_S`, its whole process tree ended.
+    A console signal cannot reach it there: it has a console of its own.
+    """
     record = _read(layout, run_id) or {}
     pid = record.get("pid")
     if (
-        record.get("state") == "running"
-        and isinstance(pid, int)
-        and pid > 0
-        and pid != os.getpid()
+        record.get("state") != "running"
+        or not isinstance(pid, int)
+        or pid <= 0
+        or pid == os.getpid()
     ):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
+        return
+    if WINDOWS:
+        _cancel_windows(layout, run_id, pid)
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+
+
+def _cancel_windows(layout: JobLayout, run_id: str, pid: int) -> None:
+    cancel_path(layout, run_id).touch()
+    deadline = time.monotonic() + CANCEL_GRACE_S
+    while _alive(pid):
+        if time.monotonic() >= deadline:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],  # noqa: S607
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                check=False,
+                creationflags=_DETACHED_FLAGS,
+            )
+            return
+        time.sleep(POLL_S)
 
 
 def wait(

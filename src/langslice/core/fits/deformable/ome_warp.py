@@ -51,7 +51,6 @@ comes from ``record.json``).
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -59,6 +58,7 @@ import numpy as np
 
 from langslice.core.fits.deformable.fields import EngineStep
 from langslice.core.fits.deformable.geometry import WorkingGrid
+from langslice.core.shared_files import remove_tree
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
@@ -255,7 +255,7 @@ def write(directory: str | Path, record: DeformableRecord) -> Path:
 
     path = Path(directory) / WARP_STORE
     if path.exists():
-        shutil.rmtree(path)
+        remove_tree(path)
     mm = float(record.mm_per_px)
     root = zarr.open_group(str(path), mode="w", zarr_format=3)
     transforms = root.create_group("coordinateTransformations")

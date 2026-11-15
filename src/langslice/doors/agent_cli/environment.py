@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from langslice.core.refusal import RefusalCode
+from langslice.core.shared_files import remove_tree
 from langslice.doors.agent_cli.envelope import Envelope
 from langslice.job.layout import ENV_DIR, JobLayout
 
@@ -50,15 +51,18 @@ INSTALL_TIMEOUT_S = 1800
 def command(layout: JobLayout, positional: list[str]) -> Envelope:
     """``env``, ``env install PACKAGE ...`` or ``env remove`` on the job in *layout*."""
     action, packages = (positional[0], positional[1:]) if positional else ("", [])
-    if action == "remove" and not packages:
-        removed = remove(layout)
-        return Envelope(result={"removed": removed,
-                                "requirements": str(layout.folder / REQUIREMENTS)})
-    if action not in ("", "install") or (action == "install" and not packages):
+    removing = action == "remove" and not packages
+    if not removing and (action not in ("", "install")
+                         or (action == "install" and not packages)):
         return Envelope.failure(
             RefusalCode.BAD_ARGS,
             "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.")
     try:
+        if removing:
+            removed = remove(layout)
+            requirements = str(layout.folder / REQUIREMENTS)
+            return Envelope(result={"removed": removed,
+                                    "requirements": requirements})
         built = ensure(layout)
         if packages:
             install(layout, packages)
@@ -130,7 +134,7 @@ def remove(layout: JobLayout) -> bool:
     if not folder.exists():
         return False
     write_requirements(layout)
-    shutil.rmtree(folder)
+    remove_tree(folder)
     return True
 
 

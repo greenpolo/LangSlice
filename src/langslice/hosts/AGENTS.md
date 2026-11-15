@@ -38,7 +38,8 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 - `service.py` — `langslice serve --stdio`: the JSON-lines engine
   service the Fiji connector starts (protocol 3: `setup.status`,
-  `abba.prepare`, `abba.follow`). A long request (`abba.follow`, the
+  `abba.prepare`, `abba.follow`; UTF-8 both ways, lines ending in LF on
+  every system). A long request (`abba.follow`, the
   follower that mirrors a job's checkpoints into ABBA) runs until the
   service's input closes: a thread reads the rest of the input and sets the
   request's stop event at its end. The protocol models, the preparation of

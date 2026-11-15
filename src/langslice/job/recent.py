@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from langslice.core.shared_files import replace_file
+
 logger = logging.getLogger(__name__)
 
 #: Another file for the list, or ``off`` for none.
@@ -55,7 +57,7 @@ def remember(folder: str | os.PathLike[str], image_folder: str | os.PathLike[str
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(json.dumps(record) + "\n")
         if path.stat().st_size > KEEP_BYTES:
             _compact(path)
@@ -92,5 +94,6 @@ def _compact(path: Path) -> None:
         newest[entry["folder"]] = entry
     kept = list(newest.values())[-KEEP_JOBS:]
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text("".join(json.dumps(entry) + "\n" for entry in kept), encoding="utf-8")
-    os.replace(temporary, path)
+    lines = "".join(json.dumps(entry) + "\n" for entry in kept)
+    temporary.write_text(lines, encoding="utf-8", newline="\n")
+    replace_file(temporary, path)

@@ -34,9 +34,14 @@ yellow.
 It keeps the call-key folders and attempts, takes the image model as an
 argument, and leaves fitting to the tools layer. A running attempt holds a
 lock on its call key's `.call.lock`: another process asking the same call
-meanwhile is refused `IMAGE_CALL_IN_PROGRESS`, and an attempt whose process
-died releases it, so the call is made again as the next attempt. An
-attempt's folder holds
+meanwhile is refused `IMAGE_CALL_IN_PROGRESS` (after `CLAIM_WAIT_S`, 1 s;
+a reply saved meanwhile is returned `cached`), and an attempt whose process
+died releases it, so the call is made again as the next attempt. The call
+key's `result.json` (and the attempt's copy) store `artifact_dir` and
+`artifact_paths` relative to the call key's folder (`attempt-01`,
+`attempt-01/raw_reply.png`); a cached reply gives them as paths where the
+folder is now, an older file's absolute paths carried over by their last
+parts (`_path_in_call`). An attempt's folder holds
 `request.json` (what was sent: the geometry, and each attached picture's
 role and PNG SHA-256 in the order sent), `prompt.txt`, `base_prompt.txt`,
 `prompt_diff.txt`, `raw_reply.png` (the model's answer, kept as received)

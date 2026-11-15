@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
+from langslice.core.shared_files import replace_file
 from langslice.core.stack.json_reads import (
     flag_at,
     integer_at,
@@ -70,14 +71,14 @@ def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
     os.makedirs(directory, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             if indent is None:
                 json.dump(data, handle, separators=(",", ":"))
             else:
                 json.dump(data, handle, indent=indent)
         # mkstemp creates 0600; a job file is an ordinary output file.
         os.chmod(tmp_path, 0o644)
-        os.replace(tmp_path, path)
+        replace_file(tmp_path, path)
     except BaseException:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

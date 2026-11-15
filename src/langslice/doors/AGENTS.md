@@ -555,7 +555,14 @@ bodies, and turned into an answer once per door:
     `OpenProcess`/`GetExitCodeProcess`), `listing`, `latest`, `wait`
     (`WAIT_S`: what `wait` waits without `--timeout`, and a detached long
     call, well inside the time a harness gives a command), `cancel` (the run's
-    process sent `SIGTERM`), `detaching()` (`DETACH_ENV`, `LANGSLICE_DETACH`:
+    process sent `SIGTERM`; on Windows, where the run has a console of its
+    own that no console signal reaches, `<id>.cancel` written, which the
+    child's watcher (started by `begin`) turns into a raised `SIGINT`, so its
+    cleanup runs, and after `CANCEL_GRACE_S` (10 s) its process tree ended by
+    `taskkill /T /F`), `DETACHED` (the `Popen` options of a process on its
+    own: a new session; on Windows `CREATE_NEW_PROCESS_GROUP` and
+    `CREATE_NO_WINDOW`, so no console window flashes; also `linear run
+    --gui`'s window process), `detaching()` (`DETACH_ENV`, `LANGSLICE_DETACH`:
     `0` no, `1` yes; unset, yes unless `CLAUDECODE` is set: Claude Code's
     sandbox ends what a command leaves running).
 

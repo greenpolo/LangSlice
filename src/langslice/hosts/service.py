@@ -8,6 +8,7 @@ input is read by a thread of its own, and its end stops the request.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -107,6 +108,10 @@ def run_stdio(
     input_stream: TextIO | None = None,
     output_stream: TextIO | None = None,
 ) -> int:
+    if input_stream is None and isinstance(sys.stdin, io.TextIOWrapper):
+        # the connector writes UTF-8 whatever the system's code page
+        stdin = cast("io.TextIOWrapper[io.BufferedReader]", sys.stdin)
+        stdin.reconfigure(encoding="utf-8")
     # Scientific libraries may print through Python OR native stdout. Keep both
     # away from the protocol; a dedicated duplicate of stdout carries JSON only.
     with _protocol_output(output_stream) as out_stream:
@@ -121,7 +126,9 @@ def _protocol_output(output_stream: TextIO | None):
         return
     sys.stdout.flush()
     saved = os.dup(sys.stdout.fileno())
-    wire = os.fdopen(os.dup(saved), "w", encoding="utf-8", buffering=1)
+    # UTF-8 with bare newlines, as the connector reads it on every system
+    wire = os.fdopen(os.dup(saved), "w", encoding="utf-8", buffering=1,
+                     newline="\n")
     try:
         os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
         with redirect_stdout(sys.stderr):

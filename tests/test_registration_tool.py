@@ -199,6 +199,44 @@ def test_a_running_call_refuses_another_and_an_interrupted_one_is_made_again(
     assert Path(submitted["artifact_dir"]).name == "attempt-01"
 
 
+def test_result_files_hold_paths_relative_to_the_call(case, tmp_path):
+    """result.json names the attempt's files relative to the call key's
+    folder, with LF line ends; a cached reply gives them where the folder
+    is now, and an older file's absolute paths are carried over."""
+    state, ctx, record, original, *_ = case
+    model = _model(lambda request: SimpleNamespace(image=original, route="test"))
+    first = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    attempt = Path(first["artifact_dir"])
+    call = attempt.parent
+    for saved in (call / "result.json", attempt / "result.json"):
+        raw = saved.read_bytes()
+        assert b"\r\n" not in raw
+        stored = json.loads(raw)
+        assert stored["artifact_dir"] == "attempt-01"
+        assert stored["artifact_paths"]["raw_reply"] == "attempt-01/raw_reply.png"
+    assert b"\r\n" not in (attempt / "prompt_diff.txt").read_bytes()
+
+    # the folder moved: the cached reply names the files where they are now
+    moved = tmp_path / "moved"
+    (tmp_path / "out").rename(moved)
+    cached = _correct(state, ctx, record.id, out=moved, image_model=model)
+    new_attempt = (moved / call.parent.name / call.name / "attempt-01").resolve()
+    assert cached["cached"] and cached["artifact_dir"] == str(new_attempt)
+    assert cached["artifact_paths"]["raw_reply"] == str(new_attempt / "raw_reply.png")
+
+    # an older file's absolute paths, written on another computer
+    result_path = moved / call.parent.name / call.name / "result.json"
+    old = json.loads(result_path.read_text(encoding="utf-8"))
+    old["artifact_dir"] = "C:\\Users\\someone\\out\\x\\" + call.name + "\\attempt-01"
+    old["artifact_paths"] = {
+        key: f"/home/someone/out/x/{call.name}/attempt-01/{Path(value).name}"
+        for key, value in old["artifact_paths"].items()}
+    result_path.write_text(json.dumps(old), encoding="utf-8")
+    reread = _correct(state, ctx, record.id, out=moved, image_model=model)
+    assert reread["artifact_dir"] == str(new_attempt)
+    assert reread["artifact_paths"]["prompt"] == str(new_attempt / "prompt.txt")
+
+
 def test_another_image_provider_makes_a_trace_stale(case):
     state, ctx, record, *_ = case
     first = tool.correction_fingerprint(state, ctx, record.id)

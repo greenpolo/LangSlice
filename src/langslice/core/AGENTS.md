@@ -158,6 +158,12 @@ the angles in a caption (empty for the flat plane).
   string's, so a reply prints, compares and serializes as before. Core,
   job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
   `plugins.ToolError` is its subclass for plugins.
+- `shared_files.py` — files another process may hold open (on Windows a
+  reader without the lock, the window's watcher, a memory-mapped cache file
+  or a scanner makes a replace, delete or lock fail with `PermissionError`
+  for milliseconds): `retried(operation)` tries again for up to `RETRY_S`
+  (1 s), `replace_file` (`os.replace`, every atomic write's rename),
+  `remove_tree` (`rmtree`, read-only files made writable).
 - `fits/flags.py` — `FitFlag`, the codes of a fit's flags (`FOLDS`,
   `DISPLACEMENT_OUTSIZED`, `REGION_*`, `SCALE_CHANGED`, `SHEAR`): not
   refusals, the fit is written; `SECTION_FLAGS`, the whole-section ones.
