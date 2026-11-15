@@ -28,7 +28,7 @@ ENGINES = Path(_gpu_queue.__file__).resolve().parent
 
 
 def test_every_engine_takes_the_shared_queue_and_none_imports_fcntl():
-    for name in ("stalign", "spomialign", "emlddmm"):
+    for name in ("stalign", "emlddmm"):
         tree = ast.parse((ENGINES / name / "engine.py").read_text(encoding="utf-8"))
         imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
                     for alias in node.names}
@@ -125,10 +125,11 @@ def test_the_environment_is_found_by_name_and_otherwise_named_under_claude_scien
 
 def test_an_unset_source_is_refused_naming_where_to_set_it():
     with pytest.raises(ToolError) as refused:
-        _environment.require_path("SPOmiAlign", "ref:tools", "src", "",
-                                  variable="SPOMIALIGN_SRC")
+        _environment.require_path("emlddmm", "ref:tools", "emlddmm_src", "",
+                                  variable="EMLDDMM_SRC")
     assert refused.value.code == "ENGINE_MISSING"
-    assert "src is not set" in str(refused.value) and "SPOMIALIGN_SRC" in str(refused.value)
+    assert "emlddmm_src is not set" in str(refused.value)
+    assert "EMLDDMM_SRC" in str(refused.value)
 
 
 def test_no_engine_default_names_a_machine_folder():

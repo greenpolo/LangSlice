@@ -1,11 +1,12 @@
 """Find an engine's interpreter, and refuse a call when it is missing.
 
-Each engine runs under the Python of its own conda environment (``stalign2``,
-``rigid_spomialign``, ``rigid_emlddmm``). A plugin's ``python`` option names
-that interpreter; without one, the environment is looked up by name in the
-folders conda keeps environments in, and the interpreter is the one inside it
-for this platform. An option the engine needs that is unset or names a path
-that does not exist is refused at call time with ``ENGINE_MISSING``.
+An engine run as a subprocess (STalign, emlddmm) runs under the Python of
+its own conda environment (``stalign2``, ``rigid_emlddmm``). A plugin's
+``python`` option names that interpreter; without one, the environment is
+looked up by name in the folders conda keeps environments in, and the
+interpreter is the one inside it for this platform. An option the engine
+needs that is unset or names a path that does not exist is refused at call
+time with ``ENGINE_MISSING``.
 """
 
 from __future__ import annotations
