@@ -3,9 +3,11 @@
 Load it with ``--plugins langslice.engines.stalign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python`` (the
-``stalign2`` interpreter), ``device`` (``auto``: the GPU at float32 when there is one, else
-the CPU at float64), ``threads``, ``timeout_s``. STalign (GPL-3.0) runs in ``engine.py`` under
-that interpreter; this module imports only ``langslice.plugin_api``.
+``stalign2`` interpreter; by default the one of the conda environment of
+that name, ``_environment.env_python``), ``device`` (``auto``: the GPU at
+float32 when there is one, else the CPU at float64), ``threads``,
+``timeout_s``. STalign (GPL-3.0) runs in ``engine.py`` under that
+interpreter; this module imports only ``langslice.plugin_api``.
 
 Two tools:
 
@@ -35,7 +37,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,7 +44,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from langslice.engines import _blocks
+from langslice.engines import _blocks, _environment, _process_tree
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -57,7 +58,7 @@ HERE = Path(__file__).resolve().parent
 NAME = "STalign"
 REF = "langslice.engines.stalign.plugin:tools"
 DEFAULTS = {
-    "python": str(Path("~/.claude-science/conda/envs/stalign2/bin/python").expanduser()),
+    "python": _environment.env_python("stalign2"),
     "device": "auto",
     "threads": 4,
     "timeout_s": 1800,
@@ -362,11 +363,9 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
 def _require(config: dict[str, Any], *keys: str) -> None:
     """Refuse at call time when an environment or source folder the engine needs is missing."""
     for key in keys:
-        path = Path(str(config[key])).expanduser()
-        if not path.exists():
-            raise ToolError(RefusalCode.ENGINE_MISSING,
-                            f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
-                            f"it in the plugin_config of {REF})")
+        # plugin_config holds JSON values
+        _environment.require_path(
+            NAME, REF, key, str(config[key]))  # pyright: ignore[reportAny]
 
 
 # --- the engine -------------------------------------------------------------------------------
@@ -380,10 +379,11 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     np.savez_compressed(src, params=np.array(json.dumps(
         {**params, "device": config["device"], "threads": int(config["threads"])})), **arrays)
     env = {**os.environ, "OMP_NUM_THREADS": str(config["threads"])}
-    done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-                          capture_output=True, stdin=subprocess.DEVNULL, text=True,
-                          env=env, cwd=str(folder),
-                          timeout=float(config["timeout_s"]))
+    # plugin_config holds JSON values
+    timeout_s = float(config["timeout_s"])  # pyright: ignore[reportAny]
+    done = _process_tree.run_engine(
+        [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
+        timeout_s=timeout_s, env=env, cwd=folder)
     (folder / "log.txt").write_text(done.stdout + done.stderr,
         encoding="utf-8")
     if done.returncode != 0 or not dst.exists():
@@ -566,7 +566,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                         row.get("error", RefusalCode.NOT_WRITTEN),  # pyright: ignore[reportAny]
                         row.get("message", ""))  # pyright: ignore[reportAny]
             summary = warp.summary
-            relative = here.relative_to(lctx.job_dir) if here.is_relative_to(lctx.job_dir) else here
+            relative = _blocks.job_path(lctx, here)
             flags = flag_words(summary)
             left = (f"; its sorting left out {estimated['left_out_fraction']:.0%} of the tissue "
                     "and is saved with the deformation") if estimated and (
@@ -579,7 +579,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                     + (f"It waited {round(waited)} s for the machine's GPU queue. "
                        if queue else "")
                     + f"STalign's mismatch record: "
-                    f"{relative / 'energy.csv'} (plot: {relative / 'mismatch.png'}).")
+                    f"{relative}/energy.csv (plot: {relative}/mismatch.png).")
             pictures = []
             if view:
                 pictures = [lctx.caption(lctx.overlay_picture(sid), f"{sid}: {note}")]

@@ -6,8 +6,9 @@ registration agent as two tools. Design: Fable's proposal of 2026-10-19, with on
 made: the slot spacing is an argument of the agent's, not a plugin setting.
 
 - `plugin.py`: the adapter, run in LangSlice's process (imports only `langslice.plugin_api`).
-- `engine.py`: the emlddmm calls, run under `~/.claude-science/conda/envs/rigid_emlddmm/bin/python -I`
-  with `emlddmm.py` from `comparators/src/emlddmm_fix`. Nothing of emlddmm is copied or edited:
+- `engine.py`: the emlddmm calls, run with `-I` under the `rigid_emlddmm` environment's
+  interpreter, with `emlddmm.py` from the folder `emlddmm_src` names (SliceBench's
+  `comparators/src/emlddmm_fix`). Nothing of emlddmm is copied or edited:
   the energy record is taken by wrapping the fork's `interp` (it finds the calling `emlddmm` frame's
   local `Esave` list). That environment has no `brainglobe_atlasapi`, so the engine reads the atlas
   folder under `~/.brainglobe` (`reference.tiff`, `additional_references/`, `annotation.tiff`)
@@ -24,10 +25,19 @@ langslice linear run ... --plugins langslice.engines.emlddmm.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--plugin-config`):
-`python`, `emlddmm_src`, `brainglobe_dir`, `device` (`auto`), `dtype` (`float64`), `section_um`
+`python` (default: the `rigid_emlddmm` conda environment's interpreter, found as below),
+`emlddmm_src` (no default: a call without it is refused `ENGINE_MISSING`), `brainglobe_dir`
+(`~/.brainglobe`), `device` (`auto`), `dtype` (`float64`), `section_um`
 (58.88, the example's pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb`
-(24), `threads`, `timeout_s`. Engine calls take the GPU lock file STalign's engine takes
-(`~/.cache/langslice-stalign/gpu.lock`).
+(24), `threads`, `timeout_s`. Engine calls take the machine's GPU lock file, as STalign's,
+SPOmiAlign's and LangSlice's own GPU fits do (`LANGSLICE_GPU_LOCK`, else
+`~/.cache/langslice-stalign/gpu.lock`; `../_gpu_queue.py`).
+
+The default interpreter is the one of the conda environment of that name in the first of
+`SLICEBENCH_CONDA_ENVS`, conda's `CONDA_ENVS_PATH`, the `envs` folder of the conda
+`CONDA_EXE` names, `~/.conda/envs` and `~/.claude-science/conda/envs` that holds it:
+`python.exe` at its root on Windows (`Scripts\python.exe` for a venv), `bin/python`
+elsewhere (`../_environment.py`).
 
 ## The tools
 

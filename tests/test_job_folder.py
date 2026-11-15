@@ -5,6 +5,7 @@ layers."""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from langslice.job.layout import (
     JobLayout,
     job_folder_for,
     section_dirname,
+    section_dirnames,
 )
 from langslice.job.pictures import flush_all
 from langslice.job.settings.spec import JobSpec
@@ -64,6 +66,50 @@ def test_section_folders_are_stems_unless_two_images_share_one(tmp_path: Path):
     outside = tmp_path.parent / "elsewhere" / "file"
     assert layout.relative(outside) == str(outside)
     assert layout.resolve("sections/s0") == layout.folder / "sections" / "s0"
+
+
+def _folder_before(section_id: str, siblings: list[str]) -> str:
+    """The section folder name as jobs made before the Windows rules have it."""
+    name = Path(section_id).name
+    stem = Path(name).stem
+    clash = sum(1 for other in siblings
+                if Path(Path(other).name).stem.casefold() == stem.casefold()) > 1
+    cleaned = re.sub(r"[\x00-\x1f/\\:*?\"<>|]", "_", name if clash else stem).strip().lstrip(".")
+    return cleaned or "_"
+
+
+def test_ordinary_section_folders_keep_the_names_existing_jobs_have():
+    stacks = [
+        ["s0.png", "s1.png", "s10.tif", "S2.TIF", "brain_01.jpg", "brain 02.png"],
+        ["s1.png", "s1.tif", "s2.png", "slide.3.png", "Mouse-12_s004.tiff"],
+        ["con_1.png", "auxiliary.png", "nul0.png", "COM10.png", "LPT.png", "odd name?.tif",
+         ".hidden.png", "x..y.png", "com.png"],
+    ]
+    for siblings in stacks:
+        folders = section_dirnames(siblings)
+        for name in siblings:
+            assert folders[name] == _folder_before(name, siblings), name
+            assert section_dirname(name, siblings) == folders[name]
+
+
+def test_section_folders_are_valid_and_distinct_on_windows():
+    siblings = ["aux.png", "CON", "nul.tif", "com1.x.png", "LPT9.png", "s5..png", "a.",
+                "S1.png", "s1.png", "a?b.png", "a_b.png", "a_b_2.png"]
+    folders = section_dirnames(siblings)
+    assert folders["aux.png"] == "aux_"
+    assert folders["CON"] == "CON_"
+    assert folders["nul.tif"] == "nul_"
+    assert folders["com1.x.png"] == "com1_.x"
+    assert folders["LPT9.png"] == "LPT9_"
+    assert folders["s5..png"] == "s5_"  # the stem "s5." would lose its dot on Windows
+    assert folders["a."] == "a_"
+    # a case-only clash: the first in sorted order keeps the name
+    assert (folders["S1.png"], folders["s1.png"]) == ("S1.png", "s1.png_2")
+    # an unchanged filename keeps its name over one whose characters were replaced,
+    # and a number another section's folder already has is skipped
+    assert (folders["a_b.png"], folders["a?b.png"]) == ("a_b", "a_b_3")
+    assert folders["a_b_2.png"] == "a_b_2"
+    assert len({folder.casefold() for folder in folders.values()}) == len(siblings)
 
 
 def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):

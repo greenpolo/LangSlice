@@ -4,8 +4,9 @@
 
 Run as ``python engine.py IN.npz OUT.npz`` with the ``rigid_spomialign`` interpreter
 (``plugin.py`` does this). SPOmiAlign (Wang et al. 2026, Brief Bioinform; no licence in
-repo: local research use only) and its bundled RoMa are imported from
-``comparators/src/spomialign`` (``SPOMIALIGN_SRC`` overrides). The steps are those of
+repo: local research use only) and its bundled RoMa are imported from the
+``SPOmiAlign`` folder ``SPOMIALIGN_SRC`` names (``plugin.py`` sets it;
+SliceBench keeps it under ``comparators/src/spomialign``). The steps are those of
 ``SPOmiAlign/roma.py::align_and_process_images`` as ``comparators/rigid/spomialign_runner.py``
 audits them:
 both images resized to SPOmiAlign's 1152 x 864 grid, RoMa outdoor matches, certainty
@@ -35,17 +36,18 @@ pairs fitted, and those in the damage zone passed over to reach them),
 
 from __future__ import annotations
 
-import fcntl
 import os
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-SRC = Path(os.environ.get("SPOMIALIGN_SRC")
-           or "~/Software/SliceBench/comparators/src/spomialign/SPOmiAlign").expanduser()
+if not os.environ.get("SPOMIALIGN_SRC"):
+    raise SystemExit("SPOMIALIGN_SRC is not set: it names the SPOmiAlign folder")
+SRC = Path(os.environ["SPOMIALIGN_SRC"]).expanduser()
 sys.path.insert(0, str(SRC / "software" / "Roma"))
 sys.path.insert(0, str(SRC))
 
@@ -55,12 +57,17 @@ import torch  # noqa: E402
 from PIL import Image  # noqa: E402
 from scipy.ndimage import map_coordinates  # noqa: E402
 
+#: The engines' shared GPU queue, ``../_gpu_queue.py``: ``-I`` leaves its
+#: folder off the path, and it goes last, so it hides no installed package.
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+if TYPE_CHECKING:  # the type checker reads it from the package
+    from langslice.engines._gpu_queue import gpu_turn
+else:
+    from _gpu_queue import gpu_turn
+
 #: SPOmiAlign's registration grid (roma.py ``H, W = 864, 1152``; paper: "1152 x 864")
 H, W = 864, 1152
 #: RoMa pixel coordinates are corner based (``W / 2 (x + 1)``): pixel centre + 0.5
-#: The GPU's one queue, shared with FireANTs, STalign and emlddmm (their lock file).
-GPU_LOCK = Path(os.environ.get("LANGSLICE_GPU_LOCK")
-                or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock")
 #: A section that still finds the GPU full waits OOM_WAIT_S, twice that, ... and runs again.
 OOM_RETRIES = 4
 OOM_WAIT_S = 5.0
@@ -72,30 +79,6 @@ def out_of_memory(exc: BaseException) -> bool:
     text = str(exc)
     return (type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text
             or "CUDNN_STATUS_INTERNAL_ERROR" in text or "CUBLAS_STATUS_ALLOC_FAILED" in text)
-
-
-class gpu_queue:
-    """The whole call, the matcher's loading included, in the GPU's queue (a
-    lock on GPU_LOCK); nothing on the CPU."""
-
-    def __init__(self, device):
-        self.device = str(device)
-        self.handle = None
-        self.waited_s = 0.0
-
-    def __enter__(self):
-        if self.device.startswith("cuda"):
-            GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-            self.handle = open(GPU_LOCK, "w", encoding="utf-8")
-            asked = time.monotonic()
-            fcntl.flock(self.handle, fcntl.LOCK_EX)
-            self.waited_s = time.monotonic() - asked
-        return self
-
-    def __exit__(self, *exc):
-        if self.handle is not None:
-            fcntl.flock(self.handle, fcntl.LOCK_UN)
-            self.handle.close()
 
 
 #: Times the GPU was out of memory and a call ran again (RETRIES["n"]).
@@ -237,7 +220,9 @@ def main() -> int:
     if mode not in MODES:
         raise SystemExit(f"mode is one of {MODES}; got {mode!r}")
     device = SP.resolve_torch_device(os.environ.get("SPOMIALIGN_DEVICE") or None)
-    with gpu_queue(device) as turn:
+    # the whole call, the matcher's loading included, in the GPU's queue
+    # (RoMa's device is untyped)
+    with gpu_turn(device) as turn:  # pyright: ignore[reportUnknownArgumentType]
         return _match_all(data, mode, device, turn.waited_s)
 
 

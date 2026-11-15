@@ -3,7 +3,10 @@
 Load it with ``--plugins langslice.engines.spomialign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.spomialign.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python``
-(the ``rigid_spomialign`` interpreter), ``src`` (SPOmiAlign's ``SPOmiAlign`` folder),
+(the ``rigid_spomialign`` interpreter; by default the one of the conda
+environment of that name, ``_environment.env_python``), ``src``
+(SPOmiAlign's ``SPOmiAlign`` folder; by default ``SPOMIALIGN_SRC``, and a
+call without either is refused ``ENGINE_MISSING``),
 ``device``, ``timeout_s``. The method itself runs in ``engine.py`` under that
 interpreter; this module imports only ``langslice.plugin_api``.
 
@@ -23,7 +26,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -31,7 +33,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from langslice.engines import _blocks
+from langslice.engines import _blocks, _environment, _process_tree
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -42,12 +44,14 @@ from langslice.plugin_api import (
 
 HERE = Path(__file__).resolve().parent
 NAME = "SPOmiAlign"
-#: Where SliceBench keeps the vendored sources the engines read by path.
-COMPARATOR_SRC = Path("~/Software/SliceBench/comparators/src").expanduser()
 REF = "langslice.engines.spomialign.plugin:tools"
+#: The environment variable that sets ``src`` when the plugin_config does not.
+SRC_VARIABLE = "SPOMIALIGN_SRC"
+#: The options an environment variable also sets, named in a refusal.
+VARIABLES = {"src": SRC_VARIABLE}
 DEFAULTS = {
-    "python": str(Path("~/.claude-science/conda/envs/rigid_spomialign/bin/python").expanduser()),
-    "src": str(COMPARATOR_SRC / "spomialign" / "SPOmiAlign"),
+    "python": _environment.env_python("rigid_spomialign"),
+    "src": os.environ.get(SRC_VARIABLE, ""),
     "device": "",
     "timeout_s": 900,
 }
@@ -306,13 +310,14 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
         if pair["section_keep"] is not None:
             arrays[f"section_keep_{i}"] = pair["section_keep"]
     np.savez_compressed(src, **arrays)
-    env = {**os.environ, "SPOMIALIGN_SRC": config["src"]}
+    env = {**os.environ, SRC_VARIABLE: config["src"]}
     if config.get("device"):
         env["SPOMIALIGN_DEVICE"] = str(config["device"])
-    done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-                          capture_output=True, stdin=subprocess.DEVNULL, text=True,
-                          env=env, cwd=str(folder),
-                          timeout=float(config["timeout_s"]))
+    # plugin_config holds JSON values
+    timeout_s = float(config["timeout_s"])  # pyright: ignore[reportAny]
+    done = _process_tree.run_engine(
+        [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
+        timeout_s=timeout_s, env=env, cwd=folder)
     (folder / "log.txt").write_text(done.stdout + done.stderr,
         encoding="utf-8")
     if done.returncode != 0 or not dst.exists():
@@ -388,11 +393,10 @@ def _full_map(frame: Any, pair: dict[str, Any], matrix: np.ndarray,
 def _require(config: dict[str, Any], *keys: str) -> None:
     """Refuse at call time when an environment or source folder the engine needs is missing."""
     for key in keys:
-        path = Path(str(config[key])).expanduser()
-        if not path.exists():
-            raise ToolError(RefusalCode.ENGINE_MISSING,
-                            f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
-                            f"it in the plugin_config of {REF})")
+        # plugin_config holds JSON values
+        _environment.require_path(
+            NAME, REF, key, str(config[key]),  # pyright: ignore[reportAny]
+            variable=VARIABLES.get(key, ""))
 
 
 # --- job files --------------------------------------------------------------------------------
@@ -541,10 +545,11 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                 "device": config.get("device") or "SPOmiAlign's choice",
                 "pairs_used": int(got.get("pairs", 0)), "pairs_dropped_in_damage": in_damage,
                 "pairs_dropped_by_mask": by_mask})
-            relative = here.relative_to(ctx.job_dir) if here.is_relative_to(ctx.job_dir) else here
+            relative = _blocks.job_path(ctx, here)
             if "error" in got:
                 failed = ToolError(RefusalCode.FIT_FAILED, f"{got['error']}")
-                rows.append({**failed.payload(section_id=sid), "files": str(relative)})
+                rows.append({**failed.payload(section_id=sid),
+                             "files": relative})
                 continue
             what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"
             note = (f"SPOmiAlign {what}, atlas {resolved}, {int(got['pairs'])} pairs, "
@@ -557,7 +562,7 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                 "smoothing_sigma_px": round(float(pair["smoothing_px"]), 3),
                 "matches": matches, "canvas_px": list(pair["target"].shape[:2])}
             row: dict[str, Any] = {"id": sid, "status": "ok", "fitted": note,
-                                   "files": str(relative), "inputs": inputs, "estimated": None,
+                                   "files": relative, "inputs": inputs, "estimated": None,
                                    "engine_settings": engine_settings,
                                    **gpu_words(float(got.get("gpu_wait_s", 0.0)),
                                                int(got.get("oom_retries", 0)))}

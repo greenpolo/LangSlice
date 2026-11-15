@@ -18,9 +18,11 @@ langslice linear run ... --plugins langslice.engines.spomialign.plugin:tools
 
 or `langslice.create_job(..., plugins=["plugin:tools"])` with this folder on
 `PYTHONPATH`. Options (`--plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `python` (the
-`rigid_spomialign` interpreter; default
-`~/.claude-science/conda/envs/rigid_spomialign/bin/python`), `src`, `device`,
-`timeout_s`. RoMa's weights load from `~/.cache/torch/hub/checkpoints`.
+`rigid_spomialign` interpreter; default: that conda environment's, found as emlddmm's README
+says), `src` (SPOmiAlign's `SPOmiAlign` folder; default `SPOMIALIGN_SRC`, and a call
+without either is refused `ENGINE_MISSING`), `device`, `timeout_s`. The engine takes the
+machine's GPU lock file (`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`).
+RoMa's weights load from `~/.cache/torch/hub/checkpoints`.
 
 ## What a call does
 

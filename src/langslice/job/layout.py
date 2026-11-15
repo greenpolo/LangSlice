@@ -55,6 +55,7 @@ import json
 import os
 import re
 import tempfile
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -108,6 +109,10 @@ JOB_FORMAT_VERSION = 1
 FORMAT_KEY = "format_version"
 
 _UNSAFE = re.compile(r"[\x00-\x1f/\\:*?\"<>|]")
+#: The device names Windows refuses as a file or folder name, in any case and
+#: before any dot: ``aux`` and ``aux.png`` alike.
+_RESERVED = re.compile(r"CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³]",
+                       re.IGNORECASE)
 
 
 def job_folder_for(image_folder: str | os.PathLike[str]) -> Path:
@@ -237,18 +242,91 @@ def _safe(name: str) -> str:
     return cleaned or "_"
 
 
-def section_dirname(section_id: str, siblings: list[str] | tuple[str, ...] = ()) -> str:
-    """A section's folder name: its image filename's stem.
+def _windows_name(name: str) -> str:
+    """Make *name* (a :func:`_safe` one) a name Windows takes.
 
-    The whole filename when another image among *siblings* shares the stem
-    (``s1.png`` and ``s1.tif``), so two sections never share a folder.
-    Characters a file system refuses become ``_``.
+    A trailing dot or space becomes ``_``, and a device name gets ``_``
+    after it (``aux_.png``).
+    """
+    if name.endswith((".", " ")):  # Windows drops a trailing dot or space
+        name = name.rstrip(". ") + "_"
+    head, dot, rest = name.partition(".")
+    if _RESERVED.fullmatch(head.rstrip(" ")):
+        return f"{head}_{dot}{rest}"
+    return name
+
+
+def _distinct(order: list[str], bases: dict[str, str]) -> dict[str, str]:
+    """Give each name its base as a folder, distinct ignoring case.
+
+    A base an earlier name in *order* has gets the first ``_2``, ``_3``,
+    ... that is no other name's base.
+    """
+    every_base = {base.casefold() for base in bases.values()}
+    assigned: set[str] = set()
+    folders: dict[str, str] = {}
+    for name in order:
+        folder = bases[name]
+        n = 1
+        while folder.casefold() in assigned:
+            n += 1
+            folder = f"{bases[name]}_{n}"
+            if folder.casefold() in every_base:
+                folder = bases[name]
+        assigned.add(folder.casefold())
+        folders[name] = folder
+    return folders
+
+
+def section_dirnames(siblings: list[str] | tuple[str, ...]) -> dict[str, str]:
+    """Name the folder of every section among the images of one stack.
+
+    A section's folder is its image filename's stem, or the whole filename
+    when another image shares the stem ignoring case (``s1.png`` and
+    ``s1.tif``). Characters a file system refuses become ``_``, a trailing
+    dot or space becomes ``_``, and a name Windows reserves for a device
+    (``CON``, ``aux``, ``nul.png``, ``COM1``) gets ``_`` after it. Two
+    folders that would still be equal ignoring case (``S1.png`` and
+    ``s1.png``, ``a?b`` and ``a_b``) are told apart: a filename none of
+    these rules changed comes first, then sorted order; the first keeps
+    the name, the next ones get ``_2``, ``_3``, ...
+
+    Parameters
+    ----------
+    siblings
+        The section filenames (or paths) of the stack.
+
+    Returns
+    -------
+    dict of str to str
+        Each filename's folder name; no two equal ignoring case.
+    """
+    names = sorted({Path(sibling).name for sibling in siblings})
+    stems = Counter(Path(name).stem.casefold() for name in names)
+    raw: dict[str, str] = {}
+    for name in names:
+        stem = Path(name).stem
+        if stems[stem.casefold()] > 1:
+            raw[name] = name
+        else:
+            raw[name] = stem
+
+    bases = {name: _windows_name(_safe(text)) for name, text in raw.items()}
+    order = sorted(names, key=lambda name: (bases[name] != raw[name], name))
+    return _distinct(order, bases)
+
+
+def section_dirname(section_id: str, siblings: list[str] | tuple[str, ...] = ()) -> str:
+    """A section's folder name among *siblings* (:func:`section_dirnames`).
+
+    A section that is not among *siblings* is named as if it were the stack's
+    only image.
     """
     name = Path(section_id).name
-    stem = Path(name).stem
-    clash = sum(1 for other in siblings
-                if Path(Path(other).name).stem.casefold() == stem.casefold()) > 1
-    return _safe(name if clash else stem)
+    folders = section_dirnames(siblings)
+    if name in folders:
+        return folders[name]
+    return section_dirnames([name])[name]
 
 
 @dataclass
@@ -333,8 +411,7 @@ class JobLayout:
     def section_name(self, section_id: str) -> str:
         """The folder name of *section_id* under ``sections/``."""
         if self._names is None:
-            siblings = self._siblings()
-            self._names = {name: section_dirname(name, siblings) for name in siblings}
+            self._names = section_dirnames(self._siblings())
         name = self._names.get(Path(section_id).name)
         return name if name is not None else section_dirname(section_id)
 
