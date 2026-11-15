@@ -568,7 +568,7 @@ class SectionHistories:
         old = path.with_name(OLD_REGISTRATION_LIST)
         carried = rows if not path.exists() and old.exists() else ()
         torn = _ends_mid_line(path)
-        with path.open("a", encoding="utf-8") as stream:
+        with path.open("a", encoding="utf-8", newline="\n") as stream:
             if torn:
                 stream.write("\n")  # the cut line stays on its own
             for line in (*carried, row):

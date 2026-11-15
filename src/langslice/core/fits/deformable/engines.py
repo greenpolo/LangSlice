@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from filelock import FileLock
 
 from langslice.core.fits.deformable.settings import (
     DETAIL,
@@ -47,6 +48,7 @@ from langslice.core.fits.deformable.settings import (
     FitSettings,
     Metric,
 )
+from langslice.core.shared_files import retried
 
 #: Histogram bins for mutual information, both engines.
 MUTUAL_INFORMATION_BINS = 32
@@ -242,23 +244,21 @@ class GpuTurn:
 @contextlib.contextmanager
 def gpu_turn(device: str) -> Iterator[GpuTurn]:
     """One fit at a time on the GPU across processes (a lock on :data:`GPU_LOCK`);
-    nothing on the CPU or where file locks are not available. Yields how long
-    the turn was waited for."""
+    nothing on the CPU. Yields how long the turn was waited for."""
+    # filelock: flock on Linux and macOS, as the engine plugins take it
     turn = GpuTurn()
-    if device != "cuda" or sys.platform == "win32":
+    if device != "cuda":
         yield turn
         return
-    import fcntl
-
     GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-    with open(GPU_LOCK, "w", encoding="utf-8") as handle:
-        asked = time.perf_counter()
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        turn.waited_s = time.perf_counter() - asked
-        try:
-            yield turn
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+    lock = FileLock(str(GPU_LOCK))
+    asked = time.perf_counter()
+    retried(lock.acquire)
+    turn.waited_s = time.perf_counter() - asked
+    try:
+        yield turn
+    finally:
+        lock.release()
 
 
 #: What cuDNN and cuBLAS write in the error when they cannot allocate.

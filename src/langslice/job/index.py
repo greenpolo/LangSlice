@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from langslice.core.shared_files import replace_file
+
 #: The index entry's format: ``job_id``, ``job_folder``, ``created_at`` and
 #: ``fallback``.
 INDEX_FORMAT_VERSION = 1
@@ -65,10 +67,10 @@ def register(
     if fallback is not None:
         record["fallback"] = fallback
     temporary = path.with_suffix(".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
+    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
         os.chmod(temporary, 0o600)
         json.dump(record, handle, indent=2)
-    os.replace(temporary, path)
+    replace_file(temporary, path)
     return path
 
 

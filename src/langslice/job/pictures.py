@@ -64,6 +64,7 @@ from PIL import Image
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
 from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.layers import picture_layers, warp_layers
+from langslice.core.shared_files import retried
 from langslice.job.layout import JobLayout
 
 #: Beside ``views.jsonl``: the numbers handed out so far (``seq``: the next
@@ -378,8 +379,8 @@ class ViewStore:
 
         counter = self.layout.folder / VIEWS_COUNTER
         try:
-            lock: Any = FileLock(str(counter) + ".lock", timeout=NUMBERING_TIMEOUT_S)
-            lock.acquire()
+            lock = FileLock(str(counter) + ".lock", timeout=NUMBERING_TIMEOUT_S)
+            retried(lock.acquire)
         except (OSError, Timeout):
             yield self._next_numbers()
             return
@@ -565,7 +566,8 @@ class ViewStore:
             except Exception:
                 logger.warning("Could not save picture %s", picture.name, exc_info=True)
         if lines:
-            with self.layout.views_index.open("a", encoding="utf-8") as handle:
+            index = self.layout.views_index
+            with index.open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write("".join(lines))
 
     def _write_picture(self, call: _Call, picture: _Picture) -> str:
@@ -611,8 +613,8 @@ class ViewStore:
                 folder / BORDERS_FILE, format="PNG", optimize=True)
             record["layers"] = {"labels": LABELS_FILE, "borders": BORDERS_FILE}
             record["frame"] = frame
-        (folder / VIEW_FILE).write_text(json.dumps(record, indent=1, default=str) + "\n",
-                                        encoding="utf-8")
+        text = json.dumps(record, indent=1, default=str) + "\n"
+        (folder / VIEW_FILE).write_text(text, encoding="utf-8", newline="\n")
         entry = {"seq": picture.seq, "name": picture.name,
                  "path": self.layout.relative(folder), "tool": call.tool, "call": call.call,
                  "sections": record["sections"], "mode": record["mode"],

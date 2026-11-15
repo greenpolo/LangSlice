@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
+from langslice.doors.agent_cli.background import DETACHED
 from langslice.doors.commands.flags import add_flags
 from langslice.job.settings.schema import CLI_TASKS, REGISTRATION_TASKS
 
@@ -287,8 +288,11 @@ def open_gui(spec: Any) -> None:
     command = [sys.executable, "-c", "from langslice.cli import main; main()", "gui",
                str(folder)]
     try:
-        subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL,
+                         creationflags=DETACHED.creationflags,
+                         start_new_session=DETACHED.start_new_session)
     except OSError as exc:
         print(f"The LangSlice window could not be started: {exc}")
 

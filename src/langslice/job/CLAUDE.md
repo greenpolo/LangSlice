@@ -325,6 +325,9 @@ longer exist be taken over by the images it is opened with.
   so (background work giving way, below). `before_release`: callbacks run,
   still holding it, as a thread's outermost hold ends (the job's derived
   files, above; each `Job` registers its own when its `lock` is set).
+  A lock file refused with `PermissionError` (Windows: another process is
+  deleting it) is tried again (`core.shared_files.retried`); only a folder
+  that refuses a new file (`layout.writable`) leaves the lock off for good.
 - `background.py` — `BackgroundWork` (`Job.background`, made on first
   use): long work that runs while the agent carries on. `start(kind,
   sections, land, wait_for_images=)` returns a `Work` at once (`id` `w1`,
@@ -427,7 +430,9 @@ longer exist be taken over by the images it is opened with.
   own fields without its sections; an undo step's `stack_before` is them
   but the notes),
   `json_object` (a JSON text's object, or None), `write_json_atomic` (every
-  job file's writer),
+  job file's writer: LF line ends on every system, the rename retried
+  while a reader holds the target, `core.shared_files.replace_file`; the
+  JSONL appends of `history.py`, `pictures.py` and `recent.py` write LF too),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
 - `migrations.py` — old job folders read as the current format: the table
