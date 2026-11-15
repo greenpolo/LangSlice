@@ -310,7 +310,8 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
     if config.get("device"):
         env["SPOMIALIGN_DEVICE"] = str(config["device"])
     done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-                          capture_output=True, text=True, env=env, cwd=str(folder),
+                          capture_output=True, stdin=subprocess.DEVNULL, text=True,
+                          env=env, cwd=str(folder),
                           timeout=float(config["timeout_s"]))
     (folder / "log.txt").write_text(done.stdout + done.stderr,
         encoding="utf-8")

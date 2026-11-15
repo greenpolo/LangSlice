@@ -381,7 +381,8 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
         {**params, "device": config["device"], "threads": int(config["threads"])})), **arrays)
     env = {**os.environ, "OMP_NUM_THREADS": str(config["threads"])}
     done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-                          capture_output=True, text=True, env=env, cwd=str(folder),
+                          capture_output=True, stdin=subprocess.DEVNULL, text=True,
+                          env=env, cwd=str(folder),
                           timeout=float(config["timeout_s"]))
     (folder / "log.txt").write_text(done.stdout + done.stderr,
         encoding="utf-8")

@@ -7944,7 +7944,6 @@
 {"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "registration_document", "count": 5},
 {"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "section_entry", "count": 6},
 {"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "source", "count": 2},
-{"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "source.git", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "trace_reply_path", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "write_float_channels", "count": 3},
 {"rule": "ruff:E501", "path": "src/langslice/job/public_files.py", "symbol": "write_labels", "count": 6},
