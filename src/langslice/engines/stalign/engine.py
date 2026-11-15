@@ -1,10 +1,10 @@
 """Call STalign 2.0 in LangSlice's process, for the plugin (``plugin.py``).
 
-STalign 2.0.0 (JEFworks-Lab main 8a84bf1f, GPL-3.0) comes with the extra
-``langslice[engines]`` and is imported as installed when a tool runs, never
-when the plugin loads (:func:`installed` says whether it is there). The
-plugin prepares every image and frame; this module only calls STalign and
-samples its result.
+STalign 2.0.0 (JEFworks-Lab main 8a84bf1f, GPL-3.0) is vendored as
+``langslice_vendor.stalign`` (its pure-torch engine; the optional C++ engine
+is not included) and imported when a tool runs, never when the plugin
+loads. The plugin prepares every image and frame; this module only calls
+STalign and samples its result.
 
 The inputs (``mode`` picks the call):
 
@@ -30,7 +30,6 @@ own record), ``settings`` (JSON: what STalign chose), ``prefit`` (JSON,
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import json
 import threading
 import time
@@ -47,8 +46,8 @@ from langslice.plugin_api import gpu_turn
 if TYPE_CHECKING:
     import torch
 
-#: The package that makes STalign importable.
-PACKAGE = "STalign"
+#: The vendored STalign package.
+PACKAGE = "langslice_vendor.stalign"
 #: The ``mode`` of a plane search; any other runs the 2-D fit.
 PLANE = "plane"
 #: Query points sampled at once through STalign's map.
@@ -138,18 +137,6 @@ class _Records(threading.local):
 _RECORDS = _Records()
 #: Serializes installing the stand-in for STalign's figures.
 _INSTALL = threading.Lock()
-
-
-def installed() -> bool:
-    """Return whether STalign can be imported here.
-
-    Returns
-    -------
-    bool
-        True when the extra ``langslice[engines]`` (or STalign itself) is
-        installed in LangSlice's environment.
-    """
-    return importlib.util.find_spec(PACKAGE) is not None
 
 
 def run(

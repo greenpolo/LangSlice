@@ -4,10 +4,10 @@ Load it with ``--plugins langslice.engines.stalign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``device`` (``auto``: the GPU at float32 when there is
-one, else the CPU at float64), ``threads``. STalign (GPL-3.0, the extra
-``langslice[engines]``) runs in LangSlice's process: ``engine.py`` imports
-it when a tool runs; without it a call is refused ``ENGINE_MISSING``. This
-module imports only ``langslice.plugin_api`` and the engines' own modules.
+one, else the CPU at float64), ``threads``. STalign (GPL-3.0, vendored as
+``langslice_vendor.stalign``) runs in LangSlice's process: ``engine.py``
+imports it when a tool runs. This module imports only
+``langslice.plugin_api`` and the engines' own modules.
 
 Two tools:
 
@@ -43,7 +43,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from langslice.engines import _blocks, _environment
+from langslice.engines import _blocks
 from langslice.engines.stalign import engine
 from langslice.plugin_api import (
     RefusalCode,
@@ -686,14 +686,12 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
               sorting: dict[str, Any] | None = None, iterations: int = 2000,
               view: bool = True) -> ToolResult:
         _blocks.refuse_mask("stalign_lddmm", mask, "sorts the section's pixels itself")
-        _environment.require_package(NAME, engine.installed())
         return _lddmm(ctx, options, sections, section_image, atlas_image, mask,
                       kernel_um, fit, displacement_um, dict(sorting or {}),
                       iterations, view)
 
     def plane(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
               atlas_image: str = "nissl", view: bool = True) -> ToolResult:
-        _environment.require_package(NAME, engine.installed())
         return _plane_search(ctx, options, sections, section_image, atlas_image, view)
 
     return [

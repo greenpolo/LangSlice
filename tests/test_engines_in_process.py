@@ -1,8 +1,8 @@
 """STalign and emlddmm in LangSlice's process: real small fits, their records, the GPU queue.
 
-STalign comes with the extra ``langslice[engines]``; its tests skip without it. emlddmm is
-vendored (``langslice_vendor.emlddmm``) and always runs. Every fit here runs on the CPU at
-float64 on synthetic images, so each takes a few seconds.
+Both are vendored (``langslice_vendor.stalign``, ``langslice_vendor.emlddmm``) and always
+run. Every fit here runs on the CPU at float64 on synthetic images, so each takes a few
+seconds.
 """
 
 from __future__ import annotations
@@ -19,9 +19,6 @@ import pytest
 from langslice.engines import _atlas_images
 from langslice.engines.emlddmm import engine as emlddmm_engine
 from langslice.engines.stalign import engine as stalign_engine
-
-needs_stalign = pytest.mark.skipif(not stalign_engine.installed(),
-                                   reason='STalign is the extra langslice[engines]')
 
 
 def _blob(shape: tuple[int, ...], centre: tuple[float, ...], width: float) -> np.ndarray:
@@ -50,7 +47,6 @@ PARAMS = {"a": 200.0, "sigma_disp": 94.0, "niter": 30, "nt": 4, "epL": 0.0, "epT
           "device": "cpu", "threads": 2}
 
 
-@needs_stalign
 def test_a_small_stalign_fit_runs_in_process_and_keeps_its_energy_record():
     out = stalign_engine.run(_stalign_inputs(2.0), PARAMS)
     assert out["device"] == "cpu float64"
@@ -65,7 +61,6 @@ def test_a_small_stalign_fit_runs_in_process_and_keeps_its_energy_record():
     assert '"niter": 30' in str(out["settings"])
 
 
-@needs_stalign
 def test_stalign_fits_on_two_threads_keep_their_own_records():
     results: dict[str, dict] = {}
 
@@ -84,9 +79,8 @@ def test_stalign_fits_on_two_threads_keep_their_own_records():
     assert not np.array_equal(results["near"]["energy"], results["far"]["energy"])
 
 
-@needs_stalign
 def test_stalign_s_own_figures_still_draw_for_another_caller(monkeypatch: pytest.MonkeyPatch):
-    import STalign
+    from langslice_vendor import stalign as STalign  # noqa: N812 - STalign's own name
 
     stalign_engine.run(_stalign_inputs(1.0), PARAMS)  # installs the record
     calls: list[str] = []
@@ -106,6 +100,13 @@ def test_stalign_s_own_figures_still_draw_for_another_caller(monkeypatch: pytest
 
 
 # --- emlddmm ------------------------------------------------------------------------------------
+
+
+def test_the_vendored_stalign_runs_its_torch_engine():
+    from langslice_vendor import stalign
+
+    info = stalign.backend_info()
+    assert (info["auto"], info["cpp"]) == ("torch", False)
 
 
 def test_the_vendored_emlddmm_imports_without_ipython_and_prints_nothing():

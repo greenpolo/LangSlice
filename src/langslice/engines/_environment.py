@@ -1,4 +1,4 @@
-"""Find an engine's interpreter, and refuse a call when its engine is missing.
+"""Find an engine's interpreter, and refuse a call when it is missing.
 
 SPOmiAlign runs under the Python of its own conda environment
 (``rigid_spomialign``). Its plugin's ``python`` option names that
@@ -6,10 +6,6 @@ interpreter; without one, the environment is looked up by name in the
 folders conda keeps environments in, and the interpreter is the one inside it
 for this platform. An option the engine needs that is unset or names a path
 that does not exist is refused at call time with ``ENGINE_MISSING``.
-
-STalign runs in LangSlice's process, from the extra ``langslice[engines]``;
-a call made without it is refused with ``ENGINE_MISSING`` too
-(:func:`require_package`).
 """
 
 from __future__ import annotations
@@ -133,31 +129,4 @@ def require_path(
             RefusalCode.ENGINE_MISSING,
             f"{engine} cannot run here: {key} {str(path)!r} does not exist "
             f"(set it in {where})",
-        )
-
-
-#: The extra that installs the engines LangSlice imports, as pip names it.
-ENGINES_EXTRA = 'pip install "langslice[engines]"'
-
-
-def require_package(engine: str, installed: bool) -> None:
-    """Refuse a call whose engine is not installed in LangSlice's environment.
-
-    Parameters
-    ----------
-    engine
-        The engine's name, as the refusal says it.
-    installed
-        Whether the engine's package can be imported here.
-
-    Raises
-    ------
-    ToolError
-        ``ENGINE_MISSING``, naming the command that installs it.
-    """
-    if not installed:
-        raise ToolError(
-            RefusalCode.ENGINE_MISSING,
-            f"{engine} cannot run here: it is not installed "
-            f"({ENGINES_EXTRA} installs it)",
         )

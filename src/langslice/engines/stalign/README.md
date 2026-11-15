@@ -9,21 +9,15 @@ registration agent as three tools. Design: Fable's proposal, adopted by Nash on
 - `engine.py`: the STalign calls, in LangSlice's process; STalign is imported when a tool runs,
   never when the plugin loads.
 
-## Install
+## STalign itself
 
-STalign is the optional extra `langslice[engines]`:
-
-```bash
-pip install "langslice[engines]"
-```
-
-It installs STalign 2.0.0 from GitHub at the commit LangSlice runs (`STalign @
-git+https://github.com/JEFworks-Lab/STalign@8a84bf1facc5173f7155400867a09c302125904e`; STalign
-is not on PyPI). Without it a call is refused `ENGINE_MISSING`, naming that command. STalign
-builds its optional C++ engine (`STalign._stalign_cpp`, the fast CPU path) when a C++17
-compiler is there: MSVC Build Tools on Windows, gcc or clang elsewhere (`STalign.backend_info()`
-says whether it did). Without one the build only warns, and STalign runs its pure torch engine,
-which computes the same iterations more slowly. The GPU path is torch on CUDA either way.
+STalign is vendored: `src/langslice_vendor/stalign/` holds the Python files of its `STalign/`
+package at JEFworks-Lab/STalign commit 8a84bf1facc5173f7155400867a09c302125904e, unchanged,
+with its GPL-3.0 `LICENSE` and a header in `__init__.py` naming the commit. Its optional C++
+engine (`STalign/_cpp`, the compiled `_stalign_cpp`) is not included, so STalign runs its
+pure-torch engine on the CPU as on the GPU (`backend_info()` reports `torch`). It needs nothing
+beyond LangSlice's own dependencies (numpy, torch, matplotlib); `pandas`, `requests` and `pynrrd`
+are imported only by STalign's atlas download and analysis helpers, which LangSlice does not call.
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work for
 plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
@@ -37,8 +31,7 @@ langslice linear run ... --plugins langslice.engines.stalign.plugin:tools
 
 or `langslice.create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])`.
 Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `device` (`auto`:
-the GPU at float32 when there is one, else the CPU at float64 with STalign's C++ engine; the GPU
-result matched the CPU's to 0.001 atlas px on a test section), `threads` (4, STalign's
+the GPU at float32 when there is one, else the CPU at float64), `threads` (4, STalign's
 `num_threads`). A fit on the GPU takes the machine's GPU queue through the plugin API's
 `gpu_turn` (`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`), so two fits of
 one process, or of several, never share the GPU. STalign's end-of-fit figures are replaced, on

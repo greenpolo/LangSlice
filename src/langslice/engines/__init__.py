@@ -10,8 +10,8 @@ calls). A job names them in ``JobSpec.plugins`` exactly as any tool plugin::
 
 The three load together in one job (the tool names do not clash) and re-import from a copy of
 this package with no ``PYTHONPATH``. STalign and emlddmm run in LangSlice's process, imported
-when a tool runs: STalign from the extra ``langslice[engines]``, emlddmm vendored as
-``langslice_vendor.emlddmm``. SPOmiAlign's ``engine.py`` runs as a subprocess under its own
-environment's interpreter, which stays outside LangSlice's venv. A missing engine is refused
-at tool-call time with ``ENGINE_MISSING``, never at load time.
+when a tool runs, both vendored (``langslice_vendor.stalign``, ``langslice_vendor.emlddmm``).
+SPOmiAlign's ``engine.py`` runs as a subprocess under its own environment's interpreter,
+which stays outside LangSlice's venv; a missing one is refused at tool-call time with
+``ENGINE_MISSING``, never at load time.
 """

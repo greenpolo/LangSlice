@@ -1,9 +1,9 @@
 """The in-tree engines (``langslice.engines``): the three load together in one job, their tools
-do not clash, a missing engine is refused at call time with ``ENGINE_MISSING`` (SPOmiAlign's
-environment, STalign's extra ``langslice[engines]``), and loading the plugins imports no engine.
+do not clash, SPOmiAlign's missing environment is refused at call time with ``ENGINE_MISSING``, and
+loading the plugins imports no engine.
 
-SPOmiAlign runs in its own conda environment; STalign and emlddmm run in LangSlice's process
-(``tests/test_engines_in_process.py``).
+SPOmiAlign runs in its own conda environment; STalign and emlddmm are vendored and run in
+LangSlice's process (``tests/test_engines_in_process.py``).
 """
 
 from __future__ import annotations
@@ -77,22 +77,6 @@ def test_spomialign_is_refused_when_its_environment_is_missing(tmp_path: Path):
     assert reply.get("code") == "ENGINE_MISSING" or "ENGINE_MISSING" in str(reply), reply
     # The message quotes the path as Python does: its backslashes doubled on Windows.
     assert any(gone in text or repr(gone) in text for text in _texts(reply)), reply
-
-
-def test_stalign_without_the_extra_is_refused_naming_it(tmp_path: Path,
-                                                        monkeypatch: pytest.MonkeyPatch):
-    from langslice.engines.stalign import engine
-
-    monkeypatch.setattr(engine, "installed", lambda: False)
-    images = tmp_path / "images"
-    images.mkdir()
-    _state, ctx, spec = stack(images, 3, placed=True, plugins=[REFS[0]],
-                              tasks=["position", "transform", "nonlinear"])
-    box = build_tools(_state, ctx, spec)
-    for name in TOOLS["stalign"]:
-        reply = _call(box, name)
-        assert "ENGINE_MISSING" in str(reply), (name, reply)
-        assert 'pip install "langslice[engines]"' in str(reply), reply
 
 
 def _texts(value: object) -> list[str]:
