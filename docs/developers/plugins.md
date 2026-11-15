@@ -55,7 +55,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -392,6 +392,8 @@ with `expect=`. Each call's files go in a folder of its own,
 never share one. A notice words a fit's plausibility flags as the native fits do: each code
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
 on a `DeformationProposal.summary`: `FOLDS, REGION_COMPRESSED (CA1, DG)`).
+
+Brainways ships as `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Unlike the three above it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
 
 Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again. A plugin that fits in LangSlice's process takes the queue with `gpu_turn(device)` of `langslice.plugin_api` (a context manager; `"cuda"` takes the lock, any other device none; it yields how long it waited as `waited_s`) and tells an out-of-memory error with `out_of_memory(error)`, as SPOmiAlign does. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
 
