@@ -28,10 +28,12 @@ jobs:
         shell: bash
         run: |
           python packaging/check_wheel.py dist/*.whl
-          python -m pip install dist/*.whl
-          # uv's check: pip check crashes on a Linux CUDA wheel's malformed tags
+          # at uv.lock's versions (itk 5.4.8's Linux wheel has a broken WHEEL
+          # file that pip check and uv pip check both fail on)
           python -m pip install uv
-          uv pip check --python "$(command -v python)"
+          uv export --frozen --no-hashes --no-emit-project -o "$RUNNER_TEMP/constraints.txt"
+          python -m pip install dist/*.whl -c "$RUNNER_TEMP/constraints.txt"
+          uv pip check --python "$(python -c 'import sys; print(sys.executable)')"
       - name: Exercise installed worker outside checkout
         shell: bash
         run: |
