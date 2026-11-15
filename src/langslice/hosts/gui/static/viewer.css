@@ -210,6 +210,17 @@
   text-align: center;
   color: var(--muted);
   font-size: var(--size-sm);
+  overflow-wrap: anywhere;
+}
+.focus-problem {
+  flex-shrink: 0;
+  margin: 0 6px 6px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-left: var(--rule) solid var(--pink);
+  color: var(--text);
+  font-size: var(--size-sm);
+  overflow-wrap: anywhere;
 }
 
 /* The Sections view: the table fills the area and scrolls under a sticky head. */

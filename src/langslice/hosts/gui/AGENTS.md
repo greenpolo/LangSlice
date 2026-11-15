@@ -306,8 +306,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     side, three as one tall panel beside two, four in a 2 x 2 grid). A panel asks for `render/overlay` at its size times
     `devicePixelRatio` (rounded up to 128) and again only when its row's
     `render_key` changes or the panel grows; the old picture stays, tagged
-    `updating`, until the new one fades in; a 409 shows its message, a 503 is
-    asked again; zoom, pan and reset happen in the page; `open` shows the
+    `updating`, until the new one fades in; a 409 shows its message (the same message on every panel shown is
+    said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `open` shows the
     render in the lightbox. The Sections table (a damaged row's pink left
     edge; a click puts the section in focus), Steps (undo, redo, notes,
     spend). The dividers are remembered in `localStorage`; below 1100 px the
