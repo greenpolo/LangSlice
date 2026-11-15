@@ -60,11 +60,15 @@ and `environment.yml` hold the worker's source installation.
   door (`init`, `linear run`, MCP, the library, the ABBA worker): rows of
   `job/settings/tool_table.py` (`ToolDef.engine`), listed after the other
   tools, switched off by `disabled` like any tool. An engine's module is
-  imported only for a run that has one of its tools. Two start off
-  (`ToolDef.default_off`: `deepslice_place`, `brainways_ap`) and are switched
-  on by `JobSpec.enabled` (`--enabled`); `trace_borders` is on when the job
-  names an image model (`nonlinear.provider`, default `none`). A tool is
-  offered only on the atlases and planes its row names.
+  imported only for a run that has one of its tools. Three tools start off
+  (`ToolDef.default_off`: `trace_borders`, `deepslice_place`, `brainways_ap`)
+  and are switched on by `JobSpec.enabled` (`--enabled`). `trace_borders`
+  needs an image model (`nonlinear.provider`, default `none`): a job that
+  names one has it enabled, and a command given `--enabled trace_borders`
+  without `--nonlinear-provider` takes the connection saved on the computer
+  (`doors.credentials.saved_image_provider`: the one chosen in the window's
+  Settings, else the ChatGPT sign-in, the OpenAI key, the Gemini key). A tool
+  is offered only on the atlases and planes its row names.
 - A tool of the user's own (`JobSpec.plugins`, `docs/developers/plugins.md`)
   joins the toolbox through `langslice.plugin_api`, the API the engines are
   written against; it loads only where the user chose it (library, `linear run

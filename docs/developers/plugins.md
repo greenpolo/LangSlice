@@ -378,9 +378,9 @@ written against `langslice.plugin_api`), which is imported only for a run
 that has one of its tools (`tests/test_engines_native.py` keeps the rows and
 the adapters' declarations the same). `stalign_lddmm`, `stalign_plane_search`,
 `spomialign`, `emlddmm_stack` and `emlddmm_plane` are on;
-`deepslice_place` and `brainways_ap` start off and are switched on by the
-job's [`enabled`](../reference/settings.md#enabled) (`--enabled
-deepslice_place`). An engine's options are its entry of `plugin_config`, by
+`deepslice_place` and `brainways_ap` start off, as `trace_borders` does,
+and are switched on by the job's
+[`enabled`](../reference/settings.md#enabled) (`--enabled deepslice_place`). An engine's options are its entry of `plugin_config`, by
 its reference (`{"langslice.engines.stalign.plugin:tools": {"device":
 "cpu"}}`; `--plugin-config REF=JSON` on `linear run`). A job made when the
 engines were named in `plugins` opens with the same tools: the references

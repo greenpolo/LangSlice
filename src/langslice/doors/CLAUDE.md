@@ -424,6 +424,9 @@ bodies, and turned into an answer once per door:
   from no `--frozen`), `linear.py` (`linear run`: `build_linear_spec`,
   `spec_from_args` (`--disabled NAME[,NAME...]`: the job's `disabled` list;
   `--enabled NAME[,NAME...]`: its `enabled` list, the tools that start off;
+  `_image_provider`: `--nonlinear-provider`, else with `--enabled
+  trace_borders` the saved connection, `credentials.saved_image_provider`,
+  refused with `NO_SAVED_IMAGE_MODEL` when there is none, else `none`;
   `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
   `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
   `--registration` with any of `REGISTRATION_CLASHES` is refused; a bad flag

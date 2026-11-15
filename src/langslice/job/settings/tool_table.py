@@ -208,7 +208,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
             needs=(("look:overlay",), ("set_landmarks",)), writes=("deformation",)),
     ToolDef("trace_borders", "write", "Nonlinear", long=True, image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
-            needs=_OVERLAY, writes=("deformation",)),
+            needs=_OVERLAY, writes=("deformation",), default_off=True),
     # --- bookkeeping (every run) --------------------------------------------------------
     ToolDef("note", "write", "Common"),
     ToolDef("undo", "write", "Common", essential=True),

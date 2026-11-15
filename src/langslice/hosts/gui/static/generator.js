@@ -68,7 +68,7 @@ const Generator = (() => {
   // The tools a run of this form has: its tasks', without the image model's
   // when the form says there is none.
   function present(data, form) {
-    const key = runTasks(data, form).join(','), none = !form.imageProvider || form.imageProvider === 'none';
+    const key = runTasks(data, form).join(','), none = form.imageProvider === 'none';
     return new Set(data.tools.filter(t => t.runs_in.includes(key) && !(none && t.image_model)).map(t => t.name));
   }
 
@@ -579,7 +579,7 @@ if (typeof document !== 'undefined') (() => {
     summary.append(make('span', 'gen-step gen-disclosure'), make('span', '', 'Advanced: the tools the registration agent may use'));
     d.append(summary);
     const body = make('div', 'gen-advanced-body');
-    body.append(make('p', 'gen-help', 'Every tool is on unless you turn it off, except DeepSlice and Brainways, which start off; the image model’s border trace is on when you choose an image model. A task’s tools apply only when that task is chosen above. The violet name is the tool’s own name, as the Agent viewer shows it.'));
+    body.append(make('p', 'gen-help', 'Every tool is on unless you turn it off, except DeepSlice, Brainways and the image model’s border trace, which start off. A task’s tools apply only when that task is chosen above. The violet name is the tool’s own name, as the Agent viewer shows it.'));
     for (const group of data.groups) {
       const list = make('div', 'gen-tools');
       list.setAttribute('role', 'group');
@@ -628,7 +628,7 @@ if (typeof document !== 'undefined') (() => {
     const about = make('p', 'gen-help', `The model that draws a section’s borders for ${tracer ? `“${tracer.label}”` : 'the warp'}. Applies when warping to fit.`);
     const provider = make('select', 'gen-input gen-select');
     const fallback = data.image_models.find(p => p.default);
-    provider.append(new Option(`Not set: LangSlice’s default${fallback ? ` (${fallback.label})` : ''}`, ''));
+    provider.append(new Option(`Not set: the connection saved in Settings${fallback ? ` (${fallback.label})` : ''}`, ''));
     for (const p of data.image_models) provider.append(new Option(p.label, p.provider));
     provider.value = form.imageProvider;
     const model = make('select', 'gen-input gen-select');

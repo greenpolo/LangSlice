@@ -30,6 +30,7 @@ from tests.linear_tool_helpers import tool_named as _tool
 def _placed(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, n=1, placed=True, tasks=["nonlinear"])
     spec.nonlinear = NonlinearSpec(provider="openai-oauth")  # trace_borders is opt-in
+    spec.enabled = ["trace_borders"]
     state.slices[0].transform = affine_from_json({
         "kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
         "calibration": {"section_um_per_px": 25, "source": "host"},
@@ -44,6 +45,8 @@ def test_image_tool_is_opt_in(tmp_path: Path):
     spec.tasks = ["nonlinear"]
     assert "trace_borders" not in build_tools(state, ctx, spec).names  # no image model named
     spec.nonlinear = NonlinearSpec(provider="openai-oauth")
+    assert "trace_borders" not in build_tools(state, ctx, spec).names  # not switched on
+    spec.enabled = ["trace_borders"]
     box = build_tools(state, ctx, spec)
     assert "trace_borders" in box.names
     assert not {"elastix_affine", "interactive_transform", "position_sections"} & set(
@@ -174,6 +177,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
 
     state, ctx, spec = _stack(tmp_path, n=1, tasks=["nonlinear"])
     spec.nonlinear = NonlinearSpec(provider="openai-oauth")
+    spec.enabled = ["trace_borders"]
 
     def missing(*args, **kwargs):
         raise ValueError("s0.png requires a position and linear transform")

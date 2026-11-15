@@ -195,9 +195,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   whether this computer has its key or sign-in). Each tool row also says
   whether it calls the image model (`ToolDef.image_model`) and whether it
   starts off (`default_off`: its box is unticked until the person ticks it,
-  the form's `on`, written as `--enabled`; `runs_in` is computed with an
-  image model named, and a form with no image model chosen has no
-  `trace_borders`).
+  the form's `on`, written as `--enabled`: `trace_borders`,
+  `deepslice_place`, `brainways_ap`; `runs_in` is computed with an image
+  model named). The image-model row's `default` is the connection the job
+  would take with none chosen (`doors.credentials.saved_image_provider`,
+  else `none`).
   `integrations`: `INTEGRATIONS`, the programs the results can go to
   (QUINT, VERSO, DMC-BrainMap; ABBA is not one), each `Integration`'s
   `name`, its box's `label` and the `words` the request names it with.

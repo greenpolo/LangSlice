@@ -174,7 +174,12 @@ SETTINGS: tuple[Setting, ...] = (
         keyword="nonlinear",
         flags=("--nonlinear-provider",),
         aliases=("--image-provider",),
-        door_defaults={"library": "none, or image_model='s provider"},
+        door_defaults={
+            "library": "none, or image_model='s provider",
+            "run": "none; with --enabled trace_borders, the saved connection",
+            "init": "none; with --enabled trace_borders, the saved connection",
+            "mcp": "none; with --enabled trace_borders, the saved connection",
+        },
     ),
     Setting(
         name="nonlinear.image_model",

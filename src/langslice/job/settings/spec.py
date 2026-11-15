@@ -201,7 +201,9 @@ class NonlinearSpec:
     ``provider`` is the image model's access method (``providers/registry``);
     ``"none"``, the default, runs the task without an image model: no
     ``trace_borders``, no traced section images; naming a provider switches
-    ``trace_borders`` on. No section ever needs a trace. ``"custom"``
+    ``trace_borders`` on (``JobSpec.enabled``). A command that switches
+    ``trace_borders`` on without naming one takes the connection saved on
+    this computer. No section ever needs a trace. ``"custom"``
     (:data:`langslice.core.connections.CUSTOM_PROVIDER`): an image model the
     caller hands the library itself (``langslice.open_job(...,
     image_model=...)``); a door that is handed none offers no
@@ -351,8 +353,10 @@ class JobSpec:
     disabled: list[str] = field(default_factory=list)
     #: The tools that start off and this job switches on
     #: (:func:`~langslice.job.settings.tool_table.default_off_names`:
-    #: ``deepslice_place``, ``brainways_ap``); any other
-    #: name is refused. A tool still needs its task, and its atlas and plane.
+    #: ``trace_borders``, ``deepslice_place``, ``brainways_ap``); any other
+    #: name is refused. A tool still needs its task, and its atlas and plane;
+    #: ``trace_borders`` an image model (``nonlinear.provider``), and a job
+    #: that names one has ``trace_borders`` here unless it disables it.
     enabled: list[str] = field(default_factory=list)
     #: What the agent may not change, per section: ``{"<filename>":
     #: ["orientation", "affine"], "*": ["angles"]}`` (``"*"``: every section;
@@ -458,6 +462,10 @@ class JobSpec:
             raise ValueError("enabled must be a list of tool names")
         self.enabled = list(
             dict.fromkeys(name.strip() for name in self.enabled))
+        if (self.nonlinear.uses_image_model
+                and "trace_borders" not in self.disabled
+                and "trace_borders" not in self.enabled):
+            self.enabled.append("trace_borders")  # naming a model asks for it
         reason = tool_table.check_enabled(self.enabled)
         if reason is not None:
             raise ValueError(reason)

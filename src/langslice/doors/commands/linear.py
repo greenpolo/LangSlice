@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.doors import credentials
 from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
 from langslice.doors.agent_cli.background import DETACHED
 from langslice.doors.commands.flags import add_flags
@@ -228,8 +229,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
                   if name.strip()],
         enabled=_names(getattr(args, "enabled", [])),
         nonlinear=NonlinearSpec(
-            provider=getattr(
-                args, "nonlinear_provider", NonlinearSpec.provider),
+            provider=_image_provider(args),
             image_model=getattr(args, "nonlinear_image_model", None),
             require_deformation=bool(
                 getattr(args, "nonlinear_require_deformation", False)),
@@ -246,6 +246,46 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         debrief=getattr(args, "debrief", True),
         force_view=bool(getattr(args, "force_view", False)),
     )
+
+
+#: What ``--enabled trace_borders`` says with no connection to take.
+NO_SAVED_IMAGE_MODEL = (
+    "--enabled trace_borders needs an image model, and this computer has no "
+    "saved OpenAI sign-in or key: sign in or save a key in the LangSlice "
+    "window's Settings (langslice gui), or name one with "
+    "--nonlinear-provider")
+
+
+def _image_provider(args: argparse.Namespace) -> str:
+    """Name the image provider the flags ask for.
+
+    Parameters
+    ----------
+    args
+        The parsed job flags.
+
+    Returns
+    -------
+    str
+        ``--nonlinear-provider`` when given; else, with ``--enabled
+        trace_borders``, the connection saved on this computer
+        (:func:`langslice.doors.credentials.saved_image_provider`); else
+        ``none``.
+
+    Raises
+    ------
+    ValueError
+        When ``trace_borders`` is switched on and no connection is saved.
+    """
+    given = getattr(args, "nonlinear_provider", None)
+    if given is not None:
+        return str(given)
+    if "trace_borders" not in _names(getattr(args, "enabled", [])):
+        return "none"
+    saved = credentials.saved_image_provider()
+    if saved is None:
+        raise ValueError(NO_SAVED_IMAGE_MODEL)
+    return saved
 
 
 def _names(items: list[str]) -> list[str]:

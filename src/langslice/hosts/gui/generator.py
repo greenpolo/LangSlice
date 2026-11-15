@@ -51,7 +51,10 @@ from langslice.core.stack.json_reads import (
     text_map_at,
     texts_at,
 )
-from langslice.doors.credentials import image_model_connected
+from langslice.doors.credentials import (
+    image_model_connected,
+    saved_image_provider,
+)
 from langslice.hosts.gui.settings import LABELS as CONNECTION_LABELS
 from langslice.job.layout import JobLayout, held_image_folder, read_job_file
 from langslice.job.migrations import without_removed_settings
@@ -226,7 +229,8 @@ def image_models() -> list[ImageModelChoice]:
     list of ImageModelChoice
         The providers, in the form's order.
     """
-    default = setting("nonlinear.provider").default
+    # what a job with trace_borders on and no provider named takes
+    default = saved_image_provider() or setting("nonlinear.provider").default
     rows: list[ImageModelChoice] = []
     for name in sorted(CANONICAL_PROVIDERS, key=_provider_order):
         no_model = _calls_no_model(name)

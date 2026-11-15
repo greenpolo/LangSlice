@@ -508,10 +508,16 @@ def test_a_prefill_without_abba_gives_the_message_of_the_same_form() -> None:
 # --- the image model ------------------------------------------------------------------
 
 
-def test_the_image_models_are_the_providers_a_job_accepts() -> None:
+def test_the_image_models_are_the_providers_a_job_accepts(
+        monkeypatch: pytest.MonkeyPatch) -> None:
     from langslice.core.connections import CANONICAL_PROVIDERS
     from langslice.providers import connections as registry
 
+    # "Not set" is the connection saved on this computer
+    monkeypatch.setattr(generator, "saved_image_provider", lambda: "openai-api")
+    saved = [row["provider"] for row in generator.payload()["image_models"] if row["default"]]
+    assert saved == ["openai-api"]
+    monkeypatch.setattr(generator, "saved_image_provider", lambda: None)
     rows = generator.payload()["image_models"]
     assert sorted(row["provider"] for row in rows) == sorted(CANONICAL_PROVIDERS)
     assert rows[0]["provider"] == "openai-oauth"
@@ -532,17 +538,23 @@ def test_the_image_models_are_the_providers_a_job_accepts() -> None:
 
 
 def test_the_image_model_flags() -> None:
-    warp = {**BASE, "tasks": ["position", "transform", "nonlinear"]}
-    chosen, provider_only, none, not_warping, tracing_off, unset = _run([
+    plain = {**BASE, "tasks": ["position", "transform", "nonlinear"]}
+    warp = {**plain, "on": ["trace_borders"]}  # the border trace starts off
+    chosen, provider_only, none, not_warping, tracing_off, unset, saved = _run([
         {**warp, "imageProvider": "gemini-api", "imageModel": "gemini-3-pro-image"},
         {**warp, "imageProvider": "openai-api"},
         {**warp, "imageProvider": "none", "imageModel": "gemini-3-pro-image"},
         {**BASE, "imageProvider": "gemini-api", "imageModel": "gemini-3-pro-image"},
-        {**warp, "imageProvider": "gemini-api", "off": ["trace_borders"]},
+        {**plain, "imageProvider": "gemini-api"},
+        plain,
         warp,
     ])
+    # switched on with no provider chosen: the job takes the saved connection
+    assert saved["text"].endswith(
+        "  --atlas allen_mouse_25um \\\n  --enabled trace_borders\n```\n")
     assert chosen["text"].endswith(
         "  --atlas allen_mouse_25um \\\n"
+        "  --enabled trace_borders \\\n"
         "  --nonlinear-provider gemini-api \\\n"
         "  --nonlinear-image-model gemini-3-pro-image\n```\n")
     spec = _spec(_command(chosen["text"]))

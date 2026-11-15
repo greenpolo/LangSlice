@@ -48,7 +48,7 @@ and these of its own:
 | `--no-debrief` | No closing call asking what tools the agent missed. |
 | `--out`, `--no-resume` | Where the results JSON goes; start the job over. |
 | `--trace-dir` | A second folder for the run's trace (also `langslice mcp`). |
-| `--enabled` | The tools that start off and this run gets: `deepslice_place`, `brainways_ap` ([settings](../reference/settings.md#enabled)). |
+| `--enabled` | The tools that start off and this run gets: `trace_borders` (with the saved OpenAI sign-in or key), `deepslice_place`, `brainways_ap` ([settings](../reference/settings.md#enabled)). |
 | `--plugins`, `--plugin-config` | Tools of your own, and the engines' options ([tool plugins](../developers/plugins.md)). |
 | `--gui` | Opens the [LangSlice window](../developers/gui.md) on the job. |
 

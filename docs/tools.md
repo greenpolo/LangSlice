@@ -122,8 +122,9 @@ Writes the region and coordinate maps. From the command line and Python only.
 
 Published methods as tools, all run in LangSlice's own process. Every job
 has them, on the atlases and planes each works on; switch one off with
-`--disabled`. `deepslice_place` and `brainways_ap` start off: switch them on
-with `--enabled deepslice_place` or `--enabled brainways_ap`. `deepslice_place`
+`--disabled`. `deepslice_place` and `brainways_ap` start off, as
+`trace_borders` does: switch them on with `--enabled deepslice_place` or
+`--enabled brainways_ap`. `deepslice_place`
 and `spomialign` need the `engines` extra (`pip install "langslice[engines]"`:
 TensorFlow for DeepSlice, RoMa for SPOmiAlign); `brainways_ap`, STalign and
 emlddmm need nothing more.

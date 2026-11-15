@@ -51,7 +51,7 @@ option is switched off as `tool:option` (for example `look:atlas`).
 | [`fireants_syn`](#fireants_syn) | Nonlinear | Nonlinear on | yes | `metric`, `edges`, `detail` |
 | [`set_landmarks`](#set_landmarks) | Nonlinear | Nonlinear on | with `landmark_triangulation` | |
 | [`landmark_triangulation`](#landmark_triangulation) | Nonlinear | Nonlinear on | with `set_landmarks` | |
-| [`trace_borders`](#trace_borders) | Nonlinear | Nonlinear on and an image model named (`nonlinear.provider`, default `none`) and connected | yes | |
+| [`trace_borders`](#trace_borders) | Nonlinear | Nonlinear on, [`enabled`](settings.md#enabled) naming it or an image model named, and that model connected | yes | starts off |
 | `stalign_lddmm`, `emlddmm_stack` | Nonlinear | Nonlinear on | yes | |
 | `spomialign` | Nonlinear | Linear or Nonlinear on | yes | |
 | `stalign_plane_search`, `emlddmm_plane` | Positioning | with `position_sections` | yes | read only |
@@ -115,7 +115,7 @@ options (`look:positioning`). The valid names are:
 The engines' tools (`deepslice_place`, `brainways_ap`, `stalign_lddmm`,
 `stalign_plane_search`, `spomialign`, `emlddmm_stack`, `emlddmm_plane`) are
 switched off whole by name, and the tools of the job's own plugins are valid
-names too, for that job. `deepslice_place` and `brainways_ap` start off; a
+names too, for that job. `trace_borders`, `deepslice_place` and `brainways_ap` start off; a
 job's [`enabled`](settings.md#enabled) switches them on.
 
 A list that cannot work is refused when the job is made, with one line

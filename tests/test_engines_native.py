@@ -46,7 +46,7 @@ def test_a_new_job_has_the_engines_and_two_start_off(tmp_path: Path) -> None:
     assert spec.plugins == [] and "plugins" not in spec.to_dict()
     names = enabled(spec)
     assert names[-len(ON):] == ON
-    assert default_off_names() == ["deepslice_place", "brainways_ap"]
+    assert default_off_names() == ["trace_borders", "deepslice_place", "brainways_ap"]
     assert not {"deepslice_place", "brainways_ap", "trace_borders"} & set(names)
     assert set(ON) | {"deepslice_place", "brainways_ap"} <= set(valid_names())
     assert list(verbs_for(spec))[-len(ON):] == ON
@@ -80,7 +80,6 @@ def test_disabled_takes_an_engine_tool_off_like_any_other(tmp_path: Path) -> Non
 
 @pytest.mark.parametrize("names, message", [
     (["zoom"], "is not a tool that starts off"),
-    (["trace_borders"], "is not a tool that starts off"),
     (["deepslice"], "is not a tool that starts off"),
 ])
 def test_enabled_takes_only_the_tools_that_start_off(
@@ -99,6 +98,56 @@ def test_a_job_that_named_an_engine_as_a_plugin_keeps_its_tool(tmp_path: Path) -
     spec = JobSpec.from_dict(old)
     assert spec.plugins == [] and spec.enabled == ["deepslice_place"]
     assert {"deepslice_place", "stalign_lddmm"} <= set(enabled(spec))
+
+
+def test_trace_borders_is_switched_on_by_name_or_by_naming_a_model(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from langslice.doors import credentials
+    from langslice.doors.agent_cli.calls import init_parser
+    from langslice.doors.commands.linear import spec_from_args
+    from langslice.job.settings.spec import NonlinearSpec
+
+    folder = str(tmp_path)
+    plain = JobSpec(image_folder=folder, tasks=["nonlinear"])
+    assert plain.nonlinear.provider == "none" and "trace_borders" not in enabled(plain)
+    named = JobSpec(image_folder=folder, tasks=["nonlinear"],
+                    nonlinear=NonlinearSpec(provider="gemini-api"))
+    assert named.enabled == ["trace_borders"] and "trace_borders" in enabled(named)
+    off = JobSpec(image_folder=folder, tasks=["nonlinear"], disabled=["trace_borders"],
+                  nonlinear=NonlinearSpec(provider="gemini-api"))
+    assert off.enabled == [] and "trace_borders" not in enabled(off)
+
+    def init(*flags: str) -> JobSpec:
+        return spec_from_args(init_parser().parse_args(
+            ["--tasks", "nonlinear", *flags]), folder)
+
+    # switched on by name: the connection saved on this computer
+    monkeypatch.setattr(credentials, "saved_image_provider", lambda: "openai-api")
+    spec = init("--enabled", "trace_borders")
+    assert spec.nonlinear.provider == "openai-api" and "trace_borders" in enabled(spec)
+    assert init().nonlinear.provider == "none"
+    assert init("--enabled", "trace_borders", "--nonlinear-provider",
+                "gemini-api").nonlinear.provider == "gemini-api"
+    assert init("--nonlinear-provider", "gemini-api").enabled == ["trace_borders"]
+    monkeypatch.setattr(credentials, "saved_image_provider", lambda: None)
+    with pytest.raises(ValueError, match="no saved OpenAI sign-in or key"):
+        init("--enabled", "trace_borders")
+
+
+def test_the_saved_connection_is_the_chosen_one_then_openai(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    from langslice.doors import credentials, user_settings
+
+    present = {"openai-api", "gemini-api"}
+    monkeypatch.setattr(credentials, "image_model_connected", lambda name: name in present)
+    monkeypatch.setattr(user_settings, "read", lambda: {"connection": None})
+    assert credentials.saved_image_provider() == "openai-api"
+    monkeypatch.setattr(user_settings, "read", lambda: {"connection": "gemini-api"})
+    assert credentials.saved_image_provider() == "gemini-api"
+    monkeypatch.setattr(user_settings, "read", lambda: {"connection": "anthropic-api"})
+    assert credentials.saved_image_provider() == "openai-api"  # no image model of its own
+    present.clear()
+    assert credentials.saved_image_provider() is None
 
 
 def test_init_and_linear_run_take_enabled(tmp_path: Path) -> None:

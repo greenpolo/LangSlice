@@ -82,10 +82,13 @@ FLAGS: dict[str, Flag] = {
     "--plane": Flag(checked=True, help=PLANE_HELP),
     "--nonlinear-provider": Flag(
         metavar="PROVIDER",
+        table_default=False,
         help="Image provider for the nonlinear task's trace_borders "
         "(openai-oauth, openai-api, gemini-api): naming one gives the agent "
-        "trace_borders. none, the default: the nonlinear task fits "
-        "deformations to the stain alone, with no image model",
+        "trace_borders. Not given: with --enabled trace_borders, the "
+        "OpenAI sign-in or key saved in the LangSlice window's Settings; "
+        "otherwise none (the nonlinear task fits deformations to the stain "
+        "alone, with no image model)",
     ),
     "--nonlinear-image-model": Flag(
         metavar="MODEL",
@@ -135,7 +138,9 @@ FLAGS: dict[str, Flag] = {
         action="append",
         metavar="NAME[,NAME...]",
         help="Tools that start off and the agent gets in this job "
-        "(repeatable): " + ", ".join(default_off_names()),
+        "(repeatable): " + ", ".join(default_off_names()) + ". "
+        "trace_borders uses the saved OpenAI sign-in or key unless "
+        "--nonlinear-provider names another image model",
     ),
     "--transform-hemisphere-cue": Flag(
         metavar="TEXT",
