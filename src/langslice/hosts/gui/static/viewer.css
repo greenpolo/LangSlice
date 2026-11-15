@@ -336,15 +336,15 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  height: var(--tray-height, 30%);
-  min-height: 180px;
+  height: var(--tray-height, 48%);
+  min-height: 240px;
   padding: 2px var(--space-3) var(--space-3);
 }
 .tray.empty { height: auto; min-height: 0; }
-.tray.empty .tray-grid, .tray.empty .tray-nav, .tray.empty .tray-caption { display: none; }
+.tray.empty .tray-grid, .tray.empty .tray-nav, .tray.empty .tray-caption, .tray.empty .tray-text { display: none; }
 .tray-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: 6px; }
 .tray-titles { min-width: 0; }
-.tray-title { font-size: var(--size-sm); display: flex; gap: var(--space-1); white-space: nowrap; }
+.tray-title { font-size: var(--size-md); display: flex; gap: var(--space-1); white-space: nowrap; }
 .tray-tool { color: var(--violet); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
 .tray.empty .tray-tool { color: var(--muted); }
 .tray-caption { margin: 0; color: var(--muted); font-size: var(--size-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -358,6 +358,7 @@
 .tile img { flex: 1; min-height: 0; width: 100%; object-fit: contain; display: block; }
 .tile-label { flex-shrink: 0; padding: 1px 6px 2px; border-top: 1px solid var(--line); font-size: var(--size-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-number { color: var(--text); margin-right: 1ch; }
+.tray-text { flex-shrink: 0; max-height: 7.5em; overflow-y: auto; margin: 6px 0 0; color: var(--text); font-size: var(--size-sm); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Narrow windows: the log goes under the focus area, full width, collapsed to its last
    lines and the tray; the tab scrolls. */

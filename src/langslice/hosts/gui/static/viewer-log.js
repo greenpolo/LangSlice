@@ -297,6 +297,7 @@ const AgentLog = (() => {
     if (empty) {
       $('tray-tool').textContent = '· no pictures yet';
       $('tray-grid').replaceChildren();
+      $('tray-text').hidden = true;
       tray.shown = '';
       return;
     }
@@ -321,6 +322,10 @@ const AgentLog = (() => {
     const shown = batch.pictures.map(p => p.number).join(',');
     if (shown === tray.shown) return;
     tray.shown = shown;
+    // One picture's caption, the words the agent read under it, as text the person can read.
+    const words = batch.pictures.length === 1 ? batch.pictures[0].caption : '';
+    $('tray-text').textContent = words;
+    $('tray-text').hidden = !words;
     const grid = $('tray-grid');
     grid.classList.toggle('one', batch.pictures.length === 1);
     grid.replaceChildren(...batch.pictures.map(tile));

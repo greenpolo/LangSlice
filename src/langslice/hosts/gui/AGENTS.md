@@ -328,7 +328,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     `▸ N pictures`, notes, the line saying the agent's own words are not
     in the job folder when it holds no trace, following the end (`Latest
     activity` when scrolled up); the Tool images tray (four pictures per
-    page, the calls with pictures paged, Follow, resizable); the lightbox (the
+    page, the calls with pictures paged, Follow, resizable, about half the
+    column; a lone picture's caption under it as text); the lightbox (the
     arrow keys through every picture of the job).
   - `settings.js`, `settings.css` — the Settings tab: built once, updated
     from each answer, so a key being typed survives a refresh; refreshed
