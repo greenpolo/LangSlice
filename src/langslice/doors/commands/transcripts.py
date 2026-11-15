@@ -36,7 +36,10 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # a type only: the job modules load with the hook's call
+    from langslice.job.layout import JobLayout
 
 #: A job folder named on a command line or in a script; unquoted, a Windows
 #: path holds backslashes, which a POSIX shell reads as escapes.
@@ -113,11 +116,24 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
     return copies
 
 
-def job_submitted(layout: Any) -> bool:
-    """Whether the job's own checkpoint (``state.json``) says it is submitted:
-    what tells a submit the transcript's text does not show (a command run
-    through a shell variable, a wrapper script or a script's ``job.submit``
-    by another name). False when the file is missing or does not read."""
+def job_submitted(layout: JobLayout) -> bool:
+    """Tell whether the job's checkpoint (``state.json``) says it is submitted.
+
+    It finds a submit the transcript's text does not show: a command run
+    through a shell variable, a wrapper script, or a script's ``job.submit``
+    under another name.
+
+    Parameters
+    ----------
+    layout
+        The job folder.
+
+    Returns
+    -------
+    bool
+        True when it does; False also when the file is missing or does not
+        read.
+    """
     try:
         state = json.loads(layout.state_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):

@@ -31,14 +31,14 @@ exceptions: a violation is fixed by moving code.
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.25, which starts `langslice serve
 --stdio`), `claude-desktop/` (configuration for `langslice mcp`),
-`claude-code/`, `antigravity/` and `codex/` (skills and agents over the agent CLI). `packaging/`
+`claude-code/`, `antigravity/` and `codex/` (skills over the agent CLI; registration agents over MCP, one of them with scripts). `packaging/`
 and `environment.yml` hold the worker's source installation.
 
 ## Rules that hold in the code
 
 - Every way in goes through one job folder and its verbs: the agent run
-  (`langslice linear run`), the agent CLI (`langslice-job FOLDER VERB`, `ops`,
-  `schema`), the library (`langslice.open_job`, `create_job`),
+  (`langslice linear run`), the agent CLI (`langslice-job FOLDER COMMAND`: setting a job up and
+  checking it, no registration tool; `ops`, `schema`), the library (`langslice.open_job`, `create_job`),
   MCP and the Fiji worker.
 - Tasks `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from

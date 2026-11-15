@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `langslice.tools.descriptions.render.declare`d | LangSlice's agent (`doors/agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `agent_cli/launch.py`) | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call a process of its own | Claude Code, Antigravity, Codex |
+| agent CLI (`langslice-job`) | `agent_cli/calls.py`: the commands of the session that sets a job up and checks it (`init`, `launch`, `runs`, `wait`, `env`, `python SCRIPT`) and, over the same toolbox, the verbs `status` and `export_maps` alone (`catalog.CLI_VERBS`, `on_command_line`; any other verb answers `VERB_OFF` with where it is: an MCP tool, a library method); gates off, `level="auto"`; each call a process of its own. The test suite sets `LANGSLICE_JOB_TEST_ALL_VERBS=1` (`catalog.ALL_VERBS_ENV`, `tests/conftest.py`) to drive every verb through this plumbing | the main session of Claude Code, Antigravity, Codex |
 | library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
@@ -449,10 +449,11 @@ bodies, and turned into an answer once per door:
     `save` in `logs/launches/<six-digit number>_<role>.md` (artifact
     `launch`). `mcp_prompt`: line + `mcp.server.mcp_statement` of the job
     opened as the MCP server opens it (`ImportError` -> `MCP_MISSING`);
-    `cli_prompt(opened)` -> `Launch`: line + the statement for door `cli`
-    (no gates, `auto` sizing), the opening strips saved as the job's `opening`
-    views (artifacts with `index` and `label`) and listed in the prompt in
-    reading order; `facts` (`viewer`, `resolution`, `image_model`, also
+    `scripting_prompt`: the same with the paragraph on scripts after the
+    opening's (`door_text.scripting_lines`: the interpreter of the job's own
+    environment, made first by `environment.ensure`, `ENV_FAILED` when it
+    cannot be; `environment.install_command`; `langslice.open_job`; where
+    the agent's files go); `facts` (`viewer`, `resolution`, `image_model`, also
     `init`'s); `write_tools`: `TOOLS.md` (artifact `tools`), every verb of the
     toolbox as its run declares it (`ToolBox.variant`, `catalog.tools_text`).
   - `catalog.py` — `ops` (the listed verbs: name, kind, group, summary,
@@ -545,7 +546,8 @@ bodies, and turned into an answer once per door:
     through `jobs.find`), each given the transcript as
     `trace/<harness>_<session>.jsonl` with inline image data replaced by its
     size (`slim`) and beside it a launch check, `<harness>_<session>.launch.json` (`launch_check`: the first user message, `first_user_message`, against `logs/launches/*.md`: `verbatim`, `launch`, `similarity`, `first_difference`, lengths; or `checked: false`); a transcript that submitted (`SUBMIT_PATTERN`, or an MCP `submit`
-    call, `MCP_SUBMIT` through `called`) also removes the job's `env/`. Never raises; prints `{}`.
+    call, `MCP_SUBMIT` through `called`), or whose job's `state.json` says it is
+    submitted (`job_submitted`), also removes the job's `env/`. Never raises; prints `{}`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
     --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish` (in the
