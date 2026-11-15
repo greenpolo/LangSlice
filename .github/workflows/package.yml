@@ -34,7 +34,7 @@ jobs:
           # read; any other finding fails the job
           if ! out=$(NO_COLOR=1 uv pip check --python "$(python -c 'import sys; print(sys.executable)')" 2>&1); then
             echo "$out"
-            if echo "$out" | grep -v -e 'Found 1 incompatibilit' -e 'The package `itk` is broken' -e '^Checked [0-9]* packages' | grep -q .; then
+            if echo "$out" | grep -v -e 'Found 1 incompatibilit' -e 'The package `itk` is broken' -e '^Checked [0-9]* packages' -e '^Using Python' | grep -q .; then
               exit 1
             fi
           fi
