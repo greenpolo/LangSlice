@@ -123,7 +123,7 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["core/atlas/*.json", "hosts/gui/static/*"]
+langslice = ["core/atlas/*.json", "hosts/gui/static/*", "engines/brainways/LICENSE"]
 langslice_vendor = ["emlddmm/LICENSE", "emlddmm/NOTICE", "stalign/LICENSE"]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each

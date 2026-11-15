@@ -121,8 +121,14 @@ Writes the region and coordinate maps. From the command line and Python only.
 ## Optional engines
 
 Tool plugins. A job gets them when it is made from Python or with
-`langslice linear run --plugins`. STalign and emlddmm come with LangSlice;
-SPOmiAlign runs in an environment of its own.
+`langslice linear run --plugins`. STalign, emlddmm and `brainways_ap` come
+with LangSlice; SPOmiAlign runs in an environment of its own.
+
+### `brainways_ap`
+
+Finds each section's position along the slicing axis with
+[Brainways](https://github.com/bkntr/brainways)' network. Rat
+(`whs_sd_rat_39um`) coronal jobs only.
 
 ### `stalign_lddmm`
 

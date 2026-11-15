@@ -1,4 +1,4 @@
-"""In-tree engines: the STalign, SPOmiAlign and emlddmm adapters, loaded as tool plugins.
+"""In-tree engines: the STalign, SPOmiAlign, emlddmm and Brainways adapters, loaded as tool plugins.
 
 Each engine is a package of ``plugin.py`` (the adapter, run in LangSlice's process, importing
 only :mod:`langslice.plugin_api` and the engines' own modules) and ``engine.py`` (the method's
@@ -14,4 +14,9 @@ when a tool runs, both vendored (``langslice_vendor.stalign``, ``langslice_vendo
 SPOmiAlign's ``engine.py`` runs as a subprocess under its own environment's interpreter,
 which stays outside LangSlice's venv; a missing one is refused at tool-call time with
 ``ENGINE_MISSING``, never at load time.
+
+``langslice.engines.brainways.plugin:tools`` (``brainways_ap``, rat coronal
+jobs only) runs in LangSlice's own process too: the part of Brainways
+0.1.16.3 that finds a section's position is vendored beside its adapter
+(GPL-3.0, ``brainways/LICENSE``) and needs only torch.
 """
