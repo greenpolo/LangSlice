@@ -286,13 +286,17 @@ def _plugin(name: str, facts: DescriptionFacts) -> Declaration:
     _, _, below = render(
         inspect.cleandoc(stub.__doc__ or ""), facts.switched_off | facts.absent
     ).partition("\n")
+    # every tool returns its reply, whatever the stub's return annotation
+    annotations = dict(inspect.get_annotations(stub, eval_str=True))
+    annotations["return"] = RETURNS
+    signature = inspect.signature(stub, eval_str=True)
     return Declaration(
         name,
         doc,
         below.strip(),
         argument_texts(doc),
-        inspect.signature(stub, eval_str=True),
-        dict(inspect.get_annotations(stub, eval_str=True)),
+        signature.replace(return_annotation=RETURNS),
+        annotations,
     )
 
 
@@ -426,6 +430,37 @@ def summary(name: str, facts: DescriptionFacts = FULL) -> str:
     return declaration(name, facts).summary
 
 
+def context_parameter(
+    signature: inspect.Signature,
+    *,
+    annotation: object = inspect.Parameter.empty,
+) -> inspect.Parameter:
+    """Make ADK's ``tool_context`` parameter to end a declared signature.
+
+    It is keyword-only after a keyword-only argument (a plugin stub's
+    options after ``*``), and positional-or-keyword otherwise.
+
+    Parameters
+    ----------
+    signature
+        The declared signature it is appended to.
+    annotation
+        The parameter's annotation; none by default.
+
+    Returns
+    -------
+    inspect.Parameter
+        ``tool_context``, defaulting to None.
+    """
+    kinds = [parameter.kind for parameter in signature.parameters.values()]
+    kind = inspect.Parameter.POSITIONAL_OR_KEYWORD
+    if inspect.Parameter.KEYWORD_ONLY in kinds:
+        kind = inspect.Parameter.KEYWORD_ONLY
+    return inspect.Parameter(
+        "tool_context", kind, default=None, annotation=annotation
+    )
+
+
 def declare(
     name: str, body: Callable[..., Any], facts: DescriptionFacts = FULL
 ) -> Callable[..., Any]:
@@ -471,12 +506,7 @@ def declare(
         signature = signature.replace(
             parameters=[
                 *signature.parameters.values(),
-                inspect.Parameter(
-                    "tool_context",
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                    default=None,
-                    annotation=Any,
-                ),
+                context_parameter(signature, annotation=Any),
             ]
         )
         annotations = {

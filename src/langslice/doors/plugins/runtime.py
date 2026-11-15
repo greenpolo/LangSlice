@@ -29,7 +29,7 @@ from langslice.doors.plugins.context import ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.job import plugins as core
 from langslice.tools.descriptions.description import DescriptionFacts
-from langslice.tools.descriptions.render import declaration
+from langslice.tools.descriptions.render import context_parameter, declaration
 
 if TYPE_CHECKING:
     from langslice.tools.run import Run
@@ -117,8 +117,8 @@ def body(run: Run, tool: ToolSpec,
 
     declared = declaration(tool.name, facts)
     answer.__signature__ = declared.signature.replace(  # type: ignore[attr-defined]
-        parameters=[*declared.signature.parameters.values(), inspect.Parameter(
-            "tool_context", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None)],
+        parameters=[*declared.signature.parameters.values(),
+                    context_parameter(declared.signature)],
         return_annotation=inspect.Signature.empty)
     answer.__name__ = tool.name
     return answer

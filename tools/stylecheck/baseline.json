@@ -7602,7 +7602,6 @@
 {"rule": "ruff:E501", "path": "src/langslice/doors/plugins/reads.py", "symbol": "SectionRaster.to_section_px", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/doors/plugins/reads.py", "symbol": "as_tool_error", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/doors/plugins/reads.py", "symbol": "unorient_raster", "count": 3},
-{"rule": "ruff:E501", "path": "src/langslice/doors/plugins/runtime.py", "symbol": "body", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/doors/plugins/runtime.py", "symbol": "body.answer", "count": 4},
 {"rule": "ruff:E501", "path": "src/langslice/doors/plugins/runtime.py", "symbol": "reply_of", "count": 3},
 {"rule": "ruff:E501", "path": "src/langslice/doors/plugins/writes.py", "symbol": "<module>", "count": 1},
