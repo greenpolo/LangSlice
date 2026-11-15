@@ -120,8 +120,15 @@ Writes the region and coordinate maps. From the command line and Python only.
 
 ## Optional engines
 
-Tool plugins, each run in an environment of its own. A job gets them when it
-is made from Python or with `langslice linear run --plugins`.
+Tool plugins, each run in an environment of its own except `brainways_ap`,
+which runs in LangSlice's. A job gets them when it is made from Python or with
+`langslice linear run --plugins`.
+
+### `brainways_ap`
+
+Finds each section's position along the slicing axis with
+[Brainways](https://github.com/bkntr/brainways)' network. Rat
+(`whs_sd_rat_39um`) coronal jobs only.
 
 ### `stalign_lddmm`
 
