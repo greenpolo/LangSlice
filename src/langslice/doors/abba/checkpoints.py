@@ -592,7 +592,7 @@ class HostCheckpoints:
         partial = path.with_suffix(f".{os.getpid()}.tmp")
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            partial.write_text(json.dumps(row), encoding="utf-8")
+            partial.write_text(json.dumps(row), encoding="utf-8", newline="\n")
             partial.replace(path)
         except OSError:
             logger.warning("Could not keep the converted warp in %s", path)

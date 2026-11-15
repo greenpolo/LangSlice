@@ -489,7 +489,8 @@ class JobLayout:
             self.logs_dir.mkdir(parents=True, exist_ok=True)
             record = {"kind": kind, **fields,
                       "at": datetime.now(UTC).isoformat(timespec="seconds")}
-            with (self.logs_dir / EVENTS_FILE).open("a", encoding="utf-8") as handle:
+            with (self.logs_dir / EVENTS_FILE).open("a", encoding="utf-8",
+                newline="\n") as handle:
                 handle.write(json.dumps(record, default=str) + "\n")
         except OSError:
             pass

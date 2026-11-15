@@ -116,7 +116,7 @@ def write(settings: dict[str, Any]) -> dict[str, Any]:
     fd, temporary_name = tempfile.mkstemp(prefix=".settings-", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(clean, stream, indent=1)
             stream.write("\n")
         temporary.replace(path)

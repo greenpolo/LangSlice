@@ -88,7 +88,7 @@ def save_reply(logs_folder: Path, verb: str, text: str) -> Path | None:
         for _attempt in range(1000):
             path = folder / f"{number:06d}_{safe}.json"
             try:
-                with path.open("x", encoding="utf-8") as handle:
+                with path.open("x", encoding="utf-8", newline="\n") as handle:
                     handle.write(text + "\n")
                 return path
             except FileExistsError:
@@ -101,7 +101,7 @@ def save_reply(logs_folder: Path, verb: str, text: str) -> Path | None:
 def _append(path: Path, record: dict[str, Any]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(json.dumps(record, default=str) + "\n")
     except Exception:
         logger.warning("Could not write a record to %s", path, exc_info=True)

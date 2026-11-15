@@ -319,7 +319,7 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
         [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
         timeout_s=timeout_s, env=env, cwd=folder)
     (folder / "log.txt").write_text(done.stdout + done.stderr,
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
     if done.returncode != 0 or not dst.exists():
         missing = _weights_missing()
         if missing:
@@ -446,7 +446,7 @@ def _files(here: Path, pair: dict[str, Any], got: dict[str, Any],
     Image.fromarray(_outline(pair["target"], ~pair["keep"])).save(here / "atlas.png")
     Image.fromarray(pair["source"]).save(here / "section.png")
     (here / "settings.json").write_text(json.dumps(settings, indent=1, default=str),
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
     used = np.asarray(got.get("used", np.zeros((0, 5))))
     dropped = np.asarray(got.get("dropped_pairs", np.zeros((0, 5))))
     with open(here / "matches.csv", "w", encoding="utf-8", newline="") as fh:

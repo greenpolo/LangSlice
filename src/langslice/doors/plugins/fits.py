@@ -98,7 +98,8 @@ class ContextFits(ContextProposals):
                           "native_to_um a native pixel [x, y, 1] to atlas micrometres.",
         }
         frame_file = target / "frame.json"
-        frame_file.write_text(json.dumps(info, indent=1) + "\n", encoding="utf-8")
+        frame_file.write_text(json.dumps(info, indent=1) + "\n", encoding="utf-8",
+            newline="\n")
         return {**written, "frame": frame_file}
 
     def map_from_itk(self, section: object, source: Any, *, fixed: str = "section",

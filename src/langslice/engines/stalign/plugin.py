@@ -385,7 +385,7 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
         [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
         timeout_s=timeout_s, env=env, cwd=folder)
     (folder / "log.txt").write_text(done.stdout + done.stderr,
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
         raise ToolError(RefusalCode.FIT_FAILED,
@@ -535,7 +535,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                 {"asked": {**settings, **params}, **blocks,
                  "chosen": json.loads(str(out["settings"])), "device": str(out["device"]),
                  "seconds": float(out["seconds"])}, indent=1, default=str),
-                     encoding="utf-8")
+                     encoding="utf-8", newline="\n")
             np.savez_compressed(here / "weights.npz", WM=out["WM"], WB=out["WB"], WA=out["WA"])
             # bend only: the map converts before the lock (with affine the conversion reads the
             # new transform, so it waits for it)
@@ -661,7 +661,7 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
                     < 1e-6 or abs(abs(shift) - SEARCH_SHIFT_UM) < 1e-6)
         (folder / sid / "plane.json").write_text(json.dumps(
             {"found": found, "prefit": prefit, "device": str(out["device"])}, indent=1,
-            default=float), encoding="utf-8")
+            default=float), encoding="utf-8", newline="\n")
         pitch0, yaw0 = (float(v) for v in view_of.angles)
         row = {"id": sid, "status": "ok", "inputs": inputs, "estimated": None,
                "pitch_deg": round(found["pitch_deg"], 2),

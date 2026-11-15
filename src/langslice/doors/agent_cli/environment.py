@@ -113,7 +113,7 @@ def _make(layout: JobLayout) -> bool:
                    stdin=subprocess.DEVNULL)
     (_site_packages(folder) / PARENT_PTH).write_text(
         "".join(f"import site; site.addsitedir({str(path)!r})\n" for path in _parent_sites()),
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
     requirements = layout.folder / REQUIREMENTS
     if requirements.is_file() and requirements.read_text(encoding="utf-8").strip():
         _pip(folder, ["-r", str(requirements)])
@@ -162,7 +162,7 @@ def write_requirements(layout: JobLayout) -> None:
     path = layout.folder / REQUIREMENTS
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(f"{name}=={version}\n" for name, version in packages),
-                    encoding="utf-8")
+                    encoding="utf-8", newline="\n")
 
 
 def describe(layout: JobLayout) -> dict[str, Any]:

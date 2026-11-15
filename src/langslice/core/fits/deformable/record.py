@@ -383,7 +383,7 @@ class DeformableRecord:
         ome_warp.write(out, self)
         metadata = to_jsonable(self.metadata(), strict=True)
         (out / "record.json").write_text(json.dumps(metadata, indent=2) + "\n",
-            encoding="utf-8")
+            encoding="utf-8", newline="\n")
         self.saved_as = out.name
         return out
 

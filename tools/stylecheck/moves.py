@@ -457,7 +457,7 @@ def write_moves(root: Path, moves: Moves) -> None:
     ]
     body = "\n" + ",\n".join(lines) + "\n" if lines else ""
     text = '{\n"moves": [' + body + "]\n}\n"
-    (root / MOVES_FILE).write_text(text, encoding="utf-8")
+    (root / MOVES_FILE).write_text(text, encoding="utf-8", newline="\n")
 
 
 def _symbols(module: Module) -> frozenset[str]:

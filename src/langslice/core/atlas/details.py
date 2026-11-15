@@ -93,7 +93,7 @@ def _refresh() -> None:  # pragma: no cover - reads the network
         "source": f"https://github.com/{REPOSITORY}/blob/{commit}/{PAGE}",
         "licence": "CC BY 4.0, BrainGlobe",
         "atlases": dict(sorted(atlases.items())),
-    }, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    }, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"{len(atlases)} atlases from {REPOSITORY}@{commit[:10]} -> {DETAILS_FILE}")
 
 
