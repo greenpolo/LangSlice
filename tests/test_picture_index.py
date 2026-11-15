@@ -35,11 +35,14 @@ def test_view_json_and_the_index_carry_caption_step_and_recipe(tmp_path: Path):
             (_picture(), None)])
     store.flush()
     assert [picture.seq for picture in saved] == [1, 2]
-    line = json.loads((tmp_path / "langslice" / "views.jsonl").read_text().splitlines()[0])
+    line = json.loads((tmp_path / "langslice" / "views.jsonl").read_text(
+        encoding="utf-8").splitlines()[0])
     assert (line["caption"], line["step"], line["recipe"]) == ("s0 as drawn", 4, RECIPE)
-    record = json.loads((tmp_path / "langslice" / line["path"] / "view.json").read_text())
+    record = json.loads((tmp_path / "langslice" / line["path"] / "view.json").read_text(
+        encoding="utf-8"))
     assert (record["caption"], record["step"], record["recipe"]) == ("s0 as drawn", 4, RECIPE)
-    bare = json.loads((tmp_path / "langslice" / "views.jsonl").read_text().splitlines()[1])
+    bare = json.loads((tmp_path / "langslice" / "views.jsonl").read_text(
+        encoding="utf-8").splitlines()[1])
     assert "caption" not in bare and "recipe" not in bare and bare["step"] == 4
 
 

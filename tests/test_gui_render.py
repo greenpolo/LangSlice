@@ -272,9 +272,11 @@ def test_what_cannot_be_drawn_says_why(job: Path, pool: ThreadPoolExecutor) -> N
     shutil.move(job.parent / ID0, job.parent.parent / ID0)
     moved = job.parent.parent / "elsewhere"
     shutil.copytree(job, moved / "langslice")
-    record = json.loads((moved / "langslice" / "job.json").read_text())
+    record = json.loads((moved / "langslice" / "job.json").read_text(
+        encoding="utf-8"))
     record["image_folder"] = str(job.parent.parent / "gone")
-    (moved / "langslice" / "job.json").write_text(json.dumps(record))
+    (moved / "langslice" / "job.json").write_text(json.dumps(record),
+        encoding="utf-8")
     # The images moved away: every render says what NoJob says.
     away = _renderer(moved / "langslice", pool)
     for call in (away.strip, lambda: away.overlay(ID1, 128), lambda: away.thumb(ID1, 128)):

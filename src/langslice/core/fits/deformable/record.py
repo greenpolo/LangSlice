@@ -382,7 +382,8 @@ class DeformableRecord:
         self.round_to_storage()
         ome_warp.write(out, self)
         metadata = to_jsonable(self.metadata(), strict=True)
-        (out / "record.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        (out / "record.json").write_text(json.dumps(metadata, indent=2) + "\n",
+            encoding="utf-8")
         self.saved_as = out.name
         return out
 
@@ -425,7 +426,8 @@ class DeformableRecord:
     def _metadata(root: Path) -> dict[str, Any]:
         """*root*'s ``record.json``, checked: its keys and its format."""
         try:
-            meta = json.loads((root / "record.json").read_text())
+            meta = json.loads((root / "record.json").read_text(
+                encoding="utf-8"))
             unknown = sorted(set(meta) - set(_RECORD_KEYS))
             if unknown:
                 raise ValueError(f"Unknown record key(s) {unknown}")

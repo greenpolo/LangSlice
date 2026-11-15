@@ -224,7 +224,7 @@ def child_environment(root: Path) -> dict[str, str]:
     (brainglobe_config / "bg_config.conf").write_text(
         "[default_dirs]\n"
         f"brainglobe_dir = {atlases}\n"
-        f"interm_download_dir = {atlases}\n"
+        f"interm_download_dir = {atlases}\n", encoding="utf-8"
     )
     runtime = home / "runtime"
     runtime.mkdir(mode=0o700)
@@ -281,7 +281,7 @@ def run_door(door: str, root: Path) -> Run:
         pytest.fail(
             f"the {door} door's scenario failed:\n" + finished.stderr[-4000:]
         )
-    calls = json.loads(calls_path.read_text())
+    calls = json.loads(calls_path.read_text(encoding="utf-8"))
     return Run(root=root, job=images / "langslice", calls=calls)
 
 
@@ -293,6 +293,10 @@ class Normaliser:
 
     def __init__(self, root: Path) -> None:
         spellings = {str(root), os.path.realpath(root)}
+        # a path inside JSON text has its backslashes escaped (Windows), and a
+        # path may be written with forward slashes
+        spellings |= {json.dumps(s)[1:-1] for s in spellings}
+        spellings |= {s.replace("\\", "/") for s in spellings}
         self.roots = sorted(spellings, key=len, reverse=True)
 
     def text(self, value: str) -> str:
@@ -406,9 +410,9 @@ def file_entry(path: Path, normaliser: Normaliser) -> object:
     """Return what is pinned of one job-folder file."""
     suffix = path.suffix
     if suffix == ".json":
-        return normaliser.data(json.loads(path.read_text()))
+        return normaliser.data(json.loads(path.read_text(encoding="utf-8")))
     if suffix == ".jsonl":
-        lines = path.read_text().splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
         return [normaliser.data(json.loads(line)) for line in lines if line]
     if path.name == "view.jpg":
         return picture_entry(path)
@@ -419,7 +423,7 @@ def file_entry(path: Path, normaliser: Normaliser) -> object:
         return array_entry(tifffile.imread(path))
     if suffix == ".npz":
         return npz_entry(path, normaliser)
-    return normaliser.text(path.read_text()).splitlines()
+    return normaliser.text(path.read_text(encoding="utf-8")).splitlines()
 
 
 def job_files(job: Path) -> Iterator[Path]:
@@ -486,8 +490,8 @@ def write_outputs(
     if folder.exists():
         shutil.rmtree(folder)
     (folder / "pictures").mkdir(parents=True)
-    (folder / "calls.json").write_text(dump(outputs.calls))
-    (folder / "files.json").write_text(dump(outputs.files))
+    (folder / "calls.json").write_text(dump(outputs.calls), encoding="utf-8")
+    (folder / "files.json").write_text(dump(outputs.files), encoding="utf-8")
     for name, path in outputs.pictures.items():
         if every_picture or is_kept(name):
             shutil.copyfile(path, folder / "pictures" / f"{name}.jpg")
@@ -519,7 +523,7 @@ def recorded_at(folder: Path) -> str:
     path = folder / "provenance.json"
     if not path.exists():
         return "an unknown commit (no provenance.json)"
-    record = json.loads(path.read_text())
+    record = json.loads(path.read_text(encoding="utf-8"))
     n_changed = len(record["uncommitted_changes"])
     changes = f" with {n_changed} files uncommitted" * bool(n_changed)
     return (
@@ -703,8 +707,8 @@ def calls_diff(old: object, new: object) -> list[str]:
 def differences(outputs: Outputs, door: str) -> list[str]:
     """List what *outputs* change against the goldens; empty when nothing."""
     expected = EXPECTED / door
-    expected_calls = (expected / "calls.json").read_text()
-    expected_files = (expected / "files.json").read_text()
+    expected_calls = (expected / "calls.json").read_text(encoding="utf-8")
+    expected_files = (expected / "files.json").read_text(encoding="utf-8")
     actual_calls, actual_files = dump(outputs.calls), dump(outputs.files)
     # compared as text: a NaN in a file never equals itself as a value
     if actual_calls == expected_calls and actual_files == expected_files:
@@ -751,12 +755,13 @@ def test_golden_outputs(door: str, tmp_path: Path) -> None:
         return
 
     write_outputs(outputs, actual, every_picture=True)
-    (actual / "diff.txt").write_text("\n".join(lines) + "\n")
+    (actual / "diff.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     if updating:
         # the goldens are not under version control: the failure carries
         # the diff, so a regeneration is always reviewed
         write_outputs(outputs, expected, every_picture=False)
-        (expected / "provenance.json").write_text(dump(provenance()))
+        (expected / "provenance.json").write_text(dump(provenance()),
+            encoding="utf-8")
         pytest.fail(
             f"the {door} door: regenerated {expected} at "
             f"{recorded_at(expected)}; it changed:\n" + printed(lines, door)

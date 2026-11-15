@@ -119,7 +119,8 @@ def prompt_diff(base: str, edited: str) -> str:
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8")
     temporary.replace(path)
 
 
@@ -480,7 +481,8 @@ def reply_on_grid(
 
     directory = Path(directory)
     try:
-        request = json.loads((directory / "request.json").read_text())
+        request = json.loads((directory / "request.json").read_text(
+            encoding="utf-8"))
         with Image.open(directory / "extracted_lines.png") as opened:
             lines = np.asarray(opened.convert("L"), dtype=np.float32) / 255.0
         with Image.open(directory / "raw_reply.png") as opened:

@@ -30,7 +30,7 @@ def test_engine_output_sends_descriptor_2_to_the_log_and_back(tmp_path: Path):
                            check=True)
         os.write(2, b"still the engine\n")
     assert os.fstat(2).st_ino == before
-    text = log.read_text()
+    text = log.read_text(encoding="utf-8")
     assert "a fit" in text and "another" in text
     assert text.index("from the engine") < text.index("from gcc") < text.index("still the")
     with engine_output(None):  # a job that persists nothing: stderr as it is
@@ -49,7 +49,7 @@ def test_gpu_turn_reports_how_long_it_waited(tmp_path: Path, monkeypatch):
     def hold() -> None:
         import fcntl  # POSIX only: the queue takes no lock on Windows
 
-        with open(lock, "w") as handle:
+        with open(lock, "w", encoding="utf-8") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             held.set()
             time.sleep(0.4)

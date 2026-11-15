@@ -345,9 +345,11 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     assert np.array_equal(loaded.labels, second.labels)
     assert np.array_equal(loaded.field_mm, second.field_mm)  # saving rounded it
     assert np.allclose(loaded.placement.atlas_to_section, second.placement.atlas_to_section)
-    meta = json.loads((tmp_path / "rec" / "record.json").read_text())
+    meta = json.loads((tmp_path / "rec" / "record.json").read_text(
+        encoding="utf-8"))
     meta["placement"]["origin"] = 0
-    (tmp_path / "rec" / "record.json").write_text(json.dumps(meta))
+    (tmp_path / "rec" / "record.json").write_text(json.dumps(meta),
+        encoding="utf-8")
     with pytest.raises(ValueError, match=r"record\.json: Unknown placement key\(s\) \['origin'\]"):
         DeformableRecord.load(tmp_path / "rec")
     with pytest.raises(ValueError, match="None of the chosen structures"):

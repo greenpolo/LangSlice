@@ -251,7 +251,7 @@ def gpu_turn(device: str) -> Iterator[GpuTurn]:
     import fcntl
 
     GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-    with open(GPU_LOCK, "w") as handle:
+    with open(GPU_LOCK, "w", encoding="utf-8") as handle:
         asked = time.perf_counter()
         fcntl.flock(handle, fcntl.LOCK_EX)
         turn.waited_s = time.perf_counter() - asked

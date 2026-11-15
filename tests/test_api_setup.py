@@ -30,7 +30,7 @@ def test_save_both_keys_preserves_them_and_never_returns_secrets(isolated_home: 
     assert result == {"configured": True, "source": "saved", "validated": False}
     setup.save_api_key("gemini-api", "test-private-gemini")
     path = isolated_home / ".langslice" / "provider_credentials.json"
-    assert json.loads(path.read_text()) == {
+    assert json.loads(path.read_text(encoding="utf-8")) == {
         "openai-api": "test-private-openai", "gemini-api": "test-private-gemini"
     }
     if os.name == "posix":
@@ -64,15 +64,17 @@ def test_unknown_or_unreadable_saved_entries_are_skipped(
     nothing and raises nowhere."""
     path = isolated_home / ".langslice" / "provider_credentials.json"
     path.parent.mkdir()
-    path.write_text(json.dumps({"future-api": "f", "gemini-api": "saved-gemini"}))
+    path.write_text(json.dumps({"future-api": "f", "gemini-api": "saved-gemini"}),
+        encoding="utf-8")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     setup.apply_saved_credentials()
     assert os.environ["GEMINI_API_KEY"] == "saved-gemini"
     assert setup.connections()["providers"]["gemini-api"]["configured"]
     setup.save_api_key("openai-api", "new")
-    assert json.loads(path.read_text()) == {"future-api": "f", "gemini-api": "saved-gemini",
+    assert json.loads(path.read_text(
+        encoding="utf-8")) == {"future-api": "f", "gemini-api": "saved-gemini",
                                             "openai-api": "new"}
-    path.write_text("not json")
+    path.write_text("not json", encoding="utf-8")
     setup.apply_saved_credentials()  # warns, raises nothing
     setup.load_credentials()
 
@@ -90,33 +92,35 @@ def test_invalid_save_does_not_write(isolated_home: Path, provider: str, key: st
 def test_corrupt_settings_report_generic_error_and_are_not_overwritten(isolated_home: Path) -> None:
     path = isolated_home / ".langslice" / "provider_credentials.json"
     path.parent.mkdir()
-    path.write_text("sensitive malformed input")
+    path.write_text("sensitive malformed input", encoding="utf-8")
     status = setup.connections()
     assert status["credentials_error"]
     assert "sensitive" not in json.dumps(status)
     with pytest.raises(ValueError):
         setup.save_api_key("openai-api", "new-key")
-    assert path.read_text() == "sensitive malformed input"
+    assert path.read_text(encoding="utf-8") == "sensitive malformed input"
 
 
 def test_oauth_presence_does_not_refresh_or_expose_token(isolated_home: Path) -> None:
     path = isolated_home / ".langslice" / "openai_auth.json"
     path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps({"tokens": {"access_token": "private-oauth-token"}}))
-    original = path.read_text()
+    path.write_text(json.dumps({"tokens": {"access_token": "private-oauth-token"}}),
+        encoding="utf-8")
+    original = path.read_text(encoding="utf-8")
     status = setup.connections()
     oauth = status["providers"]["openai-oauth"]
     assert {key: oauth[key] for key in ("configured", "source", "validated")} == {
         "configured": True, "source": "saved", "validated": False,
     }
     assert "private-oauth-token" not in json.dumps(status)
-    assert path.read_text() == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_a_codex_login_is_not_a_langslice_login(isolated_home: Path) -> None:
     path = isolated_home / ".codex" / "auth.json"
     path.parent.mkdir()
-    path.write_text(json.dumps({"tokens": {"access_token": "codex-token"}}))
+    path.write_text(json.dumps({"tokens": {"access_token": "codex-token"}}),
+        encoding="utf-8")
     assert setup.connections()["providers"]["openai-oauth"]["configured"] is False
 
 
@@ -154,7 +158,8 @@ def test_an_image_model_is_connected_by_its_key_or_login_offline(
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     path = isolated_home / ".langslice" / "openai_auth.json"
     path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps({"tokens": {"access_token": "token"}}))
+    path.write_text(json.dumps({"tokens": {"access_token": "token"}}),
+        encoding="utf-8")
     connected = {name: setup.image_model_connected(name) for name in providers}
     assert connected == {"openai-oauth": True, "gemini-api": True, "openai-api": False,
                          "none": False}

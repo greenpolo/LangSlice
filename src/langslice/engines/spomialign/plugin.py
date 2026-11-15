@@ -312,7 +312,8 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
     done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
                           capture_output=True, text=True, env=env, cwd=str(folder),
                           timeout=float(config["timeout_s"]))
-    (folder / "log.txt").write_text(done.stdout + done.stderr)
+    (folder / "log.txt").write_text(done.stdout + done.stderr,
+        encoding="utf-8")
     if done.returncode != 0 or not dst.exists():
         missing = _weights_missing()
         if missing:
@@ -439,10 +440,11 @@ def _files(here: Path, pair: dict[str, Any], got: dict[str, Any],
     here.mkdir(parents=True, exist_ok=True)
     Image.fromarray(_outline(pair["target"], ~pair["keep"])).save(here / "atlas.png")
     Image.fromarray(pair["source"]).save(here / "section.png")
-    (here / "settings.json").write_text(json.dumps(settings, indent=1, default=str))
+    (here / "settings.json").write_text(json.dumps(settings, indent=1, default=str),
+        encoding="utf-8")
     used = np.asarray(got.get("used", np.zeros((0, 5))))
     dropped = np.asarray(got.get("dropped_pairs", np.zeros((0, 5))))
-    with open(here / "matches.csv", "w", newline="") as fh:
+    with open(here / "matches.csv", "w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["atlas_x", "atlas_y", "section_x", "section_y", "confidence",
                          "dropped"])

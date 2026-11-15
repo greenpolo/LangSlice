@@ -45,11 +45,13 @@ def _init(folder: Path, *flags: str) -> dict[str, Any]:
 
 
 def _saved_spec(folder: Path) -> dict[str, Any]:
-    return json.loads((folder / "langslice" / "job.json").read_text())["spec"]
+    return json.loads((folder / "langslice" / "job.json").read_text(
+        encoding="utf-8"))["spec"]
 
 
 def _state(folder: Path) -> dict[str, Any]:
-    return json.loads((folder / "langslice" / "state.json").read_text())
+    return json.loads((folder / "langslice" / "state.json").read_text(
+        encoding="utf-8"))
 
 
 def test_init_continues_the_prepared_job_with_abbas_inputs(tmp_path: Path):

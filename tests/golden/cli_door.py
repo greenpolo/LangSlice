@@ -136,7 +136,8 @@ def main() -> None:
     calls = [
         call(arguments, images.parent) for arguments in commands(str(images))
     ]
-    calls_path.write_text(json.dumps(calls, indent=1, sort_keys=True))
+    calls_path.write_text(json.dumps(calls, indent=1, sort_keys=True),
+        encoding="utf-8")
 
 
 if __name__ == "__main__":

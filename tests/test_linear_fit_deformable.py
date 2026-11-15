@@ -141,7 +141,8 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert not Path(held["record"]).is_absolute()  # relative to the job folder
     record_dir = Path(ctx.job_folder) / held["record"]
     assert record_dir.parent == Path(ctx.job_folder) / "sections" / Path(ID).stem / "deformable"
-    saved = json.loads((record_dir / "record.json").read_text())
+    saved = json.loads((record_dir / "record.json").read_text(
+        encoding="utf-8"))
     assert saved["provenance"]["section_id"] == ID
     # The record names what the fit read and estimated, as the reply does.
     assert saved["provenance"]["inputs"] == row["inputs"]
@@ -302,7 +303,8 @@ def _trace_artifacts(state: Stack, ctx: Any, folder: Path, *,
     edges = region_boundaries(placed)[0].astype(np.uint8)
     folder.mkdir(parents=True)
     Image.fromarray(edges * 255).save(folder / "extracted_lines.png")
-    (folder / "request.json").write_text(json.dumps({"atlas_to_canvas": atlas_to_canvas.tolist()}))
+    (folder / "request.json").write_text(json.dumps({"atlas_to_canvas": atlas_to_canvas.tolist()}),
+        encoding="utf-8")
     return {"id": "s0.png", "status": "ok", "geometry_fingerprint": fingerprint,
             "artifact_dir": str(folder)}
 

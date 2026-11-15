@@ -205,9 +205,9 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
 
 def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
     job = init(capsys, images)
-    record = json.loads((job / "job.json").read_text())
+    record = json.loads((job / "job.json").read_text(encoding="utf-8"))
     record["spec"]["plane"] = "diagonal"  # a spec the job layer refuses
-    (job / "job.json").write_text(json.dumps(record))
+    (job / "job.json").write_text(json.dumps(record), encoding="utf-8")
     code, envelope = cli(capsys, "schema", "fireants_syn", "--job", str(images))
     assert code == 3 and envelope["error"]["code"] == "JOB_UNREADABLE"
 
@@ -218,8 +218,8 @@ def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
 def test_init_creates_the_job_and_its_reference_card(capsys, images):
     job = init(capsys, images)
     assert job == images / "langslice"
-    agents = (job / "AGENTS.md").read_text()
-    assert agents == (job / "CLAUDE.md").read_text()
+    agents = (job / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents == (job / "CLAUDE.md").read_text(encoding="utf-8")
     from langslice.tools.catalog import VERBS
     from langslice.tools.deformable import MAX_FIREANTS_SYN_SECTIONS
 
@@ -249,9 +249,9 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     code, missing = cli(capsys, str(images.parent), "status")
     assert code == 2 and missing["error"]["code"] == "NO_JOB"
     # A stale card is rewritten on the next open.
-    (job / "AGENTS.md").write_text("old")
+    (job / "AGENTS.md").write_text("old", encoding="utf-8")
     cli(capsys, str(images), "status")
-    assert (job / "AGENTS.md").read_text() == agents
+    assert (job / "AGENTS.md").read_text(encoding="utf-8") == agents
 
 
 # --- launch: the job statement and the opening, as LangSlice's own agent gets them ------
@@ -324,8 +324,8 @@ def test_launch_register_scripting_is_the_native_statement_and_opening(capsys, i
     assert envelope["artifacts"][-1] == {"path": str(job / "TOOLS.md"), "kind": "tools"}
     tools = (job / "TOOLS.md").read_text(encoding="utf-8")
     assert "## look" in tools and "## export_maps" in tools and "- `mode`: one of" in tools
-    assert "TOOLS.md" in (job / "AGENTS.md").read_text()
-    assert "BRIEF.md" not in (job / "AGENTS.md").read_text()
+    assert "TOOLS.md" in (job / "AGENTS.md").read_text(encoding="utf-8")
+    assert "BRIEF.md" not in (job / "AGENTS.md").read_text(encoding="utf-8")
     assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048
     # The next launch is the next number.
     code, again = cli(capsys, str(images), "launch", "--role", "register-scripting")
@@ -368,26 +368,29 @@ def test_init_keeps_notes_and_viewer(capsys, images):
     assert envelope["next"] == [
         f"langslice-job {images / 'langslice'} launch --role register",
         f"langslice-job {images / 'langslice'} launch --role register-scripting"]
-    record = json.loads((images / "langslice" / "job.json").read_text())
+    record = json.loads((images / "langslice" / "job.json").read_text(
+        encoding="utf-8"))
     assert record["notes"] == "Mind the bulbs." and "viewer" not in record
     # Continuing the job keeps the notes; --viewer is stored.
     code, again = cli(capsys, str(images), "init", "--tasks", "position",
                       "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                       "--viewer", "openai")
     assert code == 0 and again["result"]["viewer"] == "openai"
-    record = json.loads((images / "langslice" / "job.json").read_text())
+    record = json.loads((images / "langslice" / "job.json").read_text(
+        encoding="utf-8"))
     assert record["notes"] == "Mind the bulbs." and record["viewer"] == "openai"
 
 
 def test_init_on_an_existing_job_refuses_other_settings(capsys, images):
     """DOORS-2: a second init with other job flags does not replace the saved settings."""
     job = init(capsys, images)
-    before = json.loads((job / "job.json").read_text())["spec"]
+    before = json.loads((job / "job.json").read_text(encoding="utf-8"))["spec"]
     code, envelope = cli(capsys, str(images), "init", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          "--notes", "Mind the bulbs.")
     assert code != 0 and envelope["error"]["code"] == "SETTINGS_CHANGED", envelope
     assert "tasks" in envelope["error"]["message"]
-    assert json.loads((job / "job.json").read_text())["spec"] == before
+    assert json.loads((job / "job.json").read_text(
+        encoding="utf-8"))["spec"] == before
 
 
 def test_pictures_are_capped_at_the_viewers_largest(capsys, images):
@@ -450,7 +453,8 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     assert code == 0
     code, refused = cli(capsys, str(images), "undo")
     assert code == 3
-    lines = [json.loads(line) for line in (job / "logs" / "calls.jsonl").read_text()
+    lines = [json.loads(line) for line in (job / "logs" / "calls.jsonl").read_text(
+        encoding="utf-8")
              .splitlines()]
     assert [line["verb"] for line in lines] == ["init", "look", "undo"]
     seen = lines[1]
@@ -462,13 +466,16 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     assert [line["reply"] for line in lines] == [
         "logs/calls/000001_init.json", "logs/calls/000002_look.json",
         "logs/calls/000003_undo.json"]
-    assert json.loads((job / lines[1]["reply"]).read_text()) == envelope
-    assert json.loads((job / lines[2]["reply"]).read_text()) == refused
+    assert json.loads((job / lines[1]["reply"]).read_text(
+        encoding="utf-8")) == envelope
+    assert json.loads((job / lines[2]["reply"]).read_text(
+        encoding="utf-8")) == refused
     assert lines[2]["message"] == refused["error"]["message"]
     # The trace, as the MCP door writes its own: one file for the job.
     files = list(traces.glob("cli_stack_*.jsonl"))
     assert len(files) == 1
-    records = [json.loads(line) for line in files[0].read_text().splitlines()]
+    records = [json.loads(line) for line in files[0].read_text(
+        encoding="utf-8").splitlines()]
     assert [record["kind"] for record in records] == ["tool_result"] * 3
     traced = records[1]
     assert traced["name"] == "look" and traced["args"]["sections"] == [ID0]
@@ -484,7 +491,8 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
 
 
 def _tool_events(job: Path) -> list[dict[str, Any]]:
-    lines = [json.loads(line) for line in (job / "logs" / "events.jsonl").read_text()
+    lines = [json.loads(line) for line in (job / "logs" / "events.jsonl").read_text(
+        encoding="utf-8")
              .splitlines()]
     return [line for line in lines if line["kind"] in ("tool_start", "tool_end")]
 
@@ -595,7 +603,8 @@ def test_a_write_returns_its_pictures_as_artifact_paths(capsys, images):
     assert kinds == ["view", "view_json"]
     for artifact in envelope["artifacts"]:
         assert Path(artifact["path"]).is_file() and os.path.isabs(artifact["path"])
-    record = json.loads(Path(envelope["artifacts"][1]["path"]).read_text())
+    record = json.loads(Path(envelope["artifacts"][1]["path"]).read_text(
+        encoding="utf-8"))
     assert record["tool"] == "position_sections" and record["sections"] == [ID0]
     assert record["mode"] == "positioning"
     assert len(envelope["result"]["pictures"]) == 1
@@ -605,7 +614,8 @@ def test_a_write_returns_its_pictures_as_artifact_paths(capsys, images):
     assert code == 0, turned
     assert [artifact["kind"] for artifact in turned["artifacts"]] == [
         "view", "view_json", "labels", "borders"]
-    record = json.loads(Path(turned["artifacts"][1]["path"]).read_text())
+    record = json.loads(Path(turned["artifacts"][1]["path"]).read_text(
+        encoding="utf-8"))
     assert record["tool"] == "interactive_transform" and record["mode"] == "overlay"
     # The pictures to open come first, before the reply: their JPEGs' paths.
     assert list(turned)[:3] == ["ok", "picture_files", "result"]
@@ -726,7 +736,7 @@ def test_a_failed_fit_says_the_first_line_and_keeps_the_rest_in_the_log(tmp_path
                             "memory")
     assert "cudaErrorMemoryAllocation" not in words
     assert words.endswith("logs/engine.log holds the whole error.")
-    held = log.read_text()
+    held = log.read_text(encoding="utf-8")
     assert "the fit of s0.png failed" in held and "more lines" in held
     assert failure_message("ValueError: bad", None) == "ValueError: bad."
 
@@ -822,7 +832,7 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
                 and item["label"].startswith(f"{work} (")]
     assert worked and len(pictures) == len(worked)
     assert all(Path(item["path"]).is_file() for item in pictures)
-    state = json.loads((job / "state.json").read_text())
+    state = json.loads((job / "state.json").read_text(encoding="utf-8"))
     section = next(row for row in state["slices"] if row["id"] == ID0)
     assert section["deformation"]
 
@@ -1170,7 +1180,8 @@ def test_pictures_queued_by_a_script_are_written_when_it_exits(capsys, images):
                           env=env, capture_output=True, text=True, timeout=300)
     assert done.returncode == 0, done.stderr
     assert "cannot schedule new futures" not in done.stderr and "Could not save" not in done.stderr
-    lines = [json.loads(line) for line in (job / "views.jsonl").read_text().splitlines()]
+    lines = [json.loads(line) for line in (job / "views.jsonl").read_text(
+        encoding="utf-8").splitlines()]
     placed = [line for line in lines if line["tool"] == "interactive_transform"]
     assert len(placed) == 3 and all(line["layers"] for line in placed)
     for line in placed:
@@ -1190,15 +1201,16 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
     assert code == 0, envelope
     folder = Path(envelope["result"]["job_folder"])
     assert "zoom" not in envelope["result"]["verbs"] and "look" in envelope["result"]["verbs"]
-    assert json.loads((folder / "job.json").read_text())["spec"]["disabled"] == [
+    assert json.loads((folder / "job.json").read_text(
+        encoding="utf-8"))["spec"]["disabled"] == [
         "zoom", "look:positioning", "interactive_transform:flip"]
     code, launched = cli(capsys, str(folder), "launch", "--role", "register-scripting")
     assert code == 0, launched
     statement = launched["result"]["prompt"]
     assert "`zoom`" not in statement and "mode positioning" not in statement
-    card = (folder / "AGENTS.md").read_text()
+    card = (folder / "AGENTS.md").read_text(encoding="utf-8")
     assert "- `zoom`" not in card and "- `look`" in card
-    assert (folder / "CLAUDE.md").read_text() == card
+    assert (folder / "CLAUDE.md").read_text(encoding="utf-8") == card
 
     code, refused = cli(capsys, str(folder), "zoom", "--box", "[0,0,1,1]")
     assert code == 3 and refused["error"]["code"] == "VERB_OFF"

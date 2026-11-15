@@ -32,7 +32,8 @@ def _model_event(text: str) -> _Event:
 
 
 def _records(trace: SessionTrace) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in trace.path.read_text().splitlines()]
+    return [json.loads(line) for line in trace.path.read_text(
+        encoding="utf-8").splitlines()]
 
 
 def test_model_turns_are_recorded_with_a_step_counter(tmp_path: Path):

@@ -113,7 +113,8 @@ def test_a_mapped_answer_becomes_a_layer_and_a_path_in_it_is_never_followed(
     layer = json_of(state.by_id("s0.png").layers[0])
     assert layer["tool"] == "fix__add_points" and layer["kind"] == "points"
     assert layer["file"].startswith("plugins/fix__add_points/layers/")
-    rows = (box.job.folder / layer["file"]).read_text().splitlines()
+    rows = (box.job.folder / layer["file"]).read_text(
+        encoding="utf-8").splitlines()
     assert rows[0] == "x,y,label,value" and len(rows) == 4
     assert not (tmp_path.parent / "outside.txt").exists()
     drawn = call(box, "look", mode="section", sections=["s0.png"], layers=["fixture_points"])

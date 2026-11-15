@@ -41614,14 +41614,6 @@
                 }
             },
             {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 31,
-                    "endColumn": 59,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportIncompatibleMethodOverride",
                 "range": {
                     "startColumn": 12,

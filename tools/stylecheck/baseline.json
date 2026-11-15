@@ -6946,7 +6946,7 @@
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformation.py", "symbol": "run_jobs", "count": 4},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformation.py", "symbol": "section_image", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformation.py", "symbol": "summary", "count": 8},
-{"rule": "ruff:E501", "path": "src/langslice/core/fits/deformation.py", "symbol": "traced_lines", "count": 4},
+{"rule": "ruff:E501", "path": "src/langslice/core/fits/deformation.py", "symbol": "traced_lines", "count": 3},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/engine_log.py", "symbol": "<module>", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/engine_log.py", "symbol": "engine_output", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/engine_log.py", "symbol": "failure_message", "count": 3},

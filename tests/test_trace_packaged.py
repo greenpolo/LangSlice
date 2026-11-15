@@ -131,7 +131,8 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
 
     # The prompt sent is saved with the attempt in the job folder.
     folder = Path(job.folder) / str(trace_to_json(record.border_trace)["artifact_dir"])
-    assert (folder / "prompt.txt").read_text() == "Move each yellow line onto its edge."
+    assert (folder / "prompt.txt").read_text(
+        encoding="utf-8") == "Move each yellow line onto its edge."
     assert len(stub.calls) == 1
 
 
@@ -200,7 +201,8 @@ def test_restrict_to_traces_and_warps_that_region_only(tmp_path, atlas):
     assert work.status == "done", work.notice
     assert "restricted to TH" in work.notice
     artifacts = Path(job.folder) / str(started.record["artifact_dir"])
-    request = json.loads((artifacts / "request.json").read_text())
+    request = json.loads((artifacts / "request.json").read_text(
+        encoding="utf-8"))
     assert request["include"] == ["TH"]
     step = deformation_to_json(job.state.slices[0].deformation)["steps"][0]  # type: ignore[index]
     assert step["include"] == ["TH"]

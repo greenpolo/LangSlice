@@ -43,9 +43,9 @@ def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
 
 def _edit_on_disk(path: str, edit: Any) -> None:
     """What a script does: read the file, change it, write it in place."""
-    data = json.loads(Path(path).read_text())
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
     edit(data)
-    Path(path).write_text(json.dumps(data))
+    Path(path).write_text(json.dumps(data), encoding="utf-8")
 
 
 # --- undo, persisted -----------------------------------------------------------
@@ -108,11 +108,12 @@ def test_an_unchanged_or_half_written_file_is_not_a_step(tmp_path: Path):
     write_checkpoint(job.state, ctx.checkpoint_path)  # rewritten, same content
     assert job.sync() is None and job.undo_stack == []
 
-    Path(ctx.checkpoint_path).write_text('{"slices": [')  # a script mid-write
+    Path(ctx.checkpoint_path).write_text('{"slices": [',
+        encoding="utf-8")  # a script mid-write
     assert job.sync() is None and job.undo_stack == []
     Path(ctx.checkpoint_path).write_text(json.dumps(
         {"format_version": STATE_FORMAT_VERSION, **stack_to_json(
-            job.state), "notes": ["finished"]}))
+            job.state), "notes": ["finished"]}), encoding="utf-8")
     assert job.sync() is not None
     assert job.state.notes == ["finished"] and len(job.undo_stack) == 1
 

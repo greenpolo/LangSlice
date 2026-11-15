@@ -107,7 +107,7 @@ def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
 
     ours = oauth_login.Creds("OLD", "R", None, "acct_1", source=str(creds_path))
     oauth_login.refresh(ours)
-    saved = json.loads(creds_path.read_text())
+    saved = json.loads(creds_path.read_text(encoding="utf-8"))
     assert saved["tokens"]["access_token"] == "NEW"
     assert saved["tokens"]["refresh_token"] == "NEWR"
     if os.name == "posix":
@@ -117,7 +117,8 @@ def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
 def test_load_credentials_prefers_our_file_and_refreshes_when_expired(tmp_path, monkeypatch):
     creds_path = tmp_path / "openai_auth.json"
     expired = _fake_jwt({"exp": 0})
-    creds_path.write_text(json.dumps({"tokens": {"access_token": expired, "refresh_token": "R"}}))
+    creds_path.write_text(json.dumps({"tokens": {"access_token": expired, "refresh_token": "R"}}),
+        encoding="utf-8")
     monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(creds_path))
     monkeypatch.setattr(oauth_login, "refresh", lambda creds: oauth_login.Creds("FRESH"))
 

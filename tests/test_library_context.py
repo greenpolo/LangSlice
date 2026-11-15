@@ -61,7 +61,8 @@ def make(images: Path, **settings: Any) -> Any:
 
 def events(job: Any) -> list[dict[str, Any]]:
     path = Path(job.folder) / "logs" / "events.jsonl"
-    lines = path.read_text().splitlines() if path.exists() else []
+    lines = path.read_text(
+        encoding="utf-8").splitlines() if path.exists() else []
     return [entry for entry in map(json.loads, lines) if entry["kind"] == "script_write"]
 
 
@@ -99,7 +100,8 @@ def test_an_affine_is_recorded_as_the_scripts_and_undo_reverts_it(images: Path):
         proposal = c.transform_from_matrix(ID0, shift(c.fit_frame(ID0), 6.0), note="shifted")
         done = c.set_transforms([proposal.row()])
         assert done.written == [ID0] and len(job.job.undo_stack) == depth + 1
-        registration = json.loads((Path(job.folder) / "registration.json").read_text())
+        registration = json.loads((Path(job.folder) / "registration.json").read_text(
+            encoding="utf-8"))
         entry = next(item for item in registration["sections"] if item["id"] == ID0)
         assert entry["parameters"]["affine"]["kind"] == "script"
         assert affine_to_json(job.state.by_id(ID0).transform)["note"] == "shifted"
@@ -219,10 +221,12 @@ def test_a_preview_is_saved_numbered_and_writes_nothing(images: Path):
         assert saved.path.parent.parent.name == "views" and "NOT written" in saved.caption
         with Image.open(saved.path) as opened:
             assert opened.size == saved.image.size
-        view = json.loads((saved.path.parent / "view.json").read_text())
+        view = json.loads((saved.path.parent / "view.json").read_text(
+            encoding="utf-8"))
         assert view["recipe"]["renderer"] == "transport_snapshot" and view["frame"] is None
         linear = c.preview_overlay(ID0, {"position_mm": 0.12})
-        assert json.loads((linear.path.parent / "view.json").read_text())["frame"] is not None
+        assert json.loads((linear.path.parent / "view.json").read_text(
+            encoding="utf-8"))["frame"] is not None
         assert (linear.path.parent / "labels.tif").is_file()
         zoomed = job.zoom(picture=saved.index, box=[10, 10, 120, 90])
         assert zoomed["redrawn"] is False
@@ -243,7 +247,7 @@ def test_an_outside_engines_field_and_affine_come_back_through_the_bridge(images
     with make(images) as job:
         c = job.context
         files = c.write_frame(ID0, tmp_path / "frame", format="nii.gz")
-        frame = json.loads(files["frame"].read_text())
+        frame = json.loads(files["frame"].read_text(encoding="utf-8"))
         width, height = frame["fit_size"]
         assert sitk.ReadImage(str(files["stain"])).GetSize() == (width, height)
         assert sitk.ReadImage(str(files["placed_template"])).GetSize() == (width, height)
@@ -375,7 +379,8 @@ def test_a_scripts_layer_is_drawn_by_look_on_a_job_without_plugins(images: Path)
     from langslice.core.plugins import Layer
 
     with make(images) as job:
-        assert "plugins" not in json.loads((Path(job.folder) / "job.json").read_text())["spec"]
+        assert "plugins" not in json.loads((Path(job.folder) / "job.json").read_text(
+            encoding="utf-8"))["spec"]
         job.context.add_layer(ID0, Layer.points([[100.0, 80.0], [150.0, 120.0]],
                                                 frame="section_px", name="cells"))
         rows = {row["id"]: row for row in job.status()["rows"]}

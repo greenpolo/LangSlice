@@ -31,7 +31,7 @@ def _make_stack(folder: Path, n: int = 4) -> list[str]:
     names = [f"slice_{i}.png" for i in (1, 2, 3, 10, 11)][:n]
     for index, name in enumerate(names):
         Image.new("RGB", (40, 30), (10 * index, 60, 120)).save(folder / name)
-    (folder / "notes.txt").write_text("not an image")
+    (folder / "notes.txt").write_text("not an image", encoding="utf-8")
     return names
 
 
@@ -135,7 +135,8 @@ def test_run_places_the_stack_and_writes_results(tmp_path: Path, monkeypatch):
     assert state.submitted is True
     assert [s.position_mm for s in state.in_order()] == list(positions.values())
 
-    results = json.loads((tmp_path / "langslice" / "exports" / "linear_results.json").read_text())
+    results = json.loads((tmp_path / "langslice" / "exports" / "linear_results.json").read_text(
+        encoding="utf-8"))
     assert [row["id"] for row in results["slices"]] == names
     assert results["submitted"] is True
 
@@ -201,7 +202,7 @@ def test_a_session_that_fails_before_submitting_keeps_its_writes_and_its_spend(
         asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
 
     exports = tmp_path / "langslice" / "exports"
-    spend = json.loads((exports / "spend.json").read_text())
+    spend = json.loads((exports / "spend.json").read_text(encoding="utf-8"))
     assert spend["tokens"]["input_uncached"] == 3000  # the three calls that were answered
     saved = load_checkpoint(tmp_path / "langslice" / "state.json")
     assert saved.by_id(names[0]).position_mm == 4.0
@@ -271,10 +272,11 @@ def test_window_share_warnings_go_to_the_operator_every_ten_points(
             and "used_percent" in e] == [10, 20]
     assert any("window used by this run 10%" in line for line in lines)
     assert any(line == "[spend] run total: 20% of the usage window" for line in lines)
-    spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text())
+    spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text(
+        encoding="utf-8"))
     assert spend["quota_used_percent"] == 20 and spend["usd_estimate"] is None
     records = [json.loads(row) for path in (tmp_path / "trace").glob("*.jsonl")
-               for row in path.read_text().splitlines()]
+               for row in path.read_text(encoding="utf-8").splitlines()]
     assert [r["threshold"] for r in records if r["kind"] == "spend"
             and "used_percent" in r] == [10, 20]
     assert next(r for r in records if r["kind"] == "summary")["spend"]["quota_used_percent"] == 20
@@ -299,7 +301,8 @@ def test_a_trace_sent_elsewhere_is_also_written_in_the_job_folder_as_it_goes(
 
     def on_event(event: dict) -> None:
         if event["kind"] == "usage":  # after the call is counted
-            spend = json.loads((job_folder / "exports" / "spend.json").read_text())
+            spend = json.loads((job_folder / "exports" / "spend.json").read_text(
+                encoding="utf-8"))
             mirrored = list((job_folder / "trace").glob("*.jsonl"))
             live.append((spend["tokens"]["input_uncached"], len(mirrored)))
 
@@ -312,14 +315,16 @@ def test_a_trace_sent_elsewhere_is_also_written_in_the_job_folder_as_it_goes(
                      (elsewhere, job_folder / "trace"))
     assert len(first) == len(second) == 1 and first[0].name == second[0].name
     assert first[0].read_bytes() == second[0].read_bytes()
-    kinds = [json.loads(line)["kind"] for line in second[0].read_text().splitlines()]
+    kinds = [json.loads(line)["kind"] for line in second[0].read_text(
+        encoding="utf-8").splitlines()]
     assert kinds[0] == "session" and kinds[-1] == "summary"
     # The account after each call, before the run ended; the mirror already there.
     assert len(live) >= 2
     assert [tokens for tokens, _ in live] == [1000 * n for n in range(1, len(live) + 1)]
     assert all(count == 1 for _, count in live)
     events = [json.loads(line) for line in
-              (job_folder / "logs" / "events.jsonl").read_text().splitlines()]
+              (job_folder / "logs" / "events.jsonl").read_text(
+                  encoding="utf-8").splitlines()]
     calls = [e for e in events if e["kind"] in ("tool_start", "tool_end")]
     assert calls and {e["door"] for e in calls} == {"agent"}
     assert calls[-1]["kind"] == "tool_end" and calls[-1]["name"] == "submit"
@@ -351,7 +356,8 @@ def test_an_api_key_lane_is_told_its_dollar_estimate_through_the_whole_session(
         "list prices)",
     ]
     assert [e["threshold"] for e in events if e["kind"] == "spend"] == [5.0, 10.0]
-    spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text())
+    spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text(
+        encoding="utf-8"))
     assert spend["usd_estimate"] == 15.0 and spend["quota_used_percent"] is None
 
 

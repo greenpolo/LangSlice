@@ -777,7 +777,8 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
                           capture_output=True, text=True, env=env, cwd=str(folder),
                           timeout=float(config["timeout_s"]))
-    (folder / "log.txt").write_text(done.stdout + done.stderr)
+    (folder / "log.txt").write_text(done.stdout + done.stderr,
+        encoding="utf-8")
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
         raise ToolError(RefusalCode.FIT_FAILED,
@@ -835,7 +836,7 @@ def _sheet_picture(st: dict[str, Any], i: int, sec: dict[str, Any], out: dict[st
 
 def _energy_files(energy: np.ndarray, folder: Path) -> None:
     """emlddmm's own energy record as ``energy.csv`` and a small line plot (files in the job)."""
-    with open(folder / "energy.csv", "w", newline="") as fh:
+    with open(folder / "energy.csv", "w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["scale", "iteration", "total", "mismatch", "regularization"])
         for row in energy:
@@ -917,13 +918,13 @@ def _write_files(st: dict[str, Any], out: dict[str, Any], folder: Path, secs: li
                         slot=np.asarray(st["slot"]))
     (folder / "A.json").write_text(json.dumps({"A": A.tolist(), "A_start": A0.tolist(),
                                                "A2d": A2d.tolist(), **extra}, indent=1,
-                                              default=float))
+                                              default=float), encoding="utf-8")
     (folder / "settings.json").write_text(json.dumps(
         {"asked": asked, "chosen": chosen, "plugin": config,
          "emlddmm": json.loads(str(out["settings"])), "device": str(out["device"]),
          "energy": "captured" if _captured(out) else "not captured",
          "peak_gpu_gb": float(out["peak_gpu_gb"]), "seconds": float(out["seconds"])},
-        indent=1, default=str))
+        indent=1, default=str), encoding="utf-8")
 
 
 def _captured(out: dict[str, Any]) -> bool:
@@ -1107,7 +1108,8 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                          "summary": summaries.get(sid, {}), "set_aside": rec["set_aside"],
                          "inputs": rec["sec"]["inputs"], "estimated": rec["estimated"],
                          "written": wrote, "problem": problem})
-        with open(folder / "sections.csv", "w", newline="") as fh:
+        with open(folder / "sections.csv", "w",
+            encoding="utf-8", newline="") as fh:
             writer = csv.writer(fh)
             writer.writerow(["section", "slot", "snap_um", "moved_median_mm", "moved_max_mm",
                              "off_plane_max_um", "displacement_median_mm", "displacement_max_mm",

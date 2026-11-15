@@ -83,7 +83,8 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         assert reply["changed"] == ["L1", "L2", "L3"]
         assert len(job.undo_stack) == depth + 1 and record.deformation is None
         derived = job.layout.section_dir(record.id) / "landmarks.json"
-        assert json.loads(derived.read_text())["pairs"] == landmarks_to_json(
+        assert json.loads(derived.read_text(
+            encoding="utf-8"))["pairs"] == landmarks_to_json(
             record.landmarks)["pairs"]
         from langslice.job.state_file import read_checkpoint
 
@@ -97,7 +98,8 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         record.position_mm += 0.01
         job.commit(before)
         assert all(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
-        assert all(p["stale"] for p in json.loads(derived.read_text())["pairs"])
+        assert all(p["stale"] for p in json.loads(derived.read_text(
+            encoding="utf-8"))["pairs"])
         with pytest.raises(Refused, match="re-place their atlas endpoints"):
             landmark_warp.landmark_triangulation(job, ws, record.id)
         assert job.undo()
@@ -109,7 +111,7 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         assert not any(p["stale"] for p in landmarks_to_json(record.landmarks)["pairs"])
         assert job.undo()  # the note
         assert job.undo()  # first landmark batch
-        empty = json.loads(derived.read_text())
+        empty = json.loads(derived.read_text(encoding="utf-8"))
         assert empty["pairs"] == [] and empty["next_id"] == 1
     finally:
         job.close()

@@ -170,7 +170,7 @@ def transforms_file(images: Path) -> str:
     """The supplied transforms as a JSON file (inline JSON works as well:
     ``test_init_takes_a_long_inline_json``)."""
     path = images.parent / "transforms.json"
-    path.write_text(json.dumps(EXTERNAL_TRANSFORMS))
+    path.write_text(json.dumps(EXTERNAL_TRANSFORMS), encoding="utf-8")
     return str(path)
 
 
@@ -179,7 +179,7 @@ def test_init_takes_a_long_inline_json(capsys, images):
     assert len(long_inline) > 255  # longer than any file name
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
                "--transforms", long_inline)
-    spec = json.loads((job / "job.json").read_text())["spec"]
+    spec = json.loads((job / "job.json").read_text(encoding="utf-8"))["spec"]
     assert spec["inputs"]["transforms"] == EXTERNAL_TRANSFORMS
 
 
@@ -195,7 +195,8 @@ def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = (),
     *residual* carry a warp."""
     import langslice
 
-    document = json.loads((job_folder / "registration.json").read_text())
+    document = json.loads((job_folder / "registration.json").read_text(
+        encoding="utf-8"))
     assert document["submitted"] is True
     assert set(document["exports"]) == {"quicknii", "visualign"}
     for name in ("quicknii.json", "visualign.json"):
@@ -208,7 +209,8 @@ def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = (),
             assert not (job_folder / "sections" / stem / "coords.tif").exists()
     with langslice.open_job(job_folder) as job:
         assert job.export_maps()["status"] == "ok"
-    document = json.loads((job_folder / "registration.json").read_text())
+    document = json.loads((job_folder / "registration.json").read_text(
+        encoding="utf-8"))
     for entry, stem in zip(document["sections"], STEMS, strict=True):
         assert entry["maps"]["current"] is True
         for name in ("coords.tif", "labels.tif", "maps.json"):
@@ -580,7 +582,7 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     assert "positions" in envelope["error"]["message"]
     assert "--no-resume" in envelope["error"]["message"]
     assert "--no-resume" in envelope["error"]["fix"]
-    spec = json.loads((job / "job.json").read_text())["spec"]
+    spec = json.loads((job / "job.json").read_text(encoding="utf-8"))["spec"]
     assert spec["inputs"]["positions"] == POSITIONS
     assert positions() == POSITIONS
     # The same inputs: resumed as before.
@@ -596,11 +598,11 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
 
 def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
     damaged = images.parent / "damaged.json"
-    damaged.write_text(json.dumps({ID2: "torn"}))
+    damaged.write_text(json.dumps({ID2: "torn"}), encoding="utf-8")
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
                "--frozen", json.dumps({"*": ["orientation", "affine"]}),
                "--damaged", str(damaged))
-    spec = json.loads((job / "job.json").read_text())["spec"]
+    spec = json.loads((job / "job.json").read_text(encoding="utf-8"))["spec"]
     assert spec["frozen"] == {"*": ["orientation", "affine"]}
     assert spec["inputs"]["damaged"] == {ID2: "torn"}
     from tests.linear_tool_helpers import load_checkpoint
@@ -637,8 +639,10 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     # The new job maps every section's file as the source job's quicknii.json
     # does: the source's placement with its anchoring made perpendicular
     # (QuickNII anchorings are rounded to 1e-6 voxels).
-    document = json.loads((source / "registration.json").read_text())
-    after = json.loads((tmp_path / "again" / "registration.json").read_text())["sections"]
+    document = json.loads((source / "registration.json").read_text(
+        encoding="utf-8"))
+    after = json.loads((tmp_path / "again" / "registration.json").read_text(
+        encoding="utf-8"))["sections"]
     for old, new in zip(document["sections"], after, strict=True):
         assert new["problem"] is None, new
         expected = perpendicular_pixel_map(old["pixel_to_atlas_um"],
@@ -717,7 +721,8 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
             ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
         ])
         assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
-        spec = json.loads((images / "langslice" / "job.json").read_text())["spec"]
+        spec = json.loads((images / "langslice" / "job.json").read_text(
+            encoding="utf-8"))["spec"]
         assert spec["nonlinear"]["provider"] == "openai-oauth"  # the job keeps its provider
 
 
@@ -785,6 +790,7 @@ def test_7_the_agent_with_every_task_and_no_image_model(images, monkeypatch):
     assert state.by_id(ID0).deformation
     assert not any(state.by_id(name).deformation for name in (ID1, ID2))
     assert_exported(images / "langslice", residual=(ID0,))
-    results = json.loads((images / "langslice" / "exports" / "linear_results.json").read_text())
+    results = json.loads((images / "langslice" / "exports" / "linear_results.json").read_text(
+        encoding="utf-8"))
     assert results["submitted"] is True
 

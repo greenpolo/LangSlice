@@ -139,7 +139,7 @@ def test_gui_tab_reaches_serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     job = tmp_path / "images" / "langslice"
     job.mkdir(parents=True)
-    (job / "job.json").write_text("{}")
+    (job / "job.json").write_text("{}", encoding="utf-8")
     parser = argparse.ArgumentParser()
     add_gui_parser(parser.add_subparsers())
     calls: list[tuple[list[Path], str]] = []
@@ -174,9 +174,11 @@ def test_the_address_is_written_at_once_when_the_output_is_a_file(tmp_path: Path
             stdout=handle, stderr=subprocess.DEVNULL, env=env, cwd=tmp_path)
     try:
         deadline = time.monotonic() + 60
-        while not out.read_text() and time.monotonic() < deadline and process.poll() is None:
+        while not out.read_text(
+            encoding="utf-8") and time.monotonic() < deadline and process.poll() is None:
             time.sleep(0.1)
-        assert out.read_text().startswith("LangSlice GUI at http://127.0.0.1:")
+        assert out.read_text(
+            encoding="utf-8").startswith("LangSlice GUI at http://127.0.0.1:")
     finally:
         process.terminate()
         process.wait(10)
