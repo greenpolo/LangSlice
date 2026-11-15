@@ -14,7 +14,7 @@ const Generator = (() => {
   // The form as the page starts it: the default atlas and tasks, nothing else.
   function startForm(data) {
     return { folder: '', atlas: data.default_atlas, plane: '', thickness: '', interval: '', pixelSize: '',
-             tasks: data.tasks.filter(t => t.default).map(t => t.name), off: [], ordered: false,
+             tasks: data.tasks.filter(t => t.default).map(t => t.name), off: [], on: [], ordered: false,
              damaged: '', keep: {}, notes: '', imageProvider: '', imageModel: '',
              abba: null, keepRegistrations: true, frozen: {}, integrations: [] };
   }
@@ -28,7 +28,7 @@ const Generator = (() => {
     const tasks = data.tasks.map(t => t.name).filter(name => (prefill.tasks || []).includes(name));
     return { ...form, folder: prefill.folder || '', atlas: prefill.atlas || '', plane: prefill.plane || '',
              thickness: prefill.thickness || '', interval: prefill.interval || '', pixelSize: prefill.pixel_size || '',
-             tasks, off: [...(prefill.off || [])], ordered: (prefill.facts || []).includes(ORDERED),
+             tasks, off: [...(prefill.off || [])], on: [...(prefill.on || [])], ordered: (prefill.facts || []).includes(ORDERED),
              damaged: prefill.damaged || '', keep: { ...(prefill.keep || {}) }, notes: prefill.notes || '',
              frozen: { ...(prefill.frozen || {}) }, abba: prefill.abba || null };
   }
@@ -68,7 +68,7 @@ const Generator = (() => {
   // The tools a run of this form has: its tasks', without the image model's
   // when the form says there is none.
   function present(data, form) {
-    const key = runTasks(data, form).join(','), none = form.imageProvider === 'none';
+    const key = runTasks(data, form).join(','), none = !form.imageProvider || form.imageProvider === 'none';
     return new Set(data.tools.filter(t => t.runs_in.includes(key) && !(none && t.image_model)).map(t => t.name));
   }
 
@@ -77,9 +77,9 @@ const Generator = (() => {
   function imageModelApplies(data, form) {
     const tasks = runTasks(data, form);
     if (!tasks.includes('nonlinear')) return false;
-    const key = tasks.join(','), off = new Set(form.off || []), held = keptOff(data, form);
+    const key = tasks.join(','), held = keptOff(data, form);
     return data.tools.some(t => t.image_model && t.runs_in.includes(key)
-      && !(t.disableable && off.has(t.name)) && !held.has(t.name));
+      && !(t.disableable && toolOff(form, t)) && !held.has(t.name));
   }
   // The image-model flags: [setting, value] pairs, none when nothing is chosen.
   function imageModelFlags(data, form) {
@@ -90,6 +90,23 @@ const Generator = (() => {
     return out;
   }
 
+  // Whether the form has a tool off: a tool that starts off (`default_off`)
+  // is off unless `form.on` names it, any other when `form.off` does.
+  function toolOff(form, tool) {
+    return tool.default_off ? !(form.on || []).includes(tool.name) : (form.off || []).includes(tool.name);
+  }
+  // The tools that start off and the form leaves off.
+  function startsOff(data, form) {
+    return data.tools.filter(t => t.default_off && toolOff(form, t)).map(t => t.name);
+  }
+  // The names the job's `--enabled` takes: the tools of this run that start
+  // off and the form switches on.
+  function onNames(data, form) {
+    const here = present(data, form), held = keptOff(data, form);
+    return data.tools.filter(t => t.default_off && here.has(t.name) && !held.has(t.name) && !toolOff(form, t))
+      .map(t => t.name);
+  }
+
   // The names the job's `--disabled` takes: the tools of this run switched off
   // whole, then the options switched off of the tools still on (a name a kept
   // property already switches off left out).
@@ -97,7 +114,7 @@ const Generator = (() => {
     const off = new Set(form.off || []), here = present(data, form), held = keptOff(data, form), names = [];
     for (const tool of data.tools) {
       if (!here.has(tool.name) || held.has(tool.name)) continue;
-      if (tool.disableable && off.has(tool.name)) { names.push(tool.name); continue; }
+      if (tool.disableable && toolOff(form, tool)) { if (!tool.default_off) names.push(tool.name); continue; }
       for (const option of tool.options) if (off.has(option.name) && !held.has(option.name)) names.push(option.name);
     }
     return names;
@@ -136,7 +153,7 @@ const Generator = (() => {
     if (!blank(form.thickness) && !wholeNumber(form.thickness)) out.push('Section thickness is a whole number of micrometres (µm).');
     if (!blank(form.interval) && !wholeNumber(form.interval)) out.push('Section interval is a whole number of micrometres (µm).');
     if (!form.abba && !blank(form.pixelSize) && !positiveNumber(form.pixelSize)) out.push('Pixel size is a number of micrometres per pixel, above 0.');
-    const off = new Set(offNames(data, form)), here = present(data, form);
+    const off = new Set([...offNames(data, form), ...startsOff(data, form)]), here = present(data, form);
     const look = data.tools.find(t => t.name === 'look');
     if (look && look.options.length && look.options.every(o => isOff(off, o.name))) {
       out.push(`"${look.label}" needs at least one kind of picture: turn one back on.`);
@@ -223,6 +240,8 @@ const Generator = (() => {
     if (!fixed && !blank(form.pixelSize)) flag('inputs.pixel_size_um', String(form.pixelSize).trim());
     const off = offNames(data, form);
     if (off.length) flag('disabled', off.join(','));
+    const on = onNames(data, form);
+    if (on.length) flag('enabled', on.join(','));
     for (const [setting, value] of imageModelFlags(data, form)) flag(setting, value);
     const frozen = frozenFlag(data, form);
     if (frozen !== null) flag('frozen', frozen);
@@ -272,7 +291,7 @@ const Generator = (() => {
       : `Keep the ${n} sections’ existing ABBA registrations (their positions may still move)`;
   }
 
-  return { shellQuote, cleanPath, startForm, prefilled, offNames, present, keptOff, imageModelApplies,
+  return { shellQuote, cleanPath, startForm, prefilled, offNames, onNames, toolOff, present, keptOff, imageModelApplies,
            problems, warnings, leftOut, integrationWords, command, message, keepLabel };
 })();
 
@@ -543,6 +562,13 @@ if (typeof document !== 'undefined') (() => {
     return { row, input, note };
   }
   function setOff(name, off) {
+    const tool = data.tools.find(t => t.name === name);
+    if (tool && tool.default_off) {  // a tool that starts off is named when it is on
+      const on = new Set(form.on || []);
+      if (off) on.delete(name); else on.add(name);
+      form.on = [...on];
+      return;
+    }
     const names = new Set(form.off);
     if (off) names.add(name); else names.delete(name);
     form.off = [...names];
@@ -553,7 +579,7 @@ if (typeof document !== 'undefined') (() => {
     summary.append(make('span', 'gen-step gen-disclosure'), make('span', '', 'Advanced: the tools the registration agent may use'));
     d.append(summary);
     const body = make('div', 'gen-advanced-body');
-    body.append(make('p', 'gen-help', 'Every tool is on unless you turn it off. A task’s tools apply only when that task is chosen above. The violet name is the tool’s own name, as the Agent viewer shows it.'));
+    body.append(make('p', 'gen-help', 'Every tool is on unless you turn it off, except DeepSlice and Brainways, which start off; the image model’s border trace is on when you choose an image model. A task’s tools apply only when that task is chosen above. The violet name is the tool’s own name, as the Agent viewer shows it.'));
     for (const group of data.groups) {
       const list = make('div', 'gen-tools');
       list.setAttribute('role', 'group');
@@ -565,7 +591,7 @@ if (typeof document !== 'undefined') (() => {
       head.append(title, note);
       list.append(head);
       for (const tool of data.tools.filter(t => t.group === group.name)) {
-        const row = toolRow(tool.label, tool.name, !form.off.includes(tool.name), tool.options.length ? 'gen-parent' : '');
+        const row = toolRow(tool.label, tool.name, !Generator.toolOff(form, tool), tool.options.length ? 'gen-parent' : '');
         if (!tool.disableable) { row.input.disabled = true; row.input.title = 'Every run needs this tool.'; row.row.classList.add('gen-fixed'); }
         row.input.addEventListener('change', () => { setOff(tool.name, !row.input.checked); update(); });
         list.append(row.row);
@@ -697,10 +723,10 @@ if (typeof document !== 'undefined') (() => {
       row.title = inRun ? '' : (noModel ? 'Not in this run: you chose no image model.' : 'Not in this run: its task is not chosen.');
       if (tool.disableable) {
         input.disabled = !inRun || held;
-        input.checked = !held && !off.has(tool.name);
+        input.checked = !held && !Generator.toolOff(form, tool);
       }
       note.textContent = !tool.disableable ? 'always on' : noModel ? 'not in this run: you chose no image model' : held ? 'off: you said this stays as it is' : '';
-      const toolOff = tool.disableable && off.has(tool.name);
+      const toolOff = tool.disableable && Generator.toolOff(form, tool);
       for (const o of options) {
         const kept = keptOff.has(o.option.name);
         o.input.disabled = !inRun || kept || toolOff;

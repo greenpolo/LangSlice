@@ -57,13 +57,22 @@ EVERY_TOOL_A_COMMAND = (
     "`artifacts` again with their kinds (`view`, in the order the reply's "
     "`pictures` lists their numbers); open them to see them."
 )
+#: The in-tree engines' tools: an engine is never run by a dry run.
+_ENGINE_TOOLS = (
+    "deepslice_place|brainways_ap|stalign_lddmm|stalign_plane_search|"
+    "spomialign|emlddmm_stack|emlddmm_plane"
+)
 DRY_RUN = (
     "- `--dry-run` runs a write without writing and reports what would "
-    "change[[?elastix_affine|fireants_syn|trace_borders ; the "
-    "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders]] are "
+    "change[[?elastix_affine|fireants_syn|trace_borders|"
+    + _ENGINE_TOOLS
+    + " ; the "
+    "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders||"
+    + _ENGINE_TOOLS
+    + "=engines' tools]] are "
     "only checked, not run]]{plugins}."
 )
-DRY_RUN_PLUGINS = "; a plugin's engine tools are only checked too"
+DRY_RUN_PLUGINS = "; a plugin's tools are only checked too"
 LONG_TOOLS = (
     "- Long tools ({tools}): a call answers with the result or, still "
     "running after 30 s, with its run id and state `running`; the run goes "

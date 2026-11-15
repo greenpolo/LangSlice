@@ -73,6 +73,11 @@ verb re-checks each section first: `STALE_INPUT`, run it again for that section)
 - `restore_registration` (write, Common): Put back registrations sections held before: their orientation, transform and deformation.
 - `submit` (write, Common): End the run. Call this exactly once, last.
 - `export_maps` (read, Common, long): Write each placed section's maps and the stack's exports, from the job as it stands.
+- `stalign_lddmm` (write, Nonlinear, long; at most 20 sections per call): Fit the atlas onto sections with STalign, on their current registration.
+- `stalign_plane_search` (read, Positioning; at most 8 sections per call): Estimate the cutting angles with STalign's plane search. Writes nothing.
+- `spomialign` (write, Nonlinear, long; at most 20 sections per call): Register sections to the atlas with SPOmiAlign, on their current registration.
+- `emlddmm_stack` (write, Nonlinear, long; at most 4 pictures per call): Fit the whole stack to the atlas at once with emlddmm, on its current plane.
+- `emlddmm_plane` (read, Positioning; at most 4 pictures per call): Estimate the stack's cutting angles and spacing with emlddmm. Writes nothing.
 
 ## Python
 `import langslice; job = langslice.open_job("<ROOT>/langslice")`; the verbs are methods

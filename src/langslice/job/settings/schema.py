@@ -168,7 +168,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         name="nonlinear.provider",
         type="str",
-        default="openai-oauth",
+        default="none",
         doors=EVERY_DOOR,
         json_key="spec.nonlinear.provider",
         keyword="nonlinear",
@@ -235,6 +235,16 @@ SETTINGS: tuple[Setting, ...] = (
         keyword="disabled",
         flags=("--disabled",),
         aliases=("--disable",),
+    ),
+    Setting(
+        name="enabled",
+        type="list[str]",
+        default=[],
+        doors=EVERY_DOOR,
+        json_key="spec.enabled",
+        keyword="enabled",
+        flags=("--enabled",),
+        aliases=("--enable",),
     ),
     Setting(
         name="transform.hemisphere_cue",

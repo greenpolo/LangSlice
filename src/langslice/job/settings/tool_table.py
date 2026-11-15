@@ -23,18 +23,26 @@ The valid names are derived from this table (:func:`valid_names`).
 it when it is made. The text a tool or option appears in is written with
 what it needs and rendered for the job (:mod:`langslice.job.settings.needs`).
 
-A job that loads tool plugins (``JobSpec.plugins``,
-:mod:`langslice.job.plugins`) has their tools beside these: :func:`tools_for`
-is the per-spec view (:data:`TOOLS` plus the plugin tools), and the functions
-below that take a *spec* or *tools* read it. With no plugins every answer is
+The in-tree engines' tools (DeepSlice, Brainways, STalign, SPOmiAlign,
+emlddmm) are rows of this table like every other: ``engine`` names the
+engine that holds the tool's declaration and handler, ``atlases`` and
+``planes`` the jobs it is offered on. A tool with
+``default_off`` is off unless the job's ``enabled`` list
+(:attr:`langslice.job.settings.spec.JobSpec.enabled`) names it.
+
+A job that loads tools of the user's own (``JobSpec.plugins``,
+:mod:`langslice.job.plugins`) has them beside these: :func:`tools_for`
+is the per-spec view (:data:`TOOLS` plus those tools), and the functions
+below that take a *spec* or *tools* read it. Without any every answer is
 the one :data:`TOOLS` gives.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+import fnmatch
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.tool_kinds import GROUPS as GROUPS
@@ -52,6 +60,13 @@ def positions_on(spec: Any) -> bool:
 
 def _always(_spec: Any) -> bool:
     return True
+
+
+class _AtlasAndPlane(Protocol):
+    """A job's settings, as far as an atlas and plane fit reads them."""
+
+    atlas: str
+    plane: str
 
 
 @dataclass(frozen=True)
@@ -89,6 +104,35 @@ class ToolDef:
     #: them frozen on every section the tool can change nothing and is off
     #: (:func:`off_names`).
     writes: tuple[str, ...] = ()
+    #: An in-tree engine's tool: the reference (``module:factory``) of the
+    #: engine that declares it and runs it. Empty: any other tool.
+    engine: str = ""
+    #: The tool is off unless the job's ``enabled`` list names it.
+    default_off: bool = False
+    #: Shell-style patterns of the atlas names the tool is offered on, and
+    #: the section planes; empty: every one. A tool the job's atlas or plane
+    #: does not fit counts as switched off (:func:`off_names`).
+    atlases: tuple[str, ...] = ()
+    planes: tuple[str, ...] = ()
+
+    def fits(self, spec: _AtlasAndPlane) -> bool:
+        """Tell whether the tool is offered on a job's atlas and plane.
+
+        Parameters
+        ----------
+        spec
+            The job's settings.
+
+        Returns
+        -------
+        bool
+            True when ``atlases`` and ``planes`` each hold the job's, or
+            are empty.
+        """
+        atlas, plane = str(spec.atlas), str(spec.plane)
+        on_atlas = not self.atlases or any(
+            fnmatch.fnmatchcase(atlas, pattern) for pattern in self.atlases)
+        return on_atlas and (not self.planes or plane in self.planes)
 
     def is_on(self, spec: Any) -> bool:
         """Whether a run of *spec* has this tool: its ``when`` and not
@@ -101,8 +145,18 @@ class ToolDef:
 TASK_WRITERS: dict[str, tuple[str, ...]] = {
     "position": ("position_sections",),
     "transform": ("interactive_transform", "elastix_affine"),
-    "nonlinear": ("fireants_syn", "landmark_triangulation", "trace_borders"),
+    "nonlinear": ("fireants_syn", "landmark_triangulation", "trace_borders",
+                  "stalign_lddmm", "spomialign", "emlddmm_stack"),
 }
+
+#: The in-tree engines (:mod:`langslice.engines`), by the reference their
+#: tools are loaded from.
+_ENGINES = "langslice.engines."
+DEEPSLICE = _ENGINES + "deepslice.plugin:tools"
+BRAINWAYS = _ENGINES + "brainways.plugin:tools"
+STALIGN = _ENGINES + "stalign.plugin:tools"
+SPOMIALIGN = _ENGINES + "spomialign.plugin:tools"
+EMLDDMM = _ENGINES + "emlddmm.plugin:tools"
 
 _LOOK_OPTIONS = {mode: "mode" for mode in LOOK_MODES}
 _OVERLAY = (("look:overlay",),)
@@ -168,14 +222,98 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     # The job folder's derived files on demand (submit writes them too):
     # changes no state, so a read; for scripts, not for a model.
     ToolDef("export_maps", "read", "Common", scripting=True, long=True),
+    # --- the in-tree engines -----------------------------------------------
+    # Each row repeats what the engine's own declaration says
+    # (tests/test_engines_native.py compares them), so the table answers
+    # without importing an engine.
+    ToolDef("deepslice_place", "write", "Positioning", when=positions_on,
+            needs=(("look:positioning",),),
+            writes=("position", "angles", "affine"),
+            engine=DEEPSLICE, default_off=True,
+            atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
+            planes=("coronal",)),
+    ToolDef("brainways_ap", "write", "Positioning",
+            when=lambda spec: spec.has("position"),
+            needs=(("look:positioning",),), writes=("position",),
+            engine=BRAINWAYS, default_off=True,
+            atlases=("whs_sd_rat_39um",), planes=("coronal",)),
+    ToolDef("stalign_lddmm", "write", "Nonlinear", long=True,
+            when=lambda spec: spec.has("nonlinear"),
+            writes=("affine", "deformation"), engine=STALIGN),
+    ToolDef("stalign_plane_search", "read", "Positioning", when=positions_on,
+            engine=STALIGN),
+    ToolDef("spomialign", "write", "Nonlinear", long=True,
+            when=lambda spec: spec.has("transform") or spec.has("nonlinear"),
+            writes=("affine", "deformation"), engine=SPOMIALIGN),
+    ToolDef("emlddmm_stack", "write", "Nonlinear", long=True,
+            when=lambda spec: spec.has("nonlinear"),
+            writes=("affine", "deformation"), engine=EMLDDMM),
+    ToolDef("emlddmm_plane", "read", "Positioning", when=positions_on,
+            engine=EMLDDMM),
 )}
+
+#: The in-tree engines' references, in table order.
+ENGINES: tuple[str, ...] = tuple(dict.fromkeys(
+    tool.engine for tool in TOOLS.values() if tool.engine))
+
+
+def default_off_names() -> list[str]:
+    """List the tools that are off unless a job's ``enabled`` names them.
+
+    Returns
+    -------
+    list of str
+        Their names, in table order.
+    """
+    return [tool.name for tool in TOOLS.values() if tool.default_off]
+
+
+def engines_on(spec: object) -> list[str]:
+    """List the engines a run has a tool of.
+
+    Parameters
+    ----------
+    spec
+        The job's settings.
+
+    Returns
+    -------
+    list of str
+        The engines' references, in table order.
+    """
+    on = [tool.engine for tool in TOOLS.values()
+          if tool.engine and tool.is_on(spec)]
+    return list(dict.fromkeys(on))
+
+
+def check_enabled(names: Sequence[object]) -> str | None:
+    """Say why a list is no ``enabled`` list.
+
+    Parameters
+    ----------
+    names
+        The list a job gives as ``enabled``.
+
+    Returns
+    -------
+    str or None
+        One line naming the first name that is no tool that starts off;
+        None when every name is one.
+    """
+    known = default_off_names()
+    for name in names:
+        if name not in known:
+            return (f"enabled: {name!r} is not a tool that starts off; the "
+                    f"tools that do: {', '.join(known)}. Every other tool "
+                    "is on unless disabled names it")
+    return None
 
 
 def tools_for(spec: Any = None) -> Mapping[str, ToolDef]:
     """The tools a job of *spec* can have: :data:`TOOLS`, then the tools of the
-    plugins its ``plugins`` name (:mod:`langslice.job.plugins`; loaded when not
+    tools its ``plugins`` add (:mod:`langslice.job.plugins`; loaded when not
     yet, ``PluginError`` -- a ``ValueError`` -- when one cannot be). Without
-    plugins, :data:`TOOLS` itself."""
+    any, :data:`TOOLS` itself."""
     if not getattr(spec, "plugins", None):
         return TOOLS
     from langslice.job import plugins
@@ -214,15 +352,22 @@ def catalog(spec: Any = None) -> list[dict[str, Any]]:
 
 def off_names(spec: Any) -> list[str]:
     """Every name that is off for *spec*: its ``disabled`` list, then the tools
-    the run has that can change nothing because everything they write
-    (:attr:`ToolDef.writes`) is frozen on every section
+    that start off and its ``enabled`` list does not name and the tools the
+    job's atlas or plane does not fit (:meth:`ToolDef.fits`;
+    :func:`langslice.job.plugins.not_offered` for a tool the job's ``plugins``
+    add), so no text names them, then the tools the run has that can change
+    nothing because everything they write (:attr:`ToolDef.writes`) is frozen
+    on every section
     (:attr:`~langslice.job.settings.spec.JobSpec.frozen_everywhere`), and the
     mirror and the quarter turn (``interactive_transform:flip``,
-    ``:rotate``) when the orientation is, and the plugin tools the job's
-    atlas or plane does not fit (:func:`langslice.job.plugins.not_offered`),
-    so no text names them.
+    ``:rotate``) when the orientation is.
     A tool a task switched off is not listed: it is not in the run at all."""
     names = list(spec.disabled)
+    enabled = getattr(spec, "enabled", ())
+    names.extend(
+        tool.name for tool in TOOLS.values()
+        if tool.when(spec) and not (tool.fits(spec) and (
+            tool.name in enabled or not tool.default_off)))
     if getattr(spec, "plugins", None):
         from langslice.job import plugins
 

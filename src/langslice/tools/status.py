@@ -99,6 +99,11 @@ def raw_channels(run: Run) -> list[str] | dict[str, list[str]]:
     return list(next(iter(distinct))) if len(distinct) == 1 else named
 
 
+#: The tools that fit a deformation, as ``can_change`` names them.
+DEFORMABLE_FITS = ("fireants_syn", "trace_borders", "stalign_lddmm",
+                   "spomialign", "emlddmm_stack")
+
+
 def can_change(run: Run) -> list[str]:
     """What this run lets the agent change, in words (``status``)."""
     spec = run.spec
@@ -126,7 +131,7 @@ def can_change(run: Run) -> list[str]:
     if has("mark_damage"):
         out.append("damaged regions")
     if spec.has("nonlinear"):
-        fits = [name for name in ("fireants_syn", "trace_borders")
+        fits = [name for name in DEFORMABLE_FITS
                 if has(name) and (name != "trace_borders" or run.traces_on)]
         if has("set_landmarks") and has("landmark_triangulation"):
             fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")
@@ -137,6 +142,6 @@ def can_change(run: Run) -> list[str]:
         out.append("masks for the fits")
     added = [name for name, tool in tools_for(spec).items()
              if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)]
-    if added:  # tools tool plugins added (a job without plugins has none)
+    if added:  # tools the job's plugins added (a job without any has none)
         out.append(f"whatever the plugin tools change ({', '.join(added)})")
     return out

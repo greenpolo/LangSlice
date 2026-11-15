@@ -64,6 +64,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     prompt_file.write_text(JOB_PROMPT + "\n", encoding="utf-8")
     args = build_parser().parse_args([
         "linear", "run", str(tmp_path), "--tasks", "position,transform,nonlinear",
+        "--nonlinear-provider", "openai-oauth",
         "--nonlinear-image-prompt", str(prompt_file), "--position-notes", "Olfactory bulb first",
         "--transform-notes", "Ventral side down", "--nonlinear-notes", "Ignore the tear"])
     spec = spec_from_args(args, str(tmp_path))

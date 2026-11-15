@@ -1,6 +1,6 @@
 # SPOmiAlign as a LangSlice tool
 
-A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers SPOmiAlign
+A LangSlice engine (`docs/developers/plugins.md` in LangSlice) that offers SPOmiAlign
 (Wang et al. 2026, Brief Bioinform) to the registration agent as one tool,
 `spomialign(sections, fit, rigid, section_image, atlas_image, mask, smoothness_um, matches, view)`.
 
@@ -25,10 +25,10 @@ extra.
 ## Use
 
 ```bash
-langslice linear run ... --plugins langslice.engines.spomialign.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["langslice.engines.spomialign.plugin:tools"])`.
+Its tool is on in every job; `--disabled spomialign` switches it off. Its options are the entry of the job's `plugin_config`
+under `langslice.engines.spomialign.plugin:tools`.
 Option (`--plugin-config 'langslice.engines.spomialign.plugin:tools=JSON'`): `device` (a
 torch device name; default the first GPU when torch sees one, else the CPU). A call, the
 matcher's loading included, holds the machine's GPU queue (the core's `gpu_turn`: the lock

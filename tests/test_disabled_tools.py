@@ -23,7 +23,7 @@ from langslice.job.settings.spec import (
     TransformSpec,
 )
 from langslice.job.settings.tool_table import TOOLS, is_off, valid_names
-from langslice.tools.catalog import VERBS, enabled
+from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.description import DOORS, DescriptionFacts
 from langslice.tools.descriptions.fixes import FIXES
 from langslice.tools.descriptions.render import arguments_schema, declaration
@@ -37,11 +37,12 @@ def _spec(folder: str = "/stack", **fields: Any) -> JobSpec:
 
 
 def test_the_valid_names_come_from_the_registry():
-    assert set(TOOLS) == set(VERBS)
+    verbs = verbs_for()  # the engines' tools after the others
+    assert set(TOOLS) == set(verbs)
     names = valid_names()
     # a tool that can be switched off, then its options, in registry order
     assert names[:4] == [f"look:{mode}" for mode in TOOLS["look"].options]
-    for name, verb in VERBS.items():
+    for name, verb in verbs.items():
         assert (name in names) is (not verb.tool.essential), name
         for option in verb.tool.options:
             assert f"{name}:{option}" in names
@@ -93,10 +94,13 @@ def test_a_tool_disables_its_options():
     ({"tasks": ["position"], "disabled": ["position_sections"]},
      "position task is on and every tool that writes its answer"),
     ({"tasks": ["nonlinear"], "disabled": ["fireants_syn", "landmark_triangulation",
-                                                 "set_landmarks", "trace_borders"]},
+                                                 "set_landmarks", "trace_borders",
+                                                 "stalign_lddmm", "spomialign",
+                                                 "emlddmm_stack"]},
      "nonlinear task is on and every tool that writes its answer"),
     ({"tasks": ["nonlinear"], "nonlinear": NonlinearSpec(provider="none"),
-      "disabled": ["fireants_syn", "landmark_triangulation", "set_landmarks"]},
+      "disabled": ["fireants_syn", "landmark_triangulation", "set_landmarks",
+                   "stalign_lddmm", "spomialign", "emlddmm_stack"]},
      "nonlinear task is on and every tool that writes"),
     ({"tasks": ["nonlinear"], "disabled": ["set_landmarks"]},
      "landmark_triangulation is on and needs set_landmarks"),
@@ -185,7 +189,8 @@ def _pattern(name: str) -> re.Pattern[str]:
     if name == "interactive_transform:rotate":  # a key of the sections, or the turn itself
         return re.compile(r"rotate_quarter|quarter turn is applied")
     if name == "fireants_syn:metric":  # the argument, or one of its two values
-        return re.compile(r"\bmetric\b|mutual_information|local_correlation")
+        # ("metric mapping" is LDDMM's own name, in STalign's description)
+        return re.compile(r"\bmetric\b(?! mapping)|mutual_information|local_correlation")
     if name == "fireants_syn:edges":  # the argument
         return re.compile(r"\bedges:|\"edges\"|edges \(the gradient")
     if name == "fireants_syn:detail":  # the argument, or a value of it

@@ -151,10 +151,11 @@ def build_tools(
     (:data:`langslice.tools.pipeline.TOOL_STEPS`); its events go to
     *on_event* and to the job folder's ``logs/events.jsonl``.
 
-    A job whose spec names tool plugins (``spec.plugins``) gets their tools
-    after the native ones: declared from their own stubs, their bodies run
-    by :mod:`langslice.doors.plugins.runtime`, through the same steps; the
-    plugins' provenance is recorded in ``job.json`` and kept on the box.
+    The in-tree engines' tools the run has, and the tools a job's
+    ``plugins`` add, follow the others: declared from
+    their own stubs, their bodies run by
+    :mod:`langslice.doors.plugins.runtime`, through the same steps; their
+    provenance is recorded in ``job.json`` and kept on the box.
     """
     if job is None:
         job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
@@ -189,7 +190,7 @@ def build_tools(
         name: functools.partial(body, run)
         for name, body in TOOL_BODIES.items()
     }
-    if spec.plugins:
+    if variant.plugins:  # the engines' tools, and the job's plugins'
         bodies.update(runtime.bodies(run, variant))
         box.plugins = provenance.records(variant)
         provenance.record(job, box.plugins)

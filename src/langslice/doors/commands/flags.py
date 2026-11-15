@@ -21,7 +21,7 @@ from langslice.job.settings.schema import (
     SETTINGS,
     Setting,
 )
-from langslice.job.settings.tool_table import valid_names
+from langslice.job.settings.tool_table import default_off_names, valid_names
 
 #: Which commands add a flag: ``job`` every command that opens a stack
 #: (``linear run``, ``init``, ``mcp``), ``plugins`` and ``session`` only
@@ -83,8 +83,9 @@ FLAGS: dict[str, Flag] = {
     "--nonlinear-provider": Flag(
         metavar="PROVIDER",
         help="Image provider for the nonlinear task's trace_borders "
-        "(openai-oauth, openai-api, gemini-api), or none: the nonlinear task "
-        "then fits deformations to the stain alone, with no image model",
+        "(openai-oauth, openai-api, gemini-api): naming one gives the agent "
+        "trace_borders. none, the default: the nonlinear task fits "
+        "deformations to the stain alone, with no image model",
     ),
     "--nonlinear-image-model": Flag(
         metavar="MODEL",
@@ -129,6 +130,12 @@ FLAGS: dict[str, Flag] = {
         "(look:positioning, interactive_transform:flip, which keeps the "
         "agent from mirroring sections). Valid names: "
         + ", ".join(valid_names()),
+    ),
+    "--enabled": Flag(
+        action="append",
+        metavar="NAME[,NAME...]",
+        help="Tools that start off and the agent gets in this job "
+        "(repeatable): " + ", ".join(default_off_names()),
     ),
     "--transform-hemisphere-cue": Flag(
         metavar="TEXT",

@@ -226,6 +226,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
             notes=getattr(args, "transform_notes", "")),
         disabled=[name.strip() for item in getattr(args, "disabled", []) for name in item.split(",")
                   if name.strip()],
+        enabled=_names(getattr(args, "enabled", [])),
         nonlinear=NonlinearSpec(
             provider=getattr(
                 args, "nonlinear_provider", NonlinearSpec.provider),
@@ -245,6 +246,23 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         debrief=getattr(args, "debrief", True),
         force_view=bool(getattr(args, "force_view", False)),
     )
+
+
+def _names(items: list[str]) -> list[str]:
+    """Split a repeatable ``NAME[,NAME...]`` flag into its names.
+
+    Parameters
+    ----------
+    items
+        The flag's values, one per time it was given.
+
+    Returns
+    -------
+    list of str
+        The names, in the order given, without blanks.
+    """
+    names = ",".join(items).split(",")
+    return [name.strip() for name in names if name.strip()]
 
 
 def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:

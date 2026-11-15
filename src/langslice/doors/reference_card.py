@@ -26,8 +26,7 @@ from langslice.job.layout import JobLayout, read_job_file
 from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
-from langslice.job.settings.tool_table import TOOLS
-from langslice.tools.catalog import enabled, verbs_for
+from langslice.tools.catalog import VERBS, enabled, verbs_for
 from langslice.tools.descriptions.render import summary
 
 logger = logging.getLogger(__name__)
@@ -95,15 +94,14 @@ def card_text(layout: JobLayout) -> str:
     spec = job_spec(layout)
     disabled = off_names(spec)
     run = set(enabled(spec, scripting=True))
-    variant = None
-    if spec.plugins:  # the tools plugins add are declared in its run
-        from langslice.tools.descriptions.description import DescriptionFacts
+    # the engines' tools and the tools plugins add are declared in its run
+    from langslice.tools.descriptions.description import DescriptionFacts
 
-        variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")
+    variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): "
-        f"{summary(name, variant) if variant is not None and name not in TOOLS else summary(name)}"
+        f"{summary(name) if name in VERBS else summary(name, variant)}"
         for name, verb in verbs_for(spec).items() if name in run
     ) + transform_cap_line(layout)
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("

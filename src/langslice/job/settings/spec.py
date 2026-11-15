@@ -199,15 +199,16 @@ class NonlinearSpec:
     chooses to trace, to the borders the image model draws.
 
     ``provider`` is the image model's access method (``providers/registry``);
-    ``"none"`` runs the task without an image model: no ``trace_borders``, no
-    traced section images. No section ever needs a trace. ``"custom"``
+    ``"none"``, the default, runs the task without an image model: no
+    ``trace_borders``, no traced section images; naming a provider switches
+    ``trace_borders`` on. No section ever needs a trace. ``"custom"``
     (:data:`langslice.core.connections.CUSTOM_PROVIDER`): an image model the
     caller hands the library itself (``langslice.open_job(...,
     image_model=...)``); a door that is handed none offers no
     ``trace_borders``.
     """
 
-    provider: str = "openai-oauth"
+    provider: str = "none"
     image_model: str | None = None
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
@@ -348,6 +349,11 @@ class JobSpec:
     #: (:func:`~langslice.job.settings.tool_table.refusal`). A host's
     #: ``inputs["damaged"]`` notes are shown whatever is disabled.
     disabled: list[str] = field(default_factory=list)
+    #: The tools that start off and this job switches on
+    #: (:func:`~langslice.job.settings.tool_table.default_off_names`:
+    #: ``deepslice_place``, ``brainways_ap``); any other
+    #: name is refused. A tool still needs its task, and its atlas and plane.
+    enabled: list[str] = field(default_factory=list)
     #: What the agent may not change, per section: ``{"<filename>":
     #: ["orientation", "affine"], "*": ["angles"]}`` (``"*"``: every section;
     #: the properties are :data:`langslice.job.settings.frozen.PROPERTIES`). A
@@ -390,17 +396,19 @@ class JobSpec:
     #: After submit, ask the agent (same context) what tools it missed and
     #: record the answer on the state. One extra model call.
     debrief: bool = True
-    #: Tool plugins the job loads, each ``module:factory``
-    #: (:mod:`langslice.core.plugins`, ``docs/developers/plugins.md``): their tools join
-    #: the toolbox, and are named in ``disabled`` like the native ones. A
-    #: plugin that cannot be loaded, or whose tools clash with another's, is
-    #: refused when the spec is made. Code runs on load: only the library and
-    #: the CLI build specs with plugins (the MCP server and the ABBA worker
-    #: refuse them).
+    #: Tools of the user's own the job loads besides LangSlice's, each
+    #: ``module:factory`` (:mod:`langslice.core.plugins`,
+    #: ``docs/developers/plugins.md``): they join the toolbox, and are named in
+    #: ``disabled`` like LangSlice's. One that cannot be loaded, or whose
+    #: tools clash with another's, is refused when the spec is made. Code
+    #: runs on load: only the library and ``linear run`` build specs with
+    #: them. LangSlice's own engines are not named here: they are tools of
+    #: every job (:data:`~langslice.job.settings.tool_table.ENGINES`).
     plugins: list[str] = field(default_factory=list)
-    #: Options a plugin's factory is called with, by plugin reference (a JSON
-    #: object each; the generic MCP adapter's server and allow-list are one).
-    #: A plugin without an entry is called without arguments.
+    #: Options an engine's or a plugin's factory is called with, by its
+    #: reference (a JSON object each: an engine's ``device``, the generic
+    #: MCP adapter's server and allow-list). One without an entry is called
+    #: without arguments.
     plugin_config: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -436,13 +444,37 @@ class JobSpec:
                 isinstance(ref, str) and ref.strip() for ref in self.plugins):
             raise ValueError("plugins must be a list of module:factory references")
         self.plugins = list(dict.fromkeys(ref.strip() for ref in self.plugins))
+        # A job made when the engines were plugins names them here: they are
+        # tools of every job now, and one it named is on.
+        named = [ref for ref in self.plugins if ref in tool_table.ENGINES]
+        if named:
+            self.plugins = [ref for ref in self.plugins if ref not in named]
+            self.enabled = list(dict.fromkeys([*self.enabled, *(
+                tool.name for tool in tool_table.TOOLS.values()
+                if tool.default_off and tool.engine in named
+                and tool.name not in self.disabled)]))
+        if not isinstance(self.enabled, (list, tuple)) or not all(
+                isinstance(name, str) for name in self.enabled):
+            raise ValueError("enabled must be a list of tool names")
+        self.enabled = list(
+            dict.fromkeys(name.strip() for name in self.enabled))
+        reason = tool_table.check_enabled(self.enabled)
+        if reason is not None:
+            raise ValueError(reason)
+        both = [name for name in self.enabled if name in self.disabled]
+        if both:
+            raise ValueError(f"{both} are in both enabled and disabled")
         if not isinstance(self.plugin_config, dict) or not all(
                 isinstance(ref, str) and isinstance(item, dict)
                 for ref, item in self.plugin_config.items()):
             raise ValueError("plugin_config must map a plugin reference to an options object")
-        stray = sorted(set(self.plugin_config) - set(self.plugins))
+        known = {*self.plugins, *tool_table.ENGINES}
+        stray = sorted(set(self.plugin_config) - known)
         if stray:
-            raise ValueError(f"plugin_config names {stray}, which are no plugin of this job")
+            raise ValueError(
+                f"plugin_config names {stray}, which are no plugin of this "
+                "job and no engine of LangSlice "
+                f"({', '.join(tool_table.ENGINES)})")
         if self.plugins:
             tool_table.tools_for(self)  # loads them: refused if they cannot be
         self.frozen = freeze.clean(self.frozen)
@@ -575,6 +607,8 @@ class JobSpec:
             data.pop("force_view", None)
         if not data.get("disabled"):  # likewise
             data.pop("disabled", None)
+        if not data.get("enabled"):  # likewise
+            data.pop("enabled", None)
         if not data.get("frozen"):  # likewise
             data.pop("frozen", None)
         if not data.get("plugins"):  # likewise

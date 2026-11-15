@@ -124,9 +124,9 @@ def test_schema_of_several_verbs_at_once(capsys):
     assert "resolution" in verbs["look"]["arguments"]["properties"]
     assert "steps" in verbs["undo"]["arguments"]["properties"]
     assert verbs["wait"]["kind"] == "command"
-    code, refused = cli(capsys, "schema", "look", "spomialign")
+    code, refused = cli(capsys, "schema", "look", "nudge_sections")
     assert code == 2 and refused["error"]["code"] == "UNKNOWN_VERB"
-    assert "'spomialign'" in refused["error"]["message"]
+    assert "'nudge_sections'" in refused["error"]["message"]
 
 
 def test_schema_in_a_jobs_folder_declares_its_verbs(capsys, images):
@@ -234,7 +234,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    "schema init", "reply.images", "`scripts/`", "never in /tmp",
                    "`env install PACKAGE ...`", "`job.context`"):
         assert needle in agents, needle
-    assert len(agents.splitlines()) < 90  # one screen, its verb list included
+    assert len(agents.splitlines()) < 100  # one screen, its verb list included
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     # The card lists exactly the verbs the job has: none it would refuse.

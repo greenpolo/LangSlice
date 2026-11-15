@@ -1,7 +1,7 @@
 """Offer Brainways' atlas-position network to the agent as one tool.
 
-Load it with ``--plugins langslice.engines.brainways.plugin:tools`` or
-``create_job(..., plugins=["langslice.engines.brainways.plugin:tools"])``.
+It is a tool of every job (its row of the tool table names
+``langslice.engines.brainways.plugin:tools``).
 Options (``plugin_config``): ``device`` (``auto``, ``cuda`` or ``cpu``;
 ``auto`` takes the GPU when torch sees one), ``long_edge`` (the long edge,
 pixels, of the one channel handed to Brainways, which makes its own

@@ -15,11 +15,16 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 | agent CLI (`langslice-job`) | `agent_cli/calls.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call a process of its own | Claude Code, Antigravity, Codex |
 | library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
-A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
-the native ones on every door: the toolbox (agent and MCP), `ops` / `schema`
+The in-tree engines' tools a run has (`ToolDef.engine`; `deepslice_place`
+and `brainways_ap` only where `JobSpec.enabled` names them) follow the others
+on every door, bound from their engine's adapter when the toolbox is built
+(`plugins/runtime.py`), and a job whose spec names tool plugins
+(`JobSpec.plugins`) has their tools after those: the toolbox (agent and MCP), `ops` / `schema`
 (for the job in the folder), the card and the library's `verbs` read the
 per-spec view (`catalog.verbs_for(spec)`, `langslice/tools/catalog.py`).
-A job without plugins declares, replies and draws exactly as before.
+`catalog.VERBS` holds the tools whose operation is in `tools/`; a verb
+outside it (an engine's, a plugin's) is declared from its stub.
+`plugins/provenance.py` records the job's own plugins only.
 
 The text snapshot (`tests/snapshots/agent_text/`) pins what the doors
 declare.
@@ -245,7 +250,7 @@ bodies, and turned into an answer once per door:
   Python entry point and what a method returns, and to keep the agent's own
   files in `scripts/` and `scratch/` of the job folder, not `/tmp`; one line
   pointing a method of the agent's own to `help(job.context)`; first,
-  one sentence that a registering agent's job is the message `launch` makes; under 90 lines, `tests/test_agent_cli.py`),
+  one sentence that a registering agent's job is the message `launch` makes; under 100 lines, `tests/test_agent_cli.py`),
   `write_card` (writes where missing or worded differently; never raises);
   `TOOLS_FILE` (`TOOLS.md`, which the card names and `init` / `launch` write).
   Written by every door that opens or makes a job.
@@ -418,6 +423,7 @@ bodies, and turned into an answer once per door:
   parsed arguments when it is not given, so `init` tells `--frozen '{}'`
   from no `--frozen`), `linear.py` (`linear run`: `build_linear_spec`,
   `spec_from_args` (`--disabled NAME[,NAME...]`: the job's `disabled` list;
+  `--enabled NAME[,NAME...]`: its `enabled` list, the tools that start off;
   `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
   `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
   `--registration` with any of `REGISTRATION_CLASHES` is refused; a bad flag

@@ -203,7 +203,7 @@ def test_a_filled_form_gives_every_setting_and_init_reads_it() -> None:
         "  --position-thickness-um 40 \\\n"
         "  --position-interval-um 120 \\\n"
         "  --pixel-size-um 0.65 \\\n"
-        "  --disabled look:atlas,zoom,trace_borders \\\n"
+        "  --disabled look:atlas,zoom \\\n"
         "  --frozen '{\"*\":[\"angles\",\"orientation\"]}' \\\n"
         "  --damaged '{\"s012.tif\":\"left cortex torn\",\"s013.tif\":\"damaged\"}' \\\n"
         "  --facts 'The file names sort in the order the sections were cut.' \\\n"
@@ -214,7 +214,7 @@ def test_a_filled_form_gives_every_setting_and_init_reads_it() -> None:
     assert (spec.atlas, spec.plane) == ("whs_sd_rat_39um", "coronal")
     assert (spec.position.thickness_um, spec.position.interval_um) == (40, 120)
     assert spec.inputs["pixel_size_um"] == 0.65
-    assert spec.disabled == ["look:atlas", "zoom", "trace_borders"]
+    assert spec.disabled == ["look:atlas", "zoom"]  # no image model: no trace_borders
     assert spec.frozen == {"*": ["angles", "orientation"]}
     assert spec.inputs["damaged"] == {"s012.tif": "left cortex torn", "s013.tif": "damaged"}
     assert spec.facts == ["The file names sort in the order the sections were cut."]
@@ -514,8 +514,9 @@ def test_the_image_models_are_the_providers_a_job_accepts() -> None:
 
     rows = generator.payload()["image_models"]
     assert sorted(row["provider"] for row in rows) == sorted(CANONICAL_PROVIDERS)
-    assert rows[0]["provider"] == "openai-oauth" and rows[0]["default"]
+    assert rows[0]["provider"] == "openai-oauth"
     assert rows[-1]["provider"] == "none" and rows[-1]["models"] == []
+    assert [row["provider"] for row in rows if row["default"]] == ["none"]
     by_name = {row["provider"]: row for row in rows}
     assert by_name["openai-oauth"]["models"] == list(registry.OPENAI_OAUTH_IMAGE_MODELS)
     assert by_name["gemini-api"]["models"] == list(registry.GEMINI_IMAGE_MODELS)
