@@ -120,8 +120,16 @@ Writes the region and coordinate maps. From the command line and Python only.
 
 ## Optional engines
 
-Tool plugins, each run in an environment of its own. A job gets them when it
-is made from Python or with `langslice linear run --plugins`.
+Tool plugins. A job gets them when it is made from Python or with
+`langslice linear run --plugins`. DeepSlice runs in LangSlice's own
+environment once the `engines` extra is installed
+(`pip install "langslice[engines]"`); the others each run in an environment
+of their own.
+
+### `deepslice_place`
+
+Places mouse coronal sections and proposes the stack's cutting angles with
+[DeepSlice](https://github.com/PolarBean/DeepSlice).
 
 ### `stalign_lddmm`
 

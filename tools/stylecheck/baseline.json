@@ -7632,7 +7632,6 @@
 {"rule": "ruff:E501", "path": "src/langslice/doors/user_settings.py", "symbol": "model_name", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/doors/user_settings.py", "symbol": "read", "count": 3},
 {"rule": "ruff:E501", "path": "src/langslice/doors/user_settings.py", "symbol": "write", "count": 2},
-{"rule": "ruff:E501", "path": "src/langslice/engines/__init__.py", "symbol": "<module>", "count": 8},
 {"rule": "ruff:E501", "path": "src/langslice/engines/_blocks.py", "symbol": "<module>", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/engines/_blocks.py", "symbol": "_margin_mm", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/engines/_blocks.py", "symbol": "atlas_plane", "count": 4},

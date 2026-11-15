@@ -11,7 +11,8 @@ A plugin has two parts. The **adapter** is a small Python module that runs in
 LangSlice's process and imports `langslice.plugin_api` only. The **engine** is
 the method itself, usually in its own environment; the adapter calls it as a
 subprocess and exchanges files or JSON with it. The engine never imports
-LangSlice.
+LangSlice. An engine whose dependencies install beside LangSlice's can
+instead be imported by the adapter when its tool runs, as DeepSlice is (below).
 
 ## A plugin module
 
@@ -356,7 +357,24 @@ already has some. The work's own landing is not refused.
 
 ## In-tree engines
 
-STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm`), found by name under `SLICEBENCH_CONDA_ENVS`, `CONDA_ENVS_PATH`, the active conda's `envs`, `~/.conda/envs` or `~/.claude-science/conda/envs` (`python.exe` on Windows, `bin/python` elsewhere); the SPOmiAlign source comes from `SPOMIALIGN_SRC` and emlddmm's from `emlddmm_src`, with no default. Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`); each engine's README gives the order. A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+DeepSlice ships in `langslice.engines` as the tool plugin
+`langslice.engines.deepslice.plugin:tools`, one tool, `deepslice_place`
+(Positioning, task `angles`; offered on the Allen mouse atlases and
+`ccfv3augmented_mouse_25um`, coronal jobs only): DeepSlice 1.2.8 places each
+section as the agent oriented it, votes the stack's cutting angles and, with
+an `order`, spaces the sections; `write` names the parts written as one undo
+step (`positions`, `angles`, and `transform` where the transform task and
+`elastix_affine` are on), an empty `write` proposes. It runs in LangSlice's
+process on CPU TensorFlow, imported only when the tool runs, from the
+`engines` extra (`pip install "langslice[engines]"`: `deepslice`,
+`tensorflow` and `tf-keras`); without it, or when DeepSlice's weights folder
+(`DeepSlice/metadata/weights/` in its package, where it downloads its mouse
+weights on first use) cannot be written or holds a broken file, the call is
+refused `ENGINE_MISSING`. Options (`plugin_config`): `ensemble` (true) and
+`long_edge` (3072). Its README (`src/langslice/engines/deepslice/README.md`)
+gives the reply and the files of each call.
+
+STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the four engines load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm`), found by name under `SLICEBENCH_CONDA_ENVS`, `CONDA_ENVS_PATH`, the active conda's `envs`, `~/.conda/envs` or `~/.claude-science/conda/envs` (`python.exe` on Windows, `bin/python` elsewhere); the SPOmiAlign source comes from `SPOMIALIGN_SRC` and emlddmm's from `emlddmm_src`, with no default. Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`); each engine's README gives the order. A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
