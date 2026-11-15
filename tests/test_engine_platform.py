@@ -27,14 +27,23 @@ ENGINES = Path(_gpu_queue.__file__).resolve().parent
 # --- the GPU queue ------------------------------------------------------------------------------
 
 
+def _imports_from(name: str, module: str) -> bool:
+    tree = ast.parse((ENGINES / name / "engine.py").read_text(encoding="utf-8"))
+    return any(isinstance(node, ast.ImportFrom) and node.module == module
+               and any(alias.name == "gpu_turn" for alias in node.names)
+               for node in ast.walk(tree))
+
+
 def test_every_engine_takes_the_shared_queue_and_none_imports_fcntl():
     for name in ("stalign", "spomialign", "emlddmm"):
         tree = ast.parse((ENGINES / name / "engine.py").read_text(encoding="utf-8"))
         imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
                     for alias in node.names}
         assert "fcntl" not in imported, name
-        assert any(isinstance(node, ast.ImportFrom) and node.module == "_gpu_queue"
-                   for node in ast.walk(tree)), name
+    # SPOmiAlign in its own process; STalign and emlddmm in LangSlice's, through the plugin API
+    assert _imports_from("spomialign", "_gpu_queue")
+    for name in ("stalign", "emlddmm"):
+        assert _imports_from(name, "langslice.plugin_api"), name
 
 
 def test_the_queue_loads_as_an_engine_loads_it_without_langslice(tmp_path: Path):
@@ -139,7 +148,6 @@ def test_no_engine_default_names_a_machine_folder():
     for plugin in (emlddmm, spomialign, stalign):
         for key, value in plugin.DEFAULTS.items():
             assert "Software" not in str(value), (plugin.NAME, key)
-    assert emlddmm.DEFAULTS["emlddmm_src"] == ""
 
 
 # --- paths in replies ---------------------------------------------------------------------------

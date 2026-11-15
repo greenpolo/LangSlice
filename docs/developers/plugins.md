@@ -9,9 +9,10 @@ plugin.
 
 A plugin has two parts. The **adapter** is a small Python module that runs in
 LangSlice's process and imports `langslice.plugin_api` only. The **engine** is
-the method itself, usually in its own environment; the adapter calls it as a
-subprocess and exchanges files or JSON with it. The engine never imports
-LangSlice.
+the method itself: either imported into LangSlice's process when a tool runs
+(a package in LangSlice's environment, as STalign and emlddmm are), or run in
+its own environment as a subprocess that exchanges files or JSON with the
+adapter and never imports LangSlice (as SPOmiAlign is).
 
 ## A plugin module
 
@@ -45,7 +46,11 @@ def tools() -> list[ToolSpec]:
 ```
 
 `langslice.plugin_api` is the one import path; `PLUGIN_API_VERSION` (1) changes
-when the names in it change incompatibly. A module may set its own
+when the names in it change incompatibly. Besides the context and the
+records, it holds `flag_words` (below) and `gpu_turn(device)`, the machine's
+GPU queue for an engine that fits on the GPU in LangSlice's process (a
+context manager; `device` a torch device name, a lock only for one starting
+with `cuda`; it yields how long the turn was waited for, `waited_s`). A module may set its own
 `PLUGIN_API_VERSION`, and a `ToolSpec` has `api_version`; a plugin written for
 another version is refused. The same names are importable from
 `langslice.doors.plugins`.
@@ -356,7 +361,7 @@ already has some. The work's own landing is not refused.
 
 ## In-tree engines
 
-STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm`), found by name under `SLICEBENCH_CONDA_ENVS`, `CONDA_ENVS_PATH`, the active conda's `envs`, `~/.conda/envs` or `~/.claude-science/conda/envs` (`python.exe` on Windows, `bin/python` elsewhere); the SPOmiAlign source comes from `SPOMIALIGN_SRC` and emlddmm's from `emlddmm_src`, with no default. Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`); each engine's README gives the order. A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the three load together and need no `PYTHONPATH`. STalign and emlddmm run in LangSlice's process, imported when a tool runs, never when the plugin loads: STalign (GPL-3.0) is the optional extra `langslice[engines]` (`pip install "langslice[engines]"`; a call without it is refused `ENGINE_MISSING`, naming that command), and emlddmm (Apache-2.0) is vendored as `langslice_vendor.emlddmm`, so it always runs. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). SPOmiAlign runs as a subprocess in its own conda environment (`rigid_spomialign`), found by name under `SLICEBENCH_CONDA_ENVS`, `CONDA_ENVS_PATH`, the active conda's `envs`, `~/.conda/envs` or `~/.claude-science/conda/envs` (`python.exe` on Windows, `bin/python` elsewhere), its source from `SPOMIALIGN_SRC`, with no default; override with `plugin_config` (`python`, `src`). A missing interpreter or source is refused at call time with `ENGINE_MISSING` naming the path, never at load time. Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
@@ -393,7 +398,7 @@ never share one. A notice words a fit's plausibility flags as the native fits do
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
 on a `DeformationProposal.summary`: `FOLDS, REGION_COMPRESSED (CA1, DG)`).
 
-Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
+Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`; STalign and emlddmm through `gpu_turn`, so two fits in one process wait for each other too), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
 
 Each engine's description opens with what the method is and where it comes from (its paper),
 as `fireants_syn`'s does. A job with more than one deformable method (`fireants_syn` and any of

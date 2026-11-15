@@ -10,6 +10,7 @@ the plugins a ``JobSpec`` names.
 
 from __future__ import annotations
 
+from langslice.core.fits.deformable.engines import gpu_turn
 from langslice.core.fits.deformation import flag_words
 from langslice.core.plugins import (
     PLUGIN_API_VERSION,
@@ -47,4 +48,5 @@ __all__ = [
     "ToolResult",
     "ToolSpec",
     "TransformProposal", "WriteResult", "as_refs", "flag_words", "load",
+    "gpu_turn",
 ]

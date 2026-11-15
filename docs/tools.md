@@ -120,8 +120,9 @@ Writes the region and coordinate maps. From the command line and Python only.
 
 ## Optional engines
 
-Tool plugins, each run in an environment of its own. A job gets them when it
-is made from Python or with `langslice linear run --plugins`.
+Tool plugins. A job gets them when it is made from Python or with
+`langslice linear run --plugins`. STalign needs `pip install "langslice[engines]"`;
+emlddmm comes with LangSlice; SPOmiAlign runs in an environment of its own.
 
 ### `stalign_lddmm`
 

@@ -1,205 +1,382 @@
-# pyright: reportMissingImports=false, reportCallIssue=false, reportArgumentType=false
-# pyright: reportAttributeAccessIssue=false, reportIndexIssue=false
-"""STalign 2.0 for the LangSlice plugin, run in its own environment (GPL-3.0 stays here).
+"""Call STalign 2.0 in LangSlice's process, for the plugin (``plugin.py``).
 
-Run as ``python -I engine.py IN.npz OUT.npz`` with the ``stalign2`` interpreter (``plugin.py``
-does this). STalign 2.0.0 (JEFworks-Lab main 8a84bf1f, installed from
-``comparators/src/stalign2``) is imported as installed; nothing of it is copied. The plugin
-prepares every image and frame; this file only calls STalign and samples its result.
+STalign 2.0.0 (JEFworks-Lab main 8a84bf1f, GPL-3.0) comes with the extra
+``langslice[engines]`` and is imported as installed when a tool runs, never
+when the plugin loads (:func:`installed` says whether it is there). The
+plugin prepares every image and frame; this module only calls STalign and
+samples its result.
 
-IN (``mode`` picks the call):
+The inputs (``mode`` picks the call):
 
-- ``lddmm`` / ``sorting``: 2-D ``STalign.LDDMM``. ``I`` (C x h x w source), ``xI0``, ``xI1``
-  (its pixel centres, um), ``J`` (1 x H x W target), ``xJ0``, ``xJ1``, ``A0`` (3 x 3, source um
-  -> target um, row/col order), ``query`` (N x 2 target um, row/col: where the map is
-  sampled), ``params`` (JSON: STalign keyword arguments, mixture included), and optional
-  ``pointsI``/``pointsJ``. ``sorting`` holds the source still (no step of any kind) for 56
-  iterations, so STalign's own sorting updates run at iterations 50 and 55 at the current
-  alignment.
-- ``plane``: 3-D ``STalign.LDDMM_3D_to_slice`` with ``niter=0``: the plane search and its
-  refinement only. ``atlas`` (BrainGlobe name), ``image`` (``template`` or one of its
-  additional references), ``J``, ``xJ0``, ``xJ1``, ``A0`` (4 x 4, atlas um -> target um,
-  target = (0, row um, col um)), ``params``. The volume is block-averaged to 50 um (the
-  published atlas voxel) and cached under ``~/.cache/langslice-stalign``.
+- ``lddmm``: 2-D ``STalign.LDDMM``. ``I`` (C x h x w source), ``xI0``,
+  ``xI1`` (its pixel centres, um), ``J`` (1 x H x W target), ``xJ0``,
+  ``xJ1``, ``A0`` (3 x 3, source um -> target um, row/col order),
+  ``query`` (N x 2 target um, row/col: where the map is sampled).
+- ``plane``: 3-D ``STalign.LDDMM_3D_to_slice`` with ``niter=0``: the plane
+  search and its refinement only. ``atlas`` (BrainGlobe name), ``image``
+  (``template``, one of its additional references or the borrowed Nissl),
+  ``J``, ``xJ0``, ``xJ1``, ``A0`` (4 x 4, atlas um -> target um, target =
+  (0, row um, col um)). The volume is read at 50 um (the published atlas
+  voxel, ``_atlas_images.py``).
 
-OUT: ``source_um`` (N x 2 for 2-D: the source point STalign's map takes each query point to),
-``A``, ``WM``/``WB``/``WA``, ``energy`` (iterations x [E, EM, ER(, EP)], STalign's record),
-``settings`` (JSON: what STalign chose), ``prefit`` (JSON, 3-D), ``device``, ``seconds``;
-``error`` when the fit failed.
+``params`` holds STalign's keyword arguments (its mixture included), with
+``device`` and ``threads``. The result: ``source_um`` (N x 2 for 2-D: the
+source point STalign's map takes each query point to), ``A``,
+``WM``/``WB``/``WA``, ``energy`` (iterations x [E, EM, ER(, EP)], STalign's
+own record), ``settings`` (JSON: what STalign chose), ``prefit`` (JSON,
+3-D), ``device``, ``seconds`` and ``gpu_wait_s``.
 """
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
-import os
-import sys
+import threading
 import time
-import traceback
-from pathlib import Path
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast, overload
 
 import numpy as np
-import torch
-from STalign import STalign, _lddmm_common
 
-#: The engines' shared GPU queue, ``../_gpu_queue.py``: ``-I`` leaves its
-#: folder off the path, and it goes last, so it hides no installed package.
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-if TYPE_CHECKING:  # the type checker reads it from the package
-    from langslice.engines._gpu_queue import gpu_turn
-else:
-    from _gpu_queue import gpu_turn
+from langslice.engines._atlas_images import averaged_image
+from langslice.engines._devices import AUTO, CPU, on_gpu, resolve_device
+from langslice.plugin_api import gpu_turn
 
-CACHE = Path.home() / ".cache" / "langslice-stalign"
-ATLAS_UM = 50.0
-#: The Nissl image LangSlice offers on an Allen CCFv3 atlas, borrowed from another atlas.
-BORROWED_NISSL = "ccfv3augmented_nissl"
-ENERGY: list[np.ndarray] = []
+if TYPE_CHECKING:
+    import torch
 
+#: The package that makes STalign importable.
+PACKAGE = "STalign"
+#: The ``mode`` of a plane search; any other runs the 2-D fit.
+PLANE = "plane"
+#: Query points sampled at once through STalign's map.
+QUERY_CHUNK = 1 << 20
 
-class _Record:
-    """Stands in for STalign's end-of-fit figures (``draw='end'``): draws nothing and keeps
-    the energy record the figures would plot."""
-
-    def __init__(self, problem):
-        pass
-
-    def update(self, snap):
-        ENERGY[:] = [np.asarray(snap["Esave"], float)]
+#: A value of STalign's keyword arguments as the plugin sets them.
+Option = float | int | str | dict[str, str]
+#: A value of a call's result.
+Output = np.ndarray | str | float
 
 
-_lddmm_common._Figures = _Record
+class _Fit(Protocol):
+    """Name the entries of STalign's result this module reads."""
+
+    @overload
+    def __getitem__(
+        self, key: Literal["A", "v", "WM", "WB", "WA"]
+    ) -> torch.Tensor: ...
+
+    @overload
+    def __getitem__(self, key: Literal["xv"]) -> list[torch.Tensor]: ...
+
+    @overload
+    def __getitem__(
+        self, key: Literal["settings", "prefit"]
+    ) -> Mapping[str, Option]: ...
 
 
-def device_of(name: str) -> tuple[str, torch.dtype]:
-    """``auto``: the GPU at float32 when torch sees one, else the CPU at float64 (STalign's
-    C++ engine)."""
-    if name == "auto":
-        name = "cuda" if torch.cuda.is_available() else "cpu"
-    if name.startswith("cuda"):
-        return ("cuda:0" if name == "cuda" else name), torch.float32
-    return "cpu", torch.float64
+class _STalign(Protocol):
+    """Name the functions of STalign this module calls (it ships no types)."""
+
+    def LDDMM(  # noqa: N802 - STalign's name
+        self,
+        source_axes: list[np.ndarray],
+        source: np.ndarray,
+        target_axes: list[np.ndarray],
+        target: np.ndarray,
+        /,
+        **_options: object,
+    ) -> _Fit: ...
+
+    def LDDMM_3D_to_slice(  # noqa: N802 - STalign's name
+        self,
+        source_axes: list[np.ndarray],
+        source: np.ndarray,
+        target_axes: list[np.ndarray],
+        target: np.ndarray,
+        /,
+        **_options: object,
+    ) -> _Fit: ...
+
+    def build_transform(
+        self,
+        xv: list[torch.Tensor],
+        v: torch.Tensor,
+        A: torch.Tensor,  # noqa: N803 - STalign's name
+        *,
+        direction: str,
+        XJ: torch.Tensor,  # noqa: N803 - STalign's name
+    ) -> torch.Tensor: ...
 
 
-def plain(value):
-    if torch.is_tensor(value):
+class _Figures(Protocol):
+    """Name what STalign asks of its end-of-fit figures."""
+
+    def update(self, snap: Mapping[str, np.ndarray]) -> None: ...
+
+
+#: How STalign makes its figures: its class, called with the fit's problem.
+FiguresMaker = Callable[[object], _Figures]
+
+
+class _FiguresModule(Protocol):
+    """Name the module that holds STalign's figures class."""
+
+    _Figures: FiguresMaker
+
+
+class _Records(threading.local):
+    """Hold the energy record of the fit running on this thread."""
+
+    def __init__(self) -> None:
+        #: The fit's record, or None on a thread that runs no fit here.
+        self.energy: list[np.ndarray] | None = None
+
+
+_RECORDS = _Records()
+#: Serializes installing the stand-in for STalign's figures.
+_INSTALL = threading.Lock()
+
+
+def installed() -> bool:
+    """Return whether STalign can be imported here.
+
+    Returns
+    -------
+    bool
+        True when the extra ``langslice[engines]`` (or STalign itself) is
+        installed in LangSlice's environment.
+    """
+    return importlib.util.find_spec(PACKAGE) is not None
+
+
+def run(
+    arrays: Mapping[str, np.ndarray], params: Mapping[str, Option]
+) -> dict[str, Output]:
+    """Run one STalign call on the inputs the plugin prepared.
+
+    Parameters
+    ----------
+    arrays
+        The call's inputs by name (see the module text); ``mode`` picks
+        the call.
+    params
+        STalign's keyword arguments, with ``device`` (``auto``, ``cpu`` or
+        ``cuda``) and ``threads``.
+
+    Returns
+    -------
+    dict of str to Output
+        The call's results by name (see the module text).
+    """
+    import torch  # local: slow to import, needed only when a fit runs
+
+    options = dict(params)
+    device = resolve_device(str(options.pop("device", AUTO)))
+    if not on_gpu(device):
+        device = CPU
+    # the GPU at float32, the CPU at float64 (STalign's C++ engine)
+    dtype = torch.float32 if on_gpu(device) else torch.float64
+    threads = int(str(options.pop("threads", 4)))
+    precision = str(dtype).replace("torch.", "")
+    out: dict[str, Output] = {"device": f"{device} {precision}"}
+    started = time.monotonic()
+    stalign = _stalign()
+    how = _How(device, dtype, threads)
+    if str(arrays["mode"]) == PLANE:
+        out.update(_plane(stalign, arrays, options, how))
+    else:
+        out.update(_lddmm(stalign, arrays, options, how))
+    out["seconds"] = time.monotonic() - started
+    return out
+
+
+@dataclass(frozen=True)
+class _How:
+    """Hold where and how a fit runs.
+
+    Parameters
+    ----------
+    device
+        The torch device the fit runs on.
+    dtype
+        The precision of the fit's tensors.
+    threads
+        The threads STalign may use.
+    """
+
+    device: str
+    dtype: torch.dtype
+    threads: int
+
+
+def _stalign() -> _STalign:
+    """Import STalign, its end-of-fit figures replaced by the record."""
+    module = importlib.import_module(PACKAGE)
+    figures = cast(  # STalign ships no types: the module of its figures
+        "_FiguresModule", importlib.import_module(f"{PACKAGE}._lddmm_common")
+    )
+    with _INSTALL:
+        current = figures._Figures  # noqa: SLF001  # pyright: ignore[reportPrivateUsage] - STalign's figures hook
+        if current is not _EnergyRecord:
+            _EnergyRecord.figures = current
+            figures._Figures = _EnergyRecord  # noqa: SLF001  # pyright: ignore[reportPrivateUsage] - STalign's figures hook
+    return cast("_STalign", module)  # STalign ships no types: its functions
+
+
+class _EnergyRecord:
+    """Stand in for STalign's end-of-fit figures (``draw='end'``).
+
+    On a thread that runs a fit for LangSlice it draws nothing and keeps
+    the energy record the figures would plot; on any other thread it draws
+    them as STalign does.
+
+    Parameters
+    ----------
+    problem
+        STalign's description of the fit, which its own figures read.
+    """
+
+    #: STalign's own figures class, which another caller's fit draws with.
+    figures: ClassVar[FiguresMaker | None] = None
+
+    def __init__(self, problem: object) -> None:
+        self._energy = _RECORDS.energy
+        self._figures: _Figures | None = None
+        if self._energy is None and _EnergyRecord.figures is not None:
+            self._figures = _EnergyRecord.figures(problem)
+
+    def update(self, snap: Mapping[str, np.ndarray]) -> None:
+        """Keep the record, or draw the figures for another caller.
+
+        Parameters
+        ----------
+        snap
+            STalign's state after the last iteration; ``Esave`` is its
+            energy per iteration (a tensor on the fit's device, or an
+            array).
+        """
+        if self._figures is not None:
+            self._figures.update(snap)
+        elif self._energy is not None:
+            self._energy[:] = [_plain(snap["Esave"])]
+
+
+def _plain(value: object) -> np.ndarray:
+    """Copy a tensor or array as a float64 array on the CPU."""
+    import torch  # local: slow to import, needed only when a fit runs
+
+    if isinstance(value, torch.Tensor):
         return value.detach().cpu().double().numpy()
-    if isinstance(value, list):
-        return [plain(item) for item in value]
-    return value
+    return np.asarray(value, np.float64)
 
 
-def _json(value) -> str:
-    """JSON of STalign's records (tensors and arrays as lists)."""
-    return json.dumps(value, default=lambda o: np.asarray(plain(o)).tolist())
+def _json(value: Mapping[str, Option]) -> str:
+    """Write STalign's records as JSON (tensors and arrays as lists)."""
+    return json.dumps(value, default=_listed)
 
 
-def borrowed_nissl(a) -> np.ndarray:
-    """LangSlice's borrowed Nissl on an Allen CCFv3 atlas (``core/atlas/images.py``): the
-    ``ccfv3augmented_mouse_25um`` template, whose grid starts 0.35 mm further forward,
-    resampled onto *a*'s grid, zero outside its brain."""
-    from brainglobe_atlasapi import BrainGlobeAtlas
-    from scipy.ndimage import affine_transform
-
-    source = np.asarray(BrainGlobeAtlas("ccfv3augmented_mouse_25um", check_latest=False).template,
-                        np.float32)
-    step = np.asarray(a.resolution, float) / 25.0
-    offset = 0.5 * step - 0.5 + np.array([350.0 / 25.0, 0.0, 0.0])
-    annotation = np.asarray(a.annotation)
-    data = affine_transform(source, np.diag(step), offset=offset, output_shape=annotation.shape,
-                            order=1, output=np.float32)
-    data[annotation == 0] = 0
-    return data
+def _listed(item: object) -> object:
+    """Turn a tensor or array into nested lists, for JSON."""
+    # numpy types tolist() as Any: nested lists
+    return cast("object", _plain(item).tolist())
 
 
-def volume(atlas: str, image: str) -> tuple[np.ndarray, list[np.ndarray]]:
-    """The atlas image volume at 50 um (block mean) and its axes in atlas um."""
-    from brainglobe_atlasapi import BrainGlobeAtlas
+def _lddmm(
+    stalign: _STalign,
+    arrays: Mapping[str, np.ndarray],
+    options: Mapping[str, Option],
+    how: _How,
+) -> dict[str, Output]:
+    """Run STalign's 2-D fit and sample its map at the query points."""
+    import torch  # local: slow to import, needed only when a fit runs
 
-    CACHE.mkdir(parents=True, exist_ok=True)
-    held = CACHE / f"{atlas}__{image}__{int(ATLAS_UM)}um.npz"
-    if held.exists():
-        z = np.load(held)
-        return z["I"], [z["x0"], z["x1"], z["x2"]]
-    a = BrainGlobeAtlas(atlas, check_latest=False)
-    if image == BORROWED_NISSL:
-        data = borrowed_nissl(a)
-    else:
-        data = a.reference if image == "template" else a.additional_references[image]
-    data = np.asarray(data, np.float32)
-    res = np.asarray(a.resolution, float)
-    f = [max(1, int(round(ATLAS_UM / r))) for r in res]
-    sh = [s // k * k for s, k in zip(data.shape, f, strict=True)]
-    block = data[:sh[0], :sh[1], :sh[2]].reshape(sh[0] // f[0], f[0], sh[1] // f[1], f[1],
-                                                 sh[2] // f[2], f[2]).mean((1, 3, 5))
-    axes = [(np.arange(n) * k + (k - 1) / 2.0) * r
-            for n, k, r in zip(block.shape, f, res, strict=True)]
-    np.savez(held, I=block, x0=axes[0], x1=axes[1], x2=axes[2])
-    return block, axes
-
-
-def run(z, out: dict) -> None:
-    mode = str(z["mode"])
-    params = json.loads(str(z["params"]))
-    device, dtype = device_of(params.pop("device", "auto"))
-    threads = int(params.pop("threads", 4))
-    out["device"] = f"{device} {str(dtype).replace('torch.', '')}"
-    t0 = time.monotonic()
-    if mode == "plane":
-        I, xI = volume(str(z["atlas"]), str(z["image"]))  # noqa: E741
-        I = I[None] / np.mean(np.abs(I))  # noqa: E741 (STalign's name)
-        I = np.concatenate((I, (I - I.mean()) ** 2))  # noqa: E741 (STalign's name)
-        with gpu_turn(device):
-            result = STalign.LDDMM_3D_to_slice(
-                xI, I, [z["xJ0"], z["xJ1"]], z["J"], A=z["A0"], niter=0, prefit=True,
-                draw=False, device=device, dtype=dtype, num_threads=threads, **params)
-        pf = result.get("prefit", {})
-        out["A"] = plain(result["A"])
-        out["prefit"] = _json({k: v for k, v in pf.items() if k != "A"})
-    else:
-        kw = dict(params)
-        if mode == "sorting":
-            kw.update(niter=56, epL=0.0, epT=0.0, epV=0.0)
-        if "pointsI" in z.files:
-            kw.update(pointsI=z["pointsI"], pointsJ=z["pointsJ"])
-        A0 = z["A0"]
-        with gpu_turn(device) as turn:
-            out["gpu_wait_s"] = turn.waited_s
-            result = STalign.LDDMM([z["xI0"], z["xI1"]], z["I"], [z["xJ0"], z["xJ1"]], z["J"],
-                                   L=A0[:2, :2].copy(), T=A0[:2, 2].copy(), prefit=False,
-                                   draw="end", device=device, dtype=dtype, num_threads=threads,
-                                   **kw)
-            A_t, v_t = result["A"], result["v"]
-            xv = result["xv"]
-            query = np.asarray(z["query"], float)
-            got = []
-            for k in range(0, len(query), 1 << 20):
-                Xq = torch.as_tensor(query[k:k + (1 << 20)], dtype=v_t.dtype,
-                                     device=v_t.device)[:, None]
-                with torch.no_grad():
-                    got.append(plain(STalign.build_transform(xv, v_t, A_t, direction="b",
-                                                             XJ=Xq))[:, 0])
-        out["source_um"] = np.concatenate(got, 0) if got else np.zeros((0, 2))
-        out["A"] = plain(A_t)
-        for key in ("WM", "WB", "WA"):
-            out[key] = plain(result[key])
-        out["energy"] = ENERGY[0] if ENERGY else np.zeros((0, 3))
-    out["settings"] = _json(dict(result.get("settings", {})))
-    out["seconds"] = time.monotonic() - t0
-
-
-def main(src: str, dst: str) -> int:
-    z = np.load(src, allow_pickle=False)
-    out: dict = {}
+    start = arrays["A0"]
+    energy: list[np.ndarray] = []
+    _RECORDS.energy = energy
+    out: dict[str, Output] = {}
     try:
-        run(z, out)
-    except Exception as exc:  # the plugin turns it into the section's error
-        traceback.print_exc()
-        out = {"error": f"{type(exc).__name__}: {exc}"}
-    np.savez_compressed(dst, **out)
-    return 0
+        with gpu_turn(how.device) as turn:
+            out["gpu_wait_s"] = turn.waited_s
+            result = stalign.LDDMM(
+                [arrays["xI0"], arrays["xI1"]],
+                arrays["I"],
+                [arrays["xJ0"], arrays["xJ1"]],
+                arrays["J"],
+                L=start[:2, :2].copy(),
+                T=start[:2, 2].copy(),
+                prefit=False,
+                draw="end",
+                device=how.device,
+                dtype=how.dtype,
+                num_threads=how.threads,
+                **options,
+            )
+            velocity = result["v"]
+            query = np.asarray(arrays["query"], np.float64)
+            sampled: list[np.ndarray] = []
+            for first in range(0, len(query), QUERY_CHUNK):
+                points = torch.as_tensor(
+                    query[first : first + QUERY_CHUNK],
+                    dtype=velocity.dtype,
+                    device=velocity.device,
+                )[:, None]
+                with torch.no_grad():
+                    mapped = stalign.build_transform(
+                        result["xv"],
+                        velocity,
+                        result["A"],
+                        direction="b",
+                        XJ=points,
+                    )
+                sampled.append(_plain(mapped)[:, 0])
+    finally:
+        _RECORDS.energy = None
+    out["source_um"] = np.zeros((0, 2))
+    if sampled:
+        out["source_um"] = np.concatenate(sampled, 0)
+    out["A"] = _plain(result["A"])
+    out["WM"] = _plain(result["WM"])
+    out["WB"] = _plain(result["WB"])
+    out["WA"] = _plain(result["WA"])
+    out["energy"] = energy[0] if energy else np.zeros((0, 3))
+    out["settings"] = _json(result["settings"])
+    return out
 
 
-if __name__ == "__main__":
-    os.environ.setdefault("OMP_NUM_THREADS", "4")
-    sys.exit(main(sys.argv[1], sys.argv[2]))
+def _plane(
+    stalign: _STalign,
+    arrays: Mapping[str, np.ndarray],
+    options: Mapping[str, Option],
+    how: _How,
+) -> dict[str, Output]:
+    """Run STalign's 3-D plane search and its refinement, no warp."""
+    atlas = averaged_image(str(arrays["atlas"]), str(arrays["image"]))
+    image = atlas.image[None] / np.mean(np.abs(atlas.image))
+    image = np.concatenate((image, (image - image.mean()) ** 2))
+    out: dict[str, Output] = {}
+    with gpu_turn(how.device) as turn:
+        out["gpu_wait_s"] = turn.waited_s
+        result = stalign.LDDMM_3D_to_slice(
+            atlas.axes,
+            image,
+            [arrays["xJ0"], arrays["xJ1"]],
+            arrays["J"],
+            A=arrays["A0"],
+            niter=0,
+            prefit=True,
+            draw=False,
+            device=how.device,
+            dtype=how.dtype,
+            num_threads=how.threads,
+            **options,
+        )
+    prefit = {
+        key: value for key, value in result["prefit"].items() if key != "A"
+    }
+    out["A"] = _plain(result["A"])
+    out["prefit"] = _json(prefit)
+    out["settings"] = _json(result["settings"])
+    return out

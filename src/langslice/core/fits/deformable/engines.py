@@ -224,8 +224,9 @@ def engine_worker() -> None:
 
 
 #: The GPU's one queue, shared by every process on the machine that fits on it:
-#: FireANTs here, and the engine plugins (STalign, emlddmm and SPOmiAlign take
-#: the same file). The folder is the one every engine sandbox may write.
+#: FireANTs here, STalign and emlddmm (in this process, through the plugin API)
+#: and SPOmiAlign (in its own process) take the same file. The folder is the
+#: one every engine sandbox may write.
 GPU_LOCK = Path(os.environ.get("LANGSLICE_GPU_LOCK")
                 or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock")
 #: A fit that still finds the GPU full (a process outside the queue holds it)
@@ -243,11 +244,12 @@ class GpuTurn:
 
 @contextlib.contextmanager
 def gpu_turn(device: str) -> Iterator[GpuTurn]:
-    """One fit at a time on the GPU across processes (a lock on :data:`GPU_LOCK`);
-    nothing on the CPU. Yields how long the turn was waited for."""
+    """One fit at a time on the GPU across processes and threads (a lock on
+    :data:`GPU_LOCK`) for a device whose name starts with ``cuda``; nothing on
+    the CPU. Yields how long the turn was waited for."""
     # filelock: flock on Linux and macOS, as the engine plugins take it
     turn = GpuTurn()
-    if device != "cuda":
+    if not device.startswith("cuda"):
         yield turn
         return
     GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)

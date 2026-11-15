@@ -1,9 +1,9 @@
 """The in-tree engines (``langslice.engines``): the three load together in one job, their tools
-do not clash, a missing environment is refused at call time with ``ENGINE_MISSING``, and
-nothing of the engine environments is imported into LangSlice's process.
+do not clash, a missing engine is refused at call time with ``ENGINE_MISSING`` (SPOmiAlign's
+environment, STalign's extra ``langslice[engines]``), and loading the plugins imports no engine.
 
-The engines themselves run in their own conda environments; a test that runs one is marked
-``slow`` and skips where the environment is missing.
+SPOmiAlign runs in its own conda environment; STalign and emlddmm run in LangSlice's process
+(``tests/test_engines_in_process.py``).
 """
 
 from __future__ import annotations
@@ -39,11 +39,6 @@ CALLS = {
     "emlddmm_stack": {"sections": ["s0", "s1"], "slot_um": 100.0},
     "emlddmm_plane": {"sections": ["s0", "s1"], "slot_um": 100.0},
 }
-ENGINES_PYTHON = {
-    "stalign": "stalign2",
-    "spomialign": "rigid_spomialign",
-    "emlddmm": "rigid_emlddmm",
-}
 
 
 @pytest.fixture(autouse=True)
@@ -62,25 +57,42 @@ def test_the_three_refs_load_together_without_a_name_clash(tmp_path: Path):
     assert len(added) == len(set(added))
 
 
-def test_each_tool_is_refused_when_its_environment_is_missing(tmp_path: Path):
+def _call(box: object, name: str) -> dict:
+    tool = tool_named(box, name)
+    arguments = dict(CALLS[name])
+    if "tool_context" in inspect.signature(tool).parameters:
+        arguments["tool_context"] = ToolContext()
+    return tool(**arguments)
+
+
+def test_spomialign_is_refused_when_its_environment_is_missing(tmp_path: Path):
     images = tmp_path / "images"
     images.mkdir()
     gone = str(tmp_path / "no" / "python")
-    config = {ref: {"python": gone} for ref in REFS}
-    _state, ctx, spec = stack(images, 3, placed=True, plugins=REFS, plugin_config=config,
+    ref = "langslice.engines.spomialign.plugin:tools"
+    _state, ctx, spec = stack(images, 3, placed=True, plugins=[ref],
+                              plugin_config={ref: {"python": gone}},
+                              tasks=["position", "transform", "nonlinear"])
+    reply = _call(build_tools(_state, ctx, spec), "spomialign")
+    assert reply.get("code") == "ENGINE_MISSING" or "ENGINE_MISSING" in str(reply), reply
+    # The message quotes the path as Python does: its backslashes doubled on Windows.
+    assert any(gone in text or repr(gone) in text for text in _texts(reply)), reply
+
+
+def test_stalign_without_the_extra_is_refused_naming_it(tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch):
+    from langslice.engines.stalign import engine
+
+    monkeypatch.setattr(engine, "installed", lambda: False)
+    images = tmp_path / "images"
+    images.mkdir()
+    _state, ctx, spec = stack(images, 3, placed=True, plugins=[REFS[0]],
                               tasks=["position", "transform", "nonlinear"])
     box = build_tools(_state, ctx, spec)
-    for names in TOOLS.values():
-        for name in names:
-            tool = tool_named(box, name)
-            arguments = dict(CALLS[name])
-            if "tool_context" in inspect.signature(tool).parameters:
-                arguments["tool_context"] = ToolContext()
-            reply = tool(**arguments)
-            assert reply.get("code") == "ENGINE_MISSING" or "ENGINE_MISSING" in str(
-                reply), (name, reply)
-            # The message quotes the path as Python does: its backslashes doubled on Windows.
-            assert any(gone in text or repr(gone) in text for text in _texts(reply)), reply
+    for name in TOOLS["stalign"]:
+        reply = _call(box, name)
+        assert "ENGINE_MISSING" in str(reply), (name, reply)
+        assert 'pip install "langslice[engines]"' in str(reply), reply
 
 
 def _texts(value: object) -> list[str]:
@@ -99,7 +111,7 @@ def test_nothing_of_the_engine_environments_is_imported():
         "import sys\n"
         "import langslice.engines.stalign.plugin, langslice.engines.spomialign.plugin, "
         "langslice.engines.emlddmm.plugin\n"
-        "banned = ('STalign', 'emlddmm', 'roma', 'SPOmiAlign', 'torch', 'SimpleITK_x')\n"
+        "banned = ('STalign', 'emlddmm', 'langslice_vendor', 'roma', 'SPOmiAlign', 'torch')\n"
         "bad = sorted(m for m in sys.modules if m.split('.')[0] in banned)\n"
         "print(bad)\nsys.exit(1 if bad else 0)\n"
     )
@@ -138,9 +150,7 @@ def test_the_declared_arguments_follow_the_interface_note(tmp_path: Path):
 def test_stalign_refuses_a_section_mask_by_name_before_anything_else(tmp_path: Path):
     images = tmp_path / "images"
     images.mkdir()
-    gone = str(tmp_path / "no" / "python")
-    config = {REFS[0]: {"python": gone}}
-    state, ctx, spec = stack(images, 2, placed=True, plugins=[REFS[0]], plugin_config=config,
+    state, ctx, spec = stack(images, 2, placed=True, plugins=[REFS[0]],
                              tasks=["position", "transform", "nonlinear"])
     reply = tool_named(build_tools(state, ctx, spec), "stalign_lddmm")(sections=["s0"], mask="m")
     assert reply.get("error") == "MASK_UNSUPPORTED" or "MASK_UNSUPPORTED" in str(reply)

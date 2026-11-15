@@ -87,6 +87,14 @@ anthropic = [
     "anthropic>=1.13",
     "httpx2",
 ]
+# The engines LangSlice imports into its own process (src/langslice/engines/).
+engines = [
+    # STalign 2.0.0 (GPL-3.0) for stalign_lddmm and stalign_plane_search: not on
+    # PyPI, so the JEFworks-Lab commit the plugin runs. Its optional C++ engine
+    # builds where a C++17 compiler is (MSVC Build Tools on Windows); without
+    # one STalign uses its torch engine. (emlddmm is vendored, langslice_vendor/.)
+    "STalign @ git+https://github.com/JEFworks-Lab/STalign@8a84bf1facc5173f7155400867a09c302125904e",
+]
 dev = [
     "mcp>=1.24,<2",
     "pytest",
@@ -124,6 +132,7 @@ include = ["langslice*"]
 
 [tool.setuptools.package-data]
 langslice = ["core/atlas/*.json", "hosts/gui/static/*"]
+langslice_vendor = ["emlddmm/LICENSE", "emlddmm/NOTICE"]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs

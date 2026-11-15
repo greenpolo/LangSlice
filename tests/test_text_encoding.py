@@ -8,6 +8,9 @@ every ``read_text`` / ``write_text`` names its encoding.
 And every text file LangSlice writes (``src/``, ``tools/``) names its line
 ends: without ``newline`` Windows writes CRLF, so a job's files would differ
 byte for byte from the same job written on Linux.
+
+Third-party code vendored as published (``src/langslice_vendor/``) is not
+read: LangSlice calls none of its file readers or writers.
 """
 
 from __future__ import annotations
@@ -17,6 +20,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 FOLDERS = ("src", "tests", "tools")
+#: Third-party code kept as published; LangSlice calls none of its file I/O.
+VENDORED = REPO / "src" / "langslice_vendor"
+
+
+def _sources(folder: str) -> list[Path]:
+    return [path for path in sorted((REPO / folder).rglob("*.py"))
+            if not path.is_relative_to(VENDORED)]
 
 
 def _text_mode(node: ast.Call) -> bool:
@@ -44,7 +54,7 @@ def _missing(node: ast.Call) -> bool:
 def test_text_files_name_their_encoding():
     found = []
     for folder in FOLDERS:
-        for path in sorted((REPO / folder).rglob("*.py")):
+        for path in _sources(folder):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             found += [f"{path.relative_to(REPO).as_posix()}:{node.lineno}"
                       for node in ast.walk(tree)
@@ -81,7 +91,7 @@ def _writes_text(node: ast.Call) -> bool:
 def test_text_files_name_their_line_ends():
     found = []
     for folder in ("src", "tools"):
-        for path in sorted((REPO / folder).rglob("*.py")):
+        for path in _sources(folder):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             found += [f"{path.relative_to(REPO).as_posix()}:{node.lineno}"
                       for node in ast.walk(tree)

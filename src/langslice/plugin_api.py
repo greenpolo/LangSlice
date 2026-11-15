@@ -29,6 +29,7 @@ from langslice.doors.plugins import (
     TransformProposal,
     WriteResult,
     flag_words,
+    gpu_turn,
 )
 
 __all__ = [
@@ -38,5 +39,5 @@ __all__ = [
     "PluginError", "RefusalCode", "SectionRaster", "SectionView", "ToolContext", "ToolError",
     "ToolResult",
     "ToolSpec",
-    "TransformProposal", "WriteResult", "flag_words",
+    "TransformProposal", "WriteResult", "flag_words", "gpu_turn",
 ]

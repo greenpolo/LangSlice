@@ -5,14 +5,18 @@ Nat Commun; twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece and 6ff62b0, Apac
 registration agent as two tools. Design: Fable's proposal of 2026-10-19, with one change Nash
 made: the slot spacing is an argument of the agent's, not a plugin setting.
 
-- `plugin.py`: the adapter, run in LangSlice's process (imports only `langslice.plugin_api`).
-- `engine.py`: the emlddmm calls, run with `-I` under the `rigid_emlddmm` environment's
-  interpreter, with `emlddmm.py` from the folder `emlddmm_src` names (SliceBench's
-  `comparators/src/emlddmm_fix`). Nothing of emlddmm is copied or edited:
-  the energy record is taken by wrapping the fork's `interp` (it finds the calling `emlddmm` frame's
-  local `Esave` list). That environment has no `brainglobe_atlasapi`, so the engine reads the atlas
-  folder under `~/.brainglobe` (`reference.tiff`, `additional_references/`, `annotation.tiff`)
-  directly.
+- `plugin.py`: the adapter (imports only `langslice.plugin_api` and the engines' own modules).
+- `engine.py`: the emlddmm calls, in LangSlice's process, imported when a tool runs.
+- emlddmm itself is vendored: `src/langslice_vendor/emlddmm/emlddmm.py` is the fork's file
+  (SliceBench's `comparators/src/emlddmm_fix`), with its `LICENSE` and `NOTICE`. Its header
+  names the upstream commit and our two commits, and the two changes LangSlice made to import it
+  on numpy 2 and torch 2 in its own process: IPython's `display` is imported only when IPython
+  is installed (it shows figures in a notebook, and the fits draw none), and the print at import
+  is gone (it wrote to LangSlice's stdout). Nothing else of the file is changed. The energy
+  record is taken by wrapping its `interp` (the wrapper finds the calling `emlddmm` frame's local
+  `Esave` list, per thread), and what it prints during a fit goes to the call's `log.txt`.
+- The atlas image is read from BrainGlobe in LangSlice's process at 50 um
+  (`../_atlas_images.py`, kept under `~/.cache/langslice-engines`).
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work,
 `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`, `angles_from_plane`, the `angles`
@@ -24,20 +28,13 @@ task). No further seam was needed.
 langslice linear run ... --plugins langslice.engines.emlddmm.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--plugin-config`):
-`python` (default: the `rigid_emlddmm` conda environment's interpreter, found as below),
-`emlddmm_src` (no default: a call without it is refused `ENGINE_MISSING`), `brainglobe_dir`
-(`~/.brainglobe`), `device` (`auto`), `dtype` (`float64`), `section_um`
-(58.88, the example's pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb`
-(24), `threads`, `timeout_s`. Engine calls take the machine's GPU lock file, as STalign's,
-SPOmiAlign's and LangSlice's own GPU fits do (`LANGSLICE_GPU_LOCK`, else
-`~/.cache/langslice-stalign/gpu.lock`; `../_gpu_queue.py`).
-
-The default interpreter is the one of the conda environment of that name in the first of
-`SLICEBENCH_CONDA_ENVS`, conda's `CONDA_ENVS_PATH`, the `envs` folder of the conda
-`CONDA_EXE` names, `~/.conda/envs` and `~/.claude-science/conda/envs` that holds it:
-`python.exe` at its root on Windows (`Scripts\python.exe` for a venv), `bin/python`
-elsewhere (`../_environment.py`).
+or `langslice.create_job(..., plugins=["langslice.engines.emlddmm.plugin:tools"])`. It needs
+nothing beyond LangSlice's own dependencies. Options (`--plugin-config`): `device` (`auto`: the
+GPU when torch sees one, else the CPU), `dtype` (`float64`), `section_um` (58.88, the example's
+pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb` (24). A fit runs on
+torch's own thread count. A fit on the GPU takes the machine's GPU queue through the plugin
+API's `gpu_turn`, as STalign's, SPOmiAlign's and LangSlice's own GPU fits do
+(`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`).
 
 ## The tools
 
@@ -74,7 +71,7 @@ call is refused `STACK_TOO_LARGE` when slots x rows x columns (the grid is the u
 footprints, so slide size counts) x 0.4 GB per million voxels (float64) is over `memory_limit_gb`,
 naming the slot spacing that would fit; two sections in one slot is `BAD_ARGS`. Sections whose
 planes differ by under 1 degree (an imported placement's rounding) count as one stack; the largest
-tilt is kept in `settings.json`. The borrowed Nissl `ccfv3augmented_nissl` is built in the engine
+tilt is kept in `settings.json`. The borrowed Nissl `ccfv3augmented_nissl` is built
 as LangSlice builds it (the augmented template on the atlas grid, 0.35 mm AP offset, zero outside
 the brain).
 
@@ -88,7 +85,7 @@ section weighs as the gap it stands for (`section_weight`, as the Fig 3 runner).
 `plugins/<tool>/calls/<n>_<tool>/`: `settings.json` (asked, chosen, plugin options, what emlddmm
 chose, whether its energy was captured, device, peak GPU memory, seconds), `sections.csv` (stack), `A.json`, `energy.csv`
 and `energy.png`, `images/` (each section as the engine saw it, its final sorting and the atlas
-under the fit), `weights.npz`, `in.npz`, `out.npz`, `log.txt`.
+under the fit), `weights.npz`, `log.txt` (what emlddmm printed).
 
 ## Checked (2026-10-19)
 
@@ -102,4 +99,3 @@ after); without it the fit takes the same points from 229 to 113 um. The whole 2
 
 Takes a section mask as soft weights (`W0 *= weights`). Estimates its own three-class sorting, saved with each deformation it writes. One smooth 3-D warp for the stack, no per-section bends; needs dense, evenly spaced sections. Brightness: the channel as it is, 0-1.
 
-A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.
