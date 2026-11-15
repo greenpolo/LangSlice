@@ -7868,7 +7868,6 @@
 {"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "JobLayout._siblings", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "JobLayout.ensure", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "JobLayout.images_dir", "count": 1},
-{"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "JobLayout.log_event", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "JobLayout.plugin_dir", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "JobLayout.resolve", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/job/layout.py", "symbol": "check_owner", "count": 1},

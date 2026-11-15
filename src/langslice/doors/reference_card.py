@@ -195,7 +195,7 @@ def write_card(layout: JobLayout) -> list[Path]:
         try:
             if path.exists() and path.read_text(encoding="utf-8") == text:
                 continue
-            path.write_text(text, encoding="utf-8")
+            path.write_text(text, encoding="utf-8", newline="\n")
             written.append(path)
         except OSError:
             logger.warning("Could not write the reference card %s", path, exc_info=True)

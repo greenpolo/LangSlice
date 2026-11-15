@@ -165,7 +165,7 @@ def save_api_key(provider: str, api_key: str) -> dict[str, object]:
     fd, temporary_name = tempfile.mkstemp(prefix=".provider_credentials-", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(saved, stream)
             stream.write("\n")
             stream.flush()

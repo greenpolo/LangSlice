@@ -779,7 +779,7 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
         [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
         timeout_s=timeout_s, env=env, cwd=folder)
     (folder / "log.txt").write_text(done.stdout + done.stderr,
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
     if done.returncode != 0 or not dst.exists():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
         raise ToolError(RefusalCode.FIT_FAILED,
@@ -915,13 +915,14 @@ def _write_files(st: dict[str, Any], out: dict[str, Any], folder: Path, secs: li
                         slot=np.asarray(st["slot"]))
     (folder / "A.json").write_text(json.dumps({"A": A.tolist(), "A_start": A0.tolist(),
                                                "A2d": A2d.tolist(), **extra}, indent=1,
-                                              default=float), encoding="utf-8")
+                                              default=float), encoding="utf-8",
+                                                  newline="\n")
     (folder / "settings.json").write_text(json.dumps(
         {"asked": asked, "chosen": chosen, "plugin": config,
          "emlddmm": json.loads(str(out["settings"])), "device": str(out["device"]),
          "energy": "captured" if _captured(out) else "not captured",
          "peak_gpu_gb": float(out["peak_gpu_gb"]), "seconds": float(out["seconds"])},
-        indent=1, default=str), encoding="utf-8")
+        indent=1, default=str), encoding="utf-8", newline="\n")
 
 
 def _captured(out: dict[str, Any]) -> bool:

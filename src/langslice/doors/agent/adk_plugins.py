@@ -245,5 +245,6 @@ class RequestCapturePlugin(BasePlugin):
             ],
         }
         path = self.capture_dir / f"{self.run_label}_{self._instance}_{self._counter:03d}.json"
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8",
+            newline="\n")
         return None

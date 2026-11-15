@@ -366,7 +366,7 @@ def write_baseline(path: Path, baseline: Baseline) -> None:
     baseline
         The allowed count per key and the record of the run.
     """
-    path.write_text(format_baseline(baseline), encoding="utf-8")
+    path.write_text(format_baseline(baseline), encoding="utf-8", newline="\n")
 
 
 def _dumps(value: object) -> str:

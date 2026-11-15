@@ -117,7 +117,7 @@ def _write_creds(creds: Creds) -> None:
                 "last_refresh": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
             indent=2,
-        ), encoding="utf-8"
+        ), encoding="utf-8", newline="\n"
     )
     path.chmod(0o600)
 

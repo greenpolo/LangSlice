@@ -96,7 +96,7 @@ def failure_message(text: str, path: str | Path | None, label: str = "") -> str:
     if path is not None:
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a", encoding="utf-8") as stream:
+            with open(path, "a", encoding="utf-8", newline="\n") as stream:
                 stream.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {label or 'failed'}\n"
                              f"{whole}\n")
             kept = True

@@ -104,7 +104,7 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
         layout = JobLayout(folder)
         target = layout.trace_dir / f"{harness}_{_safe(session)}.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(slim_lines(text), encoding="utf-8")
+        target.write_text(slim_lines(text), encoding="utf-8", newline="\n")
         copies.append(target)
         write_launch_check(layout, text, target.with_suffix(".launch.json"))
         if submitted:
@@ -343,7 +343,7 @@ def write_launch_check(layout: Any, text: str, target: Path) -> None:
     """Write :func:`launch_check` to *target*; never raises."""
     try:
         target.write_text(json.dumps(launch_check(layout, text), indent=1) + "\n",
-                          encoding="utf-8")
+                          encoding="utf-8", newline="\n")
     except Exception as exc:  # noqa: BLE001 - a hook never fails the session
         print(f"langslice session-end: launch check: {type(exc).__name__}: {exc}",
               file=sys.stderr)

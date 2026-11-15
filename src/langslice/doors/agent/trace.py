@@ -141,7 +141,7 @@ class SessionTrace:
         for path in self.paths:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open("a", encoding="utf-8") as handle:
+                with path.open("a", encoding="utf-8", newline="\n") as handle:
                     handle.write(line)
             except Exception:
                 # A debug trace must never take down a 40-section run.

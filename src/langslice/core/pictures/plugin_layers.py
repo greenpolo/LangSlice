@@ -84,7 +84,8 @@ def save_layer(layer: Layer, stem: Path) -> Path:
             if layer.tags:
                 features[-1]["properties"] = {"label": layer.tags[index]}
         path.write_text(json.dumps({"kind": "lines", "frame": layer.frame,
-                                    "features": features}), encoding="utf-8")
+                                    "features": features}), encoding="utf-8",
+                                        newline="\n")
         return path
     if kind == "labels":
         assert layer.raster is not None
