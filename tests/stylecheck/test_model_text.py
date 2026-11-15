@@ -130,7 +130,7 @@ def test_the_docstring_findings_of_other_functions_are_kept() -> None:
 
 
 def test_the_engine_plugins_tool_stubs_are_found() -> None:
-    """Find the six engine plugin stubs in the real package."""
+    """Find the seven engine plugin stubs in the real package."""
     project = load_project(REPOSITORY, CONFIG)
     stubs = find_stubs(project)
     engine_stubs = sorted(
@@ -140,6 +140,7 @@ def test_the_engine_plugins_tool_stubs_are_found() -> None:
     )
     assert engine_stubs == [
         "brainways_ap",
+        "deepslice_place",
         "emlddmm_plane",
         "emlddmm_stack",
         "spomialign",

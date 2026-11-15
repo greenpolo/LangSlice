@@ -2,38 +2,42 @@
 
 Load it with ``--plugins langslice.engines.spomialign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.spomialign.plugin:tools"])``;
-it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python``
-(the ``rigid_spomialign`` interpreter; by default the one of the conda
-environment of that name, ``_environment.env_python``), ``src``
-(SPOmiAlign's ``SPOmiAlign`` folder; by default ``SPOMIALIGN_SRC``, and a
-call without either is refused ``ENGINE_MISSING``),
-``device``, ``timeout_s``. The method itself runs in ``engine.py`` under that
-interpreter; this module imports only ``langslice.plugin_api``.
+it is imported from this package (no ``PYTHONPATH``). Option
+(``plugin_config``): ``device`` (the torch device; by default the first GPU
+when torch sees one, else the CPU). The method itself runs in this process,
+in ``engine.py`` and ``matching.py``, on RoMa (``romatch``, LangSlice's
+``engines`` extra), imported only when a call runs; a call without it is
+refused ``ENGINE_MISSING``. This module imports only
+``langslice.plugin_api`` and the engine.
 
-Each call puts the section on SPOmiAlign's canvas, runs the engine on (atlas image,
-section), and maps the answer back: the linear part through ``transform_from_matrix``, the
-full map through ``deformation_from_map``. Canvas: for rigid, affine and affine_warp the
-atlas plane's grid, upsampled to about :data:`CANVAS_EDGE` px, with the section resampled
-onto it through its current transform (as the published user's hand-picked plate and
-rotation did); for warp on a section that holds a deformation, the fit grid, with the atlas
-resampled onto it through that deformation (``FitFrame.applied_map``), so the warp starts on
-top of a landmark warp, as ``stalign_lddmm`` does. A new transform clears a deformation, so
-rigid, affine and affine_warp are refused on a section that holds one (``HAS_DEFORMATION``).
+Each call puts the section on SPOmiAlign's canvas, runs the engine on (atlas
+image, section), and maps the answer back: the linear part through
+``transform_from_matrix``, the full map through ``deformation_from_map``.
+Canvas: for rigid, affine and affine_warp the atlas plane's grid, upsampled
+to about :data:`CANVAS_EDGE` px, with the section resampled onto it through
+its current transform (as the published user's hand-picked plate and
+rotation did); for warp on a section that holds a deformation, the fit grid,
+with the atlas resampled onto it through that deformation
+(``FitFrame.applied_map``), so the warp starts on top of a landmark warp, as
+``stalign_lddmm`` does. A new transform clears a deformation, so rigid,
+affine and affine_warp are refused on a section that holds one
+(``HAS_DEFORMATION``).
 """
 
 from __future__ import annotations
 
 import csv
 import json
-import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 from PIL import Image, ImageDraw
 
-from langslice.engines import _blocks, _environment, _process_tree
+from langslice.engines import _blocks
+from langslice.engines.spomialign import engine, matching
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -42,33 +46,29 @@ from langslice.plugin_api import (
     ToolSpec,
 )
 
-HERE = Path(__file__).resolve().parent
 NAME = "SPOmiAlign"
 REF = "langslice.engines.spomialign.plugin:tools"
-#: The environment variable that sets ``src`` when the plugin_config does not.
-SRC_VARIABLE = "SPOMIALIGN_SRC"
-#: The options an environment variable also sets, named in a refusal.
-VARIABLES = {"src": SRC_VARIABLE}
-DEFAULTS = {
-    "python": _environment.env_python("rigid_spomialign"),
-    "src": os.environ.get(SRC_VARIABLE, ""),
-    "device": "",
-    "timeout_s": 900,
-}
+DEFAULTS = {"device": ""}
+#: What a call without RoMa installed is refused with.
+MISSING = (
+    "SPOmiAlign cannot run here: its matcher, RoMa (the romatch package), "
+    "is not installed; install LangSlice's engines extra: "
+    'pip install "langslice[engines]"'
+)
 #: Long edge of the canvas SPOmiAlign receives, px: above its 1152 x 864 grid, so its own
 #: resize brings both images down to that grid as with its published inputs.
 CANVAS_EDGE = 1536
 #: What a call fits (``fit``), as every engine tool names it: the section's
 #: transform, a warp on top of its registration, or both (an affine, then a warp).
 FITS = ("transform", "warp", "both")
-#: The engine's own modes (engine.py ``MODES``).
-MODES = ("rigid", "affine", "warp", "affine_warp")
+#: The engine's own modes.
+MODES = engine.MODES
 #: The section properties each mode writes (``frozen`` names).
 WRITES = {"rigid": ("affine",), "affine": ("affine",), "warp": ("deformation",),
           "affine_warp": ("affine", "deformation")}
-#: SPOmiAlign's sources as LangSlice runs them (the vendored commit).
+#: The SPOmiAlign commit whose method LangSlice runs.
 ENGINE_VERSION = "SPOmiAlign c7f8b7a"
-#: RoMa as SPOmiAlign builds it (engine.py ``SP.roma_outdoor(coarse_res=560)``).
+#: RoMa as SPOmiAlign builds it (``matching.load_matcher``).
 MATCHER = "RoMa roma_outdoor, coarse resolution 560"
 
 
@@ -78,17 +78,10 @@ def mode_of(fit: str, rigid: bool) -> str:
     if fit == "transform":
         return "rigid" if rigid else "affine"
     return "warp" if fit == "warp" else "affine_warp"
-#: RoMa's weights, which ``roma_outdoor`` downloads into torch's hub cache on first use.
-WEIGHTS = {
-    "roma_outdoor.pth": "https://github.com/Parskatt/storage/releases/download/roma/"
-                        "roma_outdoor.pth",
-    "dinov2_vitl14_pretrain.pth": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/"
-                                  "dinov2_vitl14_pretrain.pth",
-}
 #: The default atlas image, resolved by the job's atlas (its Nissl, else its template).
 NISSL = _blocks.NISSL
-#: SPOmiAlign's registration grid (engine.py ``W``, ``H``).
-WORK_W, WORK_H = 1152, 864
+#: SPOmiAlign's registration grid.
+WORK_W, WORK_H = matching.W, matching.H
 #: How many of the most confident pairs ``matches.png`` draws (the CSV holds them all).
 DRAWN_PAIRS = 300
 
@@ -290,54 +283,29 @@ def _inputs(frame: Any, plane_image: np.ndarray, on_grid: bool,
             **extra}
 
 
-def _weights_missing() -> list[str]:
-    hub = Path(os.environ.get("TORCH_HOME") or Path.home() / ".cache" / "torch")
-    return [name for name in WEIGHTS if not (hub / "hub" / "checkpoints" / name).exists()]
-
-
-def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
-            pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Run engine.py on every section's pair in one process (one model load); its inputs,
-    outputs and log are kept in *folder*."""
-    folder.mkdir(parents=True, exist_ok=True)
-    src, dst = folder / "in.npz", folder / "out.npz"
-    arrays: dict[str, Any] = {"mode": np.array(mode), "n": np.array(len(pairs)),
-                              "matches": np.array(matches)}
-    for i, pair in enumerate(pairs):
-        arrays.update({f"target_{i}": pair["target"], f"source_{i}": pair["source"],
-                       f"keep_{i}": pair["keep"],
-                       f"smoothing_px_{i}": np.array(pair["smoothing_px"])})
-        if pair["section_keep"] is not None:
-            arrays[f"section_keep_{i}"] = pair["section_keep"]
-    np.savez_compressed(src, **arrays)
-    env = {**os.environ, SRC_VARIABLE: config["src"]}
-    if config.get("device"):
-        env["SPOMIALIGN_DEVICE"] = str(config["device"])
-    # plugin_config holds JSON values
-    timeout_s = float(config["timeout_s"])  # pyright: ignore[reportAny]
-    done = _process_tree.run_engine(
-        [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-        timeout_s=timeout_s, env=env, cwd=folder)
-    (folder / "log.txt").write_text(done.stdout + done.stderr,
-        encoding="utf-8", newline="\n")
-    if done.returncode != 0 or not dst.exists():
-        missing = _weights_missing()
+def _engine(config: dict[str, Any], mode: str, matches: int,
+            pairs: list[dict[str, Any]]) -> engine.EngineRun:
+    """Run the engine on every section's pair in this process (one model load)."""
+    inputs = [engine.EnginePair(
+        target=cast("npt.NDArray[np.uint8]", pair["target"]),
+        source=cast("npt.NDArray[np.uint8]", pair["source"]),
+        keep=cast("npt.NDArray[np.bool_]", pair["keep"]),
+        smoothing_px=cast(float, pair["smoothing_px"]),
+        section_keep=cast("npt.NDArray[np.bool_] | None", pair["section_keep"]),
+    ) for pair in pairs]
+    try:
+        return engine.fit_pairs(inputs, mode=mode, top_k=matches,
+                                device_name=str(config.get("device") or ""))
+    except Exception as error:  # noqa: BLE001 - the matcher's load or the GPU failed
+        missing = matching.weights_missing()
         if missing:
             raise ToolError(RefusalCode.ENGINE_MISSING,
                             "SPOmiAlign's matcher weights are not in torch's "
                             "hub cache and could not be downloaded: "
-                            + ", ".join(WEIGHTS[name] for name in missing))
-        tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
+                            + ", ".join(matching.WEIGHTS[name] for name in missing)) from error
+        first = str(error).strip().splitlines()[:1] or ["no message"]
         raise ToolError(RefusalCode.FIT_FAILED,
-                        f"SPOmiAlign did not run: {tail[0]}")
-    out = np.load(dst)
-    results = []
-    waited = float(out["gpu_wait_s"]) if "gpu_wait_s" in out.files else 0.0
-    for i in range(len(pairs)):
-        got = {key[: -len(f"_{i}")]: out[key] for key in out.files if key.endswith(f"_{i}")}
-        got["gpu_wait_s"] = waited  # the call's one wait for the GPU queue
-        results.append(got)
-    return results
+                        f"SPOmiAlign did not run: {type(error).__name__}: {first[0]}") from error
 
 
 def gpu_words(waited_s: float, retries: int) -> dict[str, Any]:
@@ -390,15 +358,6 @@ def _full_map(frame: Any, pair: dict[str, Any], matrix: np.ndarray,
     return _to_native(pair, moved).T.reshape(gh, gw, 2)
 
 
-def _require(config: dict[str, Any], *keys: str) -> None:
-    """Refuse at call time when an environment or source folder the engine needs is missing."""
-    for key in keys:
-        # plugin_config holds JSON values
-        _environment.require_path(
-            NAME, REF, key, str(config[key]),  # pyright: ignore[reportAny]
-            variable=VARIABLES.get(key, ""))
-
-
 # --- job files --------------------------------------------------------------------------------
 
 
@@ -440,15 +399,16 @@ def _pairs_picture(pair: dict[str, Any], used: np.ndarray, dropped: np.ndarray,
     image.save(path)
 
 
-def _files(here: Path, pair: dict[str, Any], got: dict[str, Any],
+def _files(here: Path, pair: dict[str, Any], got: engine.EngineAnswer,
            settings: dict[str, Any]) -> None:
     here.mkdir(parents=True, exist_ok=True)
     Image.fromarray(_outline(pair["target"], ~pair["keep"])).save(here / "atlas.png")
     Image.fromarray(pair["source"]).save(here / "section.png")
     (here / "settings.json").write_text(json.dumps(settings, indent=1, default=str),
         encoding="utf-8", newline="\n")
-    used = np.asarray(got.get("used", np.zeros((0, 5))))
-    dropped = np.asarray(got.get("dropped_pairs", np.zeros((0, 5))))
+    none = np.zeros((0, 5), np.float32)
+    used = none if got.used is None else got.used
+    dropped = none if got.dropped_pairs is None else got.dropped_pairs
     with open(here / "matches.csv", "w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["atlas_x", "atlas_y", "section_x", "section_y", "confidence",
@@ -529,30 +489,30 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
     if not ready:
         return ToolResult({"rows": rows, "settings": settings})
     folder = _blocks.call_folder(ctx, mode)
-    answers = _engine(config, folder, mode, matches, [item[2] for item in ready])
+    run = _engine(config, mode, matches, [item[2] for item in ready])
     pictures = []
     with ctx.writing():
-        for (sid, frame, pair, digest, inputs, resolved), got in zip(ready, answers,
+        for (sid, frame, pair, digest, inputs, resolved), got in zip(ready, run.answers,
                                                                      strict=True):
             here = folder / Path(sid).stem
             start = "the deformation it held" if pair["on_grid"] else "its linear placement"
-            by_mask = int(got.get("dropped_by_mask", 0))
-            in_damage = int(got.get("dropped", 0)) - by_mask
+            by_mask = got.dropped_by_mask
+            in_damage = got.dropped - by_mask
             _files(here, pair, got, {
                 **settings, "inputs": inputs, "atlas_image_resolved": resolved,
                 "smoothing_px": pair["smoothing_px"], "start": start,
                 "canvas_px": pair["target"].shape[:2],
                 "device": config.get("device") or "SPOmiAlign's choice",
-                "pairs_used": int(got.get("pairs", 0)), "pairs_dropped_in_damage": in_damage,
+                "pairs_used": got.pairs, "pairs_dropped_in_damage": in_damage,
                 "pairs_dropped_by_mask": by_mask})
             relative = _blocks.job_path(ctx, here)
-            if "error" in got:
-                failed = ToolError(RefusalCode.FIT_FAILED, f"{got['error']}")
+            if got.error or got.matrix is None:
+                failed = ToolError(RefusalCode.FIT_FAILED, got.error)
                 rows.append({**failed.payload(section_id=sid),
                              "files": relative})
                 continue
             what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"
-            note = (f"SPOmiAlign {what}, atlas {resolved}, {int(got['pairs'])} pairs, "
+            note = (f"SPOmiAlign {what}, atlas {resolved}, {got.pairs} pairs, "
                     f"{in_damage} in marked damage dropped"
                     + (f", {by_mask} outside the mask dropped" if mask != "none" else ""))
             engine_settings = {
@@ -564,12 +524,12 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
             row: dict[str, Any] = {"id": sid, "status": "ok", "fitted": note,
                                    "files": relative, "inputs": inputs, "estimated": None,
                                    "engine_settings": engine_settings,
-                                   **gpu_words(float(got.get("gpu_wait_s", 0.0)),
-                                               int(got.get("oom_retries", 0)))}
+                                   # the call's one wait for the GPU queue
+                                   **gpu_words(run.gpu_wait_s, got.oom_retries)}
             if mask != "none":
                 row["mask_note"] = "approximated by dropping matches"
             if mode != "warp":
-                to_native = (pair["from_canvas"] @ _homog(got["matrix"]) @ pair["to_canvas"])[:2]
+                to_native = (pair["from_canvas"] @ _homog(got.matrix) @ pair["to_canvas"])[:2]
                 proposal = ctx.transform_from_matrix(sid, to_native, note=note)
                 written = ctx.set_transforms([proposal.row()], expect={sid: digest})
                 if sid not in written.written:
@@ -577,10 +537,11 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                     continue
                 row["transform"] = proposal.knobs
             if mode in ("warp", "affine_warp"):
-                native = _full_map(frame, pair, got["matrix"], got["residual"])
+                assert got.residual is not None  # a warp mode answers with its field
+                native = _full_map(frame, pair, got.matrix, got.residual)
                 warp = ctx.deformation_from_map(
                     sid, native, note=note,
-                    meta={"sitk_max_px": float(got["sitk_max_px"]), "inputs": inputs,
+                    meta={"sitk_max_px": got.sitk_max_px, "inputs": inputs,
                           "estimated": None},
                     start="current" if pair["on_grid"] else "linear", settings=settings,
                     engine_settings=engine_settings, engine_version=ENGINE_VERSION)
@@ -603,7 +564,8 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
                 section_image: str = "preprocessed", atlas_image: str = NISSL,
                 mask: str = "none", smoothness_um: float = 150.0, matches: int = 5000,
                 view: bool = True) -> ToolResult:
-        _require(options, "python", "src")
+        if not matching.is_installed():
+            raise ToolError(RefusalCode.ENGINE_MISSING, MISSING)
         return _run(ctx, options, sections, fit, rigid, section_image, atlas_image, mask,
                     smoothness_um, matches, view)
 

@@ -143,8 +143,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   every system; `flock` on Linux and macOS) on `GPU_LOCK`,
   `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, taken for a
   device whose name starts with `cuda`, by threads of one process as by
-  processes; the plugin API re-exports it, which STalign and emlddmm take in
-  LangSlice's process, and SPOmiAlign takes the same file in its own; it yields a `GpuTurn`
+  processes; the plugin API re-exports it, which the in-tree engines that fit
+  on the GPU (STalign, emlddmm, SPOmiAlign) take in LangSlice's process; it yields a `GpuTurn`
   whose `waited_s` is how long the lock was waited for), so fits of several jobs
   never share the GPU's memory; one that still finds it full (a process outside
   the queue) waits and fits again, `OOM_RETRIES` times. The `EngineResult`

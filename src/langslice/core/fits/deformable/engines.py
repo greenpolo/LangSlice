@@ -224,9 +224,9 @@ def engine_worker() -> None:
 
 
 #: The GPU's one queue, shared by every process on the machine that fits on it:
-#: FireANTs here, STalign and emlddmm (in this process, through the plugin API)
-#: and SPOmiAlign (in its own process) take the same file. The folder is the
-#: one every engine sandbox may write.
+#: FireANTs here, and STalign, emlddmm and SPOmiAlign through the plugin API,
+#: in this process, take the same file. The folder is the one every engine
+#: sandbox may write.
 GPU_LOCK = Path(os.environ.get("LANGSLICE_GPU_LOCK")
                 or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock")
 #: A fit that still finds the GPU full (a process outside the queue holds it)

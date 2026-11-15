@@ -1,9 +1,10 @@
 """The in-tree engines (``langslice.engines``): the three load together in one job, their tools
-do not clash, SPOmiAlign's missing environment is refused at call time with ``ENGINE_MISSING``, and
-loading the plugins imports no engine.
+do not clash, SPOmiAlign without the ``engines`` extra is refused at call time with
+``ENGINE_MISSING``, and loading the plugins imports no engine.
 
-SPOmiAlign runs in its own conda environment; STalign and emlddmm are vendored and run in
-LangSlice's process (``tests/test_engines_in_process.py``).
+All three run in LangSlice's process: STalign and emlddmm vendored
+(``tests/test_engines_in_process.py``), SPOmiAlign on romatch from the extra
+(``tests/test_spomialign_engine.py``).
 """
 
 from __future__ import annotations
@@ -57,26 +58,22 @@ def test_the_three_refs_load_together_without_a_name_clash(tmp_path: Path):
     assert len(added) == len(set(added))
 
 
-def _call(box: object, name: str) -> dict:
-    tool = tool_named(box, name)
-    arguments = dict(CALLS[name])
-    if "tool_context" in inspect.signature(tool).parameters:
-        arguments["tool_context"] = ToolContext()
-    return tool(**arguments)
+def test_spomialign_without_the_extra_is_refused_naming_it(tmp_path: Path, monkeypatch):
+    from langslice.engines.spomialign import matching
 
-
-def test_spomialign_is_refused_when_its_environment_is_missing(tmp_path: Path):
+    monkeypatch.setattr(matching, "is_installed", lambda: False)
     images = tmp_path / "images"
     images.mkdir()
-    gone = str(tmp_path / "no" / "python")
     ref = "langslice.engines.spomialign.plugin:tools"
     _state, ctx, spec = stack(images, 3, placed=True, plugins=[ref],
-                              plugin_config={ref: {"python": gone}},
                               tasks=["position", "transform", "nonlinear"])
-    reply = _call(build_tools(_state, ctx, spec), "spomialign")
+    tool = tool_named(build_tools(_state, ctx, spec), "spomialign")
+    arguments = dict(CALLS["spomialign"])
+    if "tool_context" in inspect.signature(tool).parameters:
+        arguments["tool_context"] = ToolContext()
+    reply = tool(**arguments)
     assert reply.get("code") == "ENGINE_MISSING" or "ENGINE_MISSING" in str(reply), reply
-    # The message quotes the path as Python does: its backslashes doubled on Windows.
-    assert any(gone in text or repr(gone) in text for text in _texts(reply)), reply
+    assert any('pip install "langslice[engines]"' in text for text in _texts(reply)), reply
 
 
 def _texts(value: object) -> list[str]:
@@ -95,7 +92,8 @@ def test_nothing_of_the_engine_environments_is_imported():
         "import sys\n"
         "import langslice.engines.stalign.plugin, langslice.engines.spomialign.plugin, "
         "langslice.engines.emlddmm.plugin\n"
-        "banned = ('STalign', 'emlddmm', 'langslice_vendor', 'roma', 'SPOmiAlign', 'torch')\n"
+        "banned = ('STalign', 'emlddmm', 'langslice_vendor', 'roma', 'romatch', 'SPOmiAlign', "
+        "'torch')\n"
         "bad = sorted(m for m in sys.modules if m.split('.')[0] in banned)\n"
         "print(bad)\nsys.exit(1 if bad else 0)\n"
     )
