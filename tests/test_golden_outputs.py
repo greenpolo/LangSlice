@@ -124,7 +124,11 @@ DOORS = ("library", "cli", "mcp")
 #: The caller's environment names a child keeps: what finds programs and
 #: decodes text. Every other name (the user's LangSlice settings, model
 #: keys, display) stays behind.
-KEPT_ENV = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME")
+KEPT_ENV = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME",
+            # Windows: what the system itself needs (platform.machine() reads
+            # PROCESSOR_ARCHITECTURE)
+            "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PROCESSOR_ARCHITECTURE",
+            "NUMBER_OF_PROCESSORS")
 #: Model keys set empty: python-dotenv reads a ``.env`` above the checkout
 #: into a child and never replaces a name that is set.
 EMPTY_ENV = (
@@ -232,6 +236,10 @@ def child_environment(root: Path) -> dict[str, str]:
     environment.update(CHILD_ENV)
     environment.update(
         HOME=str(home),
+        # Windows finds the home folder and its app data here, not in HOME / XDG
+        USERPROFILE=str(home),
+        APPDATA=str(home / "AppData" / "Roaming"),
+        LOCALAPPDATA=str(home / "AppData" / "Local"),
         XDG_CONFIG_HOME=str(home / ".config"),
         XDG_CACHE_HOME=str(home / ".cache"),
         XDG_DATA_HOME=str(home / ".local" / "share"),
@@ -239,6 +247,8 @@ def child_environment(root: Path) -> dict[str, str]:
         XDG_RUNTIME_DIR=str(runtime),
         BRAINGLOBE_CONFIG_DIR=str(brainglobe_config),
         TMPDIR=str(root / "tmp"),
+        TEMP=str(root / "tmp"),  # Windows reads TEMP / TMP, not TMPDIR
+        TMP=str(root / "tmp"),
     )
     return environment
 

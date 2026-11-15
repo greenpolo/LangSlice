@@ -130,12 +130,23 @@ to them by their GitHub address.
 
 ## Environment and checks
 
-Linux + bash. The project environment is a uv venv at `.venv` (Python 3.11):
-`uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`; the deformable engine
-(FireANTs on torch) and SimpleITK are core dependencies.
+The project environment is a uv venv at `.venv` (Python 3.11) at the versions in
+`uv.lock`; the deformable engine (FireANTs on torch) and SimpleITK are core
+dependencies. `--torch-backend=auto` installs the CUDA build of torch that fits the
+GPU (PyPI's torch on Windows is CPU-only):
 
 ```bash
-source .venv/bin/activate
+uv venv --python 3.11 .venv
+uv export --frozen --extra dev --no-hashes --no-emit-project -o "$TMP/langslice-lock.txt"
+uv pip install -r "$TMP/langslice-lock.txt" --torch-backend=auto
+uv pip install --no-deps -e .
+```
+
+On Windows, long paths must be on (`LongPathsEnabled`; a deformation's zarr paths
+pass 260 characters) and Developer Mode lets the tests make symlinks.
+
+```bash
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 python -m pytest              # in parallel (pytest-xdist); `slow` is deselected by default
 python -m ruff check .
 python -m tools.stylecheck    # STYLE.md; the baseline only shrinks
