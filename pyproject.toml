@@ -127,6 +127,15 @@ Documentation = "https://langslice.readthedocs.io"
 Repository = "https://github.com/greenpolo/LangSlice"
 Issues = "https://github.com/greenpolo/LangSlice/issues"
 
+[tool.uv]
+# TensorFlow 2.21 (the engines extra) caps h5py below 3.15. uv keeps one
+# version of a package for every install, so that cap would move h5py back
+# for every LangSlice install; h5py's floor stays the higher of the two
+# requirements (TensorFlow's 3.11, registration's 3.10). DeepSlice's network
+# runs alike on h5py 3.16 (engines/deepslice/README.md). pip still honours
+# TensorFlow's cap where the engines extra is installed.
+override-dependencies = ["h5py>=3.11"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["langslice*"]

@@ -1,4 +1,4 @@
-"""In-tree engines: the DeepSlice, Brainways, STalign, SPOmiAlign and emlddmm adapters.
+"""In-tree engines: DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm.
 
 Each engine is a package loaded as a tool plugin, its ``plugin.py`` the
 adapter, run in LangSlice's process and importing only

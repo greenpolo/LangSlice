@@ -40,7 +40,6 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -416,7 +415,7 @@ def _sorted_table(
     rank = {section: index + 1 for index, section in enumerate(request.order)}
     numbers = np.array([rank.get(section, 0) for section in ids], np.int64)
     keys = numbers if request.order else prediction.anchorings[:, 1]
-    rows = np.argsort(keys, kind="stable")
+    rows = cast("list[int]", np.argsort(keys, kind="stable").tolist())
     bad = set(request.bad_sections)
     return _Table(
         ids=[ids[row] for row in rows],
@@ -466,17 +465,21 @@ def _with_anchorings(
 
 def _write_quint(table: _Table, path: Path, *, numbered: bool) -> None:
     """Write a QUINT file of a table, filenames the section ids."""
-    slices = [
-        {
-            "filename": section,
-            "anchoring": [float(value) for value in table.anchorings[row]],
-            "height": table.heights[row],
-            "width": table.widths[row],
-            "nr": int(table.numbers[row]) if numbered else None,
-            "markers": [],
-        }
-        for row, section in enumerate(table.ids)
-    ]
+    numbers = _ints(table.numbers)
+    anchorings = _anchorings(table.anchorings)
+    slices: list[dict[str, object]] = []
+    for row, section in enumerate(table.ids):
+        number = numbers[row] if numbered else None
+        slices.append(
+            {
+                "filename": section,
+                "anchoring": list(anchorings[row]),
+                "height": table.heights[row],
+                "width": table.widths[row],
+                "nr": number,
+                "markers": [],
+            }
+        )
     document = {"name": "", "target": TARGET, "aligner": ALIGNER}
     path.write_text(
         json.dumps({**document, "slices": slices}),
@@ -489,21 +492,32 @@ def _answers(
     final: _Table, own: npt.NDArray[np.float64]
 ) -> dict[str, SectionAnswer]:
     """Return each section's answer, in the final table's order."""
+    numbers = _ints(final.numbers)
+    flags = cast("list[bool]", final.bad.tolist())
+    anchorings = _anchorings(final.anchorings)
+    own_anchorings = _anchorings(own)
     return {
         section: SectionAnswer(
-            nr=int(final.numbers[row]),
-            bad=bool(final.bad[row]),
+            nr=numbers[row],
+            bad=flags[row],
             width=final.widths[row],
             height=final.heights[row],
-            anchoring=_numbers(final.anchorings[row]),
-            own_anchoring=_numbers(own[row]),
+            anchoring=anchorings[row],
+            own_anchoring=own_anchorings[row],
         )
         for row, section in enumerate(final.ids)
     }
 
 
-def _numbers(values: Sequence[float]) -> tuple[float, ...]:
-    return tuple(float(value) for value in values)
+def _ints(values: npt.NDArray[np.int64]) -> list[int]:
+    """Return an array's elements as Python ints (numpy leaves them bare)."""
+    return cast("list[int]", values.tolist())
+
+
+def _anchorings(values: npt.NDArray[np.float64]) -> list[tuple[float, ...]]:
+    """Return an array's rows as tuples of Python floats."""
+    rows = cast("list[list[float]]", values.tolist())
+    return [tuple(row) for row in rows]
 
 
 def _versions() -> Versions:

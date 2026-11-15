@@ -226,11 +226,8 @@ def _fetched(folder: Path, file: tuple[str, str]) -> Path:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        while chunk := stream.read(1 << 20):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def predict(
@@ -265,7 +262,10 @@ def predict(
         generator.reset()
         _load_weights(keras, model, weights.secondary)
         secondary = model.predict(generator, steps=steps, verbose=0)
-        anchorings = np.mean([anchorings, secondary], axis=0)
+        anchorings = cast(  # the two networks' answers averaged
+            "npt.NDArray[np.float64]",
+            np.mean([anchorings, secondary], axis=0),
+        )
 
     sizes = [_size(path) for path in images]
     return Prediction(
@@ -363,18 +363,8 @@ def _generator(keras: _Keras, images: Sequence[Path]) -> _Generator:
 
 
 class _DataGenerator(Protocol):
-    def flow_from_dataframe(
-        self,
-        frame: object,
-        *,
-        x_col: str,
-        y_col: None,
-        target_size: tuple[int, int],
-        batch_size: int,
-        color_mode: str,
-        shuffle: bool,
-        class_mode: None,
-    ) -> _Generator: ...
+    @property
+    def flow_from_dataframe(self) -> Callable[..., _Generator]: ...
 
 
 def _grey(image: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
