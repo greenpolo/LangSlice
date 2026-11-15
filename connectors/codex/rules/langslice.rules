@@ -7,7 +7,7 @@ prefix_rule(
     pattern = ["langslice-job"],
     decision = "allow",
     justification = "LangSlice job commands may run without a prompt",
-    match = ["langslice-job /data/M04 status", "langslice-job ops"],
+    match = ["langslice-job /data/M04 status", "langslice-job C:/data/M04 status", "langslice-job ops"],
     not_match = ["langslice linear run /data/M04", "python3 -c print(1)"],
 )
 

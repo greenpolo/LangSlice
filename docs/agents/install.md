@@ -14,7 +14,7 @@ each long step is doing; the install downloads several gigabytes.
 ## 1. Look for an existing install
 
 Run `langslice version` (find it first with `command -v langslice` on macOS and
-Linux, `where langslice` on Windows). If it prints a version, LangSlice is
+Linux, `where.exe langslice` on Windows). If it prints a version, LangSlice is
 installed: tell the user, offer the update below, and go to step 6.
 
 ## 2. Find conda
@@ -31,7 +31,9 @@ often has not loaded conda, so when `conda --version` fails, look further:
   `/opt/homebrew/Caskroom/miniforge/base` and
   `/usr/local/Caskroom/miniforge/base`.
 - Windows: `Scripts\conda.exe` under `miniforge3`, `mambaforge`, `miniconda3`
-  and `anaconda3`, in `%USERPROFILE%`, `%LOCALAPPDATA%` and `%ProgramData%`.
+  and `anaconda3`, in `%USERPROFILE%`, `%LOCALAPPDATA%\Programs` (where the
+  installer's window puts a per-user install; letter case does not matter),
+  `%LOCALAPPDATA%` and `%ProgramData%`.
 
 Use its full path wherever `conda` appears below.
 
@@ -48,12 +50,12 @@ rights. With their yes:
   ```
 
   conda is then `~/miniforge3/bin/conda`.
-- Windows: download
-  <https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe>
-  and run it from `cmd`:
+- Windows, in PowerShell (from Git Bash, pass each line in single quotes to
+  `powershell.exe -NoProfile -Command`):
 
-  ```bat
-  start /wait "" Miniforge3-Windows-x86_64.exe /InstallationType=JustMe /RegisterPython=0 /S /D=%UserProfile%\miniforge3
+  ```powershell
+  curl.exe -fsSLo Miniforge3-Windows-x86_64.exe https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe
+  Start-Process -Wait .\Miniforge3-Windows-x86_64.exe -ArgumentList "/InstallationType=JustMe", "/RegisterPython=0", "/S", "/D=$env:USERPROFILE\miniforge3"
   ```
 
   conda is then `%USERPROFILE%\miniforge3\Scripts\conda.exe`. Miniforge fails
@@ -63,6 +65,17 @@ rights. With their yes:
 Delete the installer afterwards. Do not run `conda init`: LangSlice does not
 need it, and the setup skill of step 6 adds only LangSlice's own folder to
 `PATH`.
+
+On Windows, check that long paths are on: a deformation's files have paths
+longer than 260 characters.
+
+```powershell
+(Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem).LongPathsEnabled
+```
+
+If it does not print `1`, tell the user. Turning it on needs an
+administrator: in PowerShell run as administrator,
+`Set-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem LongPathsEnabled 1`.
 
 ## 3. Make the environment
 

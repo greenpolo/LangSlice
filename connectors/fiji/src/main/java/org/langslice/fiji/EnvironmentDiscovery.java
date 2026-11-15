@@ -9,12 +9,16 @@ import java.util.prefs.Preferences;
 /** Discover prefixes without requiring a terminal's activated conda environment. */
 public final class EnvironmentDiscovery {
     private static final Preferences PREFS = Preferences.userNodeForPackage(EnvironmentDiscovery.class);
-    /** Where conda and mamba installers put their base environment, relative to the home folder. */
+    /** The folders conda and mamba installers put their base environment in (inside the folders condaRoots searches). */
     private static final List<String> CONDA_ROOTS = Arrays.asList("miniforge3", "miniconda3", "anaconda3", "mambaforge", "micromamba");
     private EnvironmentDiscovery() {}
+    /** The environment's Python: python.exe of a conda environment on Windows, Scripts\python.exe of a virtual environment on Windows, else bin/python. */
     public static Path python(Path prefix) {
-        Path windows = prefix.resolve("python.exe");
-        return Files.isRegularFile(windows) ? windows : prefix.resolve("bin/python");
+        for (String windows : Arrays.asList("python.exe", "Scripts/python.exe")) {
+            Path candidate = prefix.resolve(windows);
+            if (Files.isRegularFile(candidate)) return candidate;
+        }
+        return prefix.resolve("bin/python");
     }
     /** The environment the user saved in the environment dialog, or null. */
     public static Path saved() {
@@ -48,23 +52,45 @@ public final class EnvironmentDiscovery {
         result.sort(Comparator.comparingInt((Path path) -> path.equals(preferred) ? 0 : "langslice".equalsIgnoreCase(path.getFileName().toString()) ? 1 : 2).thenComparing(Path::toString));
         return result;
     }
+    static List<Path> condaRoots(Path home) { return condaRoots(home, System.getenv()); }
     /**
      * Conda base environments to search: the one named by CONDA_EXE or MAMBA_ROOT_PREFIX, then the installers'
-     * default folders in the home folder.
+     * folders in the home folder, in %LOCALAPPDATA%\Programs (where the graphical installer puts a per-user install,
+     * such as Miniforge3), in %LOCALAPPDATA% and in %ProgramData%, each folder's name in any letter case.
      */
-    static List<Path> condaRoots(Path home) {
-        List<Path> roots = new ArrayList<>();
-        String exe = System.getenv("CONDA_EXE");
+    static List<Path> condaRoots(Path home, Map<String, String> environment) {
+        Set<Path> roots = new LinkedHashSet<>();
+        String exe = environment.get("CONDA_EXE");
         if (exe != null && !exe.isEmpty()) {
             try { Path base = Paths.get(exe).getParent(); if (base != null && base.getParent() != null) roots.add(base.getParent()); }
             catch (InvalidPathException ignored) { }
         }
-        String mamba = System.getenv("MAMBA_ROOT_PREFIX");
+        String mamba = environment.get("MAMBA_ROOT_PREFIX");
         if (mamba != null && !mamba.isEmpty()) {
             try { roots.add(Paths.get(mamba)); } catch (InvalidPathException ignored) { }
         }
-        for (String name : CONDA_ROOTS) roots.add(home.resolve(name));
-        return roots;
+        List<Path> parents = new ArrayList<>();
+        parents.add(home);
+        String local = environment.get("LOCALAPPDATA");
+        String shared = environment.get("PROGRAMDATA");
+        try {
+            if (local != null && !local.isEmpty()) { parents.add(Paths.get(local, "Programs")); parents.add(Paths.get(local)); }
+            if (shared != null && !shared.isEmpty()) parents.add(Paths.get(shared));
+        } catch (InvalidPathException ignored) { }
+        for (Path parent : parents) roots.addAll(installsIn(parent));
+        return new ArrayList<>(roots);
+    }
+    /** The installers' folders in *parent*, and every folder there whose name differs from one only in letter case. */
+    static List<Path> installsIn(Path parent) {
+        List<Path> found = new ArrayList<>();
+        for (String name : CONDA_ROOTS) found.add(parent.resolve(name));
+        try (DirectoryStream<Path> dirs = Files.newDirectoryStream(parent)) {
+            for (Path dir : dirs) {
+                String name = dir.getFileName().toString();
+                for (String install : CONDA_ROOTS) if (install.equalsIgnoreCase(name) && !install.equals(name)) found.add(dir);
+            }
+        } catch (IOException ignored) { /* A missing folder holds no install. */ }
+        return found;
     }
     /**
      * {@code python -u -m langslice ARGS} in the environment *prefix* (the worker: {@code serve --stdio}; the
@@ -83,10 +109,6 @@ public final class EnvironmentDiscovery {
         if (base != null) bases.add(base);
         Path home = Paths.get(System.getProperty("user.home"));
         bases.addAll(condaRoots(home));
-        for (String variable : Arrays.asList("LOCALAPPDATA", "PROGRAMDATA")) {
-            String root = System.getenv(variable);
-            if (root != null) for (String install : CONDA_ROOTS) bases.add(Paths.get(root).resolve(install));
-        }
         for (Path root : bases) for (String relative : Arrays.asList("bin/conda", "Scripts/conda.exe", "_conda.exe")) executables.add(root.resolve(relative));
         for (Path executable : executables) {
             if (Files.isRegularFile(executable)) {

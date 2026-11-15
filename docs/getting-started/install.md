@@ -2,7 +2,7 @@
 
 LangSlice runs on Windows, macOS and Linux with Python 3.11. It takes about
 15 GB of disk space, with the atlas it downloads on first use. An NVIDIA GPU
-is optional: on Linux it makes deformable fits faster.
+is optional and makes deformable fits faster.
 
 [Let your AI app install it](#for-agents), or install it [yourself](#for-humans).
 
@@ -20,14 +20,28 @@ I want to install LangSlice. Read this and follow the steps: https://raw.githubu
 
 ### 1. Install LangSlice
 
-With conda ([Miniforge](https://conda-forge.org/download/); on Windows, in
-Miniforge Prompt):
+With conda ([Miniforge](https://conda-forge.org/download/), installed in a
+folder whose path has no spaces or non-ASCII letters; on Windows, in Miniforge
+Prompt):
 
 ```bash
 conda create -n langslice python=3.11
 conda activate langslice
 pip install "langslice[registration,mcp]"
 ```
+
+On Windows with an NVIDIA GPU, install PyTorch's CUDA build before the last
+line, because the PyTorch that pip installs on Windows uses the processor
+only:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cuXXX
+```
+
+Take the highest `cuXXX` that <https://download.pytorch.org/whl/torch/>
+offers for Python 3.11 and that is not above the CUDA version `nvidia-smi`
+shows. On Windows, also turn long paths on
+(see [Troubleshooting](../troubleshooting.md#windows-a-path-is-too-long)).
 
 Check it with `langslice version`. To update later, run the `pip install` line
 again with `-U`.
@@ -39,6 +53,9 @@ git clone https://github.com/greenpolo/LangSlice.git
 cd LangSlice
 conda env create -f environment.yml
 ```
+
+On Windows with an NVIDIA GPU, then run `conda activate langslice` and the
+PyTorch line above with `--force-reinstall` added.
 
 ### 2. Connect your AI app
 

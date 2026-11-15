@@ -26,6 +26,9 @@ register and what you know:
 Register the brain in /data/brains/M04. Coronal sections, Allen mouse atlas. The images are 0.65 µm per pixel. The sections are 40 µm thick and every sixth one was kept. M04_s07.tif has a torn left cortex. Never mirror a section.
 ```
 
+On Windows, name the folder as Windows writes it, such as
+`C:\Users\you\Documents\brains\M04`.
+
 Give the pixel size when the files don't record it: PNG and JPEG never do.
 Without it, LangSlice sizes each section to the width of the atlas. Name
 sections by filename. What you say must not change (“keep my positions”) is
