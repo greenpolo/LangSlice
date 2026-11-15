@@ -30,17 +30,25 @@ OUT: ``source_um`` (N x 2 for 2-D: the source point STalign's map takes each que
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sys
 import time
 import traceback
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from STalign import STalign, _lddmm_common
+
+#: The engines' shared GPU queue, ``../_gpu_queue.py``: ``-I`` leaves its
+#: folder off the path, and it goes last, so it hides no installed package.
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+if TYPE_CHECKING:  # the type checker reads it from the package
+    from langslice.engines._gpu_queue import gpu_turn
+else:
+    from _gpu_queue import gpu_turn
 
 CACHE = Path.home() / ".cache" / "langslice-stalign"
 ATLAS_UM = 50.0
@@ -128,29 +136,6 @@ def volume(atlas: str, image: str) -> tuple[np.ndarray, list[np.ndarray]]:
             for n, k, r in zip(block.shape, f, res, strict=True)]
     np.savez(held, I=block, x0=axes[0], x1=axes[1], x2=axes[2])
     return block, axes
-
-
-class gpu_turn:
-    """One engine at a time on the GPU (a lock file shared by every process)."""
-
-    def __init__(self, device: str):
-        self.device = device
-        self.waited_s = 0.0
-
-    def __enter__(self):
-        self.handle = None
-        if self.device.startswith("cuda"):
-            CACHE.mkdir(parents=True, exist_ok=True)
-            self.handle = open(CACHE / "gpu.lock", "w", encoding="utf-8")
-            asked = time.monotonic()
-            fcntl.flock(self.handle, fcntl.LOCK_EX)
-            self.waited_s = time.monotonic() - asked
-        return self
-
-    def __exit__(self, *exc):
-        if self.handle is not None:
-            fcntl.flock(self.handle, fcntl.LOCK_UN)
-            self.handle.close()
 
 
 def run(z, out: dict) -> None:

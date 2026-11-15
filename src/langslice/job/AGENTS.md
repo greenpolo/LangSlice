@@ -159,7 +159,10 @@ state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/undo.json    the undo and redo steps (undo_steps.py)
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
-                     filename when two images share a stem)
+                     filename when two images share a stem), valid on Windows
+                     (`layout.section_dirnames`: `aux_` for a device name, `_`
+                     for a trailing dot or space) and distinct ignoring case
+                     (a later clash gets `_2`, `_3`, ...)
   history.jsonl              every write that changed the section, its row and
                              registration number (history.py); read back by
                              undo, redo and restore_registration
@@ -357,7 +360,7 @@ longer exist be taken over by the images it is opened with.
   `JobLayout` (the folder, every name, `section_dir`, `section_history`,
   `undo_file`, `deformable_dir`, `masks_dir`, `images_dir`, `border_trace_dir`, `section_views_dir`,
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
-  `section_dirname`, `read_job_file` (refuses a newer `format_version`),
+  `section_dirnames`, `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
 - `plugin_store.py` — what tool plugins keep in the job folder
   (`docs/developers/plugins.md`): `register_layer(layout, record, tool, call, layer,

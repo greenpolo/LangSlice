@@ -3,7 +3,10 @@
 Load it with ``--plugins langslice.engines.emlddmm.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.emlddmm.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python`` (the
-``rigid_emlddmm`` interpreter), ``emlddmm_src`` (the fork's folder), ``brainglobe_dir`` (where the
+``rigid_emlddmm`` interpreter; by default the one of the conda
+environment of that name, ``_environment.env_python``), ``emlddmm_src``
+(the fork's folder; no default: a call without it is refused
+``ENGINE_MISSING``), ``brainglobe_dir`` (where the
 atlases are installed), ``device`` (``auto``: the GPU when there is one, else the CPU),
 ``dtype`` (``float64``), ``section_um`` (58.88),
 ``section_weight``
@@ -48,7 +51,6 @@ import csv
 import json
 import math
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -56,7 +58,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from langslice.engines import _blocks
+from langslice.engines import _blocks, _environment, _process_tree
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -68,12 +70,11 @@ from langslice.plugin_api import (
 
 HERE = Path(__file__).resolve().parent
 NAME = "emlddmm"
-#: Where SliceBench keeps the vendored sources the engines read by path.
-COMPARATOR_SRC = Path("~/Software/SliceBench/comparators/src").expanduser()
 REF = "langslice.engines.emlddmm.plugin:tools"
 DEFAULTS = {
-    "python": str(Path("~/.claude-science/conda/envs/rigid_emlddmm/bin/python").expanduser()),
-    "emlddmm_src": str(COMPARATOR_SRC / "emlddmm_fix"),
+    "python": _environment.env_python("rigid_emlddmm"),
+    # no portable default: SliceBench's comparators/src/emlddmm_fix
+    "emlddmm_src": "",
     "brainglobe_dir": str(Path("~/.brainglobe").expanduser()),
     "device": "auto",
     "dtype": "float64",
@@ -754,11 +755,9 @@ def _check_sorting(sorting: dict[str, Any]) -> dict[str, float]:
 def _require(config: dict[str, Any], *keys: str) -> None:
     """Refuse at call time when an environment or source folder the engine needs is missing."""
     for key in keys:
-        path = Path(str(config[key])).expanduser()
-        if not path.exists():
-            raise ToolError(RefusalCode.ENGINE_MISSING,
-                            f"{NAME} cannot run here: {key} {str(path)!r} does not exist (set "
-                            f"it in the plugin_config of {REF})")
+        # plugin_config holds JSON values
+        _environment.require_path(
+            NAME, REF, key, str(config[key]))  # pyright: ignore[reportAny]
 
 
 # --- the engine -------------------------------------------------------------------------------
@@ -774,10 +773,11 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
          "brainglobe_dir": config["brainglobe_dir"], "device": config["device"],
          "dtype": config["dtype"]})), **arrays)
     env = {**os.environ, "OMP_NUM_THREADS": str(config["threads"])}
-    done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-                          capture_output=True, stdin=subprocess.DEVNULL, text=True,
-                          env=env, cwd=str(folder),
-                          timeout=float(config["timeout_s"]))
+    # plugin_config holds JSON values
+    timeout_s = float(config["timeout_s"])  # pyright: ignore[reportAny]
+    done = _process_tree.run_engine(
+        [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
+        timeout_s=timeout_s, env=env, cwd=folder)
     (folder / "log.txt").write_text(done.stdout + done.stderr,
         encoding="utf-8")
     if done.returncode != 0 or not dst.exists():
@@ -789,10 +789,6 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
         raise ToolError(RefusalCode.FIT_FAILED,
                         f"emlddmm failed: {out['error']}")
     return out
-
-
-def _relative(path: Path, ctx: ToolContext) -> str:
-    return str(path.relative_to(ctx.job_dir)) if path.is_relative_to(ctx.job_dir) else str(path)
 
 
 def _arrays(st: dict[str, Any], queries: list[np.ndarray]) -> dict[str, Any]:
@@ -947,10 +943,10 @@ def _device(config: dict[str, Any]) -> str:
     if config["device"] != "auto":
         return str(config["device"])
     if config["python"] not in _DEVICES:
-        done = subprocess.run([config["python"], "-I", "-c",
-                               "import torch; print(torch.cuda.is_available())"],
-                              capture_output=True, text=True, timeout=120,
-                              stdin=subprocess.DEVNULL)
+        done = _process_tree.run_engine(
+            [config["python"], "-I", "-c",
+             "import torch; print(torch.cuda.is_available())"],
+            timeout_s=120)
         _DEVICES[config["python"]] = "cuda" if done.stdout.strip().endswith("True") else "cpu"
     return _DEVICES[config["python"]]
 
@@ -1133,7 +1129,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
         shown = sorted((r for r in rows if r["id"] in written),
                        key=lambda r: (not _flags(r["summary"]), -r["moved"][0]))[:OVERLAYS]
         drawn = ", ".join(f"{r['id']} ({r['moved'][0]:.2f})" for r in shown)
-        relative = _relative(folder, lctx)
+        relative = _blocks.job_path(lctx, folder)
         left = [f"{r['id']} ({r['estimated']['left_out_fraction']:.0%})" for r in rows
                 if r["estimated"] and r["estimated"]["left_out_fraction"] is not None]
         energy = (f"emlddmm's energy record: {relative}/energy.csv (plot: {relative}/energy.png)"
@@ -1176,7 +1172,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                        "largest_snap_um": round(max(abs(s["snap_um"]) for s in secs), 1),
                        "device": config["device"]
                        + (" (the fit takes tens of minutes)" if config["device"] == "cpu" else ""),
-                       "files": _relative(folder, ctx)})
+                       "files": _blocks.job_path(ctx, folder)})
 
 
 # --- emlddmm_plane ----------------------------------------------------------------------------
@@ -1231,7 +1227,7 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                 "spacing_shift_mm": float(shift_mm)}
     _write_files(st, out, folder, secs, A, A0, A2d, {"proposed_plane": proposal, "sections": rows},
                  asked, _chosen(st, config, cfg), config)
-    pictures = []
+    pictures: list[Image.Image] = []
     if view:
         for j in sorted({int(round(v)) for v in np.linspace(0, len(secs) - 1,
                                                             min(OVERLAYS, len(secs)))}):
@@ -1247,7 +1243,7 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                                    "shift_mm": round(float(shift_mm), 3)},
                        "rows": rows, "left_out": st["left_out"],
                        **({} if _captured(out) else {"energy": "not captured"}),
-                       "files": _relative(folder, ctx)}, pictures)
+                       "files": _blocks.job_path(ctx, folder)}, pictures)
 
 
 # --- the factory ------------------------------------------------------------------------------
