@@ -32,9 +32,9 @@ jobs:
           python -m pip install uv
           # itk's Linux wheels ship a WHEEL file neither pip check nor uv can
           # read; any other finding fails the job
-          if ! out=$(uv pip check --python "$(python -c 'import sys; print(sys.executable)')" 2>&1); then
+          if ! out=$(NO_COLOR=1 uv pip check --python "$(python -c 'import sys; print(sys.executable)')" 2>&1); then
             echo "$out"
-            if echo "$out" | grep -v -e '^Found 1 incompatibility$' -e 'The package `itk` is broken' | grep -q .; then
+            if echo "$out" | grep -v -e 'Found 1 incompatibilit' -e 'The package `itk` is broken' | grep -q .; then
               exit 1
             fi
           fi
