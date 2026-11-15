@@ -17,9 +17,10 @@ class FitFlag(TextEnum):
     DISPLACEMENT_OUTSIZED = "DISPLACEMENT_OUTSIZED"
     #: The deformation folds more of the tissue than its limit.
     FOLDS = "FOLDS"
-    #: A region shrinks below its area limit.
+    #: A region shrinks below its area limit. Read from saved records only:
+    #: a fit reports area ratios without a flag.
     REGION_COMPRESSED = "REGION_COMPRESSED"
-    #: A region grows past its area limit.
+    #: A region grows past its area limit. Read from saved records only.
     REGION_EXPANDED = "REGION_EXPANDED"
     #: A region's warped area cannot be measured: it folds over itself.
     REGION_FOLDED = "REGION_FOLDED"

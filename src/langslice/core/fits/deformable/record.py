@@ -32,8 +32,10 @@ as the fit made them (the ``fields`` module); a map made elsewhere and a
 restricted fit store their fields whole, as float16.
 
 Plausibility diagnostics are reported, never enforced: a flag says the warp
-compresses, expands or folds tissue more than a rough biological limit, and
-a person or agent decides what that means.
+folds tissue, drops or turns a region inside out, or moves the tissue further
+than its brain allows, and a person or agent decides what that means. Each
+region's area ratio is reported without a flag: a large change in a region's
+area is as often the warp correcting the placement as distorting the tissue.
 """
 
 from __future__ import annotations
@@ -73,10 +75,6 @@ from langslice.core.stack.json_reads import (
 
 logger = logging.getLogger(__name__)
 
-#: Area ratio (warped / placed) limits for solid tissue regions.
-TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
-#: Looser limits for the ventricular system, which collapses or dilates freely.
-VENTRICLE_AREA_RATIO_LIMITS = (0.1, 10.0)
 #: Regions smaller than this (placed area, mm^2, adult mouse; times the brain
 #: scale squared) are reported but never flagged.
 MIN_FLAG_AREA_MM2 = 0.02
@@ -185,6 +183,9 @@ def diagnose(
     section-to-placed map, so ``area_ratio = N_R / sum_{p in R} J(p)``
     (warped over placed; below 1 the warp compresses the region onto the
     section). The raster ratio of pixel counts is reported alongside.
+    Area ratios raise no flag (a region whose area changes most under the
+    warp is as often moved closer to its true outline as further from
+    it); a region that vanishes or folds over itself does.
     """
     jacobian = jacobian_determinant(field_mm, mm_per_px)
     in_tissue = jacobian[footprint]
@@ -202,7 +203,6 @@ def diagnose(
     flags: list[dict[str, Any]] = []
     for k, uid in enumerate(int(i) for i in ids):
         ventricle = uid in ventricles
-        limits = VENTRICLE_AREA_RATIO_LIMITS if ventricle else TISSUE_AREA_RATIO_LIMITS
         placed_mm2 = float(placed_count[k] * pixel_mm2)
         # None: the warp turns this region inside out (non-positive total Jacobian).
         ratio: float | None = 0.0
@@ -214,7 +214,6 @@ def diagnose(
             "area_ratio": ratio,
             "raster_area_ratio": float(count[k] / placed_count[k]) if placed_count[k] else None,
             "ventricle": ventricle, "excluded": uid in excluded,
-            "limits": list(limits),
         }
         regions.append(entry)
         if uid in excluded or placed_mm2 < min_flag_area_mm2:
@@ -224,14 +223,9 @@ def diagnose(
             code = FitFlag.REGION_VANISHED
         elif ratio is None:
             code = FitFlag.REGION_FOLDED
-        elif ratio < limits[0]:
-            code = FitFlag.REGION_COMPRESSED
-        elif ratio > limits[1]:
-            code = FitFlag.REGION_EXPANDED
         if code:
             flags.append({"code": code, "id": uid, "acronym": entry["acronym"],
-                          "area_ratio": ratio, "limits": list(limits),
-                          "ventricle": ventricle})
+                          "area_ratio": ratio, "ventricle": ventricle})
     if fold_fraction > FOLD_FRACTION_LIMIT:
         flags.append({"code": FitFlag.FOLDS, "fold_fraction": fold_fraction,
                       "limit": FOLD_FRACTION_LIMIT})
@@ -257,8 +251,6 @@ def diagnose(
         "regions": regions,
         "flags": flags,
         "thresholds": {
-            "tissue_area_ratio": list(TISSUE_AREA_RATIO_LIMITS),
-            "ventricle_area_ratio": list(VENTRICLE_AREA_RATIO_LIMITS),
             "min_flag_area_mm2": min_flag_area_mm2,
             "fold_fraction": FOLD_FRACTION_LIMIT,
             "outsized_max_fraction": OUTSIZED_MAX_FRACTION,

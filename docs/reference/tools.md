@@ -783,9 +783,8 @@ a position and a transform.
 | `detail` | `standard` | `coarse`, `standard` or `fine` (10 µm working pixels, five pyramid levels): finer is slower. |
 | `view` | true | Return each section's overlay. |
 
-The reply gives displacement, fold fraction and plausibility flags (regions
-compressed, expanded, vanished or folded beyond limits; outsized
-displacement), which report concerns and reject nothing. Changing a section's
+The reply gives displacement, fold fraction and plausibility flags (tissue
+folded, regions vanished or folded over themselves; outsized displacement), which report concerns and reject nothing. Changing a section's
 position, orientation, cutting angles or transform clears its deformation.
 
 **In a run when** Nonlinear is on. **Switch off:** `fireants_syn`. Options:

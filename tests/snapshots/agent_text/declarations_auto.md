@@ -560,8 +560,8 @@ Args:
 
 Returns:
     Per section the displacement (median and max, mm, over the placed atlas),
-    the fold fraction and plausibility flags (regions compressed,
-    expanded, vanished or folded beyond limits; displacement outsized
+    the fold fraction and plausibility flags (tissue folded, regions
+    vanished or folded over themselves; displacement outsized
     for the section, measured beyond any landmark warp); the
     `inputs` it used (section image, atlas image as resolved, mask, damage
     regions left out, intensity scaling) and `estimated` (the fraction of

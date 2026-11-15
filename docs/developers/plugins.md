@@ -416,7 +416,7 @@ with `expect=`. Each call's files go in a folder of its own,
 `plugins/<tool>/calls/NNNN_<kind>/`, made when the call starts, so calls running at once
 never share one. A notice words a fit's plausibility flags as the native fits do: each code
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
-on a `DeformationProposal.summary`: `FOLDS, REGION_COMPRESSED (CA1, DG)`).
+on a `DeformationProposal.summary`: `FOLDS, REGION_VANISHED (CA1, DG)`).
 
 Brainways ships as `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Like STalign and emlddmm it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
 

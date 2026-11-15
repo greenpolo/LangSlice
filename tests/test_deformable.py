@@ -164,7 +164,7 @@ def test_exclusion_blanks_intensity_images_and_includes_descendants(atlas, warpe
     assert np.isfinite(grid_to_native).all()
 
 
-def test_synthetic_compression_flags_tissue_but_not_ventricle():
+def test_synthetic_compression_is_reported_not_flagged():
     size = 200
     yy, xx = np.indices((size, size), dtype=np.float64)
     placed = np.zeros((size, size), dtype=np.int32)
@@ -183,8 +183,9 @@ def test_synthetic_compression_flags_tissue_but_not_ventricle():
     ratios = {r["id"]: r["area_ratio"] for r in report["regions"]}
     assert ratios[CTX] == pytest.approx(1 / k ** 2, rel=0.1)
     assert ratios[VL] == pytest.approx(1 / k ** 2, rel=0.1)
-    flagged = {f["id"]: f["code"] for f in report["flags"] if "id" in f}
-    assert flagged == {CTX: "REGION_COMPRESSED"}  # ventricles get the looser limit
+    # Area ratios are reported, never flagged: a 1/k^2 region raises no region flag.
+    assert not [f for f in report["flags"] if "id" in f]
+    assert {r["id"]: r["ventricle"] for r in report["regions"]} == {CTX: False, VL: True}
     assert report["fold_fraction"] == 0
 
 

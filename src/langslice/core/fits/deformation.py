@@ -508,7 +508,7 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
 def flag_words(summary: dict[str, Any]) -> str:
     """A fit's flags (:func:`summary`'s ``flags`` and ``more_flags``) in a
     line: each code once, in order, a region flag with its regions
-    (``FOLDS, REGION_COMPRESSED (CA1, DG), REGION_EXPANDED (VL)``); "none"
+    (``FOLDS, REGION_VANISHED (CA1, DG), REGION_FOLDED (VL)``); "none"
     when there are none."""
     regions: dict[str, list[str]] = {}
     for flag in summary.get("flags") or []:

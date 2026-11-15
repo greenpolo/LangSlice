@@ -6794,7 +6794,7 @@
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "DeformableRecord.load", "count": 8},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "DeformableRecord.metadata", "count": 4},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "DeformableRecord.save", "count": 3},
-{"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "diagnose", "count": 11},
+{"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "diagnose", "count": 10},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "displacement_report", "count": 4},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/record.py", "symbol": "jacobian_determinant", "count": 2},
 {"rule": "ruff:E501", "path": "src/langslice/core/fits/deformable/regions.py", "symbol": "_joint_names", "count": 2},
