@@ -1,5 +1,4 @@
-"""In-tree engines: STalign, SPOmiAlign, emlddmm and Brainways, loaded as tool
-plugins.
+"""In-tree engines: STalign, SPOmiAlign, emlddmm and Brainways tool plugins.
 
 Each engine is a package of ``plugin.py`` (the adapter, run in LangSlice's
 process, importing only :mod:`langslice.plugin_api`) and ``engine.py`` (the
