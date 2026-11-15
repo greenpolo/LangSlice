@@ -775,7 +775,8 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
          "dtype": config["dtype"]})), **arrays)
     env = {**os.environ, "OMP_NUM_THREADS": str(config["threads"])}
     done = subprocess.run([config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-                          capture_output=True, text=True, env=env, cwd=str(folder),
+                          capture_output=True, stdin=subprocess.DEVNULL, text=True,
+                          env=env, cwd=str(folder),
                           timeout=float(config["timeout_s"]))
     (folder / "log.txt").write_text(done.stdout + done.stderr,
         encoding="utf-8")
@@ -948,7 +949,8 @@ def _device(config: dict[str, Any]) -> str:
     if config["python"] not in _DEVICES:
         done = subprocess.run([config["python"], "-I", "-c",
                                "import torch; print(torch.cuda.is_available())"],
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, text=True, timeout=120,
+                              stdin=subprocess.DEVNULL)
         _DEVICES[config["python"]] = "cuda" if done.stdout.strip().endswith("True") else "cpu"
     return _DEVICES[config["python"]]
 

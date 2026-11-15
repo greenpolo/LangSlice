@@ -105,7 +105,8 @@ def _make(layout: JobLayout) -> bool:
     uv = shutil.which("uv")
     command = ([uv, "venv", "--quiet", "--python", sys.executable, str(folder)] if uv
                else [sys.executable, "-m", "venv", str(folder)])
-    subprocess.run(command, check=True, capture_output=True)
+    subprocess.run(command, check=True, capture_output=True,
+                   stdin=subprocess.DEVNULL)
     (_site_packages(folder) / PARENT_PTH).write_text(
         "".join(f"import site; site.addsitedir({str(path)!r})\n" for path in _parent_sites()),
         encoding="utf-8")
@@ -180,7 +181,8 @@ def _pip(folder: Path, arguments: list[str]) -> None:
     # The installer's own encoding, not the locale's: Windows' code page
     # cannot decode every byte of uv's UTF-8.
     done = subprocess.run(command, capture_output=True, encoding="utf-8",
-                          errors="replace", timeout=INSTALL_TIMEOUT_S)
+                          errors="replace", timeout=INSTALL_TIMEOUT_S,
+                          stdin=subprocess.DEVNULL)
     if done.returncode != 0:
         raise subprocess.SubprocessError(
             (done.stderr or done.stdout).strip()[-4000:] or "the install failed")
@@ -249,5 +251,6 @@ def python(folder: str, rest: list[str]) -> int:
     sys.stdout.flush()
     sys.stderr.flush()
     if os.name == "nt":  # no exec there: the script's exit code is passed on
-        return subprocess.call([str(interpreter), *rest])
+        # the user's script reads the caller's stdin, as `python` itself would
+        return subprocess.call([str(interpreter), *rest], stdin=None)
     os.execv(interpreter, [str(interpreter), *rest])

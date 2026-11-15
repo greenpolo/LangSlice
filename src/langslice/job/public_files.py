@@ -117,8 +117,9 @@ def source() -> dict[str, Any]:
 
     def git(*args: str) -> str | None:
         try:
-            done = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
-                                  text=True, timeout=10, check=True)
+            done = subprocess.run(
+                ["git", "-C", str(root), *args], capture_output=True,
+                stdin=subprocess.DEVNULL, text=True, timeout=10, check=True)
         except (OSError, subprocess.SubprocessError):
             return None
         return done.stdout.strip()
