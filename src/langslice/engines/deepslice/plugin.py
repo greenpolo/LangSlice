@@ -4,12 +4,14 @@ Load it with ``--plugins langslice.engines.deepslice.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.deepslice.plugin:tools"])``;
 it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``ensemble`` (true: the paper's two-network model,
-DeepSlice's own default for mouse) and ``long_edge`` (3072: the long edge,
-in pixels, of the image written for DeepSlice; a file of that size or
-smaller goes in with its delivered pixels, and DeepSlice shrinks it to 299
-itself). DeepSlice runs in this process (``engine.py``), imported only when
-the tool runs; without the ``langslice[engines]`` extra a call is refused
-``ENGINE_MISSING``.
+DeepSlice's own default for mouse), ``long_edge`` (3072: the long edge, in
+pixels, of the image written for DeepSlice; a file of that size or smaller
+goes in with its delivered pixels, and DeepSlice shrinks it to 299 itself)
+and ``cache_folder`` (where its weights are kept; empty is
+``~/.cache/langslice/deepslice``). DeepSlice 1.2.8 is vendored beside this
+module and runs in this process (``engine.py``) on TensorFlow, imported
+only when the tool runs; without the ``langslice[engines]`` extra, or when
+its weights cannot be fetched, a call is refused ``ENGINE_MISSING``.
 
 Offered on the Allen mouse atlases and ``ccfv3augmented_mouse_25um``,
 coronal jobs only; absent (and unnamed in any other tool's text) elsewhere.
@@ -17,7 +19,7 @@ Its inputs are the sections as the agent oriented them (quarter turn and
 flip), the delivered pixels, no preprocessing. Its parts: ``positions``,
 ``angles`` and, only while the transform task is on and ``elastix_affine``
 is on (the marks in the description), ``transform``. A call writes the
-parts choice for as one undo step (``writes.py``); an empty ``write``
+parts asked for as one undo step (``writes.py``); an empty ``write``
 proposes and writes nothing. Every call saves
 ``plugins/deepslice_place/calls/<n>/``: the images written, DeepSlice's run
 (``engine/``), ``out.json`` (the run's request and answer),
@@ -33,13 +35,14 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 from PIL import Image
 
 from langslice.engines.deepslice import engine, reply, writes
 from langslice.engines.deepslice.engine import EngineRequest
+from langslice.engines.deepslice.network import CACHE_FOLDER
 from langslice.engines.deepslice.proposal import (
     ProposalRow,
     proposal_rows,
@@ -61,6 +64,8 @@ from langslice.plugin_api import (
     ToolSpec,
 )
 
+#: The plugin's options (``plugin_config``).
+OPTIONS = ("ensemble", "long_edge", "cache_folder")
 #: The reference a job names this plugin by.
 REF = "langslice.engines.deepslice.plugin:tools"
 #: What a ``plugin_config`` value is, as JSON gives it.
@@ -80,22 +85,69 @@ class Options:
         Whether DeepSlice averages its two mouse networks.
     long_edge
         The long edge, in pixels, of the image written for DeepSlice.
+    cache_folder
+        Where DeepSlice's weights are kept; empty is
+        ``~/.cache/langslice/deepslice``.
     """
 
     ensemble: bool = True
     long_edge: int = 3072
+    cache_folder: str = ""
+
+    @classmethod
+    def from_configs(
+        cls, configs: Sequence[Mapping[str, ConfigValue]]
+    ) -> Options:
+        """Read the options a job's ``plugin_config`` gives.
+
+        Parameters
+        ----------
+        configs
+            The plugin's entry of ``plugin_config``, when the job has one;
+            empty gives the defaults.
+
+        Returns
+        -------
+        Options
+            The options.
+
+        Raises
+        ------
+        ValueError
+            For an option the plugin does not take.
+        """
+        given: dict[str, ConfigValue] = {}
+        for config in configs:
+            given.update(config)
+        unknown = sorted(set(given) - set(OPTIONS))
+        if unknown:
+            raise ValueError(
+                f"deepslice_place takes the options {', '.join(OPTIONS)}; "
+                f"got {', '.join(unknown)}"
+            )
+        return cls(
+            ensemble=bool(given.get("ensemble", cls.ensemble)),
+            long_edge=int(given.get("long_edge", cls.long_edge)),
+            cache_folder=str(given.get("cache_folder", cls.cache_folder)),
+        )
+
+    @property
+    def weights_folder(self) -> Path:
+        """Return the folder that keeps DeepSlice's weights."""
+        return Path(self.cache_folder) if self.cache_folder else CACHE_FOLDER
 
 
 # --- the agent-facing declaration -------------------------------------------
 
 
 def deepslice_place(
-    sections: list[str] = [],  # noqa: B006 (a declaration's default)
+    *,
+    sections: list[str] = [],  # noqa: B006 - a declaration's default
     order: list[str] = [],  # noqa: B006
     bad_sections: list[str] | None = None,
     write: list[str] | None = None,
     view: bool = False,
-) -> dict[str, Any]:
+) -> None:
     """Place sections with DeepSlice, a network trained on mouse brain sections.
 
     DeepSlice looks at each section on its own, without the atlas, and
@@ -162,14 +214,15 @@ def deepslice_place(
 # --- the factory ------------------------------------------------------------
 
 
-def tools(config: Mapping[str, ConfigValue] | None = None) -> list[ToolSpec]:
+def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
     """Return the plugin's one tool, ``deepslice_place``.
 
     Parameters
     ----------
-    config
-        The job's ``plugin_config`` for this plugin: ``ensemble`` and
-        ``long_edge``; None, or a key left out, keeps the default.
+    *config
+        The plugin's entry of the job's ``plugin_config`` (``ensemble``,
+        ``long_edge``, ``cache_folder``), when the job has one; the loader
+        passes it as the one argument.
 
     Returns
     -------
@@ -177,14 +230,10 @@ def tools(config: Mapping[str, ConfigValue] | None = None) -> list[ToolSpec]:
         The tool, offered on the Allen mouse atlases and the augmented
         CCFv3 atlas, coronal jobs only.
     """
-    given = dict(config or {})
-    defaults = Options()
-    options = Options(
-        ensemble=bool(given.get("ensemble", defaults.ensemble)),
-        long_edge=int(given.get("long_edge", defaults.long_edge)),
-    )
+    options = Options.from_configs(config)
     meta = {
         "method": "DeepSlice 1.2.8",
+        "commit": "b0d6965",
         "paper": "Carey et al. 2023, Nat Commun",
         "engine": "langslice.engines.deepslice",
         "ensemble": options.ensemble,
@@ -305,6 +354,7 @@ def place(
     if ordered and interval:
         signed = -interval  # anterior first: DeepSlice's depth falls
 
+    weights = engine.fetched_weights(options.weights_folder)
     folder = _call_folder(context)
     images = tuple(
         (section, _write_png(context, section, folder, options.long_edge))
@@ -316,6 +366,7 @@ def place(
         bad_sections=tuple(bad),
         interval_um=signed,
         ensemble=options.ensemble,
+        weights=weights,
         out_folder=folder / "engine",
     )
     run = engine.run_deepslice(request)

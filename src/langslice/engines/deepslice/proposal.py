@@ -54,8 +54,6 @@ class ProposalRow:
     ----------
     id
         The section's filename.
-    staged
-        The name DeepSlice read its image under.
     nr
         DeepSlice's section number.
     bad
@@ -72,7 +70,6 @@ class ProposalRow:
     """
 
     id: str
-    staged: str
     nr: int | None
     bad: bool
     final: Placement | None
@@ -123,7 +120,6 @@ def proposal_rows(context: ToolContext, run: EngineRun) -> list[ProposalRow]:
         rows.append(
             ProposalRow(
                 id=section,
-                staged=answer.staged,
                 nr=answer.nr,
                 bad=answer.bad,
                 final=final_plane,

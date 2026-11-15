@@ -1,16 +1,19 @@
 """The DeepSlice tool (``langslice.engines.deepslice``), in LangSlice's process.
 
 Most of these need no TensorFlow: where the tool is offered, its declaration,
-the refusals before DeepSlice runs (the extra or its weights missing, bad
-arguments), the staging names and the reply's words. The last test runs the
-real model (the ``langslice[engines]`` extra) on a few small images, twice in
-one process; it is ``slow`` and skips without the extra.
+the refusals before DeepSlice runs (the extra missing, bad arguments, an
+unknown option), the weights' fetch and checksum, the vendored angle vote
+and spacing, and the reply's words. The last test runs the real model (the
+``langslice[engines]`` extra) on a few small images, twice in one process;
+it is ``slow`` and skips without the extra.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import inspect
+import io
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +23,7 @@ import pytest
 from PIL import Image
 
 from langslice.doors.tools.toolbox import build_tools
-from langslice.engines.deepslice import engine, reply
+from langslice.engines.deepslice import alignment, engine, network, reply
 from langslice.engines.deepslice.proposal import (
     Placement,
     ProposalRow,
@@ -169,26 +172,59 @@ def test_a_call_without_the_extra_is_refused_engine_missing(
     assert not (tmp_path / "images" / "langslice" / "plugins").exists()
 
 
-def test_the_weight_files_are_checked_before_deepslice_runs(
-    tmp_path: Path, monkeypatch
-):
-    folder = tmp_path / "metadata"
-    (folder / "weights").mkdir(parents=True)
-    monkeypatch.setattr(engine, "REQUIRED_MODULES", ())
-    monkeypatch.setattr(engine, "_metadata_folder", lambda: folder)
-    engine.require_engine()  # missing files in a folder it can write: downloaded on first use
+class _Served:
+    """What ``urlopen`` answers in the weight test: fixed bytes."""
 
-    broken = folder / engine.MOUSE_WEIGHTS[1]
-    broken.write_bytes(b"<html>503</html>")
-    with pytest.raises(ToolError, match="not a weight file") as refused:
-        engine.require_engine()
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+    def __enter__(self):
+        return io.BytesIO(self.data)
+
+    def __exit__(self, *details) -> None:
+        return None
+
+
+def test_the_weights_are_fetched_once_and_checked(tmp_path: Path, monkeypatch):
+    data = b"weights"
+    digest = hashlib.sha256(data).hexdigest()
+    fetched: list[str] = []
+
+    def urlopen(url, timeout):
+        fetched.append(url)
+        return _Served(data)
+
+    monkeypatch.setattr(network.urllib.request, "urlopen", urlopen)
+    names = [network.XCEPTION[0], network.PRIMARY[0], network.SECONDARY[0]]
+    for role, name in zip(
+        ("XCEPTION", "PRIMARY", "SECONDARY"), names, strict=True
+    ):
+        monkeypatch.setattr(network, role, (name, digest))
+    weights = network.fetch_weights(tmp_path / "cache")
+    assert weights.primary.read_bytes() == data
+    assert fetched == [f"{network.BUCKET}/{name}" for name in names]
+    network.fetch_weights(tmp_path / "cache")
+    assert len(fetched) == 3  # kept: not fetched again
+
+    monkeypatch.setattr(network, "SECONDARY", (names[2], "0" * 64))
+    with pytest.raises(ToolError, match="could not be fetched") as refused:
+        engine.fetched_weights(tmp_path / "cache")
     assert refused.value.code == "ENGINE_MISSING"
-    broken.write_bytes(engine.HDF5_SIGNATURE + b"\0" * 8)
-    engine.require_engine()
+    assert not list((tmp_path / "cache").glob("*.part"))
 
-    monkeypatch.setattr(engine, "_is_writable", lambda _folder: False)
-    with pytest.raises(ToolError, match="cannot write"):
-        engine.require_engine()
+
+def test_an_unknown_option_is_refused_when_the_plugin_loads():
+    from langslice.engines.deepslice import plugin
+
+    assert (
+        plugin.tools({"long_edge": 1024})[0].handler.options.long_edge == 1024
+    )
+    assert (
+        plugin.tools()[0].handler.options.weights_folder
+        == network.CACHE_FOLDER
+    )
+    with pytest.raises(ValueError, match="takes the options"):
+        plugin.tools({"python": "/usr/bin/python"})
 
 
 @pytest.mark.parametrize(
@@ -213,9 +249,10 @@ def test_bad_arguments_are_refused_before_deepslice_runs(
 ):
     monkeypatch.setattr(engine, "require_engine", lambda: None)
 
-    def never(_request):
+    def never(*_arguments):
         raise AssertionError("DeepSlice ran")
 
+    monkeypatch.setattr(engine, "fetched_weights", never)
     monkeypatch.setattr(engine, "run_deepslice", never)
     reply_ = _call(tmp_path, **arguments)
     assert reply_["error"] == "BAD_ARGS", reply_
@@ -225,28 +262,48 @@ def test_bad_arguments_are_refused_before_deepslice_runs(
 # --- the pieces of a run --------------------------------------------------------------------------
 
 
-def test_staged_names_carry_one_section_number_or_the_id():
-    order = [f"x_s{index:03d}.png" for index in range(3)]
-    names = engine.staged_names(order, list(reversed(order)))
-    assert names == {
-        "x_s002.png": "section_s001.png",
-        "x_s001.png": "section_s002.png",
-        "x_s000.png": "section_s003.png",
-    }
-    long_order = [f"s{index}" for index in range(1000)]
-    assert (
-        engine.staged_names(long_order, long_order)["s999"]
-        == "section_s1000.png"
+def _coronal(depth: float, tilt: float = 0.0) -> np.ndarray:
+    """A coronal anchoring at ``depth`` voxels, tilted dorsoventrally."""
+    return np.array([0.0, depth, 320.0, 456.0, 0.0, 0.0, 0.0, tilt, -320.0])
+
+
+def test_the_vote_turns_every_section_to_the_good_sections_angles():
+    planes = np.array(
+        [
+            _coronal(depth, tilt)
+            for depth, tilt in (
+                (100.0, 8.0),
+                (200.0, 8.0),
+                (300.0, 8.0),
+                (400.0, -40.0),
+            )
+        ]
     )
-    assert engine.staged_names(["a.png", "b.tif", "c.JPG"], []) == {
-        "a.png": "a.png",
-        "b.tif": "b.tif.png",
-        "c.JPG": "c.JPG",
-    }
-    with pytest.raises(ToolError, match="path separator"):
-        engine.staged_names(["a/b.png"], [])
-    with pytest.raises(ToolError, match="share a staged name"):
-        engine.staged_names(["a", "a.png"], [])
+    bad = np.array([False, False, False, True])
+    turned, votes = alignment.propagated(planes, bad)
+    assert len(votes) == 2
+    first_dv = alignment._angle(planes[0], alignment.DORSOVENTRAL)
+    assert votes[0][0] == pytest.approx(
+        first_dv, abs=1e-9
+    )  # the bad one left out
+    for row in turned:  # the bad section turned too
+        assert alignment._angle(row, alignment.DORSOVENTRAL) == pytest.approx(
+            votes[-1][0], abs=1e-6
+        )
+
+
+def test_spacing_puts_the_sections_one_interval_apart_along_the_index():
+    planes = np.array(
+        [_coronal(depth) for depth in (300.0, 292.0, 283.0, 271.0)]
+    )
+    numbers = np.arange(1, 5)
+    good = np.zeros(4, np.bool_)
+    spaced, used = alignment.spaced(planes, numbers, good, thickness_um=-200.0)
+    assert used.thickness_voxels == -8.0 and not used.estimated
+    assert used.direction == alignment.CAUDAL_ROSTRO
+    assert np.diff(spaced[:, 1]) == pytest.approx([-8.0, -8.0, -8.0])
+    _, estimated = alignment.spaced(planes, numbers, good, thickness_um=None)
+    assert estimated.estimated and -12.0 < estimated.thickness_voxels < -8.0
 
 
 def test_the_in_plane_change_is_worded_against_the_held_transform():
@@ -254,14 +311,8 @@ def test_the_in_plane_change_is_worded_against_the_held_transform():
     assert reply.in_plane_change(identity, identity, 400, 300) == (
         "turn 0.0 deg counter-clockwise, scale x 1.00 y 1.00, shift 0% right, 0% down"
     )
-    turned = (
-        np.cos(np.radians(10)),
-        np.sin(np.radians(10)),
-        -0.2,
-        -np.sin(np.radians(10)),
-        np.cos(np.radians(10)),
-        0.05,
-    )
+    cos, sin = np.cos(np.radians(10)), np.sin(np.radians(10))
+    turned = (cos, sin, -0.2, -sin, cos, 0.05)
     assert reply.in_plane_change(turned, identity, 300, 300) == (
         "turn 10.0 deg counter-clockwise, scale x 1.00 y 1.00, shift 20% left, 5% down"
     )
@@ -278,7 +329,6 @@ def test_the_stack_angles_are_the_median_of_the_placed_rows():
         plane = Placement(1.0, pitch, yaw, None) if placed else None
         return ProposalRow(
             id=name,
-            staged=name,
             nr=None,
             bad=False,
             final=plane,
@@ -303,15 +353,17 @@ def test_the_stack_angles_are_the_median_of_the_placed_rows():
 
 @pytest.mark.slow
 @pytest.mark.skipif(not HAS_EXTRA, reason="needs the langslice[engines] extra")
-def test_deepslice_runs_in_this_process_and_alike_twice(tmp_path: Path):
-    """Four small blobs; a second run in the process answers exactly as the first
-    (Keras's session is cleared before each), and nothing reaches the GPU."""
+def test_deepslice_runs_in_this_process_and_alike_twice(
+    tmp_path: Path, capsys
+):
+    """Four small blobs (DeepSlice's vote fails on two voting sections or
+    fewer); a second run in the process answers exactly as the first (Keras's
+    session is cleared before each), nothing is printed, nothing reaches the
+    GPU. Fetches the weights on first use."""
     rng = np.random.default_rng(0)
     images = []
-    for index in range(
-        4
-    ):  # DeepSlice's vote fails with two voting sections or fewer
-        y, x = np.mgrid[:240, :320]
+    y, x = np.mgrid[:240, :320]
+    for index in range(4):
         blob = ((x - 160) / (120 - 10 * index)) ** 2 + (
             (y - 120) / 90
         ) ** 2 < 1
@@ -323,6 +375,7 @@ def test_deepslice_runs_in_this_process_and_alike_twice(tmp_path: Path):
             "RGB"
         ).save(path)
         images.append((path.name, path))
+    weights = engine.fetched_weights(network.CACHE_FOLDER)
 
     def run(folder: str, order: tuple[str, ...]) -> engine.EngineRun:
         return engine.run_deepslice(
@@ -332,6 +385,7 @@ def test_deepslice_runs_in_this_process_and_alike_twice(tmp_path: Path):
                 bad_sections=(images[0][0],),
                 interval_um=-100.0 if order else None,
                 ensemble=True,
+                weights=weights,
                 out_folder=tmp_path / folder,
             )
         )
@@ -345,13 +399,17 @@ def test_deepslice_runs_in_this_process_and_alike_twice(tmp_path: Path):
         assert answer.bad is (section == images[0][0])
     assert len(first.propagation) == 2 and first.spacing is None
     assert first.final_json.exists() and first.own_json.exists()
-    assert (tmp_path / "first" / "deepslice.json").exists()
+    assert sorted(answer.nr for answer in first.sections.values()) == [
+        1,
+        2,
+        3,
+        4,
+    ]
+    assert capsys.readouterr().out == ""
 
     spaced = run("spaced", tuple(name for name, _ in images))
-    assert (
-        spaced.spacing is not None
-        and spaced.spacing.section_thickness_um_used == -100.0
-    )
+    assert spaced.spacing is not None
+    assert spaced.spacing.section_thickness_um_used == -100.0
     assert [answer.nr for answer in spaced.sections.values()] == [1, 2, 3, 4]
 
     import tensorflow as tf
