@@ -22,7 +22,7 @@ jobs:
           python-version: '3.11'
       - name: Build wheel
         run: |
-          python -m pip install build
+          python -m pip install --upgrade pip build
           python -m build --wheel
       - name: Audit and install wheel
         shell: bash
@@ -41,7 +41,7 @@ jobs:
           import sys
           result = subprocess.run(
               [sys.executable, '-m', 'langslice', 'serve', '--stdio'],
-              input=json.dumps({"id": "smoke", "method": "version", "params": {}}) + "\n",
+              input=json.dumps({"id": "smoke", "method": "setup.status", "params": {}}) + "\n",
               text=True, capture_output=True, check=True, timeout=60,
           )
           reply = json.loads(result.stdout)
