@@ -277,14 +277,18 @@
 .log-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 2px var(--space-4) var(--space-4); }
 .log-scroll > .empty-state { padding-top: var(--space-6); }
 .log-trace-note { margin: var(--space-3) 0 var(--space-1); padding: 1px 0 1px var(--space-3); border-left: var(--rule) solid var(--lavender); color: var(--muted); font-size: var(--size-xs); }
-.msg { margin-top: var(--space-4); }
+/* The agent's own words stand out from its tool rows: a message and a reasoning summary
+   each sit behind a rule in the logo's colours, a summary's words in the names' off-white. */
+.msg { margin-top: var(--space-4); padding: 2px 0 2px var(--space-3); border-left: var(--rule) solid var(--lavender); }
+.msg.reasoning { border-left-color: var(--violet); }
 .msg-label { color: var(--muted); font-size: var(--size-xs); margin-bottom: 3px; }
+.msg.reasoning .msg-label { color: var(--violet); }
 .msg-body { line-height: var(--leading-prose); overflow-wrap: anywhere; }
 .msg-body p { margin: 0 0 var(--space-2); }
 .msg-body p:last-child { margin-bottom: 0; }
 .msg-body .item { padding-left: 2ch; text-indent: -2ch; }
 .msg-body .marker { color: var(--muted); }
-.msg.reasoning .msg-body { color: var(--muted); font-size: var(--size-sm); }
+.msg.reasoning .msg-body { color: var(--name); }
 .call { margin-top: var(--space-2); border-left: var(--rule) solid var(--tract); }
 .call.running { border-left-color: var(--running); }
 .call.failed { border-left-color: var(--failed); }

@@ -94,7 +94,7 @@ const AgentLog = (() => {
   function message(item) {
     words = true;
     const root = el('article', 'msg ' + (item.kind === 'agent' ? 'agent' : 'reasoning'));
-    root.append(el('div', 'msg-label', item.kind === 'agent' ? 'Agent' : 'Reasoning summary'));
+    root.append(el('div', 'msg-label', item.kind === 'agent' ? 'Agent' : 'Thinking'));
     const body = el('div', 'msg-body');
     for (const block of String(item.text || '').split(/\n\s*\n/)) {
       if (!block.trim()) continue;
