@@ -292,7 +292,7 @@
 .call { margin-top: var(--space-2); border-left: var(--rule) solid var(--tract); }
 .call.running { border-left-color: var(--running); }
 .call.failed { border-left-color: var(--failed); }
-.call summary, .call-line { display: flex; align-items: baseline; gap: var(--space-2); padding: 4px var(--space-2); cursor: pointer; list-style: none; font-size: var(--size-sm); }
+.call summary, .call-line { display: flex; align-items: baseline; gap: var(--space-2); padding: 3px var(--space-2); cursor: pointer; list-style: none; font-size: var(--size-md); }
 .call summary::-webkit-details-marker { display: none; }
 .call summary::before { content: "›"; color: var(--muted); width: 1ch; flex-shrink: 0; }
 .call[open] summary::before { content: "⌄"; }
@@ -302,9 +302,9 @@
 .call-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .call-name { color: var(--violet); overflow-wrap: anywhere; }
 .call-name.plain { color: var(--text); }
-.call-targets { color: var(--muted); font-size: var(--size-xs); overflow-wrap: anywhere; }
-.section-link { color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--tract); text-underline-offset: 2px; }
-.section-link:hover { color: var(--lavender); text-decoration-color: var(--lavender); }
+.call-targets { color: var(--muted); font-size: var(--size-sm); overflow-wrap: anywhere; }
+.section-link { color: var(--muted); cursor: pointer; }
+.section-link:hover { color: var(--lavender); text-decoration: underline; text-underline-offset: 2px; }
 .call-state { margin-left: auto; color: var(--muted); font-size: var(--size-xs); white-space: nowrap; }
 .call.running .call-state { color: var(--running); }
 .call.failed .call-state { color: var(--failed); }
@@ -324,7 +324,7 @@
   line-height: 1.5;
 }
 .call-meta { margin: var(--space-2) 0 0; }
-.view-images { display: block; margin: 3px 0 0 var(--space-3); padding: 0 var(--space-1); border: 0; background: none; color: var(--lavender); font-size: var(--size-xs); }
+.view-images { display: block; margin: 2px 0 0 calc(var(--space-2) + 2ch); padding: 0 var(--space-1); border: 0; background: none; color: var(--lavender); font-size: var(--size-sm); }
 .view-images:hover { background: none; text-decoration: underline; }
 .view-images.shown { color: var(--name); }
 .note { margin-top: var(--space-3); color: var(--muted); font-size: var(--size-xs); }

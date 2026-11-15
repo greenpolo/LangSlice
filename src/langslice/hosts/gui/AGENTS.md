@@ -325,7 +325,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     (paragraphs, lists and `code` kept, by `textContent`), tool rows
     (`<details>`, a running, done or failed left edge, section names that
     focus, the inputs at most 240 px tall, step, status and door),
-    `[View N images]`, notes, the line saying the agent's own words are not
+    `▸ N pictures`, notes, the line saying the agent's own words are not
     in the job folder when it holds no trace, following the end (`Latest
     activity` when scrolled up); the Tool images tray (four pictures per
     page, the calls with pictures paged, Follow, resizable); the lightbox (the
