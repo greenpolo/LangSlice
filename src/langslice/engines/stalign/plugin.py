@@ -2,12 +2,12 @@
 
 Load it with ``--plugins langslice.engines.stalign.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])``;
-it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python`` (the
-``stalign2`` interpreter; by default the one of the conda environment of
-that name, ``_environment.env_python``), ``device`` (``auto``: the GPU at
-float32 when there is one, else the CPU at float64), ``threads``,
-``timeout_s``. STalign (GPL-3.0) runs in ``engine.py`` under that
-interpreter; this module imports only ``langslice.plugin_api``.
+it is imported from this package (no ``PYTHONPATH``). Options
+(``plugin_config``): ``device`` (``auto``: the GPU at float32 when there is
+one, else the CPU at float64), ``threads``. STalign (GPL-3.0, vendored as
+``langslice_vendor.stalign``) runs in LangSlice's process: ``engine.py``
+imports it when a tool runs. This module imports only
+``langslice.plugin_api`` and the engines' own modules.
 
 Two tools:
 
@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -44,7 +43,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from langslice.engines import _blocks, _environment, _process_tree
+from langslice.engines import _blocks
+from langslice.engines.stalign import engine
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -54,14 +54,10 @@ from langslice.plugin_api import (
     flag_words,
 )
 
-HERE = Path(__file__).resolve().parent
 NAME = "STalign"
-REF = "langslice.engines.stalign.plugin:tools"
 DEFAULTS = {
-    "python": _environment.env_python("stalign2"),
     "device": "auto",
     "threads": 4,
-    "timeout_s": 1800,
 }
 #: The published target raster and atlas voxel, um (merfish-allen3Datlas-alignment.ipynb).
 TARGET_UM, SOURCE_UM = 10.0, 50.0
@@ -360,41 +356,24 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
     return params
 
 
-def _require(config: dict[str, Any], *keys: str) -> None:
-    """Refuse at call time when an environment or source folder the engine needs is missing."""
-    for key in keys:
-        # plugin_config holds JSON values
-        _environment.require_path(
-            NAME, REF, key, str(config[key]))  # pyright: ignore[reportAny]
-
-
 # --- the engine -------------------------------------------------------------------------------
 
 
 def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
             params: dict[str, Any]) -> dict[str, Any]:
-    """Run engine.py on *arrays* in *folder* (inputs, outputs and log kept there)."""
+    """Run STalign on *arrays* in this process (``engine.run``).
+
+    *folder* holds the call's files.
+    """
     folder.mkdir(parents=True, exist_ok=True)
-    src, dst = folder / "in.npz", folder / "out.npz"
-    np.savez_compressed(src, params=np.array(json.dumps(
-        {**params, "device": config["device"], "threads": int(config["threads"])})), **arrays)
-    env = {**os.environ, "OMP_NUM_THREADS": str(config["threads"])}
-    # plugin_config holds JSON values
-    timeout_s = float(config["timeout_s"])  # pyright: ignore[reportAny]
-    done = _process_tree.run_engine(
-        [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-        timeout_s=timeout_s, env=env, cwd=folder)
-    (folder / "log.txt").write_text(done.stdout + done.stderr,
-        encoding="utf-8", newline="\n")
-    if done.returncode != 0 or not dst.exists():
-        tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
+    threads = int(config["threads"])  # pyright: ignore[reportAny] - plugin_config holds JSON values
+    how = {"device": config["device"], "threads": threads}
+    try:
+        return engine.run(arrays, {**params, **how})
+    except Exception as exc:  # noqa: BLE001 - the fit's failure is its refusal
+        failure = f"{type(exc).__name__}: {exc}"
         raise ToolError(RefusalCode.FIT_FAILED,
-                        f"STalign did not run: {tail[0]}")
-    out = dict(np.load(dst, allow_pickle=False))
-    if "error" in out:
-        raise ToolError(RefusalCode.FIT_FAILED,
-                        f"STalign failed: {out['error']}")
-    return out
+                        f"STalign failed: {failure}") from exc
 
 
 def _frame(ctx: ToolContext, name: str, atlas_image: str, section_image: str,
@@ -527,7 +506,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                 encoding="utf-8", newline="") as fh:
                 writer = csv.writer(fh)
                 writer.writerow(["iteration", "total", "image_mismatch", "smoothness",
-                                 "landmarks"][:2 + energy.shape[1]])
+                                 "landmarks"][:1 + energy.shape[1]])
                 for i, row in enumerate(energy):
                     writer.writerow([i, *[f"{v:.6g}" for v in row]])
             _loss_picture(energy, here / "mismatch.png")
@@ -707,14 +686,12 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
               sorting: dict[str, Any] | None = None, iterations: int = 2000,
               view: bool = True) -> ToolResult:
         _blocks.refuse_mask("stalign_lddmm", mask, "sorts the section's pixels itself")
-        _require(options, "python")
         return _lddmm(ctx, options, sections, section_image, atlas_image, mask,
                       kernel_um, fit, displacement_um, dict(sorting or {}),
                       iterations, view)
 
     def plane(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
               atlas_image: str = "nissl", view: bool = True) -> ToolResult:
-        _require(options, "python")
         return _plane_search(ctx, options, sections, section_image, atlas_image, view)
 
     return [

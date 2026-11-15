@@ -5,9 +5,19 @@ A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers 
 registration agent as three tools. Design: Fable's proposal, adopted by Nash on
 2026-10-18.
 
-- `plugin.py`: the adapter, run in LangSlice's process (imports only `langslice.plugin_api`).
-- `engine.py`: the STalign calls, run in the `stalign2` conda environment (STalign installed
-  from SliceBench's `comparators/src/stalign2` with its C++ engine). GPL code stays in that process.
+- `plugin.py`: the adapter (imports only `langslice.plugin_api` and the engines' own modules).
+- `engine.py`: the STalign calls, in LangSlice's process; STalign is imported when a tool runs,
+  never when the plugin loads.
+
+## STalign itself
+
+STalign is vendored: `src/langslice_vendor/stalign/` holds the Python files of its `STalign/`
+package at JEFworks-Lab/STalign commit 8a84bf1facc5173f7155400867a09c302125904e, unchanged,
+with its GPL-3.0 `LICENSE` and a header in `__init__.py` naming the commit. Its optional C++
+engine (`STalign/_cpp`, the compiled `_stalign_cpp`) is not included, so STalign runs its
+pure-torch engine on the CPU as on the GPU (`backend_info()` reports `torch`). It needs nothing
+beyond LangSlice's own dependencies (numpy, torch, matplotlib); `pandas`, `requests` and `pynrrd`
+are imported only by STalign's atlas download and analysis helpers, which LangSlice does not call.
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work for
 plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
@@ -20,12 +30,13 @@ langslice linear run ... --plugins langslice.engines.stalign.plugin:tools
 ```
 
 or `langslice.create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])`.
-Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `python` (default:
-the `stalign2` conda environment's interpreter, found as emlddmm's README says), `device` (`auto`: the GPU at
-float32 when there is one, else the CPU at float64 with STalign's C++ engine; the GPU result
-matched the CPU's to 0.001 atlas px on a test section), `threads` (4), `timeout_s`. The
-engine takes the machine's GPU lock file (`LANGSLICE_GPU_LOCK`, else
-`~/.cache/langslice-stalign/gpu.lock`).
+Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `device` (`auto`:
+the GPU at float32 when there is one, else the CPU at float64), `threads` (4, STalign's
+`num_threads`). A fit on the GPU takes the machine's GPU queue through the plugin API's
+`gpu_turn` (`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`), so two fits of
+one process, or of several, never share the GPU. STalign's end-of-fit figures are replaced, on
+the thread that runs a fit for LangSlice, by a record of its energy per iteration; any other
+caller of STalign in the process still gets its figures.
 
 ## The tools
 
@@ -48,8 +59,8 @@ engine takes the machine's GPU lock file (`LANGSLICE_GPU_LOCK`, else
   dumped into context automatically"). Pictures: the overlay and the final sorting.
 - **`stalign_plane_search`** (read, Positioning, task `angles`): STalign 2.0's 3-D plane search
   only (`LDDMM_3D_to_slice(niter=0, prefit=True)`: 27 trial planes, the best refined), from the
-  section's current placement, against the BrainGlobe volume at 50 um (cached in
-  `~/.cache/langslice-stalign`). Gives each section's pitch, yaw and position in the stack's
+  section's current placement, against the BrainGlobe volume at 50 um (`../_atlas_images.py`,
+  kept under `~/.cache/langslice-engines`). Gives each section's pitch, yaw and position in the stack's
   convention (`ToolContext.angles_from_plane`), `at_search_edge`, the sections grouped by the
   sign of their yaw (a mirrored section reverses it; how small a yaw still tells its sign
   depends on the stack, so no threshold is set), the
@@ -77,5 +88,3 @@ plane search (sigmas 2, muA 3, muB 0). Sorting defaults are STalign's own (`clas
 ## Limits (the engine's own)
 
 Takes no section mask (it sorts the section's pixels itself; a named mask is refused `MASK_UNSUPPORTED`). One image pair (channels are fitted jointly by STalign but the tool gives one). Its final sorting is saved with the deformation. Brightness: slide 0, tissue 1.
-
-A missing interpreter or source folder is refused at call time with `ENGINE_MISSING`.

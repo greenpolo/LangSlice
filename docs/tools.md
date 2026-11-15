@@ -120,9 +120,16 @@ Writes the region and coordinate maps. From the command line and Python only.
 
 ## Optional engines
 
-Tool plugins, each run in an environment of its own except `brainways_ap`,
-which runs in LangSlice's. A job gets them when it is made from Python or with
-`langslice linear run --plugins`.
+Tool plugins, all run in LangSlice's own process. A job gets them when it is
+made from Python or with `langslice linear run --plugins`. `deepslice_place`
+and `spomialign` need the `engines` extra (`pip install "langslice[engines]"`:
+TensorFlow for DeepSlice, RoMa for SPOmiAlign); `brainways_ap`, STalign and
+emlddmm need nothing more.
+
+### `deepslice_place`
+
+Places mouse coronal sections and proposes the stack's cutting angles with
+[DeepSlice](https://github.com/PolarBean/DeepSlice).
 
 ### `brainways_ap`
 

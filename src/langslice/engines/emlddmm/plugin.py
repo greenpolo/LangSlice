@@ -2,17 +2,13 @@
 
 Load it with ``--plugins langslice.engines.emlddmm.plugin:tools`` or
 ``create_job(..., plugins=["langslice.engines.emlddmm.plugin:tools"])``;
-it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``): ``python`` (the
-``rigid_emlddmm`` interpreter; by default the one of the conda
-environment of that name, ``_environment.env_python``), ``emlddmm_src``
-(the fork's folder; no default: a call without it is refused
-``ENGINE_MISSING``), ``brainglobe_dir`` (where the
-atlases are installed), ``device`` (``auto``: the GPU when there is one, else the CPU),
-``dtype`` (``float64``), ``section_um`` (58.88),
-``section_weight``
-(``gap`` or a thickness in um), ``memory_limit_gb`` (24), ``threads``,
-``timeout_s``. emlddmm (Apache-2.0) runs in ``engine.py`` under that interpreter; this module
-imports only ``langslice.plugin_api``.
+it is imported from this package (no ``PYTHONPATH``). Options
+(``plugin_config``): ``device`` (``auto``: the GPU when there is one, else
+the CPU), ``dtype`` (``float64``), ``section_um`` (58.88), ``section_weight``
+(``gap`` or a thickness in um), ``memory_limit_gb`` (24). emlddmm
+(Apache-2.0, vendored as ``langslice_vendor.emlddmm``) runs in LangSlice's
+process: ``engine.py`` imports it when a tool runs. This module imports only
+``langslice.plugin_api`` and the engines' own modules.
 
 Two tools:
 
@@ -34,15 +30,16 @@ deformation included, ``FitFrame.applied_map``) onto the stack's in-plane grid, 
 of the sections' footprints. Marked damage (with the native margin) and everything outside the
 image get weight 0. The background mean muB is 1 on a white slide (the median of the image
 border over 0.5: brightfield, with muA 0) or 0 on a black one (fluorescence). The atlas
-image is read in the engine at 50 um,
-divided by its mean.
+image is read from BrainGlobe at 50 um
+(``_atlas_images.py``), divided by its mean.
 
 Files, under ``plugins/<tool>/calls/<n>_<tool>/``: ``settings.json`` (asked, chosen, plugin
 options, what emlddmm chose, whether its energy record was captured), ``sections.csv`` (the
 stack's per-section results; the plane's are in ``A.json``), ``A.json`` (emlddmm's own matrices),
 ``energy.csv`` and ``energy.png``, ``images/`` (each section as the engine saw it, its final
-sorting and the atlas under the fit), ``weights.npz``, ``in.npz`` and ``out.npz`` (the engine's
-input and output) and ``log.txt``. Replies name them; their numbers never go into the reply.
+sorting and the atlas under the fit), ``weights.npz`` and ``log.txt``
+(what emlddmm printed). Replies name them; their numbers never go into the
+reply.
 """
 
 from __future__ import annotations
@@ -50,7 +47,6 @@ from __future__ import annotations
 import csv
 import json
 import math
-import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -58,7 +54,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from langslice.engines import _blocks, _environment, _process_tree
+from langslice.engines import _blocks
+from langslice.engines.emlddmm import engine
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -68,21 +65,13 @@ from langslice.plugin_api import (
     flag_words,
 )
 
-HERE = Path(__file__).resolve().parent
 NAME = "emlddmm"
-REF = "langslice.engines.emlddmm.plugin:tools"
 DEFAULTS = {
-    "python": _environment.env_python("rigid_emlddmm"),
-    # no portable default: SliceBench's comparators/src/emlddmm_fix
-    "emlddmm_src": "",
-    "brainglobe_dir": str(Path("~/.brainglobe").expanduser()),
     "device": "auto",
     "dtype": "float64",
     "section_um": 58.88,  # the published mouse serial-section example's pixel
     "section_weight": "gap",
     "memory_limit_gb": 24.0,
-    "threads": 4,
-    "timeout_s": 3600,
 }
 
 #: GB of GPU memory per million voxels (slots x rows x columns) in float64, measured on the
@@ -110,7 +99,6 @@ def scale_iterations(iterations: int) -> list[int]:
 ANGLE_TOLERANCE_DEG = 1.0
 LATTICE_PX = 8  # the map is read every 8 fit-grid pixels and interpolated (the warp is smooth)
 NO_WARP = 10 ** 6  # emlddmm's v_start past the last iteration: the warp never starts
-_DEVICES: dict[str, str] = {}  # the engine interpreter -> its device when asked for ``auto``
 OVERLAYS = 4  # the pictures a landing or a plane proposal sends
 
 
@@ -752,42 +740,25 @@ def _check_sorting(sorting: dict[str, Any]) -> dict[str, float]:
     return {key: float(value) for key, value in sorting.items()}
 
 
-def _require(config: dict[str, Any], *keys: str) -> None:
-    """Refuse at call time when an environment or source folder the engine needs is missing."""
-    for key in keys:
-        # plugin_config holds JSON values
-        _environment.require_path(
-            NAME, REF, key, str(config[key]))  # pyright: ignore[reportAny]
-
-
 # --- the engine -------------------------------------------------------------------------------
 
 
 def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
             params: dict[str, Any]) -> dict[str, Any]:
-    """Run engine.py on *arrays* in *folder* (inputs, outputs and log kept there)."""
+    """Run emlddmm on *arrays* in this process (``engine.run``).
+
+    What it printed is kept in *folder*'s ``log.txt``.
+    """
     folder.mkdir(parents=True, exist_ok=True)
-    src, dst = folder / "in.npz", folder / "out.npz"
-    np.savez_compressed(src, params=np.array(json.dumps(
-        {**params, "emlddmm_src": config["emlddmm_src"],
-         "brainglobe_dir": config["brainglobe_dir"], "device": config["device"],
-         "dtype": config["dtype"]})), **arrays)
-    env = {**os.environ, "OMP_NUM_THREADS": str(config["threads"])}
-    # plugin_config holds JSON values
-    timeout_s = float(config["timeout_s"])  # pyright: ignore[reportAny]
-    done = _process_tree.run_engine(
-        [config["python"], "-I", str(HERE / "engine.py"), str(src), str(dst)],
-        timeout_s=timeout_s, env=env, cwd=folder)
-    (folder / "log.txt").write_text(done.stdout + done.stderr,
-        encoding="utf-8", newline="\n")
-    if done.returncode != 0 or not dst.exists():
-        tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
+    how = {"device": config["device"], "dtype": config["dtype"]}
+    try:
+        out = engine.run(arrays, {**params, **how})
+    except Exception as exc:  # noqa: BLE001 - the fit's failure is its refusal
+        failure = f"{type(exc).__name__}: {exc}"
         raise ToolError(RefusalCode.FIT_FAILED,
-                        f"emlddmm did not run: {tail[0]}")
-    out = dict(np.load(dst, allow_pickle=False))
-    if "error" in out:
-        raise ToolError(RefusalCode.FIT_FAILED,
-                        f"emlddmm failed: {out['error']}")
+                        f"emlddmm failed: {failure}") from exc
+    (folder / "log.txt").write_text(str(out.pop("log", "")), encoding="utf-8",
+                                    newline="\n")
     return out
 
 
@@ -940,16 +911,12 @@ def _chosen(st: dict[str, Any], config: dict[str, Any], cfg: dict[str, Any]) -> 
 
 
 def _device(config: dict[str, Any]) -> str:
-    """The device the engine will run on: ``auto`` is asked of the engine's own torch, once."""
+    """The device the fit will run on: ``auto`` is the GPU when torch sees one."""
     if config["device"] != "auto":
         return str(config["device"])
-    if config["python"] not in _DEVICES:
-        done = _process_tree.run_engine(
-            [config["python"], "-I", "-c",
-             "import torch; print(torch.cuda.is_available())"],
-            timeout_s=120)
-        _DEVICES[config["python"]] = "cuda" if done.stdout.strip().endswith("True") else "cpu"
-    return _DEVICES[config["python"]]
+    import torch  # local: slow to import, needed only when a fit runs
+
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 # --- emlddmm_stack ----------------------------------------------------------------------------
@@ -1260,7 +1227,6 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
               mask: str = "none", kernel_um: float = 500.0, fit: str = "both",
               warp_freedom: float = 10000.0, iterations: int = 100,
               sorting: dict[str, Any] | None = None, view: bool = True) -> ToolResult:
-        _require(options, "python", "emlddmm_src", "brainglobe_dir")
         return _stack_tool(ctx, options, list(dict.fromkeys(sections)), float(slot_um),
                            section_image, atlas_image, mask, float(kernel_um), str(fit),
                            float(warp_freedom), iterations, dict(sorting or {}), view)
@@ -1268,7 +1234,6 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
     def plane(ctx: ToolContext, sections: list[str], slot_um: float,
               section_image: str = "preprocessed", atlas_image: str = "nissl",
               iterations: int = 100, view: bool = True) -> ToolResult:
-        _require(options, "python", "emlddmm_src", "brainglobe_dir")
         return _plane_tool(ctx, options, list(dict.fromkeys(sections)), float(slot_um),
                            section_image, atlas_image, iterations, view)
 

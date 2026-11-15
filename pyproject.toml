@@ -82,7 +82,13 @@ mcp = [
     "mcp>=1.24,<2",
 ]
 # The comparison engines, run in LangSlice's process (langslice.engines).
+# DeepSlice 1.2.8's inference is vendored (MIT) and needs only CPU
+# TensorFlow and the Keras 2 it is written for. TensorFlow 2.21 has no
+# wheels for Intel Macs (nor has torch, so LangSlice itself installs
+# nowhere there); the marker keeps a resolver from looking for them.
 engines = [
+    "tensorflow==2.21.*; sys_platform != 'darwin' or platform_machine == 'arm64'",
+    "tf-keras==2.21.*; sys_platform != 'darwin' or platform_machine == 'arm64'",
     # SPOmiAlign's matcher, RoMa: the release SPOmiAlign (commit c7f8b7a)
     # vendors, its own code unchanged (langslice.engines.spomialign).
     "romatch==0.1.2",
@@ -124,12 +130,25 @@ Documentation = "https://langslice.readthedocs.io"
 Repository = "https://github.com/greenpolo/LangSlice"
 Issues = "https://github.com/greenpolo/LangSlice/issues"
 
+[tool.uv]
+# TensorFlow 2.21 (the engines extra) caps h5py below 3.15. uv keeps one
+# version of a package for every install, so that cap would move h5py back
+# for every LangSlice install; h5py's floor stays the higher of the two
+# requirements (TensorFlow's 3.11, registration's 3.10). DeepSlice's network
+# runs alike on h5py 3.16 (engines/deepslice/README.md). pip still honours
+# TensorFlow's cap where the engines extra is installed.
+override-dependencies = ["h5py>=3.11"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["core/atlas/*.json", "hosts/gui/static/*", "engines/brainways/LICENSE"]
+langslice = [
+    "core/atlas/*.json", "hosts/gui/static/*", "engines/brainways/LICENSE",
+    "engines/deepslice/LICENSE",
+]
+langslice_vendor = ["emlddmm/LICENSE", "emlddmm/NOTICE", "stalign/LICENSE"]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs

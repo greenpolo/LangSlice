@@ -141,8 +141,10 @@ and returns a `record.DeformableRecord`. No custom solver.
   candidate is a `CandidateFailure`, never an exception. A GPU fit runs in the
   machine's one GPU queue (`engines.gpu_turn`: a file lock (`filelock`, on
   every system; `flock` on Linux and macOS) on `GPU_LOCK`,
-  `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, the lock the
-  STalign, emlddmm and SPOmiAlign engines take too; it yields a `GpuTurn`
+  `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, taken for a
+  device whose name starts with `cuda`, by threads of one process as by
+  processes; the plugin API re-exports it, which the in-tree engines that fit
+  on the GPU (STalign, emlddmm, SPOmiAlign) take in LangSlice's process; it yields a `GpuTurn`
   whose `waited_s` is how long the lock was waited for), so fits of several jobs
   never share the GPU's memory; one that still finds it full (a process outside
   the queue) waits and fits again, `OOM_RETRIES` times. The `EngineResult`
