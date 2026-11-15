@@ -144,6 +144,8 @@
 }
 .panels.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .panels.n3, .panels.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+/* Three: the first panel takes the left column's height, the other two stack beside it. */
+.panels.n3 > .panel:first-child { grid-row: span 2; }
 .panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--line); background: var(--ground); }
 .panel.slot-1 { --mark: var(--focus-1); }
 .panel.slot-2 { --mark: var(--focus-2); }

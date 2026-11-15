@@ -132,17 +132,12 @@ const Viewer = (() => {
     }
     const grid = $('view-focus');
     grid.className = 'panels n' + Math.max(1, onPage.length);
-    // 1 fills the area, 2 sit side by side, 3 or 4 in a 2 x 2 grid (a fourth cell stays empty).
-    const cells = onPage.length === 3 ? 4 : onPage.length;
-    const wanted = panels.slice(0, onPage.length);
-    const children = [...wanted.map(p => p.root)];
-    if (cells === 4 && onPage.length === 3) children.push(spacer());
+    // 1 fills the area, 2 sit side by side, 3 as one tall panel beside two, 4 in a 2 x 2 grid.
+    const children = panels.slice(0, onPage.length).map(p => p.root);
     if (grid.children.length !== children.length || children.some((c, i) => grid.children[i] !== c)) grid.replaceChildren(...children);
     onPage.forEach((id, i) => showPanel(panels[i], id));
     for (const p of panels.slice(onPage.length)) clearPanel(p);
   }
-  let blank = null;
-  function spacer() { return blank || (blank = el('div', 'panel-spacer')); }
   // Called when the viewer tab is shown again: sizes were zero while it was hidden.
   function shown() {
     Strip.relayout();

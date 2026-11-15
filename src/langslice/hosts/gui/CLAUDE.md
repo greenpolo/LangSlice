@@ -302,8 +302,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   - `viewer.js`, `viewer.css` — the Agent focus: Focus | Sections | Steps,
     Follow agent (the snapshot's `focus` replaces the targets and returns to
     page 1; a section clicked in the strip, the table or the log becomes the
-    focus and stops following), four sections to a page in one, two or four
-    cells. A panel asks for `render/overlay` at its size times
+    focus and stops following), four sections to a page (one fills the area, two side by
+    side, three as one tall panel beside two, four in a 2 x 2 grid). A panel asks for `render/overlay` at its size times
     `devicePixelRatio` (rounded up to 128) and again only when its row's
     `render_key` changes or the panel grows; the old picture stays, tagged
     `updating`, until the new one fades in; a 409 shows its message, a 503 is
