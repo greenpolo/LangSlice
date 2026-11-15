@@ -81,14 +81,17 @@ registration = [
 mcp = [
     "mcp>=1.24,<2",
 ]
-# DeepSlice (langslice.engines.deepslice, deepslice_place) runs in
-# LangSlice's process: DeepSlice 1.2.8's inference is vendored there (MIT) and
-# needs only CPU TensorFlow and the Keras 2 it is written for. TensorFlow 2.21
-# has no wheels for Intel Macs (nor has torch, so LangSlice itself installs
+# The comparison engines, run in LangSlice's process (langslice.engines).
+# DeepSlice 1.2.8's inference is vendored (MIT) and needs only CPU
+# TensorFlow and the Keras 2 it is written for. TensorFlow 2.21 has no
+# wheels for Intel Macs (nor has torch, so LangSlice itself installs
 # nowhere there); the marker keeps a resolver from looking for them.
 engines = [
     "tensorflow==2.21.*; sys_platform != 'darwin' or platform_machine == 'arm64'",
     "tf-keras==2.21.*; sys_platform != 'darwin' or platform_machine == 'arm64'",
+    # SPOmiAlign's matcher, RoMa: the release SPOmiAlign (commit c7f8b7a)
+    # vendors, its own code unchanged (langslice.engines.spomialign).
+    "romatch==0.1.2",
 ]
 # Claude agent models via an Anthropic API key (``anthropic-api/<model>``,
 # providers/anthropic_api.py, on ADK's AnthropicLlm).

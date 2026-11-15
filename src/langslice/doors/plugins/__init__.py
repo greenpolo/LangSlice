@@ -10,6 +10,7 @@ the plugins a ``JobSpec`` names.
 
 from __future__ import annotations
 
+from langslice.core.fits.deformable.engines import gpu_turn, out_of_memory
 from langslice.core.fits.deformation import flag_words
 from langslice.core.plugins import (
     PLUGIN_API_VERSION,
@@ -40,11 +41,27 @@ from langslice.doors.plugins.writes import WriteResult
 _loader.install()
 
 __all__ = [
-    "PLUGIN_API_VERSION", "AffineView", "AtlasPlane", "AtlasView", "DeformationProposal",
-    "FitFrame", "Layer",
+    "PLUGIN_API_VERSION",
+    "AffineView",
+    "AtlasPlane",
+    "AtlasView",
+    "DeformationProposal",
+    "FitFrame",
+    "Layer",
     "LayerRef",
-    "PluginError", "RefusalCode", "SectionRaster", "SectionView", "ToolContext", "ToolError",
+    "PluginError",
+    "RefusalCode",
+    "SectionRaster",
+    "SectionView",
+    "ToolContext",
+    "ToolError",
     "ToolResult",
     "ToolSpec",
-    "TransformProposal", "WriteResult", "as_refs", "flag_words", "load",
+    "TransformProposal",
+    "WriteResult",
+    "as_refs",
+    "flag_words",
+    "gpu_turn",
+    "load",
+    "out_of_memory",
 ]

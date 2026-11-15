@@ -1,251 +1,672 @@
-# pyright: reportMissingImports=false, reportCallIssue=false, reportArgumentType=false
-# pyright: reportAttributeAccessIssue=false, reportIndexIssue=false
-"""SPOmiAlign's matching and fitting for the LangSlice plugin, run in its own environment.
+"""Fit SPOmiAlign's transforms to RoMa's matches, in LangSlice's process.
 
-Run as ``python engine.py IN.npz OUT.npz`` with the ``rigid_spomialign`` interpreter
-(``plugin.py`` does this). SPOmiAlign (Wang et al. 2026, Brief Bioinform; no licence in
-repo: local research use only) and its bundled RoMa are imported from the
-``SPOmiAlign`` folder ``SPOMIALIGN_SRC`` names (``plugin.py`` sets it;
-SliceBench keeps it under ``comparators/src/spomialign``). The steps are those of
-``SPOmiAlign/roma.py::align_and_process_images`` as ``comparators/rigid/spomialign_runner.py``
-audits them:
-both images resized to SPOmiAlign's 1152 x 864 grid, RoMa outdoor matches, certainty
-weighted by the source's FFT edge map, 3 x 3 grid NMS, the 5000 most confident matches;
-then the transform the mode names, fitted with SPOmiAlign's own functions. The match budget
-(``matches``, the paper's K, "typically 5000") and the warp's smoothing (``smoothing_px``,
-``fit_bspline_transform``'s Gaussian sigma on the 1152 x 864 grid, 15 by default) are the
-call's; the edge-weight constants stay as the authors fixed them.
+SPOmiAlign (Wang et al. 2026, Brief Bioinform; wangyiyuyang/SPOmiAlign at
+commit c7f8b7a) matches points between two images with RoMa
+(``matching.py``) and fits a transform to the matched pairs. Its repository
+carries no licence, so none of its code is copied here: each step is
+written from what its ``align_and_process_images`` does. The transform the
+mode names: ``rigid`` a least-squares rotation and shift (Kabsch),
+``affine`` least squares, ``warp`` the displacement field alone,
+``affine_warp`` an affine and the field on top of it. The field is
+SPOmiAlign's ``bspline`` mode: each pair's displacement on the grid (pairs
+that share a pixel averaged), filled in between the pairs by TELEA
+inpainting and smoothed by a Gaussian of ``smoothing_px``.
 
-Damage is the plugin's, as the native fits handle it: ``plugin.py`` paints the marked regions
-as background in the atlas image, and here matches whose atlas end lands in the damage zone
-(the marked regions plus the native margin; ``keep`` False) are dropped before the 5000 are
-taken.
-
-IN, for each section ``i`` (``n`` sections): ``target_i`` (h x w x 3 uint8, the atlas
-image), ``source_i`` (the same size: the section on the same canvas), ``keep_i`` (h x w
-bool, False in the damage zone); ``mode`` (rigid | affine | warp | affine_warp),
-``matches``, ``smoothing_px``.
-OUT: ``matrix_i`` (2 x 3, source canvas px -> target canvas px: the linear part; the
-identity for ``warp``), ``residual_i`` (h x w x 2 for the warp modes: the full map minus the
-linear part at every source canvas pixel, target canvas px), ``pairs_i``, ``dropped_i``,
-``sitk_max_px_i`` (the vectorized field against SimpleITK's own ``TransformPoint``),
-``used_i`` / ``dropped_pairs_i`` (rows atlas x, y, section x, y in canvas px, confidence: the
-pairs fitted, and those in the damage zone passed over to reach them),
-``error_i`` (empty, or why the section failed).
+Damage and the section mask are the plugin's: matches whose atlas end lies
+in the damage zone (``keep`` False), or whose section end lies where the
+section mask is below one half (``section_keep`` False), are dropped before
+the ``top_k`` most confident are taken. Coordinates on the way in and out
+are canvas pixels (pixel centres); RoMa's grid is corner based.
 """
 
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
+import dataclasses
+import functools
 import time
-from pathlib import Path
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, TypeVar, cast
 
+import cv2
 import numpy as np
+import numpy.typing as npt
 
-if not os.environ.get("SPOMIALIGN_SRC"):
-    raise SystemExit("SPOMIALIGN_SRC is not set: it names the SPOmiAlign folder")
-SRC = Path(os.environ["SPOMIALIGN_SRC"]).expanduser()
-sys.path.insert(0, str(SRC / "software" / "Roma"))
-sys.path.insert(0, str(SRC))
+# scipy ships no types for ndimage
+from scipy.ndimage import (  # pyright: ignore[reportMissingTypeStubs]
+    map_coordinates,  # pyright: ignore[reportUnknownVariableType]
+)
 
-import roma as SP  # noqa: E402  (SPOmiAlign/roma.py)
-import SimpleITK as sitk  # noqa: E402
-import torch  # noqa: E402
-from PIL import Image  # noqa: E402
-from scipy.ndimage import map_coordinates  # noqa: E402
+from langslice.engines.spomialign.matching import (
+    GPU_DEVICE,
+    H,
+    Matcher,
+    W,
+    load_matcher,
+    ranked_matches,
+    resolve_device,
+)
+from langslice.plugin_api import gpu_turn, out_of_memory
 
-#: The engines' shared GPU queue, ``../_gpu_queue.py``: ``-I`` leaves its
-#: folder off the path, and it goes last, so it hides no installed package.
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-if TYPE_CHECKING:  # the type checker reads it from the package
-    from langslice.engines._gpu_queue import gpu_turn
-else:
-    from _gpu_queue import gpu_turn
+if TYPE_CHECKING:
+    import torch
 
-#: SPOmiAlign's registration grid (roma.py ``H, W = 864, 1152``; paper: "1152 x 864")
-H, W = 864, 1152
-#: RoMa pixel coordinates are corner based (``W / 2 (x + 1)``): pixel centre + 0.5
-#: A section that still finds the GPU full waits OOM_WAIT_S, twice that, ... and runs again.
+#: RoMa's pixel coordinates are corner based (``W / 2 (x + 1)``): a pixel
+#: centre sits half a pixel in.
+CORNER = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
+#: The engine's modes, as the plugin names them.
+MODES = ("rigid", "affine", "warp", "affine_warp")
+RIGID, AFFINE, WARP, AFFINE_WARP = MODES
+#: TELEA inpainting's radius when the field is filled in, px of the grid.
+INPAINT_RADIUS = 3
+#: Random canvas points at which the field is checked against SimpleITK's.
+N_PROBES = 500
+#: A section that still finds the GPU full waits OOM_WAIT_S, twice that,
+#: ... and runs again, OOM_RETRIES times.
 OOM_RETRIES = 4
 OOM_WAIT_S = 5.0
 
-
-def out_of_memory(exc: BaseException) -> bool:
-    """The GPU ran out of memory (torch's error, or what cuDNN and cuBLAS raise
-    when their allocation fails)."""
-    text = str(exc)
-    return (type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text
-            or "CUDNN_STATUS_INTERNAL_ERROR" in text or "CUBLAS_STATUS_ALLOC_FAILED" in text)
+Result = TypeVar("Result")
 
 
-#: Times the GPU was out of memory and a call ran again (RETRIES["n"]).
-RETRIES = {"n": 0}
+@dataclass(frozen=True)
+class EnginePair:
+    """Hold one section's inputs: the two canvases and what may match.
+
+    ``target`` is the atlas image and ``source`` the section, both
+    ``(h, w, 3)`` uint8 on one canvas; ``keep`` is ``(h, w)`` bool, False
+    in the damage zone; ``section_keep`` is ``(h, w)`` bool, False where
+    the section mask is below one half, or None without a mask;
+    ``smoothing_px`` is the field's Gaussian sigma, px of the grid.
+    """
+
+    target: npt.NDArray[np.uint8]
+    source: npt.NDArray[np.uint8]
+    keep: npt.NDArray[np.bool_]
+    smoothing_px: float
+    section_keep: npt.NDArray[np.bool_] | None = None
 
 
-def retried(device, call):
-    """*call*, run again when a process outside the queue has taken the GPU's memory."""
+@dataclass(frozen=True)
+class EngineAnswer:
+    """Hold what the engine fitted for one section.
+
+    ``matrix`` (2 x 3) takes source canvas px to target canvas px: the
+    linear part, the identity for ``warp``; ``residual`` (h x w x 2, the
+    warp modes) is the full map minus the linear part at every source
+    canvas pixel, target canvas px; ``sitk_max_px`` is the largest
+    difference between that field and SimpleITK's own ``TransformPoint``.
+    ``used`` and ``dropped_pairs`` are rows atlas x, y, section x, y in
+    canvas px and confidence: the pairs fitted, and those passed over to
+    reach them. ``error`` says why the section failed, empty when it did
+    not; ``oom_retries`` counts the runs again after the GPU ran out of
+    memory.
+    """
+
+    pairs: int = 0
+    dropped: int = 0
+    dropped_by_mask: int = 0
+    used: npt.NDArray[np.float32] | None = None
+    dropped_pairs: npt.NDArray[np.float32] | None = None
+    matrix: npt.NDArray[np.float64] | None = None
+    residual: npt.NDArray[np.float32] | None = None
+    sitk_max_px: float = 0.0
+    error: str = ""
+    oom_retries: int = 0
+
+
+@dataclass(frozen=True)
+class EngineRun:
+    """Hold one call's answers, in the order of its pairs.
+
+    ``gpu_wait_s`` is how long the call waited for the GPU's queue.
+    """
+
+    answers: list[EngineAnswer]
+    gpu_wait_s: float
+
+
+def fit_pairs(
+    pairs: list[EnginePair], *, mode: str, top_k: int, device_name: str = ""
+) -> EngineRun:
+    """Match and fit every section's pair with one load of the matcher.
+
+    The whole call, the matcher's loading included, holds the machine's
+    GPU queue; the matcher is let go before the queue is.
+
+    Parameters
+    ----------
+    pairs
+        Each section's two canvases and what may match on them.
+    mode : {"rigid", "affine", "warp", "affine_warp"}
+        The transform each section is fitted with.
+    top_k
+        How many of the most confident pairs each fit uses.
+    device_name
+        The torch device to run on; empty means the first GPU when torch
+        sees one, else the CPU.
+
+    Returns
+    -------
+    EngineRun
+        One answer per pair; a section that failed carries its error and
+        leaves the others.
+    """
+    import torch  # local: slow to import, needed only when a call runs
+
+    device = resolve_device(device_name)
+    queue_device = "cpu"
+    if device.type == GPU_DEVICE:
+        queue_device = GPU_DEVICE
+
+    with gpu_turn(queue_device) as turn:
+        try:
+            build = functools.partial(load_matcher, device)
+            model, _ = _retried(device, build)
+            answers = [
+                _fit_one(model, device, pair, mode=mode, top_k=top_k)
+                for pair in pairs
+            ]
+        finally:
+            if device.type == GPU_DEVICE:
+                torch.cuda.empty_cache()
+    return EngineRun(answers=answers, gpu_wait_s=turn.waited_s)
+
+
+def _retried(
+    device: torch.device, call: Callable[[], Result]
+) -> tuple[Result, int]:
+    """Run *call*, again while a process outside the queue fills the GPU.
+
+    Returns the call's value and how many times it ran again.
+    """
+    import torch  # local: slow to import, needed only when a call runs
+
     for attempt in range(OOM_RETRIES + 1):
         try:
-            return call()
-        except Exception as exc:
-            if (not str(device).startswith("cuda") or attempt == OOM_RETRIES
-                    or not out_of_memory(exc)):
+            return call(), attempt
+        except Exception as error:
+            last = attempt == OOM_RETRIES
+            if device.type != GPU_DEVICE or last or not out_of_memory(error):
                 raise
             torch.cuda.empty_cache()
-            RETRIES["n"] += 1
             time.sleep(OOM_WAIT_S * (attempt + 1))
     raise AssertionError("unreachable")
 
 
-CORNER = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
-MODES = ("rigid", "affine", "warp", "affine_warp")
+def _fit_one(
+    model: Matcher,
+    device: torch.device,
+    pair: EnginePair,
+    *,
+    mode: str,
+    top_k: int,
+) -> EngineAnswer:
+    """Fit one section, its failure kept as its answer's error."""
+    fit = functools.partial(
+        fit_pair, model, device, pair, mode=mode, top_k=top_k
+    )
+    try:
+        answer, retries = _retried(device, fit)
+    except Exception as error:  # noqa: BLE001 - one section must not sink the rest
+        return EngineAnswer(error=f"{type(error).__name__}: {error}")
+    return dataclasses.replace(answer, oom_retries=retries)
 
 
-def resize_map(w_from: int, h_from: int, w_to: int, h_to: int) -> np.ndarray:
-    """Pixel-centre map of a plain resize, image of size (w_from, h_from) -> (w_to, h_to)."""
-    sx, sy = w_to / w_from, h_to / h_from
-    return np.array([[sx, 0, 0.5 * sx - 0.5], [0, sy, 0.5 * sy - 0.5], [0, 0, 1.0]])
+def fit_pair(
+    model: Matcher,
+    device: torch.device,
+    pair: EnginePair,
+    *,
+    mode: str,
+    top_k: int,
+) -> EngineAnswer:
+    """Match one section's pair and fit the transform *mode* names.
+
+    Parameters
+    ----------
+    model
+        RoMa's matcher, from :func:`load_matcher`.
+    device
+        The torch device the matcher runs on.
+    pair
+        The section's two canvases and what may match on them.
+    mode : {"rigid", "affine", "warp", "affine_warp"}
+        The transform fitted.
+    top_k
+        How many of the most confident pairs the fit uses.
+
+    Returns
+    -------
+    EngineAnswer
+        The fit, or an error when fewer than three pairs are left.
+    """
+    h, w = cast("tuple[int, int]", pair.target.shape[:2])
+    to_grid = CORNER @ resize_map((w, h), (W, H))
+    from_grid = np.linalg.inv(resize_map((w, h), (W, H))) @ np.linalg.inv(
+        CORNER
+    )
+    atlas_grid, section_grid, certainty = ranked_matches(
+        model, device, pair.target, pair.source
+    )
+    chosen = choose_pairs(
+        pair, atlas_grid, section_grid, certainty, from_grid, top_k=top_k
+    )
+    if chosen.n_pairs < 3:
+        return chosen.answer(
+            error=f"only {chosen.n_pairs} matches outside the marked damage"
+        )
+
+    atlas_grid = atlas_grid[chosen.fitted]
+    section_grid = section_grid[chosen.fitted]
+    linear_raw = linear_fit(atlas_grid, section_grid, mode)
+    matrix = (from_grid @ homogeneous(linear_raw) @ to_grid)[:2]
+    if mode in (RIGID, AFFINE):
+        return chosen.answer(matrix=matrix)
+
+    # SPOmiAlign moves the section's points by the linear part, then fits
+    # the field from them to their atlas points
+    ones = np.ones((len(section_grid), 1))
+    moved = (linear_raw @ np.hstack([section_grid, ones]).T).T
+    displacement = smoothed_field(moved, atlas_grid, pair.smoothing_px)
+    affine_raw = homogeneous(linear_raw) @ to_grid
+    residual, sitk_max_px = field_on_canvas(
+        displacement, affine_raw, from_grid, matrix, (w, h)
+    )
+    return chosen.answer(
+        matrix=matrix, residual=residual, sitk_max_px=sitk_max_px
+    )
 
 
-def homog(m: np.ndarray) -> np.ndarray:
-    return np.vstack([np.asarray(m, np.float64)[:2], [0.0, 0.0, 1.0]])
+def resize_map(
+    size_from: tuple[int, int], size_to: tuple[int, int]
+) -> npt.NDArray[np.float64]:
+    """Map pixel centres through a plain resize between two sizes.
+
+    Parameters
+    ----------
+    size_from, size_to : (width, height)
+        The image's size before and after the resize, px.
+
+    Returns
+    -------
+    ndarray, shape (3, 3)
+        The homogeneous map from the first image's px to the second's.
+    """
+    sx, sy = size_to[0] / size_from[0], size_to[1] / size_from[1]
+    return np.array(
+        [[sx, 0, 0.5 * sx - 0.5], [0, sy, 0.5 * sy - 0.5], [0, 0, 1.0]]
+    )
 
 
-def matches(model, device, target: np.ndarray, source: np.ndarray):
-    """SPOmiAlign's ranked matches, every one (RoMa grid, corner convention):
-    ``(kpts1 target, kpts2 source, weighted certainty)``, most confident first."""
-    with tempfile.TemporaryDirectory() as tmp:
-        img1, img2 = Path(tmp) / "atlas.png", Path(tmp) / "section.png"
-        Image.fromarray(target).save(img1)
-        Image.fromarray(source).save(img2)
-        warp, certainty = model.match(str(img1), str(img2), device=device)
-        edge = SP.compute_edge_weight(str(img2), H, W, device)
-    edge_full = torch.cat((torch.zeros_like(edge), edge), dim=1)
-    if certainty.dim() == 3:
-        certainty = certainty.squeeze(0)
-    weighted = certainty * (edge_full * 0.9 + 0.1)
-    weighted[:, :W] = 0
-    filtered = SP.apply_grid_nms(weighted, kernel_size=3)
-    k1, k2, cert = model.get_sorted_matches(warp, filtered, H, W)
-    return (k1.cpu().numpy().astype(np.float64), k2.cpu().numpy().astype(np.float64),
-            cert.float().cpu().numpy().astype(np.float64))
+def homogeneous(matrix: npt.ArrayLike) -> npt.NDArray[np.float64]:
+    """Extend a 2 x 3 (or 3 x 3) affine to its 3 x 3 homogeneous form.
+
+    Parameters
+    ----------
+    matrix
+        The affine; rows past the second are replaced.
+
+    Returns
+    -------
+    ndarray, shape (3, 3)
+        The affine with the row ``[0, 0, 1]``.
+    """
+    rows = np.asarray(matrix, np.float64)[:2]
+    return np.vstack([rows, [0.0, 0.0, 1.0]])
 
 
-def run(model, device, target: np.ndarray, source: np.ndarray, keep: np.ndarray,
-        mode: str, top_k: int, smoothing_px: float,
-        section_keep: np.ndarray | None = None) -> dict[str, np.ndarray]:
-    h, w = target.shape[:2]
-    to_grid = CORNER @ resize_map(w, h, W, H)  # canvas px -> RoMa grid
-    from_grid = np.linalg.inv(resize_map(w, h, W, H)) @ np.linalg.inv(CORNER)
-    k1, k2, cert = matches(model, device, target, source)
-    # the plugin's step: drop matches whose atlas end is in the damage zone and, with a
-    # section mask, those whose section end is where the mask is under one half; then take
-    # the top_k most confident of the rest
-    at = k1 @ from_grid[:2, :2].T + from_grid[:2, 2]
-    col = np.clip(np.rint(at[:, 0]).astype(int), 0, w - 1)
-    row = np.clip(np.rint(at[:, 1]).astype(int), 0, h - 1)
-    section_at = k2 @ from_grid[:2, :2].T + from_grid[:2, 2]
-    outside_damage = keep[row, col]
-    if section_keep is None:
-        inside_mask = np.ones_like(outside_damage)
-    else:
-        scol = np.clip(np.rint(section_at[:, 0]).astype(int), 0, w - 1)
-        srow = np.clip(np.rint(section_at[:, 1]).astype(int), 0, h - 1)
-        inside_mask = section_keep[srow, scol]
+@dataclass(frozen=True)
+class ChosenPairs:
+    """Hold which ranked matches a fit uses and which it passed over.
+
+    ``fitted`` indexes the ranked matches the fit uses, at most ``top_k``;
+    ``used`` and ``passed`` are their rows (atlas x, y, section x, y in
+    canvas px, confidence) and those of the matches dropped to reach them;
+    ``by_mask`` counts the drops by the section mask alone.
+    """
+
+    fitted: npt.NDArray[np.intp]
+    used: npt.NDArray[np.float32]
+    passed: npt.NDArray[np.float32]
+    by_mask: int
+
+    @property
+    def n_pairs(self) -> int:
+        """Count the pairs the fit uses."""
+        return len(self.fitted)
+
+    def answer(
+        self,
+        *,
+        matrix: npt.NDArray[np.float64] | None = None,
+        residual: npt.NDArray[np.float32] | None = None,
+        sitk_max_px: float = 0.0,
+        error: str = "",
+    ) -> EngineAnswer:
+        """Make the section's answer from these pairs and what was fitted.
+
+        Parameters
+        ----------
+        matrix
+            The linear part, source canvas px to target canvas px.
+        residual
+            The warp's field minus the linear part, target canvas px.
+        sitk_max_px
+            The field's largest difference from SimpleITK's own.
+        error
+            Why the section failed; empty when it did not.
+
+        Returns
+        -------
+        EngineAnswer
+            The answer, the pairs counted and listed.
+        """
+        return EngineAnswer(
+            pairs=self.n_pairs,
+            dropped=len(self.passed),
+            dropped_by_mask=self.by_mask,
+            used=self.used,
+            dropped_pairs=self.passed,
+            matrix=matrix,
+            residual=residual,
+            sitk_max_px=sitk_max_px,
+            error=error,
+        )
+
+
+def choose_pairs(
+    pair: EnginePair,
+    atlas_grid: npt.NDArray[np.float64],
+    section_grid: npt.NDArray[np.float64],
+    certainty: npt.NDArray[np.float64],
+    from_grid: npt.NDArray[np.float64],
+    *,
+    top_k: int,
+) -> ChosenPairs:
+    """Drop the matches in the damage zone or off the mask, then take top_k.
+
+    Parameters
+    ----------
+    pair
+        The section's canvases, damage zone and section mask.
+    atlas_grid, section_grid : ndarray, shape (n, 2)
+        The ranked matches' two ends, px of the grid.
+    certainty : ndarray, shape (n,)
+        Their weighted certainty, most confident first.
+    from_grid : ndarray, shape (3, 3)
+        The map from grid px to canvas px.
+    top_k
+        How many of the most confident remaining matches are taken.
+
+    Returns
+    -------
+    ChosenPairs
+        The matches taken and those passed over to reach them.
+    """
+    h, w = cast("tuple[int, int]", pair.keep.shape)
+    atlas_at = atlas_grid @ from_grid[:2, :2].T + from_grid[:2, 2]
+    section_at = section_grid @ from_grid[:2, :2].T + from_grid[:2, 2]
+    outside_damage = pair.keep[_rows(atlas_at, h), _cols(atlas_at, w)]
+    inside_mask = np.ones_like(outside_damage)
+    if pair.section_keep is not None:
+        inside_mask = pair.section_keep[
+            _rows(section_at, h), _cols(section_at, w)
+        ]
+
+    # the ranks scanned to fill top_k, and those passed over among them
     kept = outside_damage & inside_mask
-    reach = int(np.searchsorted(np.cumsum(kept), top_k)) + 1  # ranks scanned to fill top_k
+    reach = int(np.searchsorted(np.cumsum(kept), top_k)) + 1
     passed = ~kept[:reach]
+    by_mask = int(
+        np.count_nonzero(outside_damage[:reach] & ~inside_mask[:reach])
+    )
+    fitted = np.flatnonzero(kept)[:top_k]
+    table = np.column_stack((atlas_at, section_at, certainty)).astype(
+        np.float32
+    )
+    return ChosenPairs(
+        fitted=fitted,
+        used=table[fitted],
+        passed=table[np.flatnonzero(passed)],
+        by_mask=by_mask,
+    )
 
-    def rows(sel: np.ndarray) -> np.ndarray:
-        return np.c_[at[sel], section_at[sel], cert[sel]].astype(np.float32)
 
-    out: dict[str, np.ndarray] = {
-        "dropped": np.array(int(passed.sum())),
-        "dropped_by_mask": np.array(int((outside_damage[:reach] & ~inside_mask[:reach]).sum())),
-        "dropped_pairs": rows(np.flatnonzero(passed)),
-        "used": rows(np.flatnonzero(kept)[:top_k])}
-    k1, k2 = k1[kept][:top_k], k2[kept][:top_k]
-    out["pairs"] = np.array(len(k1))
-    if len(k1) < 3:
-        out["error"] = np.array(f"only {len(k1)} matches outside the marked damage")
-        return out
-    ones = np.ones((len(k2), 1))
-    if mode == "rigid":
-        m_raw = np.asarray(SP.fit_rigid_transform(k1, k2), np.float64)[:2]
-    elif mode == "warp":  # SPOmiAlign's own 'bspline' mode: no linear step
-        m_raw = np.eye(3)[:2]
-    else:  # affine and affine+bspline: least squares, source -> target (roma.py)
-        m_raw = np.linalg.lstsq(np.hstack([k2, ones]), k1, rcond=None)[0].T
-    out["matrix"] = (from_grid @ homog(m_raw) @ to_grid)[:2]
-    if mode in ("rigid", "affine"):
-        return out
-    # fit_bspline_transform(M kpts2, kpts1): tx_csv, as SPOmiAlign moves spot coordinates
-    moved = (m_raw @ np.hstack([k2, ones]).T).T
-    tx = SP.fit_bspline_transform(moved, k1, H, W, smooth_sigma=smoothing_px)
-    disp = (sitk.GetArrayFromImage(tx.GetDisplacementField()).astype(np.float64)
-            if tx.GetName() == "DisplacementFieldTransform" else np.zeros((H, W, 2)))
-    a_raw = homog(m_raw) @ to_grid  # canvas px -> affine-mapped RoMa grid
+def _rows(points: npt.NDArray[np.float64], h: int) -> npt.NDArray[np.intp]:
+    return np.clip(np.rint(points[:, 1]).astype(int), 0, h - 1)
 
-    def field(xy: np.ndarray) -> np.ndarray:
-        p = xy @ a_raw[:2, :2].T + a_raw[:2, 2]
-        # ITK's displacement-field transform: linear interpolation (edge-clamped) inside the
-        # field's buffer, continuous index in [-0.5, size - 0.5]; zero outside it
-        inside = ((p[:, 0] >= -0.5) & (p[:, 0] <= W - 0.5) & (p[:, 1] >= -0.5)
-                  & (p[:, 1] <= H - 0.5))
-        q = p.copy()
-        for c in range(2):
-            q[:, c] += np.where(inside, map_coordinates(disp[..., c], [p[:, 1], p[:, 0]],
-                                                        order=1, mode="nearest"), 0.0)
-        return q @ from_grid[:2, :2].T + from_grid[:2, 2]
+
+def _cols(points: npt.NDArray[np.float64], w: int) -> npt.NDArray[np.intp]:
+    return np.clip(np.rint(points[:, 0]).astype(int), 0, w - 1)
+
+
+def linear_fit(
+    atlas_grid: npt.NDArray[np.float64],
+    section_grid: npt.NDArray[np.float64],
+    mode: str,
+) -> npt.NDArray[np.float64]:
+    """Fit the linear part *mode* names, section to atlas, on the grid.
+
+    Parameters
+    ----------
+    atlas_grid, section_grid : ndarray, shape (n, 2)
+        The pairs' two ends, px of the grid.
+    mode : {"rigid", "affine", "warp", "affine_warp"}
+        ``rigid``: a least-squares rotation and shift; ``warp``: the
+        identity (SPOmiAlign's ``bspline`` mode has no linear step);
+        otherwise an affine by least squares.
+
+    Returns
+    -------
+    ndarray, shape (2, 3)
+        The map from section grid px to atlas grid px.
+    """
+    if mode == RIGID:
+        return rigid_fit(atlas_grid, section_grid)
+    if mode == WARP:
+        return np.eye(3)[:2]
+    ones = np.ones((len(section_grid), 1))
+    design = np.hstack([section_grid, ones])
+    solution = np.linalg.lstsq(design, atlas_grid, rcond=None)[0]
+    return np.asarray(solution, np.float64).T
+
+
+def rigid_fit(
+    fixed: npt.NDArray[np.float64], moving: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64]:
+    """Fit the rotation and shift that best take *moving* onto *fixed*.
+
+    Parameters
+    ----------
+    fixed, moving : ndarray, shape (n, 2)
+        Corresponding points, one row per pair, in one pixel frame.
+
+    Returns
+    -------
+    ndarray, shape (2, 3)
+        ``[R | t]`` minimizing the squared distances (the Kabsch
+        algorithm, a reflection ruled out), rounded through float32 as
+        SPOmiAlign returns it.
+    """
+    fixed_centre = cast("npt.NDArray[np.float64]", fixed.mean(axis=0))
+    moving_centre = cast("npt.NDArray[np.float64]", moving.mean(axis=0))
+    covariance = (moving - moving_centre).T @ (fixed - fixed_centre)
+    u, _, vt = np.linalg.svd(covariance)
+    rotation = vt.T @ u.T
+    if np.linalg.det(rotation) < 0:
+        vt[-1, :] *= -1
+        rotation = vt.T @ u.T
+    shift = fixed_centre - rotation @ moving_centre
+    matrix = np.hstack([rotation, shift.reshape(2, 1)]).astype(np.float32)
+    return matrix.astype(np.float64)
+
+
+def smoothed_field(
+    fixed: npt.NDArray[np.float64],
+    moving: npt.NDArray[np.float64],
+    smoothing_px: float,
+) -> npt.NDArray[np.float64]:
+    """Make SPOmiAlign's smoothed match field on the grid.
+
+    Parameters
+    ----------
+    fixed, moving : ndarray, shape (n, 2)
+        Each pair's two ends, px of the grid: the field at the pixel nearest
+        a pair's *fixed* end is its displacement to its *moving* end.
+    smoothing_px
+        The Gaussian's sigma, px of the grid.
+
+    Returns
+    -------
+    ndarray, shape (H, W, 2)
+        The displacement (x, y) at every grid pixel, zero without a pair.
+
+    Notes
+    -----
+    Pairs that land on one pixel are averaged; the pixels without a pair
+    are filled by TELEA inpainting (radius :data:`INPAINT_RADIUS`) and the
+    field blurred by a Gaussian whose kernel spans six sigmas.
+    """
+    # each pixel's running mean of its pairs, rounded to float32 at every
+    # step as SPOmiAlign keeps it in a float32 image
+    means: dict[tuple[int, int], tuple[float, float, int]] = {}
+    moving_rows = cast("list[list[float]]", moving.tolist())
+    fixed_rows = cast("list[list[float]]", fixed.tolist())
+    for (mx, my), (fx, fy) in zip(moving_rows, fixed_rows, strict=True):
+        x, y = round(fx), round(fy)
+        if not (0 <= x < W and 0 <= y < H):
+            continue
+        ddx, ddy = mx - fx, my - fy
+        previous = means.get((y, x))
+        n = 0
+        if previous is not None:
+            mean_x, mean_y, n = previous
+            ddx = (mean_x * n + ddx) / (n + 1)
+            ddy = (mean_y * n + ddy) / (n + 1)
+        means[(y, x)] = (float(np.float32(ddx)), float(np.float32(ddy)), n + 1)
+    if not means:
+        return np.zeros((H, W, 2))
+
+    dx = np.zeros((H, W), dtype=np.float32)
+    dy = np.zeros((H, W), dtype=np.float32)
+    known = np.zeros((H, W), dtype=bool)
+    rows = [y for y, _ in means]
+    cols = [x for _, x in means]
+    dx[rows, cols] = [mean[0] for mean in means.values()]
+    dy[rows, cols] = [mean[1] for mean in means.values()]
+    known[rows, cols] = True
+
+    # fill in between the pairs, then smooth
+    unknown = (~known).astype(np.uint8) * 255
+    size = int(max(3, (smoothing_px * 6) // 2 * 2 + 1))
+    channels: list[npt.NDArray[np.float32]] = []
+    for start in (dx, dy):
+        filled = cv2.inpaint(start, unknown, INPAINT_RADIUS, cv2.INPAINT_TELEA)
+        blurred = cv2.GaussianBlur(filled, (size, size), smoothing_px)
+        channels.append(np.asarray(blurred, dtype=np.float32))
+    return np.stack(channels, axis=-1).astype(np.float64)
+
+
+def field_on_canvas(
+    displacement: npt.NDArray[np.float64],
+    affine_raw: npt.NDArray[np.float64],
+    from_grid: npt.NDArray[np.float64],
+    matrix: npt.NDArray[np.float64],
+    size: tuple[int, int],
+) -> tuple[npt.NDArray[np.float32], float]:
+    """Read the grid's field at every canvas pixel, less the linear part.
+
+    Parameters
+    ----------
+    displacement : ndarray, shape (H, W, 2)
+        The field on the grid, from :func:`smoothed_field`.
+    affine_raw : ndarray, shape (3, 3)
+        Canvas px to the linearly moved grid px.
+    from_grid : ndarray, shape (3, 3)
+        Grid px to canvas px.
+    matrix : ndarray, shape (2, 3)
+        The linear part, canvas px to canvas px.
+    size : (w, h)
+        The canvas, px.
+
+    Returns
+    -------
+    residual : ndarray, shape (h, w, 2)
+        The full map minus the linear part, target canvas px.
+    sitk_max_px : float
+        The largest difference at :data:`N_PROBES` random points between
+        this reading and SimpleITK's own displacement-field transform.
+    """
+    import SimpleITK as sitk  # local: slow to import, needed for a warp
+
+    w, h = size
+    image = sitk.GetImageFromArray(displacement, isVector=True)
+    # SimpleITK's stubs leave a vector's element type unknown
+    image.SetSpacing(  # pyright: ignore[reportUnknownMemberType]
+        [1.0, 1.0]
+    )
+    transform = sitk.DisplacementFieldTransform(image)
 
     rng = np.random.default_rng(0)
-    probe = np.c_[rng.uniform(0, w - 1, 500), rng.uniform(0, h - 1, 500)]
-    pa = probe @ a_raw[:2, :2].T + a_raw[:2, 2]
-    own = np.array([tx.TransformPoint(tuple(map(float, p))) for p in pa])
+    probe = np.column_stack(
+        (rng.uniform(0, w - 1, N_PROBES), rng.uniform(0, h - 1, N_PROBES))
+    )
+    grid_points = probe @ affine_raw[:2, :2].T + affine_raw[:2, 2]
+    points = cast("list[list[float]]", grid_points.tolist())
+    # SimpleITK's stubs leave a point's element type unknown
+    moved = cast(
+        "list[tuple[float, float]]",
+        [
+            transform.TransformPoint(  # pyright: ignore[reportUnknownMemberType]
+                (x, y)
+            )
+            for x, y in points
+        ],
+    )
+    own = np.array(moved, dtype=np.float64)
     own = own @ from_grid[:2, :2].T + from_grid[:2, 2]
-    out["sitk_max_px"] = np.array(float(np.abs(own - field(probe)).max()))
-    ys, xs = np.mgrid[0:h, 0:w]
-    grid = np.c_[xs.ravel(), ys.ravel()].astype(np.float64)
-    linear = grid @ out["matrix"][:, :2].T + out["matrix"][:, 2]
-    out["residual"] = (field(grid) - linear).reshape(h, w, 2).astype(np.float32)
-    return out
+    read = _read_field(displacement, affine_raw, from_grid, probe)
+    sitk_max_px = float(cast(float, np.max(np.abs(own - read))))
+
+    xs, ys = np.meshgrid(np.arange(w), np.arange(h))
+    canvas = np.column_stack((xs.ravel(), ys.ravel())).astype(np.float64)
+    linear = canvas @ matrix[:, :2].T + matrix[:, 2]
+    full = _read_field(displacement, affine_raw, from_grid, canvas)
+    residual = (full - linear).reshape(h, w, 2).astype(np.float32)
+    return residual, sitk_max_px
 
 
-def main() -> int:
-    data = np.load(sys.argv[1])
-    mode = str(data["mode"])
-    if mode not in MODES:
-        raise SystemExit(f"mode is one of {MODES}; got {mode!r}")
-    device = SP.resolve_torch_device(os.environ.get("SPOMIALIGN_DEVICE") or None)
-    # the whole call, the matcher's loading included, in the GPU's queue
-    # (RoMa's device is untyped)
-    with gpu_turn(device) as turn:  # pyright: ignore[reportUnknownArgumentType]
-        return _match_all(data, mode, device, turn.waited_s)
+def _read_field(
+    displacement: npt.NDArray[np.float64],
+    affine_raw: npt.NDArray[np.float64],
+    from_grid: npt.NDArray[np.float64],
+    points: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
+    """Map canvas points through the linear part and the field, as ITK does.
 
-
-def _match_all(data, mode: str, device, waited_s: float = 0.0) -> int:
-    model = retried(device, lambda: SP.roma_outdoor(device=device, coarse_res=560,
-                                                    upsample_res=(H, W)))
-    result: dict[str, np.ndarray] = {"gpu_wait_s": np.array(waited_s)}
-    for i in range(int(data["n"])):
-        before = RETRIES["n"]
-        try:
-            held = f"section_keep_{i}"
-            got = retried(device, lambda i=i, held=held: run(
-                model, device, data[f"target_{i}"], data[f"source_{i}"],
-                data[f"keep_{i}"].astype(bool), mode, int(data["matches"]),
-                float(data[f"smoothing_px_{i}"]),
-                data[held].astype(bool) if held in data.files else None))
-        except Exception as exc:  # one section failing leaves the others
-            got = {"error": np.array(f"{type(exc).__name__}: {exc}")}
-        got["oom_retries"] = np.array(RETRIES["n"] - before)
-        result.update({f"{key}_{i}": value for key, value in got.items()})
-    np.savez(sys.argv[2], **result)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    ITK's displacement-field transform interpolates linearly (edge-clamped)
+    inside the field's buffer, continuous index in [-0.5, size - 0.5], and
+    displaces nothing outside it.
+    """
+    grid = points @ affine_raw[:2, :2].T + affine_raw[:2, 2]
+    inside = (
+        (grid[:, 0] >= -0.5)
+        & (grid[:, 0] <= W - 0.5)
+        & (grid[:, 1] >= -0.5)
+        & (grid[:, 1] <= H - 0.5)
+    )
+    moved = grid.copy()
+    for c in range(2):
+        # scipy's stubs leave the output's type open
+        sampled = cast(
+            "npt.NDArray[np.float64]",
+            map_coordinates(
+                displacement[..., c],
+                [grid[:, 1], grid[:, 0]],
+                order=1,
+                mode="nearest",
+            ),
+        )
+        moved[:, c] += np.where(inside, sampled, 0.0)
+    return moved @ from_grid[:2, :2].T + from_grid[:2, 2]

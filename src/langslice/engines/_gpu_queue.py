@@ -1,8 +1,9 @@
 """The GPU's one queue, as the engine processes take it: a lock on one file.
 
 Every fit on the machine that runs on the GPU takes the same file, so jobs
-running at once never fill the GPU together: FireANTs in LangSlice's own
-process, and STalign, SPOmiAlign and emlddmm in theirs. The file is
+running at once never fill the GPU together: FireANTs and SPOmiAlign in
+LangSlice's own process (the core's ``gpu_turn``), and STalign and emlddmm
+in theirs. The file is
 ``LANGSLICE_GPU_LOCK``, else ``~/.cache/langslice-stalign/gpu.lock``.
 
 Each engine's ``engine.py`` runs under the engine's own interpreter, which
