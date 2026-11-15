@@ -65,8 +65,8 @@ LangSlice's `start_job`. ABBA follows the job while the abba-mcp server stays co
 - **Plugins › LangSlice › Choose Python environment…**: the environment dialog.
 - **Plugins › LangSlice › Stop following**: detaches the follower from this ABBA
   session without closing it; ABBA keeps what it has.
-- **Plugins › LangSlice › LangSlice Job Folder**: outputs this ABBA project's job folder
-  (`job_folder`) and whether its job exists (`ready`), so an assistant driving ABBA through
+- **Plugins › LangSlice › LangSlice Job Folder**: outputs the folder to open with `start_job`
+  (`job_folder`: the project folder of snapshots, whose `langslice/` holds the job) and whether its job exists (`ready`), so an assistant driving ABBA through
   abba-mcp can run **Open LangSlice…**, then open the job with LangSlice's `start_job`.
 
 ## What Register › LangSlice… does
