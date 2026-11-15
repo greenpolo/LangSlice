@@ -3,7 +3,6 @@ inside the folder, capped answers, picture files answered with their index recor
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +58,21 @@ def test_paths_outside_the_job_folder_are_refused(tmp_path: Path):
         not name.endswith("/"), name))
 
 
-@pytest.mark.skipif(os.name == "nt", reason="symlinks")
+@pytest.fixture
+def symlinks(tmp_path: Path) -> None:
+    """Skips the test where this account cannot make symlinks (Windows without
+    Developer Mode or an administrator)."""
+    target = tmp_path / "symlink-target.txt"
+    target.write_text("", encoding="utf-8")
+    try:
+        (tmp_path / "symlink-probe").symlink_to(target)
+    except OSError:
+        pytest.skip("this account cannot make symlinks")
+    (tmp_path / "symlink-probe").unlink()
+    target.unlink()
+
+
+@pytest.mark.usefixtures("symlinks")
 def test_symlinks_out_of_the_folder_are_refused_and_not_walked(tmp_path: Path):
     job = _open(tmp_path)
     folder = job.layout.folder
@@ -198,7 +211,7 @@ def test_a_picture_is_seen_again_with_zoom_or_drawn_again_with_look(tmp_path: Pa
     assert "call look" not in text and "To draw" not in text
 
 
-@pytest.mark.skipif(os.name == "nt", reason="symlinks")
+@pytest.mark.usefixtures("symlinks")
 def test_the_agent_transcripts_are_neither_listed_searched_nor_read(tmp_path: Path):
     job = _open(tmp_path)
     folder = job.layout.folder
