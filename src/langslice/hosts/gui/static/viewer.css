@@ -64,8 +64,8 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  height: var(--strip-height, 22%);
-  min-height: 110px;
+  height: var(--strip-height, 17%);
+  min-height: 96px;
   border-top: 1px solid var(--line);
 }
 .strip.collapsed { height: auto; min-height: 0; }
