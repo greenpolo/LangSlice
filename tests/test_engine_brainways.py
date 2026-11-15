@@ -113,12 +113,14 @@ def test_the_package_imports_without_torch():
 def test_the_percentiles_are_numpy_1s():
     # np.percentile(x, float32 (0.1, 99.8)) under numpy 1.26, as Brainways
     # pins it; numpy 2 answers 1.1098171270873536e-09 / 0.9944179058074951
-    # and 7.0 / 250.87600708007812
+    # and 7.0 / 250.87600708007812. The plane is cubed by multiplying: a
+    # float32 power's last bits differ between numpy builds and CPUs
     rng = np.random.default_rng(7)
     rng.integers(0, 256, (224, 224), dtype=np.uint8)
-    plane = rng.random((224, 224), dtype=np.float32) ** 3
+    unit = rng.random((224, 224), dtype=np.float32)
+    plane = unit * unit * unit
     assert images._percentiles(plane.astype(np.float64), float32=True) == (
-        1.1098170861366987e-09, 0.9944179123267531)
+        1.1098170861366987e-09, 0.9944178916048259)
     small = np.random.default_rng(11).integers(0, 256, (7, 9), dtype=np.uint8)
     assert images._percentiles(small.astype(np.float64), float32=False) == (
         7.0, 250.87600326538086)

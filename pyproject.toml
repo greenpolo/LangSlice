@@ -81,6 +81,12 @@ registration = [
 mcp = [
     "mcp>=1.24,<2",
 ]
+# The comparison engines, run in LangSlice's process (langslice.engines).
+engines = [
+    # SPOmiAlign's matcher, RoMa: the release SPOmiAlign (commit c7f8b7a)
+    # vendors, its own code unchanged (langslice.engines.spomialign).
+    "romatch==0.1.2",
+]
 # Claude agent models via an Anthropic API key (``anthropic-api/<model>``,
 # providers/anthropic_api.py, on ADK's AnthropicLlm).
 anthropic = [
