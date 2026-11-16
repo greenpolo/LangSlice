@@ -93,6 +93,12 @@ engines = [
     # vendors, its own code unchanged (langslice.engines.spomialign).
     "romatch==0.1.2",
 ]
+# The LangSlice window as a desktop app of its own (hosts/gui/app.py):
+# pywebview shows the page in the system's web view. Without it the window
+# is a browser's app window.
+window = [
+    "pywebview>=6.1",
+]
 # Claude agent models via an Anthropic API key (``anthropic-api/<model>``,
 # providers/anthropic_api.py, on ADK's AnthropicLlm).
 anthropic = [

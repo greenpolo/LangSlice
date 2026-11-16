@@ -34,7 +34,7 @@ from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import TypeVar
 
 from PIL import Image
 
@@ -42,17 +42,16 @@ from langslice.core.fits.deformation import RecordStore
 from langslice.core.pictures.captions import view_angles_label
 from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.look import (
-    LookPicture,
-    LookRequest,
-    look,
     snapshot,
 )
 from langslice.core.refusal import Refused
-from langslice.core.sections.renders import render_slice
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.doors.jobs import JobContext, NoJob, context, read_spec
+from langslice.hosts.gui.drawing import draw_atlas as _atlas_picture
+from langslice.hosts.gui.drawing import draw_overlay as _overlay_picture
+from langslice.hosts.gui.drawing import draw_thumb as _thumb_picture
 from langslice.job.layout import JOB_FILE
 
 logger = logging.getLogger(__name__)
@@ -127,6 +126,10 @@ class RenderBusy(TimeoutError):
     """A picture not drawn within :data:`WAIT_S`."""
 
 
+class _Superseded(Exception):
+    """A queued picture of a section whose registration has changed since."""
+
+
 @dataclass(frozen=True)
 class Axis:
     """The cutting axis the strip is drawn along."""
@@ -159,6 +162,8 @@ class StripSection:
     position_mm: float | None
     #: :func:`render_key` of the section: its pictures change with it.
     render_key: str
+    #: :func:`thumb_key` of the section: its thumbnail changes with it.
+    thumb_key: str
 
 
 @dataclass(frozen=True)
@@ -225,6 +230,34 @@ def render_key(state: Stack, section_id: str) -> str:
         section depends on changes.
     """
     text = json.dumps(snapshot(state, [section_id]), sort_keys=True)
+    return hashlib.sha256(text.encode()).hexdigest()[:KEY_DIGITS]
+
+
+def thumb_key(state: Stack, section_id: str) -> str:
+    """Digest what a section's thumbnail depends on.
+
+    Parameters
+    ----------
+    state
+        The job's stack as the viewer reads it.
+    section_id
+        The section's filename.
+
+    Returns
+    -------
+    str
+        :data:`KEY_DIGITS` hex digits of the section's flip, quarter turn and
+        made images: a new position, transform or deformation leaves it
+        unchanged, so the strip does not draw the thumbnail again.
+    """
+    section = _section(state, section_id)
+    images = sorted(section.images.items())
+    facts = {
+        "flip": section.flip,
+        "rotation_deg": section.rotation_deg,
+        "images": {name: ref.digest for name, ref in images},
+    }
+    text = json.dumps(facts, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()[:KEY_DIGITS]
 
 
@@ -350,6 +383,7 @@ class JobRenderer:
                 order,
                 _rounded_mm(section.position_mm),
                 render_key(state, section.id),
+                thumb_key(state, section.id),
             )
             for order, section in enumerate(state.in_order(), 1)
         )
@@ -390,10 +424,11 @@ class JobRenderer:
         opened = self._open()
         key = ("overlay", section_id, edge, render_key(state, section_id))
         draw = partial(_overlay_picture, opened, state, section, edge)
-        return self._picture(key, opened, draw)
+        still = self._still(render_key, section_id, key[3])
+        return self._picture(key, opened, draw, current=still)
 
     def thumb(self, section_id: str, edge: int) -> bytes:
-        """Draw a section's thumbnail: its ``preprocessed`` image, oriented.
+        """Draw a section's thumbnail: its raw channels, oriented.
 
         Parameters
         ----------
@@ -420,9 +455,10 @@ class JobRenderer:
         state = self._state()
         section = _section(state, section_id)
         opened = self._open()
-        key = ("thumb", section_id, edge, render_key(state, section_id))
-        draw = partial(render_slice, opened.workspace, section, long_edge=edge)
-        return self._picture(key, opened, draw)
+        key = ("thumb", section_id, edge, thumb_key(state, section_id))
+        draw = partial(_thumb_picture, opened, section, edge)
+        still = self._still(thumb_key, section_id, key[3])
+        return self._picture(key, opened, draw, current=still)
 
     def atlas_thumb(self, k: int, edge: int) -> bytes:
         """Draw the strip's *k*-th atlas thumbnail.
@@ -485,12 +521,27 @@ class JobRenderer:
                     self._pictures.clear()
             return opened
 
+    def _still(
+        self, keyed: Callable[[Stack, str], str], section_id: str, digest: str
+    ) -> Callable[[], bool]:
+        """Make the check that a section's picture is still the one to draw."""
+        return partial(_is_current, self._stack, keyed, section_id, digest)
+
     def _picture(
-        self, key: _Key, opened: _Opened, draw: Callable[[], Image.Image]
+        self,
+        key: _Key,
+        opened: _Opened,
+        draw: Callable[[], Image.Image],
+        *,
+        current: Callable[[], bool] | None = None,
     ) -> bytes:
         """Return the picture *key* from the cache, else drawn.
 
-        One drawing per key, however many requests wait for it.
+        One drawing per key, however many requests wait for it. A picture
+        whose section has changed by the time its turn comes is not drawn
+        (*current* says so): the request is answered busy, and asked again it
+        draws the section as it is then. A fast run's queue so holds only
+        the pictures still worth drawing.
         """
         with self._lock:
             ready = self._pictures.get(key)
@@ -499,20 +550,28 @@ class JobRenderer:
                 return ready
             future = self._flying.get(key)
             if future is None:
-                future = self._executor.submit(self._make, key, opened, draw)
+                make = partial(self._make, key, opened, draw, current=current)
+                future = self._executor.submit(make)
                 self._flying[key] = future
         try:
             return future.result(timeout=WAIT_S)
-        except TimeoutError as exc:
+        except (TimeoutError, _Superseded) as exc:
             raise RenderBusy(BUSY) from exc
 
     def _make(
-        self, key: _Key, opened: _Opened, draw: Callable[[], Image.Image]
+        self,
+        key: _Key,
+        opened: _Opened,
+        draw: Callable[[], Image.Image],
+        *,
+        current: Callable[[], bool] | None = None,
     ) -> bytes:
         """Draw and encode one picture on the pool, then keep it."""
         data: bytes | None = None
         try:
             with self._drawing:
+                if current is not None and not current():
+                    raise _Superseded(key)
                 try:
                     picture = _drawn_safely(draw, key)
                 finally:
@@ -638,33 +697,22 @@ def _drawn_safely(draw: Callable[[], Image.Image], key: _Key) -> Image.Image:
         raise RenderError(DRAWING_FAILED.format(reason=exc)) from exc
 
 
-def _overlay_picture(
-    opened: _Opened, state: Stack, section: Section, edge: int
-) -> Image.Image:
-    mode = "overlay" if section.position_mm is not None else "section"
-    request = LookRequest(mode=mode, sections=(section.id,), long_edge=edge)
-    pictures = look(opened.workspace, state, request, store=opened.store)
-    return _content(pictures[0])
+def _is_current(
+    stack: Callable[[], Stack | None],
+    keyed: Callable[[Stack, str], str],
+    section_id: str,
+    digest: str,
+) -> bool:
+    """Tell whether a section's picture keyed *digest* is still current.
 
-
-def _atlas_picture(
-    opened: _Opened, state: Stack, position_mm: float, edge: int
-) -> Image.Image:
-    # The template, look's own atlas default: a borrowed Nissl would add
-    # over a gigabyte to the window for thumbnails a few dozen pixels tall.
-    request = LookRequest(
-        mode="atlas", positions_mm=(position_mm,), long_edge=edge
-    )
-    return _content(look(opened.workspace, state, request)[0])
-
-
-def _content(picture: LookPicture) -> Image.Image:
-    """Cut *picture*'s caption band off.
-
-    The content is the recipe's content size, at the top left.
+    *stack* reads the job's stack now; *keyed* digests what the picture
+    depends on (:func:`render_key`, :func:`thumb_key`).
     """
-    width, height = cast("list[int]", picture.recipe["shown"])
-    return picture.image.crop((0, 0, width, height))
+    state = stack()
+    try:
+        return state is not None and keyed(state, section_id) == digest
+    except UnknownSection:
+        return False
 
 
 def _section(state: Stack, section_id: str) -> Section:

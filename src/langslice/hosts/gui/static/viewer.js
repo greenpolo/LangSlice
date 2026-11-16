@@ -1,18 +1,22 @@
 'use strict';
-// The agent focus area, the ABBA viewer's comparison window: its header (how many
-// sections are in focus, the page, the Focus | Sections | Steps switch, Follow agent and
-// the page buttons), the positioning strip (viewer-strip.js) and one of three views:
-//   Focus     up to four panels (1, 1 x 2 or 2 x 2), each a section under its current
+// The sections area: its header (whose choice the sections are and how many, the
+// Pictures | Table | Steps switch, Follow the agent and the page buttons), one of three
+// views, and under them the brain strip (viewer-strip.js):
+//   Pictures  up to four panels (1, 1 x 2 or 2 x 2), each a section under its current
 //             registration with the atlas borders, drawn by the server
 //             (`render/overlay/<section>`) at the panel's size; the old picture stays,
 //             tagged `updating`, until a newer one has loaded;
-//   Sections  the sections table;
+//   Table     the sections table;
 //   Steps     undo and redo, the notes and the spend.
+// It also keeps the narration band's progress meters (how many sections are placed,
+// aligned and warped).
 // Follow: the focus is the sections of the agent's latest followed call (the snapshot's
 // `focus`); a new call replaces them and goes back to page 1. A section the person
-// clicks (strip, table, a name in the log) becomes the focus and Follow agent turns off.
+// clicks (strip, table, a name in the journal) becomes the focus and Follow turns off.
 const Viewer = (() => {
-  const PAGE_SIZE = 4;
+  const PAGE_SIZES = { simple: 2, extended: 4 };
+  // How a section got its in-plane transform, in a panel's words.
+  const HOW = { elastix: 'aligned automatically', interactive: 'aligned by hand' };
   const $ = id => document.getElementById(id);
   const { el } = Ui;
 
@@ -28,6 +32,10 @@ const Viewer = (() => {
   let mode = 'focus';
   let panels = [];
   let resizeTimer = null;
+  let tasks = null;            // the job's tasks, from the header
+  let tasksSeen = '';
+  let simple = true;           // the Simple view: two sections to a page, no other view
+  const pageSize = () => (simple ? PAGE_SIZES.simple : PAGE_SIZES.extended);
 
   // --- the header, the switch, Follow and paging -------------------------------------------
   function init() {
@@ -51,13 +59,40 @@ const Viewer = (() => {
     job = index;
     rows = []; byId = new Map(); loaded = false;
     agent = null; agentSeen = ''; follow = true; manual = []; page = 0;
+    tasks = null; tasksSeen = '';
+    progress();
     for (const p of panels) clearPanel(p);
     Strip.setJob(index);
     renderSections();
     renderSteps({});
     refresh();
   }
-  function setHeader(header) { Strip.setPlane(header?.plane); }
+  function setHeader(header) {
+    Strip.setPlane(header?.plane);
+    const seen = JSON.stringify(header?.tasks ?? null);
+    if (seen !== tasksSeen) { tasksSeen = seen; tasks = Array.isArray(header?.tasks) ? header.tasks : null; progress(); }
+  }
+  // How far the registration is: of the job's sections, how many have a position, an
+  // in-plane transform and a deformation. A task the job has switched off has no meter.
+  function progress() {
+    const box = $('progress');
+    box.hidden = !loaded || !rows.length;
+    if (box.hidden) return;
+    const counts = {
+      placed: rows.filter(r => typeof r.position_mm === 'number').length,
+      aligned: rows.filter(r => r.transform).length,
+      warped: rows.filter(r => r.deformation).length,
+    };
+    const task = { placed: 'position', aligned: 'transform', warped: 'nonlinear' };
+    for (const meter of box.querySelectorAll('.meter')) {
+      const name = meter.dataset.meter, n = counts[name];
+      meter.hidden = Boolean(tasks) && !tasks.includes(task[name]) && !n;
+      meter.classList.toggle('full', n === rows.length);
+      meter.classList.toggle('none', n === 0);
+      meter.querySelector('.meter-count').textContent = `${n} of ${rows.length}`;
+      meter.querySelector('.meter-fill').style.width = `${(100 * n) / rows.length}%`;
+    }
+  }
   // One snapshot: its tables (when the state moved; else null) and the agent's focus, applied
   // together so the panels ask only for what the snapshot puts in focus.
   function update(tables, focus) {
@@ -69,6 +104,7 @@ const Viewer = (() => {
       Strip.setRows(rows);
       renderSections(tables.sections_note || '');
       renderSteps(tables);
+      progress();
       changed = true;
     }
     const seen = JSON.stringify(focus ? [focus.call ?? null, focus.sections || []] : null);
@@ -91,6 +127,12 @@ const Viewer = (() => {
     page = 0;
     showView('focus');
   }
+  // Simple shows the pictures only, and follows the agent.
+  function setSimple(on) {
+    simple = on;
+    if (on) { follow = true; page = 0; if (mode !== 'focus') { showView('focus'); return; } }
+    refresh();
+  }
   function toggleFollow() {
     if (follow) manual = targets();
     follow = !follow;
@@ -98,7 +140,7 @@ const Viewer = (() => {
     refresh();
   }
   function pageBy(delta) {
-    const count = Math.max(1, Math.ceil(targets().length / PAGE_SIZE));
+    const count = Math.max(1, Math.ceil(targets().length / pageSize()));
     page = (page + delta + count) % count;
     refresh();
   }
@@ -113,18 +155,21 @@ const Viewer = (() => {
   // Everything that follows from the focus: the header, the strip's colours, the panels.
   function refresh() {
     const all = targets();
-    const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+    const size = pageSize();
+    const pages = Math.max(1, Math.ceil(all.length / size));
     page = Math.min(page, pages - 1);
-    const onPage = all.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-    $('focus-count').textContent = loaded && rows.length
-      ? `· ${all.length} of ${rows.length} section${rows.length === 1 ? '' : 's'} · page ${page + 1}/${pages} · read-only`
-      : '· read-only';
+    const onPage = all.slice(page * size, page * size + size);
+    $('focus-name').textContent = follow ? 'The agent is working on' : 'You are looking at';
+    $('focus-count').textContent = !loaded || !rows.length ? ''
+      : (all.length === rows.length ? `all ${rows.length} sections` : `${all.length} of ${rows.length} sections`)
+        + (pages > 1 ? `, page ${page + 1} of ${pages}` : '');
     $('follow-agent').setAttribute('aria-pressed', String(follow));
-    $('page-previous').disabled = $('page-next').disabled = pages < 2;
+    $('pager').hidden = pages < 2;
     Strip.setTargets(all, onPage);
     for (const tr of document.querySelectorAll('#sections tbody tr')) tr.classList.toggle('target', all.includes(tr.dataset.id));
     const empty = $('focus-empty');
     empty.hidden = true;
+    shareProblem();
     if (mode !== 'focus') return;
     if (!loaded || !rows.length || !onPage.length) {
       empty.textContent = !loaded ? 'Loading the job…' : !rows.length ? 'This job has no sections yet.' : 'Nothing in focus.';
@@ -132,17 +177,12 @@ const Viewer = (() => {
     }
     const grid = $('view-focus');
     grid.className = 'panels n' + Math.max(1, onPage.length);
-    // 1 fills the area, 2 sit side by side, 3 or 4 in a 2 x 2 grid (a fourth cell stays empty).
-    const cells = onPage.length === 3 ? 4 : onPage.length;
-    const wanted = panels.slice(0, onPage.length);
-    const children = [...wanted.map(p => p.root)];
-    if (cells === 4 && onPage.length === 3) children.push(spacer());
+    // 1 fills the area, 2 sit side by side, 3 as one tall panel beside two, 4 in a 2 x 2 grid.
+    const children = panels.slice(0, onPage.length).map(p => p.root);
     if (grid.children.length !== children.length || children.some((c, i) => grid.children[i] !== c)) grid.replaceChildren(...children);
     onPage.forEach((id, i) => showPanel(panels[i], id));
     for (const p of panels.slice(onPage.length)) clearPanel(p);
   }
-  let blank = null;
-  function spacer() { return blank || (blank = el('div', 'panel-spacer')); }
   // Called when the viewer tab is shown again: sizes were zero while it was hidden.
   function shown() {
     Strip.relayout();
@@ -153,19 +193,20 @@ const Viewer = (() => {
   function makePanel(slot) {
     const root = el('article', 'panel slot-' + slot);
     const title = el('header', 'panel-title');
-    const name = el('span', 'panel-name'), angles = el('span', 'panel-angles'), tags = el('span', 'panel-tags');
-    const open = el('button', 'panel-open', 'open');
+    const number = el('span', 'panel-slot', String(slot));
+    const name = el('span', 'panel-name'), where = el('span', 'panel-where'), angles = el('span', 'panel-angles'), tags = el('span', 'panel-tags');
+    const open = el('button', 'panel-open', 'Enlarge');
     open.title = 'Show this picture large';
-    title.append(name, angles, tags, open);
+    title.append(number, name, where, angles, tags, open);
     const box = el('div', 'panel-picture');
     const updating = el('span', 'panel-updating', 'updating');
     const message = el('p', 'panel-message');
     updating.hidden = message.hidden = true;
     box.append(updating, message);
     root.append(title, box);
-    const p = { slot, root, name, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, view: { s: 1, x: 0, y: 0 } };
+    const p = { slot, root, name, where, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, stale: false, problem: '', view: { s: 1, x: 0, y: 0 } };
     open.addEventListener('click', () => {
-      if (!p.img) return;
+      if (!p.img || p.stale) return;
       const row = byId.get(p.id);
       const words = [p.angles.textContent, row?.transform, row?.deformation, row?.damaged ? 'damaged' : ''].filter(Boolean);
       AgentLog.openRender(p.img.src, edge => renderUrl(p.id, edge), p.name.textContent,
@@ -183,28 +224,37 @@ const Viewer = (() => {
   function clearPanel(p) {
     if (p.pending) { drop(p.pending); p.pending = null; }
     p.img?.remove();
-    p.img = null; p.id = null; p.key = null; p.edge = 0; p.url = '';
+    p.img = null; p.id = null; p.key = null; p.edge = 0; p.url = ''; p.stale = false;
     p.view = { s: 1, x: 0, y: 0 };
     p.updating.hidden = p.message.hidden = true;
+    p.problem = '';
+    shareProblem();
   }
   function showPanel(p, id) {
     const row = byId.get(id);
-    if (p.id !== id) { clearPanel(p); p.id = id; }
-    const position = typeof row?.position_mm === 'number' ? ` · ${Ui.mm(row.position_mm)} mm` : '';
-    p.name.textContent = `${p.slot} · ${id}${position}`;
+    // Another section: the picture shown stays, dimmed, until the new section's has loaded.
+    if (p.id !== id) {
+      if (p.pending) { drop(p.pending); p.pending = null; }
+      p.id = id; p.key = null; p.edge = 0; p.url = ''; p.problem = '';
+      p.view = { s: 1, x: 0, y: 0 };
+      p.message.hidden = true;
+      if (p.img) { p.stale = true; p.img.classList.add('stale'); transform(p, p.img); }
+    }
+    p.name.textContent = Ui.short(id);
     p.name.title = id;
+    p.where.textContent = typeof row?.position_mm === 'number' ? `${Ui.mm(row.position_mm)} mm` : '';
     const a = row?.angles && typeof row.angles === 'object' ? row.angles : {};
     const pitch = Number(a.pitch) || 0, yaw = Number(a.yaw) || 0;
-    p.angles.textContent = [pitch ? `pitch ${pitch.toFixed(1)}°` : '', yaw ? `yaw ${yaw.toFixed(1)}°` : ''].filter(Boolean).join(' · ');
+    p.angles.textContent = [pitch ? `pitch ${pitch.toFixed(1)}°` : '', yaw ? `yaw ${yaw.toFixed(1)}°` : ''].filter(Boolean).join(', ');
     // Each tag keeps a rank: when the strip is short of room the lowest go first.
     const tags = [];
-    const tag = (cls, text, rank) => { const t = el('span', cls, text); t.dataset.rank = rank; tags.push(t); };
-    if (row?.transform) tag('tag', row.transform, 1);
-    if (row?.deformation) tag('tag method', row.deformation, 2);
+    const tag = (cls, text, rank) => { const t = el('span', cls, text); t.dataset.rank = rank; tags.push(t); return t; };
+    if (row?.transform) tag('tag', HOW[row.transform] || row.transform, 1).title = 'Transform: ' + row.transform;
+    if (row?.deformation) tag('tag', 'warped', 2).title = 'Deformation: ' + row.deformation;
     if (row?.damaged) tag('tag damaged', 'damaged', 4);
     if (row && typeof row.position_mm !== 'number') tag('tag', 'not placed', 3);
     p.tags.replaceChildren(...tags);
-    p.open.disabled = !p.img;
+    p.open.disabled = !p.img || p.stale;
     fitTitle(p);
     request(p);
   }
@@ -256,16 +306,18 @@ const Viewer = (() => {
     img.decoding = 'async';
     img.draggable = false;
     p.pending = img;
-    p.updating.hidden = !p.img;
+    p.updating.hidden = !p.img || p.stale;
     if (!p.img) { p.message.textContent = 'Drawing the section…'; p.message.hidden = false; }
     img.onload = () => {
       img.release();
       if (p.pending !== img) return;
       p.pending = null;
       p.updating.hidden = p.message.hidden = true;
+      if (p.problem) { p.problem = ''; shareProblem(); }
       img.className = 'entering';
       transform(p, img);
       const old = p.img;
+      p.stale = false;
       p.img = img;
       p.box.prepend(img);
       p.open.disabled = false;
@@ -287,14 +339,25 @@ const Viewer = (() => {
       }
       p.updating.hidden = true;
       p.img?.remove();
-      p.img = null;
+      p.img = null; p.stale = false;
       p.open.disabled = true;
-      p.message.textContent = answer.error
+      p.problem = answer.error
         || (answer.status === 404 ? 'No picture of this section is available from this LangSlice.'
           : answer.status === 0 ? 'LangSlice is not reachable.' : 'The picture could not be drawn.');
       p.message.hidden = false;
+      shareProblem();
     };
     img.release = Ui.loads.add(() => p.slot / 10, () => { img.src = url; });
+  }
+  // The same reason on every panel shown (a job whose images moved, say) is said once, over
+  // the panels; each panel then says only that it was not drawn.
+  function shareProblem() {
+    const shown = mode === 'focus' ? panels.filter(p => p.id) : [];
+    const said = shown.filter(p => p.problem);
+    const shared = shown.length > 1 && said.length === shown.length && said.every(p => p.problem === said[0].problem);
+    $('focus-problem').textContent = shared ? said[0].problem : '';
+    $('focus-problem').hidden = !shared;
+    for (const p of said) p.message.textContent = shared ? 'Not drawn: the reason is above.' : p.problem;
   }
   // Wheel zooms about the pointer, dragging pans, a double-click resets: the picture is
   // transformed in the page; nothing is drawn again while zooming.
@@ -445,12 +508,12 @@ const Viewer = (() => {
     Ui.drag($('strip-divider'), {
       start: () => { start = strip.getBoundingClientRect().height; },
       move: (dx, dy) => {
-        const height = Math.round(Math.min(area.clientHeight - 200, Math.max(110, start + dy)));
+        const height = Math.round(Math.min(area.clientHeight - 200, Math.max(110, start - dy)));
         strip.style.setProperty('--strip-height', height + 'px');
       },
       end: () => Ui.store.set('stripHeight', parseInt(strip.style.getPropertyValue('--strip-height'), 10) || ''),
     });
   }
 
-  return { init, setJob, setHeader, update, pick, toggleFollow, pageBy, showView, shown };
+  return { init, setJob, setHeader, update, pick, toggleFollow, pageBy, showView, shown, setSimple };
 })();

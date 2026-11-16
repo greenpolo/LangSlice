@@ -1,16 +1,17 @@
 'use strict';
-// The positioning strip: the ABBA viewer's positioning overview, drawn as one inline
-// SVG. Along the top, the atlas's reference image at regular positions of the cutting
-// axis (`jobs/<n>/strip` names them; `render/atlas/<k>` draws them); under it the axis
-// with a millimetre ruler and its two ends named; below, every placed section in at
-// most three stair rows (each in the first row where its thumbnail does not overlap its
-// neighbour), drawn as its thumbnail (`render/thumb/<section>`) with a round handle and
-// a dashed leader up to a square key on the axis at its position. The focus's sections
-// take their panel's colour, and a pink bar on the axis spans them. Sections with no
-// position wait in a group at the right end. The wheel zooms the axis about the
-// pointer, dragging pans it, a double-click shows the whole axis; hovering names a
-// section and clicking puts it in focus. Without the strip route (an older server) the
-// strip is drawn from the snapshot's rows, without pictures.
+// The brain strip, under the pictures: where every section sits along the cutting axis,
+// drawn as one inline SVG. Along the top, the atlas's reference image at regular
+// positions of the axis (`jobs/<n>/strip` names them; `render/atlas/<k>` draws them);
+// under it the axis with a millimetre ruler and its two ends named; below, every placed
+// section in at most three stair rows (each in the first row where its thumbnail does not
+// overlap its neighbour), drawn as its thumbnail (`render/thumb/<section>`) with a square
+// key on the axis at its position. The focus's sections take the accent and a leader up
+// to their key; the ones on the shown page are outlined and carry their panel's number,
+// and a bar on the axis spans them. Sections with no position wait in a group at the
+// right end. The wheel zooms the axis about the pointer, dragging pans it, a double-click
+// shows the whole axis; hovering names a section and clicking puts it in focus. Without
+// the strip route (an older server) the strip is drawn from the snapshot's rows, without
+// pictures.
 const Strip = (() => {
   const NS = 'http://www.w3.org/2000/svg';
   const MAX_ROWS = 3;
@@ -125,7 +126,7 @@ const Strip = (() => {
     for (const id of all) {
       const mark = marks.get(id);
       if (!mark) continue;
-      for (const part of [mark.leader, mark.outline, mark.key, mark.handle]) part.parentNode?.append(part);
+      for (const part of [mark.leader, mark.outline, mark.key, mark.handle, mark.number]) part.parentNode?.append(part);
     }
     place();
   }
@@ -139,9 +140,11 @@ const Strip = (() => {
       outline: svgEl('rect', { class: 'outline' }),
       key: svgEl('rect', { class: 'key' }),
       handle: svgEl('circle', { class: 'handle' }),
-      parts() { return [this.thumb.img, this.thumb.next, this.leader, this.outline, this.key, this.handle].filter(Boolean); },
+      number: svgEl('text', { class: 'slot-number', 'text-anchor': 'middle' }),
+      parts() { return [this.thumb.img, this.thumb.next, this.leader, this.outline, this.key, this.handle, this.number].filter(Boolean); },
       classes(target, slot) {
-        const kind = target ? (slot ? 'slot-' + slot : 'other') : '';
+        const kind = target ? (slot ? 'shown' : 'other') : '';
+        this.number.textContent = slot ? String(slot) : '';
         for (const [part, base] of [[this.leader, 'leader'], [this.outline, 'outline'], [this.key, 'key'], [this.handle, 'handle']]) {
           part.setAttribute('class', base + (target ? ' target ' + kind : ''));
         }
@@ -151,7 +154,7 @@ const Strip = (() => {
     layers.leaders.append(mark.leader);
     layers.outlines.append(mark.outline);
     layers.keys.append(mark.key);
-    layers.handles.append(mark.handle);
+    layers.handles.append(mark.handle, mark.number);
     mark.classes(all.includes(id), slots.get(id));
     return mark;
   }
@@ -204,10 +207,10 @@ const Strip = (() => {
     for (const mark of marks.values()) release(mark.thumb.next);
     for (const entry of atlas) release(entry.next);
   }
-  // A section's thumbnail is asked for again only when its render key changes.
+  // A section's thumbnail is asked for again only when its orientation or images change.
   function thumbHref(row) {
     if (!info || job === null) return '';
-    const key = row.render_key ?? [row.flip ? 'f' : '', row.rotation_deg || 0].join('');
+    const key = row.thumb_key ?? row.render_key ?? [row.flip ? 'f' : '', row.rotation_deg || 0].join('');
     return `jobs/${job}/render/thumb/${encodeURIComponent(row.id)}?edge=${edge}&key=${encodeURIComponent(key)}`;
   }
   function atlasHref(entry) {
@@ -352,7 +355,7 @@ const Strip = (() => {
       const row = mark.row;
       if (!row) continue;
       const target = all.includes(id);
-      const radius = target ? 6 : 5;
+      const radius = slots.has(id) ? 7 : target ? 4 : 3;
       let cx, cy;
       if (placed(row)) {
         cx = toX(row.position_mm);
@@ -363,10 +366,12 @@ const Strip = (() => {
         mark.leader.style.display = mark.key.style.display = '';
         if (target) targetsX.push(cx);
         mark.handle.setAttribute('clip-path', 'url(#strip-clip)');
+        mark.number.setAttribute('clip-path', 'url(#strip-clip)');
       } else {
         [cx, cy] = loosePlace(row, tw, th, rowY);
         mark.leader.style.display = mark.key.style.display = 'none';
         mark.handle.removeAttribute('clip-path');
+        mark.number.removeAttribute('clip-path');
       }
       mark.thumb.box = { x: cx - tw / 2, y: cy - th / 2, width: tw, height: th };
       const layer = placed(row) ? layers.thumbs : layers.loose;
@@ -380,8 +385,9 @@ const Strip = (() => {
       set(mark.outline, { x: cx - tw / 2, y: cy - th / 2, width: tw, height: th });
       mark.outline.style.display = L.withAtlas ? '' : 'none';
       set(mark.handle, { cx, cy, r: radius });
+      set(mark.number, { x: cx, y: cy + 3.5 });
     }
-    // The pink bar spanning the focus's sections.
+    // The bar spanning the focus's sections.
     layers.span.replaceChildren();
     if (targetsX.length > 1) {
       layers.span.append(svgEl('line', { class: 'span', x1: Math.min(...targetsX), y1: yAxis, x2: Math.max(...targetsX), y2: yAxis }));
@@ -463,7 +469,7 @@ const Strip = (() => {
     else if (reason) parts.push('no pictures');
     const unplaced = rows.filter(r => !placed(r)).length;
     if (unplaced && rows.length) parts.push(`${unplaced} not placed`);
-    title.textContent = '· ' + parts.join(' · ');
+    title.textContent = parts.join(', ');
     // A refusal's words are long: the panels show them, the title keeps them on hover.
     title.title = info ? '' : reason;
   }
@@ -523,11 +529,11 @@ const Strip = (() => {
       const row = mark.row;
       const lines = [placed(row) ? `${Ui.mm(row.position_mm)} mm` : 'not placed'];
       if (row.angles && typeof row.angles === 'object') {
-        lines.push(`pitch ${Ui.mm(Number(row.angles.pitch), 1)}° · yaw ${Ui.mm(Number(row.angles.yaw), 1)}°`);
+        lines.push(`pitch ${Ui.mm(Number(row.angles.pitch), 1)}°, yaw ${Ui.mm(Number(row.angles.yaw), 1)}°`);
       }
       const facts = [row.transform, row.deformation, row.damaged ? 'damaged' : ''].filter(Boolean);
-      if (facts.length) lines.push(facts.join(' · '));
-      tip.replaceChildren(Ui.el('div', 'tip-name', `${row.order} · ${row.id}`), ...lines.map(line => Ui.el('div', 'tip-line', line)));
+      if (facts.length) lines.push(facts.join(', '));
+      tip.replaceChildren(Ui.el('div', 'tip-name', Ui.short(row.id)), ...lines.map(line => Ui.el('div', 'tip-line', line)));
       for (const m of marks.values()) m.handle.classList.toggle('hover', m.id === id);
     }
     tip.hidden = false;

@@ -15,6 +15,7 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.hosts.gui.render import render_key
 from langslice.hosts.gui.watch import IDLE_S, JobList, JobWatcher
+from langslice.job.settings.labels import label as tool_title
 from langslice.job.state_file import write_checkpoint, write_json_atomic
 
 
@@ -71,6 +72,7 @@ def test_appended_lines_arrive_once_in_order(tmp_path: Path) -> None:
     assert [i["kind"] for i in second["items"]] == ["tool"]
     assert second["status"]["word"] == "Running"
     assert second["status"]["sentence"].startswith("position_sections on s000.png")
+    assert second["items"][0]["title"].startswith("Place sections along the atlas")
     assert second["header"]["door"] == "cli"
     assert _snap(watcher, second["cursor"])["items"] == []
 
@@ -86,6 +88,8 @@ def test_a_half_written_line_waits_for_its_end(tmp_path: Path) -> None:
     _append(views, text[20:])
     pictures = [i for i in _snap(watcher)["items"] if i["kind"] == "picture"]
     assert [(p["number"], p["caption"]) for p in pictures] == [(1, "look picture 1")]
+    # A picture carries its tool's plain-language label, as a tool row does.
+    assert pictures[0]["title"] == tool_title("look") != "look"
     assert watcher.picture(1) == folder / "views" / "000001_look" / "view.jpg"
     assert watcher.picture(2) is None
 

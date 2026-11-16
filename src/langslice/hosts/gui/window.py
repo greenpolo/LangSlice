@@ -1,6 +1,11 @@
-"""Opening the GUI: a browser app window without an address bar, else a tab.
+"""Opening the GUI: LangSlice's own window, a browser's, or a tab.
 
-The order: a Chrome, Chromium, Edge or Brave on the ``PATH``; on Windows the
+With pywebview installed (the ``window`` extra) the page is shown by
+:mod:`.app`, a desktop window of LangSlice's own with its icon and its own
+taskbar entry, started as a process (closing it ends that process, which is
+how the server knows the window is gone). Without it, a browser's app
+window without an address bar: a Chrome, Chromium, Edge or Brave on the
+``PATH``; on Windows the
 usual install folders under ``PROGRAMFILES`` and ``LOCALAPPDATA``; on macOS
 ``/Applications`` and ``~/Applications``. The window is opened with
 ``--app=URL`` and a private profile, so it is a process of its own (closing it
@@ -11,6 +16,7 @@ URL is printed and the server keeps serving.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -44,6 +50,11 @@ MAC_APPS = (
     "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "Brave Browser.app/Contents/MacOS/Brave Browser",
 )
+#: How long LangSlice's own window has to fail in (a web view that cannot
+#: start ends its process within this); after it the window is taken as open.
+OWN_WINDOW_START_S = 2.0
+#: The module that shows LangSlice's own window.
+OWN_WINDOW_MODULE = "langslice.hosts.gui.app"
 #: The tabs the window can open on (``langslice gui --tab``).
 TABS = ("viewer", "prompt")
 
@@ -64,11 +75,12 @@ def start_address(url: str, tab: str, *, folders: bool) -> str:
     Returns
     -------
     str
-        *url* for the agent viewer; for the prompt generator, *url* with a
-        fragment naming the tab and the job.
+        *url* with a fragment naming the tab and the job. The agent viewer
+        with no folders given is *url* as it is: the page then chooses (the
+        Settings tab while no connection is chosen).
     """
     if tab == "viewer":
-        return url
+        return url + "#tab=viewer&job=0" if folders else url
     if folders:
         return url + "#tab=prompt&job=0"
     return url + "#tab=prompt"
@@ -101,6 +113,26 @@ def find_browser(*, platform: str = sys.platform, env: dict[str, str] | None = N
         if is_file(path):
             return str(path)
     return None
+
+
+def own_window_command(url: str) -> list[str] | None:
+    """Make the command that shows *url* in LangSlice's own window.
+
+    Parameters
+    ----------
+    url
+        The address the window opens on.
+
+    Returns
+    -------
+    list of str or None
+        The command starting :mod:`.app` at :data:`WINDOW_SIZE`, or None
+        when pywebview (the ``window`` extra) is not installed.
+    """
+    if importlib.util.find_spec("webview") is None:
+        return None
+    size = [str(edge) for edge in WINDOW_SIZE]
+    return [sys.executable, "-m", OWN_WINDOW_MODULE, url] + size
 
 
 def app_arguments(browser: str, url: str, profile: str,
@@ -140,12 +172,33 @@ class Opened:
             shutil.rmtree(self.profile, ignore_errors=True)
 
 
+def _own_window(url: str, popen: Callable[..., subprocess.Popen[bytes]]
+                ) -> subprocess.Popen[bytes] | None:
+    """Start LangSlice's own window; None when it cannot be shown."""
+    command = own_window_command(url)
+    if not command:
+        return None
+    try:
+        process = popen(command, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+    try:
+        process.wait(timeout=OWN_WINDOW_START_S)
+    except subprocess.TimeoutExpired:
+        return process
+    return None
+
+
 def open_window(url: str, *, browser: str | None = None,
                 find: Callable[[], str | None] = find_browser,
                 popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
                 open_tab: Callable[[str], bool] = webbrowser.open,
                 say: Callable[[str], None] = print) -> Opened:
-    """Open *url* as an app window, else a tab, else print it."""
+    """Open *url* in a window of its own, else a tab, else print it."""
+    own = None if browser else _own_window(url, popen)
+    if own is not None:
+        return Opened("app", own)
     browser = browser or find()
     if browser:
         profile = tempfile.mkdtemp(prefix="langslice-gui-")

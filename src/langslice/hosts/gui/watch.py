@@ -32,6 +32,7 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import stack_angles_entry, status_rows
 from langslice.hosts.gui.focus import Focus, started_focus
 from langslice.hosts.gui.render import render_key
+from langslice.hosts.gui.transcripts import TranscriptWords, projects_root
 from langslice.job.history import SectionHistories
 from langslice.job.layout import (
     EVENTS_FILE,
@@ -49,6 +50,7 @@ from langslice.job.layout import (
     held_image_folder,
 )
 from langslice.job.migrations import viewer_stack
+from langslice.job.settings.labels import label as tool_title
 from langslice.job.settings.tool_table import TOOLS
 
 #: How often a watched job's files are looked at, at most.
@@ -271,6 +273,7 @@ class JobWatcher:
         self.events = _Tail(f / LOGS_DIR / EVENTS_FILE)
         self.views = _Tail(f / VIEWS_INDEX)
         self.trace: _Tail | None = None
+        self.words = TranscriptWords(projects_root())
         self.state = _Whole(f / STATE_FILE)
         self.history = _Whole(f / HISTORY_DIR / UNDO_FILE)
         self.job = _Whole(f / JOB_FILE)
@@ -352,8 +355,10 @@ class JobWatcher:
                     records, cut = self.trace.read()
                     return older + records, cut
                 self.trace = _Tail(newest)
-        if self.trace is None:
-            return [], False
+        if self.trace is None:  # a coding agent's words: its app's transcript
+            last = self.last_change()
+            said = self.words.read(self.folder, self.job.value, last)  # pyright: ignore[reportAny]
+            return [dict(record) for record in said], False
         return self.trace.read()
 
     def _append(self, item: dict[str, Any]) -> None:
@@ -371,6 +376,7 @@ class JobWatcher:
                 "kind": "tool", "phase": "start" if kind == "tool_start" else "end",
                 "key": key, "name": str(record.get("name") or "tool"),
                 "label": str(record.get("name") or "tool"),
+                "title": tool_title(str(record.get("name") or "tool")),
                 "sections": [str(s) for s in record.get("target_ids") or []],
                 "failed": bool(record.get("failed")), "status": record.get("status"),
                 "step": record.get("step"), "door": record.get("door"), "at": at,
@@ -474,6 +480,7 @@ class JobWatcher:
             "kind": "picture", "number": number, "path": _view_folder(path),
             "tool": str(record.get("tool") or ""),
             "label": str(record.get("tool") or "picture"),
+            "title": tool_title(str(record.get("tool") or "")),
             "call": record.get("call"), "sections": [str(s) for s in
                                                      record.get("sections") or []],
             "mode": record.get("mode"), "caption": _short(caption, 4000),
