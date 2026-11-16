@@ -18,12 +18,12 @@ def _tissue(seed: int = 0) -> np.ndarray:
 
 def test_nothing_asked_returns_the_plane() -> None:
     plane = _tissue()
-    assert enhance_plane(plane, n4=False, denoise=False) is plane
+    assert enhance_plane(plane, n4=False) is plane
 
 
 def test_n4_flattens_the_illumination_ramp_and_keeps_the_background() -> None:
     plane = _tissue()
-    out = enhance_plane(plane, n4=True, denoise=False)
+    out = enhance_plane(plane, n4=True)
     left, right = (lambda a: (a[16:, :32].mean(), a[16:, -32:].mean()))(out.astype(float))
     before = plane[16:, -32:].mean() / plane[16:, :32].mean()
     assert right / left < before
@@ -31,15 +31,7 @@ def test_n4_flattens_the_illumination_ramp_and_keeps_the_background() -> None:
     assert abs(out[16:].mean() - plane[16:].mean()) < 3  # the channel keeps its brightness
 
 
-def test_denoise_smooths_and_is_repeatable() -> None:
-    plane = _tissue()
-    first = enhance_plane(plane, n4=False, denoise=True)
-    again = enhance_plane(plane, n4=False, denoise=True)
-    assert np.array_equal(first, again)
-    assert first[16:].astype(float).std() < plane[16:].astype(float).std()
-
-
 def test_a_constant_plane_is_returned_unchanged() -> None:
     plane = np.full((32, 32), 100, np.uint8)
-    out = enhance_plane(plane, n4=True, denoise=True)
+    out = enhance_plane(plane, n4=True)
     assert out.shape == plane.shape and abs(int(out.mean()) - 100) <= 1

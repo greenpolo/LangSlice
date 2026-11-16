@@ -60,7 +60,6 @@ class ImageRecipe:
     clahe_clip: float = images.DEFAULT_CLAHE_CLIP
     clahe_tiles: int = images.DEFAULT_CLAHE_TILES
     n4: bool = False
-    denoise: bool = False
     #: ``[low, high]``, fractions 0 to 1 of the blended image; empty: none.
     contrast: Sequence[float] = ()
     #: The gamma after the blend; None (or 0, 1): linear.
@@ -169,7 +168,6 @@ def make_image_tool(
     clahe_clip: float,
     clahe_tiles: int,
     n4: bool,
-    denoise: bool,
     contrast: list[float],
     gamma: float,
     invert: bool,
@@ -183,7 +181,7 @@ def make_image_tool(
     ----------
     run
         The run the tool is called in.
-    name, sections, weights, clahe_clip, clahe_tiles, n4, denoise, contrast
+    name, sections, weights, clahe_clip, clahe_tiles, n4, contrast
         The declared arguments as the model sent them
         (``tools/descriptions/looking.py``).
     gamma, invert, delete, view
@@ -203,7 +201,6 @@ def make_image_tool(
             clahe_clip=clahe_clip,
             clahe_tiles=clahe_tiles,
             n4=bool(n4),
-            denoise=bool(denoise),
             contrast=as_list(contrast),
             gamma=_exponent(gamma),
             invert=bool(invert),
@@ -272,7 +269,7 @@ def make_section_image(
 
     The recipe *given* (:func:`langslice.core.sections.images.validate_recipe`):
     *weights* ``{image name: weight}`` (empty: each raw channel by its tissue
-    coverage), CLAHE, *n4*, *denoise*, then *contrast* (fractions 0 to 1),
+    coverage), CLAHE, *n4*, then *contrast* (fractions 0 to 1),
     *gamma*, *invert*. Each section's image is computed from its own images
     (:func:`langslice.core.sections.images.make`) and saved as a file before
     the write. ``preprocessed`` made with every argument at its default is the
@@ -310,7 +307,7 @@ def make_section_image(
         contrast = list(given.contrast) if given.contrast else None
         recipe = images.validate_recipe(
             weights=weights, clahe_clip=given.clahe_clip,
-            clahe_tiles=given.clahe_tiles, n4=given.n4, denoise=given.denoise,
+            clahe_tiles=given.clahe_tiles, n4=given.n4,
             contrast=contrast, gamma=given.gamma or None, invert=given.invert)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
@@ -327,12 +324,11 @@ def make_section_image(
                 raise Refused(RefusalCode.UNKNOWN_IMAGE, message=str(exc),
                               images=images.image_names(workspace, record)) from exc
     reset = label == PREPROCESSED and recipe == images.OPENING_RECIPE
-    # The sections are made at once on threads, one per core; their N4 and
-    # denoising (SimpleITK, which holds Python's lock) run in worker
-    # processes of ITK_THREADS threads each. A failure is the first failing
-    # section's, in order, once every section is done.
-    enhancing = bool(recipe["n4"] or recipe["denoise"]) and not reset  # pyright: ignore[reportAny] - JSON
-    tasks = 2 * len(records) if enhancing else 0
+    # The sections are made at once on threads, one per core; their N4
+    # (SimpleITK, which holds Python's lock) runs in worker processes of
+    # ITK_THREADS threads each. A failure is the first failing section's, in
+    # order, once every section is done.
+    tasks = 2 * len(records) if recipe["n4"] and not reset else 0
     with process_pool(tasks, threads_each=ITK_THREADS) as pool:
         making = _Making(job, workspace, label, recipe, reset,
                          _InProcesses(pool))
@@ -349,15 +345,12 @@ def make_section_image(
 
 @dataclass(frozen=True)
 class _InProcesses:
-    """N4 and denoising in worker processes (:data:`images.Enhance`)."""
+    """N4 in worker processes (:data:`images.Enhance`)."""
 
     pool: ProcessPoolExecutor | None
 
-    def __call__(
-        self, planes: list[np.ndarray], n4: bool, denoise: bool
-    ) -> list[np.ndarray]:
-        jobs = [(plane, n4, denoise) for plane in planes]
-        return map_processes(images.enhanced_plane, jobs, self.pool)
+    def __call__(self, planes: list[np.ndarray]) -> list[np.ndarray]:
+        return map_processes(images.n4_plane, planes, self.pool)
 
 
 @dataclass(frozen=True)

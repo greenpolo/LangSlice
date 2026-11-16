@@ -127,7 +127,6 @@ def validate_recipe(
     clahe_clip: float = DEFAULT_CLAHE_CLIP,
     clahe_tiles: int = DEFAULT_CLAHE_TILES,
     n4: bool = False,
-    denoise: bool = False,
     contrast: Iterable[float] | None = None,
     gamma: float | None = None,
     invert: bool = False,
@@ -160,8 +159,8 @@ def validate_recipe(
         raise ValueError(f"clahe_clip must be from 0 (none) to {MAX_CLAHE_CLIP:g}")
     if not 1 <= tiles <= MAX_CLAHE_TILES:
         raise ValueError(f"clahe_tiles must be from 1 to {MAX_CLAHE_TILES}")
-    if not isinstance(n4, bool) or not isinstance(denoise, bool) or not isinstance(invert, bool):
-        raise ValueError("n4, denoise and invert must be true or false")
+    if {type(n4), type(invert)} != {bool}:
+        raise ValueError("n4 and invert must be true or false")
     limits: list[float] | None = None
     given = list(contrast) if contrast is not None else []
     if given:
@@ -184,7 +183,7 @@ def validate_recipe(
         if power == 1.0:
             power = None
     return {"weights": held, "clahe_clip": clip, "clahe_tiles": tiles, "n4": n4,
-            "denoise": denoise, "contrast": limits, "gamma": power, "invert": invert}
+            "contrast": limits, "gamma": power, "invert": invert}
 
 
 #: The recipe the arguments' defaults give: the opening image's own.
@@ -192,7 +191,7 @@ OPENING_RECIPE: dict[str, Any] = validate_recipe()
 
 
 def recipe_words(recipe: Mapping[str, Any]) -> str:
-    """A recipe in a caption's words: ``weights auto, CLAHE 4 on 8x8 tiles, denoise``."""
+    """A recipe in a caption's words: ``weights auto, CLAHE 4 on 8x8 tiles, N4``."""
     held = recipe.get("weights")
     weights = (AUTO if not isinstance(held, Mapping) else
                ", ".join(f"{name} {value:g}" for name, value in held.items()))
@@ -202,7 +201,7 @@ def recipe_words(recipe: Mapping[str, Any]) -> str:
              f"CLAHE {clip:g} on {tiles}x{tiles} tiles" if clip else "no CLAHE"]
     if recipe.get("n4"):
         parts.append("N4")
-    if recipe.get("denoise"):
+    if recipe.get("denoise"):  # an image made when make_image denoised
         parts.append("denoise")
     if recipe.get("contrast"):
         low, high = recipe["contrast"]
@@ -543,75 +542,65 @@ def sources_of(
     return [name for name, _v in used], [value for _n, value in used]
 
 
-#: Runs N4 and denoising on planes: ``(planes, n4, denoise)`` -> the planes
-#: enhanced, in order (:func:`enhance_here`, or a caller's worker processes).
-Enhance = Callable[[list[np.ndarray], bool, bool], list[np.ndarray]]
+#: Runs N4 on planes: the planes corrected, in order (:func:`n4_here`, or a
+#: caller's worker processes).
+Enhance = Callable[[list[np.ndarray]], list[np.ndarray]]
 
 
-def enhance_here(
-    planes: list[np.ndarray], n4: bool, denoise: bool
-) -> list[np.ndarray]:
-    """Enhance *planes* in this process, in turn (:data:`Enhance`).
+def n4_here(planes: list[np.ndarray]) -> list[np.ndarray]:
+    """Correct *planes* with N4 in this process, in turn (:data:`Enhance`).
 
-    SimpleITK's global thread count is held at ``ITK_THREADS``: its
-    denoising filter reads that count, not its own, and its result depends
-    on the split.
+    SimpleITK's global thread count is held at ``ITK_THREADS``, so the
+    result does not depend on the machine's cores.
 
     Parameters
     ----------
     planes
         8-bit planes.
-    n4, denoise
-        The steps to run (``reading.enhance_plane``).
 
     Returns
     -------
     list of numpy.ndarray
-        The planes enhanced, in order.
+        The planes corrected (``reading.enhance_plane``), in order.
     """
     with global_threads(simpleitk_threader(), ITK_THREADS):
-        return [
-            enhance_plane(plane, n4=n4, denoise=denoise) for plane in planes
-        ]
+        return [enhance_plane(plane, n4=True) for plane in planes]
 
 
-def enhanced_plane(job: tuple[np.ndarray, bool, bool]) -> np.ndarray:
-    """Enhance one plane: a worker process's task.
+def n4_plane(plane: np.ndarray) -> np.ndarray:
+    """Correct one plane with N4: a worker process's task.
 
     Parameters
     ----------
-    job
-        ``(plane, n4, denoise)``.
+    plane
+        An 8-bit plane.
 
     Returns
     -------
     numpy.ndarray
         :func:`langslice.core.sections.reading.enhance_plane`'s plane.
     """
-    plane, n4, denoise = job
     with global_threads(simpleitk_threader(), ITK_THREADS):
-        return enhance_plane(plane, n4=n4, denoise=denoise)
+        return enhance_plane(plane, n4=True)
 
 
 def make(
     ws: Workspace, section_id: str, images: Mapping[str, ImageRef], recipe: Mapping[str, Any],
-    *, enhance: Enhance = enhance_here,
+    *, enhance: Enhance = n4_here,
 ) -> tuple[np.ndarray, dict[str, float]]:
     """*recipe* drawn on the section's working copy: ``(uint8 (H, W), the weights
-    used by name)``. The steps on each source: N4, denoise, CLAHE; then the
+    used by name)``. The steps on each source: N4, CLAHE; then the
     weighted blend, brightened to a mid-gray tissue mean; then contrast, gamma,
     invert
     (:func:`langslice.core.sections.reading.custom_appearance`). *enhance*
-    runs N4 and denoising on the sources weighted above zero."""
+    runs N4 on the sources weighted above zero."""
     names, weights = sources_of(ws, section_id, images, recipe)
     planes = [plane_of(ws, section_id, images, name) for name in names]
     used = list(weights) if weights is not None else coverage_weights(planes)
-    n4, denoise = bool(recipe["n4"]), bool(recipe["denoise"])  # pyright: ignore[reportAny] - JSON
-    if n4 or denoise:
+    if recipe["n4"]:
         chosen = [index for index, weight in enumerate(used) if weight > 0]
         sources = [planes[index] for index in chosen]
-        enhanced = enhance(sources, n4, denoise)
-        for index, plane in zip(chosen, enhanced, strict=True):
+        for index, plane in zip(chosen, enhance(sources), strict=True):
             planes[index] = plane
     blended = custom_appearance(
         planes, channel_weights=used, clahe_clip=float(recipe["clahe_clip"]),

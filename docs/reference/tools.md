@@ -345,10 +345,9 @@ two kinds of section image. **Raw** images are the planes of the image file
 (`red`, `green`, `blue` for a colour file, `gray`, or the channel names a host
 gives, else `ch1`, `ch2`, and so on), never edited. **Made** images are made
 here, by a script, or when the job opens, and saved as
-`sections/<stem>/images/<name>.png`. The sections of a call are made at once; `n4` and
-`denoise` run in worker processes of eight threads each, as many as the
-processor's cores allow (`LANGSLICE_CPU_CORES` sets the core count). Denoising
-is the slow step: about 3 to 5 s per channel of a 1600-pixel working copy.
+`sections/<stem>/images/<name>.png`. The sections of a call are made at once;
+`n4` runs in worker processes of eight threads each, as many as the
+processor's cores allow (`LANGSLICE_CPU_CORES` sets the core count).
 
 `preprocessed` is the made image LangSlice writes for every section when the
 job is created, and the image every fit, the image model and `look` read by
@@ -365,14 +364,13 @@ read, in gray.
 | `clahe_clip` | 4 | Local contrast enhancement (CLAHE) clip limit, 0 (none) to 40. |
 | `clahe_tiles` | 8 | CLAHE tiles per side, 1 to 32. |
 | `n4` | false | Correct uneven illumination (N4). |
-| `denoise` | false | Patch-based denoising. |
 | `contrast` | none | `[low, high]`, fractions of the blended image's range, stretched to the full range. |
 | `gamma` | 0 (linear) | 0.1 to 10. |
 | `invert` | false | Bright as dark. |
 | `delete` | false | Remove the image. `preprocessed` cannot be deleted. |
 | `view` | true | Return up to 4 sections drawn as `look`'s `section` mode draws the image. |
 
-The steps run in this order on each source: N4, denoising, CLAHE; then the
+The steps run in this order on each source: N4, CLAHE; then the
 weighted blend, brightened to a mid-gray tissue mean; then `contrast`,
 `gamma`, `invert`. Files are never deleted: a name made again with other
 pixels gets a new file (`<name>.2.png`), so undo finds the old one.

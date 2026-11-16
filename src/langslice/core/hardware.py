@@ -1,6 +1,6 @@
 """The machine LangSlice runs on, and how many sections to work on at once.
 
-A per-section step that runs a multithreaded filter (ITK's denoising and N4,
+A per-section step that runs a multithreaded filter (ITK's N4,
 Elastix) keeps a fixed thread count per call, because the count changes a
 multithreaded filter's last bits. What scales with the machine is how many
 sections run at once: :func:`section_workers` divides the processor's cores
@@ -420,7 +420,7 @@ def global_threads(
 def simpleitk_threader() -> Threader:
     """Return SimpleITK's thread settings, for :func:`global_threads`.
 
-    Its denoising filter ignores its own thread count and runs on the
+    Some of its filters ignore their own thread count and run on the
     global one.
 
     Returns

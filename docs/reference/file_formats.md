@@ -755,7 +755,7 @@ the state reference, and a name made again with other pixels gets a new file
 (`<name>.2.png`, ...). `state.json` holds the entry under the section's
 `images`, absent while empty: `source` (`{"recipe": {...}}` with the recipe's
 `weights` (`"auto"` or `{image name: weight}`), `clahe_clip`, `clahe_tiles`,
-`n4`, `denoise`, `contrast` (`[low, high]` or null), `gamma` (or null),
+`n4`, `contrast` (`[low, high]` or null), `gamma` (or null),
 `invert`; `{"script": note}`; or `{"opening": "adaptive" | "host" | "plain"}`,
 with the host's `settings` for `host`), `file`, `digest` (8 hex digits of the
 pixels and their shape), `made` (ISO time) and, for a recipe with automatic
@@ -774,7 +774,7 @@ Deformation records are not rewritten. A recipe image is made once on the
 working copy, so a fit on a migrated job reads that file: it is not the image
 the older LangSlice ran the recipe on at the fit's size, and a refit does not
 reproduce the job's earlier fit. The first open of a large job takes a while
-(about 2-3 minutes for 20-30 sections whose recipe denoises); later opens do not.
+(minutes for a few dozen sections whose recipe runs N4); later opens do not.
 
 ## Masks (`sections/<stem>/masks/<name>.npz`)
 

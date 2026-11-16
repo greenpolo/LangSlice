@@ -165,16 +165,12 @@ the angles in a caption (empty for the flat plane).
   per item on threads, in order, each in a copy of the caller's context so
   its pictures are noted; the first error raised after every step ends),
   `process_pool` / `map_processes` (spawned workers for one call, for a
-  library that holds Python's lock: SimpleITK's N4 and denoising of
-  `make_image`), `kept_process_pool` / `drop_process_pool` (workers kept for
+  library that holds Python's lock: SimpleITK's N4 of `make_image`), `kept_process_pool` / `drop_process_pool` (workers kept for
   the process: the Elastix affine), `global_threads` (a library's global
   thread count held while any call runs, counted across threads;
   `simpleitk_threader`). The plugin API re-exports `map_sections`. Measured on
-  the 331CTX stack (24 cores): ITK's patch-based denoising ignores its own
-  thread count and already fills the CPU (about 75 core-seconds per 1600 px
-  channel), so `make_image` with `denoise` gains about 1.4x; the Elastix
-  affine about 2.5x; the STalign plane search (CPU work, no GPU turn) about
-  1.8x.
+  the 331CTX stack (24 cores): the Elastix affine about 2.5x faster, the
+  STalign plane search (CPU work, no GPU turn) about 1.8x.
 - `shared_files.py` — files another process may hold open (on Windows a
   reader without the lock, the window's watcher, a memory-mapped cache file
   or a scanner makes a replace, delete or lock fail with `PermissionError`
@@ -223,7 +219,7 @@ the angles in a caption (empty for the flat plane).
   unoriented; `write_file` / `write_image`, never overwritten: other pixels
   under a name get `<name>.2.png`, the same pixels reuse the file;
   `_Layout.images_dir`). `validate_recipe` (weights `"auto"` or `{image:
-  weight}`, `clahe_clip`, `clahe_tiles`, `n4`, `denoise`, `contrast`,
+  weight}`, `clahe_clip`, `clahe_tiles`, `n4`, `contrast`,
   `gamma`, `invert`; `OPENING_RECIPE` its defaults), `make` (a recipe on the
   working copy: `sections.reading.custom_appearance` over the sources, then the tone
   steps; sources are raw channels or made images, so chains compose),
