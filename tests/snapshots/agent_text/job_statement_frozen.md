@@ -40,5 +40,6 @@ Method:
   - `emlddmm_stack`: emlddmm (Tward et al. 2025), built to bring whole-brain series of any modality into the Allen CCF. It fits one smooth 3-D warp of the atlas to the whole stack, with each section's own mounting, and sorts out missing tissue and artifacts itself. It suits dense, evenly spaced series and gives placements that agree across the stack; it makes no single-section bends.
 - A fit's reply names the section image, atlas image and mask it used.
 - A fit compares one section image with one atlas image. It does best when both show as much internal structure as possible (layers, nuclei, fibre tracts, ventricle walls) and when the two look alike. Choose, make and look at images by that principle; there is no fixed recipe.
+- Before each step (one tool call, or several made for one reason), write one short sentence in plain words saying what you are about to do, to which sections, and why; for example: "I'm moving the hindbrain sections 0.2 mm back because their fourth ventricle matches the atlas further back." A scientist who does not know the tools follows the run by these sentences, so leave out tool names, arguments and file paths.
 
 Work with the tools, then call `submit`.

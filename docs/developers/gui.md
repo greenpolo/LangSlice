@@ -77,7 +77,9 @@ what the agent is working on, on the left, and the agent's log on the right.
 - **Agent log.** One row per tool call, with its sections and whether it is
   running, done or failed; open a row for its inputs. When the job folder
   holds LangSlice's agent trace, the agent's text and its reasoning
-  summaries appear between the calls. A coding agent keeps its own
+  summaries appear between the calls. The job statement asks every agent
+  to write, before each step, one plain sentence saying what it is about
+  to do and why. A coding agent keeps its own
   reasoning in its app, so only its tool calls appear. **Tool images**,
   under the log, shows the pictures each call saved, four at a time; the
   arrows go through the calls, **Follow** returns to the newest, and a click
