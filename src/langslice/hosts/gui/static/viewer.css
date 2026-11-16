@@ -8,18 +8,36 @@
 .tab.viewer { display: flex; flex-direction: column; }
 #no-jobs { flex: 1; display: flex; align-items: center; justify-content: center; }
 
-/* The narration band. Its height is fixed, so new words never move the pictures. */
+/* The narration band: the agent's figure, and beside it its latest words. Its height is
+   fixed, so new words never move the pictures. */
 .now {
   flex-shrink: 0;
   height: 152px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(240px, 22vw, 340px);
-  gap: var(--space-6);
+  grid-template-columns: auto minmax(0, 1fr) clamp(240px, 22vw, 340px);
+  gap: var(--space-5);
   align-items: center;
   padding: 0 var(--space-5);
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
+/* The agent's figure: a small face that blinks, and talks while new words come in. */
+.speaker { display: flex; align-items: center; gap: var(--space-3); }
+.speaker-logo { display: none; width: 60px; height: 60px; }
+.guy-box { margin: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+.guy { display: block; width: 52px; height: 52px; overflow: visible; }
+.guy-body { fill: var(--wash); stroke: var(--name); stroke-width: 1.6; }
+.guy-eye, .guy-mouth { fill: var(--name); transform-box: fill-box; transform-origin: center; }
+.guy-smile { fill: none; stroke: var(--name); stroke-width: 1.6; stroke-linecap: round; }
+.guy-mouth, .speaking .guy-smile { display: none; }
+.speaking .guy-mouth { display: inline; }
+.guy-eye { animation: blink 5.6s infinite; }
+.speaking .guy { animation: bob 760ms ease-in-out infinite alternate; }
+.speaking .guy-mouth { animation: talk 240ms ease-in-out infinite alternate; }
+.guy-name { display: none; max-width: 11em; color: var(--muted); font-size: var(--size-xs); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97.5% { transform: scaleY(0.1); } }
+@keyframes bob { to { transform: translateY(-2px); } }
+@keyframes talk { to { transform: scaleY(3.4); } }
 .now-main { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
 .now-main p { margin: 0; }
 .now-meta { display: flex; align-items: center; gap: var(--space-2); font-size: var(--size-sm); white-space: nowrap; min-width: 0; }
@@ -33,6 +51,7 @@
   color: var(--text);
   line-height: 18px;
 }
+.bubble:has(.now-words:empty) { display: none; }
 .now-words {
   font-family: var(--serif);
   font-size: var(--size-voice);
@@ -45,9 +64,9 @@
   overflow: hidden;
   text-wrap: pretty;
 }
-.now-words:empty { display: none; }
-.now-words.arriving { animation: arrive 420ms ease-out; }
-@keyframes arrive { from { opacity: 0; transform: translateY(5px); } }
+/* The words come in one after another. */
+.word-in { animation: word-in 240ms ease-out both; }
+@keyframes word-in { from { opacity: 0; } }
 .sentence { color: var(--muted); font-size: var(--size-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* A run without the agent's words (a coding agent keeps them in its own app): what it is
    doing takes their place. */
@@ -177,6 +196,8 @@
   -webkit-user-drag: none;
 }
 .panel-picture img.entering { opacity: 0; }
+/* Another section's picture, kept until this section's has been drawn. */
+.panel-picture img.stale { opacity: 0.28; }
 .panel-updating {
   position: absolute;
   top: 6px;
@@ -383,6 +404,7 @@
 /* A run: calls of one tool in a row, folded into one line that opens to show each. */
 .run-calls { margin: 2px 0 var(--space-1); padding-left: var(--space-3); border-left: 1px solid var(--line); }
 .run-calls .call, .run-calls .view-images { margin-left: 0; }
+.call-name { color: var(--faint); font-family: var(--mono); font-size: var(--size-xs); font-variant-ligatures: none; }
 .call-targets { color: var(--faint); font-size: var(--size-xs); overflow-wrap: anywhere; }
 .section-link { cursor: pointer; }
 .section-link:hover { color: var(--lavender); text-decoration: underline; text-underline-offset: 2px; }
@@ -441,11 +463,54 @@
 .tile img { flex: 1; min-height: 0; width: 100%; object-fit: contain; display: block; }
 .tile-label { flex-shrink: 0; padding: 2px 8px 3px; background: var(--panel); font-size: var(--size-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* The Simple view: three things. The agent speaking, in a speech bubble beside the
+   LangSlice mark and its own figure; the sections it is working on, two at a time; and
+   where they sit in the brain. The journal, the agent's pictures, the meters, the other
+   views and the panels' details are the Extended view's. */
+.viewer.simple .now {
+  height: 252px;
+  grid-template-columns: auto minmax(0, 1040px);
+  justify-content: center;
+  background: var(--ground);
+  border-bottom: 0;
+}
+.viewer.simple .progress, .viewer.simple .log, .viewer.simple #log-divider,
+.viewer.simple .switch, .viewer.simple #follow-agent,
+.viewer.simple .panel-angles, .viewer.simple .panel-tags, .viewer.simple .panel-open,
+.viewer.simple .strip-title { display: none; }
+.viewer.simple .speaker-logo, .viewer.simple .guy-name { display: block; }
+.viewer.simple .guy { width: 84px; height: 84px; }
+.viewer.simple .bubble {
+  position: relative;
+  padding: var(--space-4) var(--space-5);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+.viewer.simple .bubble::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 30px;
+  width: 14px;
+  height: 14px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.viewer.simple .now-words { font-size: var(--size-voice-lg); -webkit-line-clamp: 4; max-width: none; }
+.viewer.simple .now.wordless .sentence { font-size: var(--size-voice-lg); }
+.viewer.simple .viewer-body { grid-template-columns: minmax(0, 1fr); }
+.viewer.simple .focus-head { padding-right: var(--space-5); }
+.viewer.simple .panels { padding-right: var(--space-5); }
+
 /* Narrow windows: the progress goes under the words, the journal under the sections, full
    width, collapsed to its last lines and the tray; the tab scrolls. */
 @media (max-width: 1099px) {
   .tab.viewer { overflow-y: auto; }
-  .now { height: auto; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+  .now, .viewer.simple .now { height: auto; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+  .progress { grid-column: 1 / 3; }
   .progress { flex-direction: row; gap: var(--space-4); }
   .meter { flex: 1; }
   .viewer-body { display: flex; flex-direction: column; flex: none; min-height: auto; }
@@ -466,6 +531,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .now-words.arriving { animation: none; }
+  .word-in, .guy-eye, .speaking .guy, .speaking .guy-mouth { animation: none; }
   .meter-fill { transition: none; }
 }

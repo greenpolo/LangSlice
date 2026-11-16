@@ -32,6 +32,7 @@ const AgentLog = (() => {
   let status = { word: '', sentence: '' };
   let lastCall = null;        // the newest tool call
   let started = null;         // when the agent session's first record was written
+  let spoken = null;          // the timer that ends the figure's talking
   let following = true;       // the journal keeps its end in view
   let latest = null;          // the newest of the agent's own entries
 
@@ -163,13 +164,22 @@ const AgentLog = (() => {
   }
   // The narration band says the agent's latest words: the entry's first paragraph (the
   // whole entry on hover, and in the journal).
+  // The words come in one after another, as said, and the agent's figure talks meanwhile.
   function narrate(body) {
     const now = $('now-words');
-    now.textContent = body.firstElementChild?.textContent || '';
+    const text = body.firstElementChild?.textContent || '';
+    now.replaceChildren();
+    text.split(/(\s+)/).forEach((part, i) => {
+      if (!part.trim()) { now.append(document.createTextNode(part)); return; }
+      const word = el('span', 'word-in', part);
+      word.style.animationDelay = `${Math.min(i * 22, 2600)}ms`;
+      now.append(word);
+    });
     now.title = body.textContent || '';
-    now.classList.remove('arriving');
-    void now.offsetWidth;
-    now.classList.add('arriving');
+    const band = $('statusline');
+    band.classList.add('speaking');
+    clearTimeout(spoken);
+    spoken = setTimeout(() => band.classList.remove('speaking'), Math.min(4200, 1200 + text.length * 14));
   }
   function inline(parent, text) {
     for (const part of text.split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {
@@ -243,6 +253,8 @@ const AgentLog = (() => {
     const title = el('span', 'call-title', item.title || item.name);
     title.title = item.name;
     body.append(title, sectionsLine(item.sections));
+    // The tool's own name, beside its plain words.
+    if (item.title && item.title !== item.name) body.append(el('span', 'call-name', item.name));
     const state = el('span', 'call-state');
     summary.append(body, state);
     const detail = el('div', 'call-detail');
@@ -283,6 +295,7 @@ const AgentLog = (() => {
     title.title = first.name;
     const targets = el('span', 'call-targets');
     body.append(title, targets);
+    if (first.title !== first.name) body.append(el('span', 'call-name', first.name));
     const state = el('span', 'call-state');
     summary.append(body, state);
     const list = el('div', 'run-calls');

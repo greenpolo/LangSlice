@@ -161,6 +161,7 @@ const Ui = (() => {
     }
     for (const box of document.querySelectorAll('.tab')) box.hidden = box.id !== 'tab-' + name;
     $('picker').classList.toggle('off', name !== 'viewer');
+    $('detail').classList.toggle('off', name !== 'viewer');
     closePicker();
     writeAddress();
     if (name === 'viewer') Viewer.shown();
@@ -174,6 +175,24 @@ const Ui = (() => {
     const job = addressJob();
     if (job !== null && job !== current && jobs?.some(j => j.index === job)) { chosen = true; select(job); }
   });
+
+  // --- Simple | Extended ----------------------------------------------------------------
+  // Simple (the start) shows three things: the agent speaking, the sections it is working
+  // on and where they sit in the brain. Extended adds the journal of tool calls, the
+  // agent's pictures, the progress meters, the table and the steps. Kept per browser.
+  let detail = Ui.store.get('detail') === 'extended' ? 'extended' : 'simple';
+  function showDetail(name) {
+    detail = name;
+    Ui.store.set('detail', name);
+    for (const button of document.querySelectorAll('[data-detail]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.detail === name));
+    }
+    $('tab-viewer').classList.toggle('simple', name === 'simple');
+    Viewer.setSimple(name === 'simple');
+  }
+  for (const button of document.querySelectorAll('[data-detail]')) {
+    button.addEventListener('click', () => showDetail(button.dataset.detail));
+  }
 
   // --- the job picker -------------------------------------------------------------------
   const changedOf = job => Number(job?.changed_at) || 0;
@@ -344,6 +363,7 @@ const Ui = (() => {
     $('word').className = 'word word-' + word;
     $('facts').textContent = runWords(h, word);
     $('facts').title = [h.name, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
+    $('guy-name').textContent = h.model || 'The agent';
     // A replayed run (a finished run's records played again into a job folder) says so.
     const replay = h.replay;
     $('replay').hidden = !replay;
@@ -393,6 +413,7 @@ const Ui = (() => {
     if (event.key === '[') Viewer.pageBy(-1);
     else if (event.key === ']') Viewer.pageBy(1);
     else if (event.key === 'f' || event.key === 'F') Viewer.toggleFollow();
+    else if (event.key === 'v' || event.key === 'V') showDetail(detail === 'simple' ? 'extended' : 'simple');
     else return;
     event.preventDefault();
   });
@@ -400,6 +421,7 @@ const Ui = (() => {
   document.addEventListener('DOMContentLoaded', () => {
     Viewer.init();
     AgentLog.init();
+    showDetail(detail);
     showTab(tab);
     clearStatus();
     pollJobs();

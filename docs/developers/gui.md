@@ -33,8 +33,22 @@ connection chosen and no `--tab`, it opens on Settings.
 
 ## The agent viewer
 
-The agent viewer answers three questions, top to bottom: what is the agent
-doing, what does the registration look like, and how did it get here.
+The agent viewer has two views, chosen by **Simple | Extended** at the top
+right (or `v`); the window remembers the choice.
+
+**Simple**, the view it starts in, shows three things: the agent speaking,
+the sections it is working on, and where they sit in the brain. The agent's
+latest words are in a speech bubble beside the LangSlice mark and a small
+figure for the agent, named by its model; the words come in one after
+another and the figure talks while they do. Under the bubble is the tool
+running now, in plain words. The sections are shown two at a time, with
+their name and position only.
+
+**Extended** answers three questions, top to bottom: what is the agent
+doing, what does the registration look like, and how did it get here. It
+adds the progress meters, the journal of tool calls, the agent's pictures,
+the table and the steps. The parts below are Extended's unless they say
+otherwise.
 
 - **Job.** The job picker at the top right lists the folders given on the
   command line and the jobs opened recently on this computer
@@ -59,7 +73,8 @@ doing, what does the registration look like, and how did it get here.
   arrows, or `[` and `]`). Each panel shows its section under its current
   registration with the atlas borders, drawn by the window from the job
   folder, and drawn again whenever that section's registration changes; a
-  section not placed yet is shown alone. Its title gives the panel's
+  section not placed yet is shown alone. While a panel waits for another
+  section's picture, the one it showed stays, dimmed. Its title gives the panel's
   number, the section, its position and cutting angles, and how it was
   aligned, whether it is warped and whether it is damaged. The wheel zooms,
   dragging pans and **Enlarge** shows it large. **Follow the agent** (on to
@@ -89,7 +104,7 @@ doing, what does the registration look like, and how did it get here.
   run, when the job folder holds LangSlice's agent trace. Between them, one
   quiet line per tool call, named in plain words, with its section or how
   many it worked on and how many pictures it saved; open a line for the
-  tool's own name and inputs. Calls of one tool in a row share one line
+  inputs; the tool's own name is beside its plain words. Calls of one tool in a row share one line
   (`×n`) that opens to show each. The journal follows its end until you
   scroll away from it.
 - **The agent looked at.** Under the journal, the pictures each call saved,

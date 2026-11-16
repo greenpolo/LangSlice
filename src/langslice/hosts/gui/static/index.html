@@ -21,6 +21,9 @@
       <button data-tab="prompt">Prompt generator</button>
     </nav>
     <div class="bar-end">
+      <div id="detail" class="detail" role="group" aria-label="How much the viewer shows">
+        <button data-detail="simple" aria-pressed="true" title="The agent speaking, the sections it is working on and where they sit (v)">Simple</button><button data-detail="extended" aria-pressed="false" title="Adds the journal of tool calls, the agent's pictures, the table and the steps (v)">Extended</button>
+      </div>
       <div class="picker" id="picker">
         <button id="picker-button" class="picker-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="picker-list">
           <span id="picker-dot" class="dot"></span><span id="picker-name" class="picker-name">Looking for jobs…</span><span class="caret" aria-hidden="true">⌄</span>
@@ -33,6 +36,19 @@
 
   <div id="tab-viewer" class="tab viewer">
     <header class="now" id="statusline" aria-label="What the agent is doing now">
+      <div class="speaker">
+        <img class="speaker-logo" src="logomark.svg" alt="">
+        <figure class="guy-box">
+          <svg id="guy" class="guy" viewBox="0 0 48 48" role="img" aria-label="The agent">
+            <path class="guy-body" d="M24 7c10.5 0 17 6.2 17 16.5S34.5 41 24 41 7 33.8 7 23.500S13.500 7 24 7z"/>
+            <circle class="guy-eye" cx="17.500" cy="22" r="2.300"/>
+            <circle class="guy-eye" cx="30.500" cy="22" r="2.300"/>
+            <path class="guy-smile" d="M20 29.500q4 3.200 8 0"/>
+            <ellipse class="guy-mouth" cx="24" cy="30.500" rx="3.600" ry="1.100"/>
+          </svg>
+          <figcaption id="guy-name" class="guy-name"></figcaption>
+        </figure>
+      </div>
       <div class="now-main">
         <p class="now-meta">
           <span id="status-dot" class="dot"></span>
@@ -40,7 +56,7 @@
           <span id="replay" class="replay-chip" hidden></span>
           <span id="facts" class="facts"></span>
         </p>
-        <p id="now-words" class="now-words" aria-live="polite"></p>
+        <div class="bubble"><p id="now-words" class="now-words" aria-live="polite"></p></div>
         <p id="sentence" class="sentence"></p>
       </div>
       <dl id="progress" class="progress" aria-label="How far the registration is" hidden>

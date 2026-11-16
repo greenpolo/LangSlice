@@ -82,6 +82,7 @@
   --size-md: 13.5px;        /* the window's body text */
   --size-lg: 15px;
   --size-xl: 17px;
+  --size-voice-lg: 27px;    /* the same in the Simple view's speech bubble */
   --size-voice: 21px;       /* the agent's latest words, in the narration */
   --weight-strong: 600;
   --leading: 1.5;
@@ -90,6 +91,7 @@
   /* Spacing and corners. */
   --radius: 6px;            /* panels and cards */
   --radius-sm: 4px;         /* buttons, inputs, tags */
+  --radius-lg: 14px;        /* the agent's speech bubble */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

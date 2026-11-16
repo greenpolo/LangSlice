@@ -14,7 +14,7 @@
 // `focus`); a new call replaces them and goes back to page 1. A section the person
 // clicks (strip, table, a name in the journal) becomes the focus and Follow turns off.
 const Viewer = (() => {
-  const PAGE_SIZE = 4;
+  const PAGE_SIZES = { simple: 2, extended: 4 };
   // How a section got its in-plane transform, in a panel's words.
   const HOW = { elastix: 'aligned automatically', interactive: 'aligned by hand' };
   const $ = id => document.getElementById(id);
@@ -34,6 +34,8 @@ const Viewer = (() => {
   let resizeTimer = null;
   let tasks = null;            // the job's tasks, from the header
   let tasksSeen = '';
+  let simple = true;           // the Simple view: two sections to a page, no other view
+  const pageSize = () => (simple ? PAGE_SIZES.simple : PAGE_SIZES.extended);
 
   // --- the header, the switch, Follow and paging -------------------------------------------
   function init() {
@@ -125,6 +127,12 @@ const Viewer = (() => {
     page = 0;
     showView('focus');
   }
+  // Simple shows the pictures only, and follows the agent.
+  function setSimple(on) {
+    simple = on;
+    if (on) { follow = true; page = 0; if (mode !== 'focus') { showView('focus'); return; } }
+    refresh();
+  }
   function toggleFollow() {
     if (follow) manual = targets();
     follow = !follow;
@@ -132,7 +140,7 @@ const Viewer = (() => {
     refresh();
   }
   function pageBy(delta) {
-    const count = Math.max(1, Math.ceil(targets().length / PAGE_SIZE));
+    const count = Math.max(1, Math.ceil(targets().length / pageSize()));
     page = (page + delta + count) % count;
     refresh();
   }
@@ -147,9 +155,10 @@ const Viewer = (() => {
   // Everything that follows from the focus: the header, the strip's colours, the panels.
   function refresh() {
     const all = targets();
-    const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+    const size = pageSize();
+    const pages = Math.max(1, Math.ceil(all.length / size));
     page = Math.min(page, pages - 1);
-    const onPage = all.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+    const onPage = all.slice(page * size, page * size + size);
     $('focus-name').textContent = follow ? 'The agent is working on' : 'You are looking at';
     $('focus-count').textContent = !loaded || !rows.length ? ''
       : (all.length === rows.length ? `all ${rows.length} sections` : `${all.length} of ${rows.length} sections`)
@@ -195,9 +204,9 @@ const Viewer = (() => {
     updating.hidden = message.hidden = true;
     box.append(updating, message);
     root.append(title, box);
-    const p = { slot, root, name, where, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, problem: '', view: { s: 1, x: 0, y: 0 } };
+    const p = { slot, root, name, where, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, stale: false, problem: '', view: { s: 1, x: 0, y: 0 } };
     open.addEventListener('click', () => {
-      if (!p.img) return;
+      if (!p.img || p.stale) return;
       const row = byId.get(p.id);
       const words = [p.angles.textContent, row?.transform, row?.deformation, row?.damaged ? 'damaged' : ''].filter(Boolean);
       AgentLog.openRender(p.img.src, edge => renderUrl(p.id, edge), p.name.textContent,
@@ -215,7 +224,7 @@ const Viewer = (() => {
   function clearPanel(p) {
     if (p.pending) { drop(p.pending); p.pending = null; }
     p.img?.remove();
-    p.img = null; p.id = null; p.key = null; p.edge = 0; p.url = '';
+    p.img = null; p.id = null; p.key = null; p.edge = 0; p.url = ''; p.stale = false;
     p.view = { s: 1, x: 0, y: 0 };
     p.updating.hidden = p.message.hidden = true;
     p.problem = '';
@@ -223,7 +232,14 @@ const Viewer = (() => {
   }
   function showPanel(p, id) {
     const row = byId.get(id);
-    if (p.id !== id) { clearPanel(p); p.id = id; }
+    // Another section: the picture shown stays, dimmed, until the new section's has loaded.
+    if (p.id !== id) {
+      if (p.pending) { drop(p.pending); p.pending = null; }
+      p.id = id; p.key = null; p.edge = 0; p.url = ''; p.problem = '';
+      p.view = { s: 1, x: 0, y: 0 };
+      p.message.hidden = true;
+      if (p.img) { p.stale = true; p.img.classList.add('stale'); transform(p, p.img); }
+    }
     p.name.textContent = Ui.short(id);
     p.name.title = id;
     p.where.textContent = typeof row?.position_mm === 'number' ? `${Ui.mm(row.position_mm)} mm` : '';
@@ -238,7 +254,7 @@ const Viewer = (() => {
     if (row?.damaged) tag('tag damaged', 'damaged', 4);
     if (row && typeof row.position_mm !== 'number') tag('tag', 'not placed', 3);
     p.tags.replaceChildren(...tags);
-    p.open.disabled = !p.img;
+    p.open.disabled = !p.img || p.stale;
     fitTitle(p);
     request(p);
   }
@@ -290,7 +306,7 @@ const Viewer = (() => {
     img.decoding = 'async';
     img.draggable = false;
     p.pending = img;
-    p.updating.hidden = !p.img;
+    p.updating.hidden = !p.img || p.stale;
     if (!p.img) { p.message.textContent = 'Drawing the section…'; p.message.hidden = false; }
     img.onload = () => {
       img.release();
@@ -301,6 +317,7 @@ const Viewer = (() => {
       img.className = 'entering';
       transform(p, img);
       const old = p.img;
+      p.stale = false;
       p.img = img;
       p.box.prepend(img);
       p.open.disabled = false;
@@ -322,7 +339,7 @@ const Viewer = (() => {
       }
       p.updating.hidden = true;
       p.img?.remove();
-      p.img = null;
+      p.img = null; p.stale = false;
       p.open.disabled = true;
       p.problem = answer.error
         || (answer.status === 404 ? 'No picture of this section is available from this LangSlice.'
@@ -498,5 +515,5 @@ const Viewer = (() => {
     });
   }
 
-  return { init, setJob, setHeader, update, pick, toggleFollow, pageBy, showView, shown };
+  return { init, setJob, setHeader, update, pick, toggleFollow, pageBy, showView, shown, setSimple };
 })();

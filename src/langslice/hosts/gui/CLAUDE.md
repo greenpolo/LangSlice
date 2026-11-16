@@ -5,8 +5,14 @@ the project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror
 to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
-generator and Settings (top right). The agent viewer is made for a person new
-to the run, read top to bottom: the narration band (the agent's latest words,
+generator and Settings (top right). The agent viewer has two views (Simple |
+Extended in the top bar, `v`, kept in `localStorage` as `detail`; `.viewer.simple`
+on `#tab-viewer`). Simple, the start, shows three things: the agent speaking (its
+latest words in a speech bubble beside the LangSlice mark and the agent's
+figure, `#guy`, an inline SVG face that blinks and talks while the words come
+in), the sections it is working on, two to a page with name and position only,
+and the brain strip. Extended is made for a person who wants the whole run,
+read top to bottom: the narration band (the agent's latest words,
 large, what it is doing now and how far the registration is), up to four
 panels showing the sections the agent works on under their current
 registration with the brain strip under them, and on the right the journal (the
@@ -320,9 +326,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     what is shown (`#tab=…&job=n`) once a job was named; the job picker
     (keyboard-navigable, newest first by `changed_at`); the polls (jobs every
     2 s, the snapshot every 300 ms, the strip when the tables change, at most
-    every 1.5 s); the narration band's status word, Replay chip and the run
+    every 1.5 s); Simple | Extended (`showDetail`, `Viewer.setSimple`); the narration band's status word, Replay chip and the run
     in one sentence (`runWords`: the model, the plane, the atlas); the keys
-    `[`, `]` and `f`. `Ui.short` is a section's name as the window shows it
+    `[`, `]`, `f` and `v`. `Ui.short` is a section's name as the window shows it
     (the file name without its extension). `Ui.loads` is
     one queue for every picture the server draws: at most three in flight, so
     the polls keep their connections, lowest rank first (the lightbox, the
@@ -332,12 +338,12 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     the sections are, how many), Pictures | Table | Steps,
     Follow the agent (the snapshot's `focus` replaces the targets and returns to
     page 1; a section clicked in the strip, the table or the journal becomes the
-    focus and stops following), four sections to a page (one fills the area, two side by
+    focus and stops following), four sections to a page (two in Simple, `PAGE_SIZES`, which also shows the pictures only and follows; one fills the area, two side by
     side, three as one tall panel beside two, four in a 2 x 2 grid; the page
     arrows only when there is more than one page). A panel asks for `render/overlay` at its size times
     `devicePixelRatio` (rounded up to 128) and again only when its row's
     `render_key` changes or the panel grows; the old picture stays, tagged
-    `updating`, until the new one fades in; a 409 shows its message (the same message on every panel shown is
+    `updating`, until the new one fades in (another section's picture stays dimmed, `stale`, until this section's has loaded); a 409 shows its message (the same message on every panel shown is
     said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `Enlarge` shows the
     render in the lightbox. A panel's title: its number (the one on its
     section in the strip), the section, its position, the angles, and tags in
@@ -361,12 +367,14 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     reasoning summaries as timeline entries in the serif face (paragraphs,
     lists and `code` kept, by `textContent`; each at its minute of the run,
     `elapsed`, from the trace's first record; the newest marked `latest`),
-    whose first paragraph `narrate` puts in the band (`#now-words`);
+    whose first paragraph `narrate` puts in the band (`#now-words`, one
+    `word-in` span per word, each a little later than the last; the band is
+    `speaking` meanwhile, which makes the figure talk);
     `renderDoing` writes the band's last line (`Now:` the running call's
     title and sections, else `Last step:`, else the server's sentence; the
     band is `wordless` for a run without the agent's words); tool lines
-    (`<details>` named by the tool's plain-language `title`, its name on
-    hover and inside, one section named and focusable or their count, `now`
+    (`<details>` named by the tool's plain-language `title`, its name beside
+    it in the monospace face, one section named and focusable or their count, `now`
     or `failed`, the inputs at most 240 px tall, step, status and door; calls of
     one tool in a row fold into one run line, `title ×n`, that opens to show
     each, with the run's `N pictures` while closed),
