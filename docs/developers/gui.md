@@ -44,7 +44,7 @@ right (or `v`); the window remembers the choice.
 **Simple**, the view it starts in, shows three things: the agent speaking,
 the sections it is working on, and where they sit in the brain. The agent's
 latest words are in a speech bubble beside the LangSlice mark and a small
-figure for the agent, named by its model; the words come in one after
+figure for the agent's model, named under it; the words come in one after
 another and the figure talks while they do. Under the bubble is the tool
 running now, in plain words. The sections are shown two at a time, with
 their name and position only.
@@ -106,7 +106,7 @@ otherwise.
   spend (tokens and the dollar estimate, when the run records them).
 - **The run so far.** The journal, on the right: a timeline of the agent's
   own words, its messages and reasoning summaries, each at its minute of the
-  run, when the job folder holds LangSlice's agent trace. Between them, one
+  run. Between them, one
   quiet line per tool call, named in plain words, with its section or how
   many it worked on and how many pictures it saved; open a line for the
   inputs; the tool's own name is beside its plain words. Calls of one tool in a row share one line
@@ -118,12 +118,28 @@ otherwise.
   agent read with it (then the arrow keys go through every picture of the
   job).
 
-A run replayed into a job folder (its trace's session record carries
-`replay`) says **Replay** and its speed beside the status word.
+The agent's words come from LangSlice's own agent trace when the job folder
+holds one. For a run by Claude Code they come from Claude Code's transcript
+of the session, read while it is written: LangSlice looks under
+`~/.claude/projects` for the session (or subagent) whose `start_job` call
+names the job's folder, and shows its messages and reasoning summaries from
+that call on. It reads those files and writes nothing;
+`LANGSLICE_CLAUDE_TRANSCRIPTS` names another folder, or `off`. Other apps'
+runs show their tool calls only.
 
-The window is neutral graphite around the pictures, with one accent colour
-for what is happening now. The agent's own words are set in a serif face,
-the window's own in a sans-serif face.
+The figure beside the agent's words is its model maker's: Clawd, Claude
+Code's mascot, for a Claude model, OpenAI's mark for a GPT model, Google
+Gemini's for a Gemini model, and a plain face otherwise. The marks belong to
+their owners and only say whose model is speaking.
+
+The panels and the strip show each section as its file holds it, its
+channels in their own colours, not the contrast-enhanced image the fits
+read. The pictures the agent looked at are shown as the agent saw them.
+
+The window is neutral around the pictures, with one accent colour for what
+is happening now; **Light | Dark** in the top bar switches its look (dark to
+start with, remembered). The agent's own words are set in a serif face, the
+window's own in a sans-serif face.
 
 The viewer is read-only: nothing in it changes the job.
 

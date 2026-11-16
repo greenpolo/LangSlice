@@ -3,7 +3,8 @@
 The GUI is a separate process from every run (the agent run, an MCP server, the
 agent CLI's calls, a SliceBench subprocess), so it learns everything from the
 job folder. :class:`JobWatcher` tails the append-only files by byte offset
-(``logs/events.jsonl``, ``views.jsonl`` and the newest ``trace/*.jsonl``),
+(``logs/events.jsonl``, ``views.jsonl``; the newest ``trace/*.jsonl``, else
+Claude Code's transcript of the run, :mod:`.transcripts`),
 keeping an unterminated last line for the next round, and rereads the files
 that are replaced whole (``state.json``, ``history/undo.json``, ``job.json``,
 ``exports/spend.json``) when their size or modification time changes.
@@ -32,6 +33,7 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import stack_angles_entry, status_rows
 from langslice.hosts.gui.focus import Focus, started_focus
 from langslice.hosts.gui.render import render_key
+from langslice.hosts.gui.transcripts import TranscriptWords, projects_root
 from langslice.job.history import SectionHistories
 from langslice.job.layout import (
     EVENTS_FILE,
@@ -272,6 +274,7 @@ class JobWatcher:
         self.events = _Tail(f / LOGS_DIR / EVENTS_FILE)
         self.views = _Tail(f / VIEWS_INDEX)
         self.trace: _Tail | None = None
+        self.words = TranscriptWords(projects_root())
         self.state = _Whole(f / STATE_FILE)
         self.history = _Whole(f / HISTORY_DIR / UNDO_FILE)
         self.job = _Whole(f / JOB_FILE)
@@ -353,8 +356,10 @@ class JobWatcher:
                     records, cut = self.trace.read()
                     return older + records, cut
                 self.trace = _Tail(newest)
-        if self.trace is None:
-            return [], False
+        if self.trace is None:  # a coding agent's words: its app's transcript
+            last = self.last_change()
+            said = self.words.read(self.folder, self.job.value, last)
+            return [dict(record) for record in said], False
         return self.trace.read()
 
     def _append(self, item: dict[str, Any]) -> None:
@@ -433,8 +438,7 @@ class JobWatcher:
             return
         at = record.get("at")
         if kind == "session":
-            self.session = {"model": record.get("model"), "agent": record.get("agent"),
-                            "replay": _dict(record.get("replay")) or None}
+            self.session = {"model": record.get("model"), "agent": record.get("agent")}
             self._append({"kind": "note", "at": at, "text": "Agent session started"
                           + (f" ({record['model']})" if record.get("model") else "")})
         elif kind == "model":
@@ -622,7 +626,6 @@ class JobWatcher:
             "tasks": spec.get("tasks"),
             "model": self.session.get("model") or spec.get("model"),
             "door": self.door, "exists": self.folder.is_dir(),
-            "replay": self.session.get("replay"),
         }
 
     def status(self) -> dict[str, str]:

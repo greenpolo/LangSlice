@@ -16,8 +16,9 @@ import ctypes
 import importlib
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Protocol, cast
 
 #: The window's title, and its name in the taskbar.
 TITLE = "LangSlice"
@@ -40,14 +41,68 @@ WINDOWS = "nt"
 USAGE = "usage: python -m langslice.hosts.gui.app URL [WIDTH HEIGHT]"
 
 
+class _Handle(Protocol):
+    def ToInt64(self) -> int: ...  # noqa: N802 - .NET's name
+
+
+class _Native(Protocol):
+    Handle: _Handle
+
+
+class _Event(Protocol):
+    def __iadd__(self, handler: Callable[[_Window], None]) -> _Event: ...
+
+
+class _Events(Protocol):
+    before_show: _Event
+
+
+class _Window(Protocol):
+    events: _Events
+    native: _Native
+
+
+class _Webview(Protocol):
+    def create_window(  # noqa: PLR0913 - pywebview's call
+        self,
+        title: str,
+        url: str,
+        *,
+        width: int,
+        height: int,
+        min_size: tuple[int, int],
+        background_color: str,
+    ) -> _Window: ...
+
+    def start(self, *, icon: str) -> None: ...
+
+
+class _Shell(Protocol):
+    def SetCurrentProcessExplicitAppUserModelID(  # noqa: N802 - Win32's name
+        self, app_id: str
+    ) -> int: ...
+
+
+class _Dwm(Protocol):
+    def DwmSetWindowAttribute(  # noqa: N802 - Win32's name
+        self, window: int, attribute: int, value: object, size: int
+    ) -> int: ...
+
+
+def _library(name: str) -> object:
+    """Load one of Windows' libraries by name."""
+    loader = cast("Callable[[str], object]", vars(ctypes)["WinDLL"])
+    return loader(name)
+
+
 def own_taskbar_identity() -> None:
     """Give this process its own taskbar identity (Windows only)."""
     if os.name == WINDOWS:
-        shell: Any = ctypes.windll.shell32  # type: ignore[attr-defined]
+        shell = cast("_Shell", _library("shell32"))
         shell.SetCurrentProcessExplicitAppUserModelID(APP_ID)
 
 
-def dark_title_bar(window: object) -> None:
+def dark_title_bar(window: _Window) -> None:
     """Draw the window's title bar dark, as the page is (Windows only).
 
     Parameters
@@ -56,11 +111,10 @@ def dark_title_bar(window: object) -> None:
         The pywebview window, once its native window exists.
     """
     if os.name == WINDOWS:
-        native: Any = window.native  # type: ignore[attr-defined]
         on = ctypes.c_int(1)
-        dwm: Any = ctypes.windll.dwmapi  # type: ignore[attr-defined]
+        dwm = cast("_Dwm", _library("dwmapi"))
         dwm.DwmSetWindowAttribute(
-            int(native.Handle.ToInt64()),
+            window.native.Handle.ToInt64(),
             DARK_TITLE_BAR,
             ctypes.byref(on),
             ctypes.sizeof(on),
@@ -84,7 +138,7 @@ def main() -> int:
     sized = len(args) >= SIZED_ARGUMENTS
     width, height = (int(args[1]), int(args[2])) if sized else DEFAULT_SIZE
     # pywebview comes with the `window` extra only.
-    webview: Any = importlib.import_module("webview")
+    webview = cast("_Webview", importlib.import_module("webview"))
     own_taskbar_identity()
     window = webview.create_window(
         TITLE,

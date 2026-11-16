@@ -9,8 +9,11 @@ generator and Settings (top right). The agent viewer has two views (Simple |
 Extended in the top bar, `v`, kept in `localStorage` as `detail`; `.viewer.simple`
 on `#tab-viewer`). Simple, the start, shows three things: the agent speaking (its
 latest words in a speech bubble beside the LangSlice mark and the agent's
-figure, `#guy`, an inline SVG face that blinks and talks while the words come
-in), the sections it is working on, two to a page with name and position only,
+figure, `#guy`, inline SVGs of which one shows by the model's maker
+(`maker` in `app.js`, class `maker-claude|openai|gemini|plain`: Clawd drawn
+from the pixel map Claude Code carries, in `--clawd`; OpenAI's and Gemini's
+marks, their paths from Simple Icons; a plain face), moving while the words
+come in), the sections it is working on, two to a page with name and position only,
 and the brain strip. Extended is made for a person who wants the whole run,
 read top to bottom: the narration band (the agent's latest words,
 large, what it is doing now and how far the registration is), up to four
@@ -95,10 +98,10 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   JSON string; `title`, the tool's plain-language label from
   `job.settings.labels`), `picture` (number, view folder, tool and its `title`, call, sections, caption
   from `view.json`; a path outside the folder is refused), `agent` and
-  `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
-  script writes, session start and end, a trace error); a trace `session`
-  record's `replay` object (`speed`, `about`: a finished run's records played
-  again into the folder) is the header's `replay`. The sections table:
+  `reasoning` (the trace's `model` `text` / `thought`; for a folder with no
+  trace, the same records from Claude Code's transcript, `transcripts.py`),
+  `note` (open, plugins, script writes, session start and end, a trace
+  error). The sections table:
   `core.stack.status.status_rows` of `job.migrations.viewer_stack` (an older
   format migrated in memory as every door opens it, nothing written) with
   each section's registration number (`job.history.SectionHistories`); a state this
@@ -129,6 +132,21 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `path`, `folder`, `atlas`, `changed_at`, `status`, `given`. The recent jobs file is the job layer's
   (`job/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
   `LANGSLICE_RECENT_JOBS`, another file or `off`).
+- `transcripts.py` — a coding agent's words. `TranscriptWords(root)`
+  (`projects_root()`: `~/.claude/projects`, or `LANGSLICE_CLAUDE_TRANSCRIPTS`,
+  another folder or `off`; the test suite sets it off) `.read(job_folder,
+  job_file, until)`: until the job's transcript is known, every `SEARCH_S`
+  it reads on in the candidates (`*/*.jsonl` and `*/*/subagents/*.jsonl`
+  last written between `EARLY_S` before the job's first tool call,
+  `first_call_at`, and `LATE_S` after its last change; at most
+  `MAX_CANDIDATES`, nearest that change first; each by byte offset, so a
+  growing file is never read twice) for an assistant turn whose `start_job`
+  call names one of `job_folders` (the job folder, its images folder, the one
+  `job.json` names; `folder_key`); then it tails that file. Only lines
+  holding `"type":"assistant"` are parsed (`Turn`). It gives trace records:
+  one `session` (`model_name` of the model id, agent `Claude Code`), then a
+  `model` record per reasoning summary that is not empty (`thought`) and per
+  message (`text`), times local as the trace's (`local_time`). Read-only.
 - `server.py` — `GuiServer(jobs, port=, settings=)`: `ThreadingHTTPServer` on
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer).
@@ -169,7 +187,10 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   cannot be read is `RenderError` with the reason) and draws from the
   watcher's `current_stack`: `overlay(id, edge)` (`look` mode `overlay`, the
   applied deformation; mode `section` for a section with no position),
-  `thumb(id, edge)` (`render_slice`: the `preprocessed` image, oriented),
+  `thumb(id, edge)` (`render_slice`, oriented); both draw the section's raw
+  channels in their own colours (`_raw_channels`, at most
+  `MAX_OVERLAY_CHANNELS`), not the `preprocessed` image the fits read,
+  whose contrast enhancement makes a scanner's tile mosaic stand out,
   `atlas_thumb(k, edge)` (`look` mode `atlas` at the stack's view angles: the
   template, `look`'s own atlas default, because the borrowed Nissl of the
   Allen atlases would add over a gigabyte), each with its caption band cut off
@@ -323,8 +344,13 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     glow, gradients or shadows, colours each with one job (off-white names
     and the agent's latest words, lavender the one accent: what is happening
     now and what can be clicked, also `--focus`, the sections in focus;
-    grey-violet literal text, pink problems, green Submitted).
-    `lockup.svg` and `logomark.svg` are `assets/logo/`'s dark ones.
+    grey-violet literal text, pink problems, green Submitted; `--clawd`
+    is the mascot's own). `:root[data-theme="light"]` is the light look:
+    paper grounds and dark words, pictures still on black, and the brain
+    strip on a dark ground of its own (`--stage*`). `theme.js` (loaded
+    before the page is drawn) keeps the choice in `localStorage` and swaps
+    the lockup. `lockup.svg` and `logomark.svg` are `assets/logo/`'s dark
+    ones, `lockup-light.svg` the light one.
   - `index.html` — the top bar (the lockup, the tabs, the job picker,
     Settings), the viewer tab (the narration band `#statusline` with the
     progress meters, the sections area with the strip under it, the journal
@@ -337,7 +363,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     what is shown (`#tab=…&job=n`) once a job was named; the job picker
     (keyboard-navigable, newest first by `changed_at`); the polls (jobs every
     2 s, the snapshot every 300 ms, the strip when the tables change, at most
-    every 1.5 s); Simple | Extended (`showDetail`, `Viewer.setSimple`); the narration band's status word, Replay chip and the run
+    every 1.5 s); Light | Dark (`Theme.toggle`); Simple | Extended (`showDetail`, `Viewer.setSimple`); the narration band's status word, the agent's figure and the run
     in one sentence (`runWords`: the model, the plane, the atlas); the keys
     `[`, `]`, `f` and `v`. `Ui.short` is a section's name as the window shows it
     (the file name without its extension). `Ui.loads` is
@@ -390,8 +416,8 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     one tool in a row fold into one run line, `title ×n`, that opens to show
     each, with the run's `N pictures` while closed),
     `N pictures`, the pictures read at the start as one line at the top
-    (`GROUP_TITLES`), notes, the line saying the agent's own words are not
-    in the job folder when it holds no trace, following the end until the
+    (`GROUP_TITLES`), notes, the line saying the agent's own words were not
+    found when the snapshot holds none, following the end until the
     person scrolls away (`Latest activity`); the tray "The agent looked at" (four pictures per
     page, the calls with pictures paged, Newest, resizable, about half the
     column); the lightbox (a picture with its caption; the
@@ -412,6 +438,9 @@ whole, a trace appearing mid-run, time order, missing files, the raw-state
 fallback, undo labels, a path outside the folder, the job list,
 a truncated file, the focus, Idle, the rows' render keys and positions, job
 names; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
+`tests/test_gui_transcripts.py` (the transcript found by its `start_job`
+call among others and tailed, a half-written line, an old transcript and a
+job with no call left alone, `off`, the watcher showing the words),
 `tests/test_gui_render.py` (every picture drawn with nothing written to the
 folder, an overlay as `look`'s with its deformation and without its caption,
 the render key, the strip and its spacing, one drawing for concurrent requests,

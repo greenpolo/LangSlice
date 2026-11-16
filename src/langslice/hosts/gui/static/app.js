@@ -354,7 +354,6 @@ const Ui = (() => {
     $('status-dot').className = 'dot none';
     $('word').textContent = '';
     $('facts').textContent = '';
-    $('replay').hidden = true;
     AgentLog.setStatus('', 'Loading the job…');
   }
   // Whose model is speaking, by its name: the figure shown beside its words.
@@ -382,13 +381,6 @@ const Ui = (() => {
     $('facts').title = [h.name, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
     $('guy-name').textContent = h.model || 'The agent';
     $('guy').className = 'guy-box maker-' + maker(h.model);
-    // A replayed run (a finished run's records played again into a job folder) says so.
-    const replay = h.replay;
-    $('replay').hidden = !replay;
-    if (replay) {
-      $('replay').textContent = replay.speed ? `Replay at ${replay.speed}× speed` : 'Replay';
-      $('replay').title = replay.about || 'A finished run, played again from its records';
-    }
     AgentLog.setStatus(word, snap.status?.sentence || '');
     Viewer.setHeader(h);
     const job = jobs?.find(j => j.index === watch.index);

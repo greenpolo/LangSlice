@@ -49,14 +49,6 @@
 .now-meta { display: flex; align-items: center; gap: var(--space-2); font-size: var(--size-sm); white-space: nowrap; min-width: 0; }
 .now-meta .word { font-weight: var(--weight-strong); }
 .facts { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; margin-left: var(--space-1); }
-/* A replayed run says so beside the status word. */
-.replay-chip {
-  padding: 0 var(--space-2);
-  border: 1px solid var(--tract);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  line-height: 18px;
-}
 .bubble:has(.now-words:empty) { display: none; }
 .now-words {
   font-family: var(--serif);

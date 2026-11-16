@@ -709,13 +709,13 @@ def _raw_channels(opened: _Opened, section: Section) -> tuple[str, ...]:
     return tuple(names[:MAX_OVERLAY_CHANNELS])
 
 
-def _thumb_picture(opened: _Opened, section: Section, edge: int) -> Image.Image:
+def _thumb_picture(
+    opened: _Opened, section: Section, edge: int
+) -> Image.Image:
     names = _raw_channels(opened, section)
     several = len(names) > 1
-    drawn = {"overlay": list(names)} if several else {"image": names[0]}
-    return render_slice(
-        opened.workspace, section, long_edge=edge, look=drawn
-    )
+    raw = {"overlay": list(names)} if several else {"image": names[0]}
+    return render_slice(opened.workspace, section, long_edge=edge, look=raw)
 
 
 def _overlay_picture(
