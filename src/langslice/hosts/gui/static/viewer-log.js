@@ -558,5 +558,8 @@ const AgentLog = (() => {
     showBox();
   }
 
-  return { init, setJob, setStatus, add, openRender };
+  // Called when the journal is shown again (the Extended view): its end, if it was following.
+  function shown() { if (following) toEnd(); }
+
+  return { init, setJob, setStatus, add, openRender, shown };
 })();

@@ -189,6 +189,7 @@ const Ui = (() => {
     }
     $('tab-viewer').classList.toggle('simple', name === 'simple');
     Viewer.setSimple(name === 'simple');
+    AgentLog.shown();
   }
   for (const button of document.querySelectorAll('[data-detail]')) {
     button.addEventListener('click', () => showDetail(button.dataset.detail));
