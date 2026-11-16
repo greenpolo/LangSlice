@@ -38,7 +38,7 @@ imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`,
 and the job layer (`job.settings.tool_table`, `job.settings.spec`,
 `job.settings.schema`, `job.settings.labels`, `job.layout` names and
 `read_job_file`, `job.migrations.viewer_stack` and `without_removed_settings`,
-`job.history`), the providers' image-model lists (`providers.connections`,
+`job.history`, `job.review` for the review comments), the providers' image-model lists (`providers.connections`,
 `providers.openai_api`), the doors' job reading for the viewer's pictures
 (`doors.jobs.read_spec`, `context`: the job read as the agent CLI reads it,
 never opened), and for the Settings tab the doors' setup
@@ -46,11 +46,14 @@ never opened), and for the Settings tab the doors' setup
 `image_model_connected` for the generator) and the
 user's settings file (`doors.user_settings`). Nothing imports it but
 `hosts/cli.py` (`langslice gui`); `doors/commands/linear.py`'s `--gui` starts that
-command as a process (`open_gui`). The viewer and the prompt generator are
-read-only: every job and generator endpoint is GET only, nothing is written to
-a job folder (the viewer's pictures are kept in memory; the atlas's own disk
-cache is the only file the core may write, as for any reader). The Settings tab's three POSTs are the only writes (the user's
-settings file, a saved key, the ChatGPT login); sign-in runs in this window's
+command as a process (`open_gui`). The viewer and the prompt generator change
+no registration: every job and generator endpoint is GET only but the review
+comments' POST, and nothing else is written to a job folder (the viewer's
+pictures are kept in memory; the atlas's own disk cache is the only file the
+core may write, as for any reader). The writes are the Settings tab's three
+POSTs (the user's settings file, a saved key, the ChatGPT login) and the
+review comments' (`jobs/<n>/comments`: the job's `review.json`, through
+`job.review`, the one job file the window writes); sign-in runs in this window's
 process, never inside an agent tool call. Nothing in it is model-facing: the
 prompt generator's message is the person's to send, and its labels
 (`job.settings.labels`) are for people.
@@ -160,18 +163,29 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `jobs/<n>/render/overlay|thumb/<section>?edge=&key=` (the section's filename
   URL-encoded and one of the job's sections, else 404; `key`, the row's
   `render_key`, is for the browser's cache only), `jobs/<n>/render/atlas/<k>?edge=`,
-  `settings`; anything else 404. A picture that cannot be drawn is 409
+  `settings`; anything else 404. The snapshot answer also carries
+  `comments`: the job's review comments (`comments.CommentRow` each, through
+  one `CommentWatch` per folder). A picture that cannot be drawn is 409
   `{"error"}` with the reason, one still being drawn after `render.WAIT_S` 503.
   The static files: `""` is `index.html`, and every other file directly in
   `static/` whose name `STATIC_NAME` matches is served with its type from its
   extension (`STATIC_TYPES`), so a new script or stylesheet needs no server
   change. `GuiServer(..., renders=)` takes a `RenderPool` (tests).
-  `post(path, headers, body)`: only `settings.POSTS` (any other path 405),
+  `post(path, headers, body)`: only `settings.POSTS` and `jobs/<n>/comments`
+  (`_comment`: `{"section", "box", "text"}` keeps a comment
+  (`job.review.add_comment` on the watcher's `current_stack`), `{"remove": id}`
+  takes one away; the answer is the comments as they now stand, a
+  `ReviewError` 400 `{"error"}`; any other path 405),
   with the token and `Host`, `Origin` exactly `http://127.0.0.1:<port>` and
   `Sec-Fetch-Site` same-origin when sent (403), `Content-Type`
   `application/json` (415), at most `MAX_BODY` bytes (413); a refusal is 400
   `{"error"}`. PUT, DELETE, PATCH, HEAD: 405. The Settings code in `server.py` and
   `index.html` sits between `Settings tab` marker comments.
+- `comments.py` — the review comments as the viewer shows them:
+  `CommentRow` (the comment's fields and `revised`: its section changed
+  since, `job.review.revised`), `CommentWatch(folder).rows(state, version)`
+  (read again only when `review.json`'s stamp or the watcher's
+  `state_version` moved).
 - `focus.py` — the agent's focus, as ABBA's follower followed it: `Focus`
   (`sections`, `tool`, `call`, `at`); `is_followed(name)` (a tool of kind
   `write` in `job.settings.tool_table`, a plugin's or an unknown tool, and
@@ -366,7 +380,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     2 s, the snapshot every 300 ms, the strip when the tables change, at most
     every 1.5 s); Light | Dark (`Theme.toggle`); Simple | Extended (`showDetail`, `Viewer.setSimple`); the narration band's status word, the agent's figure and the run
     in one sentence (`runWords`: the model, the plane, the atlas); the keys
-    `[`, `]`, `f` and `v`. `Ui.short` is a section's name as the window shows it
+    `[`, `]`, `f`, `v`, `r` (Review) and, in Review, the arrow keys and `Esc`. `Ui.short` is a section's name as the window shows it
     (the file name without its extension). `Ui.loads` is
     one queue for every picture the server draws: at most three in flight, so
     the polls keep their connections, lowest rank first (the lightbox, the
@@ -391,7 +405,16 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     has none). The Table (a damaged row's pink left
     edge; a click puts the section in focus), Steps (undo, redo, notes,
     spend). The dividers are remembered in `localStorage`; below 1100 px the
-    journal goes under the sections area.
+    journal goes under the sections area. Review (`#review`, `r`): one
+    section to a page, every section in stack order, the arrow keys page,
+    Follow off, drag draws a box instead of panning (`drawable`: fractions of
+    the picture's contained content rectangle through the panel's zoom,
+    `contentRect`, `fractionAt`), a composer under the box (Enter POSTs it,
+    Esc drops it). Every panel draws its section's comments from the
+    snapshot (`setComments`, `drawMarks`) in `.panel-marks`, a layer with the
+    picture's own transform: an accent box with its words above it, faded
+    and `revised` once the section changed; `×` removes one in Review. The
+    button counts the open comments (`#review-count`).
   - `viewer-strip.js` — the brain strip, one inline SVG under the pictures:
     atlas thumbnails over a millimetre ruler, the placed sections in at most three
     stair rows (each in the first row where it clears its neighbour) with a
@@ -465,6 +488,10 @@ no colour value, and its script builds no HTML from strings), `tests/test_gui_wi
 fake `which` and filesystem, LangSlice's own window first and the browser when it cannot start, its icon shipped, the app window, both fallbacks, the start
 address per tab, `--tab` reaching `serve`, a port in use in one sentence, the
 address flushed),
+`tests/test_review_comments.py` (a comment kept with nothing else
+written to the job folder, the refusals, Origin needed, removal; the tool's
+pictures with the boxes outlined, open and revised after a write, the
+statement's line),
 `tests/test_gui_settings.py` (the settings file in a temporary home, the
 environment override, the POST checks, a key never sent back, the Claude key
 loaded for the agent only, the run location's greying, models per

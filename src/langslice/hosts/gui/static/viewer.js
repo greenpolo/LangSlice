@@ -13,6 +13,11 @@
 // Follow: the focus is the sections of the agent's latest followed call (the snapshot's
 // `focus`); a new call replaces them and goes back to page 1. A section the person
 // clicks (strip, table, a name in the journal) becomes the focus and Follow turns off.
+// Review (r): one section at a time, every section in stack order, the arrow keys flip
+// through them; dragging on the picture draws a box, and a short comment typed under it is
+// kept in the job (`POST jobs/<n>/comments`, the job's review.json), where the agent's
+// `review_comments` tool reads it. Every panel shows its section's comments: a box and the
+// words, faded once the section has changed since (`revised`: the agent worked on it).
 const Viewer = (() => {
   const PAGE_SIZES = { simple: 2, extended: 4 };
   // How a section got its in-plane transform, in a panel's words.
@@ -35,7 +40,10 @@ const Viewer = (() => {
   let tasks = null;            // the job's tasks, from the header
   let tasksSeen = '';
   let simple = true;           // the Simple view: two sections to a page, no other view
-  const pageSize = () => (simple ? PAGE_SIZES.simple : PAGE_SIZES.extended);
+  let review = false;          // one section at a time, every section, boxes and comments
+  let comments = [];           // the job's review comments, from the snapshot
+  let commentsSeen = '';
+  const pageSize = () => (review ? 1 : simple ? PAGE_SIZES.simple : PAGE_SIZES.extended);
 
   // --- the header, the switch, Follow and paging -------------------------------------------
   function init() {
@@ -43,12 +51,13 @@ const Viewer = (() => {
       button.addEventListener('click', () => showView(button.dataset.view));
     }
     $('follow-agent').addEventListener('click', toggleFollow);
+    $('review').addEventListener('click', toggleReview);
     $('page-previous').addEventListener('click', () => pageBy(-1));
     $('page-next').addEventListener('click', () => pageBy(1));
     panels = [1, 2, 3, 4].map(makePanel);
     new ResizeObserver(() => {
       clearTimeout(resizeTimer);
-      for (const p of panels) if (p.id) fitTitle(p);
+      for (const p of panels) if (p.id) { fitTitle(p); drawMarks(p); }
       resizeTimer = setTimeout(() => { for (const p of panels) if (p.id) request(p); }, 250);
     }).observe($('view-focus'));
     Strip.init({ pick });
@@ -60,6 +69,10 @@ const Viewer = (() => {
     rows = []; byId = new Map(); loaded = false;
     agent = null; agentSeen = ''; follow = true; manual = []; page = 0;
     tasks = null; tasksSeen = '';
+    review = false; comments = []; commentsSeen = '';
+    $('review').setAttribute('aria-pressed', 'false');
+    $('view-focus').classList.remove('reviewing');
+    $('review-count').hidden = true;
     progress();
     for (const p of panels) clearPanel(p);
     Strip.setJob(index);
@@ -119,18 +132,56 @@ const Viewer = (() => {
     const ids = (agent?.sections || []).filter(id => byId.has(id));
     return ids.length ? [...new Set(ids)] : rows.map(r => r.id);
   }
-  function targets() { return follow ? agentTargets() : manual.filter(id => byId.has(id)); }
+  function targets() {
+    if (review) return rows.map(r => r.id);
+    return follow ? agentTargets() : manual.filter(id => byId.has(id));
+  }
   function pick(id) {
     if (!byId.has(id)) return;
+    if (review) {
+      page = Math.max(0, rows.findIndex(r => r.id === id));
+      showView('focus');
+      return;
+    }
     manual = [id];
     follow = false;
     page = 0;
     showView('focus');
   }
+  // Review: from the first section shown, one at a time through every section.
+  function toggleReview() {
+    const shown = panels.find(p => p.id)?.id;
+    review = !review;
+    for (const p of panels) cancelDraft(p);
+    if (review) {
+      follow = false;
+      page = Math.max(0, rows.findIndex(r => r.id === shown));
+      for (const p of panels) { p.view = { s: 1, x: 0, y: 0 }; transform(p, p.img); }
+    } else {
+      manual = shown ? [shown] : manual;
+      page = 0;
+    }
+    $('review').setAttribute('aria-pressed', String(review));
+    $('view-focus').classList.toggle('reviewing', review);
+    showView('focus');
+    for (const p of panels) drawMarks(p);
+  }
+  function reviewing() { return review; }
+  // The snapshot's comments: every panel showing a commented section draws them again.
+  function setComments(list) {
+    const seen = JSON.stringify(list || []);
+    if (seen === commentsSeen) return;
+    commentsSeen = seen;
+    comments = Array.isArray(list) ? list : [];
+    const open = comments.filter(c => !c.revised).length;
+    $('review-count').textContent = open ? String(open) : '';
+    $('review-count').hidden = !open;
+    for (const p of panels) drawMarks(p);
+  }
   // Simple shows the pictures only, and follows the agent.
   function setSimple(on) {
     simple = on;
-    if (on) { follow = true; page = 0; if (mode !== 'focus') { showView('focus'); return; } }
+    if (on && !review) { follow = true; page = 0; if (mode !== 'focus') { showView('focus'); return; } }
     refresh();
   }
   function toggleFollow() {
@@ -159,11 +210,17 @@ const Viewer = (() => {
     const pages = Math.max(1, Math.ceil(all.length / size));
     page = Math.min(page, pages - 1);
     const onPage = all.slice(page * size, page * size + size);
-    $('focus-name').textContent = follow ? 'The agent is working on' : 'You are looking at';
-    $('focus-count').textContent = !loaded || !rows.length ? ''
-      : (all.length === rows.length ? `all ${rows.length} sections` : `${all.length} of ${rows.length} sections`)
-        + (pages > 1 ? `, page ${page + 1} of ${pages}` : '');
-    $('follow-agent').setAttribute('aria-pressed', String(follow));
+    $('focus-name').textContent = review ? 'Reviewing' : follow ? 'The agent is working on' : 'You are looking at';
+    if (review) {
+      $('focus-count').textContent = !loaded || !rows.length ? '' : `section ${page + 1} of ${rows.length}`;
+      $('focus-hint').textContent = rows.length ? '← → to flip · drag a box to comment' : '';
+    } else {
+      $('focus-count').textContent = !loaded || !rows.length ? ''
+        : (all.length === rows.length ? `all ${rows.length} sections` : `${all.length} of ${rows.length} sections`)
+          + (pages > 1 ? `, page ${page + 1} of ${pages}` : '');
+      $('focus-hint').textContent = '';
+    }
+    $('follow-agent').setAttribute('aria-pressed', String(follow && !review));
     $('pager').hidden = pages < 2;
     Strip.setTargets(all, onPage);
     for (const tr of document.querySelectorAll('#sections tbody tr')) tr.classList.toggle('target', all.includes(tr.dataset.id));
@@ -202,9 +259,10 @@ const Viewer = (() => {
     const updating = el('span', 'panel-updating', 'updating');
     const message = el('p', 'panel-message');
     updating.hidden = message.hidden = true;
-    box.append(updating, message);
+    const marks = el('div', 'panel-marks');
+    box.append(marks, updating, message);
     root.append(title, box);
-    const p = { slot, root, name, where, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, stale: false, problem: '', view: { s: 1, x: 0, y: 0 } };
+    const p = { slot, root, name, where, angles, tags, open, box, marks, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, stale: false, problem: '', view: { s: 1, x: 0, y: 0 }, draft: null };
     open.addEventListener('click', () => {
       if (!p.img || p.stale) return;
       const row = byId.get(p.id);
@@ -213,6 +271,7 @@ const Viewer = (() => {
         'The current registration' + (words.length ? ' · ' + words.join(' · ') : '') + ' · drawn for this window, not a picture the agent saw');
     });
     zoomable(p);
+    drawable(p);
     return p;
   }
   // A load no longer wanted is stopped, freeing its place in the queue and its connection.
@@ -226,6 +285,8 @@ const Viewer = (() => {
     p.img?.remove();
     p.img = null; p.id = null; p.key = null; p.edge = 0; p.url = ''; p.stale = false;
     p.view = { s: 1, x: 0, y: 0 };
+    cancelDraft(p);
+    drawMarks(p);
     p.updating.hidden = p.message.hidden = true;
     p.problem = '';
     shareProblem();
@@ -238,7 +299,9 @@ const Viewer = (() => {
       p.id = id; p.key = null; p.edge = 0; p.url = ''; p.problem = '';
       p.view = { s: 1, x: 0, y: 0 };
       p.message.hidden = true;
+      cancelDraft(p);
       if (p.img) { p.stale = true; p.img.classList.add('stale'); transform(p, p.img); }
+      drawMarks(p);
     }
     p.name.textContent = Ui.short(id);
     p.name.title = id;
@@ -321,6 +384,7 @@ const Viewer = (() => {
       p.img = img;
       p.box.prepend(img);
       p.open.disabled = false;
+      drawMarks(p);
       requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('entering')));
       if (old) setTimeout(() => old.remove(), 200);
     };
@@ -378,7 +442,7 @@ const Viewer = (() => {
     }, { passive: false });
     let press = null;
     box.addEventListener('pointerdown', event => {
-      if (event.button !== 0 || !p.img) return;
+      if (event.button !== 0 || !p.img || review) return;
       press = { x: event.clientX, y: event.clientY, vx: p.view.x, vy: p.view.y };
       box.setPointerCapture(event.pointerId);
       box.classList.add('panning');
@@ -393,7 +457,11 @@ const Viewer = (() => {
     const release = () => { press = null; box.classList.remove('panning'); };
     box.addEventListener('pointerup', release);
     box.addEventListener('pointercancel', release);
-    box.addEventListener('dblclick', () => { p.view = { s: 1, x: 0, y: 0 }; transform(p, p.img); });
+    box.addEventListener('dblclick', event => {
+      if (event.target.closest('.composer')) return;
+      p.view = { s: 1, x: 0, y: 0 };
+      transform(p, p.img);
+    });
   }
   function clampPan(p, r) {
     const v = p.view;
@@ -404,6 +472,150 @@ const Viewer = (() => {
     if (!img) return;
     const v = p.view;
     img.style.transform = v.s === 1 ? '' : `translate(${v.x}px, ${v.y}px) scale(${v.s})`;
+    if (img === p.img) p.marks.style.transform = img.style.transform;
+  }
+
+  // --- review boxes ---------------------------------------------------------------------------
+  // Where the picture's pixels lie in its panel (the image is contained, centred): the
+  // rectangle a box's fractions are of, in the panel's unzoomed pixels.
+  function contentRect(p) {
+    const r = p.box.getBoundingClientRect();
+    const w = p.img?.naturalWidth || 0, h = p.img?.naturalHeight || 0;
+    if (!w || !h || r.width < 8 || r.height < 8) return null;
+    const scale = Math.min(r.width / w, r.height / h);
+    return { left: (r.width - w * scale) / 2, top: (r.height - h * scale) / 2, width: w * scale, height: h * scale };
+  }
+  // A pointer's place as fractions of the picture, through the panel's zoom.
+  function fractionAt(p, event) {
+    const c = contentRect(p);
+    if (!c) return null;
+    const r = p.box.getBoundingClientRect(), v = p.view;
+    const x = (event.clientX - r.left - v.x) / v.s, y = (event.clientY - r.top - v.y) / v.s;
+    const clamp = n => Math.min(1, Math.max(0, n));
+    return { x: clamp((x - c.left) / c.width), y: clamp((y - c.top) / c.height) };
+  }
+  function placeBox(node, c, box) {
+    const [x0, y0, x1, y1] = box;
+    node.style.left = `${c.left + x0 * c.width}px`;
+    node.style.top = `${c.top + y0 * c.height}px`;
+    node.style.width = `${(x1 - x0) * c.width}px`;
+    node.style.height = `${(y1 - y0) * c.height}px`;
+  }
+  // The section's comments over its picture, and the box being drawn.
+  function drawMarks(p) {
+    const c = p.id && p.img && !p.stale ? contentRect(p) : null;
+    const nodes = [];
+    if (c) {
+      for (const comment of comments.filter(x => x.section === p.id)) {
+        const mark = el('div', 'mark' + (comment.revised ? ' revised' : ''));
+        placeBox(mark, c, comment.box);
+        const chip = el('div', 'mark-chip');
+        chip.append(el('span', 'mark-text', comment.text));
+        if (comment.revised) chip.append(el('span', 'mark-state', 'revised'));
+        if (review) {
+          const remove = el('button', 'mark-remove', '×');
+          remove.type = 'button';
+          remove.title = 'Remove this comment';
+          remove.setAttribute('aria-label', 'Remove the comment ' + comment.text);
+          remove.addEventListener('pointerdown', event => event.stopPropagation());
+          remove.addEventListener('click', () => send({ remove: comment.id }));
+          chip.append(remove);
+        }
+        mark.append(chip);
+        nodes.push(mark);
+      }
+      if (p.draft?.box) {
+        const draft = el('div', 'mark draft');
+        placeBox(draft, c, p.draft.box);
+        nodes.push(draft);
+      }
+    }
+    p.marks.replaceChildren(...nodes);
+    p.marks.style.transform = p.img?.style.transform || '';
+  }
+  // Review: a drag draws a box; letting go asks for the comment under it.
+  function drawable(p) {
+    const box = p.box;
+    box.addEventListener('pointerdown', event => {
+      if (!review || event.button !== 0 || !p.img || p.stale) return;
+      if (event.target.closest('.composer, .mark-remove')) return;
+      const start = fractionAt(p, event);
+      if (!start) return;
+      cancelDraft(p);
+      p.draft = { start, box: null, drawing: true };
+      box.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    box.addEventListener('pointermove', event => {
+      if (!p.draft?.drawing) return;
+      const at = fractionAt(p, event), s = p.draft.start;
+      if (!at) return;
+      p.draft.box = [Math.min(s.x, at.x), Math.min(s.y, at.y), Math.max(s.x, at.x), Math.max(s.y, at.y)];
+      drawMarks(p);
+    });
+    const done = () => {
+      if (!p.draft?.drawing) return;
+      p.draft.drawing = false;
+      const b = p.draft.box;
+      if (!b || b[2] - b[0] < 0.01 || b[3] - b[1] < 0.01) { cancelDraft(p); return; }
+      compose(p);
+    };
+    box.addEventListener('pointerup', done);
+    box.addEventListener('pointercancel', () => cancelDraft(p));
+  }
+  function cancelDraft(p) {
+    if (!p.draft) return;
+    p.draft = null;
+    p.box.querySelector('.composer')?.remove();
+    drawMarks(p);
+  }
+  // The comment's field, just under the box (above it near the bottom), outside the zoom.
+  function compose(p) {
+    const c = contentRect(p);
+    if (!c) { cancelDraft(p); return; }
+    const r = p.box.getBoundingClientRect(), v = p.view, [x0, y0, , y1] = p.draft.box;
+    const form = el('form', 'composer');
+    const input = el('input', 'composer-input');
+    input.type = 'text';
+    input.maxLength = 500;
+    input.placeholder = 'What is off here?';
+    input.setAttribute('aria-label', 'Your comment on the box');
+    const note = el('span', 'composer-note', 'Enter to keep · Esc to cancel');
+    form.append(input, note);
+    const left = Math.min(Math.max(8, v.x + (c.left + x0 * c.width) * v.s), Math.max(8, r.width - 340));
+    let top = v.y + (c.top + y1 * c.height) * v.s + 8;
+    if (top > r.height - 72) top = Math.max(8, v.y + (c.top + y0 * c.height) * v.s - 72);
+    form.style.left = `${left}px`;
+    form.style.top = `${top}px`;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text || !p.draft) return;
+      input.disabled = true;
+      const ok = await send({ section: p.id, box: p.draft.box, text }, note);
+      if (ok) cancelDraft(p); else input.disabled = false;
+    });
+    input.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Escape') { event.preventDefault(); cancelDraft(p); }
+    });
+    p.box.append(form);
+    input.focus();
+  }
+  // Keep or remove a comment; the server answers with the comments as they now stand.
+  async function send(body, note = null) {
+    try {
+      const r = await fetch(`jobs/${job}/comments`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store',
+      });
+      const answer = await r.json().catch(() => ({}));
+      if (!r.ok) { if (note) note.textContent = answer.error || 'The comment was not kept.'; return false; }
+      setComments(answer.comments);
+      return true;
+    } catch {
+      if (note) note.textContent = 'LangSlice is not reachable.';
+      return false;
+    }
   }
 
   // --- the Sections view ----------------------------------------------------------------------
@@ -515,5 +727,5 @@ const Viewer = (() => {
     });
   }
 
-  return { init, setJob, setHeader, update, pick, toggleFollow, pageBy, showView, shown, setSimple };
+  return { init, setJob, setHeader, update, pick, toggleFollow, toggleReview, reviewing, setComments, pageBy, showView, shown, setSimple };
 })();

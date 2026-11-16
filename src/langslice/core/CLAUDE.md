@@ -606,6 +606,9 @@ the angles in a caption (empty for the flat plane).
   `linear_matrix` (a transform as a 3x3 affine; `ValueError` when it is not
   affine). The library's `write_frame` / `map_from_itk` / `transform_from_itk`.
 - `pictures/jpeg.py` — the doors' one JPEG encoding (below).
+- `pictures/review_boxes.py` — `draw_boxes(image, content, boxes)`: review
+  boxes (fractions of the content) outlined in place in `BOX_COLOUR` with a
+  label chip each; returns the boxes in pixels (`tools/review.py`).
 - `fits/frame.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
   long_edge=, transform=)` (the oriented section render, its

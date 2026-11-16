@@ -199,6 +199,8 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("list_files", "read", "Common"),
     ToolDef("search_files", "read", "Common"),
     ToolDef("read_file", "read", "Common"),
+    # The boxes and comments a person left in the LangSlice window.
+    ToolDef("review_comments", "read", "Common"),
     # --- changing -------------------------------------------------------------------
     ToolDef("position_sections", "write", "Positioning", when=positions_on,
             needs=(("look:positioning", "look:overlay"),), writes=("position", "angles")),

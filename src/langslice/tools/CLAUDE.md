@@ -227,6 +227,16 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   made on; a changed registration only marks it `earlier_registration`). The
   verb `make_mask`.
 - `notes.py` — `add_note(job, text)`.
+- `review.py` — `review_pictures(job, workspace, long_edge=)` (the tool
+  `review_comments`, `review_comments_tool`): the job's review comments
+  (`job.review`, `review.json`, written by the LangSlice window only) as
+  `ReviewRow`s (`id`, `section`, `comment`, `box` fractions, `state`
+  `open` / `revised`; an open one drawn: `picture`, `box_px`), and per
+  section with open comments its overlay (`look` mode `overlay`, `section`
+  without a position) with the boxes outlined and numbered by
+  `core.pictures.review_boxes.draw_boxes`, saved as tool `review_comments`
+  (at most `Job.picture_cap`, the rest `not_shown`). A read: no state, no
+  undo step.
 - `files.py` — read-only file access over the job folder for the native agent
   (`job.browse` keeps every path inside it; `BAD_PATH` otherwise, and
   `NOT_FOUND` for a path that does not exist, with `nearest`, the nearest
@@ -637,7 +647,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `VERBS`). The gating (`when`):
   `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`,
   `status`, the job-folder tools (`list_files`, `search_files`, `read_file`),
-  `note`, `undo`, `redo`, `mark_damage` (unless `damage` is frozen on
+  `review_comments`, `note`, `undo`, `redo`, `mark_damage` (unless `damage` is frozen on
   every section) and `submit` in every run;
   `position_sections` with the `position` task or the stack's cutting angles
   left to the agent (`transform.angles`, `positions_on`);

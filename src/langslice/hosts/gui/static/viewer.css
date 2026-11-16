@@ -549,3 +549,60 @@
   .word-in, .guy-eye, .clawd-eye, .speaking .guy, .speaking .guy-mark, .speaking .guy-mouth { animation: none; }
   .meter-fill { transition: none; }
 }
+
+/* --- Review: one section at a time, boxes and comments (viewer.js) ------------------------- */
+.focus-hint { margin-left: var(--space-3); color: var(--muted); font-weight: 400; font-size: var(--size-sm); }
+.review-count {
+  margin-left: var(--space-1);
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--focus);
+  color: var(--ground);
+  font-size: var(--size-xs);
+  font-weight: var(--weight-strong);
+}
+.panels.reviewing .panel-picture { cursor: crosshair; }
+/* The marks lie over the picture and zoom with it (the same transform, origin 0 0). */
+.panel-marks { position: absolute; inset: 0; z-index: 1; transform-origin: 0 0; pointer-events: none; }
+.mark { position: absolute; border: 2px solid var(--focus); border-radius: 2px; }
+.mark.draft { border-style: dashed; }
+.mark.revised { border-color: var(--muted); border-style: dashed; opacity: 0.6; }
+.mark-chip {
+  position: absolute;
+  left: -2px;
+  bottom: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 320px;
+  margin-bottom: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--focus);
+  color: var(--name);
+  font-size: var(--size-sm);
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.mark.revised .mark-chip { border-color: var(--line); color: var(--muted); }
+.mark-text { overflow: hidden; text-overflow: ellipsis; }
+.mark-state { color: var(--muted); font-size: var(--size-xs); }
+.mark-remove { padding: 0 4px; background: none; border: 0; color: var(--muted); cursor: pointer; }
+.mark-remove:hover { color: var(--name); }
+.composer {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 320px;
+  padding: var(--space-2);
+  border: 1px solid var(--focus);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: default;
+}
+.composer-input { width: 100%; font-size: var(--size-md); }
+.composer-note { color: var(--muted); font-size: var(--size-xs); }

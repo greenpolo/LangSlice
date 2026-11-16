@@ -346,6 +346,7 @@ const Ui = (() => {
     const tables = snap.sections !== undefined;
     if (tables) watch.sv = snap.state_version;
     Viewer.update(tables ? snap : null, snap.focus || null);
+    Viewer.setComments(snap.comments || []);
     if (tables) fetchStrip();
     showStatus(snap);
   }
@@ -421,6 +422,10 @@ const Ui = (() => {
     if ($('lightbox').open) return;
     if (event.key === '[') Viewer.pageBy(-1);
     else if (event.key === ']') Viewer.pageBy(1);
+    else if (Viewer.reviewing() && event.key === 'ArrowLeft') Viewer.pageBy(-1);
+    else if (Viewer.reviewing() && event.key === 'ArrowRight') Viewer.pageBy(1);
+    else if (Viewer.reviewing() && event.key === 'Escape') Viewer.toggleReview();
+    else if (event.key === 'r' || event.key === 'R') Viewer.toggleReview();
     else if (event.key === 'f' || event.key === 'F') Viewer.toggleFollow();
     else if (event.key === 'v' || event.key === 'V') showDetail(detail === 'simple' ? 'extended' : 'simple');
     else return;

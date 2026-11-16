@@ -28,6 +28,7 @@ TOOL_LABELS: dict[str, str] = {
     "list_files": "List the job folder's files",
     "search_files": "Search the job folder for words",
     "read_file": "Read one of the job folder's text files",
+    "review_comments": "Read the comments you left in the LangSlice window",
     "position_sections": "Place sections along the atlas, and tilt the cutting plane",
     "interactive_transform": "Move, turn and stretch a section by hand",
     "interactive_transform:flip": "mirror a section",

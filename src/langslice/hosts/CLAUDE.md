@@ -33,7 +33,8 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   request and a `langslice-job FOLDER init` command) a person pastes into
   their agent app, and the Settings tab (connections, run location, agent
   model), which writes only the user's settings and credentials; the viewer
-  and the generator are read-only. Only `cli.py` imports it.
+  writes only the review comments (`review.json`) and the generator is
+  read-only. Only `cli.py` imports it.
   `gui/CLAUDE.md`, `docs/developers/gui.md`.
 
 - `service.py` — `langslice serve --stdio`: the JSON-lines engine

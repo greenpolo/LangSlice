@@ -17,6 +17,7 @@ from collections.abc import Collection, Sequence
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import status_text
 from langslice.job.layout import JobLayout, read_job_file
+from langslice.job.review import read_comments, revised
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import is_off
@@ -129,6 +130,13 @@ SCRIPTING = "\n".join(
     )
 )
 USER_NOTES = "User notes:"
+#: What a statement says of the review comments still open
+#: (:func:`review_lines`).
+REVIEW_OPEN = (
+    "A person reviewed this registration in the LangSlice window and left "
+    "{comments} on {sections}. review_comments shows each with the box it "
+    "marks; work on them first."
+)
 STATUS_TABLE = (
     "Status table (filename, position, spacing to the next placed section, "
     "flags):\n{table}\n\nRecent run notes:\n{notes}"
@@ -335,3 +343,40 @@ def long_verbs(
         and not is_off(disabled, name)
         and (spec is None or verb.tool.is_on(spec))
     ]
+
+
+def review_lines(
+    layout: JobLayout, state: Stack, switched_off: Collection[str]
+) -> list[str]:
+    """Return the statement's line on the review comments still open.
+
+    Parameters
+    ----------
+    layout
+        The job folder (its ``review.json``).
+    state
+        The stack as it stands.
+    switched_off
+        The names the job switches off.
+
+    Returns
+    -------
+    list of str
+        A blank line and :data:`REVIEW_OPEN`; none when no comment is open
+        or the job switches ``review_comments`` off.
+    """
+    if is_off(switched_off, "review_comments"):
+        return []
+    still_open = [c for c in read_comments(layout) if not revised(c, state)]
+    if not still_open:
+        return []
+    sections = list(dict.fromkeys(c.section for c in still_open))
+    if len(still_open) == 1:
+        count = "a comment"
+    else:
+        count = f"{len(still_open)} comments"
+    if len(sections) <= 3:
+        named = ", ".join(sections)
+    else:
+        named = f"{len(sections)} sections"
+    return ["", REVIEW_OPEN.format(comments=count, sections=named)]

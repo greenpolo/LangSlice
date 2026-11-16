@@ -42,7 +42,7 @@ ENGINE_TOOLS = ["stalign_lddmm", "stalign_plane_search", "spomialign", "emlddmm_
 #: The tools of every run, whatever its tasks.
 EVERY_RUN = ["look", "zoom", "make_image",
              "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
-             "read_file", "note", "undo", "redo", "submit"]
+             "read_file", "review_comments", "note", "undo", "redo", "submit"]
 
 
 @pytest.fixture(scope="module")
@@ -56,6 +56,7 @@ def test_the_tools_a_model_is_offered():
     assert MODEL_VERBS == [
         "look", "zoom", "make_image",
         "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files", "read_file",
+        "review_comments",
         "position_sections", "interactive_transform", "mark_damage", "make_mask",
         "elastix_affine", "fireants_syn", "set_landmarks", "landmark_triangulation",
         "trace_borders",
@@ -124,7 +125,7 @@ def test_every_operation_is_an_op_and_classified():
         assert verb.kind in ("read", "write")
         assert verb.group in GROUPS
     reads = {"look", "zoom", "grep_atlas", "grep_atlas_view", "status", "list_files",
-             "search_files", "read_file", "export_maps"}
+             "search_files", "read_file", "review_comments", "export_maps"}
     assert {name for name, verb in VERBS.items() if verb.kind == "read"} == reads
     assert {name for name, verb in VERBS.items() if verb.long} == {
         "elastix_affine", "fireants_syn", "trace_borders", "export_maps"}
