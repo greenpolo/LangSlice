@@ -67,6 +67,9 @@
   --submitted: var(--green);
   --failed: var(--pink);
 
+  /* Clawd's own colour, as Claude Code draws it. */
+  --clawd: #d77757;
+
   /* The sections in focus, in the strip and on their panels: the accent. The others. */
   --focus: var(--lavender);
   --idle-handle: var(--stage-line);

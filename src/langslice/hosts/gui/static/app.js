@@ -357,6 +357,14 @@ const Ui = (() => {
     $('replay').hidden = true;
     AgentLog.setStatus('', 'Loading the job…');
   }
+  // Whose model is speaking, by its name: the figure shown beside its words.
+  function maker(model) {
+    const name = String(model || '').toLowerCase();
+    if (/claude|fable|mythos|opus|sonnet|haiku|anthropic/.test(name)) return 'claude';
+    if (/gemini|google/.test(name)) return 'gemini';
+    if (/gpt|openai|codex|chatgpt|\bo[0-9]/.test(name)) return 'openai';
+    return 'plain';
+  }
   // The run in one sentence: who registers what to which atlas.
   function runWords(h, word) {
     if (!h.atlas) return h.model || '';
@@ -373,6 +381,7 @@ const Ui = (() => {
     $('facts').textContent = runWords(h, word);
     $('facts').title = [h.name, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
     $('guy-name').textContent = h.model || 'The agent';
+    $('guy').className = 'guy-box maker-' + maker(h.model);
     // A replayed run (a finished run's records played again into a job folder) says so.
     const replay = h.replay;
     $('replay').hidden = !replay;

@@ -25,7 +25,13 @@
 .speaker { display: flex; align-items: center; gap: var(--space-3); }
 .speaker-logo { display: none; width: 60px; height: 60px; }
 .guy-box { margin: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
-.guy { display: block; width: 52px; height: 52px; overflow: visible; }
+.guy { display: none; width: 52px; height: 52px; overflow: visible; }
+.maker-plain .guy-plain, .maker-claude .guy-claude, .maker-openai .guy-openai, .maker-gemini .guy-gemini { display: block; }
+.guy-mark { fill: var(--name); padding: 6px; }
+.clawd { fill: var(--clawd); }
+.clawd-eye { fill: var(--panel); transform-box: fill-box; transform-origin: center; animation: blink 5.6s infinite; }
+.speaking .guy-mark { animation: bob 760ms ease-in-out infinite alternate, voice 380ms ease-in-out infinite alternate; }
+@keyframes voice { to { opacity: 0.72; } }
 .guy-body { fill: var(--wash); stroke: var(--name); stroke-width: 1.6; }
 .guy-eye, .guy-mouth { fill: var(--name); transform-box: fill-box; transform-origin: center; }
 .guy-smile { fill: none; stroke: var(--name); stroke-width: 1.6; stroke-linecap: round; }
@@ -481,6 +487,9 @@
 .viewer.simple .strip-title { display: none; }
 .viewer.simple .speaker-logo, .viewer.simple .guy-name { display: block; }
 .viewer.simple .guy { width: 84px; height: 84px; }
+.viewer.simple .guy-claude { width: 104px; }
+.viewer.simple .clawd-eye { fill: var(--ground); }
+.viewer.simple .guy-mark { padding: 12px; }
 .viewer.simple .bubble {
   position: relative;
   padding: var(--space-4) var(--space-5);
@@ -532,6 +541,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .word-in, .guy-eye, .speaking .guy, .speaking .guy-mouth { animation: none; }
+  .word-in, .guy-eye, .clawd-eye, .speaking .guy, .speaking .guy-mark, .speaking .guy-mouth { animation: none; }
   .meter-fill { transition: none; }
 }
