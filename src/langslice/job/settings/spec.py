@@ -457,8 +457,9 @@ class JobSpec:
                 tool.name for tool in tool_table.TOOLS.values()
                 if tool.default_off and tool.engine in named
                 and tool.name not in self.disabled)]))
-        if not isinstance(self.enabled, (list, tuple)) or not all(
-                isinstance(name, str) for name in self.enabled):
+        given = cast("object", self.enabled)
+        if not isinstance(given, (list, tuple)) or not all(
+                isinstance(name, str) for name in cast("list[object]", given)):
             raise ValueError("enabled must be a list of tool names")
         self.enabled = list(
             dict.fromkeys(name.strip() for name in self.enabled))
@@ -644,4 +645,6 @@ class JobSpec:
         kwargs: dict[str, Any] = {
             name: nested[name](**(value or {})) if name in nested else value
             for name, value in data.items()}
-        return cls(**kwargs)
+        # __post_init__ checks this list
+        enabled = cast("list[str]", kwargs.pop("enabled", []))
+        return cls(**kwargs, enabled=enabled)

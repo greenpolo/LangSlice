@@ -70,6 +70,8 @@ from langslice.tools.descriptions.render import Declaration, declaration
 from langslice.tools.refusal import unknown_sections as unknown_refusal
 
 if TYPE_CHECKING:  # a type only: the job module loads with the call
+    from collections.abc import Callable
+
     from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
@@ -966,7 +968,9 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
             prompt = launches.mcp_prompt(layout.folder, atlas_loader)
         else:
             prompt = launches.scripting_prompt(
-                layout.folder, atlas_loader=atlas_loader
+                layout.folder,
+                atlas_loader=cast(
+                    "Callable[[str], object] | None", atlas_loader),
             )
     except ImportError as exc:
         return Envelope.failure(

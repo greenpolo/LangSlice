@@ -277,7 +277,7 @@ def _image_provider(args: argparse.Namespace) -> str:
     ValueError
         When ``trace_borders`` is switched on and no connection is saved.
     """
-    given = getattr(args, "nonlinear_provider", None)
+    given: object = getattr(args, "nonlinear_provider", None)
     if given is not None:
         return str(given)
     if "trace_borders" not in _names(getattr(args, "enabled", [])):

@@ -36,7 +36,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # a type only: the job modules load with the hook's call
     from langslice.job.layout import JobLayout
@@ -135,10 +135,13 @@ def job_submitted(layout: JobLayout) -> bool:
         read.
     """
     try:
-        state = json.loads(layout.state_file.read_text(encoding="utf-8"))
+        text = layout.state_file.read_text(encoding="utf-8")
+        state = cast("object", json.loads(text))
     except (OSError, ValueError):
         return False
-    return isinstance(state, dict) and state.get("submitted") is True
+    if not isinstance(state, dict):
+        return False
+    return cast("dict[str, object]", state).get("submitted") is True
 
 
 def transcript_path(hook: dict[str, Any]) -> Path | None:

@@ -1,10 +1,10 @@
 """A call that runs no fit loads no registration engine.
 
-Every agent CLI call is a process of its own, so torch, FireANTs, SimpleITK
-and ITK are imported only inside the functions that fit
-(``core/fits/deformable/engines.py``): ``init``, ``position_sections``,
-``status`` and ``look`` on the synthetic stack, run in a fresh interpreter,
-leave none of them in ``sys.modules``.
+torch, FireANTs, SimpleITK and ITK are imported only inside the functions
+that fit (``core/fits/deformable/engines.py``): the agent CLI's ``init`` and
+``status`` and the library's ``position_sections`` and ``look`` on the
+synthetic stack, run in a fresh interpreter, leave none of them in
+``sys.modules``.
 """
 
 from __future__ import annotations
@@ -34,11 +34,14 @@ placed = {"sections": [{"id": ID0, "position_mm": 4.0}, {"id": ID1, "position_mm
                        {"id": ID2, "position_mm": 6.0}]}
 codes = []
 for argv in (["init", "--tasks", "position,transform,nonlinear", "--nonlinear-provider", "none",
-              "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM)],
-             ["position_sections", "--args", json.dumps(placed)],
-             ["status"], ["look", "--mode", "overlay", "--sections", ID0]):
+              "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM)], ["status"]):
     with contextlib.redirect_stdout(io.StringIO()):
         codes.append(main([str(images), *argv]))
+import langslice
+job = langslice.open_job(str(images / "langslice"))
+job.position_sections(**placed)
+job.look(mode="overlay", sections=[ID0])
+codes += [0, 0]
 print(json.dumps({"codes": codes, "loaded": sorted(
     name for name in sys.argv[2:] if name in sys.modules)}))
 """

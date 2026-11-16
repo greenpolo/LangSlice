@@ -16,7 +16,7 @@ import fnmatch
 import inspect
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from langslice.core.plugins import (
     NAME_PATTERN,
@@ -48,7 +48,7 @@ ANGLES = "angles"
 
 
 def check_tool(
-    tool: Any, *, taken: Sequence[str] = (), engine: str = ""
+    tool: object, *, taken: Sequence[str] = (), engine: str = ""
 ) -> str | None:
     """One line saying why *tool* is no valid :class:`ToolSpec`, or None.
     *taken* are the names of the other plugin tools of the same job;
@@ -136,7 +136,7 @@ def not_offered(spec: Any) -> list[str]:
     """The names of the tools *spec*'s ``plugins`` add that its atlas or
     plane does not fit; they count as switched off, so no text names them."""
     tools: list[ToolSpec] = []
-    for plugin in added(spec):
+    for plugin in added(cast("object", spec)):
         tools.extend(plugin.tools)
     return [
         tool.name
@@ -295,14 +295,15 @@ def engines(spec: object) -> list[LoadedPlugin]:
 
 def of_spec(spec: Any) -> list[LoadedPlugin]:
     """The in-tree engines a run of *spec* has a tool of, then its plugins."""
-    return [*engines(spec), *added(spec)]
+    settings = cast("object", spec)
+    return [*engines(settings), *added(settings)]
 
 
 def tool_defs(spec: Any) -> dict[str, ToolDef]:
     """The :class:`ToolDef` of every tool the ``plugins`` of *spec* add."""
     return {
         tool.name: tool_def(tool)
-        for plugin in added(spec)
+        for plugin in added(cast("object", spec))
         for tool in plugin.tools
     }
 

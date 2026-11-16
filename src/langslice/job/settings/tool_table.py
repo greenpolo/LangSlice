@@ -42,7 +42,8 @@ from __future__ import annotations
 import fnmatch
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from functools import partial
+from typing import Any, Protocol, cast
 
 from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.tool_kinds import GROUPS as GROUPS
@@ -60,6 +61,30 @@ def positions_on(spec: Any) -> bool:
 
 def _always(_spec: Any) -> bool:
     return True
+
+
+class _Tasks(Protocol):
+    """A job's settings, as far as a task switch reads them."""
+
+    def has(self, task: str, /) -> bool: ...
+
+
+def _has_any(tasks: tuple[str, ...], spec: _Tasks) -> bool:
+    """Return whether a run of *spec* has any of *tasks* switched on."""
+    return any(spec.has(task) for task in tasks)
+
+
+def _task_on(*tasks: str) -> Callable[[_Tasks], bool]:
+    """Return the switch of a tool that any of *tasks* turns on."""
+    return partial(_has_any, tasks)
+
+
+def _str_names(value: object) -> frozenset[str]:
+    """Return the strings of a list, tuple or set setting, else none."""
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return frozenset()
+    items = cast("Collection[object]", value)
+    return frozenset(item for item in items if isinstance(item, str))
 
 
 class _AtlasAndPlane(Protocol):
@@ -178,20 +203,20 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("position_sections", "write", "Positioning", when=positions_on,
             needs=(("look:positioning", "look:overlay"),), writes=("position", "angles")),
     ToolDef("interactive_transform", "write", "Linear", options={"flip": "", "rotate": ""},
-            when=lambda spec: spec.has("transform"), needs=_OVERLAY,
+            when=_task_on("transform"), needs=_OVERLAY,
             writes=("orientation", "affine")),
     ToolDef("mark_damage", "write", "Common", writes=("damage",)),
     # The section-side mask the fits take by name (an EM sorting); useless
     # where no fit exists, and it is drawn in look's section mode.
     ToolDef("make_mask", "write", "Common",
-            when=lambda spec: spec.has("transform") or spec.has("nonlinear"),
+            when=_task_on("transform", "nonlinear"),
             needs=(("look:section",),)),
     # --- fitting ----------------------------------------------------------------------
     ToolDef("elastix_affine", "write", "Linear", long=True,
-            when=lambda spec: spec.has("transform"), needs=_OVERLAY, writes=("affine",)),
+            when=_task_on("transform"), needs=_OVERLAY, writes=("affine",)),
     ToolDef("fireants_syn", "write", "Nonlinear", long=True,
             options={"metric": "", "edges": "", "detail": ""},
-            when=lambda spec: spec.has("nonlinear"), needs=_OVERLAY,
+            when=_task_on("nonlinear"), needs=_OVERLAY,
             writes=("deformation",)),
     # The landmark pair: set_landmarks only places the pairs (it applies no
     # deformation); landmark_triangulation applies them. Each is useless
@@ -199,12 +224,12 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     # ``deformation`` as what it serves, so a deformation frozen on every
     # section takes both off.
     ToolDef("set_landmarks", "write", "Nonlinear",
-            when=lambda spec: spec.has("nonlinear"),
+            when=_task_on("nonlinear"),
             needs=(("look:atlas", "look:overlay"), ("look:section", "look:overlay"),
                    ("landmark_triangulation",)),
             writes=("deformation",)),
     ToolDef("landmark_triangulation", "write", "Nonlinear",
-            when=lambda spec: spec.has("nonlinear"),
+            when=_task_on("nonlinear"),
             needs=(("look:overlay",), ("set_landmarks",)), writes=("deformation",)),
     ToolDef("trace_borders", "write", "Nonlinear", long=True, image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
@@ -216,7 +241,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     # One section back to a registration it held before (orientation, transform
     # and deformation together); it shows the section's overlay.
     ToolDef("restore_registration", "write", "Common",
-            when=lambda spec: spec.has("transform") or spec.has("nonlinear"),
+            when=_task_on("transform", "nonlinear"),
             needs=_OVERLAY, writes=("orientation", "affine", "deformation")),
     ToolDef("submit", "write", "Common", essential=True),
     # The job folder's derived files on demand (submit writes them too):
@@ -233,20 +258,20 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
             atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
             planes=("coronal",)),
     ToolDef("brainways_ap", "write", "Positioning",
-            when=lambda spec: spec.has("position"),
+            when=_task_on("position"),
             needs=(("look:positioning",),), writes=("position",),
             engine=BRAINWAYS, default_off=True,
             atlases=("whs_sd_rat_39um",), planes=("coronal",)),
     ToolDef("stalign_lddmm", "write", "Nonlinear", long=True,
-            when=lambda spec: spec.has("nonlinear"),
+            when=_task_on("nonlinear"),
             writes=("affine", "deformation"), engine=STALIGN),
     ToolDef("stalign_plane_search", "read", "Positioning", when=positions_on,
             engine=STALIGN),
     ToolDef("spomialign", "write", "Nonlinear", long=True,
-            when=lambda spec: spec.has("transform") or spec.has("nonlinear"),
+            when=_task_on("transform", "nonlinear"),
             writes=("affine", "deformation"), engine=SPOMIALIGN),
     ToolDef("emlddmm_stack", "write", "Nonlinear", long=True,
-            when=lambda spec: spec.has("nonlinear"),
+            when=_task_on("nonlinear"),
             writes=("affine", "deformation"), engine=EMLDDMM),
     ToolDef("emlddmm_plane", "read", "Positioning", when=positions_on,
             engine=EMLDDMM),
@@ -363,11 +388,12 @@ def off_names(spec: Any) -> list[str]:
     ``:rotate``) when the orientation is.
     A tool a task switched off is not listed: it is not in the run at all."""
     names = list(spec.disabled)
-    enabled = getattr(spec, "enabled", ())
+    enabled = _str_names(getattr(cast("object", spec), "enabled", ()))
     names.extend(
         tool.name for tool in TOOLS.values()
-        if tool.when(spec) and not (tool.fits(spec) and (
-            tool.name in enabled or not tool.default_off)))
+        if tool.when(spec) and not (
+            tool.fits(cast("_AtlasAndPlane", spec))
+            and (tool.name in enabled or not tool.default_off)))
     if getattr(spec, "plugins", None):
         from langslice.job import plugins
 
