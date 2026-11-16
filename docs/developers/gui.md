@@ -94,8 +94,9 @@ otherwise.
   words above it; once the section has changed since you wrote one, it is
   faded and says *revised*. The `×` beside a comment removes it. The button
   counts the comments still open. Then tell your agent to look at the
-  comments: its `review_comments` tool shows each box on its section, and a
-  registration agent launched on the job is told they are there.
+  comments: it reads them with `langslice-job FOLDER review_comments`, which
+  saves a picture of each commented section with its boxes, and briefs a
+  registration agent on what to fix.
 - **Where the sections sit in the brain.** The strip under the pictures: the
   atlas along its cutting axis, as thumbnails of the atlas template at
   regular steps over a millimetre ruler, and below them every placed section

@@ -1231,7 +1231,7 @@ def test_the_command_line_runs_only_the_setup_and_checking_verbs(capsys, images,
 
     job = init(capsys, images)
     monkeypatch.delenv(ALL_VERBS_ENV)
-    assert CLI_VERBS == {"status", "export_maps"}
+    assert CLI_VERBS == {"status", "export_maps", "review_comments"}
 
     code, status = cli(capsys, str(job), "status")
     assert code == 0 and len(status["result"]["rows"]) == 3

@@ -53,9 +53,11 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 3
 
 #: The verbs the command line runs: what the session that sets a job up and
-#: checks it needs. Every other verb is a registration agent's, through the
+#: checks it needs (``review_comments``: the comments a person left in the
+#: LangSlice window, which the main session briefs a registration agent on).
+#: Every other verb is a registration agent's, through the
 #: MCP tools or a script (``langslice.open_job``).
-CLI_VERBS = frozenset({"status", "export_maps"})
+CLI_VERBS = frozenset({"status", "export_maps", "review_comments"})
 #: Set to ``1`` by LangSlice's own test suite, which drives every verb
 #: through this command's plumbing (the envelope, the flags, the background
 #: runs); nothing a user or an agent is told of.

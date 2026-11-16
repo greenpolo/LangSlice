@@ -69,7 +69,8 @@ the user chose, if any (otherwise it inherits this session's). Make its
 prompt with `langslice-job FOLDER launch --role register` (or `--role
 register-scripting` for `langslice:register-scripting`) and pass `result.prompt`
 as the subagent's entire prompt, unchanged: nothing added, shortened or
-summarised. The user's notes belong in `init --notes` (the prompt holds them).
+summarised (the one exception: your brief of the user's review comments,
+after it, step 4). The user's notes belong in `init --notes` (the prompt holds them).
 Run `launch` again for each launch: it reflects the job as it stands. Do not
 give the subagent any other task. Run one subagent per job at a time. The
 plugin's MCP server holds one job at a time for this session, so run one
@@ -111,12 +112,16 @@ When the subagent returns, do not trust its summary alone:
 - Comments the user left in the LangSlice window (its Review: a box drawn on
   a section and a few words on what is wrong there) are kept in the job
   folder's `review.json`. When the user asks you to look at them or fix them,
-  launch a registration subagent on that job as in step 3: `launch` tells it
-  which comments are open, and its `review_comments` tool shows each box on
-  its section. Do not read the comments out to it yourself. A job the user
-  does not name is the one they last opened in the window: the newest
-  `folder` in `~/.langslice/recent_jobs.jsonl`. Afterwards, a comment whose
-  section changed is marked revised in the window.
+  run `langslice-job FOLDER review_comments`: it lists each comment (its
+  section, words, box and whether it is still `open` or already `revised`)
+  and saves a picture of each commented section with its boxes outlined and
+  numbered (`picture_files`). Look at those pictures with Read and judge
+  what each comment asks for. Then launch a registration subagent on the job
+  as in step 3, with the `launch` prompt first and, after it, your own brief
+  of what to fix, in your own words. A job the user does not name is the
+  one they last opened in the window: the newest `folder` in
+  `~/.langslice/recent_jobs.jsonl`. When the subagent returns, run
+  `review_comments` again: a comment whose section changed is `revised`.
 
 ## 5. Import and export with other software
 

@@ -62,7 +62,9 @@ MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has those after them.
 
 ## The tools are not commands
 
-`langslice-job FOLDER TOOL` runs `status` and `export_maps` only. Any other
+`langslice-job FOLDER TOOL` runs `status`, `export_maps` and `review_comments`
+(the comments left in the LangSlice window, with their pictures saved as
+files) only. Any other
 tool (`look`, `position_sections`, the fits, `undo`, `submit` and the rest)
 is refused with `VERB_OFF` and a `fix` that says where it is: a registration
 agent's MCP tool, or `langslice.open_job(FOLDER).TOOL(...)` in a script.

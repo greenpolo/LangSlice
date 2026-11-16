@@ -518,7 +518,10 @@ comment: `id`, `section`, `comment` (the words), `box` (`[x0, y0, x1, y1]`
 fractions of the picture), `state`, and for an open one `picture` (its
 number, which `zoom` takes) and `box_px` (the box in that picture's pixels).
 At most four pictures at the agent tools and MCP; the rest under
-`not_shown`.
+`not_shown`. It is also one of the three tools the command line runs
+(`langslice-job FOLDER review_comments`), so the session that set the job up
+can read the comments, look at the pictures and brief a registration agent
+in its own words.
 
 A job with open comments says so in the statement every door except the
 built-in agent's gives (`A person reviewed this registration ... left 2
