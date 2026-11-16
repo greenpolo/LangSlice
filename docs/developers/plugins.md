@@ -1,5 +1,10 @@
 # Tool plugins
 
+LangSlice's own engines (DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm)
+are tools of every job, not plugins a job names
+([in-tree engines](#in-tree-engines)); they are written against the API on
+this page. The page is for a tool of your own.
+
 A tool plugin adds tools to a job's toolbox when the job is made. An added tool
 is a tool like the native ones: it has its own name, description and
 arguments, is listed with them, is called the same way (the built-in agent,
@@ -361,10 +366,31 @@ already has some. The work's own landing is not refused.
 
 ## In-tree engines
 
-DeepSlice ships in `langslice.engines` as the tool plugin
-`langslice.engines.deepslice.plugin:tools`, one tool, `deepslice_place`
-(Positioning, task `angles`; offered on the Allen mouse atlases and
-`ccfv3augmented_mouse_25um`, coronal jobs only): DeepSlice places each
+The five engines in `langslice.engines` are tools of every job, on every
+door (`langslice-job init`, `langslice linear run`, the MCP server's
+`start_job`, the library, the ABBA worker); no job names them in `plugins`.
+Each tool is a row of the tool table (`job/settings/tool_table.py`,
+`ToolDef.engine`, with the atlases and planes it is offered on), listed
+after the other tools, switched off by the job's
+[`disabled`](../reference/settings.md#disabled) like any tool, and declared
+and run by its engine's adapter (`langslice/engines/<engine>/plugin.py`,
+written against `langslice.plugin_api`), which is imported only for a run
+that has one of its tools (`tests/test_engines_native.py` keeps the rows and
+the adapters' declarations the same). `stalign_lddmm`, `stalign_plane_search`,
+`spomialign`, `emlddmm_stack` and `emlddmm_plane` are on;
+`deepslice_place` and `brainways_ap` start off, as `trace_borders` does,
+and are switched on by the job's
+[`enabled`](../reference/settings.md#enabled) (`--enabled deepslice_place`). An engine's options are its entry of `plugin_config`, by
+its reference (`{"langslice.engines.stalign.plugin:tools": {"device":
+"cpu"}}`; `--plugin-config REF=JSON` on `linear run`). A job made when the
+engines were named in `plugins` opens with the same tools: the references
+are dropped and a tool that starts off is switched on. Their provenance is
+LangSlice's version; `job.json`'s `plugins` records only the job's own
+plugins.
+
+DeepSlice is `langslice.engines.deepslice.plugin:tools`, one tool,
+`deepslice_place` (Positioning, with `position_sections`; offered on the
+Allen mouse atlases and `ccfv3augmented_mouse_25um`, coronal jobs only): DeepSlice places each
 section as the agent oriented it, votes the stack's cutting angles and, with
 an `order`, spaces the sections; `write` names the parts written as one undo
 step (`positions`, `angles`, and `transform` where the transform task and
@@ -381,7 +407,7 @@ cannot be fetched, is refused `ENGINE_MISSING`. Options (`plugin_config`):
 when the plugin loads. Its README (`src/langslice/engines/deepslice/README.md`)
 gives the reply, the files of each call and its parity with DeepSlice.
 
-STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --plugins REF`); the three load together and need no `PYTHONPATH`. All three run in LangSlice's process, their method imported when a tool runs, never when the plugin loads. SPOmiAlign runs on RoMa (`romatch`), which the `engines` extra installs (`pip install "langslice[engines]"`); its one option is `device`, and a call without the extra is refused `ENGINE_MISSING` naming it. STalign and emlddmm need nothing beyond LangSlice's own dependencies: both are vendored, STalign (GPL-3.0) as `langslice_vendor.stalign` (its pure-torch engine, without its optional C++ engine) and emlddmm (Apache-2.0) as `langslice_vendor.emlddmm`. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm are `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools` and `langslice.engines.emlddmm.plugin:tools`. All three run in LangSlice's process, their method imported when a tool runs, never when the plugin loads. SPOmiAlign runs on RoMa (`romatch`), which the `engines` extra installs (`pip install "langslice[engines]"`); its one option is `device`, and a call without the extra is refused `ENGINE_MISSING` naming it. STalign and emlddmm need nothing beyond LangSlice's own dependencies: both are vendored, STalign (GPL-3.0) as `langslice_vendor.stalign` (its pure-torch engine, without its optional C++ engine) and emlddmm (Apache-2.0) as `langslice_vendor.emlddmm`. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
@@ -418,7 +444,7 @@ never share one. A notice words a fit's plausibility flags as the native fits do
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
 on a `DeformationProposal.summary`: `FOLDS, REGION_VANISHED (CA1, DG)`).
 
-Brainways ships as `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Like STalign and emlddmm it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
+Brainways is `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Like STalign and emlddmm it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
 
 Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again. A plugin that fits in LangSlice's process takes the queue with `gpu_turn(device)` of `langslice.plugin_api` (a context manager; a device whose name starts with `cuda` takes the lock, any other none; two fits in one process wait for each other too; it yields how long it waited as `waited_s`) and tells an out-of-memory error with `out_of_memory(error)`, as SPOmiAlign, STalign and emlddmm do. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
 
@@ -488,7 +514,7 @@ the layers the sections show to `exports/plugins/<tool>/` with a manifest.
 
 | Where | How |
 |---|---|
-| Job spec | `JobSpec.plugins`: `["module:factory", ...]`, saved in `job.json`; `JobSpec.plugin_config`: options for a factory, by reference (the factory is called with the options object when it has one) |
+| Job spec | `JobSpec.plugins`: `["module:factory", ...]`, saved in `job.json` (an in-tree engine's reference is dropped: its tools are in every job); `JobSpec.plugin_config`: options for a factory, by reference (the factory is called with the options object when it has one) |
 | `langslice linear run` | `--plugins MODULE:FACTORY` (repeatable); `--plugin-config 'MODULE:FACTORY=JSON-or-file'` |
 | Python | `langslice.create_job(folder, plugins=[...], plugin_config={...})`: references, factory functions defined at module level, or `ToolSpec` objects |
 | Reopening | `open_job(folder)` and `langslice-job FOLDER VERB` read `plugins` from `job.json` and load them again |
@@ -502,8 +528,8 @@ and `status`' `can_change`. They are named in `disabled` like native tools
 writers do not count toward a task's requirement that one of its own tools
 stays on. An agent CLI reply from a plugin tool is the plugin's reply as it is.
 
-A job without plugins is unchanged: no plugin text is in any declaration, reply
-or picture.
+A job without plugins has LangSlice's own tools only, the engines' among
+them: no `plugins` in its `job.json`.
 
 ## Provenance
 
@@ -522,6 +548,8 @@ the same content; plugin tool calls and replies are traced like native ones.
 A plugin is loaded, in the process that opens the job, by every door that opens
 a job naming it: the library, `langslice linear run`, the agent CLI and the
 MCP server; the ABBA follower, which changes nothing of the job, loads it too.
+The in-tree engines load the same way on every door, for every job that has
+one of their tools.
 A plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).
 
 ## The MCP adapter

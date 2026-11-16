@@ -1,7 +1,7 @@
 """STalign as LangSlice tools: the adapter, run in LangSlice's process.
 
-Load it with ``--plugins langslice.engines.stalign.plugin:tools`` or
-``create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])``;
+It is a tool of every job (its row of the tool table names
+``langslice.engines.stalign.plugin:tools``);
 it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``device`` (``auto``: the GPU at float32 when there is
 one, else the CPU at float64), ``threads``. STalign (GPL-3.0, vendored as
@@ -119,8 +119,9 @@ def stalign_lddmm(
     mismatch and from the background and artifact means (sorting, below). The
     final sorting is saved with the deformation[[?make_mask , and make_mask can ~
     take it as a mask for another fit (source fit)]]. A named mask is refused
-    (MASK_UNSUPPORTED); the engines that take one are fireants_syn,
-    elastix_affine, emlddmm_stack and spomialign. STalign fits the whole
+    (MASK_UNSUPPORTED)[[?fireants_syn|elastix_affine|emlddmm_stack|spomialign ; the engines ~
+    that take one are [[#fireants_syn=fireants_syn||elastix_affine=elastix_affine||~
+    emlddmm_stack=emlddmm_stack||spomialign=spomialign]]]]. STalign fits the whole
     section: it takes no regions[[?fireants_syn ; refine single regions afterwards ~
     with fireants_syn, which builds on this fit]]. It keeps its own brightness
     scaling: slide 0, typical tissue 1.

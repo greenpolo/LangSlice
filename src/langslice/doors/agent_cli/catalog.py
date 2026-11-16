@@ -154,16 +154,16 @@ LONG_WORDS = ("A long verb computes outside the job lock and may take minutes; a
 
 def verbs_table(spec: JobSpec | None = None) -> list[dict[str, Any]]:
     """Every verb: name, kind, group, one-line description, and
-    ``long: true`` for a long verb. For the job *spec* of a folder that loads
-    tool plugins, their tools follow the native ones."""
-    from langslice.job.settings.tool_table import TOOLS
-    from langslice.tools.catalog import verbs_for
+    ``long: true`` for a long verb. The engines' tools follow the others
+    (for the job *spec* of a folder, the engines its run has a tool of),
+    then the tools its plugins add."""
+    from langslice.tools.catalog import VERBS, verbs_for
 
     facts = FULL
-    if spec is not None and spec.plugins:  # the plugin tools in its run
+    if spec is not None:  # the engines' and the plugins' tools in its run
         facts = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     return [{"name": name, "kind": verb.kind, "group": verb.group,
-             "summary": summary(name, FULL if name in TOOLS else facts),
+             "summary": summary(name, FULL if name in VERBS else facts),
              **({"long": True} if verb.long else {})}
             for name, verb in verbs_for(spec).items()]
 

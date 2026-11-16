@@ -91,8 +91,9 @@ def build(ref: str, factory: Callable[..., Any], *, module_name: str,
         raise PluginError(f"plugin {ref}: the factory returns a list of ToolSpec; got "
                           f"{type(made).__name__}")
     taken: list[str] = []
+    engine = ref if ref in core.ENGINES else ""
     for tool in made:
-        reason = check_tool(tool, taken=taken)
+        reason = check_tool(tool, taken=taken, engine=engine)
         if reason is not None:
             raise PluginError(f"plugin {ref}: {reason}")
         taken.append(tool.name)

@@ -203,7 +203,7 @@ def test_a_filled_form_gives_every_setting_and_init_reads_it() -> None:
         "  --position-thickness-um 40 \\\n"
         "  --position-interval-um 120 \\\n"
         "  --pixel-size-um 0.65 \\\n"
-        "  --disabled look:atlas,zoom,trace_borders \\\n"
+        "  --disabled look:atlas,zoom \\\n"
         "  --frozen '{\"*\":[\"angles\",\"orientation\"]}' \\\n"
         "  --damaged '{\"s012.tif\":\"left cortex torn\",\"s013.tif\":\"damaged\"}' \\\n"
         "  --facts 'The file names sort in the order the sections were cut.' \\\n"
@@ -214,7 +214,7 @@ def test_a_filled_form_gives_every_setting_and_init_reads_it() -> None:
     assert (spec.atlas, spec.plane) == ("whs_sd_rat_39um", "coronal")
     assert (spec.position.thickness_um, spec.position.interval_um) == (40, 120)
     assert spec.inputs["pixel_size_um"] == 0.65
-    assert spec.disabled == ["look:atlas", "zoom", "trace_borders"]
+    assert spec.disabled == ["look:atlas", "zoom"]  # no image model: no trace_borders
     assert spec.frozen == {"*": ["angles", "orientation"]}
     assert spec.inputs["damaged"] == {"s012.tif": "left cortex torn", "s013.tif": "damaged"}
     assert spec.facts == ["The file names sort in the order the sections were cut."]
@@ -508,14 +508,21 @@ def test_a_prefill_without_abba_gives_the_message_of_the_same_form() -> None:
 # --- the image model ------------------------------------------------------------------
 
 
-def test_the_image_models_are_the_providers_a_job_accepts() -> None:
+def test_the_image_models_are_the_providers_a_job_accepts(
+        monkeypatch: pytest.MonkeyPatch) -> None:
     from langslice.core.connections import CANONICAL_PROVIDERS
     from langslice.providers import connections as registry
 
+    # "Not set" is the connection saved on this computer
+    monkeypatch.setattr(generator, "saved_image_provider", lambda: "openai-api")
+    saved = [row["provider"] for row in generator.payload()["image_models"] if row["default"]]
+    assert saved == ["openai-api"]
+    monkeypatch.setattr(generator, "saved_image_provider", lambda: None)
     rows = generator.payload()["image_models"]
     assert sorted(row["provider"] for row in rows) == sorted(CANONICAL_PROVIDERS)
-    assert rows[0]["provider"] == "openai-oauth" and rows[0]["default"]
+    assert rows[0]["provider"] == "openai-oauth"
     assert rows[-1]["provider"] == "none" and rows[-1]["models"] == []
+    assert [row["provider"] for row in rows if row["default"]] == ["none"]
     by_name = {row["provider"]: row for row in rows}
     assert by_name["openai-oauth"]["models"] == list(registry.OPENAI_OAUTH_IMAGE_MODELS)
     assert by_name["gemini-api"]["models"] == list(registry.GEMINI_IMAGE_MODELS)
@@ -531,17 +538,23 @@ def test_the_image_models_are_the_providers_a_job_accepts() -> None:
 
 
 def test_the_image_model_flags() -> None:
-    warp = {**BASE, "tasks": ["position", "transform", "nonlinear"]}
-    chosen, provider_only, none, not_warping, tracing_off, unset = _run([
+    plain = {**BASE, "tasks": ["position", "transform", "nonlinear"]}
+    warp = {**plain, "on": ["trace_borders"]}  # the border trace starts off
+    chosen, provider_only, none, not_warping, tracing_off, unset, saved = _run([
         {**warp, "imageProvider": "gemini-api", "imageModel": "gemini-3-pro-image"},
         {**warp, "imageProvider": "openai-api"},
         {**warp, "imageProvider": "none", "imageModel": "gemini-3-pro-image"},
         {**BASE, "imageProvider": "gemini-api", "imageModel": "gemini-3-pro-image"},
-        {**warp, "imageProvider": "gemini-api", "off": ["trace_borders"]},
+        {**plain, "imageProvider": "gemini-api"},
+        plain,
         warp,
     ])
+    # switched on with no provider chosen: the job takes the saved connection
+    assert saved["text"].endswith(
+        "  --atlas allen_mouse_25um \\\n  --enabled trace_borders\n```\n")
     assert chosen["text"].endswith(
         "  --atlas allen_mouse_25um \\\n"
+        "  --enabled trace_borders \\\n"
         "  --nonlinear-provider gemini-api \\\n"
         "  --nonlinear-image-model gemini-3-pro-image\n```\n")
     spec = _spec(_command(chosen["text"]))

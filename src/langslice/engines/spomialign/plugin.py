@@ -1,7 +1,7 @@
 """SPOmiAlign as a LangSlice tool: the adapter, run in LangSlice's process.
 
-Load it with ``--plugins langslice.engines.spomialign.plugin:tools`` or
-``create_job(..., plugins=["langslice.engines.spomialign.plugin:tools"])``;
+It is a tool of every job (its row of the tool table names
+``langslice.engines.spomialign.plugin:tools``);
 it is imported from this package (no ``PYTHONPATH``). Option
 (``plugin_config``): ``device`` (the torch device; by default the first GPU
 when torch sees one, else the CPU). The method itself runs in this process,

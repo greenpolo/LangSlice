@@ -21,7 +21,7 @@ Run facts:
 - Atlas images: template. The fits' default `nissl` is `template` on this atlas.
 - The atlas as BrainGlobe describes it: Allen Adult Mouse Brain Atlas: For many researchers working with mice, this is the "default" atlas for a variety of tasks. It is also the basis for the most commonly used common coordinate space (CCFv3). It is usually the best mouse atlas to start with, but it has some disadvantages. It has a reference image based on STP, which may not produce the best results for other imaging modalities, and you may want to try atlases based on other modalities. It also has limited annotations in some regions (alternatives such as the Enhanced and Unified Mouse Brain Atlas may be better if the Allen Adult Mouse Brain Atlas is not annotated sufficiently). (This version: 25μm resolution.)
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `interactive_transform`, `make_mask`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `interactive_transform`, `make_mask`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `stalign_lddmm`, `spomialign`, `emlddmm_stack`.
 
 Constraints:
 - `submit` is refused unless every section carries a transform, damaged sections included.
@@ -33,6 +33,11 @@ Method:
 - Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
 - Inspect each fit's borders against the section's internal anatomy; undo a fit that does not improve the alignment.
+- Several published deformable methods are available; none is the default, and each suits different sections. Each fit builds on the section's current registration, so methods can be chained.
+  - `fireants_syn`: ANTs SyN (Avants et al. 2008), the standard symmetric diffeomorphic registration in neuroimaging, run on the GPU by FireANTs. It matches brightness (mutual information or local correlation) and optionally edges, takes masks, and `restrict_to` refines single regions.
+  - `stalign_lddmm`: STalign (Clifton et al. 2023), LDDMM built to align single-cell spatial transcriptomics and histology to the Allen CCF. It fits a contrast map between the two images and sorts every pixel into tissue, background or artifact itself, so partial sections and debris count less.
+  - `spomialign`: SPOmiAlign (Wang et al. 2026), built to align spatial-omics sections across modalities. It matches points with RoMa, a pretrained dense feature matcher, instead of comparing brightness, so it needs only shared tissue shape and structure, not similar staining; seconds per call. Its authors report it degrades when the two images share little tissue and in repetitive or ambiguous tissue.
+  - `emlddmm_stack`: emlddmm (Tward et al. 2025), built to bring whole-brain series of any modality into the Allen CCF. It fits one smooth 3-D warp of the atlas to the whole stack, with each section's own mounting, and sorts out missing tissue and artifacts itself. It suits dense, evenly spaced series and gives placements that agree across the stack; it makes no single-section bends.
 - A fit's reply names the section image, atlas image and mask it used.
 - A fit compares one section image with one atlas image. It does best when both show as much internal structure as possible (layers, nuclei, fibre tracts, ventricle walls) and when the two look alike. Choose, make and look at images by that principle; there is no fixed recipe.
 

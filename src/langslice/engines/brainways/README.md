@@ -1,6 +1,6 @@
 # Brainways as a LangSlice tool
 
-A LangSlice tool plugin (`docs/developers/plugins.md`) that offers the agent one tool,
+A LangSlice engine (`docs/developers/plugins.md`) that offers the agent one tool,
 `brainways_ap`: the automatic search of Brainways 0.1.16.3 (Kantor et al. 2025,
 Neuropsychopharmacology; https://github.com/bkntr/brainways, GPL-3.0) over the atlas's coronal
 planes, which gives each section's position along the slicing axis and nothing else (no cutting
@@ -30,10 +30,11 @@ huggingface_hub. A call where torch does not import is refused with `ENGINE_MISS
 ## Use
 
 ```bash
-langslice linear run ... --plugins langslice.engines.brainways.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["langslice.engines.brainways.plugin:tools"])`. Options
+It starts off: switch it on with `--enabled brainways_ap` (`enabled=["brainways_ap"]` in Python). Its options are the entry of the job's `plugin_config`
+under `langslice.engines.brainways.plugin:tools`.
+Options
 (`--plugin-config 'langslice.engines.brainways.plugin:tools=JSON'`): `device` (`auto`, the GPU
 when torch sees one; `cuda`; `cpu`), `long_edge` (3072: the long edge in pixels of the one
 channel handed to Brainways, which makes its own 1024-pixel thumbnail), `cache_folder` (where

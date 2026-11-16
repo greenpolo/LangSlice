@@ -189,11 +189,17 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (`job.settings.schema.flag_spellings`, setting name -> flag), which the
   page writes the command with, and `image_models` (`ImageModelChoice` per
   provider name `core.connections.CANONICAL_PROVIDERS` holds, the one
-  `NonlinearSpec` checks `--nonlinear-provider` against: the job's default
+  `NonlinearSpec` checks `--nonlinear-provider` against: the ChatGPT sign-in
   first, the one with no image model last; its models from
   `providers.connections` / `providers.openai_api`, its default model,
   whether this computer has its key or sign-in). Each tool row also says
-  whether it calls the image model (`ToolDef.image_model`).
+  whether it calls the image model (`ToolDef.image_model`) and whether it
+  starts off (`default_off`: its box is unticked until the person ticks it,
+  the form's `on`, written as `--enabled`: `trace_borders`,
+  `deepslice_place`, `brainways_ap`; `runs_in` is computed with an image
+  model named). The image-model row's `default` is the connection the job
+  would take with none chosen (`doors.credentials.saved_image_provider`,
+  else `none`).
   `integrations`: `INTEGRATIONS`, the programs the results can go to
   (QUINT, VERSO, DMC-BrainMap; ABBA is not one), each `Integration`'s
   `name`, its box's `label` and the `words` the request names it with.
@@ -227,7 +233,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 - `static/generator.js`, `static/generator.css` — the prompt generator tab
   (loaded by one delimited block in `index.html`). `Generator`, pure
   functions on the payload and a plain form object (`folder`, `atlas`,
-  `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `ordered`,
+  `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `on`, `ordered`,
   `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`,
   `integrations`, and from a
   job's prefill `abba`, `keepRegistrations`, `frozen`), exported to node for

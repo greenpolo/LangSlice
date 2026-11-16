@@ -34,6 +34,11 @@ def _names(spec: Any, *, scripting: bool = False, image_model: bool = True) -> l
 #: are the CLI's and the library's only.
 MODEL_VERBS = [name for name, verb in VERBS.items() if not verb.scripting]
 
+#: The in-tree engines' tools a mouse coronal job has unless it disables them
+#: (``deepslice_place`` and ``brainways_ap`` start off).
+ENGINE_TOOLS = ["stalign_lddmm", "stalign_plane_search", "spomialign", "emlddmm_stack",
+                "emlddmm_plane"]
+
 #: The tools of every run, whatever its tasks.
 EVERY_RUN = ["look", "zoom", "make_image",
              "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
@@ -61,9 +66,9 @@ def test_the_tools_a_model_is_offered():
 def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, monkeypatch):
     monkeypatch.setenv("HOME", str(folder / "home"))
     names = _names(full_spec(folder))
-    assert names == MODEL_VERBS
+    assert names == MODEL_VERBS + ENGINE_TOOLS
     # The scripting door (the CLI, the library) adds the scripting verb.
-    assert _names(full_spec(folder), scripting=True) == list(VERBS)
+    assert _names(full_spec(folder), scripting=True) == list(VERBS) + ENGINE_TOOLS
     assert [name for name, verb in VERBS.items() if verb.scripting] == ["export_maps"]
 
 
@@ -79,7 +84,7 @@ def test_the_gating_table(folder: Path):
 
     for tasks in (["position"], ["transform"], ["nonlinear"], ["position", "transform"], []):
         names = enabled(_spec(folder, tasks=tasks))
-        assert set(EVERY_RUN) <= set(names) <= set(VERBS)
+        assert set(EVERY_RUN) <= set(names) <= set(VERBS) | set(ENGINE_TOOLS)
     # Positioning, or the cutting angles left to the agent.
     assert "position_sections" in has(tasks=["position"])
     assert "position_sections" in has(tasks=["transform"],

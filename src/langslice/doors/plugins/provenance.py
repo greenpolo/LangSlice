@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from langslice.job.job import Job
+from langslice.job.settings.tool_table import ENGINES
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.descriptions.render import (
     arguments_schema,
@@ -30,8 +31,12 @@ KEY = "plugins"
 
 def records(facts: DescriptionFacts) -> list[dict[str, Any]]:
     """The provenance record of every plugin the run of *facts* holds."""
+    # The ones the job's ``plugins`` name: LangSlice's own engines are tools
+    # of its version, as the others are, and are not recorded.
     out: list[dict[str, Any]] = []
     for plugin in facts.plugins:
+        if plugin.ref in ENGINES:
+            continue
         tools = []
         for tool in plugin.tools:
             declared = declaration(tool.name, facts)

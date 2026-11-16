@@ -1,7 +1,7 @@
 """DeepSlice as a LangSlice tool, ``deepslice_place``: the adapter.
 
-Load it with ``--plugins langslice.engines.deepslice.plugin:tools`` or
-``create_job(..., plugins=["langslice.engines.deepslice.plugin:tools"])``;
+It is a tool of every job (its row of the tool table names
+``langslice.engines.deepslice.plugin:tools``);
 it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``ensemble`` (true: the paper's two-network model,
 DeepSlice's own default for mouse), ``long_edge`` (3072: the long edge, in

@@ -23,7 +23,7 @@ Run facts:
 - Picture size is yours to choose: look's resolution runs from 128 to 2000 pixels.
 - The atlas as BrainGlobe describes it: Allen Adult Mouse Brain Atlas: For many researchers working with mice, this is the "default" atlas for a variety of tasks. It is also the basis for the most commonly used common coordinate space (CCFv3). It is usually the best mouse atlas to start with, but it has some disadvantages. It has a reference image based on STP, which may not produce the best results for other imaging modalities, and you may want to try atlases based on other modalities. It also has limited annotations in some regions (alternatives such as the Enhanced and Unified Mouse Brain Atlas may be better if the Allen Adult Mouse Brain Atlas is not annotated sufficiently). (This version: 25μm resolution.)
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `make_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `export_maps`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `make_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `export_maps`, `stalign_lddmm`, `stalign_plane_search`, `spomialign`, `emlddmm_stack`, `emlddmm_plane`.
 
 Constraints:
 - `submit` is refused unless every section has a position of its own, damaged sections included.
@@ -42,6 +42,11 @@ Method:
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
 - Every fit leaves the regions marked with `mark_damage` out of the atlas, so that the regions a damaged section still has drive its fits.
 - Inspect each fit's borders against the section's internal anatomy; undo a fit that does not improve the alignment.
+- Several published deformable methods are available; none is the default, and each suits different sections. Each fit builds on the section's current registration, so methods can be chained.
+  - `fireants_syn`: ANTs SyN (Avants et al. 2008), the standard symmetric diffeomorphic registration in neuroimaging, run on the GPU by FireANTs. It matches brightness (mutual information or local correlation) and optionally edges, takes masks, and `restrict_to` refines single regions.
+  - `stalign_lddmm`: STalign (Clifton et al. 2023), LDDMM built to align single-cell spatial transcriptomics and histology to the Allen CCF. It fits a contrast map between the two images and sorts every pixel into tissue, background or artifact itself, so partial sections and debris count less.
+  - `spomialign`: SPOmiAlign (Wang et al. 2026), built to align spatial-omics sections across modalities. It matches points with RoMa, a pretrained dense feature matcher, instead of comparing brightness, so it needs only shared tissue shape and structure, not similar staining; seconds per call. Its authors report it degrades when the two images share little tissue and in repetitive or ambiguous tissue.
+  - `emlddmm_stack`: emlddmm (Tward et al. 2025), built to bring whole-brain series of any modality into the Allen CCF. It fits one smooth 3-D warp of the atlas to the whole stack, with each section's own mounting, and sorts out missing tissue and artifacts itself. It suits dense, evenly spaced series and gives placements that agree across the stack; it makes no single-section bends.
 - A fit's reply names the section image, atlas image and mask it used.
 - A fit compares one section image with one atlas image. It does best when both show as much internal structure as possible (layers, nuclei, fibre tracts, ventricle walls) and when the two look alike. Choose, make and look at images by that principle; there is no fixed recipe.
 
@@ -66,8 +71,8 @@ Open every one of these pictures before any write.
 
 Commands:
 - Every tool is a command: `langslice-job <ROOT>/langslice TOOL --args '{...}'` (or `--name value`); `langslice-job <ROOT>/langslice schema TOOL [TOOL ...]` gives their arguments and descriptions, several at once. Pictures come back as files: `picture_files` lists them first, `artifacts` again with their kinds (`view`, in the order the reply's `pictures` lists their numbers); open them to see them.
-- `--dry-run` runs a write without writing and reports what would change; the fits are only checked, not run.
-- Long tools (elastix_affine, fireants_syn, export_maps): a call answers with the result or, still running after 30 s, with its run id and state `running`; the run goes on (also when your shell ends the command, where a process may outlive it) and `wait ID` answers within 30 s with its answer or its state (wait again). `--background` answers at once with the run id; `runs` lists the runs. Do not start a fit again while its run goes on.
+- `--dry-run` runs a write without writing and reports what would change; the fits and engines' tools are only checked, not run.
+- Long tools (elastix_affine, fireants_syn, export_maps, stalign_lddmm, spomialign, emlddmm_stack): a call answers with the result or, still running after 30 s, with its run id and state `running`; the run goes on (also when your shell ends the command, where a process may outlive it) and `wait ID` answers within 30 s with its answer or its state (wait again). `--background` answers at once with the run id; `runs` lists the runs. Do not start a fit again while its run goes on.
 - Commands may run in parallel: each write holds the job folder's lock, and a long tool re-checks each section before it applies (STALE_INPUT when the section changed meanwhile: run it again for that section).
 
 Status table (filename, position, spacing to the next placed section, flags):

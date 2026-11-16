@@ -43,7 +43,8 @@ and discards its work.
 | [`inputs`](#inputs) | none | What is already known per section |
 | [`frozen`](#frozen) | none | What the agent may not change |
 | [`disabled`](#disabled) | none | Tools and options switched off |
-| [`plugins`](#plugins), `plugin_config` | none | Extra tools from tool plugins |
+| [`enabled`](#enabled) | none | Tools that start off, switched on |
+| [`plugins`](#plugins), `plugin_config` | none | Tools of your own, and the engines' options |
 | [`position.*`](#position-settings) | | Section thickness and interval, spacing rule, guidance, notes |
 | [`transform.*`](#transform-settings) | | Hemisphere cue, cutting angles, sections per call, notes |
 | [`nonlinear.*`](#nonlinear-settings) | | Image model, base prompt, required deformation, notes |
@@ -222,20 +223,46 @@ take away a choice that does not apply: `interactive_transform:flip` when no
 section can be mirrored, `trace_borders` when you want fits to the stain
 alone. `disabled` is not a guard against a script; [`frozen`](#frozen) is.
 
+### `enabled`
+
+Default none. Flag `--enabled NAME[,NAME...]` (repeatable; every command
+that makes a job); library `enabled=`.
+
+The tools that start off and this job switches on: `trace_borders` (the
+image model draws a section's borders), `deepslice_place` (DeepSlice; mouse
+coronal jobs) and `brainways_ap` (Brainways; rat coronal jobs on
+`whs_sd_rat_39um`). Any other name is refused: every other tool is on unless
+[`disabled`](#disabled) names it. A tool switched on still needs its task,
+and an atlas and plane it works on.
+
+`--enabled trace_borders` uses the image model this computer has a
+connection for: the connection chosen in the LangSlice window's Settings
+when it has an image model, else the ChatGPT sign-in, else a saved OpenAI
+key, else a saved Gemini key. With none saved the command says so and makes
+no job. [`--nonlinear-provider`](#nonlinear-settings) names another one, and
+naming one switches `trace_borders` on by itself. In Python, `image_model=`
+does the same.
+
 ### `plugins`
 
 Default none. Flag `--plugins MODULE:FACTORY` (repeatable;
 `langslice linear run` only) and `--plugin-config MODULE:FACTORY=JSON`;
 library `plugins=` and `plugin_config=`.
 
-Tool plugins add tools to the agent's toolbox: each `module:factory` is a
-Python module and the function in it that returns the tools. Loading a plugin
-runs its code, so plugins load only in the library and in
-`langslice linear run`; the MCP server and the ABBA worker refuse a job that
-names one. A plugin that cannot load is refused when the job is made.
-`plugin_config` maps a plugin's reference to the options its factory is
-called with. Use plugins to give the agent a registration method of your
-own or a published one wrapped as a tool.
+Tools of your own, added to the agent's toolbox: each `module:factory` is a
+Python module and the function in it that returns the tools. Loading one
+runs its code, so they load only in the library and in
+`langslice linear run`. One that cannot load is refused when the job is
+made. Use it to give the agent a registration method of your own or a
+published one wrapped as a tool.
+
+LangSlice's own engines (DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm)
+are not named here: their tools are in every job
+([Tools](tools.md#which-tools-a-run-has)). A job made when they were named
+here opens with the same tools. `plugin_config` maps a reference to the
+options its factory is called with, an engine's included
+(`{"langslice.engines.stalign.plugin:tools": {"device": "cpu"}}`); each
+engine's README under `src/langslice/engines/` lists its options.
 
 ## Task settings
 
@@ -270,7 +297,7 @@ mark, a mirrored section can be told only from an oblique cutting angle.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `nonlinear.provider` | `openai-oauth` (library: `none`) | `--nonlinear-provider` | The image model's access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). |
+| `nonlinear.provider` | `none` | `--nonlinear-provider` | The image model's access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). Naming one gives the agent `trace_borders`; not given, `--enabled trace_borders` takes the connection saved on this computer ([`enabled`](#enabled)); the library's `image_model=` names it. |
 | `nonlinear.image_model` | the provider's | `--nonlinear-image-model` | Which image model of that provider. |
 | `nonlinear.image_prompt` | LangSlice's | `--nonlinear-image-prompt FILE` | The base prompt `trace_borders` sends, in place of LangSlice's own; `{plane}` in it becomes the section plane. Its traces are recorded as an untested profile. |
 | `nonlinear.require_deformation` | off | `--nonlinear-require-deformation` | `submit` is refused until every section has a deformation at its current placement. |
