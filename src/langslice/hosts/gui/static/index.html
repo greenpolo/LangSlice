@@ -32,41 +32,47 @@
   </header>
 
   <div id="tab-viewer" class="tab viewer">
-    <div class="statusline" id="statusline">
-      <span id="status-dot" class="dot"></span>
-      <span id="word" class="word">Starting</span>
-      <span id="replay" class="replay-chip" hidden></span>
-      <span id="sentence" class="sentence"></span>
-      <span id="facts" class="facts"></span>
-    </div>
+    <header class="now" id="statusline" aria-label="What the agent is doing now">
+      <div class="now-main">
+        <p class="now-meta">
+          <span id="status-dot" class="dot"></span>
+          <span id="word" class="word">Starting</span>
+          <span id="replay" class="replay-chip" hidden></span>
+          <span id="facts" class="facts"></span>
+        </p>
+        <p id="now-words" class="now-words" aria-live="polite"></p>
+        <p id="sentence" class="sentence"></p>
+      </div>
+      <dl id="progress" class="progress" aria-label="How far the registration is" hidden>
+        <div class="meter" data-meter="placed">
+          <dt>Placed in the atlas</dt>
+          <dd><span class="meter-count"></span><span class="meter-bar"><span class="meter-fill"></span></span></dd>
+        </div>
+        <div class="meter" data-meter="aligned">
+          <dt>Aligned to the atlas</dt>
+          <dd><span class="meter-count"></span><span class="meter-bar"><span class="meter-fill"></span></span></dd>
+        </div>
+        <div class="meter" data-meter="warped">
+          <dt>Warped to fit</dt>
+          <dd><span class="meter-count"></span><span class="meter-bar"><span class="meter-fill"></span></span></dd>
+        </div>
+      </dl>
+    </header>
     <p id="no-jobs" class="empty-state" hidden><span>No jobs yet: write one with the Prompt generator, or open a job folder with <code>langslice gui FOLDER</code>.</span></p>
     <div id="viewer-body" class="viewer-body">
-      <section id="focus-area" class="focus-area" aria-label="Agent focus">
+      <section id="focus-area" class="focus-area" aria-label="The sections the agent is working on">
         <div class="focus-head">
-          <h2 class="focus-title"><span class="focus-name">Agent focus</span><span id="focus-count" class="focus-count"></span></h2>
+          <h2 class="focus-title"><span id="focus-name" class="focus-name">The agent is working on</span><span id="focus-count" class="focus-count"></span></h2>
           <div class="focus-controls">
-            <div class="switch" role="group" aria-label="What the left area shows">
-              <button data-view="focus" aria-pressed="true">Focus</button><button data-view="sections" aria-pressed="false">Sections</button><button data-view="steps" aria-pressed="false">Steps</button>
+            <div class="switch" role="group" aria-label="What this area shows">
+              <button data-view="focus" aria-pressed="true">Pictures</button><button data-view="sections" aria-pressed="false">Table</button><button data-view="steps" aria-pressed="false">Steps</button>
             </div>
-            <button id="follow-agent" class="follow" aria-pressed="true" title="Show the sections of the agent's latest call (f)">Follow agent</button>
-            <span class="pager">
+            <button id="follow-agent" class="follow" aria-pressed="true" title="Show the sections of the agent's latest call (f)">Follow the agent</button>
+            <span id="pager" class="pager">
               <button id="page-previous" aria-label="Previous page of sections" title="Previous page ([)">←</button><button id="page-next" aria-label="Next page of sections" title="Next page (])">→</button>
             </span>
           </div>
         </div>
-        <section id="strip" class="strip" aria-label="Positioning">
-          <div class="strip-head">
-            <button id="strip-toggle" class="strip-toggle" aria-expanded="true" aria-controls="strip-body" title="Show or hide the positioning strip"><span class="strip-mark" aria-hidden="true"></span><span class="strip-name">Positioning</span></button>
-            <span id="strip-title" class="strip-title"></span>
-            <span id="strip-hint" class="strip-hint">wheel to zoom · drag to pan · double-click for the whole axis</span>
-          </div>
-          <div id="strip-body" class="strip-body">
-            <svg id="strip-svg" class="strip-svg" role="img" aria-label="Sections along the cutting axis"></svg>
-            <div id="strip-tip" class="strip-tip" hidden></div>
-            <p id="strip-empty" class="empty-state" hidden></p>
-          </div>
-        </section>
-        <div id="strip-divider" class="divider divider-row" role="separator" aria-orientation="horizontal" aria-label="Resize the positioning strip" tabindex="0"></div>
         <p id="focus-problem" class="focus-problem" role="status" hidden></p>
         <div class="views">
           <div id="view-focus" class="panels" aria-live="off"></div>
@@ -93,13 +99,25 @@
           </div>
           <p id="focus-empty" class="empty-state" hidden></p>
         </div>
+        <div id="strip-divider" class="divider divider-row" role="separator" aria-orientation="horizontal" aria-label="Resize the brain strip" tabindex="0"></div>
+        <section id="strip" class="strip" aria-label="Where the sections sit in the brain">
+          <div class="strip-head">
+            <button id="strip-toggle" class="strip-toggle" aria-expanded="true" aria-controls="strip-body" title="Show or hide the strip"><span class="strip-mark" aria-hidden="true"></span><span class="strip-name">Where the sections sit in the brain</span></button>
+            <span id="strip-title" class="strip-title"></span>
+            <span id="strip-hint" class="strip-hint">Scroll to zoom, drag to pan, double-click for the whole brain</span>
+          </div>
+          <div id="strip-body" class="strip-body">
+            <svg id="strip-svg" class="strip-svg" role="img" aria-label="Sections along the cutting axis"></svg>
+            <div id="strip-tip" class="strip-tip" hidden></div>
+            <p id="strip-empty" class="empty-state" hidden></p>
+          </div>
+        </section>
       </section>
-      <div id="log-divider" class="divider divider-column" role="separator" aria-orientation="vertical" aria-label="Resize the agent log" tabindex="0"></div>
-      <aside id="log" class="log" aria-label="Agent log">
+      <div id="log-divider" class="divider divider-column" role="separator" aria-orientation="vertical" aria-label="Resize the journal" tabindex="0"></div>
+      <aside id="log" class="log" aria-label="The run so far">
         <div class="log-head">
-          <h2 class="log-title">Agent log</h2>
-          <button id="log-expand" class="log-expand" aria-expanded="false">Whole log</button>
-          <span id="log-status" class="log-status"></span>
+          <h2 class="log-title">The run so far</h2>
+          <button id="log-expand" class="log-expand" aria-expanded="false">Whole journal</button>
         </div>
         <div id="log-scroll" class="log-scroll">
           <p id="log-trace-note" class="log-trace-note" hidden>The agent's own words are not in this job folder, only its tool calls: a coding agent keeps its reasoning in its own app.</p>
@@ -107,20 +125,19 @@
           <p id="log-empty" class="empty-state" hidden>No activity yet.</p>
         </div>
         <button id="log-jump" class="log-jump" hidden>↓ Latest activity</button>
-        <div id="tray-divider" class="divider divider-row" role="separator" aria-orientation="horizontal" aria-label="Resize the tool images" tabindex="0"></div>
-        <section id="tray" class="tray" aria-label="Tool images">
+        <div id="tray-divider" class="divider divider-row" role="separator" aria-orientation="horizontal" aria-label="Resize the agent's pictures" tabindex="0"></div>
+        <section id="tray" class="tray" aria-label="Pictures the agent looked at">
           <div class="tray-head">
             <div class="tray-titles">
-              <h3 class="tray-title"><span>Tool images</span><span id="tray-tool" class="tray-tool"></span></h3>
+              <h3 class="tray-title"><span>The agent looked at</span><span id="tray-tool" class="tray-tool"></span></h3>
               <p id="tray-caption" class="tray-caption"></p>
             </div>
             <div class="tray-nav">
-              <button id="tray-previous" aria-label="Earlier tool images">←</button><span id="tray-count" class="tray-count">0/0</span><button id="tray-next" aria-label="Later tool images">→</button>
-              <button id="tray-follow" class="follow" aria-pressed="true" title="Show the newest tool images">Follow</button>
+              <button id="tray-previous" aria-label="Earlier pictures">←</button><span id="tray-count" class="tray-count">0/0</span><button id="tray-next" aria-label="Later pictures">→</button>
+              <button id="tray-follow" class="follow" aria-pressed="true" title="Show the newest pictures">Newest</button>
             </div>
           </div>
           <div id="tray-grid" class="tray-grid"></div>
-          <p id="tray-text" class="tray-text" hidden></p>
         </section>
       </aside>
     </div>

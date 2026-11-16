@@ -1,16 +1,20 @@
 'use strict';
-// The agent log, the ABBA viewer's browser log as a column: the agent's messages and
-// reasoning summaries, each tool call as a row (its name, its sections, its state;
-// opened, its inputs, step and status), notes, and under a call that saved pictures a
-// `▸ N pictures` link to them. A row names the call in plain words (the tool's label;
-// its name on hover and inside); calls of one tool in a row fold into one row (`×n`)
-// that opens to show each. The transcript follows its end while the person is
-// there. Under it, the tool images tray: one call's pictures at a time, four per page,
-// with `← n/N →` across the calls and Follow (the newest). The lightbox shows one picture
-// as large as the window allows, `←` / `→` through every picture of the job.
+// The journal and the narration. The journal is the run so far as a timeline: the agent's
+// messages and reasoning summaries are its entries, in the serif face, each at its minute
+// of the run; between them each tool call is one quiet line in plain words (the tool's
+// label; its name on hover and inside; opened, its inputs, step and status), with a
+// `N pictures` link when it saved some. Calls of one tool in a row fold into one line
+// (`xn`) that opens to show each. The journal follows its end until the person scrolls
+// away. The narration band over the window says the newest entry's first paragraph, large,
+// and under it what the agent is doing now. Under the journal, the tray: one call's
+// pictures at a time, four per page, with `<- n/N ->` across the calls and Newest. The
+// lightbox shows one picture as large as the window allows, with its caption, and the
+// arrow keys go through every picture of the job.
 const AgentLog = (() => {
   const PER_PAGE = 4;
-  const SECTIONS_SHOWN = 3;
+  // Pictures no tool call owns: the job's opening ones, and the pages of the whole series
+  // the agent reads first.
+  const GROUP_TITLES = { opening: 'Opening pictures', show_stack: 'The whole series at a glance' };
   const $ = id => document.getElementById(id);
   const { el } = Ui;
 
@@ -25,17 +29,24 @@ const AgentLog = (() => {
   let words = false;          // the agent's own words are in the folder (a trace)
   let activity = false;
   let box = { list: null, index: 0 };
+  let status = { word: '', sentence: '' };
+  let lastCall = null;        // the newest tool call
+  let started = null;         // when the agent session's first record was written
+  let following = true;       // the journal keeps its end in view
+  let latest = null;          // the newest of the agent's own entries
 
   function init() {
     const scroll = $('log-scroll');
-    scroll.addEventListener('scroll', () => { $('log-jump').hidden = atEnd(); });
-    $('log-jump').addEventListener('click', () => { scroll.scrollTop = scroll.scrollHeight; $('log-jump').hidden = true; });
+    // The journal follows its end until the person scrolls away from it (rows also grow
+    // between additions, when a call's pictures arrive).
+    scroll.addEventListener('scroll', () => { following = atEnd(); $('log-jump').hidden = following; });
+    $('log-jump').addEventListener('click', () => { following = true; toEnd(); $('log-jump').hidden = true; });
     $('log-expand').addEventListener('click', () => {
       const on = !$('log').classList.contains('expanded');
       $('log').classList.toggle('expanded', on);
       $('log-expand').setAttribute('aria-expanded', String(on));
-      $('log-expand').textContent = on ? 'Last lines' : 'Whole log';
-      scroll.scrollTop = scroll.scrollHeight;
+      $('log-expand').textContent = on ? 'Last lines' : 'Whole journal';
+      toEnd();
     });
     $('tray-previous').addEventListener('click', () => trayStep(-1));
     $('tray-next').addEventListener('click', () => trayStep(1));
@@ -58,16 +69,43 @@ const AgentLog = (() => {
     calls = new Map(); claims = new Map(); groups = new Map(); owners = []; pictures = [];
     tray = { follow: true, owner: null, page: 0, shown: '' };
     words = false; activity = false; tail = null;
+    lastCall = null; started = null; latest = null; following = true;
+    $('now-words').textContent = '';
     $('log-items').replaceChildren();
     $('log-jump').hidden = true;
     $('log-empty').hidden = true;
     $('log-trace-note').hidden = true;
     renderTray();
   }
-  function setStatus(word) {
-    $('log-status').textContent = word;
-    $('log-status').className = 'log-status word-' + word;
+  // The narration band's two lines: the agent's latest words (`#now-words`, written by
+  // `message`) and, under them, what it is doing now in plain words: the running call,
+  // else the last one, else the server's sentence.
+  function setStatus(word, sentence) {
+    status = { word, sentence: sentence || '' };
+    renderDoing();
   }
+  function renderDoing() {
+    const running = [...calls.values()].filter(c => c.root.classList.contains('running')).pop();
+    const last = running || lastCall;
+    const what = last ? last.title + sectionWords(last.sections) : '';
+    let text;
+    if (running) text = 'Now: ' + what;
+    else if (status.word === 'Running' && last) text = 'Last step: ' + what;
+    else text = status.sentence.replace(/\s*Last: .*$/, '') || (last ? 'Last step: ' + what : '');
+    $('sentence').textContent = text;
+    $('sentence').title = status.sentence;
+    $('statusline').classList.toggle('wordless', !$('now-words').textContent);
+  }
+  const sectionWords = ids => (!ids?.length ? '' : ids.length === 1 ? ', on ' + Ui.short(ids[0]) : `, on ${ids.length} sections`);
+  // Minutes into the run, from the agent session's first record.
+  function elapsed(at) {
+    const t = Date.parse(at || '');
+    if (!Number.isFinite(t)) return '';
+    if (started === null) started = t;
+    const minutes = Math.round((t - started) / 60000);
+    return minutes < 1 ? 'Start' : `${minutes} min`;
+  }
+  const toEnd = () => { const scroll = $('log-scroll'); scroll.scrollTop = scroll.scrollHeight; };
   const atEnd = () => {
     const scroll = $('log-scroll');
     return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60;
@@ -75,7 +113,6 @@ const AgentLog = (() => {
 
   // --- the transcript ----------------------------------------------------------------------
   function add(items) {
-    const follow = atEnd();
     let pictured = false;
     for (const item of items) {
       if (item.kind === 'tool') toolItem(item);
@@ -87,17 +124,17 @@ const AgentLog = (() => {
     $('log-empty').textContent = 'No activity yet.';
     $('log-trace-note').hidden = words || !activity;
     if (pictured || items.some(i => i.kind === 'tool')) renderTray();
-    if (follow && items.length) {
-      const scroll = $('log-scroll');
-      scroll.scrollTop = scroll.scrollHeight;
-    }
+    if (items.length) renderDoing();
+    if (following && items.length) toEnd();
   }
   // An agent message: plain text with paragraphs, `inline code` in violet, **bold** names
   // and list lines; nothing from the text is read as markup.
   function message(item) {
     words = true;
     const root = el('article', 'msg ' + (item.kind === 'agent' ? 'agent' : 'reasoning'));
-    root.append(el('div', 'msg-label', item.kind === 'agent' ? 'Agent' : 'Thinking'));
+    const when = el('div', 'msg-when', elapsed(item.at));
+    when.title = item.kind === 'agent' ? 'A message from the agent' : "A summary of the agent's reasoning";
+    root.append(when);
     const body = el('div', 'msg-body');
     for (const block of String(item.text || '').split(/\n\s*\n/)) {
       if (!block.trim()) continue;
@@ -119,6 +156,20 @@ const AgentLog = (() => {
     root.append(body);
     $('log-items').append(root);
     tail = null;
+    latest?.classList.remove('latest');
+    latest = root;
+    root.classList.add('latest');
+    narrate(body);
+  }
+  // The narration band says the agent's latest words: the entry's first paragraph (the
+  // whole entry on hover, and in the journal).
+  function narrate(body) {
+    const now = $('now-words');
+    now.textContent = body.firstElementChild?.textContent || '';
+    now.title = body.textContent || '';
+    now.classList.remove('arriving');
+    void now.offsetWidth;
+    now.classList.add('arriving');
   }
   function inline(parent, text) {
     for (const part of text.split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {
@@ -129,25 +180,29 @@ const AgentLog = (() => {
     }
   }
   function note(item) {
-    if (/^Agent session/.test(item.text || '')) words = true;
+    if (/^Agent session/.test(item.text || '')) { words = true; elapsed(item.at); }
     $('log-items').append(el('p', 'note' + (item.error ? ' error' : ''), item.text));
     tail = null;
   }
-  // A call's sections, the first three (then + n more), each one a way to put it in focus.
+  // A call's sections: one is named (and puts it in focus), more are counted, their names
+  // on hover.
   function sectionsLine(ids) {
     const line = el('span', 'call-targets');
-    (ids || []).slice(0, SECTIONS_SHOWN).forEach((id, i) => {
-      if (i) line.append(document.createTextNode(', '));
-      const link = el('span', 'section-link', id);
+    ids = ids || [];
+    if (ids.length === 1) {
+      const id = ids[0];
+      const link = el('span', 'section-link', Ui.short(id));
       link.setAttribute('role', 'button');
       link.tabIndex = 0;
-      link.title = 'Show ' + id + ' in focus';
+      link.title = 'Show ' + id;
       const go = event => { event.preventDefault(); event.stopPropagation(); Viewer.pick(id); };
       link.addEventListener('click', go);
       link.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') go(event); });
       line.append(link);
-    });
-    if ((ids || []).length > SECTIONS_SHOWN) line.append(document.createTextNode(` + ${ids.length - SECTIONS_SHOWN} more`));
+    } else if (ids.length) {
+      line.textContent = `${ids.length} sections`;
+      line.title = ids.join(', ');
+    }
     return line;
   }
   function toolItem(item) {
@@ -156,6 +211,7 @@ const AgentLog = (() => {
     if (!call) {
       call = makeCall(item);
       calls.set(item.key, call);
+      lastCall = call;
       place(call);
     }
     if (item.phase === 'start') {
@@ -254,17 +310,17 @@ const AgentLog = (() => {
     const failed = run.calls.filter(c => c.root.classList.contains('failed')).length;
     run.root.classList.toggle('running', running);
     run.root.classList.toggle('failed', !running && failed > 0);
-    run.state.textContent = running ? 'running' : failed ? `${failed} failed` : '';
+    run.state.textContent = running ? 'now' : failed ? `${failed} failed` : '';
     // The run's own link while it is closed; open, each call shows its own.
     const n = run.calls.reduce((sum, c) => sum + c.pictures.length, 0);
-    run.link.textContent = `▸ ${n} picture${n === 1 ? '' : 's'}`;
+    run.link.textContent = `${n} picture${n === 1 ? '' : 's'}`;
     run.link.hidden = run.root.open || !n;
   }
   function setState(call, word) {
     call.root.classList.toggle('running', word === 'running');
     call.root.classList.toggle('failed', word === 'failed');
     // Done is the usual end and says nothing more than the row's grey rule: no word.
-    call.state.textContent = word === 'done' ? '' : word;
+    call.state.textContent = word === 'done' ? '' : word === 'running' ? 'now' : word;
     call.state.title = word;
   }
   function details(call) {
@@ -298,24 +354,26 @@ const AgentLog = (() => {
     if (call) { own(call, picture); return; }
     // A picture no tool event names (the opening, or a folder from before tool events):
     // one row per call that saved it.
-    const key = `${item.tool}:${item.call}`;
+    // The pictures read at the start are one row, whatever number of calls saved them.
+    const key = GROUP_TITLES[item.tool] ? item.tool : `${item.tool}:${item.call}`;
     let group = groups.get(key);
     if (!group) {
       const root = el('div', 'call static');
       const line = el('div', 'call-line');
       const body = el('span', 'call-body');
-      const opening = item.tool === 'opening';
-      body.append(el('span', 'call-name' + (opening ? ' plain' : ''), opening ? 'Opening pictures' : item.tool || 'pictures'));
+      const opening = Boolean(GROUP_TITLES[item.tool]);
+      const title = GROUP_TITLES[item.tool] || item.title || item.tool || 'Pictures';
+      body.append(el('span', 'call-title', title));
       const targets = el('span', 'call-targets');
       body.append(targets);
-      line.append(body, el('span', 'call-state', 'pictures'));
+      line.append(body);
       root.append(line);
-      group = { kind: 'group', key, name: item.tool, root, targets, ids: [], pictures: [], link: null };
+      group = { kind: 'group', key, name: item.tool, title, root, targets, ids: [], pictures: [], link: null };
       groups.set(key, group);
-      // The opening pictures come first, after the line saying the job opened.
+      // The pictures read at the start come first, after the line saying the job opened.
       const items = $('log-items');
       if (opening) {
-        const before = [...groups.values()].filter(g => g !== group && g.name === 'opening').pop();
+        const before = [...groups.values()].filter(g => g !== group && GROUP_TITLES[g.name]).pop();
         const anchor = before ? (before.link || before.root) : items.firstElementChild?.classList.contains('note') ? items.firstElementChild : null;
         if (anchor) anchor.after(root); else items.prepend(root);
       } else { items.append(root); tail = null; }
@@ -350,7 +408,7 @@ const AgentLog = (() => {
       owner.root.after(owner.link);
     }
     const n = owner.pictures.length;
-    owner.link.textContent = `▸ ${n} picture${n === 1 ? '' : 's'}`;
+    owner.link.textContent = `${n} picture${n === 1 ? '' : 's'}`;
   }
   const url = picture => `jobs/${job}/picture/${picture.number}`;
 
@@ -372,9 +430,8 @@ const AgentLog = (() => {
     $('tray-divider').hidden = empty;
     for (const owner of owners) { owner.link?.classList.remove('shown'); owner.run?.link.classList.remove('shown'); }
     if (empty) {
-      $('tray-tool').textContent = '· no pictures yet';
+      $('tray-tool').textContent = 'nothing yet';
       $('tray-grid').replaceChildren();
-      $('tray-text').hidden = true;
       tray.shown = '';
       return;
     }
@@ -385,13 +442,13 @@ const AgentLog = (() => {
     const owner = batch.owner;
     owner.link?.classList.add('shown');
     owner.run?.link.classList.add('shown');
-    $('tray-tool').textContent = '· ' + (owner.name === 'opening' ? 'opening' : owner.title || owner.name || 'pictures');
+    $('tray-tool').textContent = owner.title || owner.name || 'pictures';
     const total = owner.pictures.length;
     const from = batch.page * PER_PAGE + 1, to = from + batch.pictures.length - 1;
     const ids = owner.kind === 'call' ? owner.sections : owner.ids;
-    const sections = ids.length > 3 ? `${ids.slice(0, 3).join(', ')} and ${ids.length - 3} more` : ids.join(', ');
-    $('tray-caption').textContent = [sections, total > PER_PAGE ? `pictures ${from}-${to} of ${total}` : `${total} picture${total === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
-    $('tray-caption').title = $('tray-caption').textContent;
+    const sections = ids.length > 1 ? `${ids.length} sections` : ids.map(Ui.short).join('');
+    $('tray-caption').textContent = [sections, total > PER_PAGE ? `pictures ${from} to ${to} of ${total}` : `${total} picture${total === 1 ? '' : 's'}`].filter(Boolean).join(', ');
+    $('tray-caption').title = ids.join(', ');
     $('tray-count').textContent = `${index + 1}/${list.length}`;
     $('tray-previous').disabled = index === 0;
     $('tray-next').disabled = index === list.length - 1;
@@ -400,10 +457,6 @@ const AgentLog = (() => {
     const shown = batch.pictures.map(p => p.number).join(',');
     if (shown === tray.shown) return;
     tray.shown = shown;
-    // One picture's caption, the words the agent read under it, as text the person can read.
-    const words = batch.pictures.length === 1 ? batch.pictures[0].caption : '';
-    $('tray-text').textContent = words;
-    $('tray-text').hidden = !words;
     const grid = $('tray-grid');
     grid.classList.toggle('one', batch.pictures.length === 1);
     grid.replaceChildren(...batch.pictures.map(tile));
@@ -415,8 +468,8 @@ const AgentLog = (() => {
     img.alt = picture.caption || picture.label || 'A picture the agent saw';
     img.decoding = 'async';
     const label = el('span', 'tile-label');
-    const what = [picture.sections.length === 1 ? picture.sections[0] : picture.sections.length ? `${picture.sections.length} sections` : '', picture.mode].filter(Boolean).join(' · ');
-    label.append(el('span', 'tile-number', String(picture.number)), document.createTextNode(what || picture.label || ''));
+    const what = [picture.sections.length === 1 ? Ui.short(picture.sections[0]) : picture.sections.length ? `${picture.sections.length} sections` : '', picture.mode].filter(Boolean).join(', ');
+    label.textContent = what || picture.label || '';
     button.title = picture.caption || '';
     button.append(img, label);
     button.addEventListener('click', () => openPicture(picture.number));
@@ -482,7 +535,7 @@ const AgentLog = (() => {
     $('lightbox-next').disabled = box.index === box.list.length - 1;
     $('lightbox-image').src = url(picture);
     $('lightbox-image').alt = picture.caption || picture.label || '';
-    $('lightbox-label').textContent = `Picture ${picture.number} · ${picture.tool || 'picture'}` + (picture.sections.length === 1 ? ` · ${picture.sections[0]}` : '');
+    $('lightbox-label').textContent = `Picture ${picture.number}` + (picture.sections.length === 1 ? `, ${Ui.short(picture.sections[0])}` : '');
     $('lightbox-count').textContent = `${box.index + 1} / ${box.list.length}`;
     $('lightbox-caption').textContent = picture.caption || picture.sections.join(', ');
   }

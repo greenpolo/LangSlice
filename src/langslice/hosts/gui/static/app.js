@@ -2,7 +2,7 @@
 // The LangSlice window's shell: the tabs and the address (`#tab=<tab>&job=<n>`, which
 // always names what the window shows), the job picker, the polling of the local
 // server (the job list every 2 s; the shown job's snapshot every 300 ms, and its
-// positioning strip when its sections change), the status line and the keyboard. The
+// positioning strip when its sections change), the narration band's status and the keyboard. The
 // agent viewer's parts are viewer-strip.js (Strip), viewer.js (Viewer) and
 // viewer-log.js (AgentLog); they start when the page has loaded.
 
@@ -115,7 +115,9 @@ const Ui = (() => {
     }
     return { add, explain };
   })();
-  return { el, store, drag, ago, middle, mm, loads };
+  // A section's name as the window shows it: its file name without the extension.
+  const short = id => String(id).replace(/\.[A-Za-z0-9]{2,5}$/, '');
+  return { el, store, drag, ago, middle, mm, short, loads };
 })();
 
 (() => {
@@ -323,10 +325,16 @@ const Ui = (() => {
   function clearStatus() {
     $('status-dot').className = 'dot none';
     $('word').textContent = '';
-    $('sentence').textContent = 'Loading the job…';
     $('facts').textContent = '';
     $('replay').hidden = true;
-    AgentLog.setStatus('');
+    AgentLog.setStatus('', 'Loading the job…');
+  }
+  // The run in one sentence: who registers what to which atlas.
+  function runWords(h, word) {
+    if (!h.atlas) return h.model || '';
+    const verb = word === 'Submitted' ? 'registered' : word === 'Running' ? 'is registering' : 'registering';
+    const who = h.model || (word === 'Submitted' ? 'The agent' : 'An agent');
+    return `${who} ${verb} ${h.plane ? h.plane + ' ' : ''}sections to ${h.atlas}`;
   }
   function showStatus(snap) {
     const word = snap.status?.word || '';
@@ -334,16 +342,16 @@ const Ui = (() => {
     $('status-dot').className = 'dot ' + word;
     $('word').textContent = word;
     $('word').className = 'word word-' + word;
-    $('sentence').textContent = snap.status?.sentence || '';
-    $('facts').textContent = [h.atlas, h.plane, h.model, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
+    $('facts').textContent = runWords(h, word);
+    $('facts').title = [h.name, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
     // A replayed run (a finished run's records played again into a job folder) says so.
     const replay = h.replay;
     $('replay').hidden = !replay;
     if (replay) {
-      $('replay').textContent = ['Replay', replay.speed && `${replay.speed}× speed`].filter(Boolean).join(' · ');
+      $('replay').textContent = replay.speed ? `Replay at ${replay.speed}× speed` : 'Replay';
       $('replay').title = replay.about || 'A finished run, played again from its records';
     }
-    AgentLog.setStatus(word);
+    AgentLog.setStatus(word, snap.status?.sentence || '');
     Viewer.setHeader(h);
     const job = jobs?.find(j => j.index === watch.index);
     if (job && job.status !== word) { job.status = word; renderPicker(); }

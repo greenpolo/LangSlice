@@ -33,8 +33,8 @@ connection chosen and no `--tab`, it opens on Settings.
 
 ## The agent viewer
 
-The agent viewer is laid out like the viewer LangSlice once had inside ABBA:
-what the agent is working on, on the left, and the agent's log on the right.
+The agent viewer answers three questions, top to bottom: what is the agent
+doing, what does the registration look like, and how did it get here.
 
 - **Job.** The job picker at the top right lists the folders given on the
   command line and the jobs opened recently on this computer
@@ -43,52 +43,67 @@ what the agent is working on, on the left, and the agent's log on the right.
   folder above it (`M01/images`), with its path beside it. The window shows
   the most recently changed job until you pick one; the address then names
   it (`#job=<n>`).
-- **Status line.** Running, Waiting, Idle (nothing changed for ten minutes),
-  Submitted or Failed, with the tool running now or the last one and its
-  sections, and the atlas, plane, model and door when known.
-- **Positioning strip.** The atlas along its cutting axis: thumbnails of the
-  atlas template at regular steps over a millimetre ruler, and below them
-  every placed section as a thumbnail with a handle and a dashed line up to
-  its position, in up to three rows. The sections the agent is working on
-  are drawn in their panel's colour, with a pink bar along the axis spanning
-  them; sections not placed yet are grouped at the right end. Point at a
-  section for its name and position, and click it to look at it. The wheel
-  zooms, dragging pans and a double-click shows the whole axis. The divider
-  below the strip sets its height.
-- **Focus.** The sections the agent's latest call worked on (a change,
+- **What the agent is doing now.** The band across the top. Its first line
+  is the status (Running, Waiting, Idle after ten minutes without a change,
+  Submitted or Failed) and the run in one sentence: the model, the plane and
+  the atlas. Under it, large, are the agent's latest words: the first
+  paragraph of its newest message or reasoning summary (the whole of it on
+  hover and in the journal). The last line names the tool running now, or
+  the last one, in plain words, with how many sections it works on. On the
+  right, three meters count the sections that are placed in the atlas,
+  aligned to it and warped to fit; a task the job has switched off has no
+  meter. A coding agent keeps its own words in its app, so for such a run
+  the band shows what the agent is doing in their place.
+- **Pictures.** The sections the agent's latest call worked on (a change,
   `look` or `zoom`; before the first, every section), four to a page (the
   arrows, or `[` and `]`). Each panel shows its section under its current
   registration with the atlas borders, drawn by the window from the job
   folder, and drawn again whenever that section's registration changes; a
-  section not placed yet is shown alone. Its title gives the section, its
-  position and cutting angles, and tags for its transform, its deformation
-  and damage. The wheel zooms, dragging pans and **open** shows it large.
-  **Follow agent** (on to start with; `f`) keeps the panels on the agent's
-  latest call. Clicking a section in the strip, the table or the log puts it
-  in focus and stops following.
-- **Sections.** Order, filename, position, cutting angles, flipped, turned,
+  section not placed yet is shown alone. Its title gives the panel's
+  number, the section, its position and cutting angles, and how it was
+  aligned, whether it is warped and whether it is damaged. The wheel zooms,
+  dragging pans and **Enlarge** shows it large. **Follow the agent** (on to
+  start with; `f`) keeps the panels on the agent's latest call. Clicking a
+  section in the strip, the table or the journal shows it and stops
+  following.
+- **Where the sections sit in the brain.** The strip under the pictures: the
+  atlas along its cutting axis, as thumbnails of the atlas template at
+  regular steps over a millimetre ruler, and below them every placed section
+  as a thumbnail in up to three rows, with a tick on the ruler at its
+  position. The sections the agent is working on are marked in the window's
+  one accent colour, each shown one with its panel's number, and a bar along
+  the axis spans them; sections not placed yet are grouped at the right end.
+  Point at a section for its name and position, and click it to look at it.
+  The wheel zooms, dragging pans and a double-click shows the whole axis.
+  The divider above the strip sets its height.
+- **Table.** Order, filename, position, cutting angles, flipped, turned,
   transform, deformation method, damage and registration number; click a
-  row to put that section in focus. A job saved by an older LangSlice is
-  read as every other way in opens it; one whose state this LangSlice cannot
-  read (a newer one's) is shown from its raw fields.
+  row to show that section. A job saved by an older LangSlice is read as
+  every other way in opens it; one whose state this LangSlice cannot read (a
+  newer one's) is shown from its raw fields.
 - **Steps.** The steps that can be undone and redone, each named by the call
   that made it; your notes from the job's settings and the run's; and the
   spend (tokens and the dollar estimate, when the run records them).
-- **Agent log.** One row per tool call, named in plain words (the tool's own
-  name shows on hover and inside the row), with its sections and whether it
-  is running, done or failed; open a row for its inputs. Calls of one tool in
-  a row share one row (`×n`) that opens to show each. When the job folder
-  holds LangSlice's agent trace, the agent's text and its reasoning
-  summaries appear between the calls. A coding agent keeps its own
-  reasoning in its app, so only its tool calls appear. **Tool images**,
-  under the log, shows the pictures each call saved, four at a time; the
-  arrows go through the calls, **Follow** returns to the newest, and a click
-  enlarges a picture (then the arrow keys go through every picture of the
-  job). A call's lone picture has its caption, the words the agent read
-  with it, written under it.
+- **The run so far.** The journal, on the right: a timeline of the agent's
+  own words, its messages and reasoning summaries, each at its minute of the
+  run, when the job folder holds LangSlice's agent trace. Between them, one
+  quiet line per tool call, named in plain words, with its section or how
+  many it worked on and how many pictures it saved; open a line for the
+  tool's own name and inputs. Calls of one tool in a row share one line
+  (`×n`) that opens to show each. The journal follows its end until you
+  scroll away from it.
+- **The agent looked at.** Under the journal, the pictures each call saved,
+  four at a time; the arrows go through the calls, **Newest** returns to the
+  latest, and a click enlarges a picture with its caption, the words the
+  agent read with it (then the arrow keys go through every picture of the
+  job).
 
 A run replayed into a job folder (its trace's session record carries
-`replay`) shows a **Replay** chip, with its speed, beside the status word.
+`replay`) says **Replay** and its speed beside the status word.
+
+The window is neutral graphite around the pictures, with one accent colour
+for what is happening now. The agent's own words are set in a serif face,
+the window's own in a sans-serif face.
 
 The viewer is read-only: nothing in it changes the job.
 

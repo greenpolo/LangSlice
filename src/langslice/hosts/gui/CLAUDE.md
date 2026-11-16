@@ -5,12 +5,16 @@ the project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror
 to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
-generator and Settings (top right). The agent viewer is the arrangement of the
-viewer LangSlice had inside ABBA, on the web: a positioning strip and up to four
-focus panels showing the sections the agent works on under their current
-registration (ABBA's comparison window), beside the agent log and its tool
-images (ABBA's browser log). The window is a quiet dark tool: the logo keeps
-the docs' ASCII look, the rest is plain (`static/tokens.css`).
+generator and Settings (top right). The agent viewer is made for a person new
+to the run, read top to bottom: the narration band (the agent's latest words,
+large, what it is doing now and how far the registration is), up to four
+panels showing the sections the agent works on under their current
+registration with the brain strip under them, and on the right the journal (the
+run so far as a timeline of the agent's words, its tool calls quiet lines
+between them) over the pictures the agent looked at. The window is neutral
+graphite around greyscale pictures with one accent colour; the agent's words
+are in a serif face, the window's in a sans-serif face
+(`static/tokens.css`).
 
 ## The rule
 
@@ -83,7 +87,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   calls it made, a session's end after them), then the pictures. Items: `tool`
   (`tool_start` / `tool_end` by `execution_id`; `args` an object or the cut
   JSON string; `title`, the tool's plain-language label from
-  `job.settings.labels`), `picture` (number, view folder, tool, call, sections, caption
+  `job.settings.labels`), `picture` (number, view folder, tool and its `title`, call, sections, caption
   from `view.json`; a path outside the folder is refused), `agent` and
   `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
   script writes, session start and end, a trace error); a trace `session`
@@ -291,20 +295,24 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `blob:` image (scripts set `element.style` instead); every text goes in by
   `textContent`.
   - `tokens.css` — the window's look, the only place a colour, the font, a
-    size or a spacing is written: the system's sans-serif UI face for words
-    (`--sans`) and the monospace face (JetBrains Mono, bundled as
-    `jetbrains-mono-*.woff2`, SIL OFL 1.1, `jetbrains-mono-ofl.txt`) for
-    literal text only (file, section and tool names, paths, code); slate
-    grounds (`--ground`, panels and controls a step lighter in `--panel`,
-    black `--picture` behind pictures only), 1 px edges, small rounded corners
-    (`--radius`, `--radius-sm`), no glow, gradients or shadows, colours each
-    with one job (off-white names, lavender the one accent, violet literal
-    text, pink problems and keyboard focus, green Submitted), and
-    the ABBA viewer's four focus colours. `lockup.svg` and `logomark.svg` are
-    `assets/logo/`'s dark ones.
+    size or a spacing is written: three faces, the system's sans-serif UI
+    face for the window's own words (`--sans`), a system serif face for the
+    agent's own words (`--serif`: the narration and the journal) and the
+    monospace face (JetBrains Mono, bundled as `jetbrains-mono-*.woff2`, SIL
+    OFL 1.1, `jetbrains-mono-ofl.txt`) for literal text only (paths,
+    commands, tool inputs); neutral graphite grounds (`--ground`, panels and
+    controls a step lighter in `--panel`, black `--picture` behind pictures
+    only), 1 px edges, small rounded corners (`--radius`, `--radius-sm`), no
+    glow, gradients or shadows, colours each with one job (off-white names
+    and the agent's latest words, lavender the one accent: what is happening
+    now and what can be clicked, also `--focus`, the sections in focus;
+    grey-violet literal text, pink problems, green Submitted).
+    `lockup.svg` and `logomark.svg` are `assets/logo/`'s dark ones.
   - `index.html` — the top bar (the lockup, the tabs, the job picker,
-    Settings), the status line, the viewer tab, the delimited prompt
-    generator and Settings blocks, the footer and the lightbox.
+    Settings), the viewer tab (the narration band `#statusline` with the
+    progress meters, the sections area with the strip under it, the journal
+    and the tray), the delimited prompt generator and Settings blocks, the
+    footer and the lightbox.
   - `app.css`, `app.js` — the element defaults every tab uses (controls a step
     above the page with a 1 px edge and small rounded corners; `.mono` for
     literal text) and the shell: the tabs (the first one
@@ -312,45 +320,62 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     what is shown (`#tab=…&job=n`) once a job was named; the job picker
     (keyboard-navigable, newest first by `changed_at`); the polls (jobs every
     2 s, the snapshot every 300 ms, the strip when the tables change, at most
-    every 1.5 s); the status line; the keys `[`, `]` and `f`. `Ui.loads` is
+    every 1.5 s); the narration band's status word, Replay chip and the run
+    in one sentence (`runWords`: the model, the plane, the atlas); the keys
+    `[`, `]` and `f`. `Ui.short` is a section's name as the window shows it
+    (the file name without its extension). `Ui.loads` is
     one queue for every picture the server draws: at most three in flight, so
     the polls keep their connections, lowest rank first (the lightbox, the
     focus panels, the focus's thumbnails, the atlas row, the other
     thumbnails).
-  - `viewer.js`, `viewer.css` — the Agent focus: Focus | Sections | Steps,
-    Follow agent (the snapshot's `focus` replaces the targets and returns to
-    page 1; a section clicked in the strip, the table or the log becomes the
+  - `viewer.js`, `viewer.css` — the sections area: its header (whose choice
+    the sections are, how many), Pictures | Table | Steps,
+    Follow the agent (the snapshot's `focus` replaces the targets and returns to
+    page 1; a section clicked in the strip, the table or the journal becomes the
     focus and stops following), four sections to a page (one fills the area, two side by
-    side, three as one tall panel beside two, four in a 2 x 2 grid). A panel asks for `render/overlay` at its size times
+    side, three as one tall panel beside two, four in a 2 x 2 grid; the page
+    arrows only when there is more than one page). A panel asks for `render/overlay` at its size times
     `devicePixelRatio` (rounded up to 128) and again only when its row's
     `render_key` changes or the panel grows; the old picture stays, tagged
     `updating`, until the new one fades in; a 409 shows its message (the same message on every panel shown is
-    said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `open` shows the
-    render in the lightbox. The Sections table (a damaged row's pink left
+    said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `Enlarge` shows the
+    render in the lightbox. A panel's title: its number (the one on its
+    section in the strip), the section, its position, the angles, and tags in
+    plain words (`HOW`: how it was aligned; `warped`; `damaged`; the stored
+    values on hover). `progress`: the band's three meters (sections with a
+    position, a transform, a deformation; a task off in the header's `tasks`
+    has none). The Table (a damaged row's pink left
     edge; a click puts the section in focus), Steps (undo, redo, notes,
     spend). The dividers are remembered in `localStorage`; below 1100 px the
-    log goes under the focus area.
-  - `viewer-strip.js` — the positioning strip, one inline SVG: atlas
-    thumbnails over a millimetre ruler, the placed sections in at most three
+    journal goes under the sections area.
+  - `viewer-strip.js` — the brain strip, one inline SVG under the pictures:
+    atlas thumbnails over a millimetre ruler, the placed sections in at most three
     stair rows (each in the first row where it clears its neighbour) with a
-    handle, a dashed leader and a key on the axis; the focus's sections in
-    their panel's colour, other targets in off-white, a pink bar spanning
+    key on the axis; the focus's sections in the accent with a leader, the
+    shown ones outlined with their panel's number on a handle, a bar spanning
     them; the sections not placed grouped at the right. Thumbnails are asked
-    for only in view (128 px; 256 drawn large) and again on a new render key.
+    for only in view (128 px; 256 drawn large) and again on a new thumb key.
     Hover, click to focus, wheel zoom, drag pan, double-click for the whole
     axis; without the strip route, the handles from the snapshot rows.
-  - `viewer-log.js` — the agent log: agent messages and reasoning summaries
-    (paragraphs, lists and `code` kept, by `textContent`), tool rows
+  - `viewer-log.js` — the journal and the narration: agent messages and
+    reasoning summaries as timeline entries in the serif face (paragraphs,
+    lists and `code` kept, by `textContent`; each at its minute of the run,
+    `elapsed`, from the trace's first record; the newest marked `latest`),
+    whose first paragraph `narrate` puts in the band (`#now-words`);
+    `renderDoing` writes the band's last line (`Now:` the running call's
+    title and sections, else `Last step:`, else the server's sentence; the
+    band is `wordless` for a run without the agent's words); tool lines
     (`<details>` named by the tool's plain-language `title`, its name on
-    hover and inside, a running, done or failed left edge, section names that
-    focus, the inputs at most 240 px tall, step, status and door; calls of
-    one tool in a row fold into one run row, `title ×n`, that opens to show
-    each, with the run's `▸ N pictures` while closed),
-    `▸ N pictures`, notes, the line saying the agent's own words are not
-    in the job folder when it holds no trace, following the end (`Latest
-    activity` when scrolled up); the Tool images tray (four pictures per
-    page, the calls with pictures paged, Follow, resizable, about half the
-    column; a lone picture's caption under it as text); the lightbox (the
+    hover and inside, one section named and focusable or their count, `now`
+    or `failed`, the inputs at most 240 px tall, step, status and door; calls of
+    one tool in a row fold into one run line, `title ×n`, that opens to show
+    each, with the run's `N pictures` while closed),
+    `N pictures`, the pictures read at the start as one line at the top
+    (`GROUP_TITLES`), notes, the line saying the agent's own words are not
+    in the job folder when it holds no trace, following the end until the
+    person scrolls away (`Latest activity`); the tray "The agent looked at" (four pictures per
+    page, the calls with pictures paged, Newest, resizable, about half the
+    column); the lightbox (a picture with its caption; the
     arrow keys through every picture of the job).
   - `settings.js`, `settings.css` — the Settings tab: built once, updated
     from each answer, so a key being typed survives a refresh; refreshed

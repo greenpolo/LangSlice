@@ -1,18 +1,22 @@
 'use strict';
-// The agent focus area, the ABBA viewer's comparison window: its header (how many
-// sections are in focus, the page, the Focus | Sections | Steps switch, Follow agent and
-// the page buttons), the positioning strip (viewer-strip.js) and one of three views:
-//   Focus     up to four panels (1, 1 x 2 or 2 x 2), each a section under its current
+// The sections area: its header (whose choice the sections are and how many, the
+// Pictures | Table | Steps switch, Follow the agent and the page buttons), one of three
+// views, and under them the brain strip (viewer-strip.js):
+//   Pictures  up to four panels (1, 1 x 2 or 2 x 2), each a section under its current
 //             registration with the atlas borders, drawn by the server
 //             (`render/overlay/<section>`) at the panel's size; the old picture stays,
 //             tagged `updating`, until a newer one has loaded;
-//   Sections  the sections table;
+//   Table     the sections table;
 //   Steps     undo and redo, the notes and the spend.
+// It also keeps the narration band's progress meters (how many sections are placed,
+// aligned and warped).
 // Follow: the focus is the sections of the agent's latest followed call (the snapshot's
 // `focus`); a new call replaces them and goes back to page 1. A section the person
-// clicks (strip, table, a name in the log) becomes the focus and Follow agent turns off.
+// clicks (strip, table, a name in the journal) becomes the focus and Follow turns off.
 const Viewer = (() => {
   const PAGE_SIZE = 4;
+  // How a section got its in-plane transform, in a panel's words.
+  const HOW = { elastix: 'aligned automatically', interactive: 'aligned by hand' };
   const $ = id => document.getElementById(id);
   const { el } = Ui;
 
@@ -28,6 +32,8 @@ const Viewer = (() => {
   let mode = 'focus';
   let panels = [];
   let resizeTimer = null;
+  let tasks = null;            // the job's tasks, from the header
+  let tasksSeen = '';
 
   // --- the header, the switch, Follow and paging -------------------------------------------
   function init() {
@@ -51,13 +57,40 @@ const Viewer = (() => {
     job = index;
     rows = []; byId = new Map(); loaded = false;
     agent = null; agentSeen = ''; follow = true; manual = []; page = 0;
+    tasks = null; tasksSeen = '';
+    progress();
     for (const p of panels) clearPanel(p);
     Strip.setJob(index);
     renderSections();
     renderSteps({});
     refresh();
   }
-  function setHeader(header) { Strip.setPlane(header?.plane); }
+  function setHeader(header) {
+    Strip.setPlane(header?.plane);
+    const seen = JSON.stringify(header?.tasks ?? null);
+    if (seen !== tasksSeen) { tasksSeen = seen; tasks = Array.isArray(header?.tasks) ? header.tasks : null; progress(); }
+  }
+  // How far the registration is: of the job's sections, how many have a position, an
+  // in-plane transform and a deformation. A task the job has switched off has no meter.
+  function progress() {
+    const box = $('progress');
+    box.hidden = !loaded || !rows.length;
+    if (box.hidden) return;
+    const counts = {
+      placed: rows.filter(r => typeof r.position_mm === 'number').length,
+      aligned: rows.filter(r => r.transform).length,
+      warped: rows.filter(r => r.deformation).length,
+    };
+    const task = { placed: 'position', aligned: 'transform', warped: 'nonlinear' };
+    for (const meter of box.querySelectorAll('.meter')) {
+      const name = meter.dataset.meter, n = counts[name];
+      meter.hidden = Boolean(tasks) && !tasks.includes(task[name]) && !n;
+      meter.classList.toggle('full', n === rows.length);
+      meter.classList.toggle('none', n === 0);
+      meter.querySelector('.meter-count').textContent = `${n} of ${rows.length}`;
+      meter.querySelector('.meter-fill').style.width = `${(100 * n) / rows.length}%`;
+    }
+  }
   // One snapshot: its tables (when the state moved; else null) and the agent's focus, applied
   // together so the panels ask only for what the snapshot puts in focus.
   function update(tables, focus) {
@@ -69,6 +102,7 @@ const Viewer = (() => {
       Strip.setRows(rows);
       renderSections(tables.sections_note || '');
       renderSteps(tables);
+      progress();
       changed = true;
     }
     const seen = JSON.stringify(focus ? [focus.call ?? null, focus.sections || []] : null);
@@ -116,11 +150,12 @@ const Viewer = (() => {
     const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
     page = Math.min(page, pages - 1);
     const onPage = all.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-    $('focus-count').textContent = loaded && rows.length
-      ? `· ${all.length} of ${rows.length} section${rows.length === 1 ? '' : 's'} · page ${page + 1}/${pages} · read-only`
-      : '· read-only';
+    $('focus-name').textContent = follow ? 'The agent is working on' : 'You are looking at';
+    $('focus-count').textContent = !loaded || !rows.length ? ''
+      : (all.length === rows.length ? `all ${rows.length} sections` : `${all.length} of ${rows.length} sections`)
+        + (pages > 1 ? `, page ${page + 1} of ${pages}` : '');
     $('follow-agent').setAttribute('aria-pressed', String(follow));
-    $('page-previous').disabled = $('page-next').disabled = pages < 2;
+    $('pager').hidden = pages < 2;
     Strip.setTargets(all, onPage);
     for (const tr of document.querySelectorAll('#sections tbody tr')) tr.classList.toggle('target', all.includes(tr.dataset.id));
     const empty = $('focus-empty');
@@ -149,17 +184,18 @@ const Viewer = (() => {
   function makePanel(slot) {
     const root = el('article', 'panel slot-' + slot);
     const title = el('header', 'panel-title');
-    const name = el('span', 'panel-name'), angles = el('span', 'panel-angles'), tags = el('span', 'panel-tags');
-    const open = el('button', 'panel-open', 'open');
+    const number = el('span', 'panel-slot', String(slot));
+    const name = el('span', 'panel-name'), where = el('span', 'panel-where'), angles = el('span', 'panel-angles'), tags = el('span', 'panel-tags');
+    const open = el('button', 'panel-open', 'Enlarge');
     open.title = 'Show this picture large';
-    title.append(name, angles, tags, open);
+    title.append(number, name, where, angles, tags, open);
     const box = el('div', 'panel-picture');
     const updating = el('span', 'panel-updating', 'updating');
     const message = el('p', 'panel-message');
     updating.hidden = message.hidden = true;
     box.append(updating, message);
     root.append(title, box);
-    const p = { slot, root, name, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, problem: '', view: { s: 1, x: 0, y: 0 } };
+    const p = { slot, root, name, where, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, problem: '', view: { s: 1, x: 0, y: 0 } };
     open.addEventListener('click', () => {
       if (!p.img) return;
       const row = byId.get(p.id);
@@ -188,17 +224,17 @@ const Viewer = (() => {
   function showPanel(p, id) {
     const row = byId.get(id);
     if (p.id !== id) { clearPanel(p); p.id = id; }
-    const position = typeof row?.position_mm === 'number' ? ` · ${Ui.mm(row.position_mm)} mm` : '';
-    p.name.textContent = `${p.slot} · ${id}${position}`;
+    p.name.textContent = Ui.short(id);
     p.name.title = id;
+    p.where.textContent = typeof row?.position_mm === 'number' ? `${Ui.mm(row.position_mm)} mm` : '';
     const a = row?.angles && typeof row.angles === 'object' ? row.angles : {};
     const pitch = Number(a.pitch) || 0, yaw = Number(a.yaw) || 0;
-    p.angles.textContent = [pitch ? `pitch ${pitch.toFixed(1)}°` : '', yaw ? `yaw ${yaw.toFixed(1)}°` : ''].filter(Boolean).join(' · ');
+    p.angles.textContent = [pitch ? `pitch ${pitch.toFixed(1)}°` : '', yaw ? `yaw ${yaw.toFixed(1)}°` : ''].filter(Boolean).join(', ');
     // Each tag keeps a rank: when the strip is short of room the lowest go first.
     const tags = [];
-    const tag = (cls, text, rank) => { const t = el('span', cls, text); t.dataset.rank = rank; tags.push(t); };
-    if (row?.transform) tag('tag', row.transform, 1);
-    if (row?.deformation) tag('tag method', row.deformation, 2);
+    const tag = (cls, text, rank) => { const t = el('span', cls, text); t.dataset.rank = rank; tags.push(t); return t; };
+    if (row?.transform) tag('tag', HOW[row.transform] || row.transform, 1).title = 'Transform: ' + row.transform;
+    if (row?.deformation) tag('tag', 'warped', 2).title = 'Deformation: ' + row.deformation;
     if (row?.damaged) tag('tag damaged', 'damaged', 4);
     if (row && typeof row.position_mm !== 'number') tag('tag', 'not placed', 3);
     p.tags.replaceChildren(...tags);
@@ -455,7 +491,7 @@ const Viewer = (() => {
     Ui.drag($('strip-divider'), {
       start: () => { start = strip.getBoundingClientRect().height; },
       move: (dx, dy) => {
-        const height = Math.round(Math.min(area.clientHeight - 200, Math.max(110, start + dy)));
+        const height = Math.round(Math.min(area.clientHeight - 200, Math.max(110, start - dy)));
         strip.style.setProperty('--strip-height', height + 'px');
       },
       end: () => Ui.store.set('stripHeight', parseInt(strip.style.getPropertyValue('--strip-height'), 10) || ''),

@@ -1,15 +1,17 @@
-/* The LangSlice window's tokens. A quiet dark tool that stays open for hours: one
-   sans-serif face for words (the system's UI face), the monospace face (JetBrains Mono,
-   the logo's) kept for what is literal: file and section names, tool names, paths,
-   commands and numbers in code. Slate grounds with panels a step lighter, black only
-   behind pictures; 1 px edges and small rounded corners; no glow, gradients or shadows;
-   no all-caps labels. Colours each keep one job:
-     off-white  names (headings, bold text, the chosen tab)
-     lavender   the one accent: what can be followed or clicked, the chosen tab's rule
-     violet     literal text (paths, commands, tool names)
-     pink       problems and keyboard focus only
-   The four focus colours are the ABBA viewer's: they tie a focus panel to its handle in the
-   positioning strip. Every other file uses these names only. */
+/* The LangSlice window's tokens. A calm dark room around the pictures: the sections are
+   greyscale on black, so the window is neutral graphite and keeps colour for meaning.
+   Three faces, each with one job:
+     sans    the window's own words (labels, buttons, tables)
+     serif   the agent's own words (the narration and the journal)
+     mono    literal text only (paths, commands, tool inputs)
+   Grounds a step apart, black only behind pictures; 1 px edges, small rounded corners;
+   no glow, gradients or shadows; no all-caps labels. Colours:
+     off-white  names and the agent's latest words
+     lavender   the one accent: what is happening now, what can be followed or clicked
+     violet     literal text (paths, commands), a quiet grey-violet
+     pink       problems only
+     green      Submitted
+   Every other file uses these names only. */
 
 @font-face {
   font-family: "JetBrains Mono";
@@ -37,27 +39,27 @@
   color-scheme: dark;
 
   /* Grounds. */
-  --ground: #0e1015;       /* the page */
-  --panel: #14171e;        /* a panel, a card, a control, a bar a step above the page */
+  --ground: #121213;       /* the page */
+  --panel: #19191b;        /* a panel, a card, a control, a bar a step above the page */
   --picture: #000000;      /* behind a picture only */
-  --wash: #1a1e27;         /* a hovered row or button, only */
-  --selected: #222735;     /* a chosen row, a pressed button, the on side of a switch */
+  --wash: #222225;         /* a hovered row or button, only */
+  --selected: #2a2a2e;     /* a chosen row, a pressed button, the on side of a switch */
 
   /* Lines. */
-  --line: #252a35;         /* 1 px edges of panels, inputs, tables */
-  --tract: #3a4050;        /* stronger rules, scrollbars, dashed leaders, tree lines */
+  --line: #29292d;         /* 1 px edges of panels, inputs, tables */
+  --tract: #45454b;        /* stronger rules, scrollbars, dashed leaders, tree lines */
 
   /* Text. */
-  --name: #eef0f5;         /* names and headings */
-  --text: #c8ccd6;         /* body text, 11:1 on the page */
-  --muted: #8a909e;        /* captions, the window's own furniture, 5.8:1 */
-  --faint: #5b6170;        /* greyed choices, placeholders */
+  --name: #f2f0eb;         /* names and headings */
+  --text: #c6c4be;         /* body text, 11:1 on the page */
+  --muted: #8f8d87;        /* captions, the window's own furniture, 5.8:1 */
+  --faint: #5f5e5a;        /* greyed choices, placeholders */
 
   /* The logo's colours. */
-  --lavender: #8fa0f5;
-  --violet: #b3a1ee;
-  --pink: #f06b8b;
-  --green: #5fc999;
+  --lavender: #a4addf;
+  --violet: #b4aec9;
+  --pink: #d97c8e;
+  --green: #86bfa0;
 
   /* Status words. */
   --running: var(--lavender);
@@ -65,17 +67,14 @@
   --submitted: var(--green);
   --failed: var(--pink);
 
-  /* The ABBA viewer's focus colours, panel 1 to 4. */
-  --focus-1: #6ddeb7;
-  --focus-2: #76b5ff;
-  --focus-3: #f9c76b;
-  --focus-4: #cf9cf4;
-  /* A section the agent is not working on, in the positioning strip. */
-  --idle-handle: rgba(249, 215, 107, 0.42);
+  /* The sections in focus, in the strip and on their panels: the accent. The others. */
+  --focus: var(--lavender);
+  --idle-handle: var(--tract);
 
-  /* Type: a sans-serif face for words, the monospace face for literal text. */
+  /* Type: sans for the window, serif for the agent's words, monospace for literal text. */
   --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "SF Pro Text", "Helvetica Neue",
     Roboto, Arial, sans-serif;
+  --serif: "Sitka Text", "Iowan Old Style", Charter, "Bitstream Charter", Cambria, Georgia, serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas,
     "DejaVu Sans Mono", monospace;
   --size-xs: 11px;
@@ -83,6 +82,7 @@
   --size-md: 13.5px;        /* the window's body text */
   --size-lg: 15px;
   --size-xl: 17px;
+  --size-voice: 21px;       /* the agent's latest words, in the narration */
   --weight-strong: 600;
   --leading: 1.5;
   --leading-prose: 1.6;

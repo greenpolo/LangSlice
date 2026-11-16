@@ -477,6 +477,7 @@ class JobWatcher:
             "kind": "picture", "number": number, "path": _view_folder(path),
             "tool": str(record.get("tool") or ""),
             "label": str(record.get("tool") or "picture"),
+            "title": tool_title(str(record.get("tool") or "")),
             "call": record.get("call"), "sections": [str(s) for s in
                                                      record.get("sections") or []],
             "mode": record.get("mode"), "caption": _short(caption, 4000),
