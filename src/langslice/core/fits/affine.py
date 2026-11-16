@@ -242,7 +242,6 @@ def elastix_affine(
     start = [float(v) for v in start_params]
     grid = deformation.fit_grid(state, ctx, record, params=start)
     image, look = deformation.section_image(ctx, state, grid, section_image)
-    width, height = grid.image.size
     prepared = prepare_fit(
         image, ctx.atlas, grid.placement,
         elastix_settings(include, exclude, atlas_image, ctx.brain_scale, edges),
@@ -255,11 +254,10 @@ def elastix_affine(
     mm = grid.placement.section_mm_per_px
     to_mm = np.diag([mm, mm, 1.0])
     step = np.linalg.inv(to_mm) @ result.matrix_mm @ to_mm
-    # The stored matrix M draws the section onto the atlas's frame; a section
-    # point p now meets the atlas where p's step lands, so the new matrix is
-    # M @ step and the atlas reaches the section through inv(step).
-    matrix = np.vstack([denormalized_affine(start, (width, height)), [0.0, 0.0, 1.0]]) @ step
-    params = normalized_affine(matrix[:2], (width, height))
+    # A grid point p now meets the atlas where p's step lands: the atlas
+    # reaches the grid through inv(step), and the six numbers are that
+    # placement on the working frame they are stored against.
+    params = grid.params_after(start, step)
     fitted = replace(grid.placement,
                      atlas_to_section=np.linalg.inv(step) @ grid.placement.atlas_to_section)
     footprint = float((prepared.native != 0).sum())

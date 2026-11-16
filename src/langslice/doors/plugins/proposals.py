@@ -12,10 +12,11 @@ import copy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from langslice.core.geometry.affine import IDENTITY_PARAMS
 from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode, Refused
@@ -30,6 +31,7 @@ from langslice.doors.plugins.frames import ContextFrames
 from langslice.doors.plugins.reads import as_tool_error
 
 if TYPE_CHECKING:
+    from langslice.core.fits.deformation import Grid
     from langslice.tools.warps import MappedWarp
 
 
@@ -99,23 +101,14 @@ class ContextProposals(ContextFrames):
         placement exactly as an Elastix fit is, in the six normalized numbers
         and the knobs about the section's stored pivot (else the canvas
         centre). ``ToolError`` ``BAD_MATRIX`` for a degenerate map."""
-        from langslice.core.geometry.affine import (
-            IDENTITY_PARAMS,
-            denormalized_affine,
-            normalized_affine,
-        )
-
         record = self._record(section)
         grid = self._grid(record)
-        width, height = grid.image.size
         m = np.vstack([np.asarray(matrix, dtype=np.float64).reshape(2, 3), [0.0, 0.0, 1.0]])
         if not np.isfinite(m).all() or abs(np.linalg.det(m[:2, :2])) < 1e-9:
             raise ToolError(RefusalCode.BAD_MATRIX,
                             "the map is degenerate or not finite")
-        start = np.vstack([denormalized_affine(list(IDENTITY_PARAMS), (width, height)),
-                           [0.0, 0.0, 1.0]])
         step = np.asarray(grid.placement.atlas_to_section, dtype=np.float64) @ m
-        params = normalized_affine((start @ step)[:2], (width, height))
+        params = cast("Grid", grid).params_after(IDENTITY_PARAMS, step)
         return self.transform_from_params(record.id, params, note=note)
 
     def transform_from_params(self, section: object, params: Sequence[float], *,
