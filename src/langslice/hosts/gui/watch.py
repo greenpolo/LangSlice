@@ -3,8 +3,7 @@
 The GUI is a separate process from every run (the agent run, an MCP server, the
 agent CLI's calls, a SliceBench subprocess), so it learns everything from the
 job folder. :class:`JobWatcher` tails the append-only files by byte offset
-(``logs/events.jsonl``, ``views.jsonl``; the newest ``trace/*.jsonl``, else
-Claude Code's transcript of the run, :mod:`.transcripts`),
+(``logs/events.jsonl``, ``views.jsonl`` and the newest ``trace/*.jsonl``),
 keeping an unterminated last line for the next round, and rereads the files
 that are replaced whole (``state.json``, ``history/undo.json``, ``job.json``,
 ``exports/spend.json``) when their size or modification time changes.
