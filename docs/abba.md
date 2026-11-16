@@ -49,6 +49,15 @@ Choosing **Register ‣ LangSlice…** again continues the same job. Don't edit
 sections in ABBA while the agent works on them: ABBA then refuses the agent's
 later changes to those sections, and Fiji's Log window names them.
 
+## Open a LangSlice registration in ABBA
+
+A registration made in LangSlice without ABBA opens in ABBA as a project of
+its own: in the LangSlice window choose **Export ‣ ABBA project (.abba)**,
+then in ABBA (Allen Brain Adult Mouse Brain CCF 2017, coronal) choose
+**File ‣ Load State** and pick `<images>/langslice/exports/<images>.abba`.
+Each section opens from its own image file with its alignment and warp; edit
+a warp with **Edit last registration**.
+
 ## Limits
 
 - One cutting angle for the whole stack, as in ABBA.

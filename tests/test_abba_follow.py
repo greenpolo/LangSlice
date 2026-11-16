@@ -24,6 +24,10 @@ from PIL import Image
 
 import langslice
 from langslice.core.stack.codec import deformation_to_json
+from langslice.core.worker_threads import (
+    THREAD_VARIABLES,
+    started_with_threads,
+)
 from langslice.doors.abba.checkpoints import (
     ABBA_MIXED_ANGLES,
     WARP_CACHE_DIR,
@@ -36,10 +40,6 @@ from langslice.doors.abba.checkpoints import (
 from langslice.doors.abba.contract import AbbaFollowRequest, AbbaPrepareRequest
 from langslice.doors.abba.follow import follow
 from langslice.doors.abba.prepare import prepare_job
-from langslice.doors.abba.warp_workers import (
-    THREAD_VARIABLES,
-    started_with_threads,
-)
 from langslice.hosts.service import run_stdio
 from tests.fakes import SlabAtlas
 

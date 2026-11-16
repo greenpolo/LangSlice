@@ -14,6 +14,8 @@
   <script src="viewer-strip.js" defer></script>
   <script src="viewer.js" defer></script>
   <script src="viewer-log.js" defer></script>
+  <link rel="stylesheet" href="export.css">
+  <script src="export.js" defer></script>
 </head>
 <body>
   <header class="bar">
@@ -30,6 +32,9 @@
         </button>
         <div id="picker-list" class="picker-list" role="listbox" tabindex="-1" aria-label="Jobs" hidden></div>
       </div>
+      <!-- Export menu: filled by export.js (hosts/gui/export.py) -->
+      <div id="export" class="export off"></div>
+      <!-- end Export menu -->
       <button data-tab="settings" class="settings-tab">Settings</button>
     </div>
   </header>

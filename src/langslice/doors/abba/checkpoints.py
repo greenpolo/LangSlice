@@ -32,13 +32,12 @@ from langslice.core.maps import section_maps, tps_landmarks
 from langslice.core.maps.section_maps import section_frame, stored_params
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.stack.rows import ANGLES_KEY
+from langslice.core.worker_threads import started_with_threads, thread_share
 from langslice.doors.abba.warp_workers import (
     MAX_CONVERSIONS,
     ConvertedWarp,
     WarpInput,
     convert_warp,
-    started_with_threads,
-    thread_share,
 )
 from langslice.job.state_file import serialized_mixed_angles, stack_to_json
 
