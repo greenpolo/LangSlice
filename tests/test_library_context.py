@@ -390,3 +390,56 @@ def test_a_scripts_layer_is_drawn_by_look_on_a_job_without_plugins(images: Path)
         assert drawn["name"] == "cells" and drawn["drawn"] is True and drawn["tool"] == "script"
         job.undo()
         assert not job.state.by_id(ID0).layers
+
+
+# --- the fit grid and the maps are one frame ------------------------------------------------
+
+#: A placement that turns, scales and shifts the section: no sub-pixel slip
+#: between the fit grid and the frame the six numbers are stored on hides in it.
+TURNED = [0.97, 0.06, 0.031, -0.05, 1.04, -0.022]
+
+
+def test_the_fit_grid_places_the_section_where_the_maps_do(images: Path):
+    """A section large enough that its fit grid is not its working frame:
+    ``fit_frame``'s placement, the maps and ``registration.json`` are one
+    frame: the fit grid (``FIT_LONG_EDGE``) is a resize of the working frame
+    (``PREVIEW_LONG_EDGE``) the six numbers are normalized against, carried by
+    its pixel centres, so a deformation that is the placement itself moves no
+    point, and a fit-grid map of the placement writes back the stored numbers."""
+    from PIL import Image
+
+    import langslice
+
+    with Image.open(images / ID0) as small:  # the same tissue at 6.3 times the pixels
+        factor = 1714 / small.width
+        small.resize((1714, round(small.height * factor)),
+                     Image.Resampling.BILINEAR).save(images / ID0)
+    with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
+                              pixel_size_um=PIXEL_SIZE_UM / factor, preprocess="none",
+                              tasks=["transform", "nonlinear"]) as job:
+        c = job.context
+        c.set_transforms([c.transform_from_params(ID0, TURNED).row()])
+        frame = c.fit_frame(ID0, atlas=("annotation",))
+        height, width = frame.image.shape[:2]
+        assert job.section_maps(ID0).coords.shape[:2] != (height, width)
+        placed = np.asarray(frame.placed_atlas_to_section)
+        to_um = np.asarray(frame.plane["native_to_um"])
+        grid = np.array([[0.31 * width, 0.27 * height], [0.5 * width, 0.5 * height],
+                         [0.72 * width, 0.66 * height], [0.4 * width, 0.8 * height]])
+        native = np.linalg.solve(placed, np.column_stack([grid, np.ones(len(grid))]).T)
+        np.testing.assert_allclose(c.to_atlas_um(ID0, grid, frame="fit"),
+                                   (to_um @ native).T, atol=1e-6)
+
+        rng = np.random.default_rng(0)
+        size = job.section_maps(ID0, full_resolution=True).coords.shape
+        xy = np.column_stack([rng.uniform(0.3, 0.7, 50) * size[1],
+                              rng.uniform(0.3, 0.7, 50) * size[0]])
+        before = c.to_atlas_um(ID0, xy)
+        yy, xx = np.indices((height, width), dtype=np.float64)
+        identity = np.linalg.solve(placed, np.stack([xx.ravel(), yy.ravel(),
+                                                     np.ones(xx.size)]))
+        c.set_deformations([{"id": ID0, "map": identity[:2].T.reshape(height, width, 2)}])
+        np.testing.assert_allclose(c.to_atlas_um(ID0, xy), before, atol=1e-3)
+
+        back = c.transform_from_matrix(ID0, np.linalg.inv(placed)[:2])
+        np.testing.assert_allclose(back.params, TURNED, atol=1e-9)

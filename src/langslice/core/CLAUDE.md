@@ -596,8 +596,14 @@ the angles in a caption (empty for the flat plane).
   `preprocessed` image, metadata `section_image` naming a remade one, and the
   3x3 from native atlas-plane pixel centres onto it, calibration checked,
   `LinearRegistrationInput`; the trace's canvas and every deformable fit's
-  grid; its matrix is `linear_placement_matrix`, the one path from the six
-  stored numbers to the atlas, which `core.maps.section_maps` uses too),
+  grid; its matrix is `linear_placement_matrix` on the `PREVIEW_LONG_EDGE`
+  working frame, the one path from the six stored numbers to the atlas,
+  which `core.maps.section_maps` uses too, carried onto a render of another
+  size by `pixel_center_map`, metadata `working_size` and
+  `working_to_image`, so the fit grid and the maps are one frame),
+  `params_after_grid_step` (the six numbers of a placement found on such a
+  render, normalized on the working frame through the same map: Elastix's
+  and `transform_from_matrix`'s way back),
   `correction_fingerprint` (everything an image correction's inputs
   depend on; the trace's call key and a traced fit's staleness test
   read it) and `digest`. A section without a written

@@ -493,7 +493,11 @@ atlas pixels** are `[x, y]` pixels of the atlas plane at the section's
 position and cutting angles (`fit_frame(id).atlas`, `plane` says where it lies
 in atlas micrometres). `atlas_to_section` and `placed_atlas_to_section` map
 native atlas pixels to fit-grid pixels; `transform_from_matrix` and
-`deformation_from_map` take maps the other way.
+`deformation_from_map` take maps the other way. The fit grid is a resize of
+the 512-pixel working frame the stored transform is normalized against,
+pixel centre onto pixel centre, so `placed_atlas_to_section` with
+`plane["native_to_um"]` gives exactly the atlas micrometres `to_atlas_um`,
+the maps and `registration.json` give.
 
 `look` takes `layers=[names]` (or `["all"]`) for modes `section` and `overlay`
 on every job (a script leaves layers too, under `plugins/script/`). Points and lines are drawn with a dark halo, label

@@ -23,7 +23,11 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from PIL import Image
 
-from langslice.core.geometry.affine import denormalized_affine
+from langslice.core.geometry.affine import (
+    denormalized_affine,
+    normalized_affine,
+    pixel_center_map,
+)
 from langslice.core.pictures.canvas import CanvasGeometry, canvas_geometry
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.images import PREPROCESSED, entry_of, is_opening
@@ -48,6 +52,9 @@ class LinearRegistrationInput:
     Pass ``atlas_to_slice`` as nonlinear's ``initial_atlas_to_slice``. The image
     already includes the section's orientation and display preprocessing; use
     native atlas image axes and no additional atlas mirror for this handoff.
+    ``working_size`` is the working frame the six numbers are normalized
+    against and ``working_to_image`` (3x3 on ``[x, y, 1]``) its pixel centres
+    on the image's; None when the image is that frame.
     """
 
     image: Image.Image
@@ -58,6 +65,8 @@ class LinearRegistrationInput:
     pitch_deg: float
     yaw_deg: float
     metadata: dict[str, Any]
+    working_size: tuple[int, int] | None = None
+    working_to_image: np.ndarray | None = None
 
 
 def linear_placement_matrix(
@@ -95,6 +104,48 @@ def linear_placement_matrix(
     if not np.isfinite(atlas_to_slice).all():
         raise ValueError("Atlas placement produced non-finite coordinates")
     return atlas_to_slice, geometry
+
+
+def params_after_grid_step(
+    start_params: Sequence[float],
+    working_size: Sequence[int],
+    working_to_image: np.ndarray,
+    step: np.ndarray,
+) -> list[float]:
+    """Store a placement found on a resized render as six numbers.
+
+    A fit on a render that :func:`prepare_linear_registration` made at
+    another size answers with *step*; the numbers are normalized against
+    the working frame, as stored transforms are, through the pixel-centre
+    map the render was placed by, so the new placement is drawn exactly
+    where the fit found it at every size.
+
+    Parameters
+    ----------
+    start_params : Sequence[float]
+        The six numbers the render was placed by.
+    working_size : Sequence[int]
+        The working frame's ``(width, height)``, the metadata's
+        ``working_size``.
+    working_to_image : numpy.ndarray
+        3x3 on ``[x, y, 1]``, working-frame pixel centres onto the
+        render's, the metadata's ``working_to_image``.
+    step : numpy.ndarray
+        3x3 on the render's ``[x, y, 1]``: a render pixel to where it met
+        the atlas under the start, so the new ``atlas_to_slice`` is
+        ``inv(step) @`` the start's.
+
+    Returns
+    -------
+    list[float]
+        The new placement's six normalized numbers.
+    """
+    size = (int(working_size[0]), int(working_size[1]))
+    to_image = np.asarray(working_to_image, dtype=np.float64)
+    start = np.vstack(
+        [denormalized_affine(list(start_params), size), [0.0, 0.0, 1.0]])
+    on_working = np.linalg.inv(to_image) @ np.asarray(step, np.float64)
+    return normalized_affine((start @ on_working @ to_image)[:2], size)
 
 
 def prepare_linear_registration(
@@ -166,22 +217,30 @@ def prepare_linear_registration(
     with Image.open(ctx.image_path(section.id)) as source_image:
         original_size = list(source_image.size)
 
-    um_per_px, source = canvas_um_per_px(ctx, section, long_edge=long_edge)
-    if um_per_px is None:
+    working = (image if long_edge == PREVIEW_LONG_EDGE
+               else render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE))
+    um_work, source = canvas_um_per_px(ctx, section, long_edge=PREVIEW_LONG_EDGE)
+    if um_work is None:
         from langslice.core.fits.affine import calibrate
 
-        working = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
-        preview_um_per_px, source = calibrate(state, ctx, section, working)
-        preview_key = render_cache_key(ctx, section, long_edge=PREVIEW_LONG_EDGE)
-        target_key = render_cache_key(ctx, section, long_edge=long_edge)
-        um_per_px = preview_um_per_px * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
-    if not np.isfinite(um_per_px) or um_per_px <= 0:
+        um_work, source = calibrate(state, ctx, section, working)
+    if not np.isfinite(um_work) or um_work <= 0:
         raise ValueError("Section calibration must be finite and positive")
+    preview_key = render_cache_key(ctx, section, long_edge=PREVIEW_LONG_EDGE)
+    target_key = render_cache_key(ctx, section, long_edge=long_edge)
+    um_per_px = um_work * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
 
+    # The six numbers are normalized against the working frame
+    # (PREVIEW_LONG_EDGE), where every picture, registration.json and the
+    # maps place the section; the placement is made there and carried to
+    # this render by its pixel centres, so a render of another size is
+    # placed exactly where they place it.
     plane = cast(Plane, state.plane)
-    atlas_to_slice, geometry = linear_placement_matrix(
-        image.size, um_per_px, ctx.atlas, float(section.position_mm), plane,
+    atlas_to_working, geometry = linear_placement_matrix(
+        working.size, um_work, ctx.atlas, float(section.position_mm), plane,
         section.pitch_deg, section.yaw_deg, six)
+    working_to_image = pixel_center_map(working.size, image.size)
+    atlas_to_slice = working_to_image @ atlas_to_working
     return LinearRegistrationInput(
         image=image.copy(), atlas_to_slice=atlas_to_slice, atlas_name=state.atlas,
         position_mm=float(section.position_mm), plane=plane,
@@ -198,9 +257,13 @@ def prepare_linear_registration(
             "section_um_per_px": float(um_per_px), "calibration_source": source,
             "linear_params": six.tolist(),
             "atlas_to_slice": atlas_to_slice.tolist(),
+            "working_size": list(working.size),
+            "working_to_image": working_to_image.tolist(),
             "atlas_grid_size": list(geometry.annotation.shape[::-1]),
             "image_axes": "native", "atlas_mirror_lr": False,
         },
+        working_size=(int(working.size[0]), int(working.size[1])),
+        working_to_image=working_to_image,
     )
 
 

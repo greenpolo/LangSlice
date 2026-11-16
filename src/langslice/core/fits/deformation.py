@@ -68,7 +68,7 @@ from langslice.core.fits.deformable.settings import (
     neighbourhood_um_for,
 )
 from langslice.core.fits.flags import SECTION_FLAGS, FitFlag
-from langslice.core.fits.frame import digest
+from langslice.core.fits.frame import digest, params_after_grid_step
 from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
@@ -160,12 +160,46 @@ class FitStart(StrEnum):
 
 @dataclass
 class Grid:
-    """One section's fit grid: its linear placement and the default image."""
+    """One section's fit grid: its linear placement and the default image.
+
+    ``working_size`` and ``working_to_image`` say how the grid resizes the
+    working frame the six stored numbers are normalized against
+    (:class:`langslice.core.fits.frame.LinearRegistrationInput`); None when
+    the grid is that frame.
+    """
 
     record: Section
     placement: Placement
     handoff: dict[str, Any]
     image: Image.Image
+    working_size: tuple[int, int] | None = None
+    working_to_image: np.ndarray | None = None
+
+    def params_after(
+        self, start_params: Sequence[float], step: np.ndarray,
+    ) -> list[float]:
+        """Store the grid placement *step* finds from *start_params*.
+
+        Parameters
+        ----------
+        start_params : Sequence[float]
+            The six numbers the grid was placed by.
+        step : numpy.ndarray
+            3x3 on the grid's ``[x, y, 1]``: a grid pixel to where it met
+            the atlas under the start.
+
+        Returns
+        -------
+        list[float]
+            The six normalized numbers of the placement ``inv(step) @``
+            the grid's, by
+            :func:`~langslice.core.fits.frame.params_after_grid_step`.
+        """
+        width, height = self.image.size
+        size = self.working_size or (int(width), int(height))
+        to_image = (np.eye(3) if self.working_to_image is None
+                    else self.working_to_image)
+        return params_after_grid_step(start_params, size, to_image, step)
 
 
 def fit_grid(
@@ -182,7 +216,9 @@ def fit_grid(
     prepared = prepare_linear_registration(state, ctx, section.id, long_edge=FIT_LONG_EDGE,
                                            params=params)
     return Grid(record=section, placement=placement_from_handoff(prepared),
-                handoff=dict(prepared.metadata), image=prepared.image)
+                handoff=dict(prepared.metadata), image=prepared.image,
+                working_size=prepared.working_size,
+                working_to_image=prepared.working_to_image)
 
 
 def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
