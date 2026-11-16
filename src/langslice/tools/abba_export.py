@@ -8,7 +8,8 @@ its Allen CCFv3 atlas with the job's own image files. Each placed section is
 a slice at its position and the stack's cutting angles, with LangSlice's
 in-plane placement as ABBA's affine registration and an applied deformation
 as a BigWarp landmark registration on top (``core/maps/abba.py``'s
-``world_landmarks``, in worker processes: each takes 10 to 80 s), so the
+``world_landmarks``, in worker processes, one per core: each takes
+10 to 20 s), so the
 project reopens and edits in ABBA without LangSlice. Beside it,
 ``exports/abba_export.json`` records what was written, the sections left
 out and why, and each warp's distance from the deformation.
@@ -27,6 +28,7 @@ from __future__ import annotations
 import copy
 import logging
 import multiprocessing
+import os
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
 from contextlib import ExitStack
@@ -66,9 +68,10 @@ logger = logging.getLogger(__name__)
 
 #: The record of what the export holds, beside the project file.
 EXPORT_RECORD = "abba_export.json"
-#: Processes placing the deformations' landmark pairs side by side, each
-#: with its share of the machine's threads.
-WARP_PROCESSES = 6
+#: Processes placing the deformations' landmark pairs side by side, at most
+#: one per core and one thread each: most of the work is numpy's element-wise
+#: kernels, which use one thread, so a process per core keeps every core busy.
+MAX_WARP_PROCESSES = 32
 #: Micrometres per millimetre.
 UM_PER_MM = 1000.0
 #: What the record tells a person about opening the file.
@@ -269,11 +272,12 @@ def _with_warps(prepared: list[_Section]) -> _Warped:
     futures: dict[str, Future[WarpLandmarks]] = {}
     with ExitStack() as stack:
         if warped:
-            share = thread_share(WARP_PROCESSES)
-            stack.enter_context(started_with_threads(share))
+            cores = os.cpu_count() or 1
+            workers = max(1, min(MAX_WARP_PROCESSES, cores, len(warped)))
+            stack.enter_context(started_with_threads(thread_share(cores)))
             context = multiprocessing.get_context("spawn")
             pool = stack.enter_context(
-                ProcessPoolExecutor(WARP_PROCESSES, mp_context=context)
+                ProcessPoolExecutor(workers, mp_context=context)
             )
             for entry, record in warped:
                 futures[entry.section.id] = pool.submit(

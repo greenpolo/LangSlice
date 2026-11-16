@@ -166,8 +166,9 @@ another program, under the job's `exports/` folder:
   Each section opens from its own image file at its position and the stack's
   cutting angles, with its in-plane placement as an affine registration and
   its warp, when it has one, as a BigWarp landmark registration you can edit
-  with **Edit last registration**. A warp takes up to a minute per section to
-  convert; several convert at once. `exports/abba_export.json` lists the
+  with **Edit last registration**. Each warp takes 10 to 20 s to convert,
+  one per processor core at once (about 1.5 minutes for 42 warps on a
+  24-core computer). `exports/abba_export.json` lists the
   sections left out and why, and how far each warp's landmarks are from
   LangSlice's deformation.
 - **QuickNII (.json)** and **VisuAlign (.json)**: `exports/quicknii.json`

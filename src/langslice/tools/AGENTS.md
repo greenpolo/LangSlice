@@ -359,7 +359,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `abba_export.json`, from the stack as it stands. Each placed section's
   placement in ABBA's world (`core.maps.abba_world.abba_placement`), its
   file and channels, and its applied deformation as warp landmarks
-  (`core.maps.abba.world_landmarks`, in `WARP_PROCESSES` spawned processes,
+  (`core.maps.abba.world_landmarks`, in spawned processes, one per core
+  (at most `MAX_WARP_PROCESSES`), one thread each,
   `core.worker_threads`; a script calling it needs a `__main__` guard).
   `BAD_ARGS` for mixed cutting angles, an atlas other than the Allen CCFv3 or
   a plane other than coronal; `NOTHING_EXPORTED` when nothing could be

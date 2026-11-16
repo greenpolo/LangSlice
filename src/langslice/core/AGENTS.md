@@ -88,7 +88,10 @@ workspace carries. Every module's imports are core-only:
   snapshot grid; then pairs added greedily where the estimated atlas-side
   error is largest, until the budget or 5 um; a round's pairs that fold
   the spline are dropped near the fold, the fold check refined where the
-  deformation stretches the section); its `accuracy` measured over the
+  deformation stretches the section and, per round, made only near the new
+  pairs and where the last whole check found the spline near a fold, the
+  whole grid checked at the end, going back to the newest round that does
+  not fold there); its `accuracy` measured over the
   overlap at held-out probes on both sides (atlas side by Newton's inverse,
   as ABBA draws the section: median, p95, p99, max); a start that folds
   falls back to the largest even 33x33..9x9 snapshot grid that does not,
