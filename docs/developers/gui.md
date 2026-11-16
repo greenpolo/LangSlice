@@ -172,6 +172,10 @@ another program, under the job's `exports/` folder:
   `exports/abba_export.json` lists the sections left out and why, the
   landmark count, and how far each warp's landmarks are from LangSlice's
   deformation; the finished note gives the median.
+- **ABBA project, editable (.abba)**: the same project with each warp as
+  100 landmarks, which you can move in BigWarp (ABBA's own splines hold
+  about 30 points: a grid of 6 to 14 control points across, those on the
+  tissue), about 45 µm from LangSlice's warp at the median.
 - **ABBA project, linear only (.abba)**: the same project without the warp
   steps, for placing your own control points in ABBA. A warp cannot be
   written in so few: on 331CTX the warps move tissue about 95 µm at the

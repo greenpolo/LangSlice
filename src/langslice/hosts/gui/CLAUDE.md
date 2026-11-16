@@ -203,7 +203,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   checks (`server.GuiServer.post`). `static/export.js` / `export.css` (one
   delimited block in `index.html`, `app.js` naming the shown job with
   `Exporter.setJob`): the top bar's Export button, its menu (ABBA, warps
-  of 1089 landmarks; ABBA linear only; QuickNII; VisuAlign; a row for an
+  of 1089 landmarks; ABBA editable, 100; ABBA linear only; QuickNII; VisuAlign; a row for an
   ABBA project with a count of the person's own, 100 to 1089), and a note that
   says the export is running, then its path with Open folder and Copy path,
   or why it failed.
