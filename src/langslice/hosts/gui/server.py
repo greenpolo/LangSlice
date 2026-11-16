@@ -203,7 +203,7 @@ class GuiServer:
                 kind = STATIC_TYPES[name.rsplit(".", 1)[1]]
                 return (STATIC / name).read_bytes(), kind
             if resource == "jobs":
-                return self._json({"jobs": self.jobs.listing()})
+                return self._json({"jobs": self.jobs.listing(), "home": str(Path.home())})
             if resource == "generator":  # prompt generator
                 return self._generator(query)
             if resource == "settings":  # the Settings tab (hosts/gui/settings.py)

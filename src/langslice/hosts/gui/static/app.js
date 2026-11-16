@@ -197,7 +197,13 @@ const Ui = (() => {
 
   // --- the job picker -------------------------------------------------------------------
   const changedOf = job => Number(job?.changed_at) || 0;
-  const pathOf = job => String(job?.path ?? job?.folder ?? '');
+  // A job's path as the window shows it: the home folder, which names the computer's
+  // user, is written `~`.
+  let home = '';
+  const pathOf = job => {
+    const path = String(job?.path ?? job?.folder ?? '');
+    return home && path.toLowerCase().startsWith(home.toLowerCase()) ? '~' + path.slice(home.length) : path;
+  };
   let active = null;  // the option the keyboard is on
   function renderPicker() {
     const job = jobs?.find(j => j.index === current);
@@ -299,7 +305,9 @@ const Ui = (() => {
     try {
       const r = await fetch('jobs', { cache: 'no-store' });
       if (r.ok) {
-        jobs = (await r.json()).jobs || [];
+        const answer = await r.json();
+        jobs = answer.jobs || [];
+        home = String(answer.home || '');
         pickJob();
         renderPicker();
         const none = !jobs.length;
