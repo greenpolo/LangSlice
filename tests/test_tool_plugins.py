@@ -1171,10 +1171,10 @@ def test_job_json_carries_the_plugins_provenance_and_a_changed_file_is_a_new_dig
 
     first = make("evolving", HELLO)
     spec = JobSpec(image_folder=str(images), plugins=[first])
-    digest = next(iter(core_plugins.of_spec(spec)[0].provenance["sources"].values()))
+    digest = next(iter(core_plugins.added(spec)[0].provenance["sources"].values()))
     core_plugins.forget(first)
     make("evolving", HELLO + "\n# changed\n")
-    changed = next(iter(core_plugins.of_spec(spec)[0].provenance["sources"].values()))
+    changed = next(iter(core_plugins.added(spec)[0].provenance["sources"].values()))
     assert digest != changed
 
 

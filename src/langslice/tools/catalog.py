@@ -21,11 +21,13 @@ order, each one declared by :mod:`langslice.tools.descriptions.render`), the
 agent CLI (``langslice-job ops``, ``langslice-job schema``, ``langslice-job
 FOLDER VERB``), the library's job methods and the job folder's reference card.
 
-A job that loads tool plugins (``JobSpec.plugins``,
-``docs/developers/plugins.md``) has their tools after these: :func:`verbs_for` is the
-per-spec view (:data:`VERBS` plus one :class:`Verb` per plugin tool, whose
-function is the plugin's handler), and :func:`enabled` reads it. :data:`VERBS`
-stays the native table.
+The in-tree engines' tools (``ToolDef.engine``: DeepSlice, Brainways,
+STalign, SPOmiAlign, emlddmm) are rows of the tool table whose declaration
+and handler live above this layer; they are bound when a run is built:
+:func:`verbs_for` is the per-spec view (:data:`VERBS`, then one
+:class:`Verb` per engine tool of the run and per tool the job's ``plugins``
+add, ``docs/developers/plugins.md``, whose function is its handler).
+:data:`VERBS` holds the tools whose operation is here.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from langslice.job.settings.tool_table import (
     Kind,
     ToolDef,
     positions_on,
+    tools_for,
 )
 from langslice.tools import (
     affine_fit,
@@ -147,23 +150,24 @@ _LIMITS: dict[str, dict[str, int]] = {
     "fireants_syn": {"sections": deformable.MAX_FIREANTS_SYN_SECTIONS},
 }
 
-if set(_FUNCTIONS) != set(TOOLS):
+_OWN = {name for name, tool in TOOLS.items() if not tool.engine}
+if set(_FUNCTIONS) != _OWN:
     raise RuntimeError("the registry and the tool table name different "
-                       f"tools: {sorted(set(_FUNCTIONS) ^ set(TOOLS))}")
+                       f"tools: {sorted(set(_FUNCTIONS) ^ _OWN)}")
 
-#: Every verb, in the order every door lists them.
+#: Every verb whose operation is in this package, in the order every door
+#: lists them; the engines' follow (:func:`verbs_for`).
 VERBS: dict[str, Verb] = {
     name: Verb(name, _FUNCTIONS[name], tool.kind, tool.group, tool,
                limits=_LIMITS.get(name, {}))
-    for name, tool in TOOLS.items()
+    for name, tool in TOOLS.items() if not tool.engine
 }
 
 def verbs_for(spec: Any = None) -> dict[str, Verb]:
     """Every verb a job of *spec* can have: :data:`VERBS`, then one verb per
-    tool of the plugins its ``plugins`` name (loaded when not yet). Without
-    plugins, :data:`VERBS` itself."""
-    if not getattr(spec, "plugins", None):
-        return VERBS
+    tool of the in-tree engines the run has a tool of and of the plugins
+    its ``plugins`` name (each loaded when not yet). Without a spec: every
+    engine's."""
     from langslice.job import plugins
 
     return {**VERBS, **{
@@ -182,6 +186,6 @@ def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> 
     *image_model* False: the door cannot reach the spec's image model (MCP
     with none connected), so the verbs that call it (``Verb.image_model``)
     are left out."""
-    return [name for name, verb in verbs_for(spec).items()
-            if verb.tool.is_on(spec) and (scripting or not verb.scripting)
-            and (image_model or not verb.image_model)]
+    return [name for name, tool in tools_for(spec).items()
+            if tool.is_on(spec) and (scripting or not tool.scripting)
+            and (image_model or not tool.image_model)]

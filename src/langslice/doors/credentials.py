@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from langslice import __version__
+from langslice.doors import user_settings
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,34 @@ def image_model_connected(provider: str) -> bool:
     except ValueError:
         keys = {}
     return bool(_api_status(canonical, keys)["configured"])
+
+
+#: The image providers a saved connection can stand for, in the order they
+#: are tried: the ChatGPT sign-in, the OpenAI key, the Gemini key.
+SAVED_IMAGE_PROVIDERS: tuple[str, ...] = (
+    "openai-oauth", "openai-api", "gemini-api")
+
+
+def saved_image_provider() -> str | None:
+    """Name the image provider this computer has a connection for.
+
+    The connection chosen in the LangSlice window's Settings when it has an
+    image model and its sign-in or key is present, else the first of
+    :data:`SAVED_IMAGE_PROVIDERS` that is; an offline presence check
+    (:func:`image_model_connected`).
+
+    Returns
+    -------
+    str or None
+        The provider's name; None when no sign-in or key is saved.
+    """
+    chosen = user_settings.read().get("connection")
+    order = [name for name in (chosen, *SAVED_IMAGE_PROVIDERS)
+             if name in SAVED_IMAGE_PROVIDERS]
+    for provider in dict.fromkeys(order):
+        if image_model_connected(provider):
+            return provider
+    return None
 
 
 def save_api_key(provider: str, api_key: str) -> dict[str, object]:

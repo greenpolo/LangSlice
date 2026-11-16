@@ -1,6 +1,6 @@
 # STalign as LangSlice tools
 
-A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers STalign 2.0
+A LangSlice engine (`docs/developers/plugins.md` in LangSlice) that offers STalign 2.0
 (Clifton et al. 2023, Nat Commun; JEFworks-Lab main 8a84bf1f, GPL-3.0) to the
 registration agent as three tools. Design: Fable's proposal, adopted by Nash on
 2026-10-18.
@@ -26,10 +26,10 @@ plugins, `SECTION_BUSY`, `FitFrame.applied_map`, `plane.native_to_um`,
 ## Use
 
 ```bash
-langslice linear run ... --plugins langslice.engines.stalign.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["langslice.engines.stalign.plugin:tools"])`.
+Its tools are on in every job; `--disabled` switches one off. Its options are the entry of the job's `plugin_config`
+under `langslice.engines.stalign.plugin:tools`.
 Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `device` (`auto`:
 the GPU at float32 when there is one, else the CPU at float64), `threads` (4, STalign's
 `num_threads`). A fit on the GPU takes the machine's GPU queue through the plugin API's

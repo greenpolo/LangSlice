@@ -62,7 +62,7 @@ Pick the agent the user allows:
 | Subagent | Can do | Use when |
 | --- | --- | --- |
 | `register` | the LangSlice MCP tools (`call_mcp_tool` on the plugin's `langslice_mcp` server) and view_file, which opens the pictures Antigravity saves from their replies: no shell, no file writes | default |
-| `register-scripting` | run_command, view_file, write_to_file, replace_file_content and the web: the `langslice-job` command line, scripts with the LangSlice Python library, and packages installed in the job's own environment | the user wants scripting |
+| `register-scripting` | the same MCP tools, plus run_command, write_to_file, replace_file_content and the web for scripts of its own with the LangSlice Python library (a starting transform it computes, an image it cleans, a method no tool has), and packages installed in the job's own environment | the user wants scripting |
 
 Use `invoke_subagent` with `TypeName` set to that agent's name and
 `Workspace` set to `inherit`. Make its prompt with `langslice-job FOLDER launch --role register` (or `--role
@@ -70,7 +70,9 @@ register-scripting` for `register-scripting`) and pass `result.prompt` as the
 prompt, unchanged: nothing added, shortened or summarised. The user's notes
 belong in `init --notes` (the prompt holds them). Run `launch` again for each
 launch: it reflects the job as it stands. Do not give the subagent any other
-task. Run one subagent per job at a time.
+task. Run one subagent per job at a time. `langslice-job` is yours, not the
+subagent's: it sets the job up and checks it (`init`, `launch`, `status`,
+`export_maps`) and runs no registration tool.
 
 The model is the user's choice: the agents inherit this session's. Without a
 chat, either agent runs headless, started in the job folder:

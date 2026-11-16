@@ -146,7 +146,7 @@ include = ["langslice*"]
 [tool.setuptools.package-data]
 langslice = [
     "core/atlas/*.json", "hosts/gui/static/*", "engines/brainways/LICENSE",
-    "engines/deepslice/LICENSE",
+    "engines/deepslice/LICENSE", "skills/*/SKILL.md", "skills/*/examples/*",
 ]
 langslice_vendor = ["emlddmm/LICENSE", "emlddmm/NOTICE", "stalign/LICENSE"]
 

@@ -1,9 +1,11 @@
 """In-tree engines: DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm.
 
-Each engine is a package loaded as a tool plugin, its ``plugin.py`` the
-adapter, run in LangSlice's process and importing only
-:mod:`langslice.plugin_api` and the engines' own modules. A job names them
-in ``JobSpec.plugins`` exactly as any tool plugin::
+Each engine is a package whose ``plugin.py`` is the adapter: it declares
+the engine's tools and runs them in LangSlice's process, importing only
+:mod:`langslice.plugin_api` and the engines' own modules. Their tools are
+tools of every job, rows of the tool table
+(:data:`langslice.job.settings.tool_table.ENGINES`), which names each
+engine by its reference; no job names them::
 
     langslice.engines.deepslice.plugin:tools
     langslice.engines.brainways.plugin:tools
@@ -11,8 +13,9 @@ in ``JobSpec.plugins`` exactly as any tool plugin::
     langslice.engines.spomialign.plugin:tools
     langslice.engines.emlddmm.plugin:tools
 
-They load together in one job (the tool names do not clash) and re-import
-from a copy of this package with no ``PYTHONPATH``. All five run in
+An engine is loaded for a run that has one of its tools;
+``deepslice_place`` and ``brainways_ap`` start off and a job's ``enabled``
+switches them on. All five run in
 LangSlice's own process, each method imported only when a call runs:
 DeepSlice (``deepslice_place``, mouse coronal jobs) and Brainways
 (``brainways_ap``, rat coronal jobs), the part each tool uses vendored

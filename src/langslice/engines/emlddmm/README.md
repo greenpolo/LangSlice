@@ -1,6 +1,6 @@
 # emlddmm as LangSlice tools
 
-A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers emlddmm (Tward et al. 2025,
+A LangSlice engine (`docs/developers/plugins.md` in LangSlice) that offers emlddmm (Tward et al. 2025,
 Nat Commun; twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece and 6ff62b0, Apache-2.0) to the
 registration agent as two tools. Design: Fable's proposal of 2026-10-19, with one change Nash
 made: the slot spacing is an argument of the agent's, not a plugin setting.
@@ -25,10 +25,11 @@ task). No further seam was needed.
 ## Use
 
 ```bash
-langslice linear run ... --plugins langslice.engines.emlddmm.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["langslice.engines.emlddmm.plugin:tools"])`. It needs
+Its tools are on in every job; `--disabled` switches one off. Its options are the entry of the job's `plugin_config`
+under `langslice.engines.emlddmm.plugin:tools`.
+It needs
 nothing beyond LangSlice's own dependencies. Options (`--plugin-config`): `device` (`auto`: the
 GPU when torch sees one, else the CPU), `dtype` (`float64`), `section_um` (58.88, the example's
 pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb` (24). A fit runs on

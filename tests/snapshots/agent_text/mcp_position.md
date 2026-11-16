@@ -474,6 +474,100 @@ End the run. Call this exactly once, last.
 - `notes` (array of string, required):
 - `interval_breaks` (array of string, required):
 
+## stalign_plane_search
+
+Estimate the cutting angles with STalign's plane search. Writes nothing.
+
+        For each section, STalign tilts the atlas plane the section sits on by -6,
+        0 and 6 degrees about each in-plane axis and shifts it by -300, 0 and 300
+        um along the slicing axis (27 trial planes), fits each roughly to the
+        section's image at low resolution, refines the best, and
+        reports where that plane lies: its pitch and yaw in this stack's
+        convention, and the position it implies. It starts from the section's
+        current position, the stack's cutting angles and its transform, so place
+        and orient the section first. Marked damage is left out automatically.
+        One search reaches about 6 degrees from the start; from further away it
+        lands short, so write the angles and search again from them until two
+        passes agree within a degree or two.
+
+        The stack has one plane. Search sections with plenty of anatomy spread
+        along the stack, take the middle value of the pitches and of the yaw
+        magnitudes, leave out a section flagged at_search_edge or whose picture
+        at the found plane looks wrong, and write the pairwith position_sections. Keep the positions you placed unless a
+        section's picture shows its position change is right. A section mounted
+        mirrored reverses the sign of its yaw and keeps its pitch, and the
+        hemispheres often cannot be told apart by any other sign, so many
+        sections of a stack, up to half, may be mirrored: the reply sorts the
+        sections by the sign of their yaw. Make every section agree on one sign
+        (mirror the smaller group and search them again) before writing the angles.
+
+        Args:
+            sections: One to eight filenames (the extension may be left off).
+            section_image: The section image to search with, as for the fits.
+            atlas_image: One of the atlas's images, or "nissl", as for the fits.
+            view: True returns the pictures described below; false returns none.
+
+        Returns:
+            Per section pitch_deg, yaw_deg and position_mm of the found plane,
+            change (the differences from the current pitch, yaw and position)
+            and at_search_edge; the sections grouped by the sign of their yaw,
+            with the middle pitch and yaw magnitude of the call; and a picture of
+            each section with the atlas borders drawn at the found plane, not
+            written.
+        
+
+- `sections` (array of string, required):
+- `section_image` (string):
+- `atlas_image` (string):
+- `view` (boolean):
+
+## emlddmm_plane
+
+Estimate the stack's cutting angles and spacing with emlddmm. Writes nothing.
+
+        Fits emlddmm's 3-D affine to the whole placed stack at once, with the
+        plane free and no warp: every section votes on one pitch and yaw, and
+        the spacing may stretch and shift as a whole (a section cannot move on
+        its own). Starts from the current angles and positions, so place and
+        orient every section first, with the atlas outline over its tissue (emlddmm
+        cannot recover from a start 1 to 3 mm off); one call is one descent and lands short
+        from far away, so write the angles with position_sections and run it again until two passes agree within a
+        degree or two. emlddmm cannot flip a section: a section mounted mirrored
+        and not yet flipped pulls the yaw toward zero and stands out from the
+        others in its residual turn or shift here; flip it and run again before writing. Keep the
+        positions you placed unless the spacing change looks right in the
+        pictures. emlddmm's energy record and the images it saw are files in the
+        job, which read_file opens.
+
+        Args:
+            sections: Filenames; empty means every section with a position. At
+                least two.
+            slot_um: The slot spacing in micrometres: you
+                set it, there is no default. With the order right and each section
+                within about one interval of its place, set it to the section
+                thickness, or to about half the interval between neighbouring
+                sections.
+            section_image: The section image to fit.
+            atlas_image: One of the atlas's images or "nissl", as for the fit.
+            iterations: Steps at the coarsest scale. Default
+                100.
+            view: True returns the pictures described below; false returns none.
+
+        Returns:
+            pitch_deg, yaw_deg and their change from the stack's angles; the
+            spacing scale and shift_mm; per section what the fit used (inputs), its
+            proposed position_mm, the
+            change, and the residual turn (deg) and shift (mm) it needed at the
+            found plane beyond what the stack as a whole needed; and the overlays of up to four sections drawn at the found plane, not written.
+        
+
+- `sections` (array of string, required):
+- `slot_um` (number, required):
+- `section_image` (string):
+- `atlas_image` (string):
+- `iterations` (integer):
+- `view` (boolean):
+
 ## show_stack
 
 Read an opening-picture page (1-based); read every page before writes.

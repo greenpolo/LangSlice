@@ -5,6 +5,8 @@ tools:
   - view_file
   - send_message
 inheritMcp: true
+skills:
+  - skills/registration-playbook
 mainAgent: true
 subagent: true
 model: inherit

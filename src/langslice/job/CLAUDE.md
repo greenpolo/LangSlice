@@ -14,7 +14,7 @@ from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
 
 ## The job's settings (`settings/`)
 
-- `schema.py`: one row per setting (`SETTINGS`, 45 rows of `Setting`): its
+- `schema.py`: one row per setting (`SETTINGS`, 46 rows of `Setting`): its
   name (`atlas`, a section's `position.thickness_um`, a supplied answer's
   `inputs.positions`), its type and the job's default, the doors that may
   set it (`run`, `init`, `mcp`, `library`, `abba`), its `job.json` key, the
@@ -58,7 +58,15 @@ from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
   `render(text, off)`, text written with what it needs (`[[?NAMES
   text||other]]`, `[[#NAMES=item||...]]` lists), dropped or swapped for the
   disabled list; with nothing off a text renders to itself without its
-  marks, byte for byte. `tool_table.tools_for(spec)` is the per-spec view
+  marks, byte for byte. The in-tree engines' tools are rows too: `ToolDef.engine` is the
+  reference of the engine that declares and runs the tool (`ENGINES`,
+  `engines_on(spec)`: the engines a run has a tool of), `atlases` / `planes`
+  the jobs it is offered on (`ToolDef.fits`), `default_off` a tool that is
+  off unless `JobSpec.enabled` names it (`default_off_names`,
+  `check_enabled`); `off_names` counts a tool that starts off, or that the
+  job's atlas or plane does not fit, as switched off. `JobSpec.plugins`
+  naming an engine (a job made when the engines were plugins) is read as
+  that engine's tools on. `tool_table.tools_for(spec)` is the per-spec view
   (`TOOLS` plus the tools of `spec.plugins`; `TOOLS` itself without
   plugins), which `valid_names(spec)`, `check_names`, `refusal(spec)`,
   `off_names`, `catalog(spec)` read, so a job's `disabled` list can name a
@@ -90,8 +98,13 @@ from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
   and option has one and no other name does, and that none appears in the
   pinned model-facing text. A new tool or option is a row here too.
 
-`plugins.py`: the job's part of tool plugins (`docs/developers/plugins.md`;
-the types are `core/plugins.py`'s). `check_tool` (the one-line reasons a
+`plugins.py`: the job's part of the in-tree engines and of tool plugins
+(`docs/developers/plugins.md`; the types are `core/plugins.py`'s): `engines(spec)`
+loads the engines a run has a tool of (every one without a spec),
+`added(spec)` the plugins `JobSpec.plugins` names, `of_spec` both;
+`tool_specs(spec)` is every engine and plugin tool of the run, and an
+engine tool's `tool_def` is its row of the tool table (`check_tool` refuses
+an engine tool the table does not list for it). `check_tool` (the one-line reasons a
 tool declaration is refused), `tool_def` (a plugin tool as a `ToolDef`:
 `when` is its task being on and its `atlases` / `planes` fitting the job;
 `not_offered` names the tools they exclude, which `tool_table.off_names`

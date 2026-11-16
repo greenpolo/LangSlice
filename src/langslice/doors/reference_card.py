@@ -26,8 +26,7 @@ from langslice.job.layout import JobLayout, read_job_file
 from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
-from langslice.job.settings.tool_table import TOOLS
-from langslice.tools.catalog import enabled, verbs_for
+from langslice.tools.catalog import VERBS, enabled, verbs_for
 from langslice.tools.descriptions.render import summary
 
 logger = logging.getLogger(__name__)
@@ -95,15 +94,14 @@ def card_text(layout: JobLayout) -> str:
     spec = job_spec(layout)
     disabled = off_names(spec)
     run = set(enabled(spec, scripting=True))
-    variant = None
-    if spec.plugins:  # the tools plugins add are declared in its run
-        from langslice.tools.descriptions.description import DescriptionFacts
+    # the engines' tools and the tools plugins add are declared in its run
+    from langslice.tools.descriptions.description import DescriptionFacts
 
-        variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")
+    variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): "
-        f"{summary(name, variant) if variant is not None and name not in TOOLS else summary(name)}"
+        f"{summary(name) if name in VERBS else summary(name, variant)}"
         for name, verb in verbs_for(spec).items() if name in run
     ) + transform_cap_line(layout)
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
@@ -113,6 +111,9 @@ def card_text(layout: JobLayout) -> str:
                  "`sections/<name>/history.jsonl`: every registration a section held.")
     exported = render("[[?export_maps  written by `export_maps`||, not written by this job's "
                       "verbs]]", disabled)
+    export_command = render(
+        "[[?export_maps `export_maps` (answers within 30 s: its result, or its run id; "
+        "`wait [id]`, `runs`), ]]", disabled)
     background = render("[[?trace_borders `trace_borders` lands in the background: "
                         "`job.close()`\n(or a `with` block) waits for it. ]]", disabled)
     return f"""# LangSlice job folder
@@ -153,30 +154,30 @@ posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * res
 are (row, col), centres at integers. Section positions in `state.json` and the verbs are
 millimetres along the slicing axis.
 
-## CLI (JSON on stdout: ok, picture_files, result, artifacts, warnings, next)
-`langslice-job {layout.folder} VERB --args '{{...}}'` (or `--key value`); `--dry-run`
-(writes nothing), `--verbose`. A long verb's call answers within 30 s: its result, or its run id
-and state `running` (the run goes on, also if your shell ends the command where a process may
-outlive it; `wait [id]` waits 30 s more, `runs` lists runs, `--background` answers at once).
-Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index` in the reply's
-`pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
-`error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
-verb re-checks each section first: `STALE_INPUT`, run it again for that section).
-`{TOOLS_FILE}` (from `init` and `launch`) describes every verb and its arguments;
-`langslice-job {layout.folder} schema VERB [VERB ...]` as JSON (every verb without one),
-`ops` lists them, `schema init` the flags.
+## Command line (JSON on stdout: ok, result, artifacts, warnings, next)
+For the session that sets a job up and checks it, not for registering:
+`langslice-job {layout.folder} COMMAND`: `init` (`schema init`: its flags), `launch --role
+register|register-scripting`, `status`, {export_command}`env`, `python SCRIPT`.
+Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal.
+
+## Tools
+A registration agent has these as MCP tools; a script has them as methods (Python, below).
+`{TOOLS_FILE}` (from `init`) describes each and its arguments;
+`langslice-job {layout.folder} schema TOOL [TOOL ...]` as JSON (every tool without one).
 {verbs}
 
 ## Python
 `import langslice; job = langslice.open_job("{layout.folder}")`; the verbs are methods
 with the same arguments {example}. Each returns, once its pictures are on disk, a JSON-safe
-dict: the CLI's `result` in full (status rows with every field, null where unset) plus
-`artifacts` as the CLI lists them; `reply.images` holds the pictures as PIL images.
+dict: the tool's reply in full (status rows with every field, null where unset) plus
+`artifacts`, the files of its pictures; `reply.images` holds the pictures as PIL images.
+A script's writes and a registration agent's tools share the folder's lock; a long fit
+re-checks each section before it applies (`STALE_INPUT`: run it again for that section).
 {background}Atlases: `langslice.load_atlas("allen_mouse_25um")`.
 Keep your own files here, never in /tmp: scripts in `scripts/`, the rest in `scratch/`.
-Run a script with `langslice-job {layout.folder} python scripts/NAME.py [ARGS]` (the job's
-`env/` python; `env install PACKAGE ...` adds packages), but run long verbs (the fits) as
-commands: a command your harness ends takes its script, and the fits in it, with it.
+Run a script with the job's own Python, `env/` here (made by `launch --role register-scripting`,
+whose message names its interpreter, or by `langslice-job {layout.folder} python
+scripts/NAME.py [ARGS]`; `env install PACKAGE ...` adds packages).
 Your own method (an affine, a warp field) goes in through `job.context`: `help(job.context)`.
 Judge and choose fits by looking at their pictures, never by image-similarity scores (mutual
 information, outline overlap, edge correlation): the fits optimise those, they track border

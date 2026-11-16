@@ -2,8 +2,10 @@
 
 Skills for the main session and two custom agents that register one brain:
 `register` works only through LangSlice's MCP tools (`langslice mcp`), and
-`register_scripting` works through the shell, the `langslice-job` command line
-([`docs/agents/cli.md`](../../docs/agents/cli.md)) and the Python library.
+`register_scripting` works through the same MCP tools and, in the shell,
+scripts of its own with the Python library. The main session sets a job up
+and checks it with the `langslice-job` command line
+([`docs/agents/cli.md`](../../docs/agents/cli.md)), which runs no registration tool.
 The plugin carries the skills; its `setup` skill puts the agents, the command
 rules and the MCP server entry in Codex's own folder.
 
@@ -21,7 +23,7 @@ LangSlice itself must be installed first (the conda environment named
    `langslice` (on PATH, else in a conda environment named `langslice`),
    appends its folder to PATH (a guarded line in `~/.zprofile` and
    `~/.zshrc` for zsh; in `~/.bashrc` and the bash login file for bash; the
-   user `Path` on Windows), because `register_scripting` and the rules run
+   user `Path` on Windows), because the skills and the rules run
    `langslice-job` by name, copies `agents/*.toml` into `~/.codex/agents/` and `rules/langslice.rules`
    into `~/.codex/rules/` from the installed plugin, and adds this to
    `~/.codex/config.toml`, with the full path of `langslice`:
@@ -65,8 +67,7 @@ plugin cannot set.
 - No picture-size flag is needed: `langslice mcp` has none. Its pictures are
   drawn at Claude's sizes (opening strips within 1568 px; later pictures at
   the job's `--image-resolution`, at most 2000 px), within the 2048 px Codex
-  accepts. `init --viewer codex` sizes the pictures of the `langslice-job`
-  command line only.
+  accepts.
 ## What is inside
 
 | Part | For | What it is |
@@ -76,8 +77,9 @@ plugin cannot set.
 | `skills/setup` (`langslice:setup`) | main session, once | finds `langslice`, puts its folder on PATH, copies the agents and the rules into `~/.codex/`, adds the MCP server to `config.toml` |
 | `skills/register-brain` (`langslice:register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
 | `skills/abba` (`langslice:abba`) | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands, reaching a running ABBA through abba-mcp, an ABBA registration into a job |
+| `skills/registration-playbook`, `placement`, `damage-and-masks`, `landmarks`, `choosing-engines` | registration agents, through the session's skills | how to register, with example pictures; one source in `src/langslice/skills/`, copied here and checked by `tests/test_connector_skills.py` |
 | `agents/register.toml` | registers one brain | LangSlice's MCP tools only; no shell |
-| `agents/register_scripting.toml` | registers one brain | the `langslice-job` CLI plus Python-library scripts in the job folder, workspace-write sandbox |
+| `agents/register_scripting.toml` | registers one brain | LangSlice's MCP tools, plus Python-library scripts of its own in the job folder, workspace-write sandbox |
 | `rules/langslice.rules` | sandboxing | allows `langslice-job` commands outside the sandbox, forbids `curl` |
 
 The role split is the same as in Claude Code: the main session owns setup,
@@ -93,9 +95,10 @@ wants the agent to write scripts.
   launch message (which holds LangSlice's job statement), reads every
   `show_stack` page (the opening pictures, carried in the tool replies) and
   finishes with `submit`.
-- `register_scripting`'s launch message holds the same job statement, the
-  user's notes, the status table and the opening pictures listed as saved
-  files ([`docs/agents/cli.md`](../../docs/agents/cli.md)). `AGENTS.md` in the job folder
+- `register_scripting`'s launch message is the same, with a paragraph on
+  scripts: the job's own Python (made by `launch`), how to install a package
+  into it and how a script opens the job
+  ([`docs/agents/cli.md`](../../docs/agents/cli.md)). `AGENTS.md` in the job folder
   is its reference card. Create the job with `init --viewer codex`, so these
   pictures are sized for Codex's `view_image` (2048 px).
 
@@ -120,9 +123,10 @@ wants the agent to write scripts.
   (`prefix_rule`) apply only to commands that would run outside the sandbox;
   they are not an allowlist of everything the shell may run, so a
   "`langslice-job` only" shell is not possible. `rules/langslice.rules` lets
-  every `langslice-job` command run outside the sandbox, and the scripting
-  agent runs its scripts with `langslice-job FOLDER python SCRIPT`: those
-  scripts run outside the sandbox too.
+  every `langslice-job` command run outside the sandbox (the main session's).
+  The scripting agent runs its scripts with the job's own Python, inside the
+  sandbox unless a rule of the user's own names that interpreter; a script
+  that must read images outside the workspace needs such a rule.
 - The main session sees LangSlice's MCP tools as well; the `register-brain`
   skill keeps it from registering.
 - The MCP server holds one open job, and `start_job` switches it: run one

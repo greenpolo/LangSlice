@@ -340,14 +340,18 @@ undo and every child find their records.
 
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
-fraction in the footprint, inverse consistency, and flags REGION_COMPRESSED /
-EXPANDED / VANISHED / FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. A fit's reply lists them (`core.fits.deformation.summary`: whole-section flags first,
+fraction in the footprint, inverse consistency, and flags REGION_VANISHED /
+FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. Area ratios raise no flag:
+REGION_COMPRESSED / EXPANDED (outside 0.5 to 2, 0.1 to 10 for ventricles)
+fired on 187 of 299 records of the 2026-11-15 demo brains, mostly on layer
+slivers, and against the human nonlinear references the regions with the
+largest area change had moved closer to the truth, not further. The codes
+stay in `FitFlag` for records saved before. A fit's reply lists them (`core.fits.deformation.summary`: whole-section flags first,
 at most `MAX_FLAGS`, each region flag with its acronym); a notice words them in one
 line, each code once and a region code with its regions (`core.fits.deformation.flag_words`,
 also `langslice.plugin_api.flag_words`). Limits are the
-named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
-`VENTRICLE_AREA_RATIO_LIMITS` (0.1, 10) for `VS` and descendants,
-`MIN_FLAG_AREA_MM2`, `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED
+named constants `MIN_FLAG_AREA_MM2` (a smaller region never raises a
+region flag), `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED
 (`displacement_report`, also in `diagnostics["displacement"]`) a maximum
 displacement in the footprint above `OUTSIZED_MAX_FRACTION` (0.1) of the footprint's
 longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6, adult mouse;

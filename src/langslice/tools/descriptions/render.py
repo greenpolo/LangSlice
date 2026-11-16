@@ -40,6 +40,7 @@ from string import Template
 from typing import Any, Literal
 
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
+from langslice.job import plugins
 from langslice.job.settings.needs import is_met, render
 from langslice.job.settings.tool_table import OPTION_SEPARATOR, TOOLS, is_off
 from langslice.tools.arguments import (
@@ -76,7 +77,7 @@ _FAMILIES: dict[str, ToolDescription] = {
     **bookkeeping.DESCRIPTIONS,
 }
 DESCRIPTIONS: dict[str, ToolDescription] = {
-    name: _FAMILIES[name] for name in TOOLS
+    name: _FAMILIES[name] for name, tool in TOOLS.items() if not tool.engine
 }
 
 #: The run a caller without a job declares: every argument, LangSlice's
@@ -409,6 +410,8 @@ def plugin_stub(name: str, facts: DescriptionFacts) -> Callable[..., object]:
         for tool in plugin.tools:
             if tool.name == name:
                 return tool.stub
+    if name in TOOLS and TOOLS[name].engine:  # a caller without a job
+        return plugins.tool_specs(None)[name][1].stub
     raise KeyError(name)
 
 

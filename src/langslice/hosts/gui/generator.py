@@ -51,7 +51,10 @@ from langslice.core.stack.json_reads import (
     text_map_at,
     texts_at,
 )
-from langslice.doors.credentials import image_model_connected
+from langslice.doors.credentials import (
+    image_model_connected,
+    saved_image_provider,
+)
 from langslice.hosts.gui.settings import LABELS as CONNECTION_LABELS
 from langslice.job.layout import JobLayout, held_image_folder, read_job_file
 from langslice.job.migrations import without_removed_settings
@@ -131,6 +134,11 @@ def species(name: str) -> str:
     return "Other"
 
 
+#: The image provider the form lists first, and the one its tool list is
+#: built with (any provider that calls an image model would do).
+TRACED_PROVIDER = "openai-oauth"
+
+
 def task_sets() -> list[list[str]]:
     """Every non-empty choice of tasks, each in :data:`ALL_TASKS` order."""
     return [list(chosen) for size in range(1, len(ALL_TASKS) + 1)
@@ -140,9 +148,14 @@ def task_sets() -> list[list[str]]:
 def tools() -> list[dict[str, Any]]:
     """The form's tools, in table order: the catalog's (scripting verbs left
     out), each with its label, its options' names and labels, whether it
-    calls the image model, and ``runs_in``: the task choices (comma-joined)
+    calls the image model, whether it starts off (``ToolDef.default_off``:
+    the job's ``enabled`` switches it on), and ``runs_in``: the task choices
+    (comma-joined)
     whose runs have it (``ToolDef.when``)."""
-    specs = [JobSpec(image_folder=".", tasks=tasks) for tasks in task_sets()]
+    # with an image model named, so the tools that call one are in their runs
+    traced = NonlinearSpec(provider=TRACED_PROVIDER)
+    specs = [JobSpec(image_folder=".", tasks=tasks, nonlinear=traced)
+             for tasks in task_sets()]
     rows = []
     for entry in tool_table.catalog():
         held = tool_table.TOOLS.get(entry["name"])
@@ -155,6 +168,7 @@ def tools() -> list[dict[str, Any]]:
             "label": tool_labels.label(entry["name"]),
             "disableable": entry["disableable"], "needs": entry["needs"],
             "image_model": held is not None and held.image_model,
+            "default_off": held is not None and held.default_off,
             "options": [{"name": name, "label": tool_labels.label(name)} for name in options],
             "runs_in": [",".join(spec.tasks) for spec in specs
                         if held is None or held.when(spec)],
@@ -166,8 +180,11 @@ def frozen_off(*properties: str) -> list[str]:
     """The tools and options a freeze of *properties* on every section
     switches off in a run of every task
     (:func:`langslice.job.settings.tool_table.off_names`)."""
-    return JobSpec(image_folder=".", tasks=list(ALL_TASKS),
+    plain = JobSpec(image_folder=".", tasks=list(ALL_TASKS)).switched_off
+    kept = JobSpec(image_folder=".", tasks=list(ALL_TASKS),
                    frozen={"*": list(properties)}).switched_off
+    # without the tools that start off, which no freeze took away
+    return [name for name in kept if name not in plain]
 
 
 @dataclass(frozen=True)
@@ -194,9 +211,8 @@ def _calls_no_model(provider: str) -> bool:
 
 
 def _provider_order(provider: str) -> tuple[bool, bool]:
-    """Sort a provider in the form: the job's default first, no model last."""
-    default = setting("nonlinear.provider").default
-    return provider != default, _calls_no_model(provider)
+    """Sort a provider in the form: no model last, ChatGPT's sign-in first."""
+    return _calls_no_model(provider), provider != TRACED_PROVIDER
 
 
 def image_models() -> list[ImageModelChoice]:
@@ -213,7 +229,8 @@ def image_models() -> list[ImageModelChoice]:
     list of ImageModelChoice
         The providers, in the form's order.
     """
-    default = setting("nonlinear.provider").default
+    # what a job with trace_borders on and no provider named takes
+    default = saved_image_provider() or setting("nonlinear.provider").default
     rows: list[ImageModelChoice] = []
     for name in sorted(CANONICAL_PROVIDERS, key=_provider_order):
         no_model = _calls_no_model(name)
@@ -297,6 +314,8 @@ class Prefill:
     tasks: list[str]
     #: The job's ``disabled``.
     off: list[str]
+    #: The job's ``enabled``: the tools that start off and it switches on.
+    on: list[str]
     #: Each :data:`KEEP` property: frozen on every section.
     keep: dict[str, bool]
     #: ``file: note`` lines.
@@ -367,6 +386,7 @@ def prefill(folder: Path) -> Prefill | None:
         interval=_text(interval),
         tasks=list(spec.tasks),
         off=list(spec.disabled),
+        on=list(spec.enabled),
         keep={prop: prop in everywhere for prop in KEEP},
         damaged="".join(f"{name}: {note}\n" for name, note in damaged.items()),
         notes=saved.notes,

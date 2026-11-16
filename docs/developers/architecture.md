@@ -8,7 +8,7 @@ job and the same operations. Package `CLAUDE.md` files (with identical
 
 Dependencies flow downward: `hosts` → `doors` → `tools` → `job` → `core`.
 `providers` sits beside the layers and imports `core` only; `engines` (the
-in-tree plugins) sits beside `hosts` and imports the plugin API only.
+in-tree engines' tools) sits beside `hosts` and imports the plugin API only.
 Import-linter enforces the boundaries without exceptions.
 
 | Package | Responsibility |
@@ -55,8 +55,11 @@ available otherwise. Model-facing text that names a tool or an option is
 written with what it needs (`job/settings/needs.py`) and rendered for the
 job. See [tools and options](../reference/tools.md).
 
-A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
-whose tools join the toolbox. `core/plugins.py` holds the plugin types and
+The in-tree engines' tools are rows of the tool table
+(`ToolDef.engine`) whose declaration and handler live in `engines/`, written
+against the [plugin API](plugins.md) and loaded for a run that has one of
+them. A job can also load tools of the user's own: `JobSpec.plugins` names
+modules whose tools join the toolbox. `core/plugins.py` holds the plugin types and
 `job/plugins.py` the declaration checks and the registry of loaded plugins,
 which `job/settings/tool_table.py` (`tools_for(spec)`) and
 `tools/catalog.py` (`verbs_for(spec)`) merge with the native tables for that

@@ -254,21 +254,24 @@ def tool_names(images: Path, tasks: list[str], provider: str = "none",
 COMMON = {"look", "zoom", "make_image",
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
           "read_file", "mark_damage", "note", "undo", "redo", "submit"}
-LINEAR = {"interactive_transform", "elastix_affine", "make_mask", "restore_registration"}
+LINEAR = {"interactive_transform", "elastix_affine", "make_mask", "restore_registration",
+          "spomialign"}
 NONLINEAR = {"fireants_syn", "set_landmarks", "landmark_triangulation", "make_mask",
-             "restore_registration"}
+             "restore_registration", "stalign_lddmm", "spomialign", "emlddmm_stack"}
+#: Positioning's tools: the engines' plane searches come with position_sections.
+POSITIONING = {"position_sections", "stalign_plane_search", "emlddmm_plane"}
 
 
 @pytest.mark.parametrize(("tasks", "provider", "extra"), [
-    (["position"], "none", {"position_sections"}),
+    (["position"], "none", POSITIONING),
     (["transform"], "none", LINEAR),
-    (["position", "transform"], "none", {"position_sections"} | LINEAR),
+    (["position", "transform"], "none", POSITIONING | LINEAR),
     (["position", "transform", "nonlinear"], "openai-oauth",
-     {"position_sections", "trace_borders"} | LINEAR | NONLINEAR),
+     POSITIONING | {"trace_borders"} | LINEAR | NONLINEAR),
     (["nonlinear"], "none", NONLINEAR),
     (["nonlinear"], "openai-oauth", {"trace_borders"} | NONLINEAR),
     (["position", "transform", "nonlinear"], "none",
-     {"position_sections"} | LINEAR | NONLINEAR),
+     POSITIONING | LINEAR | NONLINEAR),
 ], ids=["1-positioning", "2-linear", "3-positioning+linear", "4-all+image",
         "5-nonlinear-no-image", "6-nonlinear+image", "7-all-no-image"])
 def test_each_combination_builds_exactly_its_tools(images, tasks, provider, extra):

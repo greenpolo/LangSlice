@@ -558,8 +558,8 @@ Args:
 
 Returns:
     Per section the displacement (median and max, mm, over the placed atlas),
-    the fold fraction and plausibility flags (regions compressed,
-    expanded, vanished or folded beyond limits; displacement outsized
+    the fold fraction and plausibility flags (tissue folded, regions
+    vanished or folded over themselves; displacement outsized
     for the section, measured beyond any landmark warp); the
     `inputs` it used (section image, atlas image as resolved, mask, damage
     regions left out, intensity scaling) and `estimated` (the fraction of
@@ -806,3 +806,366 @@ Args:
     interval_breaks: Filenames (the extension may be left off) of the
         sections AFTER a gap you conclude is real. Empty if there are
         none.
+
+
+## stalign_lddmm
+
+Fit the atlas onto sections with STalign, on their current registration.
+
+STalign (Clifton et al. 2023, Nature Communications) is LDDMM registration
+(large deformation diffeomorphic metric mapping) built to align single-cell
+spatial transcriptomics, as rasterised cell images or histology, to each other
+and to the Allen CCF. Its distinctive parts are an estimated contrast map, so
+the two images need not share brightness, and its own per-pixel sorting into
+matching tissue, background and artifact. It is a gradient descent that finds
+the nearest fit, so it needs a close start.
+
+STalign bends the atlas image onto each section's image by gradient
+descent on their brightness mismatch, with a linear contrast fit between
+the two, a kernel width (kernel_um: tissue closer than that bends
+together) and a displacement scale (displacement_um: how far a point may
+be carried before the penalty grows). It starts from the section's
+current registration (its linear placement, and its deformation when it
+has one) and refines it; it does not search from scratch: set the orientation and a rough transform with interactive_transform first. With fit "warp" the transform stays and
+only the bend is fitted, on top of the deformation the section holds, a landmark warp included, so the landmark move is kept. With fit "both"
+it also refits the section's in-plane transform and writes it; refused on a
+section that holds a deformation, since a new transform clears it. The
+section's marked damage regions are left out automatically; mark them with mark_damage first.
+
+STalign takes no section mask: it sorts the section's pixels itself. Before
+each comparison every pixel is weighted between matching (compared),
+background (slide, ignored) and artifact (debris, ignored), from the
+mismatch and from the background and artifact means (sorting, below). The
+final sorting is saved with the deformation, and make_mask can take it as a mask for another fit (source fit). A named mask is refused
+(MASK_UNSUPPORTED); the engines that take one are fireants_syn, elastix_affine, emlddmm_stack and spomialign. STalign fits the whole
+section: it takes no regions; refine single regions afterwards with fireants_syn, which builds on this fit. It keeps its own brightness
+scaling: slide 0, typical tissue 1.
+
+Starts one piece of background work per section and returns at once with
+their ids, so you can carry on with other sections. A write to a section
+whose fit still runs is refused until it lands. When a section's fit
+lands, the next tool reply starts with its notice: what was fitted, the
+displacement, fold fraction and flags, what STalign used and estimated,
+and the file in the job folder that holds STalign's own mismatch record
+for the fit, which read_file opens; then its pictures. Each
+landing is its own undo step. status lists the work still running; submit
+waits for it. Judge the overlay against the internal anatomy.
+
+Args:
+    sections: One to twenty filenames (the extension may be left off).
+    section_image: The section image to fit, by name: "preprocessed", a raw channel, or an image made with make_image. STalign reads it as grey.
+    atlas_image: One of the atlas's images (the job statement lists
+        them: "template" and any other reference images the atlas ships,
+        by their names), or "nissl", the atlas's Nissl (its template when
+        it ships none). Default "nissl"; the reply names the image used.
+    mask: "none". STalign takes no section mask (see above).
+    kernel_um: The width of the kernel that smooths the bend's velocity,
+        in micrometres (STalign's a; not a Gaussian sigma on the
+        displacement, as smoothness_um is elsewhere): larger bends broader
+        patches as one. Default 500.
+    fit: "warp" bends on top of the section's registration and keeps its
+        transform; "both" also refits the in-plane transform (turn,
+        stretch, shift) and writes it. Default "warp".
+    displacement_um: The displacement scale in micrometres; larger allows
+        a bigger bend. Default 94.
+    sorting: {"method": "classic" | "em" | "none"} and any of "match_sd",
+        "background_sd", "artifact_sd" (spreads), "background_mean",
+        "artifact_mean" (left out: estimated) and "artifact" (true adds the
+        artifact bin to "em"). Brightness units: slide 0, typical tissue 1.
+        "classic" is STalign's published sorting with fixed spreads; "em"
+        measures the matching spread itself and takes the background mean
+        from the slide at the image border, for sections with missing
+        tissue; "none" compares every pixel. Default {"method": "classic"}
+        with STalign's own spreads.
+    iterations: Gradient-descent steps. Default 2000.
+    view: True sends the pictures described below with each notice; false
+        sends none.
+
+Returns:
+    Per section its work id and what the fit uses (inputs: the section image,
+    the atlas image as asked and as used, the mask, the damage, the
+    brightness scaling), or why it was not started. Each notice brings,
+    per section, the numbers above, what STalign ran at (engine_settings:
+    its target and atlas grids in micrometres and its own settings), what
+    STalign estimated (its sorting,
+    saved with the deformation, and the share of the tissue it left out)
+    and the section under its new registration with the atlas borders on
+    it; when the sorting set some tissue aside, also the final sorting
+    picture (set-aside patches outlined; white compared, black ignored),
+    and when it set nothing aside the notice says so and sends no picture.
+
+
+## stalign_plane_search
+
+Estimate the cutting angles with STalign's plane search. Writes nothing.
+
+For each section, STalign tilts the atlas plane the section sits on by -6,
+0 and 6 degrees about each in-plane axis and shifts it by -300, 0 and 300
+um along the slicing axis (27 trial planes), fits each roughly to the
+section's image at low resolution, refines the best, and
+reports where that plane lies: its pitch and yaw in this stack's
+convention, and the position it implies. It starts from the section's
+current position, the stack's cutting angles and its transform, so place
+and orient the section first. Marked damage is left out automatically.
+One search reaches about 6 degrees from the start; from further away it
+lands short, so write the angles and search again from them until two
+passes agree within a degree or two.
+
+The stack has one plane. Search sections with plenty of anatomy spread
+along the stack, take the middle value of the pitches and of the yaw
+magnitudes, leave out a section flagged at_search_edge or whose picture
+at the found plane looks wrong, and write the pairwith position_sections. Keep the positions you placed unless a
+section's picture shows its position change is right. A section mounted
+mirrored reverses the sign of its yaw and keeps its pitch, and the
+hemispheres often cannot be told apart by any other sign, so many
+sections of a stack, up to half, may be mirrored: the reply sorts the
+sections by the sign of their yaw. Make every section agree on one sign
+(mirror the smaller group with interactive_transform and search them again) before writing the angles.
+
+Args:
+    sections: One to eight filenames (the extension may be left off).
+    section_image: The section image to search with, as for the fits.
+    atlas_image: One of the atlas's images, or "nissl", as for the fits.
+    view: True returns the pictures described below; false returns none.
+
+Returns:
+    Per section pitch_deg, yaw_deg and position_mm of the found plane,
+    change (the differences from the current pitch, yaw and position)
+    and at_search_edge; the sections grouped by the sign of their yaw,
+    with the middle pitch and yaw magnitude of the call; and a picture of
+    each section with the atlas borders drawn at the found plane, not
+    written.
+
+
+## spomialign
+
+Register sections to the atlas with SPOmiAlign, on their current registration.
+
+SPOmiAlign (Wang et al. 2026, Briefings in Bioinformatics) was built to align
+spatial-omics sections (transcriptomics, proteomics, H&E) to each other and to
+the Allen Nissl plates. Instead of comparing brightness it matches points with
+RoMa (Edstedt et al. 2024), a dense feature matcher pretrained on DINOv2
+features, so only the tissue's shape and structure need agree, not its stain.
+
+SPOmiAlign matches distinctive points between a section image (by
+name) and an atlas image with a pretrained dense matcher (RoMa), weights
+the matches toward tissue edges, keeps the most confident (matches), and
+fits the chosen transform to the pairs; it compares no intensities pixel by
+pixel and runs no iterations; a call takes under a minute. It starts from
+the section's current placement and does not search from scratch: place the section with position_sections and set its flip, quarter turn and rough transform with interactive_transform first. The section's marked damage regions are left
+out automatically; where tissue is missing or lies folded over other anatomy, mark those regions with mark_damage first (tissue that is intact but shifted is not damage).
+
+fit chooses what is fitted:
+- "transform": the section's transform: rotation, shift, scale and shear
+  (an affine), or with rigid rotation and shift alone, the section keeping
+  its size. Written as the section's transform.
+- "warp": a smooth local deformation on top of the registration the section
+  holds (its transform, and its deformation when it has one, a landmark warp included, so the landmark move is kept); the transform
+  stays. Written as the section's deformation.
+- "both": an affine, then a warp on top of it (SPOmiAlign's own default).
+  Writes both.
+A new transform clears the section's deformation, so "transform" and
+"both" are refused on a section that holds one: fit "warp" on it instead.
+
+The warp is SPOmiAlign's smoothed match field: each pair's displacement,
+filled in between the pairs and smoothed by a Gaussian of smoothness_um.
+Where the section and the atlas image share little tissue (a damaged or
+partial section), the affine follows wrong matches, because it weighs
+every pair equally and rejects none; the sign is an atlas shrunk off the
+tissue in the returned overlay. For such a section, fit "transform" with
+rigid, check the returned overlay, then fit "warp". The warp bends whole
+regions and does not refine individual borders.
+
+SPOmiAlign reads one image pair per section, nothing else, and has no
+weighting: it estimates no mask of its own, and a section mask can only
+drop matches. With a mask named, every match whose end on the section lies
+where the mask is below one half is dropped and the next most confident
+take their place; the mask is approximated by dropping matches, not
+applied to the pixels. The atlas side's marked damage is dropped the same
+way. The section is read as 8-bit RGB with the atlas image drawn as a
+brightfield Nissl, dark on white.
+
+Each call is one undoable write.
+
+Args:
+    sections: One to twenty filenames (the extension may be left off).
+    fit: "transform", "warp" or "both".
+    rigid: True fits the transform as a rotation and a shift alone (fit
+        "transform" only). Default false.
+    section_image: The section image to match, by name: "preprocessed", a raw channel, or an image made with make_image. Default "preprocessed".
+    atlas_image: One of the atlas's images (the job statement lists
+        them: "template" and any other reference images the atlas ships,
+        by their names), or "nissl", the atlas's Nissl (its template when
+        it ships none). Default "nissl"; the reply names the image used.
+    mask: "none", or the name of a mask of each section (made with make_mask); matches ending where it is below one half
+        are dropped. Default "none".
+    smoothness_um: The width (sigma) of the Gaussian that smooths the
+        warp's displacement field, in micrometres of the atlas; larger
+        bends broader regions as one. Default 150.
+    matches: How many of the most confident matched pairs the fit uses.
+        Default 5000 (SPOmiAlign's).
+    view: True returns the picture described below; false returns none.
+
+Returns:
+    Per section what was fitted and on what, what the fit used (inputs:
+    the section image, the atlas image as asked and as used, the mask, the
+    damage, the brightness scaling), what SPOmiAlign ran at
+    (engine_settings: the matcher, its working grid and micrometres per
+    pixel, the smoothing in its pixels, the pairs), the transform written
+    (rotation_deg, scale_x, scale_y, shear, translate_x_mm,
+    translate_y_mm about the canvas centre) when one was, for a warp its
+    displacement (median and max, mm), fold fraction and plausibility
+    flags, the pairs used and dropped, and the folder in the job holding
+    the call's files (the two images SPOmiAlign saw, its settings and the
+    matched pairs as a table and a picture, which read_file opens); and a picture of each section under its new registration
+    with the atlas borders on it. SPOmiAlign estimates no weighting, so
+    estimated is null.
+
+
+## emlddmm_stack
+
+Fit the whole stack to the atlas at once with emlddmm, on its current plane.
+
+emlddmm (Tward et al. 2025, Nature Communications) maps whole-brain datasets
+of any modality into the Allen CCF. It models every section as an image of one
+deformed 3-D atlas, with an EM sorting of missing tissue and artifacts and a
+contrast fit in small blocks.
+
+Use this when you have most of a brain's series, closely and evenly
+spaced, and want placements that agree across the stack and fit the
+brain's overall shape. It bends the brain as a whole, never one section
+alone; for a local mismatch on one section (a ventricle, a displaced piece) use a per-section warp.
+
+emlddmm explains every placed section as a picture of the same 3-D atlas:
+one smooth 3-D warp of the atlas, one shared scale and shear for the stack,
+and for each section its own in-plane turn and shift (its mounting). It
+fits all of them together against the sections' images (one section
+image, by name), with a contrast fit in small blocks and an EM sorting of every
+pixel into matching tissue, background and artifact, so holes, debris and
+empty slide are set aside. Neighbouring sections constrain each other: a
+section with little anatomy is bent and shifted the way the stack is. The
+cutting angles and positions stay as they are: put the sections in order
+and within about one interval of their place first. emlddmm has no
+centring step and cannot recover from a start 1 to 3 mm off the tissue,
+so have the atlas outline over each section's tissue, placed and
+roughly aligned, before calling; each section is
+refined from its current registration, its deformation included, so a landmark move is kept. The section's marked damage regions are
+left out automatically; mark them with mark_damage first.
+
+emlddmm takes a section mask as soft weights: the mask multiplies each
+pixel's weight in the fit, so a pixel at 0.3 counts at 0.3. Besides the
+mask, emlddmm estimates its own sorting during the fit; the final sorting
+of each section it writes a deformation for is saved with that
+deformation, and make_mask can take it as a mask for another fit (source fit). It keeps its own brightness scaling: the section image as it
+is, 0 to 1.
+
+Writes, per section: with fit "transform" or "both" its transform (turn,
+shift, and the stack's scale and shear) and with fit "warp" or "both" its
+deformation, the section's cut of the 3-D warp. A section that holds a deformation or a
+frozen transform keeps its transform and gets the rigid change folded
+into its deformation. A section whose result cannot be written still
+shapes the stack. The whole landing is one undo step.
+
+The sections are put on a grid of slots slot_um apart along the slicing
+axis, each moved to its nearest slot for the fit (at most half a slot),
+and the memory and time grow as the grid gets finer. The call is refused
+when the stack would not fit the memory, and says which spacing would.
+
+Starts one piece of background work over the stack and returns at once
+with its id. Every section in the stack refuses writes until it lands;
+you can look, zoom and work on sections you left out. When it lands, the
+next tool reply starts with its notice: how many sections were written,
+those fitted for the stack and not written with the reason, the sections
+whose warp has plausibility flags with their codes, and the overlays of
+up to four sections (flagged ones first, then those that moved most) with
+how far each moved. Judge the rest with look. emlddmm's own energy record,
+the images it saw and the per-section results (movement, warp
+displacement, fold fraction, flags, tissue set aside) are files in the
+job, which read_file opens.
+
+Args:
+    sections: Filenames; empty means every section with a position and a
+        transform. At least two.
+    slot_um: The slot spacing in micrometres; you set it, there is no
+        default. Get the order right and each section within about one
+        interval of its place first. Then set slot_um to the section
+        thickness, or to about half the interval between neighbouring
+        sections. Finer costs memory that many machines lack; coarser
+        moves sections further from where you placed them and limits what
+        the fit can resolve along the slicing axis. Two sections may not
+        share a slot.
+    section_image: The section image to fit, by name: "preprocessed", a raw channel, or an image made with make_image. Read as grey, as it
+        is, 0 to 1. Default "preprocessed".
+    atlas_image: One of the atlas's images (the job statement lists
+        them), or "nissl", the atlas's Nissl (its template when it ships
+        none). Default "nissl"; the reply names the image used.
+    mask: "none", or the name of a mask that every section in the stack
+        has (made with make_mask); its weights multiply the
+        fit's weight on that section. Default "none".
+    kernel_um: The width of the kernel that smooths the 3-D warp's
+        velocity, in micrometres, across sections too (emlddmm's a; not a
+        Gaussian sigma on the displacement, as smoothness_um is
+        elsewhere): tissue closer than this bends together. Default 500.
+    fit: "transform" refits each section's in-plane turn and shift and
+        the stack's scale and shear and writes them; "warp" keeps every
+        transform and fits the 3-D warp alone; "both" fits both. Default
+        "both".
+    warp_freedom: How freely the warp may bend; larger bends more. Start
+        large and reduce if the warps look unrealistic. Default 10000.
+    iterations: Steps at the 200 um scale; the 100 and 50 um scales take
+        half and a quarter as many. Default 100.
+    sorting: Any of "match_sd", "background_sd", "artifact_sd",
+        "background_mean", "artifact_mean" (brightness from 0, black, to 1,
+        white); keys left out take emlddmm's values. emlddmm's sorting is
+        its own EM with an artifact class: it takes no "method" or
+        "artifact".
+    view: True sends the overlays with the notice; false sends none.
+
+Returns:
+    The work id, the number of sections in the stack, those left out with
+    why, the sections that will not get a transform and what they get, the
+    furthest a section moves to its slot, the device, and per section what
+    the fit uses (inputs: the section image, the atlas image as asked and as
+    used, the mask, the damage, the brightness scaling); or why it was not
+    started. The notice that follows brings, per section, what emlddmm
+    estimated (its sorting and the share of the tissue it left out).
+
+
+## emlddmm_plane
+
+Estimate the stack's cutting angles and spacing with emlddmm. Writes nothing.
+
+Fits emlddmm's 3-D affine to the whole placed stack at once, with the
+plane free and no warp: every section votes on one pitch and yaw, and
+the spacing may stretch and shift as a whole (a section cannot move on
+its own). Starts from the current angles and positions, so place and
+orient every section first, with the atlas outline over its tissue (emlddmm
+cannot recover from a start 1 to 3 mm off); one call is one descent and lands short
+from far away, so write the angles with position_sections and run it again until two passes agree within a
+degree or two. emlddmm cannot flip a section: a section mounted mirrored
+and not yet flipped pulls the yaw toward zero and stands out from the
+others in its residual turn or shift here; flip it with interactive_transform and run again before writing. Keep the
+positions you placed unless the spacing change looks right in the
+pictures. emlddmm's energy record and the images it saw are files in the
+job, which read_file opens.
+
+Args:
+    sections: Filenames; empty means every section with a position. At
+        least two.
+    slot_um: The slot spacing in micrometres, as for emlddmm_stack: you
+        set it, there is no default. With the order right and each section
+        within about one interval of its place, set it to the section
+        thickness, or to about half the interval between neighbouring
+        sections.
+    section_image: The section image to fit, as for emlddmm_stack.
+    atlas_image: One of the atlas's images or "nissl", as for the fit.
+    iterations: Steps at the coarsest scale, as for emlddmm_stack. Default
+        100.
+    view: True returns the pictures described below; false returns none.
+
+Returns:
+    pitch_deg, yaw_deg and their change from the stack's angles; the
+    spacing scale and shift_mm; per section what the fit used (inputs), its
+    proposed position_mm, the
+    change, and the residual turn (deg) and shift (mm) it needed at the
+    found plane beyond what the stack as a whole needed; and the overlays of up to four sections drawn at the found plane, not written.

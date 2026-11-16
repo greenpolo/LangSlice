@@ -57,13 +57,22 @@ EVERY_TOOL_A_COMMAND = (
     "`artifacts` again with their kinds (`view`, in the order the reply's "
     "`pictures` lists their numbers); open them to see them."
 )
+#: The in-tree engines' tools: an engine is never run by a dry run.
+_ENGINE_TOOLS = (
+    "deepslice_place|brainways_ap|stalign_lddmm|stalign_plane_search|"
+    "spomialign|emlddmm_stack|emlddmm_plane"
+)
 DRY_RUN = (
     "- `--dry-run` runs a write without writing and reports what would "
-    "change[[?elastix_affine|fireants_syn|trace_borders ; the "
-    "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders]] are "
+    "change[[?elastix_affine|fireants_syn|trace_borders|"
+    + _ENGINE_TOOLS
+    + " ; the "
+    "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders||"
+    + _ENGINE_TOOLS
+    + "=engines' tools]] are "
     "only checked, not run]]{plugins}."
 )
-DRY_RUN_PLUGINS = "; a plugin's engine tools are only checked too"
+DRY_RUN_PLUGINS = "; a plugin's tools are only checked too"
 LONG_TOOLS = (
     "- Long tools ({tools}): a call answers with the result or, still "
     "running after 30 s, with its run id and state `running`; the run goes "
@@ -77,6 +86,47 @@ PARALLEL_COMMANDS = (
     "lock, and a long tool re-checks each section before it applies "
     "(STALE_INPUT when the section changed meanwhile: run it again for that "
     "section)."
+)
+SCRIPTS = "Scripts:"
+SCRIPT_PYTHON = (
+    "- You also have a shell and file tools, for what no tool does: write a "
+    'script and run it as `"{python}" SCRIPT [ARGS ...]`. That is the job\'s '
+    "own Python: it imports LangSlice and every package LangSlice is "
+    "installed with; `{install} PACKAGE [PACKAGE ...]` adds another."
+)
+SCRIPT_LIBRARY = (
+    '- In a script, `langslice.open_job(r"{folder}")` opens this job: every '
+    "tool is a method of it with the same arguments, without the tools' "
+    "limit on pictures or sections per call, and `job.context` holds the "
+    "parts for a method of your own (`help(job.context)`: the section "
+    "images and the atlas as arrays, a transform or a deformation of your "
+    "own, a preview that writes nothing, a section image you computed)."
+)
+SCRIPT_SHARED = (
+    "- The tools and your scripts work on the one job: each sees what the "
+    "other wrote, and every write of either is one undo step."
+)
+SCRIPT_PICTURES = (
+    "- A script's pictures are files (a method's reply lists them under "
+    "`artifacts`): open them with your file tool to see them."
+)
+SCRIPT_FILES = (
+    "- Keep your scripts in `{folder}/scripts/` and your other files in "
+    "`{folder}/scratch/`; `{folder}/AGENTS.md` describes the job folder's "
+    "files."
+)
+#: The paragraph on scripts told to a registration agent with a shell:
+#: ``{folder}`` the job folder, ``{python}`` the interpreter of the job's own
+#: Python environment, ``{install}`` the command that installs into it.
+SCRIPTING = "\n".join(
+    (
+        SCRIPTS,
+        SCRIPT_PYTHON,
+        SCRIPT_LIBRARY,
+        SCRIPT_SHARED,
+        SCRIPT_PICTURES,
+        SCRIPT_FILES,
+    )
 )
 USER_NOTES = "User notes:"
 STATUS_TABLE = (

@@ -327,7 +327,7 @@ def test_a_tool_is_off_when_everything_it_writes_is_frozen_everywhere():
         ("affine",): {"elastix_affine"},
         ("orientation",): set(),
         ("deformation",): {"fireants_syn", "trace_borders", "set_landmarks",
-                           "landmark_triangulation"},
+                           "landmark_triangulation", "stalign_lddmm", "emlddmm_stack"},
         ("position",): set(),
         ("position", "angles"): {"position_sections"},
         ("orientation", "affine"): {"interactive_transform", "elastix_affine"},
@@ -338,7 +338,8 @@ def test_a_tool_is_off_when_everything_it_writes_is_frozen_everywhere():
                      frozen={"*": list(held)}, inputs={})
         built = set(enabled(spec, scripting=True))
         gone = {name for name in TOOLS if TOOLS[name].writes and name not in built}
-        assert gone == off, held
+        # (the two engine tools that start off are never built here)
+        assert gone - {"deepslice_place", "brainways_ap"} == off, held
     # The flip goes with a frozen orientation; the tool with its other property stays.
     spec = _spec(tasks=["transform"], frozen={"*": ["orientation"]})
     assert spec.off("interactive_transform:flip") and not spec.off("interactive_transform")

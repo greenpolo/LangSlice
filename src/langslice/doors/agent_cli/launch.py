@@ -10,15 +10,14 @@ for every job.
   ``start_job``, then the job statement worded for the MCP door, built by
   :func:`langslice.doors.mcp.server.mcp_statement` from the job opened as the
   MCP server opens it, so the server and this command cannot drift.
-* ``register-scripting`` (the CLI subagent): one line naming the job folder,
-  then the job statement worded for the CLI door, whose opening paragraph lists
-  the opening pictures, drawn and saved now as the job's opening views
-  (:func:`langslice.core.pictures.opening.opening_items`: the same strips,
-  captions and order as the ADK agent's seed message, at the job's viewer's
-  limits, :func:`langslice.doors.jobs.job_viewer`), in reading order.
-  ``TOOLS.md`` (every verb's description and arguments,
-  :func:`langslice.doors.agent_cli.catalog.tools_text`) is written beside the
-  card.
+* ``register-scripting`` (the MCP subagent with a shell): the same message
+  with a paragraph on scripts after its opening's
+  (:func:`langslice.tools.descriptions.door_text.scripting_lines`): the
+  interpreter of the job's own Python environment, made now when it is
+  missing, the command that installs a package into it, the library and
+  where the agent's files go. It registers with the MCP tools and with
+  scripts of its own; ``langslice-job`` runs no registration tool
+  (:data:`langslice.doors.agent_cli.catalog.CLI_VERBS`).
 
 The exact text is saved in ``logs/launches/<six-digit number>_<role>.md``;
 ``langslice session-end`` compares the subagent's first message with those
@@ -29,22 +28,16 @@ files (:mod:`langslice.doors.commands.transcripts`). ``init`` writes
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
-from langslice.doors.jobs import Opened
-from langslice.tools.descriptions.description import CLI_DOOR
+from langslice.doors.agent_cli import environment
+from langslice.job.layout import JobLayout
 from langslice.tools.descriptions.door_text import (
+    SCRIPTING,
     image_model_state,
-    opening_for_cli,
-    read_notes,
-)
-from langslice.tools.descriptions.statement import (
-    StatementFacts,
-    job_statement,
 )
 
 #: The roles, as the connectors name their agents.
@@ -86,18 +79,59 @@ def facts(opened: Any) -> dict[str, Any]:
             **({"image_model": state} if state is not None else {})}
 
 
-def role_line(role: str, folder: str) -> str:
+def role_line(folder: str) -> str:
     """The launch prompt's first line."""
-    if role == "register":
-        return (f"Register the brain in job folder {folder}. Call "
-                f'start_job(image_folder="{folder}") first: it opens the job and gives you '
-                "its tools.")
-    return f"Register the brain in job folder {folder} with the langslice-job command line."
+    return (f"Register the brain in job folder {folder}. Call "
+            f'start_job(image_folder="{folder}") first: it opens the job and gives you '
+            "its tools.")
 
 
-def mcp_prompt(job_folder: Path, atlas_loader: Any = None) -> str:
+def scripting_prompt(
+    job_folder: Path,
+    *,
+    atlas_loader: Callable[[str], object] | None = None,
+) -> str:
+    """Return the ``register-scripting`` prompt for a job.
+
+    It is the ``register`` prompt with the paragraph on scripts after its
+    opening's. The job's own Python environment is made first when it is
+    missing, so the interpreter the prompt names is there to run.
+
+    Parameters
+    ----------
+    job_folder
+        Where the job is: its ``langslice`` folder.
+    atlas_loader
+        What loads the job's atlas; None for LangSlice's own.
+
+    Returns
+    -------
+    str
+        The prompt.
+
+    Raises
+    ------
+    ImportError
+        When the MCP package is missing.
+    OSError, subprocess.SubprocessError
+        When the job's environment cannot be made.
+    """
+    layout = JobLayout(job_folder)
+    environment.ensure(layout)
+    python = environment.python_of(environment.env_dir(layout))
+    paragraph = SCRIPTING.format(
+        folder=layout.folder,
+        python=python,
+        install=environment.install_command(layout),
+    )
+    return mcp_prompt(job_folder, atlas_loader, scripting=paragraph)
+
+
+def mcp_prompt(job_folder: Path, atlas_loader: Any = None, *,
+               scripting: str = "") -> str:
     """The ``register`` prompt for the job in *job_folder*; the MCP package is
-    needed (``ImportError`` when it is missing)."""
+    needed (``ImportError`` when it is missing). *scripting*: the paragraph
+    on scripts (:func:`scripting_prompt`)."""
     from langslice.doors.mcp.server import mcp_statement, open_folder
 
     def no_job(path: str) -> Any:
@@ -114,62 +148,10 @@ def mcp_prompt(job_folder: Path, atlas_loader: Any = None) -> str:
                 folder = str(session.job.folder)
         except (LookupError, OSError, ValueError):
             folder = str(session.job.folder)
-        return role_line("register", folder) + "\n\n" + mcp_statement(session)
+        statement = mcp_statement(session, scripting=scripting)
+        return role_line(folder) + "\n\n" + statement
     finally:
         session.close()
-
-
-def cli_prompt(opened: Opened) -> Launch:
-    """The ``register-scripting`` prompt of the open job *opened* (a
-    :class:`langslice.doors.jobs.Opened` for the CLI: its viewer and door)."""
-    from langslice.core.pictures.opening import VIEWER_LIMITS, opening_items
-    from langslice.doors.jobs import image_model_off
-    from langslice.job.pictures import PICTURE_FILE, captured
-
-    job = opened.job
-    box = opened.tools()
-    folder = str(job.folder)
-    viewer = opened.viewer or "claude"
-    items = opening_items(job.state, opened.ctx, limit=VIEWER_LIMITS[viewer][0])
-    strips = [item for item in items if isinstance(item, Image.Image)]
-    with captured() as saved:
-        job.views.save(tool="opening", pictures=[(strip, None) for strip in strips])
-    job.views.flush()
-    launch = Launch(role="register-scripting", prompt="", facts=facts(opened))
-    listing: list[str] = []
-    label = ""
-    number = 0
-    for item in items:
-        if isinstance(item, str):
-            if listing:
-                listing.append("")
-            listing.append(item)
-            label = item
-            continue
-        path = saved[number].folder / PICTURE_FILE if number < len(saved) else None
-        if path is None:
-            launch.warnings.append("An opening picture was not saved; "
-                                   "`langslice.open_job` gives it to a script.")
-        else:
-            listing.append(f"- {path}")
-            launch.artifacts.append({"path": str(path), "kind": "opening", "index": number,
-                                     "label": label})
-        number += 1
-    spec = job.spec
-    known = StatementFacts.from_run(
-        spec, job.state, opened.ctx, tool_names=opened.listed_verbs(),
-        max_resolution=box.max_view_edge, auto=True)
-    statement = job_statement(
-        known, door=CLI_DOOR,
-        opening=opening_for_cli(folder, listing, spec.switched_off, spec=spec),
-        notes=read_notes(job.layout),
-        image_model_off=image_model_off(spec, opened.image_model_connected),
-    )
-    launch.prompt = role_line("register-scripting", folder) + "\n\n" + statement
-    tools = write_tools(job.layout.folder, box)
-    if tools is not None:
-        launch.artifacts.append({"path": str(tools), "kind": "tools"})
-    return launch
 
 
 def save(layout: Any, role: str, prompt: str) -> Path:

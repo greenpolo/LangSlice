@@ -1,6 +1,6 @@
 # DeepSlice as a LangSlice tool
 
-A LangSlice tool plugin (`docs/developers/plugins.md`) that offers DeepSlice 1.2.8
+A LangSlice engine (`docs/developers/plugins.md`) that offers DeepSlice 1.2.8
 (Carey et al. 2023, Nat Commun) to the registration agent as one tool, `deepslice_place`.
 Design: Fable's proposal with Nash's decisions of 2026-10-19 (SliceBench
 `notes/2026-10-19_deepslice_brainways_plugin_design/fable_proposal.md`, "Nash's decisions"
@@ -29,10 +29,10 @@ vote and the spacing along an order. The `deepslice` package is not a dependency
 
 ```bash
 pip install "langslice[engines]"     # tensorflow 2.21, tf-keras 2.21
-langslice linear run ... --plugins langslice.engines.deepslice.plugin:tools
 ```
 
-or `langslice.create_job(..., plugins=["langslice.engines.deepslice.plugin:tools"])`.
+It starts off: switch it on with `--enabled deepslice_place` (`enabled=["deepslice_place"]` in Python). Its options are the entry of the job's `plugin_config`
+under `langslice.engines.deepslice.plugin:tools`.
 TensorFlow 2.21 has no wheels for Intel Macs. TensorFlow caps `h5py` below 3.15; the uv lock
 overrides that cap (`[tool.uv]` in `pyproject.toml`) so that it moves no version of the
 other installs, and the network reads its weights alike on h5py 3.16 (below); pip honours

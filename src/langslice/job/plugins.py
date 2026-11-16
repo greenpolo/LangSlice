@@ -16,7 +16,7 @@ import fnmatch
 import inspect
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from langslice.core.plugins import (
     NAME_PATTERN,
@@ -28,7 +28,13 @@ from langslice.core.plugins import (
 from langslice.core.tool_kinds import GROUPS
 from langslice.job.settings import frozen as freeze
 from langslice.job.settings.schema import PLANES
-from langslice.job.settings.tool_table import TOOLS, ToolDef, positions_on
+from langslice.job.settings.tool_table import (
+    ENGINES,
+    TOOLS,
+    ToolDef,
+    engines_on,
+    positions_on,
+)
 
 #: The tasks a plugin tool can belong to (the tool is on only while it is).
 TASKS: tuple[str, ...] = tuple(freeze.TASK_PROPERTIES)
@@ -41,16 +47,24 @@ ANGLES = "angles"
 # --- the declaration checks -----------------------------------------------------------
 
 
-def check_tool(tool: Any, *, taken: Sequence[str] = ()) -> str | None:
+def check_tool(
+    tool: object, *, taken: Sequence[str] = (), engine: str = ""
+) -> str | None:
     """One line saying why *tool* is no valid :class:`ToolSpec`, or None.
-    *taken* are the names of the other plugin tools of the same job."""
+    *taken* are the names of the other plugin tools of the same job;
+    *engine* is the in-tree engine being loaded, whose tools are the rows
+    of the tool table that name it."""
     if not isinstance(tool, ToolSpec):
         return f"the factory returned {type(tool).__name__}, not a ToolSpec"
     name = tool.name
     where = f"tool {name!r}"
     if not isinstance(name, str) or not NAME_PATTERN.match(name):
         return f"tool name {name!r} is not an identifier (letters, digits, underscores)"
-    if name in TOOLS:
+    if engine:
+        row = TOOLS.get(name)
+        if row is None or row.engine != engine:
+            return f"{where} is no tool the tool table lists for {engine}"
+    elif name in TOOLS:
         return f"{where} clashes with the native tool of that name"
     if name == SCRIPT_CALLER:
         return f"{where} is the name a script's own writes are recorded under"
@@ -119,17 +133,23 @@ def offered_on(tool: ToolSpec, atlas: str, plane: str) -> bool:
 
 
 def not_offered(spec: Any) -> list[str]:
-    """The names of the plugin tools of *spec* that its atlas or plane does
-    not fit; they count as switched off, so no text names them."""
+    """The names of the tools *spec*'s ``plugins`` add that its atlas or
+    plane does not fit; they count as switched off, so no text names them."""
+    tools: list[ToolSpec] = []
+    for plugin in added(cast("object", spec)):
+        tools.extend(plugin.tools)
     return [
         tool.name
-        for _plugin, tool in tool_specs(spec).values()
+        for tool in tools
         if not offered_on(tool, str(spec.atlas), str(spec.plane))
     ]
 
 
 def tool_def(tool: ToolSpec) -> ToolDef:
     """The core's definition of a plugin tool (what the per-spec views list)."""
+    row = TOOLS.get(tool.name)  # an in-tree engine's tool is its row
+    if row is not None:
+        return row
     task = tool.task
 
     def when(spec: Any, _task: str | None = task) -> bool:
@@ -238,25 +258,63 @@ def loaded(
     return out
 
 
-def of_spec(spec: Any) -> list[LoadedPlugin]:
-    """The plugins a ``JobSpec`` names (none for a spec with none)."""
+def added(spec: object) -> list[LoadedPlugin]:
+    """Load the plugins a job's ``plugins`` name.
+
+    Parameters
+    ----------
+    spec
+        The job's settings.
+
+    Returns
+    -------
+    list of LoadedPlugin
+        The plugins, in the order named; none for a job that names none.
+    """
     refs = list(getattr(spec, "plugins", None) or ())
     return loaded(refs, getattr(spec, "plugin_config", None)) if refs else []
 
 
+def engines(spec: object) -> list[LoadedPlugin]:
+    """Load the in-tree engines a run has a tool of.
+
+    Parameters
+    ----------
+    spec
+        The job's settings; None: every engine.
+
+    Returns
+    -------
+    list of LoadedPlugin
+        The engines, in table order, each loaded with the options the
+        job's ``plugin_config`` gives it.
+    """
+    refs = list(ENGINES) if spec is None else engines_on(spec)
+    return loaded(refs, getattr(spec, "plugin_config", None)) if refs else []
+
+
+def of_spec(spec: Any) -> list[LoadedPlugin]:
+    """The in-tree engines a run of *spec* has a tool of, then its plugins."""
+    settings = cast("object", spec)
+    return [*engines(settings), *added(settings)]
+
+
 def tool_defs(spec: Any) -> dict[str, ToolDef]:
-    """The :class:`ToolDef` of every tool the plugins of *spec* add."""
+    """The :class:`ToolDef` of every tool the ``plugins`` of *spec* add."""
     return {
         tool.name: tool_def(tool)
-        for plugin in of_spec(spec)
+        for plugin in added(cast("object", spec))
         for tool in plugin.tools
     }
 
 
 def tool_specs(spec: Any) -> dict[str, tuple[LoadedPlugin, ToolSpec]]:
-    """Every tool the plugins of *spec* add, with the plugin it came from."""
+    """Every engine and plugin tool of *spec*, with what it came from."""
+    # the in-tree engines' tools, then the tools the job's plugins add;
+    # without a spec, every engine's
+    sources = engines(spec) if spec is None else of_spec(spec)
     return {
         tool.name: (plugin, tool)
-        for plugin in of_spec(spec)
+        for plugin in sources
         for tool in plugin.tools
     }

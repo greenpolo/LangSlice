@@ -30,8 +30,9 @@ from langslice.core.atlas.tree import structure_table, with_descendants
 from langslice.core.fits.deformable.geometry import Placement, warp_affine
 from langslice.core.fits.deformable.settings import BORDER_IMAGES
 
-#: Acronym of the ventricular system: it and all its descendants get the
-#: looser area limits (a ventricle collapses or dilates far more than tissue).
+#: Acronym of the ventricular system: it and all its descendants are marked
+#: ``ventricle`` in a fit's region diagnostics (a ventricle collapses or
+#: dilates far more than tissue).
 VENTRICLE_ACRONYMS = ("VS",)
 #: Intensity percentile mapped to 1.0 when normalizing grayscale atlas planes.
 INTENSITY_PERCENTILE = 99.5

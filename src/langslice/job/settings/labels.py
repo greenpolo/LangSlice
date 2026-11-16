@@ -48,6 +48,13 @@ TOOL_LABELS: dict[str, str] = {
     "restore_registration": "Return a section to an earlier result",
     "submit": "Finish the run",
     "export_maps": "Write the per-section coordinate maps",
+    "deepslice_place": "DeepSlice places the series (mouse, coronal)",
+    "brainways_ap": "Brainways places each section (rat, coronal)",
+    "stalign_lddmm": "Automatic warp (STalign LDDMM)",
+    "stalign_plane_search": "STalign searches the cutting angles",
+    "spomialign": "Alignment and warp by matched points (SPOmiAlign)",
+    "emlddmm_stack": "One 3-D warp of the atlas to the whole series (emlddmm)",
+    "emlddmm_plane": "emlddmm finds the series' positions and cutting angles",
 }
 
 #: One label per task (:data:`langslice.job.settings.spec.ALL_TASKS`).

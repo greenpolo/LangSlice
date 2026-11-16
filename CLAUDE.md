@@ -14,8 +14,8 @@ has an `AGENTS.md` twin: edit one, then `cp CLAUDE.md AGENTS.md` in that folder.
 layers below it. `providers/` (model access) sits beside them and imports
 `core` only; core, job and tools never import it, nor `google.*`,
 `litellm`, `openai` or `mcp`; an image model is passed in as an argument.
-`engines/` (the in-tree plugins) sits beside `hosts` and imports the plugin
-API only. import-linter enforces this (`[tool.importlinter]` in
+`engines/` (the in-tree engines' tools: DeepSlice, Brainways, STalign,
+SPOmiAlign, emlddmm) sits beside `hosts` and imports the plugin API only. import-linter enforces this (`[tool.importlinter]` in
 `pyproject.toml`, run by `tests/test_import_layers.py` and CI) with no
 exceptions: a violation is fixed by moving code.
 
@@ -31,14 +31,14 @@ exceptions: a violation is fixed by moving code.
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.25, which starts `langslice serve
 --stdio`), `claude-desktop/` (configuration for `langslice mcp`),
-`claude-code/`, `antigravity/` and `codex/` (skills and agents over the agent CLI). `packaging/`
+`claude-code/`, `antigravity/` and `codex/` (skills over the agent CLI; registration agents over MCP, one of them with scripts). `packaging/`
 and `environment.yml` hold the worker's source installation.
 
 ## Rules that hold in the code
 
 - Every way in goes through one job folder and its verbs: the agent run
-  (`langslice linear run`), the agent CLI (`langslice-job FOLDER VERB`, `ops`,
-  `schema`), the library (`langslice.open_job`, `create_job`),
+  (`langslice linear run`), the agent CLI (`langslice-job FOLDER COMMAND`: setting a job up and
+  checking it, no registration tool; `ops`, `schema`), the library (`langslice.open_job`, `create_job`),
   MCP and the Fiji worker.
 - Tasks `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from
@@ -52,13 +52,28 @@ and `environment.yml` hold the worker's source installation.
 - The toolbox (`tools/catalog.py`, `docs/reference/tools.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
-  `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
-  named by filename only.
-- A tool plugin (`JobSpec.plugins`, `docs/developers/plugins.md`) adds first-class tools
-  through `langslice.plugin_api`; it loads only where the user chose it
-  (library, `linear run --plugins`), never through MCP or the ABBA worker,
-  writes job state only through the context's operations and files only under
-  `plugins/<tool>/`; a job without plugins shows no trace of the seam.
+  `set_landmarks` / `landmark_triangulation`, `trace_borders`, and the in-tree
+  engines' `stalign_lddmm`, `stalign_plane_search`, `spomialign`,
+  `emlddmm_stack`, `emlddmm_plane`, `deepslice_place`, `brainways_ap`); a task
+  switches its tools on or off whole. Sections are named by filename only.
+- The in-tree engines (`langslice/engines/`) are tools of every job on every
+  door (`init`, `linear run`, MCP, the library, the ABBA worker): rows of
+  `job/settings/tool_table.py` (`ToolDef.engine`), listed after the other
+  tools, switched off by `disabled` like any tool. An engine's module is
+  imported only for a run that has one of its tools. Three tools start off
+  (`ToolDef.default_off`: `trace_borders`, `deepslice_place`, `brainways_ap`)
+  and are switched on by `JobSpec.enabled` (`--enabled`). `trace_borders`
+  needs an image model (`nonlinear.provider`, default `none`): a job that
+  names one has it enabled, and a command given `--enabled trace_borders`
+  without `--nonlinear-provider` takes the connection saved on the computer
+  (`doors.credentials.saved_image_provider`: the one chosen in the window's
+  Settings, else the ChatGPT sign-in, the OpenAI key, the Gemini key). A tool
+  is offered only on the atlases and planes its row names.
+- A tool of the user's own (`JobSpec.plugins`, `docs/developers/plugins.md`)
+  joins the toolbox through `langslice.plugin_api`, the API the engines are
+  written against; it loads only where the user chose it (library, `linear run
+  --plugins`), writes job state only through the context's operations and
+  files only under `plugins/<tool>/`.
 - Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`
   (`tool` or `tool:option`; `job/settings/tool_table.py` lists the valid names, the
   spec refuses an unknown name or a list that cannot work). Every sentence

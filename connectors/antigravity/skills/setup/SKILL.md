@@ -148,7 +148,7 @@ Read the file (it may be missing or empty) and keep everything in it as it is.
 What the rules do: `mcp(langslice_mcp/*)` lets an agent call LangSlice's tools
 without asking, all the `register` agent needs. `command(langslice-job)` lets
 `langslice-job` run outside the sandbox, where it can read the atlas and the
-images; `register-scripting` runs its scripts through it. `read_url(*)` gives
+images; the main session sets jobs up and checks them through it. `read_url(*)` gives
 commands in the sandbox the web. The `read_file` rules let a script in the
 sandbox import LangSlice and read the atlases.
 

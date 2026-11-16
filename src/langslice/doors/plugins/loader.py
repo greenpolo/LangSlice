@@ -26,7 +26,7 @@ import logging
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langslice.core.plugins import PLUGIN_API_VERSION, PluginError, ToolSpec
 from langslice.job import plugins as core
@@ -91,8 +91,9 @@ def build(ref: str, factory: Callable[..., Any], *, module_name: str,
         raise PluginError(f"plugin {ref}: the factory returns a list of ToolSpec; got "
                           f"{type(made).__name__}")
     taken: list[str] = []
+    engine = ref if ref in core.ENGINES else ""
     for tool in made:
-        reason = check_tool(tool, taken=taken)
+        reason = check_tool(cast("object", tool), taken=taken, engine=engine)
         if reason is not None:
             raise PluginError(f"plugin {ref}: {reason}")
         taken.append(tool.name)

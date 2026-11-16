@@ -1,7 +1,7 @@
 """emlddmm as LangSlice tools: the adapter, run in LangSlice's process.
 
-Load it with ``--plugins langslice.engines.emlddmm.plugin:tools`` or
-``create_job(..., plugins=["langslice.engines.emlddmm.plugin:tools"])``;
+It is a tool of every job (its row of the tool table names
+``langslice.engines.emlddmm.plugin:tools``);
 it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``device`` (``auto``: the GPU when there is one, else
 the CPU), ``dtype`` (``float64``), ``section_um`` (58.88), ``section_weight``
@@ -171,7 +171,7 @@ def emlddmm_stack(
 
     Starts one piece of background work over the stack and returns at once
     with its id. Every section in the stack refuses writes until it lands;
-    you can look, zoom and work on sections you left out. When it lands, the
+    you can look[[?zoom , zoom]] and work on sections you left out. When it lands, the
     next tool reply starts with its notice: how many sections were written,
     those fitted for the stack and not written with the reason, the sections
     whose warp has plausibility flags with their codes, and the overlays of
@@ -261,14 +261,14 @@ def emlddmm_plane(
     Args:
         sections: Filenames; empty means every section with a position. At
             least two.
-        slot_um: The slot spacing in micrometres, as for emlddmm_stack: you
+        slot_um: The slot spacing in micrometres[[?emlddmm_stack , as for emlddmm_stack]]: you
             set it, there is no default. With the order right and each section
             within about one interval of its place, set it to the section
             thickness, or to about half the interval between neighbouring
             sections.
-        section_image: The section image to fit, as for emlddmm_stack.
+        section_image: The section image to fit[[?emlddmm_stack , as for emlddmm_stack]].
         atlas_image: One of the atlas's images or "nissl", as for the fit.
-        iterations: Steps at the coarsest scale, as for emlddmm_stack. Default
+        iterations: Steps at the coarsest scale[[?emlddmm_stack , as for emlddmm_stack]]. Default
             100.
         view: True returns the pictures described below; false returns none.
 
@@ -277,8 +277,8 @@ def emlddmm_plane(
         spacing scale and shift_mm; per section what the fit used (inputs), its
         proposed position_mm, the
         change, and the residual turn (deg) and shift (mm) it needed at the
-        found plane beyond what the stack as a whole needed; and the overlays
-        of up to four sections drawn at the found plane, not written.
+        found plane beyond what the stack as a whole needed[[?look:overlay ; and the overlays ~
+        of up to four sections drawn at the found plane, not written]].
     """
     ...
 

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
-from langslice.job.settings.spec import JobSpec, TransformSpec
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.tools.arguments import SectionPosition, SectionTransform
 from langslice.tools.catalog import VERBS
 from langslice.tools.descriptions import render as declarations
@@ -123,8 +123,10 @@ def test_the_run_facts_follow_the_spec():
     angles = DescriptionFacts.from_spec(
         _spec(tasks=["transform"], transform=TransformSpec(angles=True)), auto=True)
     assert not angles.positions and angles.auto
-    nonlinear = DescriptionFacts.from_spec(_spec(tasks=["nonlinear"], force_view=True), auto=False)
+    traced = NonlinearSpec(provider="openai-oauth")
+    nonlinear = DescriptionFacts.from_spec(
+        _spec(tasks=["nonlinear"], force_view=True, nonlinear=traced), auto=False)
     assert nonlinear.forced_view and nonlinear.prompt
-    unreached = DescriptionFacts.from_spec(_spec(tasks=["nonlinear"]), auto=False,
+    unreached = DescriptionFacts.from_spec(_spec(tasks=["nonlinear"], nonlinear=traced), auto=False,
                                            image_model=False)
     assert not unreached.prompt

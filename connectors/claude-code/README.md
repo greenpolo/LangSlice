@@ -6,15 +6,17 @@ The plugin is skills for the normal Claude Code session plus registration
 subagents that each register exactly one brain. It bundles LangSlice's MCP
 server (`.mcp.json`: the `langslice` executable with `mcp`, the server
 Claude Desktop uses, [`docs/agents/mcp.md`](../../docs/agents/mcp.md)), and
-the scripting subagent and the skills use the `langslice-job` command line
-([`docs/agents/cli.md`](../../docs/agents/cli.md)).
+the skills use the `langslice-job` command line to set a job up and check it
+([`docs/agents/cli.md`](../../docs/agents/cli.md)). A registration subagent
+never runs `langslice-job`: it registers with the MCP tools, and the scripting
+one also with scripts of its own.
 
 ## Install
 
 LangSlice itself must be installed first (the conda environment of
 `environment.yml`). Claude Code must then find `langslice` and
 `langslice-job` on PATH: the MCP server runs `langslice mcp`, the hook runs
-`langslice`, and the skills and `register-scripting` run `langslice-job`.
+`langslice`, and the skills run `langslice-job`.
 Claude Desktop reads PATH from the login shell (`$SHELL -ilc`) on macOS and
 Linux, and from the user and system environment variables on Windows.
 
@@ -49,8 +51,8 @@ it points at this folder. To try it from a checkout:
 | skill `langslice:setup` | main session, once | puts `langslice`'s folder on PATH and allows LangSlice's MCP tools in `~/.claude/settings.json` |
 | skill `langslice:abba` | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands (import, state, wait, export), reaching a running ABBA through abba-mcp, an ABBA registration into a job |
 | agent `langslice:register` | registers one brain | only LangSlice's MCP tools (`mcp__plugin_langslice_langslice__*`), whose replies carry the pictures; no shell, no file writes, no web |
-| agent `langslice:register-scripting` | registers one brain | Bash, Read, Write, Edit and the web: the `langslice-job` command line plus scripts with the LangSlice Python library, and packages installed in the job's own environment (`langslice-job FOLDER env`) |
-| MCP server `plugin:langslice:langslice` | the `register` agent | `langslice mcp`, started with the session; its tools are also listed in the main session, which leaves them to the subagent |
+| agent `langslice:register-scripting` | registers one brain | LangSlice's MCP tools, and Bash, Read, Write, Edit and the web for scripts of its own with the LangSlice Python library, run with the job's own Python (`env/` in the job folder), into which it may install packages |
+| MCP server `plugin:langslice:langslice` | both registration agents | `langslice mcp`, started with the session; its tools are also listed in the main session, which leaves them to the subagent |
 | `.claude-plugin/icon.png` | the plugin directory listing | LangSlice's logo, a copy of `assets/logo/logomark_light_512.png` |
 | hook `SubagentStop` | every registration subagent | `langslice session-end --harness claude-code` copies the subagent's transcript into the job's `trace/` folder |
 
@@ -61,20 +63,29 @@ one fixed system prompt, the same for every job; the job itself (LangSlice's
 job statement, the user's notes) is the message that launched them, made by
 `langslice-job <folder> launch --role register` (or `register-scripting`) and
 passed on unchanged. The job card (`AGENTS.md` in the job folder) is the
-scripting subagent's reference. The skills are not preloaded into the
-subagents (`skills` is empty and `Skill` is not in their `tools`).
+scripting subagent's reference.
 
-`register` starts with `start_job(image_folder=<folder>)`, named in its launch
+The registration skills (`registration-playbook`, `placement`,
+`damage-and-masks`, `landmarks`, `choosing-engines`) teach the subagents how
+to register, with example pictures. Both subagents preload
+`registration-playbook` (`skills` in their frontmatter) and load the others on
+demand (`Skill` is in their `tools`); `Read` lets `register` open the example
+pictures. The skills' one source is `src/langslice/skills/`; each connector
+carries a copy, checked by `tests/test_connector_skills.py`.
+
+Both start with `start_job(image_folder=<folder>)`, named in the launch
 message, which also holds LangSlice's job statement for the job (the one its
-own agent gets) and the user's notes; it reads the opening pictures with
-`show_stack`. `register-scripting`'s launch message holds the same statement,
-the status table and the opening pictures listed as saved files. Each launch
+own agent gets) and the user's notes; they read the opening pictures with
+`show_stack`. `register-scripting`'s launch message adds a paragraph on
+scripts: the job's own Python (made by `launch`), how to install a package
+into it, and how a script opens the job. Each launch
 message is also saved in the job's `logs/launches/`, and the hook checks the
 subagent's first message against those files
 ([`docs/agents/cli.md`](../../docs/agents/cli.md)).
 
-The MCP server holds one job at a time for the session, so one `register`
-subagent runs at a time per Claude Code session. It sends no progress during
+The MCP server holds one job at a time for the session, so one registration
+subagent runs at a time per Claude Code session; brains registered side by
+side each need a Claude Code session of their own. It sends no progress during
 a long verb; `.mcp.json` sets the server's `timeout` to 24 hours, which also
 keeps Claude Code from aborting a call that is silent for 30 minutes (its
 idle limit for stdio servers), so a call longer than 24 hours is aborted.
@@ -86,7 +97,7 @@ Each agent has a strict `tools` allowlist, `model: inherit` and
 CLAUDE.md files; managed policy files still load).
 
 - `register`: `mcp__plugin_langslice_langslice__*`.
-- `register-scripting`: `Bash, Read, Write, Edit, WebFetch, WebSearch`.
+- `register-scripting`: `mcp__plugin_langslice_langslice__*, Bash, Read, Write, Edit, WebFetch, WebSearch`.
 
 Claude Code asks before each MCP tool call unless a permission rule allows
 it; `"allow": ["mcp__plugin_langslice_langslice"]` in a settings file allows
@@ -106,27 +117,30 @@ inherits the session's.
 
 A plugin agent cannot restrict Bash to one command (a `Bash(langslice *)`
 entry in `tools` is not honored per command; `permissionMode` and `hooks` are
-ignored in plugin agents). To make `register-scripting` run only `langslice-job`, add
-permission rules to a settings file, for example `.claude/settings.local.json`
-of a dedicated working directory. They apply to the whole session, main agent
-included:
+ignored in plugin agents). To make `register-scripting` run only the job's
+own Python, add permission rules to a settings file, for example
+`.claude/settings.local.json` of a dedicated working directory. They apply to
+the whole session, main agent included:
 
 ```json
 {
   "permissions": {
     "defaultMode": "dontAsk",
     "allow": [
+      "mcp__plugin_langslice_langslice",
       "Bash(langslice-job *)",
+      "Bash(\"/data/brains/M04/langslice/env/bin/python\" *)",
       "Read(//data/brains/M04/**)"
     ]
   }
 }
 ```
 
-`dontAsk` denies every call that no rule allows, so only `langslice-job` commands
+`dontAsk` denies every call that no rule allows, so only LangSlice's MCP
+tools, the main session's `langslice-job` commands, the job's own Python
 (each part of a compound command must match) and reading under the named path
-run. Replace the path with your job folder (`//` starts an absolute path).
-It also needs `Edit(//data/brains/M04/**)`, and the main
-session needs whatever else it should be allowed to do. The scripting
-agent runs its scripts with `langslice-job FOLDER python SCRIPT`, so allowing
-`langslice-job` allows any script it writes.
+run. Replace the paths with your job folder's (`//` starts an absolute path;
+the launch message names the interpreter, `env\Scripts\python.exe` on
+Windows). It also needs `Edit(//data/brains/M04/**)`, and the main
+session needs whatever else it should be allowed to do. Allowing that Python
+allows any script the agent writes.

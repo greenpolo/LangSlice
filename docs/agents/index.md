@@ -7,7 +7,7 @@ page instead.
 | Page | Read it to |
 |---|---|
 | [Install LangSlice (for agents)](install.md) | Find conda, install LangSlice, check it, and connect it to Codex, Claude Code or Antigravity |
-| [The agent CLI: `langslice-job`](cli.md) | Create a job, write its launch prompt, call verbs and read their replies |
+| [The agent CLI: `langslice-job`](cli.md) | Create a job, write its launch prompt, read its status and export its results |
 | [The MCP server](mcp.md) | Serve the tools to an MCP host and open a job there |
 | [The built-in agent](builtin.md) | Run LangSlice's own agent session: model access, job settings, spend, logs |
 
@@ -16,10 +16,10 @@ same registration verbs:
 
 | Interface | Who drives it | Entry point |
 |---|---|---|
-| Agent CLI | A coding agent with a shell, such as Claude Code, Antigravity or Codex | `langslice-job FOLDER VERB` |
-| MCP | An agent in an MCP host, or a coding agent's `register` role | `langslice mcp` |
+| Agent CLI | The main session of a coding agent with a shell (Claude Code, Antigravity, Codex): it sets the job up, launches the registration agent and checks the result; it runs no registration tool | `langslice-job FOLDER COMMAND` |
+| MCP | An agent in an MCP host, or a coding agent's `register` and `register-scripting` roles | `langslice mcp` |
 | Built-in agent | LangSlice's agent session | `langslice linear run FOLDER` |
-| Python | A coding agent writing its own workflow | [Python library](../developers/library.md) |
+| Python | A script: a `register-scripting` agent's own, or a coding agent's workflow | [Python library](../developers/library.md) |
 | ABBA | A job prepared from the sections selected in ABBA, continued from the LangSlice window's message; every write appears in ABBA | [ABBA](../abba.md) |
 
 Rules for a main session that sets up a registration (the connectors'

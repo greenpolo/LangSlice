@@ -38,18 +38,16 @@ posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * res
 are (row, col), centres at integers. Section positions in `state.json` and the verbs are
 millimetres along the slicing axis.
 
-## CLI (JSON on stdout: ok, picture_files, result, artifacts, warnings, next)
-`langslice-job <ROOT>/langslice VERB --args '{...}'` (or `--key value`); `--dry-run`
-(writes nothing), `--verbose`. A long verb's call answers within 30 s: its result, or its run id
-and state `running` (the run goes on, also if your shell ends the command where a process may
-outlive it; `wait [id]` waits 30 s more, `runs` lists runs, `--background` answers at once).
-Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index` in the reply's
-`pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
-`error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
-verb re-checks each section first: `STALE_INPUT`, run it again for that section).
-`TOOLS.md` (from `init` and `launch`) describes every verb and its arguments;
-`langslice-job <ROOT>/langslice schema VERB [VERB ...]` as JSON (every verb without one),
-`ops` lists them, `schema init` the flags.
+## Command line (JSON on stdout: ok, result, artifacts, warnings, next)
+For the session that sets a job up and checks it, not for registering:
+`langslice-job <ROOT>/langslice COMMAND`: `init` (`schema init`: its flags), `launch --role
+register|register-scripting`, `status`, `export_maps` (answers within 30 s: its result, or its run id; `wait [id]`, `runs`), `env`, `python SCRIPT`.
+Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal.
+
+## Tools
+A registration agent has these as MCP tools; a script has them as methods (Python, below).
+`TOOLS.md` (from `init`) describes each and its arguments;
+`langslice-job <ROOT>/langslice schema TOOL [TOOL ...]` as JSON (every tool without one).
 - `look` (read, Common): Draw pictures of sections and the atlas. Writes nothing.
 - `zoom` (read, Common): Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 - `make_image` (write, Common): Make, replace or delete a named section image, from the section's other images.
@@ -73,18 +71,25 @@ verb re-checks each section first: `STALE_INPUT`, run it again for that section)
 - `restore_registration` (write, Common): Put back registrations sections held before: their orientation, transform and deformation.
 - `submit` (write, Common): End the run. Call this exactly once, last.
 - `export_maps` (read, Common, long): Write each placed section's maps and the stack's exports, from the job as it stands.
+- `stalign_lddmm` (write, Nonlinear, long; at most 20 sections per call): Fit the atlas onto sections with STalign, on their current registration.
+- `stalign_plane_search` (read, Positioning; at most 8 sections per call): Estimate the cutting angles with STalign's plane search. Writes nothing.
+- `spomialign` (write, Nonlinear, long; at most 20 sections per call): Register sections to the atlas with SPOmiAlign, on their current registration.
+- `emlddmm_stack` (write, Nonlinear, long; at most 4 pictures per call): Fit the whole stack to the atlas at once with emlddmm, on its current plane.
+- `emlddmm_plane` (read, Positioning; at most 4 pictures per call): Estimate the stack's cutting angles and spacing with emlddmm. Writes nothing.
 
 ## Python
 `import langslice; job = langslice.open_job("<ROOT>/langslice")`; the verbs are methods
 with the same arguments (`job.status()`,
 `job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])`). Each returns, once its pictures are on disk, a JSON-safe
-dict: the CLI's `result` in full (status rows with every field, null where unset) plus
-`artifacts` as the CLI lists them; `reply.images` holds the pictures as PIL images.
+dict: the tool's reply in full (status rows with every field, null where unset) plus
+`artifacts`, the files of its pictures; `reply.images` holds the pictures as PIL images.
+A script's writes and a registration agent's tools share the folder's lock; a long fit
+re-checks each section before it applies (`STALE_INPUT`: run it again for that section).
 Atlases: `langslice.load_atlas("allen_mouse_25um")`.
 Keep your own files here, never in /tmp: scripts in `scripts/`, the rest in `scratch/`.
-Run a script with `langslice-job <ROOT>/langslice python scripts/NAME.py [ARGS]` (the job's
-`env/` python; `env install PACKAGE ...` adds packages), but run long verbs (the fits) as
-commands: a command your harness ends takes its script, and the fits in it, with it.
+Run a script with the job's own Python, `env/` here (made by `launch --role register-scripting`,
+whose message names its interpreter, or by `langslice-job <ROOT>/langslice python
+scripts/NAME.py [ARGS]`; `env install PACKAGE ...` adds packages).
 Your own method (an affine, a warp field) goes in through `job.context`: `help(job.context)`.
 Judge and choose fits by looking at their pictures, never by image-similarity scores (mutual
 information, outline overlap, edge correlation): the fits optimise those, they track border
