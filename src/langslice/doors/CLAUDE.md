@@ -344,8 +344,17 @@ bodies, and turned into an answer once per door:
   without one gets a new job from the server's job flags), `build_server`,
   `serve` (`initialization_options`: the capabilities advertise
   `tools.listChanged`, so a host acts on the `send_tool_list_changed` that
-  `start_job` sends when it installs a job's tools). `start_job` takes one
+  `start_job` sends when it installs a job's tools; the protocol writes a
+  duplicate of stdout, the process's own stdout going to stderr, and reads
+  through `stdio.protocol_input`). `start_job` takes one
   argument, `image_folder`; without a job open and without it, `NO_FOLDER`.
+- `stdio.py` — `protocol_input()`: the host's input as a duplicate the
+  protocol alone reads, the process's stdin (fd 0) on the null device
+  meanwhile. On Windows a thread waiting on a synchronous pipe read blocks
+  every other call on that pipe, and compiled modules (numpy's, scipy's
+  Fortran `_odepack`) ask about stdin as they load, so an engine's first
+  import during a tool call would never return. The MCP server and
+  `langslice serve --stdio` read through it; `tests/test_stdio_input.py`.
 - `abba/`, `credentials.py`, `user_settings.py` — what the MCP door, the
   CLI and the engine service share (the service itself is
   `hosts/service.py`, protocol 3): `abba/contract.py` (the engine contract's

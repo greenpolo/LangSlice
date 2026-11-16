@@ -7645,7 +7645,7 @@
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/window.py", "symbol": "candidates", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/window.py", "symbol": "find_browser", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/window.py", "symbol": "open_window", "count": 3},
-{"rule": "ruff:E501", "path": "src/langslice/hosts/service.py", "symbol": "_run_requests", "count": 4},
+{"rule": "ruff:E501", "path": "src/langslice/hosts/service.py", "symbol": "_run_requests", "count": 3},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/service.py", "symbol": "_write_json_line", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/service.py", "symbol": "handle_request.data_emit", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/service.py", "symbol": "run_stdio", "count": 1},

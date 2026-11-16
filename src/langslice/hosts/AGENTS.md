@@ -42,7 +42,10 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   every system). A long request (`abba.follow`, the
   follower that mirrors a job's checkpoints into ABBA) runs until the
   service's input closes: a thread reads the rest of the input and sets the
-  request's stop event at its end. The protocol models, the preparation of
+  request's stop event at its end. The service reads its input through
+  `doors.stdio.protocol_input` and writes a duplicate of stdout, so a module
+  a request loads neither waits on the input pipe nor prints into the
+  protocol. The protocol models, the preparation of
   a job from ABBA's snapshots, the follower and its checkpoint rows are
   door-level, in `doors/abba/`. `docs/developers/architecture.md`,
   `docs/abba.md`.
