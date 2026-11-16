@@ -8,6 +8,7 @@ from __future__ import annotations
 import http.client
 import json
 import shutil
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -149,7 +150,13 @@ def test_the_agent_reads_the_open_comments_with_their_boxes(
                             [*spec.switched_off, "review_comments"]) == []
     finally:
         handle.close()
-    revised = {c["section"]: c["revised"] for c in _snapshot(gui)["comments"]}
+    # the window reads the job again at most every POLL_S
+    deadline = time.monotonic() + 5
+    while True:
+        revised = {c["section"]: c["revised"] for c in _snapshot(gui)["comments"]}
+        if revised[ID0] or time.monotonic() > deadline:
+            break
+        time.sleep(0.1)
     assert revised == {ID0: True, ID2: False}
 
 
