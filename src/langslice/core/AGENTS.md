@@ -168,7 +168,10 @@ the angles in a caption (empty for the flat plane).
   library that holds Python's lock: SimpleITK's N4 of `make_image`), `kept_process_pool` / `drop_process_pool` (workers kept for
   the process: the Elastix affine), `global_threads` (a library's global
   thread count held while any call runs, counted across threads;
-  `simpleitk_threader`). The plugin API re-exports `map_sections`. Measured on
+  `simpleitk_threader`), `gpu_slots` (how many fits run on the GPU at once:
+  `LANGSLICE_GPU_SLOTS`, else the GPU's memory over `GIB_PER_GPU_FIT`; the
+  slots of `fits/deformable/gpu_queue.py`). The plugin API re-exports
+  `map_sections`. Measured on
   the 331CTX stack (24 cores): the Elastix affine about 2.5x faster, the
   STalign plane search (CPU work, no GPU turn) about 1.8x.
 - `shared_files.py` — files another process may hold open (on Windows a

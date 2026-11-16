@@ -788,7 +788,7 @@ a position and a transform.
 
 | Argument | Default | What it does |
 |---|---|---|
-| `sections` | (required) | 1 to 20 filenames, fitted one after another. |
+| `sections` | (required) | 1 to 20 filenames, fitted at once (on the GPU, as many as its queue's slots). |
 | `restrict_to` | every region | Refine these regions only: a 0.3 mm neighbourhood around them is fitted, and the change fades to none over a further 0.3 mm. |
 | `section_image` | `preprocessed` | The section image to match. |
 | `atlas_image` | `nissl` | As for `elastix_affine`. |
@@ -849,8 +849,8 @@ never flagged. Up to 20 sections per call because every fitted section is held
 in memory until the call writes them all as one undo step (20 sections peaked
 at 6.4 GB).
 
-A fit that waited a second or more for the machine's GPU queue (one fit at a
-time across every job on the machine) says how long in its row
+A fit that waited a second or more for the machine's GPU queue (as many at once as the queue's slots (`LANGSLICE_GPU_SLOTS`, else the GPU's memory over 2 GB: 15 on a 32 GB GPU), across every job
+on the machine) says how long in its row
 (`gpu_wait_s`); one that found the GPU's memory taken by another process,
 waited and ran again says so (`retried`). What the engines print goes to the
 job's `logs/engine.log`, never into the reply. A fit whose engine fails is

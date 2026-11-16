@@ -13,8 +13,9 @@ from pathlib import Path
 
 import numpy as np
 
-from langslice.core.fits.deformable import engines
+from langslice.core.fits.deformable import gpu_queue
 from langslice.core.fits.engine_log import engine_output
+from langslice.core.hardware import GPU_SLOTS_VARIABLE
 from langslice.tools.deformable import gpu_rows
 
 
@@ -39,8 +40,9 @@ def test_engine_output_sends_descriptor_2_to_the_log_and_back(tmp_path: Path):
 
 def test_gpu_turn_reports_how_long_it_waited(tmp_path: Path, monkeypatch):
     lock = tmp_path / "gpu.lock"
-    monkeypatch.setattr(engines, "GPU_LOCK", lock)
-    with engines.gpu_turn("cpu") as turn:
+    monkeypatch.setattr(gpu_queue, "GPU_LOCK", lock)
+    monkeypatch.setenv(GPU_SLOTS_VARIABLE, "1")
+    with gpu_queue.gpu_turn("cpu") as turn:
         assert turn.waited_s == 0.0
     if sys.platform == "win32":
         return
@@ -58,7 +60,7 @@ def test_gpu_turn_reports_how_long_it_waited(tmp_path: Path, monkeypatch):
     other = threading.Thread(target=hold)
     other.start()
     held.wait(5)
-    with engines.gpu_turn("cuda") as turn:
+    with gpu_queue.gpu_turn("cuda") as turn:
         assert turn.waited_s >= 0.2
     other.join()
 

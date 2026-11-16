@@ -33,15 +33,20 @@ import threading
 import time
 import types
 import warnings
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import numpy as np
-from filelock import FileLock
 
+from langslice.core.fits.deformable.gpu_queue import (
+    OOM_RETRIES,
+    OOM_WAIT_S,
+    gpu_turn,
+    on_gpu,
+    out_of_memory,
+)
 from langslice.core.fits.deformable.settings import (
     DETAIL,
     ELASTIX_STAIN_METRIC,
@@ -55,7 +60,6 @@ from langslice.core.hardware import (
     global_threads,
     kept_process_pool,
 )
-from langslice.core.shared_files import retried
 
 logger = logging.getLogger(__name__)
 
@@ -232,91 +236,86 @@ def engine_worker() -> None:
     torch.set_num_threads(FIT_THREADS)
 
 
-#: The GPU's one queue, shared by every process on the machine that fits on it:
-#: FireANTs here, and STalign, emlddmm and SPOmiAlign through the plugin API,
-#: in this process, take the same file. The folder is the one every engine
-#: sandbox may write.
-GPU_LOCK = Path(os.environ.get("LANGSLICE_GPU_LOCK")
-                or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock")
-#: A fit that still finds the GPU full (a process outside the queue holds it)
-#: waits OOM_WAIT_S, then twice that, ..., and fits again, OOM_RETRIES times.
-OOM_RETRIES = 4
-OOM_WAIT_S = 5.0
-
-
 @dataclass
-class GpuTurn:
-    """How long a fit waited for its turn on the GPU (:func:`gpu_turn`)."""
+class _TorchSettings:
+    """Count this process's running fits; keep torch's settings from before.
 
-    waited_s: float = 0.0
+    :func:`_deterministic` puts them back after the last fit.
+    """
 
-
-@contextlib.contextmanager
-def gpu_turn(device: str) -> Iterator[GpuTurn]:
-    """One fit at a time on the GPU across processes and threads (a lock on
-    :data:`GPU_LOCK`) for a device whose name starts with ``cuda``; nothing on
-    the CPU. Yields how long the turn was waited for."""
-    # filelock: flock on Linux and macOS, as the engine plugins take it
-    turn = GpuTurn()
-    if not device.startswith("cuda"):
-        yield turn
-        return
-    GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(str(GPU_LOCK))
-    asked = time.perf_counter()
-    retried(lock.acquire)
-    turn.waited_s = time.perf_counter() - asked
-    try:
-        yield turn
-    finally:
-        lock.release()
+    running: int = 0
+    saved: tuple[bool, bool, bool, int] = (False, True, False, 1)
 
 
-#: What cuDNN and cuBLAS write in the error when they cannot allocate.
-GPU_ALLOCATION_FAILURES = (
-    "CUDNN_STATUS_INTERNAL_ERROR",
-    "CUBLAS_STATUS_ALLOC_FAILED",
-)
-
-
-def out_of_memory(exc: BaseException) -> bool:
-    """Whether *exc* is the GPU running out of memory (torch raises it as
-    ``OutOfMemoryError``, some kernels as a generic CUDA error, cuDNN and cuBLAS
-    as their own allocation failures)."""
-    text = str(exc)
-    if type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text:
-        return True
-    return any(failure in text for failure in GPU_ALLOCATION_FAILURES)
+_TORCH_SETTINGS = _TorchSettings()
 
 
 @contextlib.contextmanager
-def _deterministic(torch: Any, device: str) -> Iterator[None]:
-    """Torch's deterministic algorithms, seed and (CPU) thread count for one
-    fit; the process's own settings come back afterwards."""
+def _deterministic(device: str) -> Generator[None, None, None]:
+    """Hold torch's deterministic settings while any fit of this process runs.
+
+    Several fits run at once on threads: the first sets the deterministic
+    algorithms, the seed and (CPU) thread count, the last puts the process's
+    own back. No fit draws a random number, so the fits beside it never
+    change its result.
+    """
+    import torch  # local: slow to import; the fit has loaded it already
+
+    settings = _TORCH_SETTINGS
     with _TORCH_LOCK:
-        held = (torch.are_deterministic_algorithms_enabled(),
-                torch.backends.cudnn.enabled, torch.backends.cudnn.benchmark,
-                torch.get_num_threads())
-        # Torch flags its grid sampler's backward as nondeterministic for the
-        # image's gradient (atomic adds), which no fit asks for; the warp's
-        # gradient is one sum per output pixel. warn_only keeps that op, and
-        # the deformable tests check that identical inputs give identical
-        # fields. cuDNN's grid sampler is off: its backward is not one.
-        torch.use_deterministic_algorithms(True, warn_only=True)
-        torch.backends.cudnn.enabled = False
-        torch.backends.cudnn.benchmark = False
-        if device == "cpu":
-            torch.set_num_threads(FIT_THREADS)
-        torch.manual_seed(RANDOM_SEED)
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message=".*does not have a deterministic")
-                yield
-        finally:
-            torch.use_deterministic_algorithms(held[0])
-            torch.backends.cudnn.enabled = held[1]
-            torch.backends.cudnn.benchmark = held[2]
-            torch.set_num_threads(held[3])
+        if settings.running == 0:
+            settings.saved = (
+                torch.are_deterministic_algorithms_enabled(),
+                torch.backends.cudnn.enabled,
+                torch.backends.cudnn.benchmark,
+                torch.get_num_threads(),
+            )
+            # Torch flags its grid sampler's backward as nondeterministic for
+            # the image's gradient (atomic adds), which no fit asks for; the
+            # warp's gradient is one sum per output pixel. warn_only keeps
+            # that op, and the deformable tests check that identical inputs
+            # give identical fields. cuDNN's grid sampler is off: its backward
+            # is not one.
+            torch.use_deterministic_algorithms(True, warn_only=True)
+            torch.backends.cudnn.enabled = False
+            torch.backends.cudnn.benchmark = False
+            if device == "cpu":
+                torch.set_num_threads(FIT_THREADS)
+            torch.manual_seed(RANDOM_SEED)  # pyright: ignore[reportUnknownMemberType] - torch's stub
+        settings.running += 1
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=".*does not have a deterministic"
+            )
+            yield
+    finally:
+        with _TORCH_LOCK:
+            settings.running -= 1
+            if settings.running == 0:
+                enabled, cudnn, benchmark, threads = settings.saved
+                torch.use_deterministic_algorithms(enabled)
+                torch.backends.cudnn.enabled = cudnn
+                torch.backends.cudnn.benchmark = benchmark
+                torch.set_num_threads(threads)
+
+
+@contextlib.contextmanager
+def _own_stream(device: str) -> Generator[None, None, None]:
+    """Run a GPU fit on a CUDA stream of its own.
+
+    Fits on several threads then overlap on the GPU; on the shared default
+    stream they would queue behind each other.
+    """
+    if not on_gpu(device):
+        yield
+        return
+    import torch  # local: slow to import; the fit has loaded it already
+
+    stream = torch.cuda.Stream()
+    with torch.cuda.stream(stream):
+        yield
+    stream.synchronize()
 
 
 def _channel_loss(
@@ -512,7 +511,11 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     waited_s, retries = 0.0, 0
     for attempt in range(OOM_RETRIES + 1):
         try:
-            with gpu_turn(device) as turn, _deterministic(torch, device):
+            with (
+                gpu_turn(device) as turn,
+                _deterministic(device),
+                _own_stream(device),
+            ):
                 waited_s += turn.waited_s
                 fixed = image(fixed_channels, inputs.fixed_mask)
                 moving = image(moving_channels, inputs.moving_mask)

@@ -22,7 +22,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 from collections.abc import Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -89,6 +89,7 @@ from langslice.core.fits.deformable.settings import (
     FitSettings,
 )
 from langslice.core.geometry.oblique import plane_index_coordinates
+from langslice.core.hardware import gpu_slots
 from langslice.core.space import atlas_space_context
 
 #: Metric weight of each label-map channel; ANTs' own label registration
@@ -662,6 +663,28 @@ def run_prepared(prepared: PreparedFit) -> DeformableRecord:
     return finish_fit(prepared, run_fit(*_engine_args(prepared)))
 
 
+def run_or_fail(
+    prepared: PreparedFit,
+) -> DeformableRecord | CandidateFailure:
+    """Run one prepared fit in this process; one that fails is not raised.
+
+    Parameters
+    ----------
+    prepared
+        The fit (:func:`prepare_fit`).
+
+    Returns
+    -------
+    DeformableRecord or CandidateFailure
+        Its record, or what failed.
+    """
+    try:
+        return run_prepared(prepared)
+    except Exception as exc:  # noqa: BLE001 - one candidate must not sink the rest
+        failure = f"{type(exc).__name__}: {exc}"
+        return CandidateFailure(_engine_args(prepared)[1], failure)
+
+
 def fit_prepared(
     prepared: Sequence[PreparedFit], *, max_workers: int | None = None,
 ) -> list[DeformableRecord | CandidateFailure]:
@@ -669,8 +692,9 @@ def fit_prepared(
 
     The prepared fits may come from different sections, section images or
     settings. A failing fit comes back as a :class:`CandidateFailure`. On a GPU
-    the fits run one after another in this process (each takes about a second
-    there; workers would each pay for their own CUDA start). On the CPU they
+    the fits run at once on threads of this process, as many as the GPU
+    queue's slots (``core.hardware.gpu_slots``; workers would each pay for
+    their own CUDA start). On the CPU they
     run concurrently, one process each: every worker fits on
     :data:`~langslice.core.fits.deformable.engines.FIT_THREADS` threads
     (identical inputs give identical fields), so by default there are as many
@@ -680,13 +704,9 @@ def fit_prepared(
         return []
     results: list[DeformableRecord | CandidateFailure] = []
     if fit_device() == "cuda":
-        for item in prepared:
-            try:
-                results.append(run_prepared(item))
-            except Exception as exc:  # noqa: BLE001 - one candidate must not sink the rest
-                results.append(CandidateFailure(_engine_args(item)[1],
-                                                f"{type(exc).__name__}: {exc}"))
-        return results
+        workers = min(len(prepared), gpu_slots())
+        with ThreadPoolExecutor(workers, thread_name_prefix="gpu-fit") as pool:
+            return list(pool.map(run_or_fail, prepared))
     workers = max_workers or min(len(prepared), max(1, (os.cpu_count() or 2) // FIT_THREADS))
     context = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=workers, mp_context=context,

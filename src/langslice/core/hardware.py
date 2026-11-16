@@ -11,9 +11,9 @@ instead (``process_pool``, ``kept_process_pool``).
 ``LANGSLICE_CPU_CORES`` sets the core count by hand (``1`` runs every section
 in turn, in this process).
 
-A fit on the GPU still takes the machine's GPU queue
-(:func:`langslice.core.fits.deformable.engines.gpu_turn`) one at a time; the
-work around it (reading the section, the pictures) runs in parallel.
+A fit on the GPU takes a slot of the machine's GPU queue
+(``core.fits.deformable.gpu_queue``); :func:`gpu_slots` says how many fits
+run there at once.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import ctypes
+import functools
 import logging
 import multiprocessing
 import os
@@ -431,3 +432,32 @@ def simpleitk_threader() -> Threader:
     import SimpleITK as sitk  # local: slow to import, needed only to filter
 
     return sitk.ProcessObject
+
+
+#: Sets how many fits run on the GPU at once (an integer).
+GPU_SLOTS_VARIABLE = "LANGSLICE_GPU_SLOTS"
+#: The GPU memory one fit is given when the slots are counted from the GPU's
+#: memory: a FireANTs, STalign or emlddmm fit of a section needs well under.
+GIB_PER_GPU_FIT = 2.0
+
+
+@functools.cache
+def _gpu_memory_gib() -> float:
+    return _first_gpu()[1]
+
+
+def gpu_slots() -> int:
+    """Count the fits that may run on the GPU at once.
+
+    Returns
+    -------
+    int
+        ``LANGSLICE_GPU_SLOTS`` when it is set to a positive integer, else
+        the first GPU's memory over :data:`GIB_PER_GPU_FIT` (15 on a 32 GB
+        GPU), at least one. A fit that still finds the GPU full waits and
+        runs again.
+    """
+    given = os.environ.get(GPU_SLOTS_VARIABLE, "").strip()
+    if given.isdigit() and int(given) > 0:
+        return int(given)
+    return max(1, int(_gpu_memory_gib() // GIB_PER_GPU_FIT))

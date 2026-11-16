@@ -324,16 +324,15 @@ def _from_em(
             workspace, job.state, grid, section_image
         )
         pixels = np.asarray(image.convert("L"), dtype=np.float32) / 255.0
-        with deformation.engine_lock():
-            weights, facts = em_sorting(
-                workspace,
-                job.state,
-                section,
-                job.deformations,
-                section_image=pixels,
-                atlas_image=atlas_image,
-                params=params,
-            )
+        weights, facts = em_sorting(
+            workspace,
+            job.state,
+            section,
+            job.deformations,
+            section_image=pixels,
+            atlas_image=atlas_image,
+            params=params,
+        )
     except Refused:
         raise
     except Exception as exc:  # noqa: BLE001 - the sort's failure is the caller's refusal

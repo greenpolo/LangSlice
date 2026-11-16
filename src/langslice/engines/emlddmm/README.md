@@ -33,9 +33,9 @@ It needs
 nothing beyond LangSlice's own dependencies. Options (`--plugin-config`): `device` (`auto`: the
 GPU when torch sees one, else the CPU), `dtype` (`float64`), `section_um` (58.88, the example's
 pixel), `section_weight` (`gap`, or a thickness in um), `memory_limit_gb` (24). A fit runs on
-torch's own thread count. A fit on the GPU takes the machine's GPU queue through the plugin
-API's `gpu_turn`, as STalign's, SPOmiAlign's and LangSlice's own GPU fits do
-(`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`).
+torch's own thread count. A fit on the GPU takes a slot of the machine's GPU queue through
+the plugin API's `gpu_turn`, as STalign's, SPOmiAlign's and LangSlice's own GPU fits do
+(`LANGSLICE_GPU_SLOTS` fits at once, else the GPU's memory over 2 GB).
 
 ## The tools
 

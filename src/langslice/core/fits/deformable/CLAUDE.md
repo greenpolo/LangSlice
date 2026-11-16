@@ -143,18 +143,27 @@ and returns a `record.DeformableRecord`. No custom solver.
   a caller's own (bool on the section grid; a script's `fit_fireants(mask=)`,
   the Elastix affine's `mask=`).
   `fit_prepared` runs the prepared fits of a call (different sections or settings):
-  on a GPU one after another in the caller, on the CPU in a spawn process
+  on a GPU at once on threads of the caller, as many as the GPU queue's
+  slots, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
-  candidate is a `CandidateFailure`, never an exception. A GPU fit runs in the
-  machine's one GPU queue (`engines.gpu_turn`: a file lock (`filelock`, on
-  every system; `flock` on Linux and macOS) on `GPU_LOCK`,
-  `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, taken for a
-  device whose name starts with `cuda`, by threads of one process as by
-  processes; the plugin API re-exports it, which the in-tree engines that fit
-  on the GPU (STalign, emlddmm, SPOmiAlign) take in LangSlice's process; it yields a `GpuTurn`
-  whose `waited_s` is how long the lock was waited for), so fits of several jobs
-  never share the GPU's memory; one that still finds it full (a process outside
-  the queue) waits and fits again, `OOM_RETRIES` times. The `EngineResult`
+  candidate is a `CandidateFailure`, never an exception. A GPU fit takes a
+  slot of the machine's GPU queue (`gpu_queue.gpu_turn`: file locks
+  (`filelock`, on every system; `flock` on Linux and macOS), slot 0
+  `GPU_LOCK` (`LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`)
+  and slot k `gpu.k.lock` beside it, `core.hardware.gpu_slots` of them
+  (`LANGSLICE_GPU_SLOTS`, else the GPU's memory over `GIB_PER_GPU_FIT`, 2 GB:
+  15 on a 32 GB GPU), taken for a device whose name starts with `cuda`, by
+  threads of one process as by processes; the plugin API re-exports it, which
+  the in-tree engines that fit on the GPU (STalign, emlddmm, SPOmiAlign) take
+  in LangSlice's process; it yields a `GpuTurn` whose `waited_s` is how long
+  a free slot was waited for), so that many fits of every job and thread run
+  on the GPU at once; one that still finds it full waits and fits again,
+  `OOM_RETRIES` times. In-process fits run beside each other: torch's
+  deterministic settings are held while any runs (`engines._deterministic`,
+  counted; no fit draws a random number) and each GPU fit runs on a CUDA
+  stream of its own (`_own_stream`), so twelve FireANTs fits of the 331CTX
+  stack took 29 s where one at a time took 222 s, the fields bit for bit
+  the same. The `EngineResult`
   carries both (`gpu_wait_s`, `oom_retries`), and `finish_fit` puts them in
   the record's `engine` when not zero (a fit's row reads them,
   `tools.deformable.gpu_rows`).

@@ -32,9 +32,9 @@ Its tools are on in every job; `--disabled` switches one off. Its options are th
 under `langslice.engines.stalign.plugin:tools`.
 Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `device` (`auto`:
 the GPU at float32 when there is one, else the CPU at float64), `threads` (4, STalign's
-`num_threads`). A fit on the GPU takes the machine's GPU queue through the plugin API's
-`gpu_turn` (`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`), so two fits of
-one process, or of several, never share the GPU. `stalign_plane_search` runs no fit
+`num_threads`). A fit on the GPU takes a slot of the machine's GPU queue through the plugin
+API's `gpu_turn` (`LANGSLICE_GPU_SLOTS` fits at once, else the GPU's memory over 2 GB), so a
+call's sections, each its own piece of background work, fit at once. `stalign_plane_search` runs no fit
 iterations: its multi-start pre-alignment is CPU work, so it always runs on the CPU at float64,
 takes no GPU turn, and searches a call's sections at once (`map_sections`, `threads` each). STalign's end-of-fit figures are replaced, on
 the thread that runs a fit for LangSlice, by a record of its energy per iteration; any other
