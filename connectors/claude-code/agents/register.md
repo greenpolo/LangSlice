@@ -1,7 +1,9 @@
 ---
 name: register
 description: Registers ONE brain (one LangSlice job folder) with the LangSlice MCP tools, whose replies carry the pictures. Launch it with the job folder; it does nothing else.
-tools: mcp__plugin_langslice_langslice__*
+tools: mcp__plugin_langslice_langslice__*, Skill, Read
+skills:
+  - langslice:registration-playbook
 model: inherit
 omitClaudeMd: true
 ---

@@ -10,6 +10,8 @@ tools:
   - search_web
   - send_message
 inheritMcp: true
+skills:
+  - skills/registration-playbook
 mainAgent: true
 subagent: true
 model: inherit
