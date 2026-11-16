@@ -283,7 +283,8 @@
 .strip-svg .leader.target { display: inline; stroke: var(--focus); stroke-opacity: 0.6; }
 .strip-svg .key.target, .strip-svg .handle.target { fill: var(--focus); stroke: none; }
 .strip-svg .outline.shown { stroke: var(--focus); }
-.strip-svg .other.target { opacity: 0.6; }
+/* In focus but on another page: the accent on its key only. */
+.strip-svg .leader.other, .strip-svg .handle.other { display: none; }
 .strip-svg .slot-number { fill: var(--ground); font-size: 10px; font-weight: 700; pointer-events: none; }
 .strip-svg .group-frame { fill: none; stroke: var(--line); stroke-dasharray: 2 3; }
 .strip-tip {

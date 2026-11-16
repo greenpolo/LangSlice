@@ -64,11 +64,13 @@ from langslice.hosts.gui.watch import JobList, JobWatcher
 
 STATIC = Path(__file__).with_name("static")
 #: A file of ``static/`` the page may load: a plain name, no folder.
-STATIC_NAME = re.compile(r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt)")
+STATIC_NAME = re.compile(
+    r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt|ico)")
 #: Each static file's type, by extension.
 STATIC_TYPES = {"html": "text/html; charset=utf-8", "css": "text/css",
                 "js": "text/javascript", "woff2": "font/woff2",
-                "svg": "image/svg+xml", "txt": "text/plain; charset=utf-8"}
+                "svg": "image/svg+xml", "txt": "text/plain; charset=utf-8",
+                "ico": "image/x-icon"}
 # --- Settings tab (hosts/gui/settings.py) ---
 #: The largest POST body read.
 MAX_BODY = 16 * 1024
@@ -203,7 +205,8 @@ class GuiServer:
                 kind = STATIC_TYPES[name.rsplit(".", 1)[1]]
                 return (STATIC / name).read_bytes(), kind
             if resource == "jobs":
-                return self._json({"jobs": self.jobs.listing(), "home": str(Path.home())})
+                return self._json({"jobs": self.jobs.listing(),
+                                   "home": str(Path.home())})
             if resource == "generator":  # prompt generator
                 return self._generator(query)
             if resource == "settings":  # the Settings tab (hosts/gui/settings.py)

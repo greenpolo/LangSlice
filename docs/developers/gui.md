@@ -17,10 +17,14 @@ langslice linear run ~/data/brain1 --gui   # start a run and open the window on 
 langslice gui ~/data/brain1 --tab prompt   # open on the prompt generator, filled in from the job
 ```
 
-LangSlice serves the window from this computer only and opens it as a browser
-window without an address bar, using Chrome, Chromium, Edge or Brave. Without
-one of those it opens a tab in the default browser; if that fails too it
-prints the address to open. `--no-window` only prints the address, and
+LangSlice serves the window from this computer only. With the `window` extra
+installed (`pip install "langslice[window]"`, which adds pywebview) it opens as
+a desktop window of its own, titled LangSlice, with LangSlice's icon and its
+own entry in the taskbar or dock; no browser is involved (on Windows it is
+drawn by WebView2, which Windows 11 includes). Without the extra it opens as
+a browser window without an address bar, using Chrome, Chromium, Edge or
+Brave; without one of those, as a tab in the default browser; if that fails
+too it prints the address to open. `--no-window` only prints the address, and
 `--port N` serves on a fixed port. The command keeps running until Ctrl-C, or
 until the window has been closed for five seconds.
 
@@ -28,8 +32,9 @@ until the window has been closed for five seconds.
 
 The window has three tabs: **Agent viewer**, **Prompt generator** and
 **Settings** (top right). It opens on the agent viewer, or on the prompt
-generator with `--tab prompt`. The first time the window opens with no
-connection chosen and no `--tab`, it opens on Settings.
+generator with `--tab prompt`. Opened without a folder and with no connection
+chosen, it opens on Settings. In the job picker and its tooltips a path under
+your home folder is written from `~`.
 
 ## The agent viewer
 

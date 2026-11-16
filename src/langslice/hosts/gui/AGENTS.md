@@ -133,7 +133,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer).
   `answer(path, host)` (GET): the
-  static files, `jobs`, `generator` (`generator.payload()`; `?job=<n>` adds
+  static files (`.ico` among them: the icon), `jobs` (with `home`, the home folder, which the page writes `~` in the paths it shows), `generator` (`generator.payload()`; `?job=<n>` adds
   `prefill`, `generator.prefill` of that listed job as plain data, null
   without a `job.json`, 404 for an index not listed),
   `jobs/<n>/snapshot?since=&gen=&sv=`,
@@ -239,15 +239,26 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   never repeats the input), `settings/signin` (`setup.login_oauth` in a
   thread, `SIGNIN_TIMEOUT_S`; a failure is worded without the provider's
   reply); `SettingsError`.
-- `window.py` — `find_browser` (`PATH_NAMES` on the PATH, then
+- `app.py` — LangSlice's own window (`python -m langslice.hosts.gui.app URL
+  [WIDTH HEIGHT]`): pywebview (the `window` extra; imported only here, inside
+  `main`) shows the page in the system's web view, titled `TITLE` with `ICON`
+  (`static/langslice.ico`, made from `assets/logo/logomark_dark_512.png` with
+  rounded corners); on Windows `own_taskbar_identity` (`APP_ID`, so the
+  taskbar files it under LangSlice, not Python) and `dark_title_bar`. A
+  process of its own, private mode: nothing is kept between windows.
+- `window.py` — `own_window_command(url, size)` (the command that starts
+  `app.py`, None without pywebview), `find_browser` (`PATH_NAMES` on the PATH, then
   `candidates(platform, env, home)`: Windows `WINDOWS_ROOTS` x
   `WINDOWS_PATHS`, macOS `/Applications` and `~/Applications` x `MAC_APPS`),
-  `open_window` (`--app=URL`, a private `--user-data-dir`, `--window-size`;
+  `open_window` (LangSlice's own window first, unless a browser was named:
+  one that ends within `OWN_WINDOW_START_S` falls through; then a browser's
+  `--app=URL`, a private `--user-data-dir`, `--window-size`;
   a browser that exits at once, or none, falls back to `webbrowser.open`,
   then to printing the address) -> `Opened` (`app`, `tab`, `none`);
-  `start_address(url, tab, folders=)`: the viewer's address as it is, the
-  prompt generator's with `#tab=prompt`, plus `&job=0` (the first folder
-  given) when folders were given.
+  `start_address(url, tab, folders=)`: the address with `#tab=<tab>&job=0`
+  (the first folder given) when folders were given; without folders the
+  viewer's address as it is (the page then opens Settings while no
+  connection is chosen) and the prompt generator's with `#tab=prompt`.
 - `static/generator.js`, `static/generator.css` — the prompt generator tab
   (loaded by one delimited block in `index.html`). `Generator`, pure
   functions on the payload and a plain form object (`folder`, `atlas`,
@@ -421,7 +432,7 @@ takes, and their flags; the programs ticked named in the request only,
 the command the same as without them, none for a job prepared in ABBA; the
 tab's stylesheet uses only `tokens.css` names and
 no colour value, and its script builds no HTML from strings), `tests/test_gui_window.py` (the candidates per platform with a
-fake `which` and filesystem, the app window, both fallbacks, the start
+fake `which` and filesystem, LangSlice's own window first and the browser when it cannot start, its icon shipped, the app window, both fallbacks, the start
 address per tab, `--tab` reaching `serve`, a port in use in one sentence, the
 address flushed),
 `tests/test_gui_settings.py` (the settings file in a temporary home, the
