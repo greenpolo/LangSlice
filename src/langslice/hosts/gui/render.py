@@ -159,6 +159,8 @@ class StripSection:
     position_mm: float | None
     #: :func:`render_key` of the section: its pictures change with it.
     render_key: str
+    #: :func:`thumb_key` of the section: its thumbnail changes with it.
+    thumb_key: str
 
 
 @dataclass(frozen=True)
@@ -225,6 +227,30 @@ def render_key(state: Stack, section_id: str) -> str:
         section depends on changes.
     """
     text = json.dumps(snapshot(state, [section_id]), sort_keys=True)
+    return hashlib.sha256(text.encode()).hexdigest()[:KEY_DIGITS]
+
+
+def thumb_key(state: Stack, section_id: str) -> str:
+    """Digest what a section's thumbnail depends on: its orientation and images.
+
+    Parameters
+    ----------
+    state
+        The job's stack as the viewer reads it.
+    section_id
+        The section's filename.
+
+    Returns
+    -------
+    str
+        :data:`KEY_DIGITS` hex digits of the section's flip, quarter turn and
+        made images: a new position, transform or deformation leaves it
+        unchanged, so the strip does not draw the thumbnail again.
+    """
+    section = _section(state, section_id)
+    held = {"flip": section.flip, "rotation_deg": section.rotation_deg,
+            "images": {name: ref.digest for name, ref in sorted(section.images.items())}}
+    text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()[:KEY_DIGITS]
 
 
@@ -350,6 +376,7 @@ class JobRenderer:
                 order,
                 _rounded_mm(section.position_mm),
                 render_key(state, section.id),
+                thumb_key(state, section.id),
             )
             for order, section in enumerate(state.in_order(), 1)
         )
@@ -420,7 +447,7 @@ class JobRenderer:
         state = self._state()
         section = _section(state, section_id)
         opened = self._open()
-        key = ("thumb", section_id, edge, render_key(state, section_id))
+        key = ("thumb", section_id, edge, thumb_key(state, section_id))
         draw = partial(render_slice, opened.workspace, section, long_edge=edge)
         return self._picture(key, opened, draw)
 

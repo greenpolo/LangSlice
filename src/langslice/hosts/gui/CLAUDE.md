@@ -167,15 +167,17 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (`Workspace.position_range` and `axis_ends`, `step_mm` by `strip_step`:
   `NOMINAL_STEP_MM` times `brain_scale`, rounded to `ROUND_STEPS_MM` so
   `MIN_THUMBNAILS` to `MAX_THUMBNAILS` cover the axis, the atlas positions,
-  the view angles in words, each section's id, order, position and render
-  key). A job draws one picture at a time (a workspace's caches are not made
+  the view angles in words, each section's id, order, position, render key
+  and thumb key). A job draws one picture at a time (a workspace's caches are not made
   for concurrent writers); concurrent requests for one picture share one
   drawing; a request waits `WAIT_S` (60 s), then `RenderBusy`. The JPEGs are
   kept in an LRU of `CACHE_ENTRIES` per job, keyed by kind, section or
-  position, edge and render key, and the workspace's caches are trimmed after
+  position, edge and render key (a thumbnail by its thumb key), and the workspace's caches are trimmed after
   each drawing (`KEPT_SOURCES`, `KEPT_PLANES`, `KEPT_RENDERS`).
   `render_key(state, id)`: `KEY_DIGITS` hex of the section's `look.snapshot`,
-  changing exactly when its overlay would; `edge_px` (`MIN_EDGE_PX` to
+  changing exactly when its overlay would; `thumb_key(state, id)`: the
+  same of its flip, quarter turn and made images' digests, so a new
+  placement does not draw the strip's thumbnail again; `edge_px` (`MIN_EDGE_PX` to
   `MAX_EDGE_PX` in steps of `EDGE_STEP_PX`, `DEFAULT_EDGE_PX` without one);
   `UnknownSection`.
 - `generator.py` — the prompt generator's choices, `payload()` (`GET

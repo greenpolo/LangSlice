@@ -204,10 +204,10 @@ const Strip = (() => {
     for (const mark of marks.values()) release(mark.thumb.next);
     for (const entry of atlas) release(entry.next);
   }
-  // A section's thumbnail is asked for again only when its render key changes.
+  // A section's thumbnail is asked for again only when its orientation or images change.
   function thumbHref(row) {
     if (!info || job === null) return '';
-    const key = row.render_key ?? [row.flip ? 'f' : '', row.rotation_deg || 0].join('');
+    const key = row.thumb_key ?? row.render_key ?? [row.flip ? 'f' : '', row.rotation_deg || 0].join('');
     return `jobs/${job}/render/thumb/${encodeURIComponent(row.id)}?edge=${edge}&key=${encodeURIComponent(key)}`;
   }
   function atlasHref(entry) {
