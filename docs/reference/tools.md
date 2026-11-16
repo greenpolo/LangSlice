@@ -345,7 +345,10 @@ two kinds of section image. **Raw** images are the planes of the image file
 (`red`, `green`, `blue` for a colour file, `gray`, or the channel names a host
 gives, else `ch1`, `ch2`, and so on), never edited. **Made** images are made
 here, by a script, or when the job opens, and saved as
-`sections/<stem>/images/<name>.png`.
+`sections/<stem>/images/<name>.png`. The sections of a call are made at once; `n4` and
+`denoise` run in worker processes of eight threads each, as many as the
+processor's cores allow (`LANGSLICE_CPU_CORES` sets the core count). Denoising
+is the slow step: about 3 to 5 s per channel of a 1600-pixel working copy.
 
 `preprocessed` is the made image LangSlice writes for every section when the
 job is created, and the image every fit, the image model and `look` read by
@@ -736,7 +739,10 @@ Refines each section's current placement automatically with
 [Elastix](https://elastix.dev), matching a section image against an atlas
 image. It adjusts from where the section is and does not search from scratch;
 it does not mirror a section. The section's marked damage regions are left
-out. A section that holds a deformation is refused (`HAS_DEFORMATION`).
+out. A section that holds a deformation is refused (`HAS_DEFORMATION`). The
+sections of a call are fitted at once in worker processes, as many as the
+processor's cores allow at eight threads each (`LANGSLICE_CPU_CORES` sets the
+core count; below 16 cores they are fitted in turn).
 
 | Argument | Default | What it does |
 |---|---|---|

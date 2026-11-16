@@ -54,8 +54,8 @@ def tools() -> list[ToolSpec]:
 
 `langslice.plugin_api` is the one import path; `PLUGIN_API_VERSION` (1) changes
 when the names in it change incompatibly. Besides the context and the
-records, it holds `flag_words` (below) and the GPU queue, `gpu_turn` and
-`out_of_memory` (below). A module may set its own
+records, it holds `flag_words` (below), the GPU queue, `gpu_turn` and
+`out_of_memory` (below), and `map_sections` (below). A module may set its own
 `PLUGIN_API_VERSION`, and a `ToolSpec` has `api_version`; a plugin written for
 another version is refused. The same names are importable from
 `langslice.doors.plugins`.
@@ -447,6 +447,8 @@ on a `DeformationProposal.summary`: `FOLDS, REGION_VANISHED (CA1, DG)`).
 Brainways is `langslice.engines.brainways.plugin:tools`: one tool, `brainways_ap`, on `whs_sd_rat_39um` coronal jobs, that proposes and writes each section's position along the slicing axis. Like STalign and emlddmm it runs in LangSlice's process: the part of Brainways 0.1.16.3 that finds a position (its thumbnail, its network's input, its EfficientNetV2-S siamese network and its binary search over the atlas planes) is vendored in `langslice/engines/brainways/` under the GPL-3.0, and needs only torch. Its weights are fetched once from Hugging Face (`brainways/siamese`, a fixed revision, checked by SHA-256) into `~/.cache/langslice/brainways` (`plugin_config` `cache_folder`); a call where torch does not import or the weights cannot be fetched is refused with `ENGINE_MISSING`. It takes no place in the GPU queue below. Its README gives the options, the reply and its parity with Brainways.
 
 Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again. A plugin that fits in LangSlice's process takes the queue with `gpu_turn(device)` of `langslice.plugin_api` (a context manager; a device whose name starts with `cuda` takes the lock, any other none; two fits in one process wait for each other too; it yields how long it waited as `waited_s`) and tells an out-of-memory error with `out_of_memory(error)`, as SPOmiAlign, STalign and emlddmm do. A wait of a second or more for the queue is in the reply: `gpu_wait_s` on each SPOmiAlign row (the call's one wait) and on an STalign or emlddmm notice's result, and in the notice's words; a SPOmiAlign section that ran again after the GPU ran out of memory says so in its row's `retried`. `spomialign` and `stalign_lddmm` take up to 20 sections a call (`stalign_plane_search` 8).
+
+A tool that works on several sections runs them at once with `map_sections(step, items, threads_each)`: `step` of each item, in order, on as many threads as the machine's cores divided by the threads one step keeps busy (`LANGSLICE_CPU_CORES` sets the core count; `1` runs them in turn), each in a copy of the caller's context so its pictures are kept; the first error is raised once every step has finished. GPU fits inside the steps still take the queue in turn, so what runs beside them is each section's reading, preparation and pictures. `stalign_plane_search` searches its sections this way, on the CPU. Threads help only where the work releases Python's lock (numpy, OpenCV, torch); a library that holds it (ITK's Python wrapping, SimpleITK) runs in worker processes instead (`langslice.core.hardware`).
 
 Each engine's description opens with what the method is and where it comes from (its paper),
 as `fireants_syn`'s does. A job with more than one deformable method (`fireants_syn` and any of

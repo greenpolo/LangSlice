@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -52,6 +54,7 @@ from langslice.plugin_api import (
     ToolResult,
     ToolSpec,
     flag_words,
+    map_sections,
 )
 
 NAME = "STalign"
@@ -231,6 +234,11 @@ def stalign_plane_search(
         written.
     """
     ...
+
+
+#: STalign's settings for the plane search.
+PLANE_PARAMS = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0,
+                "muA": 3.0, "muB": 0.0}
 
 
 # --- frames -----------------------------------------------------------------------------------
@@ -606,59 +614,142 @@ def _target_to_atlas(frame: Any, s_um: float) -> np.ndarray:
     return B
 
 
+@dataclass(frozen=True)
+class _PlaneCall:
+    """One ``stalign_plane_search`` call, as every section searches."""
+
+    ctx: ToolContext
+    #: Where STalign runs and on how many threads (``plugin_config``).
+    device: str
+    threads: int
+    folder: Path
+    atlas_name: str
+    section_image: str
+    atlas_image: str
+    view: bool
+
+
+def _search_section(call: _PlaneCall, name: str) -> ToolResult:
+    """Search one section's plane: its row and picture; save its record."""
+    ctx = call.ctx
+    view_of = ctx.section(name)
+    sid = view_of.id
+    frame, _plane_image, resolved = _frame(  # pyright: ignore[reportAny] - a fit frame
+        ctx, sid, call.atlas_image, call.section_image
+    )
+    inputs = _blocks.inputs_block(
+        ctx,
+        frame,
+        section_image=call.section_image,
+        atlas_image=call.atlas_image,
+        resolved=resolved,
+        mask=None,
+        brightness="slide 0, tissue 1",
+    )
+    J, tgt = _target(frame)
+    gw, gh = (int(v) for v in tgt["grid"])  # pyright: ignore[reportAny] - _target's frame is a plain dict
+    s_um = float(tgt["s_um"])  # pyright: ignore[reportAny] - as above
+    B0 = _target_to_atlas(frame, s_um)
+    arrays = {
+        "mode": np.array("plane"),
+        "atlas": np.array(call.atlas_name),
+        "image": np.array(resolved),
+        "J": J,
+        "xJ0": tgt["x0"],
+        "xJ1": tgt["x1"],
+        "A0": np.linalg.inv(B0),
+    }
+    how = {"device": call.device, "threads": call.threads}
+    out = _engine(how, call.folder / sid, arrays, PLANE_PARAMS)
+    B = np.linalg.inv(np.asarray(out["A"], np.float64))
+    middle = [(gh - 1) / 2 * s_um, (gw - 1) / 2 * s_um]
+    centre = B @ np.array([0.0, *middle, 1.0])
+    normal = np.cross(B[:3, 2], B[:3, 1])
+    plane = ctx.angles_from_plane(normal.tolist(), centre[:3].tolist())  # pyright: ignore[reportAny] - numpy
+    prefit: dict[str, Any] = json.loads(str(out["prefit"]))  # pyright: ignore[reportAny] - JSON
+    saved = {"found": plane, "prefit": prefit, "device": str(out["device"])}
+    (call.folder / sid / "plane.json").write_text(
+        json.dumps(saved, indent=1, default=float),
+        encoding="utf-8",
+        newline="\n",
+    )
+    pitch0, yaw0 = (float(v) for v in view_of.angles)
+    position0 = float(view_of.position_mm or 0.0)
+    change = {
+        "pitch_deg": round(plane["pitch_deg"] - pitch0, 2),
+        "yaw_deg": round(plane["yaw_deg"] - yaw0, 2),
+        "position_mm": round(plane["position_mm"] - position0, 3),
+    }
+    starts: list[list[float]] = prefit.get("starts") or []
+    best: int | None = prefit.get("best")
+    edge = _at_search_edge(starts, best)
+    row = {
+        "id": sid,
+        "status": "ok",
+        "inputs": inputs,
+        "estimated": None,
+        "pitch_deg": round(plane["pitch_deg"], 2),
+        "yaw_deg": round(plane["yaw_deg"], 2),
+        "position_mm": round(plane["position_mm"], 3),
+        "change": change,
+        "at_search_edge": edge,
+    }
+    if not call.view:
+        return ToolResult(row)
+    proposal = {
+        "position_mm": plane["position_mm"],
+        "angles": (plane["pitch_deg"], plane["yaw_deg"]),
+    }
+    caption = (
+        f"{sid}: atlas at the plane STalign found (pitch "
+        f"{row['pitch_deg']}, yaw {row['yaw_deg']}), not written"
+    )
+    picture = ctx.overlay_picture(sid, proposal=proposal)
+    return ToolResult(row, [ctx.caption(picture, caption)])
+
+
+def _at_search_edge(starts: list[list[float]], best: int | None) -> bool:
+    """Tell whether the winning start is at the edge of the search's starts.
+
+    Parameters
+    ----------
+    starts
+        Every start's tilts (degrees) and shift (micrometres).
+    best
+        The winning start's index; None without one.
+
+    Returns
+    -------
+    bool
+        True when one of its tilts or its shift is the search's largest.
+    """
+    if not starts or best is None:
+        return False
+    tilt_a, tilt_b, shift = starts[int(best)]
+    tilted = (
+        abs(abs(tilt_a) - SEARCH_TILT_DEG) < 1e-6
+        or abs(abs(tilt_b) - SEARCH_TILT_DEG) < 1e-6
+    )
+    return tilted or abs(abs(shift) - SEARCH_SHIFT_UM) < 1e-6
+
+
 def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
                   section_image: str, atlas_image: str, view: bool) -> ToolResult:
     if not sections:
         raise ToolError(RefusalCode.BAD_ARGS, "name one to eight sections")
-    atlas = ctx.atlas()
-    folder = _blocks.call_folder(ctx, "plane")
-    params = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0, "muA": 3.0, "muB": 0.0}
-    rows, pictures = [], []
-    for name in sections:
-        view_of = ctx.section(name)
-        sid = view_of.id
-        frame, _plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
-        inputs = _blocks.inputs_block(ctx, frame, section_image=section_image,
-                                      atlas_image=atlas_image, resolved=resolved, mask=None,
-                                      brightness="slide 0, tissue 1")
-        J, tgt = _target(frame)
-        gw, gh = tgt["grid"]
-        B0 = _target_to_atlas(frame, tgt["s_um"])
-        arrays = {"mode": np.array("plane"), "atlas": np.array(atlas.name),
-                  "image": np.array(resolved), "J": J, "xJ0": tgt["x0"], "xJ1": tgt["x1"],
-                  "A0": np.linalg.inv(B0)}
-        out = _engine(config, folder / sid, arrays, params)
-        B = np.linalg.inv(np.asarray(out["A"], np.float64))
-        centre = B @ np.array([0.0, (gh - 1) / 2 * tgt["s_um"], (gw - 1) / 2 * tgt["s_um"], 1.0])
-        found = ctx.angles_from_plane(np.cross(B[:3, 2], B[:3, 1]).tolist(),
-                                      centre[:3].tolist())
-        prefit = json.loads(str(out["prefit"]))
-        starts, best = prefit.get("starts") or [], prefit.get("best")
-        edge = False
-        if starts and best is not None:
-            tilt_a, tilt_b, shift = starts[int(best)]
-            edge = (abs(abs(tilt_a) - SEARCH_TILT_DEG) < 1e-6 or abs(abs(tilt_b) - SEARCH_TILT_DEG)
-                    < 1e-6 or abs(abs(shift) - SEARCH_SHIFT_UM) < 1e-6)
-        (folder / sid / "plane.json").write_text(json.dumps(
-            {"found": found, "prefit": prefit, "device": str(out["device"])}, indent=1,
-            default=float), encoding="utf-8", newline="\n")
-        pitch0, yaw0 = (float(v) for v in view_of.angles)
-        row = {"id": sid, "status": "ok", "inputs": inputs, "estimated": None,
-               "pitch_deg": round(found["pitch_deg"], 2),
-               "yaw_deg": round(found["yaw_deg"], 2),
-               "position_mm": round(found["position_mm"], 3),
-               "change": {"pitch_deg": round(found["pitch_deg"] - pitch0, 2),
-                          "yaw_deg": round(found["yaw_deg"] - yaw0, 2),
-                          "position_mm": round(found["position_mm"]
-                                               - float(view_of.position_mm or 0.0), 3)},
-               "at_search_edge": bool(edge)}
-        rows.append(row)
-        if view:
-            proposal = {"position_mm": found["position_mm"],
-                        "angles": (found["pitch_deg"], found["yaw_deg"])}
-            pictures.append(ctx.caption(ctx.overlay_picture(sid, proposal=proposal),
-                                        f"{sid}: atlas at the plane STalign found (pitch "
-                                        f"{row['pitch_deg']}, yaw {row['yaw_deg']}), not written"))
+    threads = int(config["threads"])  # pyright: ignore[reportAny] - plugin_config holds JSON values
+    device = str(config["device"])  # pyright: ignore[reportAny] - plugin_config holds JSON values
+    call = _PlaneCall(ctx, device, threads,
+                      _blocks.call_folder(ctx, "plane"), ctx.atlas().name,
+                      section_image, atlas_image, view)
+    # The sections are searched at once: the search is CPU work (the engine
+    # runs it on the CPU and takes no GPU turn), "threads" threads each.
+    done = map_sections(partial(_search_section, call), list(sections),
+                        threads)
+    rows = [one.reply for one in done]
+    pictures: list[Any] = []
+    for one in done:
+        pictures.extend(one.pictures)
     ok = [row for row in rows if row["status"] == "ok"]
     groups = {"positive_yaw": [r["id"] for r in ok if r["yaw_deg"] > 0],
               "negative_yaw": [r["id"] for r in ok if r["yaw_deg"] < 0],
@@ -666,7 +757,7 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
     summary = {"sections_by_yaw_sign": groups,
                "middle_pitch_deg": round(float(np.median([r["pitch_deg"] for r in ok])), 2)
                if ok else None,
-               "middle_yaw_magnitude_deg": round(float(np.median([abs(r["yaw_deg"])
+               "middle_yaw_magnitude_deg": round(float(np.median([abs(r["yaw_deg"])  # pyright: ignore[reportAny] - rows are JSON
                                                                  for r in ok])), 2) if ok else None}
     return ToolResult({"rows": rows, "stack": summary,
                        "settings": {"section_image": section_image, "atlas_image": atlas_image}},

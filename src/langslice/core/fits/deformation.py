@@ -106,6 +106,8 @@ USE_PROCESS_POOL = True
 #: beside the agent's own calls): the engines' seed and thread settings are
 #: process-wide.
 _ENGINE_LOCK = threading.Lock()
+#: Guards every RecordStore's cache: sections are fitted on threads at once.
+_STORE_LOCK = threading.Lock()
 
 
 def engine_available() -> bool:
@@ -441,10 +443,11 @@ class RecordStore:
         if record.saved_as is None:  # a record with a folder is at storage precision
             record.round_to_storage()
         record.saved_as = folder_name(key)
-        self.cache[key] = record
-        self.cache.move_to_end(key)
-        while len(self.cache) > CACHE_SIZE:
-            self.cache.popitem(last=False)
+        with _STORE_LOCK:  # sections are fitted on threads at once
+            self.cache[key] = record
+            self.cache.move_to_end(key)
+            while len(self.cache) > CACHE_SIZE:
+                self.cache.popitem(last=False)
 
     def save(self, section_id: str, key: str, record: DeformableRecord) -> Path:
         """Save *record* under *key* (its parent first, when that is not saved

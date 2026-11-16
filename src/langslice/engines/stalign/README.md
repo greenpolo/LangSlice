@@ -34,7 +34,9 @@ Options (`--plugin-config 'langslice.engines.stalign.plugin:tools=JSON'`): `devi
 the GPU at float32 when there is one, else the CPU at float64), `threads` (4, STalign's
 `num_threads`). A fit on the GPU takes the machine's GPU queue through the plugin API's
 `gpu_turn` (`LANGSLICE_GPU_LOCK`, else `~/.cache/langslice-stalign/gpu.lock`), so two fits of
-one process, or of several, never share the GPU. STalign's end-of-fit figures are replaced, on
+one process, or of several, never share the GPU. `stalign_plane_search` runs no fit
+iterations: its multi-start pre-alignment is CPU work, so it always runs on the CPU at float64,
+takes no GPU turn, and searches a call's sections at once (`map_sections`, `threads` each). STalign's end-of-fit figures are replaced, on
 the thread that runs a fit for LangSlice, by a record of its energy per iteration; any other
 caller of STalign in the process still gets its figures.
 

@@ -158,6 +158,23 @@ the angles in a caption (empty for the flat plane).
   string's, so a reply prints, compares and serializes as before. Core,
   job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
   `plugins.ToolError` is its subclass for plugins.
+- `hardware.py` — the machine and how many sections run at once: `detect`
+  (`Hardware`: cores, memory, the first GPU and its memory), `cpu_cores`
+  (`LANGSLICE_CPU_CORES` overrides), `section_workers(tasks, threads_each)`
+  (the cores over the threads one task keeps busy), `map_sections` (a step
+  per item on threads, in order, each in a copy of the caller's context so
+  its pictures are noted; the first error raised after every step ends),
+  `process_pool` / `map_processes` (spawned workers for one call, for a
+  library that holds Python's lock: SimpleITK's N4 and denoising of
+  `make_image`), `kept_process_pool` / `drop_process_pool` (workers kept for
+  the process: the Elastix affine), `global_threads` (a library's global
+  thread count held while any call runs, counted across threads;
+  `simpleitk_threader`). The plugin API re-exports `map_sections`. Measured on
+  the 331CTX stack (24 cores): ITK's patch-based denoising ignores its own
+  thread count and already fills the CPU (about 75 core-seconds per 1600 px
+  channel), so `make_image` with `denoise` gains about 1.4x; the Elastix
+  affine about 2.5x; the STalign plane search (CPU work, no GPU turn) about
+  1.8x.
 - `shared_files.py` — files another process may hold open (on Windows a
   reader without the lock, the window's watcher, a memory-mapped cache file
   or a scanner makes a replace, delete or lock fail with `PermissionError`

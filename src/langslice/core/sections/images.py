@@ -45,6 +45,7 @@ import json
 import logging
 import math
 import re
+import threading
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -55,13 +56,16 @@ from typing import Any, Protocol
 import numpy as np
 from PIL import Image
 
+from langslice.core.hardware import global_threads, simpleitk_threader
 from langslice.core.jsonable import JsonObject
 from langslice.core.sections.reading import (
     AUTO_CLAHE_CLIP,
     AUTO_CLAHE_TILE,
+    ITK_THREADS,
     adaptive_preprocess,
     coverage_weights,
     custom_appearance,
+    enhance_plane,
 )
 from langslice.core.stack.images import ImageRef
 from langslice.core.stack.section import Section
@@ -380,19 +384,25 @@ def _resolved_file(ws: Workspace, entry: ImageRef) -> Path:
     return Path(folder) / path
 
 
+#: Guards every workspace's image cache (sections are made on threads).
+_CACHE_LOCK = threading.Lock()
+
+
 def _cached(ws: Workspace, key: tuple[str, str], make: Callable[[], np.ndarray]) -> np.ndarray:
     """*key*'s plane from the workspace's cache, least recently used out past
     :data:`IMAGE_CACHE_SIZE` planes."""
     cache = ws.image_cache
-    held = cache.get(key)
-    if held is None:
-        held = make()
-        cache[key] = held
+    with _CACHE_LOCK:
+        held: np.ndarray | None = cache.get(key)
+        if held is not None:
+            cache.move_to_end(key)
+            return held
+    made = make()  # outside the lock: other sections' planes go on
+    with _CACHE_LOCK:
+        cache[key] = made
         while len(cache) > IMAGE_CACHE_SIZE:
             cache.popitem(last=False)
-    else:
-        cache.move_to_end(key)
-    return held
+    return made
 
 
 def raw_plane(ws: Workspace, section_id: str, name: str) -> np.ndarray:
@@ -533,21 +543,79 @@ def sources_of(
     return [name for name, _v in used], [value for _n, value in used]
 
 
+#: Runs N4 and denoising on planes: ``(planes, n4, denoise)`` -> the planes
+#: enhanced, in order (:func:`enhance_here`, or a caller's worker processes).
+Enhance = Callable[[list[np.ndarray], bool, bool], list[np.ndarray]]
+
+
+def enhance_here(
+    planes: list[np.ndarray], n4: bool, denoise: bool
+) -> list[np.ndarray]:
+    """Enhance *planes* in this process, in turn (:data:`Enhance`).
+
+    SimpleITK's global thread count is held at ``ITK_THREADS``: its
+    denoising filter reads that count, not its own, and its result depends
+    on the split.
+
+    Parameters
+    ----------
+    planes
+        8-bit planes.
+    n4, denoise
+        The steps to run (``reading.enhance_plane``).
+
+    Returns
+    -------
+    list of numpy.ndarray
+        The planes enhanced, in order.
+    """
+    with global_threads(simpleitk_threader(), ITK_THREADS):
+        return [
+            enhance_plane(plane, n4=n4, denoise=denoise) for plane in planes
+        ]
+
+
+def enhanced_plane(job: tuple[np.ndarray, bool, bool]) -> np.ndarray:
+    """Enhance one plane: a worker process's task.
+
+    Parameters
+    ----------
+    job
+        ``(plane, n4, denoise)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        :func:`langslice.core.sections.reading.enhance_plane`'s plane.
+    """
+    plane, n4, denoise = job
+    with global_threads(simpleitk_threader(), ITK_THREADS):
+        return enhance_plane(plane, n4=n4, denoise=denoise)
+
+
 def make(
     ws: Workspace, section_id: str, images: Mapping[str, ImageRef], recipe: Mapping[str, Any],
+    *, enhance: Enhance = enhance_here,
 ) -> tuple[np.ndarray, dict[str, float]]:
     """*recipe* drawn on the section's working copy: ``(uint8 (H, W), the weights
     used by name)``. The steps on each source: N4, denoise, CLAHE; then the
     weighted blend, brightened to a mid-gray tissue mean; then contrast, gamma,
     invert
-    (:func:`langslice.core.sections.reading.custom_appearance`)."""
+    (:func:`langslice.core.sections.reading.custom_appearance`). *enhance*
+    runs N4 and denoising on the sources weighted above zero."""
     names, weights = sources_of(ws, section_id, images, recipe)
     planes = [plane_of(ws, section_id, images, name) for name in names]
     used = list(weights) if weights is not None else coverage_weights(planes)
+    n4, denoise = bool(recipe["n4"]), bool(recipe["denoise"])  # pyright: ignore[reportAny] - JSON
+    if n4 or denoise:
+        chosen = [index for index, weight in enumerate(used) if weight > 0]
+        sources = [planes[index] for index in chosen]
+        enhanced = enhance(sources, n4, denoise)
+        for index, plane in zip(chosen, enhanced, strict=True):
+            planes[index] = plane
     blended = custom_appearance(
         planes, channel_weights=used, clahe_clip=float(recipe["clahe_clip"]),
-        clahe_tiles=int(recipe["clahe_tiles"]), n4=bool(recipe["n4"]),
-        denoise=bool(recipe["denoise"]))
+        clahe_tiles=int(recipe["clahe_tiles"]))
     values = np.asarray(blended, dtype=np.uint8)[..., 0]
     total = float(sum(used)) or 1.0
     return _tone(values, recipe), {name: round(value / total, 4)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from langslice.core.fits.deformable.engines import gpu_turn, out_of_memory
 from langslice.core.fits.deformation import flag_words
+from langslice.core.hardware import map_sections
 from langslice.core.plugins import (
     PLUGIN_API_VERSION,
     Layer,
@@ -63,5 +64,6 @@ __all__ = [
     "flag_words",
     "gpu_turn",
     "load",
+    "map_sections",
     "out_of_memory",
 ]

@@ -162,7 +162,10 @@ def run(
 
     options = dict(params)
     device = resolve_device(str(options.pop("device", AUTO)))
-    if not on_gpu(device):
+    if not on_gpu(device) or str(arrays["mode"]) == PLANE:
+        # The plane search runs no fit iterations: its multi-start
+        # pre-alignment is CPU work in float64 wherever the fit would run, so
+        # it takes no GPU turn and several sections search at once.
         device = CPU
     # the GPU at float32, the CPU at float64 (STalign's C++ engine)
     dtype = torch.float32 if on_gpu(device) else torch.float64

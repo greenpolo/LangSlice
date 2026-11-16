@@ -23,15 +23,21 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.atlas.images import resolve_image
 from langslice.core.fits import affine as core_affine
 from langslice.core.fits.affine import FittedAffine
+from langslice.core.fits.deformable.engines import (
+    FIT_THREADS,
+    elastix_in_workers,
+)
 from langslice.core.fits.engine_log import engine_output, failure_message
 from langslice.core.fits.flags import FitFlag
 from langslice.core.fits.inputs import InputsBlock
 from langslice.core.geometry.affine import IDENTITY_PARAMS
+from langslice.core.hardware import cpu_cores, map_sections
 from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
@@ -263,73 +269,27 @@ def _fit_elastix(
     the others.
     """
     state = job.state
-    rows: list[AffineRow] = []
-    fits: list[
-        tuple[int, Section, FittedAffine, tuple[str, ...], tuple[str, ...]]
-    ] = []
-    expected: dict[str, str] = {}
-    for record in records:
-        expected[record.id] = section_inputs(state, record)
-        frozen = section_refusal(job, record.id, "affine")
-        if frozen is not None:
-            rows.append(AffineRow(record.id, refusal=frozen))
-            continue
-        if record.deformation:
-            rows.append(AffineRow(record.id, refusal=refit_refusal(record)))
-            continue
-        kept, dropped = exclusions(record, restrict_to)
-        try:
-            weights = ops_masks.section_weights(job, record, mask)
-        except Refused as refusal:
-            rows.append(AffineRow(record.id, refusal=refusal))
-            continue
-        try:
-            with engine_output(
-                job.engine_log, f"Elastix affine of {record.id}"
-            ):
-                outcome = core_affine.fit_elastix(
-                    state,
-                    workspace,
-                    record,
-                    include=kept,
-                    exclude=dropped,
-                    atlas_image=fit_atlas,
-                    section_image=section_image,
-                    edges=edges,
-                    section_weights=weights,
-                )
-        except Exception as exc:  # nothing is written for this section
-            logger.warning("elastix_affine failed for %s: %s", record.id, exc)
-            failure = _fit_failure(job, record.id, exc)
-            rows.append(AffineRow(record.id, refusal=failure))
-            continue
-        if isinstance(outcome, Refused):
-            rows.append(
-                AffineRow(record.id, refusal=_told(job, record.id, outcome))
-            )
-            continue
-        turn_deg = _turn_deg(record.transform, outcome)
-        turn = round(turn_deg, 1) if turn_deg > LARGE_TURN_DEG else None
-        rows.append(
-            AffineRow(
-                record.id,
-                fitted=outcome,
-                inputs=inputs_block(
-                    state,
-                    workspace,
-                    record,
-                    section_image=section_image,
-                    atlas_image=asked_atlas or fit_atlas,
-                    mask=mask,
-                    damage=dropped,
-                    restrict_to=restrict_to,
-                    resolved=fit_atlas,
-                ),
-                turn_deg=turn,
-                flags=tuple(plausibility_flags(record.transform, outcome)),
-            )
-        )
-        fits.append((len(rows) - 1, record, outcome, kept, dropped))
+    expected = {record.id: section_inputs(state, record) for record in records}
+    call = _ElastixCall(
+        job,
+        workspace,
+        fit_atlas,
+        restrict_to,
+        section_image,
+        asked_atlas or fit_atlas,
+        mask,
+        edges,
+    )
+    # Several sections fit at once when Elastix runs in worker processes
+    # (ITK holds Python's lock in this one), each on FIT_THREADS threads.
+    threads = FIT_THREADS if elastix_in_workers() else cpu_cores()
+    done = map_sections(partial(_fit_section, call), list(records), threads)
+    rows = [one.row for one in done]
+    fits = [
+        (index, *one.fitted)
+        for index, one in enumerate(done)
+        if one.fitted is not None
+    ]
     with job.writing():
         records_out: dict[str, StoredAffine] = {}
         for index, record, outcome, kept, dropped in fits:
@@ -354,6 +314,87 @@ def _fit_elastix(
             records_out[record.id] = made
         written = set_transforms(job, records_out)
     return AffineFit(rows=rows, fitted=written)
+
+
+@dataclass(frozen=True)
+class _ElastixCall:
+    """One ``elastix_affine`` call's settings, as every section fits with."""
+
+    job: Job
+    workspace: Workspace
+    fit_atlas: str
+    restrict_to: tuple[str, ...]
+    section_image: str
+    atlas_named: str
+    mask: str
+    edges: bool
+
+
+#: What a section's fit gives the write.
+_Fitted = tuple["Section", FittedAffine, tuple[str, ...], tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class _SectionFit:
+    """A section's row and, when it fitted, what the write takes."""
+
+    row: AffineRow
+    #: The section, the fit, and the regions kept and left out.
+    fitted: _Fitted | None = None
+
+
+def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
+    """Fit one section of an ``elastix_affine`` call; write nothing."""
+    job, state = call.job, call.job.state
+    frozen = section_refusal(job, section.id, "affine")
+    if frozen is not None:
+        return _SectionFit(AffineRow(section.id, refusal=frozen))
+    if section.deformation:
+        refused = refit_refusal(section)
+        return _SectionFit(AffineRow(section.id, refusal=refused))
+    kept, dropped = exclusions(section, call.restrict_to)
+    try:
+        weights = ops_masks.section_weights(job, section, call.mask)
+    except Refused as refusal:
+        return _SectionFit(AffineRow(section.id, refusal=refusal))
+    try:
+        with engine_output(job.engine_log, f"Elastix affine of {section.id}"):
+            outcome = core_affine.fit_elastix(
+                state,
+                call.workspace,
+                section,
+                include=kept,
+                exclude=dropped,
+                atlas_image=call.fit_atlas,
+                section_image=call.section_image,
+                edges=call.edges,
+                section_weights=weights,
+            )
+    except Exception as exc:  # noqa: BLE001 - nothing is written for it
+        logger.warning("elastix_affine failed for %s: %s", section.id, exc)
+        failure = _fit_failure(job, section.id, exc)
+        return _SectionFit(AffineRow(section.id, refusal=failure))
+    if isinstance(outcome, Refused):
+        told = _told(job, section.id, outcome)
+        return _SectionFit(AffineRow(section.id, refusal=told))
+    turn_deg = _turn_deg(section.transform, outcome)
+    turn = round(turn_deg, 1) if turn_deg > LARGE_TURN_DEG else None
+    inputs = inputs_block(
+        state,
+        call.workspace,
+        section,
+        section_image=call.section_image,
+        atlas_image=call.atlas_named,
+        mask=call.mask,
+        damage=dropped,
+        restrict_to=call.restrict_to,
+        resolved=call.fit_atlas,
+    )
+    flags = tuple(plausibility_flags(section.transform, outcome))
+    row = AffineRow(
+        section.id, fitted=outcome, inputs=inputs, turn_deg=turn, flags=flags
+    )
+    return _SectionFit(row, (section, outcome, kept, dropped))
 
 
 def _told(job: Job, section_id: str, refusal: Refused) -> Refused:

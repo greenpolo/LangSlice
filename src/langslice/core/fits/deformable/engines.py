@@ -34,6 +34,7 @@ import time
 import types
 import warnings
 from collections.abc import Iterator
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,15 @@ from langslice.core.fits.deformable.settings import (
     FitSettings,
     Metric,
 )
+from langslice.core.hardware import (
+    cpu_cores,
+    drop_process_pool,
+    global_threads,
+    kept_process_pool,
+)
 from langslice.core.shared_files import retried
+
+logger = logging.getLogger(__name__)
 
 #: Histogram bins for mutual information, both engines.
 MUTUAL_INFORMATION_BINS = 32
@@ -606,10 +615,7 @@ def _elastix_register(
     # (segfault in the optimizer's parameter estimation); every component
     # takes ITK's global default when it is built, so that is set instead,
     # for this call only.
-    threader = itk.MultiThreaderBase  # type: ignore[attr-defined]
-    held_threads = threader.GetGlobalDefaultNumberOfThreads()
-    threader.SetGlobalDefaultNumberOfThreads(FIT_THREADS)
-    try:
+    with global_threads(itk.MultiThreaderBase, FIT_THREADS):  # type: ignore[attr-defined]
         method = itk.ElastixRegistrationMethod.New(fixed, moving)  # type: ignore[attr-defined]
         method.SetFixedMask(fixed_mask)
         method.SetMovingMask(moving_mask)
@@ -621,8 +627,6 @@ def _elastix_register(
         method.SetParameterObject(parameter_object)
         method.SetLogToConsole(False)
         method.UpdateLargestPossibleRegion()
-    finally:
-        threader.SetGlobalDefaultNumberOfThreads(held_threads)
     return moving, method.GetTransformParameterObject()
 
 
@@ -653,6 +657,55 @@ class AffineResult:
     native_parameters: dict[str, Any]
     runtime_s: float
     engine_version: str
+
+
+#: Run Elastix affines in kept worker processes (ITK holds Python's lock while
+#: it registers, so threads would run them in turn). Tests switch it off.
+ELASTIX_PROCESSES = True
+#: The kept worker pool's name (``core.hardware.kept_process_pool``).
+ELASTIX_POOL = "elastix"
+
+
+def elastix_in_workers() -> bool:
+    """Say whether Elastix fits run in worker processes.
+
+    Returns
+    -------
+    bool
+        True when :data:`ELASTIX_PROCESSES` is on and the cores hold more
+        than one worker of :data:`FIT_THREADS` threads.
+    """
+    return ELASTIX_PROCESSES and cpu_cores() // FIT_THREADS > 1
+
+
+def fit_elastix_affine(inputs: EngineInputs) -> AffineResult:
+    """Run :func:`run_elastix_affine` in a kept Elastix worker process.
+
+    Several sections fit at once from threads, each in a worker that loaded
+    ITK once; without workers (one would do, or :data:`ELASTIX_PROCESSES` is
+    off) the fit runs here, and so does a fit whose worker died.
+
+    Parameters
+    ----------
+    inputs
+        The prepared fit's engine inputs.
+
+    Returns
+    -------
+    AffineResult
+        :func:`run_elastix_affine`'s result.
+    """
+    pool = None
+    if elastix_in_workers():
+        pool = kept_process_pool(ELASTIX_POOL, threads_each=FIT_THREADS)
+    if pool is None:
+        return run_elastix_affine(inputs)
+    try:
+        return pool.submit(run_elastix_affine, inputs).result()
+    except BrokenProcessPool as exc:
+        logger.warning("an Elastix worker failed (%s): fitting here", exc)
+        drop_process_pool(ELASTIX_POOL, pool)
+        return run_elastix_affine(inputs)
 
 
 def run_elastix_affine(inputs: EngineInputs) -> AffineResult:

@@ -114,9 +114,16 @@ and returns a `record.DeformableRecord`. No custom solver.
   threads; the process's own settings come back afterwards.
   `CUBLAS_WORKSPACE_CONFIG` is set before torch's first use when nothing set
   it. The Elastix affine's `RandomSeed` is the same seed; Elastix's own
-  `SetNumberOfThreads` segfaults in itk-elastix 0.25.4, so the call sets
-  ITK's global default (`FIT_THREADS`) for its duration instead. A fit takes
-  about 0.7 s per run on an RTX 5090.
+  `SetNumberOfThreads` segfaults in itk-elastix 0.25.4, so the call holds
+  ITK's global default at `FIT_THREADS` instead (`core.hardware.global_threads`,
+  counted, so overlapping calls on threads never see each other's restore).
+  A FireANTs fit takes about 0.7 s per run on an RTX 5090.
+  `fit_elastix_affine` runs the Elastix affine in a kept worker process
+  (`core.hardware.kept_process_pool`, `cores // FIT_THREADS` workers, each
+  loading ITK once): ITK holds Python's lock while it registers, so the
+  `elastix_affine` tool's sections fit at once only in processes
+  (`ELASTIX_PROCESSES`, off in the tests; `elastix_in_workers`), with results
+  identical to a fit here.
 - `engines.run_elastix_affine` (the linear affine, not a deformation): an
   Elastix `AffineTransform` from the identity on the same prepared inputs
   (intensity pair, edge pair, masks; `AutomaticTransformInitialization` off,
