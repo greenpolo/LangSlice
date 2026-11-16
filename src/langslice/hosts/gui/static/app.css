@@ -9,37 +9,39 @@
 html, body { height: 100%; }
 body { display: flex; flex-direction: column; overflow: hidden; }
 
-/* Element defaults: one face, black controls with a 1 px edge, square corners. */
+/* Element defaults: controls a step above the page, a 1 px edge, small rounded corners;
+   the monospace face only for literal text. */
 button, input, select, textarea { font: inherit; letter-spacing: inherit; }
 button {
-  color: var(--lavender);
-  background: var(--ground);
+  color: var(--text);
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 0;
-  padding: 1px 9px;
+  border-radius: var(--radius-sm);
+  padding: 2px 10px;
   cursor: pointer;
   line-height: var(--leading);
 }
 button:hover { background: var(--wash); border-color: var(--tract); }
 button[aria-pressed="true"] { background: var(--selected); color: var(--name); border-color: var(--tract); }
-button:disabled, button:disabled:hover { color: var(--faint); background: var(--ground); border-color: var(--line); cursor: default; }
+button:disabled, button:disabled:hover { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: default; }
 input, select, textarea {
   color: var(--text);
-  background: var(--ground);
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 0;
-  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
 }
 input::placeholder, textarea::placeholder { color: var(--faint); }
-select option { background: var(--ground); color: var(--text); }
+select option { background: var(--panel); color: var(--text); }
 a { color: var(--lavender); }
-code, pre { font-family: var(--mono); font-variant-ligatures: none; }
+code, pre, .mono, .picker-name, .job-option-path { font-family: var(--mono); font-variant-ligatures: none; }
+.picker-name, .job-option-path { font-size: var(--size-sm); }
 code { color: var(--violet); }
 h1, h2, h3, h4 { color: var(--name); margin: 0; }
 strong, b { color: var(--name); }
 :where(.log-scroll, .sections-view, .steps-view, .picker-list, .tab) {
   scrollbar-width: thin;
-  scrollbar-color: var(--tract) var(--ground);
+  scrollbar-color: var(--tract) transparent;
 }
 
 /* The top bar. */
@@ -66,14 +68,14 @@ strong, b { color: var(--name); }
   white-space: nowrap;
 }
 .tabs button:hover, .settings-tab:hover { color: var(--name); background: none; }
-.tabs button.active, .settings-tab.active { color: var(--name); font-weight: 700; }
+.tabs button.active, .settings-tab.active { color: var(--name); font-weight: var(--weight-strong); }
 .tabs button.active::after, .settings-tab.active::after {
   content: "";
   position: absolute;
   left: var(--space-3);
   right: var(--space-3);
   bottom: -1px;
-  border-bottom: var(--rule) solid var(--pink);
+  border-bottom: var(--rule) solid var(--lavender);
 }
 .bar-end { margin-left: auto; display: flex; align-items: stretch; gap: var(--space-3); min-width: 0; }
 
@@ -100,8 +102,9 @@ strong, b { color: var(--name); }
   width: min(480px, 92vw);
   max-height: min(70vh, 560px);
   overflow-y: auto;
-  background: var(--ground);
+  background: var(--panel);
   border: 1px solid var(--tract);
+  border-radius: var(--radius);
   padding: var(--space-1) 0;
 }
 .picker-list:focus { outline: none; }
@@ -116,9 +119,9 @@ strong, b { color: var(--name); }
 }
 .job-option:hover { background: var(--wash); }
 .job-option.active { background: var(--wash); outline: 1px solid var(--tract); outline-offset: -1px; }
-.job-option[aria-selected="true"] { background: var(--selected); border-left-color: var(--pink); }
+.job-option[aria-selected="true"] { background: var(--selected); border-left-color: var(--lavender); }
 .job-option .dot { margin-top: 6px; }
-.job-option-name { color: var(--name); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-option-name { color: var(--name); font-weight: var(--weight-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job-option-word { font-size: var(--size-xs); white-space: nowrap; }
 .job-option-path, .job-option-facts {
   grid-column: 2 / 4;
@@ -184,8 +187,8 @@ strong, b { color: var(--name); }
   max-height: none;
   padding: 0;
   border: 1px solid var(--tract);
-  border-radius: 0;
-  background: var(--ground);
+  border-radius: var(--radius);
+  background: var(--panel);
   color: var(--text);
 }
 .lightbox[open] { display: flex; flex-direction: column; }
@@ -199,12 +202,12 @@ strong, b { color: var(--name); }
   border-bottom: 1px solid var(--line);
   font-size: var(--size-sm);
 }
-.lightbox-label { color: var(--name); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lightbox-label { color: var(--name); font-weight: var(--weight-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .lightbox-count { color: var(--muted); margin-right: var(--space-2); white-space: nowrap; }
 .lightbox-nav { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
 .lightbox-nav button + button { border-left-width: 0; }
 .lightbox-nav #lightbox-close { margin-left: var(--space-2); border-left-width: 1px; }
-.lightbox-frame { flex: 1; min-height: 0; display: flex; padding: var(--space-2); }
+.lightbox-frame { flex: 1; min-height: 0; display: flex; padding: var(--space-2); background: var(--picture); }
 .lightbox-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .lightbox-caption {
   margin: 0;

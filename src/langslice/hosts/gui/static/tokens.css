@@ -1,13 +1,13 @@
-/* The LangSlice window's tokens: the docs' look (docs/_static/langslice.css, after the ASCII
-   card: language, microscopy and anatomy), toned down for a tool that stays open for hours:
-   smaller type, plainer furniture, the same family. One monospace face for every word, told
-   apart by colour; true black everywhere, as in a fluorescence image (panels are black with a
-   1 px edge, never a tinted fill); square corners; no glow, gradients or shadows; no all-caps
-   labels. The logo's colours each keep one job:
-     off-white  names (headings, bold text, the chosen tab, a section's name)
-     lavender   what can be followed or clicked (links, buttons, a running call)
-     violet     literal text (paths, commands, tool names, numbers in code)
-     pink       boundaries and state only (keyboard focus, where you are), used sparingly
+/* The LangSlice window's tokens. A quiet dark tool that stays open for hours: one
+   sans-serif face for words (the system's UI face), the monospace face (JetBrains Mono,
+   the logo's) kept for what is literal: file and section names, tool names, paths,
+   commands and numbers in code. Slate grounds with panels a step lighter, black only
+   behind pictures; 1 px edges and small rounded corners; no glow, gradients or shadows;
+   no all-caps labels. Colours each keep one job:
+     off-white  names (headings, bold text, the chosen tab)
+     lavender   the one accent: what can be followed or clicked, the chosen tab's rule
+     violet     literal text (paths, commands, tool names)
+     pink       problems and keyboard focus only
    The four focus colours are the ABBA viewer's: they tie a focus panel to its handle in the
    positioning strip. Every other file uses these names only. */
 
@@ -37,29 +37,32 @@
   color-scheme: dark;
 
   /* Grounds. */
-  --ground: #000000;       /* the page, every panel, behind every picture */
-  --wash: #0a0b14;         /* a hovered row or button, only */
-  --selected: #11131f;     /* a chosen row, a pressed button, the on side of a switch */
+  --ground: #0e1015;       /* the page */
+  --panel: #14171e;        /* a panel, a card, a control, a bar a step above the page */
+  --picture: #000000;      /* behind a picture only */
+  --wash: #1a1e27;         /* a hovered row or button, only */
+  --selected: #222735;     /* a chosen row, a pressed button, the on side of a switch */
 
   /* Lines. */
-  --line: #262a40;         /* 1 px edges of panels, inputs, tables */
-  --tract: #3e4260;        /* stronger rules, scrollbars, dashed leaders, tree lines */
+  --line: #252a35;         /* 1 px edges of panels, inputs, tables */
+  --tract: #3a4050;        /* stronger rules, scrollbars, dashed leaders, tree lines */
 
   /* Text. */
-  --name: #dce3ff;         /* the logo's off-white */
-  --text: #c3cae6;         /* 12.8:1 on black */
-  --muted: #8890b8;        /* captions, the window's own furniture, 6.6:1 */
-  --faint: #5d6488;        /* greyed choices, placeholders */
+  --name: #eef0f5;         /* names and headings */
+  --text: #c8ccd6;         /* body text, 11:1 on the page */
+  --muted: #8a909e;        /* captions, the window's own furniture, 5.8:1 */
+  --faint: #5b6170;        /* greyed choices, placeholders */
 
   /* The logo's colours. */
   --lavender: #8fa0f5;
-  --violet: #a98bf0;
-  --pink: #ff3daa;
+  --violet: #b3a1ee;
+  --pink: #f06b8b;
+  --green: #5fc999;
 
   /* Status words. */
   --running: var(--lavender);
   --waiting: var(--muted);
-  --submitted: var(--violet);
+  --submitted: var(--green);
   --failed: var(--pink);
 
   /* The ABBA viewer's focus colours, panel 1 to 4. */
@@ -70,18 +73,23 @@
   /* A section the agent is not working on, in the positioning strip. */
   --idle-handle: rgba(249, 215, 107, 0.42);
 
-  /* Type: one face, a few sizes. */
+  /* Type: a sans-serif face for words, the monospace face for literal text. */
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "SF Pro Text", "Helvetica Neue",
+    Roboto, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas,
     "DejaVu Sans Mono", monospace;
   --size-xs: 11px;
   --size-sm: 12px;
-  --size-md: 13px;          /* the window's body text */
+  --size-md: 13.5px;        /* the window's body text */
   --size-lg: 15px;
   --size-xl: 17px;
-  --leading: 1.55;
-  --leading-prose: 1.7;
+  --weight-strong: 600;
+  --leading: 1.5;
+  --leading-prose: 1.6;
 
-  /* Spacing. Corners are square everywhere. */
+  /* Spacing and corners. */
+  --radius: 6px;            /* panels and cards */
+  --radius-sm: 4px;         /* buttons, inputs, tags */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -102,19 +110,18 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--size-md);
   line-height: var(--leading);
-  font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: var(--pink);
+  background: var(--lavender);
   color: var(--ground);
 }
 
 :focus-visible {
-  outline: 2px solid var(--pink);
+  outline: 2px solid var(--lavender);
   outline-offset: 2px;
 }

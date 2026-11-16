@@ -2,13 +2,13 @@
 // The agent log, the ABBA viewer's browser log as a column: the agent's messages and
 // reasoning summaries, each tool call as a row (its name, its sections, its state;
 // opened, its inputs, step and status), notes, and under a call that saved pictures a
-// `[View N images]` link to them. The transcript follows its end while the person is
+// `▸ N pictures` link to them. The transcript follows its end while the person is
 // there. Under it, the tool images tray: one call's pictures at a time, four per page,
 // with `← n/N →` across the calls and Follow (the newest). The lightbox shows one picture
 // as large as the window allows, `←` / `→` through every picture of the job.
 const AgentLog = (() => {
   const PER_PAGE = 4;
-  const SECTIONS_SHOWN = 5;
+  const SECTIONS_SHOWN = 3;
   const $ = id => document.getElementById(id);
   const { el } = Ui;
 
@@ -94,7 +94,7 @@ const AgentLog = (() => {
   function message(item) {
     words = true;
     const root = el('article', 'msg ' + (item.kind === 'agent' ? 'agent' : 'reasoning'));
-    root.append(el('div', 'msg-label', item.kind === 'agent' ? 'Agent' : 'Reasoning summary'));
+    root.append(el('div', 'msg-label', item.kind === 'agent' ? 'Agent' : 'Thinking'));
     const body = el('div', 'msg-body');
     for (const block of String(item.text || '').split(/\n\s*\n/)) {
       if (!block.trim()) continue;
@@ -128,7 +128,7 @@ const AgentLog = (() => {
     if (/^Agent session/.test(item.text || '')) words = true;
     $('log-items').append(el('p', 'note' + (item.error ? ' error' : ''), item.text));
   }
-  // A call's sections, the first five (then …), each one a way to put it in focus.
+  // A call's sections, the first three (then + n more), each one a way to put it in focus.
   function sectionsLine(ids) {
     const line = el('span', 'call-targets');
     (ids || []).slice(0, SECTIONS_SHOWN).forEach((id, i) => {
@@ -142,7 +142,7 @@ const AgentLog = (() => {
       link.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') go(event); });
       line.append(link);
     });
-    if ((ids || []).length > SECTIONS_SHOWN) line.append(document.createTextNode(' …'));
+    if ((ids || []).length > SECTIONS_SHOWN) line.append(document.createTextNode(` + ${ids.length - SECTIONS_SHOWN} more`));
     return line;
   }
   function toolItem(item) {
@@ -188,7 +188,9 @@ const AgentLog = (() => {
   function setState(call, word) {
     call.root.classList.toggle('running', word === 'running');
     call.root.classList.toggle('failed', word === 'failed');
-    call.state.textContent = `[${word}]`;
+    // Done is the usual end and says nothing more than the row's grey rule: no word.
+    call.state.textContent = word === 'done' ? '' : word;
+    call.state.title = word;
   }
   function details(call) {
     const args = call.end?.args ?? call.start?.args;
@@ -271,7 +273,7 @@ const AgentLog = (() => {
       owner.root.after(owner.link);
     }
     const n = owner.pictures.length;
-    owner.link.textContent = `[View ${n} image${n === 1 ? '' : 's'}]`;
+    owner.link.textContent = `▸ ${n} picture${n === 1 ? '' : 's'}`;
   }
   const url = picture => `jobs/${job}/picture/${picture.number}`;
 
@@ -295,6 +297,7 @@ const AgentLog = (() => {
     if (empty) {
       $('tray-tool').textContent = '· no pictures yet';
       $('tray-grid').replaceChildren();
+      $('tray-text').hidden = true;
       tray.shown = '';
       return;
     }
@@ -319,6 +322,10 @@ const AgentLog = (() => {
     const shown = batch.pictures.map(p => p.number).join(',');
     if (shown === tray.shown) return;
     tray.shown = shown;
+    // One picture's caption, the words the agent read under it, as text the person can read.
+    const words = batch.pictures.length === 1 ? batch.pictures[0].caption : '';
+    $('tray-text').textContent = words;
+    $('tray-text').hidden = !words;
     const grid = $('tray-grid');
     grid.classList.toggle('one', batch.pictures.length === 1);
     grid.replaceChildren(...batch.pictures.map(tile));

@@ -125,6 +125,7 @@ const Viewer = (() => {
     for (const tr of document.querySelectorAll('#sections tbody tr')) tr.classList.toggle('target', all.includes(tr.dataset.id));
     const empty = $('focus-empty');
     empty.hidden = true;
+    shareProblem();
     if (mode !== 'focus') return;
     if (!loaded || !rows.length || !onPage.length) {
       empty.textContent = !loaded ? 'Loading the job…' : !rows.length ? 'This job has no sections yet.' : 'Nothing in focus.';
@@ -132,17 +133,12 @@ const Viewer = (() => {
     }
     const grid = $('view-focus');
     grid.className = 'panels n' + Math.max(1, onPage.length);
-    // 1 fills the area, 2 sit side by side, 3 or 4 in a 2 x 2 grid (a fourth cell stays empty).
-    const cells = onPage.length === 3 ? 4 : onPage.length;
-    const wanted = panels.slice(0, onPage.length);
-    const children = [...wanted.map(p => p.root)];
-    if (cells === 4 && onPage.length === 3) children.push(spacer());
+    // 1 fills the area, 2 sit side by side, 3 as one tall panel beside two, 4 in a 2 x 2 grid.
+    const children = panels.slice(0, onPage.length).map(p => p.root);
     if (grid.children.length !== children.length || children.some((c, i) => grid.children[i] !== c)) grid.replaceChildren(...children);
     onPage.forEach((id, i) => showPanel(panels[i], id));
     for (const p of panels.slice(onPage.length)) clearPanel(p);
   }
-  let blank = null;
-  function spacer() { return blank || (blank = el('div', 'panel-spacer')); }
   // Called when the viewer tab is shown again: sizes were zero while it was hidden.
   function shown() {
     Strip.relayout();
@@ -163,7 +159,7 @@ const Viewer = (() => {
     updating.hidden = message.hidden = true;
     box.append(updating, message);
     root.append(title, box);
-    const p = { slot, root, name, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, view: { s: 1, x: 0, y: 0 } };
+    const p = { slot, root, name, angles, tags, open, box, updating, message, id: null, key: null, edge: 0, url: '', img: null, pending: null, problem: '', view: { s: 1, x: 0, y: 0 } };
     open.addEventListener('click', () => {
       if (!p.img) return;
       const row = byId.get(p.id);
@@ -186,6 +182,8 @@ const Viewer = (() => {
     p.img = null; p.id = null; p.key = null; p.edge = 0; p.url = '';
     p.view = { s: 1, x: 0, y: 0 };
     p.updating.hidden = p.message.hidden = true;
+    p.problem = '';
+    shareProblem();
   }
   function showPanel(p, id) {
     const row = byId.get(id);
@@ -263,6 +261,7 @@ const Viewer = (() => {
       if (p.pending !== img) return;
       p.pending = null;
       p.updating.hidden = p.message.hidden = true;
+      if (p.problem) { p.problem = ''; shareProblem(); }
       img.className = 'entering';
       transform(p, img);
       const old = p.img;
@@ -289,12 +288,23 @@ const Viewer = (() => {
       p.img?.remove();
       p.img = null;
       p.open.disabled = true;
-      p.message.textContent = answer.error
+      p.problem = answer.error
         || (answer.status === 404 ? 'No picture of this section is available from this LangSlice.'
           : answer.status === 0 ? 'LangSlice is not reachable.' : 'The picture could not be drawn.');
       p.message.hidden = false;
+      shareProblem();
     };
     img.release = Ui.loads.add(() => p.slot / 10, () => { img.src = url; });
+  }
+  // The same reason on every panel shown (a job whose images moved, say) is said once, over
+  // the panels; each panel then says only that it was not drawn.
+  function shareProblem() {
+    const shown = mode === 'focus' ? panels.filter(p => p.id) : [];
+    const said = shown.filter(p => p.problem);
+    const shared = shown.length > 1 && said.length === shown.length && said.every(p => p.problem === said[0].problem);
+    $('focus-problem').textContent = shared ? said[0].problem : '';
+    $('focus-problem').hidden = !shared;
+    for (const p of said) p.message.textContent = shared ? 'Not drawn: the reason is above.' : p.problem;
   }
   // Wheel zooms about the pointer, dragging pans, a double-click resets: the picture is
   // transformed in the page; nothing is drawn again while zooming.

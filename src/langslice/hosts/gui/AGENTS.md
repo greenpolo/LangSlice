@@ -9,8 +9,8 @@ generator and Settings (top right). The agent viewer is the arrangement of the
 viewer LangSlice had inside ABBA, on the web: a positioning strip and up to four
 focus panels showing the sections the agent works on under their current
 registration (ABBA's comparison window), beside the agent log and its tool
-images (ABBA's browser log). The window has the docs' look, toned down
-(`static/tokens.css`).
+images (ABBA's browser log). The window is a quiet dark tool: the logo keeps
+the docs' ASCII look, the rest is plain (`static/tokens.css`).
 
 ## The rule
 
@@ -283,19 +283,23 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `blob:` image (scripts set `element.style` instead); every text goes in by
   `textContent`.
   - `tokens.css` — the window's look, the only place a colour, the font, a
-    size or a spacing is written: the docs' look (`docs/_static/langslice.css`)
-    toned down: one monospace face (JetBrains Mono, bundled as
-    `jetbrains-mono-*.woff2`, SIL OFL 1.1, `jetbrains-mono-ofl.txt`), true
-    black everywhere with 1 px edges, square corners, no glow, gradients or
-    shadows, the logo's colours each with one job (off-white names, lavender
-    what can be followed, violet literal text, pink boundaries and state), and
+    size or a spacing is written: the system's sans-serif UI face for words
+    (`--sans`) and the monospace face (JetBrains Mono, bundled as
+    `jetbrains-mono-*.woff2`, SIL OFL 1.1, `jetbrains-mono-ofl.txt`) for
+    literal text only (file, section and tool names, paths, code); slate
+    grounds (`--ground`, panels and controls a step lighter in `--panel`,
+    black `--picture` behind pictures only), 1 px edges, small rounded corners
+    (`--radius`, `--radius-sm`), no glow, gradients or shadows, colours each
+    with one job (off-white names, lavender the one accent, violet literal
+    text, pink problems and keyboard focus, green Submitted), and
     the ABBA viewer's four focus colours. `lockup.svg` and `logomark.svg` are
     `assets/logo/`'s dark ones.
   - `index.html` — the top bar (the lockup, the tabs, the job picker,
     Settings), the status line, the viewer tab, the delimited prompt
     generator and Settings blocks, the footer and the lightbox.
-  - `app.css`, `app.js` — the element defaults every tab uses (black controls
-    with a 1 px edge, square corners) and the shell: the tabs (the first one
+  - `app.css`, `app.js` — the element defaults every tab uses (controls a step
+    above the page with a 1 px edge and small rounded corners; `.mono` for
+    literal text) and the shell: the tabs (the first one
     `#tab=` names, `startTab`, which `settings.js` reads); the address names
     what is shown (`#tab=…&job=n`) once a job was named; the job picker
     (keyboard-navigable, newest first by `changed_at`); the polls (jobs every
@@ -308,12 +312,12 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   - `viewer.js`, `viewer.css` — the Agent focus: Focus | Sections | Steps,
     Follow agent (the snapshot's `focus` replaces the targets and returns to
     page 1; a section clicked in the strip, the table or the log becomes the
-    focus and stops following), four sections to a page in one, two or four
-    cells. A panel asks for `render/overlay` at its size times
+    focus and stops following), four sections to a page (one fills the area, two side by
+    side, three as one tall panel beside two, four in a 2 x 2 grid). A panel asks for `render/overlay` at its size times
     `devicePixelRatio` (rounded up to 128) and again only when its row's
     `render_key` changes or the panel grows; the old picture stays, tagged
-    `updating`, until the new one fades in; a 409 shows its message, a 503 is
-    asked again; zoom, pan and reset happen in the page; `open` shows the
+    `updating`, until the new one fades in; a 409 shows its message (the same message on every panel shown is
+    said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `open` shows the
     render in the lightbox. The Sections table (a damaged row's pink left
     edge; a click puts the section in focus), Steps (undo, redo, notes,
     spend). The dividers are remembered in `localStorage`; below 1100 px the
@@ -331,10 +335,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     (paragraphs, lists and `code` kept, by `textContent`), tool rows
     (`<details>`, a running, done or failed left edge, section names that
     focus, the inputs at most 240 px tall, step, status and door),
-    `[View N images]`, notes, the line saying the agent's own words are not
+    `▸ N pictures`, notes, the line saying the agent's own words are not
     in the job folder when it holds no trace, following the end (`Latest
     activity` when scrolled up); the Tool images tray (four pictures per
-    page, the calls with pictures paged, Follow, resizable); the lightbox (the
+    page, the calls with pictures paged, Follow, resizable, about half the
+    column; a lone picture's caption under it as text); the lightbox (the
     arrow keys through every picture of the job).
   - `settings.js`, `settings.css` — the Settings tab: built once, updated
     from each answer, so a key being typed survives a refresh; refreshed

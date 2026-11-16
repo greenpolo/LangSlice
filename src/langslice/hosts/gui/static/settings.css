@@ -13,7 +13,7 @@
   max-width: calc(720px + 2 * var(--space-5)); margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-6);
 }
-.set-title { margin: 0; color: var(--name); font-size: var(--size-xl); font-weight: 700; line-height: 1.3; }
+.set-title { margin: 0; color: var(--name); font-size: var(--size-xl); font-weight: var(--weight-strong); line-height: 1.3; }
 .set-intro { margin: 0 0 var(--space-1); color: var(--text); max-width: 70ch; }
 .set-failed { margin: var(--space-6) auto; padding: 0 var(--space-5); }
 .set-help { margin: 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.5; }
@@ -22,10 +22,10 @@
 /* Cards. */
 .set-card {
   display: flex; flex-direction: column; gap: var(--space-3);
-  margin: 0; padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--ground);
+  margin: 0; padding: var(--space-4) 20px 20px; border: 1px solid var(--line); background: var(--panel);
 }
 .set-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
-.set-card-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: 700; line-height: 1.3; }
+.set-card-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3; }
 .set-card-sub { color: var(--muted); }
 
 /* Radios: the native input stays (hidden), a square drawn beside it. */
@@ -36,7 +36,7 @@
 }
 .set-native:checked + .set-radio { border-color: var(--lavender); background-color: var(--lavender); }
 .set-native:disabled + .set-radio { border-color: var(--line); }
-.set-native:focus-visible + .set-radio { outline: 2px solid var(--pink); outline-offset: 2px; }
+.set-native:focus-visible + .set-radio { outline: 2px solid var(--lavender); outline-offset: 2px; }
 .set-name { color: var(--text); }
 
 /* Connection: one card per way in; the chosen one on --selected. */
@@ -48,7 +48,7 @@
 }
 .set-conn:hover { background: var(--wash); border-color: var(--tract); }
 .set-conn.chosen, .set-conn.chosen:hover { background: var(--selected); border-color: var(--lavender); }
-.set-conn.chosen .set-name { color: var(--name); font-weight: 700; }
+.set-conn.chosen .set-name { color: var(--name); font-weight: var(--weight-strong); }
 .set-pick { position: relative; display: flex; align-items: center; gap: var(--space-3); min-width: 0; cursor: pointer; }
 .set-pick:hover .set-native:not(:checked) + .set-radio { border-color: var(--lavender); }
 .set-pill {
@@ -61,20 +61,20 @@
 .set-key { display: flex; gap: var(--space-2); flex: 1; min-width: 0; max-width: 480px; margin: 0; }
 .set-key .set-input {
   flex: 1; min-width: 0; margin: 0; padding: 6px 10px;
-  font: inherit; color: var(--name); background: var(--ground); border: 1px solid var(--line); border-radius: 0;
+  font: inherit; color: var(--name); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
 }
 .set-key .set-input::placeholder { color: var(--faint); opacity: 1; }
 .set-key .set-input:hover { border-color: var(--tract); }
-.set-key .set-input:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+.set-key .set-input:focus-visible { outline: 2px solid var(--lavender); outline-offset: 2px; }
 .set-button {
-  margin: 0; padding: 6px 16px; border-radius: 0; cursor: pointer; white-space: nowrap;
-  font: inherit; color: var(--lavender); background: var(--ground); border: 1px solid var(--tract);
+  margin: 0; padding: 6px 16px; border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap;
+  font: inherit; color: var(--lavender); background: var(--panel); border: 1px solid var(--tract);
 }
 .set-button:hover:not(:disabled) { background: var(--wash); border-color: var(--lavender); }
 .set-button:active:not(:disabled) { background: var(--selected); }
-.set-button:disabled, .set-button:disabled:hover { color: var(--muted); background: var(--ground); border-color: var(--line); cursor: default; }
+.set-button:disabled, .set-button:disabled:hover { color: var(--muted); background: var(--panel); border-color: var(--line); cursor: default; }
 .set-link { color: var(--lavender); font-size: var(--size-sm); text-decoration: underline; text-decoration-color: var(--tract); text-underline-offset: 0.25em; }
-.set-link:hover { color: var(--pink); text-decoration-color: var(--pink); background: none; }
+.set-link:hover { color: var(--name); text-decoration-color: var(--name); background: none; }
 
 /* Messages: a note's lavender edge, an error's pink one. */
 .set-message { margin: 0; padding: 1px 0 1px var(--space-3); border-left: var(--rule) solid var(--lavender); color: var(--text); font-size: var(--size-sm); }
@@ -86,10 +86,10 @@
 .set-label { color: var(--text); }
 .set-select {
   width: 100%; min-width: 0; margin: 0; padding: 6px 8px; cursor: pointer;
-  font: inherit; color: var(--name); background: var(--ground); border: 1px solid var(--line); border-radius: 0;
+  font: inherit; color: var(--name); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
 }
 .set-select:hover { border-color: var(--tract); }
-.set-select option { color: var(--text); background: var(--ground); }
+.set-select option { color: var(--text); background: var(--panel); }
 
 /* Registration runs in: two choices, greyed until the chosen connection works. */
 .set-choices { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -100,7 +100,7 @@
 .set-choice .set-radio { margin-top: 2px; }
 .set-choice:hover:not(.disabled) { background: var(--wash); border-color: var(--tract); }
 .set-choice.chosen, .set-choice.chosen:hover:not(.disabled) { background: var(--selected); border-color: var(--lavender); }
-.set-choice.chosen .set-name { color: var(--name); font-weight: 700; }
+.set-choice.chosen .set-name { color: var(--name); font-weight: var(--weight-strong); }
 .set-choice-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .set-choice.disabled { cursor: not-allowed; border-style: dashed; }
 .set-choice.disabled .set-name { color: var(--muted); }
@@ -111,3 +111,6 @@
   .set-conn > .set-message { margin-left: 0; }
   .set-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Cards and choices: small rounded corners, as everywhere in the window. */
+.set-card, .set-conn, .set-choice { border-radius: var(--radius); }

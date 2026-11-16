@@ -82,7 +82,8 @@ what the agent is working on, on the left, and the agent's log on the right.
   under the log, shows the pictures each call saved, four at a time; the
   arrows go through the calls, **Follow** returns to the newest, and a click
   enlarges a picture (then the arrow keys go through every picture of the
-  job).
+  job). A call's lone picture has its caption, the words the agent read
+  with it, written under it.
 
 The viewer is read-only: nothing in it changes the job.
 
