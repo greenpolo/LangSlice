@@ -71,6 +71,7 @@ def test_appended_lines_arrive_once_in_order(tmp_path: Path) -> None:
     assert [i["kind"] for i in second["items"]] == ["tool"]
     assert second["status"]["word"] == "Running"
     assert second["status"]["sentence"].startswith("position_sections on s000.png")
+    assert second["items"][0]["title"].startswith("Place sections along the atlas")
     assert second["header"]["door"] == "cli"
     assert _snap(watcher, second["cursor"])["items"] == []
 
@@ -370,3 +371,15 @@ def test_a_job_is_named_by_its_images_folder_and_the_one_above(tmp_path: Path) -
         (f"{above}/images", str(tmp_path / "images")),
         ("jobs/brain7", str(tmp_path / "scans")),
         (f"{above}/later", str(tmp_path / "later"))]
+
+
+def test_a_replayed_session_says_so_in_the_header(tmp_path: Path) -> None:
+    folder = _job(tmp_path)
+    _append(folder / "trace" / "replay.jsonl",
+            {"kind": "session", "model": "claude-fable-5-2", "at": "2026-10-28T10:00:00",
+             "replay": {"speed": 5, "about": "played again 5x faster"}})
+    header = _snap(JobWatcher(folder))["header"]
+    assert header["replay"] == {"speed": 5, "about": "played again 5x faster"}
+    _append(folder / "trace" / "live.jsonl",
+            {"kind": "session", "model": "claude-fable-5-2", "at": "2026-10-28T11:00:00"})
+    assert _snap(JobWatcher(folder))["header"]["replay"] is None

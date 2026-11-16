@@ -74,8 +74,10 @@ what the agent is working on, on the left, and the agent's log on the right.
 - **Steps.** The steps that can be undone and redone, each named by the call
   that made it; your notes from the job's settings and the run's; and the
   spend (tokens and the dollar estimate, when the run records them).
-- **Agent log.** One row per tool call, with its sections and whether it is
-  running, done or failed; open a row for its inputs. When the job folder
+- **Agent log.** One row per tool call, named in plain words (the tool's own
+  name shows on hover and inside the row), with its sections and whether it
+  is running, done or failed; open a row for its inputs. Calls of one tool in
+  a row share one row (`×n`) that opens to show each. When the job folder
   holds LangSlice's agent trace, the agent's text and its reasoning
   summaries appear between the calls. A coding agent keeps its own
   reasoning in its app, so only its tool calls appear. **Tool images**,
@@ -84,6 +86,9 @@ what the agent is working on, on the left, and the agent's log on the right.
   enlarges a picture (then the arrow keys go through every picture of the
   job). A call's lone picture has its caption, the words the agent read
   with it, written under it.
+
+A run replayed into a job folder (its trace's session record carries
+`replay`) shows a **Replay** chip, with its speed, beside the status word.
 
 The viewer is read-only: nothing in it changes the job.
 

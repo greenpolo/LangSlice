@@ -49,6 +49,7 @@ from langslice.job.layout import (
     held_image_folder,
 )
 from langslice.job.migrations import viewer_stack
+from langslice.job.settings.labels import label as tool_title
 from langslice.job.settings.tool_table import TOOLS
 
 #: How often a watched job's files are looked at, at most.
@@ -371,6 +372,7 @@ class JobWatcher:
                 "kind": "tool", "phase": "start" if kind == "tool_start" else "end",
                 "key": key, "name": str(record.get("name") or "tool"),
                 "label": str(record.get("name") or "tool"),
+                "title": tool_title(str(record.get("name") or "tool")),
                 "sections": [str(s) for s in record.get("target_ids") or []],
                 "failed": bool(record.get("failed")), "status": record.get("status"),
                 "step": record.get("step"), "door": record.get("door"), "at": at,
@@ -431,7 +433,8 @@ class JobWatcher:
             return
         at = record.get("at")
         if kind == "session":
-            self.session = {"model": record.get("model"), "agent": record.get("agent")}
+            self.session = {"model": record.get("model"), "agent": record.get("agent"),
+                            "replay": _dict(record.get("replay")) or None}
             self._append({"kind": "note", "at": at, "text": "Agent session started"
                           + (f" ({record['model']})" if record.get("model") else "")})
         elif kind == "model":
@@ -618,6 +621,7 @@ class JobWatcher:
             "tasks": spec.get("tasks"),
             "model": self.session.get("model") or spec.get("model"),
             "door": self.door, "exists": self.folder.is_dir(),
+            "replay": self.session.get("replay"),
         }
 
     def status(self) -> dict[str, str]:

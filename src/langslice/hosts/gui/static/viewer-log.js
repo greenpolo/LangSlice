@@ -2,7 +2,9 @@
 // The agent log, the ABBA viewer's browser log as a column: the agent's messages and
 // reasoning summaries, each tool call as a row (its name, its sections, its state;
 // opened, its inputs, step and status), notes, and under a call that saved pictures a
-// `▸ N pictures` link to them. The transcript follows its end while the person is
+// `▸ N pictures` link to them. A row names the call in plain words (the tool's label;
+// its name on hover and inside); calls of one tool in a row fold into one row (`×n`)
+// that opens to show each. The transcript follows its end while the person is
 // there. Under it, the tool images tray: one call's pictures at a time, four per page,
 // with `← n/N →` across the calls and Follow (the newest). The lightbox shows one picture
 // as large as the window allows, `←` / `→` through every picture of the job.
@@ -19,6 +21,7 @@ const AgentLog = (() => {
   let owners = [];            // the calls and groups with pictures, in picture order
   let pictures = [];          // every picture, by number
   let tray = { follow: true, owner: null, page: 0, shown: '' };
+  let tail = null;            // the last row of the transcript (a call, a run, or other)
   let words = false;          // the agent's own words are in the folder (a trace)
   let activity = false;
   let box = { list: null, index: 0 };
@@ -54,7 +57,7 @@ const AgentLog = (() => {
     job = index;
     calls = new Map(); claims = new Map(); groups = new Map(); owners = []; pictures = [];
     tray = { follow: true, owner: null, page: 0, shown: '' };
-    words = false; activity = false;
+    words = false; activity = false; tail = null;
     $('log-items').replaceChildren();
     $('log-jump').hidden = true;
     $('log-empty').hidden = true;
@@ -115,6 +118,7 @@ const AgentLog = (() => {
     }
     root.append(body);
     $('log-items').append(root);
+    tail = null;
   }
   function inline(parent, text) {
     for (const part of text.split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {
@@ -127,6 +131,7 @@ const AgentLog = (() => {
   function note(item) {
     if (/^Agent session/.test(item.text || '')) words = true;
     $('log-items').append(el('p', 'note' + (item.error ? ' error' : ''), item.text));
+    tail = null;
   }
   // A call's sections, the first three (then + n more), each one a way to put it in focus.
   function sectionsLine(ids) {
@@ -151,7 +156,7 @@ const AgentLog = (() => {
     if (!call) {
       call = makeCall(item);
       calls.set(item.key, call);
-      $('log-items').append(call.root);
+      place(call);
     }
     if (item.phase === 'start') {
       call.start = item;
@@ -173,17 +178,87 @@ const AgentLog = (() => {
       }
     }
     details(call);
+    if (call.run) updateRun(call.run);
   }
   function makeCall(item) {
     const root = el('details', 'call');
     const summary = el('summary');
     const body = el('span', 'call-body');
-    body.append(el('span', 'call-name', item.name), sectionsLine(item.sections));
+    const title = el('span', 'call-title', item.title || item.name);
+    title.title = item.name;
+    body.append(title, sectionsLine(item.sections));
     const state = el('span', 'call-state');
     summary.append(body, state);
     const detail = el('div', 'call-detail');
     root.append(summary, detail);
-    return { kind: 'call', key: item.key, name: item.name, sections: item.sections || [], root, state, detail, pictures: [], link: null, start: null, end: null };
+    return { kind: 'call', key: item.key, name: item.name, title: item.title || item.name, sections: item.sections || [], root, state, detail, pictures: [], link: null, start: null, end: null, run: null };
+  }
+  // A new call goes at the end; the second call of one tool in a row starts a run (one
+  // row, `×n`, that opens to show the calls), and later ones join it.
+  function place(call) {
+    if (tail?.kind === 'run' && tail.name === call.name) {
+      tail.list.append(call.root);
+      call.run = tail;
+      tail.calls.push(call);
+      return;
+    }
+    if (tail?.kind === 'call' && tail.name === call.name) {
+      const first = tail;
+      const run = makeRun(first);
+      first.root.before(run.root);
+      run.root.after(run.link);
+      run.list.append(first.root);
+      if (first.link) run.list.append(first.link);
+      run.list.append(call.root);
+      first.run = call.run = run;
+      run.calls.push(first, call);
+      tail = run;
+      updateRun(run);
+      return;
+    }
+    $('log-items').append(call.root);
+    tail = call;
+  }
+  function makeRun(first) {
+    const root = el('details', 'call run');
+    const summary = el('summary');
+    const body = el('span', 'call-body');
+    const title = el('span', 'call-title');
+    title.title = first.name;
+    const targets = el('span', 'call-targets');
+    body.append(title, targets);
+    const state = el('span', 'call-state');
+    summary.append(body, state);
+    const list = el('div', 'run-calls');
+    root.append(summary, list);
+    const link = el('button', 'view-images');
+    link.hidden = true;
+    const run = { kind: 'run', name: first.name, label: first.title, root, title, targets, state, list, link, calls: [] };
+    link.addEventListener('click', () => {
+      const owner = run.calls.find(c => c.pictures.length);
+      if (!owner) return;
+      tray.follow = false;
+      tray.owner = owner;
+      tray.page = 0;
+      renderTray();
+    });
+    root.addEventListener('toggle', () => updateRun(run));
+    return run;
+  }
+  function updateRun(run) {
+    run.title.textContent = `${run.label} ×${run.calls.length}`;
+    const ids = [];
+    for (const call of run.calls) for (const id of call.sections) if (!ids.includes(id)) ids.push(id);
+    run.targets.replaceChildren(...sectionsLine(ids).childNodes);
+    const running = run.calls.some(c => c.root.classList.contains('running'));
+    const failed = run.calls.filter(c => c.root.classList.contains('failed')).length;
+    run.root.classList.toggle('running', running);
+    run.root.classList.toggle('failed', !running && failed > 0);
+    run.state.textContent = running ? 'running' : failed ? `${failed} failed` : '';
+    // The run's own link while it is closed; open, each call shows its own.
+    const n = run.calls.reduce((sum, c) => sum + c.pictures.length, 0);
+    run.link.textContent = `▸ ${n} picture${n === 1 ? '' : 's'}`;
+    run.link.hidden = run.root.open || !n;
   }
   function setState(call, word) {
     call.root.classList.toggle('running', word === 'running');
@@ -205,6 +280,7 @@ const AgentLog = (() => {
     else if (end) meta.push(end.failed ? 'failed' : 'done');
     else meta.push('running');
     if (end?.door || call.start?.door) meta.push('via ' + (end?.door || call.start?.door));
+    meta.unshift(call.name);
     parts.push(el('p', 'call-meta', meta.join(' · ')));
     call.detail.replaceChildren(...parts);
   }
@@ -242,7 +318,7 @@ const AgentLog = (() => {
         const before = [...groups.values()].filter(g => g !== group && g.name === 'opening').pop();
         const anchor = before ? (before.link || before.root) : items.firstElementChild?.classList.contains('note') ? items.firstElementChild : null;
         if (anchor) anchor.after(root); else items.prepend(root);
-      } else items.append(root);
+      } else { items.append(root); tail = null; }
     }
     for (const id of picture.sections) if (!group.ids.includes(id)) group.ids.push(id);
     group.targets.replaceChildren(...sectionsLine(group.ids).childNodes);
@@ -254,6 +330,7 @@ const AgentLog = (() => {
     if (!owners.includes(owner)) owners.push(owner);
     owners.sort((a, b) => a.pictures[0].number - b.pictures[0].number);
     link(owner);
+    if (owner.run) updateRun(owner.run);
   }
   function dropGroup(group) {
     group.root.remove();
@@ -293,7 +370,7 @@ const AgentLog = (() => {
     const empty = !list.length;
     $('tray').classList.toggle('empty', empty);
     $('tray-divider').hidden = empty;
-    for (const owner of owners) owner.link?.classList.remove('shown');
+    for (const owner of owners) { owner.link?.classList.remove('shown'); owner.run?.link.classList.remove('shown'); }
     if (empty) {
       $('tray-tool').textContent = '· no pictures yet';
       $('tray-grid').replaceChildren();
@@ -307,7 +384,8 @@ const AgentLog = (() => {
     if (!tray.follow) { tray.owner = batch.owner; tray.page = batch.page; }
     const owner = batch.owner;
     owner.link?.classList.add('shown');
-    $('tray-tool').textContent = '· ' + (owner.name === 'opening' ? 'opening' : owner.name || 'pictures');
+    owner.run?.link.classList.add('shown');
+    $('tray-tool').textContent = '· ' + (owner.name === 'opening' ? 'opening' : owner.title || owner.name || 'pictures');
     const total = owner.pictures.length;
     const from = batch.page * PER_PAGE + 1, to = from + batch.pictures.length - 1;
     const ids = owner.kind === 'call' ? owner.sections : owner.ids;

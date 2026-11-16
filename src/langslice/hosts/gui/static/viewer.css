@@ -19,6 +19,14 @@
   white-space: nowrap;
 }
 .statusline .word { font-weight: var(--weight-strong); }
+/* A replayed run: a quiet outlined chip beside the status word. */
+.replay-chip {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--tract);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  line-height: 18px;
+}
 .sentence { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: var(--space-1); }
 .facts { color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 48%; }
 
@@ -318,6 +326,10 @@
 .call-line::before { content: "·"; color: var(--muted); width: 1ch; flex-shrink: 0; }
 .call-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .call-name { color: var(--violet); overflow-wrap: anywhere; }
+.call-title { color: var(--name); overflow-wrap: anywhere; }
+/* A run: calls of one tool in a row, folded into one row that opens to show each. */
+.run-calls { margin-left: calc(var(--space-2) + 1ch); padding-bottom: var(--space-1); }
+.run-calls .call { margin-top: var(--space-1); }
 .call-name.plain { color: var(--text); }
 .call-targets { color: var(--muted); font-size: var(--size-sm); overflow-wrap: anywhere; }
 .section-link { color: var(--muted); cursor: pointer; }
@@ -364,7 +376,7 @@
 .tray-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: 6px; }
 .tray-titles { min-width: 0; }
 .tray-title { font-size: var(--size-md); display: flex; gap: var(--space-1); white-space: nowrap; }
-.tray-tool { color: var(--violet); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.tray-tool { color: var(--text); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
 .tray.empty .tray-tool { color: var(--muted); }
 .tray-caption { margin: 0; color: var(--muted); font-size: var(--size-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tray-nav { display: flex; align-items: center; gap: var(--space-1); font-size: var(--size-xs); white-space: nowrap; }
@@ -403,7 +415,7 @@
 
 /* Literal text in the monospace face, a size down so it sits with the words around it:
    section and file names, tool names, tags. */
-.panel-name, .call-name, .call-targets, .tray-tool, .tray-caption, .tile-label, .tip-name, .tag,
+.panel-name, .call-name, .call-targets, .tray-caption, .tile-label, .tip-name, .tag,
 .sections-table .name, .sections-table .method { font-family: var(--mono); font-variant-ligatures: none; }
 .panel-name, .call-name { font-size: var(--size-sm); }
 .call-targets, .tray-caption, .tile-label, .tag { font-size: var(--size-xs); }

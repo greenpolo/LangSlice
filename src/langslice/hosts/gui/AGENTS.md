@@ -82,10 +82,13 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `at` is UTC, the trace's local; within a second a model turn before the
   calls it made, a session's end after them), then the pictures. Items: `tool`
   (`tool_start` / `tool_end` by `execution_id`; `args` an object or the cut
-  JSON string), `picture` (number, view folder, tool, call, sections, caption
+  JSON string; `title`, the tool's plain-language label from
+  `job.settings.labels`), `picture` (number, view folder, tool, call, sections, caption
   from `view.json`; a path outside the folder is refused), `agent` and
   `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
-  script writes, session start and end, a trace error). The sections table:
+  script writes, session start and end, a trace error); a trace `session`
+  record's `replay` object (`speed`, `about`: a finished run's records played
+  again into the folder) is the header's `replay`. The sections table:
   `core.stack.status.status_rows` of `job.migrations.viewer_stack` (an older
   format migrated in memory as every door opens it, nothing written) with
   each section's registration number (`job.history.SectionHistories`); a state this
@@ -333,8 +336,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     axis; without the strip route, the handles from the snapshot rows.
   - `viewer-log.js` — the agent log: agent messages and reasoning summaries
     (paragraphs, lists and `code` kept, by `textContent`), tool rows
-    (`<details>`, a running, done or failed left edge, section names that
-    focus, the inputs at most 240 px tall, step, status and door),
+    (`<details>` named by the tool's plain-language `title`, its name on
+    hover and inside, a running, done or failed left edge, section names that
+    focus, the inputs at most 240 px tall, step, status and door; calls of
+    one tool in a row fold into one run row, `title ×n`, that opens to show
+    each, with the run's `▸ N pictures` while closed),
     `▸ N pictures`, notes, the line saying the agent's own words are not
     in the job folder when it holds no trace, following the end (`Latest
     activity` when scrolled up); the Tool images tray (four pictures per

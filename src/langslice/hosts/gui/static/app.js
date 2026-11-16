@@ -325,6 +325,7 @@ const Ui = (() => {
     $('word').textContent = '';
     $('sentence').textContent = 'Loading the job…';
     $('facts').textContent = '';
+    $('replay').hidden = true;
     AgentLog.setStatus('');
   }
   function showStatus(snap) {
@@ -335,6 +336,13 @@ const Ui = (() => {
     $('word').className = 'word word-' + word;
     $('sentence').textContent = snap.status?.sentence || '';
     $('facts').textContent = [h.atlas, h.plane, h.model, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
+    // A replayed run (a finished run's records played again into a job folder) says so.
+    const replay = h.replay;
+    $('replay').hidden = !replay;
+    if (replay) {
+      $('replay').textContent = ['Replay', replay.speed && `${replay.speed}× speed`].filter(Boolean).join(' · ');
+      $('replay').title = replay.about || 'A finished run, played again from its records';
+    }
     AgentLog.setStatus(word);
     Viewer.setHeader(h);
     const job = jobs?.find(j => j.index === watch.index);
