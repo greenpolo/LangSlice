@@ -52,9 +52,10 @@ logger = logging.getLogger(__name__)
 RUNNING, DONE, FAILED = "running", "done", "failed"
 #: A piece of work's states.
 STATUSES = (RUNNING, DONE, FAILED)
-#: Work threads one job runs at once. Each mostly waits for an image-model
-#: call; the fits themselves run one at a time (``core.fits.deformation``).
-MAX_WORKERS = 8
+#: Work threads one job runs at once: an image-model call each waits on, or a
+#: fit, which runs beside the others (GPU fits as many at once as the GPU
+#: queue's slots, ``core.fits.deformable.gpu_queue``).
+MAX_WORKERS = 32
 #: Prefix of a work id (``w1``, ``w2``, ... in the order the job started them).
 ID_PREFIX = "w"
 

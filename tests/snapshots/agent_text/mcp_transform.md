@@ -148,7 +148,7 @@ Make, replace or delete a named section image, from the section's other images.
         file as it is, so a look at an image is what the fit sees. "preprocessed"
         was made when the job opened; make it again, or make others under new
         names, as the sections need. The steps run in this order on each source:
-        n4, denoise, CLAHE; then the weighted blend, brightened to a mid-gray
+        n4, CLAHE; then the weighted blend, brightened to a mid-gray
         tissue mean; then contrast, gamma, invert. Undoable.
 
         Args:
@@ -164,7 +164,6 @@ Make, replace or delete a named section image, from the section's other images.
                 40.
             clahe_tiles: CLAHE tiles per side, 1 to 32.
             n4: Correct uneven illumination (N4).
-            denoise: Patch-based denoising.
             contrast: [low, high], fractions 0 to 1 of the blended image's range,
                 stretched to the full range; empty leaves it.
             gamma: 0.1 to 10; 1 or 0 is linear.
@@ -185,7 +184,6 @@ Make, replace or delete a named section image, from the section's other images.
 - `clahe_clip` (number):
 - `clahe_tiles` (integer):
 - `n4` (boolean):
-- `denoise` (boolean):
 - `contrast` (array of number):
 - `gamma` (number):
 - `invert` (boolean):

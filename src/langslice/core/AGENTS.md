@@ -158,6 +158,22 @@ the angles in a caption (empty for the flat plane).
   string's, so a reply prints, compares and serializes as before. Core,
   job and tools raise it; each door converts it once (`doors/CLAUDE.md`).
   `plugins.ToolError` is its subclass for plugins.
+- `hardware.py` — the machine and how many sections run at once: `detect`
+  (`Hardware`: cores, memory, the first GPU and its memory), `cpu_cores`
+  (`LANGSLICE_CPU_CORES` overrides), `section_workers(tasks, threads_each)`
+  (the cores over the threads one task keeps busy), `map_sections` (a step
+  per item on threads, in order, each in a copy of the caller's context so
+  its pictures are noted; the first error raised after every step ends),
+  `process_pool` / `map_processes` (spawned workers for one call, for a
+  library that holds Python's lock: SimpleITK's N4 of `make_image`), `kept_process_pool` / `drop_process_pool` (workers kept for
+  the process: the Elastix affine), `global_threads` (a library's global
+  thread count held while any call runs, counted across threads;
+  `simpleitk_threader`), `gpu_slots` (how many fits run on the GPU at once:
+  `LANGSLICE_GPU_SLOTS`, else the GPU's memory over `GIB_PER_GPU_FIT`; the
+  slots of `fits/deformable/gpu_queue.py`). The plugin API re-exports
+  `map_sections`. Measured on
+  the 331CTX stack (24 cores): the Elastix affine about 2.5x faster, the
+  STalign plane search (CPU work, no GPU turn) about 1.8x.
 - `shared_files.py` — files another process may hold open (on Windows a
   reader without the lock, the window's watcher, a memory-mapped cache file
   or a scanner makes a replace, delete or lock fail with `PermissionError`
@@ -206,7 +222,7 @@ the angles in a caption (empty for the flat plane).
   unoriented; `write_file` / `write_image`, never overwritten: other pixels
   under a name get `<name>.2.png`, the same pixels reuse the file;
   `_Layout.images_dir`). `validate_recipe` (weights `"auto"` or `{image:
-  weight}`, `clahe_clip`, `clahe_tiles`, `n4`, `denoise`, `contrast`,
+  weight}`, `clahe_clip`, `clahe_tiles`, `n4`, `contrast`,
   `gamma`, `invert`; `OPENING_RECIPE` its defaults), `make` (a recipe on the
   working copy: `sections.reading.custom_appearance` over the sources, then the tone
   steps; sources are raw channels or made images, so chains compose),

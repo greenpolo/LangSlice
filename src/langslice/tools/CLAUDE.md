@@ -188,7 +188,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `DamageRegions`.
 - `images.py` — `make_section_image(job, workspace, name, sections,
   given, delete=)`, `given` an `ImageRecipe` (`weights`, `clahe_clip`,
-  `clahe_tiles`, `n4`, `denoise`, `contrast`, `gamma`, `invert`; the
+  `clahe_tiles`, `n4`, `contrast`, `gamma`, `invert`; the
   `make_image` tool, `make_image_tool`, normalizes the model's values first): a made section image (`core/sections/images.py`) for the
   sections named (empty: every section), each computed from its own images
   and saved as a file before ONE undo step sets the entries;

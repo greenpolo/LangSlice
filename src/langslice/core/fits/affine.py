@@ -237,7 +237,7 @@ def elastix_affine(
 
     from langslice.core.fits import deformation
     from langslice.core.fits.deformable import prepare_fit
-    from langslice.core.fits.deformable.engines import run_elastix_affine
+    from langslice.core.fits.deformable.engines import fit_elastix_affine
 
     start = [float(v) for v in start_params]
     grid = deformation.fit_grid(state, ctx, record, params=start)
@@ -248,7 +248,7 @@ def elastix_affine(
         section_weights=section_weights)
     _check_elastix_region(prepared, ctx.atlas, include)
     assert prepared.inputs is not None  # prepare_fit always builds engine inputs
-    result = run_elastix_affine(prepared.inputs)
+    result = fit_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.
     mm = grid.placement.section_mm_per_px

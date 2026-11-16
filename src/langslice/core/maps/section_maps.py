@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -261,6 +262,10 @@ def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any
     )
 
 
+#: Guards every workspace's frame cache (sections are fitted on threads).
+_FRAME_LOCK = threading.Lock()
+
+
 def section_frame(state: Stack, workspace: Workspace, record: Section) -> SectionFrame:
     """The section's linear frame (``ValueError`` when it has none:
     :func:`placement_problem`). Memoized on the workspace
@@ -274,17 +279,20 @@ def section_frame(state: Stack, workspace: Workspace, record: Section) -> Sectio
         raise ValueError("State and workspace disagree about the atlas or plane")
     key = _frame_key(state, workspace, record)
     cache = workspace.frame_cache
-    held = cache.get(record.id)
-    if held is not None and held[0] == key:
-        cache.move_to_end(record.id)
-        return cast(SectionFrame, held[1])
+    with _FRAME_LOCK:
+        held = cache.get(record.id)
+        if held is not None and held[0] == key:
+            cache.move_to_end(record.id)
+            return cast(SectionFrame, held[1])
     frame = _section_frame(state, workspace, record)
     # One frame per section (the one at its current key); the least recently
-    # used section is dropped past FRAME_CACHE_SECTIONS.
-    cache[record.id] = (key, frame)
-    cache.move_to_end(record.id)
-    while len(cache) > FRAME_CACHE_SECTIONS:
-        cache.popitem(last=False)
+    # used section is dropped past FRAME_CACHE_SECTIONS. Sections are fitted
+    # on threads at once, so the cache is changed under a lock.
+    with _FRAME_LOCK:
+        cache[record.id] = (key, frame)
+        cache.move_to_end(record.id)
+        while len(cache) > FRAME_CACHE_SECTIONS:
+            cache.popitem(last=False)
     return frame
 
 

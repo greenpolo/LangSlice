@@ -345,7 +345,9 @@ two kinds of section image. **Raw** images are the planes of the image file
 (`red`, `green`, `blue` for a colour file, `gray`, or the channel names a host
 gives, else `ch1`, `ch2`, and so on), never edited. **Made** images are made
 here, by a script, or when the job opens, and saved as
-`sections/<stem>/images/<name>.png`.
+`sections/<stem>/images/<name>.png`. The sections of a call are made at once;
+`n4` runs in worker processes of eight threads each, as many as the
+processor's cores allow (`LANGSLICE_CPU_CORES` sets the core count).
 
 `preprocessed` is the made image LangSlice writes for every section when the
 job is created, and the image every fit, the image model and `look` read by
@@ -362,14 +364,13 @@ read, in gray.
 | `clahe_clip` | 4 | Local contrast enhancement (CLAHE) clip limit, 0 (none) to 40. |
 | `clahe_tiles` | 8 | CLAHE tiles per side, 1 to 32. |
 | `n4` | false | Correct uneven illumination (N4). |
-| `denoise` | false | Patch-based denoising. |
 | `contrast` | none | `[low, high]`, fractions of the blended image's range, stretched to the full range. |
 | `gamma` | 0 (linear) | 0.1 to 10. |
 | `invert` | false | Bright as dark. |
 | `delete` | false | Remove the image. `preprocessed` cannot be deleted. |
 | `view` | true | Return up to 4 sections drawn as `look`'s `section` mode draws the image. |
 
-The steps run in this order on each source: N4, denoising, CLAHE; then the
+The steps run in this order on each source: N4, CLAHE; then the
 weighted blend, brightened to a mid-gray tissue mean; then `contrast`,
 `gamma`, `invert`. Files are never deleted: a name made again with other
 pixels gets a new file (`<name>.2.png`), so undo finds the old one.
@@ -736,7 +737,10 @@ Refines each section's current placement automatically with
 [Elastix](https://elastix.dev), matching a section image against an atlas
 image. It adjusts from where the section is and does not search from scratch;
 it does not mirror a section. The section's marked damage regions are left
-out. A section that holds a deformation is refused (`HAS_DEFORMATION`).
+out. A section that holds a deformation is refused (`HAS_DEFORMATION`). The
+sections of a call are fitted at once in worker processes, as many as the
+processor's cores allow at eight threads each (`LANGSLICE_CPU_CORES` sets the
+core count; below 16 cores they are fitted in turn).
 
 | Argument | Default | What it does |
 |---|---|---|
@@ -784,7 +788,7 @@ a position and a transform.
 
 | Argument | Default | What it does |
 |---|---|---|
-| `sections` | (required) | 1 to 20 filenames, fitted one after another. |
+| `sections` | (required) | 1 to 20 filenames, fitted at once (on the GPU, as many as its queue's slots). |
 | `restrict_to` | every region | Refine these regions only: a 0.3 mm neighbourhood around them is fitted, and the change fades to none over a further 0.3 mm. |
 | `section_image` | `preprocessed` | The section image to match. |
 | `atlas_image` | `nissl` | As for `elastix_affine`. |
@@ -845,8 +849,8 @@ never flagged. Up to 20 sections per call because every fitted section is held
 in memory until the call writes them all as one undo step (20 sections peaked
 at 6.4 GB).
 
-A fit that waited a second or more for the machine's GPU queue (one fit at a
-time across every job on the machine) says how long in its row
+A fit that waited a second or more for the machine's GPU queue (as many at once as the queue's slots (`LANGSLICE_GPU_SLOTS`, else the GPU's memory over 2 GB: 15 on a 32 GB GPU), across every job
+on the machine) says how long in its row
 (`gpu_wait_s`); one that found the GPU's memory taken by another process,
 waited and ran again says so (`retried`). What the engines print goes to the
 job's `logs/engine.log`, never into the reply. A fit whose engine fails is

@@ -616,7 +616,7 @@ def working_intensity_ranges(
         return [_array_range(np.asarray(page.asarray())) for page in handle.pages]
 
 
-#: Threads the ITK filters run N4 and denoising on: a multithreaded filter's
+#: Threads ITK's N4 filter runs on: a multithreaded filter's
 #: last bits depend on the split, so the count is fixed.
 ITK_THREADS = 8
 #: N4: the image and mask shrunk
@@ -626,9 +626,6 @@ N4_SHRINK = 4
 N4_ITERATIONS = (50, 50, 50, 50)
 N4_TOLERANCE = 1e-7
 N4_CONTROL_POINTS = 4
-#: Denoising: ITK's patch-based filter, 3x3 patches, 50 sampled patches.
-DENOISE_PATCH_RADIUS = 1
-DENOISE_SAMPLE_PATCHES = 50
 
 
 def _n4_corrected(array: np.ndarray, tissue: np.ndarray | None) -> np.ndarray:
@@ -652,36 +649,18 @@ def _n4_corrected(array: np.ndarray, tissue: np.ndarray | None) -> np.ndarray:
     return sitk.GetArrayFromImage(image / sitk.Exp(field)).astype(np.float32)
 
 
-def _denoised(array: np.ndarray) -> np.ndarray:
-    """ITK's patch-based (non-local means) denoising of a float32 plane."""
-    import SimpleITK as sitk
-
-    if float(array.max()) == float(array.min()):
-        return array  # the filter refuses a constant image; there is no noise
-    denoise = sitk.PatchBasedDenoisingImageFilter()
-    denoise.SetNumberOfThreads(ITK_THREADS)
-    denoise.SetPatchRadius(DENOISE_PATCH_RADIUS)
-    denoise.SetNumberOfSamplePatches(DENOISE_SAMPLE_PATCHES)
-    denoise.SetNoiseModel(denoise.NOMODEL)
-    return sitk.GetArrayFromImage(denoise.Execute(sitk.GetImageFromArray(array))).astype(np.float32)
-
-
-def enhance_plane(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
-    """N4 bias-field correction and/or denoising of one 8-bit plane (SimpleITK).
+def enhance_plane(plane: np.ndarray, *, n4: bool) -> np.ndarray:
+    """N4 bias-field correction of one 8-bit plane (SimpleITK); *n4* False keeps it.
 
     Intensities are shifted positive first (N4 works on their logarithm) and
     the result is scaled back to the plane's own mean inside the tissue, so a
     dim channel stays dim; outside the tissue the plane is kept.
     """
-    if not (n4 or denoise):
+    if not n4:
         return plane
     array = plane.astype(np.float32) + 1.0
     tissue = plane > 15
-    out = array
-    if n4:
-        out = _n4_corrected(out, tissue if tissue.any() else None)
-    if denoise:
-        out = _denoised(out)
+    out = _n4_corrected(array, tissue if tissue.any() else None)
     region = tissue if tissue.any() else np.ones(plane.shape, dtype=bool)
     # Keep the channel's own brightness: a dim channel stays dim, so the
     # weights still mean what they say and its noise is not stretched up.
@@ -699,11 +678,10 @@ def custom_appearance(
     clahe_clip: float = AUTO_CLAHE_CLIP,
     clahe_tiles: int = AUTO_CLAHE_TILE[0],
     n4: bool = False,
-    denoise: bool = False,
 ) -> Image.Image:
     """The grayscale image an explicit appearance draws from raw planes.
 
-    Each plane with weight above zero is optionally N4-corrected and denoised
+    Each plane with weight above zero is optionally N4-corrected
     (:func:`enhance_plane`), CLAHE-enhanced at *clahe_clip* over a
     *clahe_tiles* x *clahe_tiles* grid (0 = no CLAHE), then the planes are
     blended by *channel_weights* (None = :func:`coverage_weights`) and
@@ -713,7 +691,7 @@ def custom_appearance(
     if len(weights) != len(planes):
         raise ValueError(f"Expected {len(planes)} channel weight(s); got {len(weights)}")
     used = [
-        enhance_plane(plane, n4=n4, denoise=denoise) if weight > 0 else plane
+        enhance_plane(plane, n4=n4) if weight > 0 else plane
         for plane, weight in zip(planes, weights, strict=True)
     ]
     tiles = max(1, int(clahe_tiles))

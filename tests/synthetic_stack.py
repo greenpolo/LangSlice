@@ -117,6 +117,7 @@ def _reference_brain(atlas: Any) -> float:
 
 PATCHES: tuple[tuple[str, str, Any], ...] = (
     ("langslice.core.fits.deformation", "USE_PROCESS_POOL", False),
+    ("langslice.core.fits.deformable.engines", "ELASTIX_PROCESSES", False),
     ("langslice.core.fits.deformation", "DETAIL_LEVEL", "coarse"),
     ("langslice.core.atlas.brain_size", "brain_volume_mm3", _reference_brain),
 )

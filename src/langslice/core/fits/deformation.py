@@ -47,6 +47,7 @@ from langslice.core.fits.deformable import (
     DeformableRecord,
     FitSettings,
     Placement,
+    PreparedFit,
     fit_prepared,
     placement_from_handoff,
     prepare_fit,
@@ -59,7 +60,7 @@ from langslice.core.fits.deformable.engines import (
     TRACED_LEARNING_RATE,
     TRACED_TOTAL_SIGMA_FACTOR,
 )
-from langslice.core.fits.deformable.fit import run_prepared
+from langslice.core.fits.deformable.fit import run_or_fail
 from langslice.core.fits.deformable.settings import (
     CORRELATION_RADIUS_UM,
     DEFAULT_SMOOTHNESS_UM,
@@ -102,10 +103,8 @@ TRACE_WAIT_S = 300.0
 #: Run several fits in a process pool; a single fit runs in this process.
 #: Tests switch the pool off.
 USE_PROCESS_POOL = True
-#: Fits that run in this process run one at a time (a job's background work
-#: beside the agent's own calls): the engines' seed and thread settings are
-#: process-wide.
-_ENGINE_LOCK = threading.Lock()
+#: Guards every RecordStore's cache: sections are fitted on threads at once.
+_STORE_LOCK = threading.Lock()
 
 
 def engine_available() -> bool:
@@ -477,10 +476,11 @@ class RecordStore:
         if record.saved_as is None:  # a record with a folder is at storage precision
             record.round_to_storage()
         record.saved_as = folder_name(key)
-        self.cache[key] = record
-        self.cache.move_to_end(key)
-        while len(self.cache) > CACHE_SIZE:
-            self.cache.popitem(last=False)
+        with _STORE_LOCK:  # sections are fitted on threads at once
+            self.cache[key] = record
+            self.cache.move_to_end(key)
+            while len(self.cache) > CACHE_SIZE:
+                self.cache.popitem(last=False)
 
     def save(self, section_id: str, key: str, record: DeformableRecord) -> Path:
         """Save *record* under *key* (its parent first, when that is not saved
@@ -641,14 +641,9 @@ class Job:
     section_weights: np.ndarray | None = None
 
 
-def engine_lock() -> threading.Lock:
-    """The lock one in-process deformable fit holds (fits share the engine)."""
-    return _ENGINE_LOCK
-
-
 def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
     """Prepare and run every job without a result, concurrently when several."""
-    prepared = []
+    prepared: list[PreparedFit] = []
     waiting: list[Job] = []
     for job in jobs:
         if job.result is not None:
@@ -666,12 +661,6 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
     if USE_PROCESS_POOL and len(prepared) > 1:
         results = fit_prepared(prepared)
     else:
-        results = []
-        for item in prepared:
-            try:
-                with _ENGINE_LOCK:
-                    results.append(run_prepared(item))
-            except Exception as exc:  # noqa: BLE001
-                results.append(CandidateFailure(item.settings, f"{type(exc).__name__}: {exc}"))
+        results = [run_or_fail(item) for item in prepared]
     for job, result in zip(waiting, results, strict=True):
         job.result = result

@@ -144,10 +144,7 @@ def fit_record(
             previous=previous,
             section_weights=weights,
         )
-        with (
-            deformation.engine_lock(),
-            engine_output(job.engine_log, f"FireANTs fit of {record.id}"),
-        ):
+        with engine_output(job.engine_log, f"FireANTs fit of {record.id}"):
             outcome = run_prepared(prepared)
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
         raise Refused(

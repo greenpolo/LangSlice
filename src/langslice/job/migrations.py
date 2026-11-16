@@ -504,7 +504,6 @@ def _recipe_3_to_4(old: JsonObject, raw: Sequence[str]) -> JsonObject:
         clahe_clip=as_number("clahe_clip", clahe_clip),
         clahe_tiles=int(as_number("clahe_tiles", clahe_tiles)),
         n4=bool(old.get("n4", False)),
-        denoise=bool(old.get("denoise", False)),
         contrast=contrast,
         gamma=gamma,
         invert=bool(old.get("invert", False)),

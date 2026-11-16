@@ -197,11 +197,15 @@ def test_the_averaged_image_is_kept_and_read_back(tmp_path: Path,
 # --- the GPU queue ------------------------------------------------------------------------------
 
 
-def test_two_threads_take_the_gpu_queue_in_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from langslice.core.fits.deformable import engines
+def test_two_threads_take_the_gpu_queue_in_turn_with_one_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from langslice.core.fits.deformable import gpu_queue
+    from langslice.core.hardware import GPU_SLOTS_VARIABLE
     from langslice.plugin_api import gpu_turn
 
-    monkeypatch.setattr(engines, "GPU_LOCK", tmp_path / "gpu.lock")
+    monkeypatch.setattr(gpu_queue, "GPU_LOCK", tmp_path / "gpu.lock")
+    monkeypatch.setenv(GPU_SLOTS_VARIABLE, "1")
     held = threading.Event()
 
     def hold() -> None:

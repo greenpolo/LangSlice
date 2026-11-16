@@ -14,7 +14,8 @@ import time
 import pytest
 
 from langslice.core import shared_files
-from langslice.core.fits.deformable import engines
+from langslice.core.fits.deformable import gpu_queue
+from langslice.core.hardware import GPU_SLOTS_VARIABLE
 from langslice.doors.agent_cli import background
 from langslice.job import index, lock, recent
 from langslice.job.layout import JobLayout
@@ -125,23 +126,45 @@ def test_only_an_unwritable_folder_leaves_the_lock_off(tmp_path, monkeypatch):
     assert folder_lock._unusable
 
 
-def test_gpu_fits_take_turns_on_every_system(tmp_path, monkeypatch):
-    monkeypatch.setattr(engines, "GPU_LOCK", tmp_path / "gpu.lock")
+def test_gpu_fits_take_turns_past_the_slots_on_every_system(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(gpu_queue, "GPU_LOCK", tmp_path / "gpu.lock")
+    monkeypatch.setenv(GPU_SLOTS_VARIABLE, "1")
     waited: list[float] = []
 
     def second_fit() -> None:
-        with engines.gpu_turn("cuda") as turn:
+        with gpu_queue.gpu_turn("cuda") as turn:
             waited.append(turn.waited_s)
 
-    with engines.gpu_turn("cuda") as first:
+    with gpu_queue.gpu_turn("cuda") as first:
         assert first.waited_s < 1
         other = threading.Thread(target=second_fit)
         other.start()
         time.sleep(0.4)
     other.join(timeout=10)
     assert waited and waited[0] >= 0.3
-    with engines.gpu_turn("cpu") as cpu:
+    with gpu_queue.gpu_turn("cpu") as cpu:
         assert cpu.waited_s == 0
+
+
+def test_gpu_fits_run_at_once_up_to_the_slots(tmp_path, monkeypatch):
+    monkeypatch.setattr(gpu_queue, "GPU_LOCK", tmp_path / "gpu.lock")
+    monkeypatch.setenv(GPU_SLOTS_VARIABLE, "3")
+    waited: list[float] = []
+    inside = threading.Barrier(3, timeout=5)
+
+    def fit() -> None:
+        with gpu_queue.gpu_turn("cuda") as turn:
+            waited.append(turn.waited_s)
+            inside.wait()  # all three hold a slot at once
+
+    fits = [threading.Thread(target=fit) for _ in range(3)]
+    for one in fits:
+        one.start()
+    for one in fits:
+        one.join(timeout=10)
+    assert len(waited) == 3 and max(waited) < 0.3
 
 
 #: A background run's process: it says it runs, then waits to be cancelled.

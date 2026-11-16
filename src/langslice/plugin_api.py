@@ -30,6 +30,7 @@ from langslice.doors.plugins import (
     WriteResult,
     flag_words,
     gpu_turn,
+    map_sections,
     out_of_memory,
 )
 
@@ -54,5 +55,6 @@ __all__ = [
     "WriteResult",
     "flag_words",
     "gpu_turn",
+    "map_sections",
     "out_of_memory",
 ]

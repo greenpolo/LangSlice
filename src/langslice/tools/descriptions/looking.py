@@ -295,7 +295,7 @@ images made here, each saved under the job folder
 file as it is, so a look at an image is what the fit sees. "preprocessed"
 was made when the job opened; make it again, or make others under new
 names, as the sections need. The steps run in this order on each source:
-n4, denoise, CLAHE; then the weighted blend, brightened to a mid-gray
+n4, CLAHE; then the weighted blend, brightened to a mid-gray
 tissue mean; then contrast, gamma, invert. Undoable.""",
     ),
     arguments={
@@ -338,11 +338,6 @@ Local contrast enhancement (CLAHE) clip limit, 0 (none) to
             bool,
             False,
             "Correct uneven illumination (N4).",
-        ),
-        "denoise": Argument(
-            bool,
-            False,
-            "Patch-based denoising.",
         ),
         "contrast": Argument(
             list[float],

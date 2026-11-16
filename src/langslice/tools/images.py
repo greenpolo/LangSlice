@@ -14,14 +14,19 @@ its entry in
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from langslice.core.hardware import map_processes, map_sections, process_pool
+from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
 from langslice.core.sections.images import NAME_PATTERN, PREPROCESSED
+from langslice.core.sections.reading import ITK_THREADS
 from langslice.core.stack.codec import image_to_json
 from langslice.core.stack.images import ImageRef
 from langslice.tools.look import show_result
@@ -55,7 +60,6 @@ class ImageRecipe:
     clahe_clip: float = images.DEFAULT_CLAHE_CLIP
     clahe_tiles: int = images.DEFAULT_CLAHE_TILES
     n4: bool = False
-    denoise: bool = False
     #: ``[low, high]``, fractions 0 to 1 of the blended image; empty: none.
     contrast: Sequence[float] = ()
     #: The gamma after the blend; None (or 0, 1): linear.
@@ -164,7 +168,6 @@ def make_image_tool(
     clahe_clip: float,
     clahe_tiles: int,
     n4: bool,
-    denoise: bool,
     contrast: list[float],
     gamma: float,
     invert: bool,
@@ -178,7 +181,7 @@ def make_image_tool(
     ----------
     run
         The run the tool is called in.
-    name, sections, weights, clahe_clip, clahe_tiles, n4, denoise, contrast
+    name, sections, weights, clahe_clip, clahe_tiles, n4, contrast
         The declared arguments as the model sent them
         (``tools/descriptions/looking.py``).
     gamma, invert, delete, view
@@ -198,7 +201,6 @@ def make_image_tool(
             clahe_clip=clahe_clip,
             clahe_tiles=clahe_tiles,
             n4=bool(n4),
-            denoise=bool(denoise),
             contrast=as_list(contrast),
             gamma=_exponent(gamma),
             invert=bool(invert),
@@ -267,7 +269,7 @@ def make_section_image(
 
     The recipe *given* (:func:`langslice.core.sections.images.validate_recipe`):
     *weights* ``{image name: weight}`` (empty: each raw channel by its tissue
-    coverage), CLAHE, *n4*, *denoise*, then *contrast* (fractions 0 to 1),
+    coverage), CLAHE, *n4*, then *contrast* (fractions 0 to 1),
     *gamma*, *invert*. Each section's image is computed from its own images
     (:func:`langslice.core.sections.images.make`) and saved as a file before
     the write. ``preprocessed`` made with every argument at its default is the
@@ -305,7 +307,7 @@ def make_section_image(
         contrast = list(given.contrast) if given.contrast else None
         recipe = images.validate_recipe(
             weights=weights, clahe_clip=given.clahe_clip,
-            clahe_tiles=given.clahe_tiles, n4=given.n4, denoise=given.denoise,
+            clahe_tiles=given.clahe_tiles, n4=given.n4,
             contrast=contrast, gamma=given.gamma or None, invert=given.invert)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
@@ -322,19 +324,16 @@ def make_section_image(
                 raise Refused(RefusalCode.UNKNOWN_IMAGE, message=str(exc),
                               images=images.image_names(workspace, record)) from exc
     reset = label == PREPROCESSED and recipe == images.OPENING_RECIPE
-    entries: dict[str, ImageRef] = {}
-    for record in records:
-        try:
-            if reset:
-                entries[record.id] = images.opening_entry(workspace, job.layout, record.id)
-                continue
-            array, used = images.make(workspace, record.id, record.images, recipe)
-            extra = {} if isinstance(held, Mapping) else {"weights_used": used}
-            entries[record.id] = images.write_file(
-                job.layout, record.id, label, array, {"recipe": recipe}, extra=extra)
-        except (OSError, ValueError, RuntimeError) as exc:
-            raise Refused(RefusalCode.RENDER_FAILED,
-                          message=f"{record.id}: {exc}") from exc
+    # The sections are made at once on threads, one per core; their N4
+    # (SimpleITK, which holds Python's lock) runs in worker processes of
+    # ITK_THREADS threads each. A failure is the first failing section's, in
+    # order, once every section is done.
+    tasks = 2 * len(records) if recipe["n4"] and not reset else 0
+    with process_pool(tasks, threads_each=ITK_THREADS) as pool:
+        making = _Making(job, workspace, label, recipe, reset,
+                         _InProcesses(pool))
+        made_all = map_sections(partial(_made, making), records, 1)
+    entries = {record.id: entry for record, entry in zip(records, made_all, strict=True)}
     before = job.snapshot()
     for record in records:
         record.images[label] = entries[record.id]
@@ -342,6 +341,50 @@ def make_section_image(
     return ImagesMade(name=label, sections=[record.id for record in records],
                       in_force=_in_force(workspace, job, label),
                       images=stack_images(workspace, job.state))
+
+
+@dataclass(frozen=True)
+class _InProcesses:
+    """N4 in worker processes (:data:`images.Enhance`)."""
+
+    pool: ProcessPoolExecutor | None
+
+    def __call__(self, planes: list[np.ndarray]) -> list[np.ndarray]:
+        return map_processes(images.n4_plane, planes, self.pool)
+
+
+@dataclass(frozen=True)
+class _Making:
+    """One ``make_image`` call's image, as every section makes it."""
+
+    job: Job
+    workspace: Workspace
+    label: str
+    recipe: JsonObject
+    reset: bool
+    enhance: images.Enhance
+
+
+def _made(making: _Making, section: Section) -> ImageRef:
+    """Make *section*'s image and write its file; ``RENDER_FAILED`` refused."""
+    layout, recipe = making.job.layout, making.recipe
+    try:
+        if making.reset:
+            return images.opening_entry(making.workspace, layout, section.id)
+        array, used = images.make(making.workspace, section.id, section.images,
+                                  recipe, enhance=making.enhance)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise Refused(RefusalCode.RENDER_FAILED,
+                      message=f"{section.id}: {exc}") from exc
+    extra = {}
+    if not isinstance(recipe["weights"], Mapping):
+        extra = {"weights_used": used}
+    try:
+        return images.write_file(layout, section.id, making.label, array,
+                                 {"recipe": recipe}, extra=extra)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise Refused(RefusalCode.RENDER_FAILED,
+                      message=f"{section.id}: {exc}") from exc
 
 
 def add_image(
