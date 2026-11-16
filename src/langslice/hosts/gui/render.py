@@ -127,6 +127,10 @@ class RenderBusy(TimeoutError):
     """A picture not drawn within :data:`WAIT_S`."""
 
 
+class _Superseded(Exception):
+    """A queued picture of a section whose registration has changed since."""
+
+
 @dataclass(frozen=True)
 class Axis:
     """The cutting axis the strip is drawn along."""
@@ -417,7 +421,7 @@ class JobRenderer:
         opened = self._open()
         key = ("overlay", section_id, edge, render_key(state, section_id))
         draw = partial(_overlay_picture, opened, state, section, edge)
-        return self._picture(key, opened, draw)
+        return self._picture(key, opened, draw, self._still(render_key, section_id, key[3]))
 
     def thumb(self, section_id: str, edge: int) -> bytes:
         """Draw a section's thumbnail: its ``preprocessed`` image, oriented.
@@ -449,7 +453,7 @@ class JobRenderer:
         opened = self._open()
         key = ("thumb", section_id, edge, thumb_key(state, section_id))
         draw = partial(render_slice, opened.workspace, section, long_edge=edge)
-        return self._picture(key, opened, draw)
+        return self._picture(key, opened, draw, self._still(thumb_key, section_id, key[3]))
 
     def atlas_thumb(self, k: int, edge: int) -> bytes:
         """Draw the strip's *k*-th atlas thumbnail.
@@ -512,12 +516,34 @@ class JobRenderer:
                     self._pictures.clear()
             return opened
 
+    def _still(
+        self, keyed: Callable[[Stack, str], str], section_id: str, digest: str
+    ) -> Callable[[], bool]:
+        """Whether a section's picture keyed *digest* is still the current one."""
+
+        def current() -> bool:
+            state = self._stack()
+            try:
+                return state is not None and keyed(state, section_id) == digest
+            except UnknownSection:
+                return False
+
+        return current
+
     def _picture(
-        self, key: _Key, opened: _Opened, draw: Callable[[], Image.Image]
+        self,
+        key: _Key,
+        opened: _Opened,
+        draw: Callable[[], Image.Image],
+        current: Callable[[], bool] | None = None,
     ) -> bytes:
         """Return the picture *key* from the cache, else drawn.
 
-        One drawing per key, however many requests wait for it.
+        One drawing per key, however many requests wait for it. A picture
+        whose section has changed by the time its turn comes is not drawn
+        (*current* says so): the request is answered busy, and asked again it
+        draws the section as it is then. A fast run's queue so holds only
+        the pictures still worth drawing.
         """
         with self._lock:
             ready = self._pictures.get(key)
@@ -526,20 +552,26 @@ class JobRenderer:
                 return ready
             future = self._flying.get(key)
             if future is None:
-                future = self._executor.submit(self._make, key, opened, draw)
+                future = self._executor.submit(self._make, key, opened, draw, current)
                 self._flying[key] = future
         try:
             return future.result(timeout=WAIT_S)
-        except TimeoutError as exc:
+        except (TimeoutError, _Superseded) as exc:
             raise RenderBusy(BUSY) from exc
 
     def _make(
-        self, key: _Key, opened: _Opened, draw: Callable[[], Image.Image]
+        self,
+        key: _Key,
+        opened: _Opened,
+        draw: Callable[[], Image.Image],
+        current: Callable[[], bool] | None = None,
     ) -> bytes:
         """Draw and encode one picture on the pool, then keep it."""
         data: bytes | None = None
         try:
             with self._drawing:
+                if current is not None and not current():
+                    raise _Superseded(key)
                 try:
                     picture = _drawn_safely(draw, key)
                 finally:

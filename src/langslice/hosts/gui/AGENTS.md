@@ -170,7 +170,10 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   the view angles in words, each section's id, order, position, render key
   and thumb key). A job draws one picture at a time (a workspace's caches are not made
   for concurrent writers); concurrent requests for one picture share one
-  drawing; a request waits `WAIT_S` (60 s), then `RenderBusy`. The JPEGs are
+  drawing; a queued overlay or thumbnail whose section's key has changed
+  by its turn is not drawn (answered `RenderBusy`; asked again, it draws
+  the section as it is then); a request waits `WAIT_S` (60 s), then
+  `RenderBusy`. The JPEGs are
   kept in an LRU of `CACHE_ENTRIES` per job, keyed by kind, section or
   position, edge and render key (a thumbnail by its thumb key), and the workspace's caches are trimmed after
   each drawing (`KEPT_SOURCES`, `KEPT_PLANES`, `KEPT_RENDERS`).
