@@ -32,7 +32,7 @@ The files most readers use are the exports (`exports/quicknii.json`,
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   views.seq             the picture and call numbers handed out
-  exports/              linear_results.json, spend.json, quicknii.json, visualign.json and the section images they name (<stem>_sNNN.png), traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers), dmc_brainmap/<animal>/ (a DMC-BrainMap animal folder, on request)
+  exports/              linear_results.json, spend.json, quicknii.json, visualign.json and the section images they name (<stem>_sNNN.png), traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers), dmc_brainmap/<animal>/ (a DMC-BrainMap animal folder, on request), <image folder>.abba and abba_export.json (an ABBA project, on request)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
@@ -591,6 +591,41 @@ the oriented section render, then the render's quarter
 turn, flip and resize of the file); the section's placement does not enter
 it, so a reply made at an earlier placement is still drawn where the model
 put it on the tissue.
+
+### `<image folder>.abba` and `abba_export.json`
+
+Written only on request, by the window's **Export ‣ ABBA project** or the
+library's `job.export_abba(warps=)` (`tools/abba_export.py`): an ABBA 0.25
+state file, which ABBA's File ‣ Load State opens on its Allen Brain Adult
+Mouse Brain CCF 2017 (v3p1) atlas, started coronal (x RL, y SI, z AP). It is
+a zip of the three files ABBA's own save writes (`job/abba_project.py`):
+
+| File | Holds |
+|---|---|
+| `_bdvdataset_0.xml` | a BigDataViewer dataset opening each section's image file with Bio-Formats (`BIOFORMATS` openers, RGB files split into channels), one view setup per channel, the view transform a bare voxel scale (the section's pixel size in mm), which ABBA centres on its world origin |
+| `sources.json` | one entry per channel source, `<file>-ch_<n>`, naming its view setup |
+| `state.json` | `version` `0.25.0`, `rotationX` / `rotationY` (ABBA's slicing rotations: LangSlice's `-pitch`, `-yaw` in radians), per slice its actions: `CreateSliceAction` (its sources), `MoveSliceAction` (its `location` on ABBA's slicing axis), an `AffineRegistration` named `LangSlice affine [<file>]` and, for a section with an applied deformation, a `BigWarpSource2DRegistration` named `LangSlice warp [<file>]` |
+
+The frame. ABBA's world is `A(rx, ry) (atlas_mm - (5.69, 4.0, 0)) + (0, 0,
+0.985)`, `atlas_mm` the atlas point in (ML, DV, AP) millimetres (BrainGlobe
+`asr` reversed) and `A` ABBA's reslicing (`core/maps/abba_world.py`); every
+section, cut at the stack's angles, lies in one world plane, its location. A
+file pixel `(x, y)` is first ABBA's centred source point `((x - (W - 1)/2)
+v, (y - (H - 1)/2) v)`, then the affine registration takes it to world `x,
+y`, exactly LangSlice's linear map. The warp registration is a thin-plate
+spline through at most 1089 landmark pairs placed where it errs most
+(`core/maps/abba.py`, as the Fiji connector's warp rows), stored as ABBA
+stores BigWarp's: `srcPts` the atlas side (where the deformation takes each
+point), `tgtPts` the section side (the point as the affine step placed it).
+
+`abba_export.json` beside it: `project`, `rotation_x_rad`, `rotation_y_rad`,
+`sections`, `warped`, `skipped` (each section left out and why: no
+placement, a file Bio-Formats cannot be told about, a warp whose spline
+folds everywhere), `warp_error_um` (per warped section, the spline's
+distance from the deformation over the atlas overlap: `median`, `p99`,
+`max`) and `note`. A stack whose sections' cutting angles differ, an atlas
+other than the Allen mouse CCFv3 (10, 25, 50 or 100 um) or a plane other
+than coronal is refused (`BAD_ARGS`).
 
 ### `dmc_brainmap/<animal>/`
 

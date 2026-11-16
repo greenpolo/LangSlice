@@ -414,7 +414,15 @@ section_image="preprocessed")` writes the job as a DMC-BrainMap animal folder,
 deformation is left out and listed in its `langslice_export.json`), and
 returns a `langslice.tools.dmc_export.DmcExported`: `folder`, `files`,
 `registered`, `skipped` (each section written without a registration and
-why) and `warps_left_out`. `langslice.load_atlas(name)` loads a cached
+why) and `warps_left_out`. `job.export_abba(warps=True)` writes the job
+as an ABBA 0.25 project, `exports/<image folder>.abba` (File ‣ Load State in
+ABBA, on its Allen CCFv3 atlas), each section with its affine registration
+and its applied deformation as a BigWarp landmark registration
+(`warps=False`: linear only), and returns a
+`langslice.tools.abba_export.AbbaExported`: `path`, `sections`, `warped`,
+`skipped` and `warp_error_um`; the warps are converted in worker processes,
+so a script calling it runs under `if __name__ == "__main__":`.
+`langslice.load_atlas(name)` loads a cached
 BrainGlobe atlas. The handle exposes `folder`, `imported`, `image_model`
 and, for lower-level work, `job`, `state` and `workspace`.
 

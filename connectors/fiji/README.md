@@ -260,6 +260,19 @@ user's step refused with nothing removed. It then reopens the saved project in a
 second JVM without the connector on the classpath (`ReloadCheck`): both steps, the
 warp's landmarks, BigWarp editing, the position and the angles survive.
 
+`reload.ExportCheck` opens a project LangSlice exported (`job.export_abba()`, the
+window's Export menu) in a JVM without the connector, and writes where ABBA's own
+pixel-to-CCF transform puts given pixels of each slice, with each slice's
+registrations and whether its warp opens in BigWarp, to compare with the job's maps:
+
+```bash
+java -cp <test-classes and the Maven classpath> org.langslice.fiji.reload.ExportCheck   ~/cached_atlas PROJECT.abba POINTS.json OUT.json
+```
+
+`POINTS.json` is `{"sections": {"file name": [[x, y], ...]}}` in file pixels. ABBA's
+CCF millimetres are (AP, DV, ML) with ML from the other side: BrainGlobe's
+micrometres are `(1000 AP, 1000 DV, 11390 - 1000 ML)`.
+
 `E2EFollowCheck` runs everything together: a real headless ABBA, the real worker and
 the agent CLI. The connector prepares a job from two synthetic sections and follows
 it; `e2e/driver.py` stands in for the agent app, calling `langslice-job FOLDER VERB`

@@ -153,8 +153,31 @@ is happening now; **Light | Dark** in the top bar switches its look (dark to
 start with, remembered). The agent's own words are set in a serif face, the
 window's own in a sans-serif face.
 
-The viewer changes nothing of the registration: the review comments are the
-only thing it writes, to their own file.
+The viewer changes nothing of the registration: it writes only the review
+comments, to their own file, and the Export menu's files.
+
+## Export
+
+**Export** in the top bar writes the shown job's registration as a file for
+another program, under the job's `exports/` folder:
+
+- **ABBA project (.abba)**: `exports/<image folder>.abba`, which ABBA 0.25
+  opens with **File ‣ Load State** on its Allen CCFv3 atlas, started coronal.
+  Each section opens from its own image file at its position and the stack's
+  cutting angles, with its in-plane placement as an affine registration and
+  its warp, when it has one, as a BigWarp landmark registration you can edit
+  with **Edit last registration**. A warp takes up to a minute per section to
+  convert; several convert at once. `exports/abba_export.json` lists the
+  sections left out and why, and how far each warp's landmarks are from
+  LangSlice's deformation.
+- **QuickNII (.json)** and **VisuAlign (.json)**: `exports/quicknii.json`
+  and `exports/visualign.json` with the section images they name, the files
+  `submit` writes (both are written together).
+
+While a file is written the menu says so; then it gives the file's path,
+**Open folder** and **Copy path**, or why nothing was written. An ABBA
+project needs the Allen mouse atlas, coronal sections and one pair of
+cutting angles for the whole stack.
 
 ## The prompt generator
 
@@ -307,7 +330,8 @@ opening the job: nothing is written to the folder. The pictures are kept in
 memory and drawn again only when a section's registration changes. The prompt generator's choices
 (the tools, the tasks, the atlases) come from the installed LangSlice, so a
 tool a newer version renames or removes is never offered. The viewer and the
-prompt generator only read; the Settings tab's changes are the only requests
-that write, with the review comments (`review.json` in the job folder, the
-only file the window writes there), and the window accepts them only from its
-own page.
+prompt generator only read; the Settings tab's changes, the review comments
+(`review.json` in the job folder) and the Export menu are the only requests
+that write (Export only under the job's `exports/` folder and
+`registration.json`, never the job's state), and the window accepts them
+only from its own page.

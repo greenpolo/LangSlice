@@ -48,12 +48,14 @@ user's settings file (`doors.user_settings`). Nothing imports it but
 `hosts/cli.py` (`langslice gui`); `doors/commands/linear.py`'s `--gui` starts that
 command as a process (`open_gui`). The viewer and the prompt generator change
 no registration: every job and generator endpoint is GET only but the review
-comments' POST, and nothing else is written to a job folder (the viewer's
-pictures are kept in memory; the atlas's own disk cache is the only file the
-core may write, as for any reader). The writes are the Settings tab's three
-POSTs (the user's settings file, a saved key, the ChatGPT login) and the
-review comments' (`jobs/<n>/comments`: the job's `review.json`, through
-`job.review`, the one job file the window writes); sign-in runs in this window's
+comments' POST and the Export menu's, and nothing else is written to a job
+folder (the viewer's pictures are kept in memory; the atlas's own disk cache
+is the only file the core may write, as for any reader). The writes are the
+Settings tab's three POSTs (the user's settings file, a saved key, the
+ChatGPT login), the review comments' (`jobs/<n>/comments`: the job's
+`review.json`, through `job.review`) and the Export menu's two (a job's
+export under its `exports/` folder and its `registration.json`, never its
+state); sign-in runs in this window's
 process, never inside an agent tool call. Nothing in it is model-facing: the
 prompt generator's message is the person's to send, and its labels
 (`job.settings.labels`) are for people.
@@ -186,6 +188,21 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   since, `job.review.revised`), `CommentWatch(folder).rows(state, version)`
   (read again only when `review.json`'s stamp or the watcher's
   `state_version` moved).
+- `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
+  `visualign`); `run_export(folder, kind)` -> `Written` writes one through
+  the library (`langslice.open_job`: `export_abba`, or `export_stack` for
+  both QUINT files, naming *kind*'s); `Exports(run=)` keeps each job's last
+  `ExportState` (`ExportStatus` idle, running, done, failed; path, message,
+  sections left out, time) and runs each export on a thread of its own
+  (`start`, `ExportError` for an unknown format or one already running);
+  `reveal(folder)` opens the job's `exports/` in the system's file browser.
+  Served as `GET jobs/<n>/export` (the state), `POST jobs/<n>/export`
+  (`{"format"}`) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
+  checks (`server.GuiServer.post`). `static/export.js` / `export.css` (one
+  delimited block in `index.html`, `app.js` naming the shown job with
+  `Exporter.setJob`): the top bar's Export button, its menu, and a note that
+  says the export is running, then its path with Open folder and Copy path,
+  or why it failed.
 - `focus.py` — the agent's focus, as ABBA's follower followed it: `Focus`
   (`sections`, `tool`, `call`, `at`); `is_followed(name)` (a tool of kind
   `write` in `job.settings.tool_table`, a plugin's or an unknown tool, and

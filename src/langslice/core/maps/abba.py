@@ -382,15 +382,65 @@ def warp_world_landmarks(
         When the tolerance is not positive, the snapshot is not the
         frame's, or the spline folds at every start and every grid.
     """
-    if not np.isfinite(tolerance_mm) or tolerance_mm <= 0:
-        raise ValueError("Export tolerance must be positive and finite")
     render_to_world, native_to_world = world_frame(
         frame, params, size=size, pixel_size_um=pixel_size_um
     )
     file_to_world = render_to_world @ np.asarray(
         frame.file_to_render, dtype=np.float64
     )
-    exact = _WorldMap(frame, record, file_to_world, native_to_world)
+    return world_landmarks(
+        frame,
+        record,
+        file_to_world,
+        native_to_world,
+        tolerance_mm=tolerance_mm,
+    )
+
+
+def world_landmarks(
+    frame: SectionFrame,
+    record: DeformableRecord,
+    file_to_world: FloatArray,
+    native_to_world: FloatArray,
+    *,
+    tolerance_mm: float = TOLERANCE_MM,
+) -> WarpLandmarks:
+    """Place a warp step's landmark pairs in any ABBA world frame.
+
+    Parameters
+    ----------
+    frame
+        The section's frame.
+    record
+        The applied deformation.
+    file_to_world
+        3x3 on ``[x, y, 1]``: a file pixel to ABBA world millimetres after
+        the affine step (the section side of the pairs).
+    native_to_world
+        3x3 on ``[x, y, 1]``: a native atlas-plane pixel to the same world
+        millimetres (the atlas side).
+    tolerance_mm
+        The search error at which pairs stop being added.
+
+    Returns
+    -------
+    WarpLandmarks
+        The pairs (module text) and their measured accuracy.
+
+    Raises
+    ------
+    ValueError
+        When the tolerance is not positive, or the spline folds at every
+        start and every grid.
+    """
+    if not np.isfinite(tolerance_mm) or tolerance_mm <= 0:
+        raise ValueError("Export tolerance must be positive and finite")
+    exact = _WorldMap(
+        frame,
+        record,
+        np.asarray(file_to_world, dtype=np.float64),
+        np.asarray(native_to_world, dtype=np.float64),
+    )
 
     step_px = max(frame.file_size) / SEARCH_SIDE
     search, region = _samples(exact, step_px, step_px)
