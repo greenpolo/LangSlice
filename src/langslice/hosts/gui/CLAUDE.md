@@ -188,8 +188,9 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   watcher's `current_stack`: `overlay(id, edge)` (`look` mode `overlay`, the
   applied deformation; mode `section` for a section with no position),
   `thumb(id, edge)` (`render_slice`, oriented); both draw the section's raw
-  channels in their own colours (`_raw_channels`, at most
-  `MAX_OVERLAY_CHANNELS`), not the `preprocessed` image the fits read,
+  channels in their own colours (`drawing.py`: `draw_overlay`, `draw_thumb`,
+  `draw_atlas`, `raw_channels`, at most `MAX_OVERLAY_CHANNELS`, `content`),
+  not the `preprocessed` image the fits read,
   whose contrast enhancement makes a scanner's tile mosaic stand out,
   `atlas_thumb(k, edge)` (`look` mode `atlas` at the stack's view angles: the
   template, `look`'s own atlas default, because the borrowed Nissl of the

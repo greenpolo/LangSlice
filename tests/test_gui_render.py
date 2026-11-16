@@ -246,7 +246,7 @@ def test_a_slow_picture_is_busy_after_the_wait_and_kept_when_drawn(
         return Image.new("RGB", (64, 48), (20, 20, 20))
 
     monkeypatch.setattr(render, "WAIT_S", 0.2)
-    monkeypatch.setattr(render, "render_slice", thumb)
+    monkeypatch.setattr(render, "_thumb_picture", thumb)
     renderer = _renderer(job, pool)
     with pytest.raises(RenderBusy):
         renderer.thumb(ID1, 64)
