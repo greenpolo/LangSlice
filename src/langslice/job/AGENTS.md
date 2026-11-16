@@ -170,6 +170,8 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      "abba", "abba": the session)
 state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
+review.json          the review comments the LangSlice window keeps (review.py):
+                     not state, no undo step, the window its only writer
 history/undo.json    the undo and redo steps (undo_steps.py)
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                      filename when two images share a stem), valid on Windows
@@ -420,6 +422,15 @@ longer exist be taken over by the images it is opened with.
   process, the files left on disk), `save`; `combined_steps` (the earliest
   line per section and field wins, the notes' changes composed:
   `merge_steps`, `amend`). No cap on the steps.
+- `review.py` — the review comments a person draws in the LangSlice window
+  (`review.json`, `JobLayout.review_file`): `Comment` (`id`, `section`,
+  `box` fractions of the section's overlay picture, `text`, `at`, `key`),
+  `read_comments`, `add_comment(layout, state, section, box, text)` (the
+  box's corners sorted and clamped, at least `MIN_SIDE`, the text's spaces
+  collapsed and cut at `MAX_TEXT`; `ReviewError` otherwise),
+  `remove_comment`, `section_key` (the digest of the section's look
+  snapshot) and `revised` (the section's key moved since, or it is gone).
+  Written atomically under one thread lock; never by a tool.
 - `recent.py` — the jobs opened on this computer,
   `~/.langslice/recent_jobs.jsonl` (`folder`, `image_folder`, `atlas`, `at`;
   one line per `Job.open`), for the GUI's job list: `remember`, `read`,

@@ -397,6 +397,28 @@ tool raised; `status` is the reply's status word (`ok` when it has none,
 `error` when the tool raised). The reply itself and picture bytes are never
 written. A dry run (`--dry-run`) writes no line.
 
+## Review comments (`review.json`)
+
+The comments a person left in the LangSlice window's Review, in the job
+folder; the window is the only writer, the `review_comments` tool reads it.
+Not part of the state: no undo step takes a comment back and no tool writes
+one.
+
+```json
+{"comments": [{"id": "1", "section": "s012.png", "box": [0.55, 0.25, 0.8, 0.5],
+               "text": "Hippocampus sits too far up here",
+               "at": "2026-11-16T18:41:32+00:00", "key": "98f7f1bbbdd8eee6"}]}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | the comment's number in the job, as text; never reused |
+| `section` | the section's filename |
+| `box` | `[x0, y0, x1, y1]`, fractions of the section's overlay picture without its caption band (`look` mode `overlay`; `section` for a section with no position), left to right and top to bottom |
+| `text` | the person's words, at most 500 characters |
+| `at` | when it was written, UTC |
+| `key` | 16 hex digits of the section's look snapshot when it was written; a comment is revised once the section's key differs |
+
 ## Recent jobs (`~/.langslice/recent_jobs.jsonl`)
 
 Outside the job folder: every `Job.open` (a run, `langslice-job FOLDER init`,

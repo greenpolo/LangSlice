@@ -10,6 +10,8 @@ without an id. Inside::
                          host job's own fields under "host"
     state.json           the state checkpoint (Stack, versioned)
     registration.json    its public rendering (public_files.py)
+    review.json          the review comments a person drew in the LangSlice
+                         window (review.py; not state, no undo step)
     history/undo.json    the undo and redo steps (undo_steps.py)
     sections/<name>/     per section (<name>: the image filename's stem)
         history.jsonl              every write that changed it (history.py)
@@ -103,6 +105,9 @@ SECTION_VIEWS_DIR = "views"
 #: The public rendering of the state (:mod:`langslice.job.public_files`, which
 #: also names each section's map files).
 REGISTRATION_FILE = "registration.json"
+#: The review comments a person left in the LangSlice window
+#: (:mod:`langslice.job.review`).
+REVIEW_FILE = "review.json"
 
 #: The job folder's format, carried by ``job.json``: this layout.
 JOB_FORMAT_VERSION = 1
@@ -390,6 +395,17 @@ class JobLayout:
     @property
     def trace_dir(self) -> Path:
         return self.folder / TRACE_DIR
+
+    @property
+    def review_file(self) -> Path:
+        """Return the review comments' file (:mod:`langslice.job.review`).
+
+        Returns
+        -------
+        Path
+            ``review.json`` in the job folder.
+        """
+        return self.folder / REVIEW_FILE
 
     @property
     def plugins_dir(self) -> Path:

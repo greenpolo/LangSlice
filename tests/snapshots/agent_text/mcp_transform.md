@@ -336,6 +336,29 @@ Read a text file of the job folder, with line numbers. Writes nothing.
 - `offset` (integer):
 - `limit` (integer):
 
+## review_comments
+
+Read the comments a person left on sections in the LangSlice window. Writes nothing.
+
+        A person reviewing the registration in the LangSlice window can draw a
+        box on the part of a section that looks wrong and write a short comment
+        on it. Each comment is open while its section is as it was when the
+        person wrote it, and revised once the section has changed since.
+
+        Each section with open comments comes as a picture of the section under
+        its registration with the atlas borders, as the person saw it, every box
+        outlined in yellow and labelled with its comment's number. Work on the
+        part the box marks: what the comment says is wrong there is the person's
+        judgement of the registration.
+
+        Returns:
+            Every comment: its id, section, the person's words, its box as
+            [x0, y0, x1, y1] fractions of the picture and its state; an open one also
+            its picture's number and its box in that picture's pixels (box_px,
+            the numbers zoom takes).
+        
+
+
 ## interactive_transform
 
 Set sections' orientation and in-plane transform by hand, and show the result.

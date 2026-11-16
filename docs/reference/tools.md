@@ -32,6 +32,7 @@ option is switched off as `tool:option` (for example `look:atlas`).
 | [`grep_atlas_view`](#grep_atlas_view) | no | always | yes | |
 | [`status`](#status) | no | always | no | |
 | [`list_files`, `search_files`, `read_file`](#list_files-search_files-read_file) | no | always | yes | |
+| [`review_comments`](#review_comments) | no | always | yes | |
 | [`mark_damage`](#mark_damage) | yes | always | yes | |
 | [`make_mask`](#make_mask) | yes | Linear or Nonlinear on | yes | |
 | [`note`](#note) | yes | always | yes | |
@@ -102,7 +103,7 @@ options (`look:positioning`). The valid names are:
 
 | Name | What it removes |
 |---|---|
-| `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
+| `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `review_comments`, `note`, `redo` | the tool |
 | `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `make_mask`, `restore_registration` | the tool, as its task or switch would; with `make_mask` off, the `mask` argument of `elastix_affine` and `fireants_syn` and `look`'s `masks` go too |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair; each needs the other, so both must be switched off together |
 | `export_maps` | the scripting verb |
@@ -500,6 +501,30 @@ folder above it and what it holds; a path under `trace/` is refused
 (`BAD_PATH`). A picture file's answer says how to see it again: `zoom` by its
 number or, in a job without `zoom`, the `look` call that draws the view again
 on the stack as it is now.
+
+### `review_comments`
+
+Reads the comments a person left in the LangSlice window's Review: a box
+drawn on a section's picture and a few words on what is wrong there
+(`review.json` in the job folder, [file formats](file_formats.md#review-comments-reviewjson)).
+Writes nothing. No arguments.
+
+A comment is **open** while its section is as it was when the person wrote
+it, and **revised** once the section has changed since (the agent has
+worked on it). Each section with open comments comes as one picture: the
+section under its registration with the atlas borders, as the window showed
+it, every box outlined in yellow and labelled `#<id>`. The reply lists every
+comment: `id`, `section`, `comment` (the words), `box` (`[x0, y0, x1, y1]`
+fractions of the picture), `state`, and for an open one `picture` (its
+number, which `zoom` takes) and `box_px` (the box in that picture's pixels).
+At most four pictures at the agent tools and MCP; the rest under
+`not_shown`.
+
+A job with open comments says so in the statement every door except the
+built-in agent's gives (`A person reviewed this registration ... left 2
+comments on ...`), so an agent launched on the job starts with them.
+
+**Switch off:** `review_comments`.
 
 ### `mark_damage`
 

@@ -603,6 +603,31 @@ The lines shown, the file's line count and, when lines remain, the
 offset to continue from.""",
 )
 
+REVIEW_COMMENTS = ToolDescription(
+    summary=(
+        "Read the comments a person left on sections in the LangSlice "
+        "window. Writes nothing."
+    ),
+    body=(
+        """\
+A person reviewing the registration in the LangSlice window can draw a
+box on the part of a section that looks wrong and write a short comment
+on it. Each comment is open while its section is as it was when the
+person wrote it, and revised once the section has changed since.""",
+        """\
+Each section with open comments comes as a picture of the section under
+its registration with the atlas borders, as the person saw it, every box
+outlined in yellow and labelled with its comment's number. Work on the
+part the box marks: what the comment says is wrong there is the person's
+judgement of the registration.""",
+    ),
+    returns="""\
+Every comment: its id, section, the person's words, its box as
+[x0, y0, x1, y1] fractions of the picture and its state; an open one also
+its picture's number and its box in that picture's pixels (box_px[[?zoom ,
+the numbers zoom takes]]).""",
+)
+
 DESCRIPTIONS: dict[str, ToolDescription] = {
     "look": LOOK,
     "zoom": ZOOM,
@@ -613,4 +638,5 @@ DESCRIPTIONS: dict[str, ToolDescription] = {
     "list_files": LIST_FILES,
     "search_files": SEARCH_FILES,
     "read_file": READ_FILE,
+    "review_comments": REVIEW_COMMENTS,
 }

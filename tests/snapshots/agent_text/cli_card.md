@@ -57,6 +57,7 @@ A registration agent has these as MCP tools; a script has them as methods (Pytho
 - `list_files` (read, Common): List the files and folders of the job folder. Writes nothing.
 - `search_files` (read, Common): Search the job folder's text files for lines that match. Writes nothing.
 - `read_file` (read, Common): Read a text file of the job folder, with line numbers. Writes nothing.
+- `review_comments` (read, Common): Read the comments a person left on sections in the LangSlice window. Writes nothing.
 - `position_sections` (write, Positioning): Set where sections sit along the slicing axis, and the stack's cutting angles.
 - `interactive_transform` (write, Linear): Set sections' orientation and in-plane transform by hand, and show the result.
 - `mark_damage` (write, Common): Mark the atlas regions a section has lost, so that every fit leaves them out.

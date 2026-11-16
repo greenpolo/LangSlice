@@ -108,6 +108,15 @@ When the subagent returns, do not trust its summary alone:
   If a picture and a number disagree, say so.
 - Changes the user asks for go through another subagent run on the same job
   (every write is one undo step), not through your own edits.
+- Comments the user left in the LangSlice window (its Review: a box drawn on
+  a section and a few words on what is wrong there) are kept in the job
+  folder's `review.json`. When the user asks you to look at them or fix them,
+  launch a registration subagent on that job as in step 3: `launch` tells it
+  which comments are open, and its `review_comments` tool shows each box on
+  its section. Do not read the comments out to it yourself. A job the user
+  does not name is the one they last opened in the window: the newest
+  `folder` in `~/.langslice/recent_jobs.jsonl`. Afterwards, a comment whose
+  section changed is marked revised in the window.
 
 ## 5. Import and export with other software
 

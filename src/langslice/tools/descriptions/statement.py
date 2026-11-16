@@ -386,6 +386,7 @@ def job_statement(
     opening: Sequence[str] = (),
     notes: str = "",
     image_model_off: bool = False,
+    review: Sequence[str] = (),
 ) -> str:
     """Return what ``door`` tells the agent of the job (see the module text).
 
@@ -403,6 +404,9 @@ def job_statement(
     image_model_off
         Whether the job's image model is not connected here: the statement
         is then that of a run without one, plus the image-model line.
+    review
+        The line on the review comments still open
+        (:func:`review_lines`; none without).
 
     Returns
     -------
@@ -415,7 +419,7 @@ def job_statement(
         facts = replace(facts, spec=spec)
     lines = [build_job_statement(facts)]
     if door == AGENT_DOOR:
-        return "\n".join([*lines, *user_notes_lines(notes)])
+        return "\n".join([*lines, *user_notes_lines(notes), *review])
 
     if opening:
         lines += ["", *opening]
@@ -423,6 +427,7 @@ def job_statement(
     if image_model_off and off_text:
         lines += ["", off_text]
     lines += user_notes_lines(notes)
+    lines += review
     lines += ["", status_and_notes(facts.state)]
     return "\n".join(lines)
 

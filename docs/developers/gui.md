@@ -86,6 +86,16 @@ otherwise.
   start with; `f`) keeps the panels on the agent's latest call. Clicking a
   section in the strip, the table or the journal shows it and stops
   following.
+- **Review.** The button above the pictures (or `r`) shows one section at a
+  time, every section in order; the arrow keys flip through them and `Esc`
+  ends the review. Drag a box around a part that looks wrong and type a few
+  words under it; `Enter` keeps the comment in the job (`review.json`),
+  `Esc` drops it. Every panel shows its section's comments, a box with the
+  words above it; once the section has changed since you wrote one, it is
+  faded and says *revised*. The `×` beside a comment removes it. The button
+  counts the comments still open. Then tell your agent to look at the
+  comments: its `review_comments` tool shows each box on its section, and a
+  registration agent launched on the job is told they are there.
 - **Where the sections sit in the brain.** The strip under the pictures: the
   atlas along its cutting axis, as thumbnails of the atlas template at
   regular steps over a millimetre ruler, and below them every placed section
@@ -141,7 +151,8 @@ is happening now; **Light | Dark** in the top bar switches its look (dark to
 start with, remembered). The agent's own words are set in a serif face, the
 window's own in a sans-serif face.
 
-The viewer is read-only: nothing in it changes the job.
+The viewer changes nothing of the registration: the review comments are the
+only thing it writes, to their own file.
 
 ## The prompt generator
 
@@ -295,4 +306,6 @@ memory and drawn again only when a section's registration changes. The prompt ge
 (the tools, the tasks, the atlases) come from the installed LangSlice, so a
 tool a newer version renames or removes is never offered. The viewer and the
 prompt generator only read; the Settings tab's changes are the only requests
-that write, and the window accepts them only from its own page.
+that write, with the review comments (`review.json` in the job folder, the
+only file the window writes there), and the window accepts them only from its
+own page.

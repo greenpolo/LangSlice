@@ -57,7 +57,11 @@ from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
 from langslice.tools.catalog import VERBS
-from langslice.tools.descriptions.door_text import opening_for_mcp, read_notes
+from langslice.tools.descriptions.door_text import (
+    opening_for_mcp,
+    read_notes,
+    review_lines,
+)
 from langslice.tools.descriptions.statement import (
     StatementFacts,
     job_statement,
@@ -175,9 +179,12 @@ def mcp_statement(session: Session, *, scripting: str = "") -> str:
     opening = opening_for_mcp(len(session.pages))
     if scripting:
         opening = [*opening, "", scripting]
+    review = review_lines(session.job.layout, session.state,
+                          session.spec.switched_off)
     return job_statement(
         facts, door="mcp", opening=opening,
         notes=session.notes, image_model_off=session.image_model_off,
+        review=review,
     )
 
 

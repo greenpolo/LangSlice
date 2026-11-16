@@ -99,11 +99,12 @@
     <div id="viewer-body" class="viewer-body">
       <section id="focus-area" class="focus-area" aria-label="The sections the agent is working on">
         <div class="focus-head">
-          <h2 class="focus-title"><span id="focus-name" class="focus-name">The agent is working on</span><span id="focus-count" class="focus-count"></span></h2>
+          <h2 class="focus-title"><span id="focus-name" class="focus-name">The agent is working on</span><span id="focus-count" class="focus-count"></span><span id="focus-hint" class="focus-hint"></span></h2>
           <div class="focus-controls">
             <div class="switch" role="group" aria-label="What this area shows">
               <button data-view="focus" aria-pressed="true">Pictures</button><button data-view="sections" aria-pressed="false">Table</button><button data-view="steps" aria-pressed="false">Steps</button>
             </div>
+            <button id="review" class="review" aria-pressed="false" title="Flip through the sections one at a time and comment on them (r)">Review<span id="review-count" class="review-count" hidden></span></button>
             <button id="follow-agent" class="follow" aria-pressed="true" title="Show the sections of the agent's latest call (f)">Follow the agent</button>
             <span id="pager" class="pager">
               <button id="page-previous" aria-label="Previous page of sections" title="Previous page ([)">←</button><button id="page-next" aria-label="Next page of sections" title="Next page (])">→</button>

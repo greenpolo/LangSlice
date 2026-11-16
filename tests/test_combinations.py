@@ -253,7 +253,7 @@ def tool_names(images: Path, tasks: list[str], provider: str = "none",
 #: The tools of every run, whatever the tasks (unless the job disables one).
 COMMON = {"look", "zoom", "make_image",
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
-          "read_file", "mark_damage", "note", "undo", "redo", "submit"}
+          "read_file", "review_comments", "mark_damage", "note", "undo", "redo", "submit"}
 LINEAR = {"interactive_transform", "elastix_affine", "make_mask", "restore_registration",
           "spomialign"}
 NONLINEAR = {"fireants_syn", "set_landmarks", "landmark_triangulation", "make_mask",

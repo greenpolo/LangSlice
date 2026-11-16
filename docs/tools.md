@@ -35,6 +35,11 @@ Lists each section's placement and what the run may change.
 
 Read the job folder.
 
+### `review_comments`
+
+Reads the boxes and comments you left in the LangSlice window's Review, each
+drawn on its section.
+
 ## Prepare
 
 In every run.

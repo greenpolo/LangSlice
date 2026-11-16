@@ -25,12 +25,18 @@ Content-Security-Policy and ``no-store``. GET endpoints:
 - ``jobs/<n>/render/atlas/<k>?edge=``: the strip's *k*-th atlas thumbnail;
 - ``settings``: the Settings tab's state (``Settings.state``).
 
+The snapshot carries the job's review comments (``review.json``,
+:mod:`langslice.job.review`).
+
 A render that is refused answers 409 with ``{"error"}``, one not drawn
 within ``render.WAIT_S`` 503. Only the folders the job list holds are
-read, and the viewer is read-only: every job endpoint is GET only, and a
-render writes nothing to the job folder. The one kind of POST is the
-Settings tab's (``settings.POSTS``, :meth:`GuiServer.post`), which also
-needs this server's ``Origin``.
+read, and the viewer writes one file only: every job endpoint is GET only
+but ``jobs/<n>/comments``, and a render writes nothing to the job folder.
+The POSTs are the Settings tab's (``settings.POSTS``) and the review
+comments' (``jobs/<n>/comments``: ``{"section", "box", "text"}`` keeps a
+comment, ``{"remove": id}`` takes one away; the job's ``review.json`` is
+the only file the window writes in a job folder), both through
+:meth:`GuiServer.post`, which also needs this server's ``Origin``.
 """
 
 from __future__ import annotations
@@ -46,10 +52,11 @@ from dataclasses import asdict
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from langslice.hosts.gui import generator
+from langslice.hosts.gui.comments import CommentRow, CommentWatch
 from langslice.hosts.gui.render import (
     DEFAULT_EDGE_PX,
     JobRenderer,
@@ -61,6 +68,8 @@ from langslice.hosts.gui.render import (
 )
 from langslice.hosts.gui.settings import POSTS, Settings, SettingsError
 from langslice.hosts.gui.watch import JobList, JobWatcher
+from langslice.job.layout import JobLayout
+from langslice.job.review import ReviewError, add_comment, remove_comment
 
 STATIC = Path(__file__).with_name("static")
 #: A file of ``static/`` the page may load: a plain name, no folder.
@@ -76,6 +85,12 @@ STATIC_TYPES = {"html": "text/html; charset=utf-8", "css": "text/css",
 MAX_BODY = 16 * 1024
 # --- end Settings tab ---
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
+#: The review comments' POST (:meth:`GuiServer._comment`).
+_COMMENTS = re.compile(r"jobs/(\d+)/comments")
+#: What a comment on a job without sections is told.
+NO_SECTIONS = "This job has no sections to comment on yet."
+#: What a comment that could not be written is told.
+NOT_SAVED = "The comment could not be saved in the job folder."
 _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 _STRIP = re.compile(r"jobs/(\d+)/strip")
 _RENDER = re.compile(r"jobs/(\d+)/render/(overlay|thumb)/([^/]+)")
@@ -136,6 +151,8 @@ class GuiServer:
         self.settings = settings if settings is not None else Settings()
         self.renders = renders if renders is not None else RenderPool()
         self.token = secrets.token_urlsafe(24)
+        self._comments: dict[Path, CommentWatch] = {}
+        self._comments_lock = threading.Lock()
         self._routes: tuple[tuple[re.Pattern[str], _Route], ...] = (
             (_SNAPSHOT, self._snapshot), (_PICTURE, self._picture),
             (_STRIP, self._strip), (_RENDER, self._render),
@@ -234,9 +251,12 @@ class GuiServer:
 
     def _snapshot(self, watcher: JobWatcher, _match: re.Match[str],
                   query: dict[str, list[str]]) -> Answer:
-        return self._json(watcher.snapshot(
+        data = watcher.snapshot(
             since=_int(query, "since", 0), generation=_int(query, "gen", 0),
-            state_version=_int(query, "sv", -1)))
+            state_version=_int(query, "sv", -1))
+        rows = self._comment_rows(watcher)
+        data["comments"] = [asdict(row) for row in rows]
+        return self._json(data)
 
     def _picture(self, watcher: JobWatcher, match: re.Match[str],
                  _query: dict[str, list[str]]) -> Answer:
@@ -321,7 +341,8 @@ class GuiServer:
                 or not parsed.path.startswith(prefix)):
             return 404
         resource = parsed.path[len(prefix):]
-        if resource not in POSTS:
+        comments = _COMMENTS.fullmatch(resource)
+        if resource not in POSTS and comments is None:
             return 405
         if (headers.get("Origin") != origin
                 or headers.get("Sec-Fetch-Site", "same-origin") != "same-origin"):
@@ -334,6 +355,9 @@ class GuiServer:
             request = json.loads(body.decode("utf-8") or "null")
         except (UnicodeDecodeError, ValueError):
             return 400
+        if comments is not None:
+            index = int(comments.group(1))
+            return self._comment(index, cast("object", request))
         try:
             return self._json(self.settings.post(resource, request))
         except SettingsError as exc:
@@ -342,6 +366,48 @@ class GuiServer:
             return (*self._json({"error": "The settings could not be saved in ~/.langslice/."}),
                     500)
     # --- end Settings tab ---
+
+    def _comment(
+        self, index: int, request: object
+    ) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
+        """Keep or remove a review comment of job *index*.
+
+        A refused one is ``{"error"}`` with 400; else the answer is the
+        comments as they now stand.
+        """
+        watcher = self.jobs.get(index)
+        if watcher is None:
+            return 404
+        if not isinstance(request, dict):
+            return 400
+        fields = cast("dict[str, object]", request)
+        layout = JobLayout(watcher.folder)
+        stack = watcher.current_stack()
+        try:
+            if "remove" in fields:
+                remove_comment(layout, str(fields["remove"]))
+            elif stack is None:
+                raise ReviewError(NO_SECTIONS)
+            else:
+                section = str(fields.get("section") or "")
+                add_comment(layout, stack, section, fields.get("box"),
+                            fields.get("text"))
+        except ReviewError as exc:
+            return (*self._json({"error": str(exc)}), 400)
+        except OSError:
+            return (*self._json({"error": NOT_SAVED}), 500)
+        rows = self._comment_rows(watcher)
+        return self._json({"comments": [asdict(row) for row in rows]})
+
+    def _comment_rows(self, watcher: JobWatcher) -> list[CommentRow]:
+        """Return a job's review comments as the page gets them.
+
+        The file is read again only when it or the job's state changed.
+        """
+        with self._comments_lock:
+            watch = self._comments.setdefault(
+                watcher.folder, CommentWatch(watcher.folder))
+            return watch.rows(watcher.current_stack(), watcher.state_version)
 
     @staticmethod
     def _json(value: Any) -> tuple[bytes, str]:
