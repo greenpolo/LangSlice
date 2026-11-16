@@ -204,7 +204,9 @@ exports/             linear_results.json (the run's result; spec.out overrides
                      on its maps' grid, with the maps),
                      plugins/<tool>/ (copies of the layers plugins left),
                      dmc_brainmap/<animal>/ (a DMC-BrainMap animal folder,
-                     only on request: tools/dmc_export.py)
+                     only on request: tools/dmc_export.py),
+                     <image folder>.abba and abba_export.json (an ABBA
+                     project, only on request: tools/abba_export.py)
 plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/);
                      the only place a plugin tool writes
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read), per
@@ -688,6 +690,15 @@ longer exist be taken over by the images it is opened with.
   are removed, `public_files.quint_copies`). The files keep the image
   file's `width` and `height`.
 
+- `abba_project.py` — an ABBA 0.25 project file, laid out as ABBA's own
+  save: `AbbaSlice` (file, size, channels, RGB, voxel size, location, the
+  affine step from centred source mm to world, `AbbaWarp`: landmark pairs and
+  parameters), `dataset_xml` (Bio-Formats openers, one view setup per
+  channel, a bare voxel scale), `sources_json`, `state_json` (version,
+  rotations, per slice `CreateSliceAction`, `MoveSliceAction`, an
+  `AffineRegistration` and a `BigWarpSource2DRegistration`), `project_bytes`
+  (the zip), `image_channels` (how Bio-Formats opens a file). The geometry
+  is the caller's (`core/maps/abba_world.py`).
 - `dmc_brainmap.py` — a section's linear map in DMC-BrainMap's terms
   (napari-dmc-brainmap 0.2.0b2's SHARPy-track `registration.json`):
   `dmc_frame` (its `xyz_dict` axes and bregma voxel for an atlas and plane,

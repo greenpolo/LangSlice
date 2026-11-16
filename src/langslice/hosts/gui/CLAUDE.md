@@ -49,8 +49,9 @@ user's settings file (`doors.user_settings`). Nothing imports it but
 command as a process (`open_gui`). The viewer and the prompt generator are
 read-only: every job and generator endpoint is GET only, nothing is written to
 a job folder (the viewer's pictures are kept in memory; the atlas's own disk
-cache is the only file the core may write, as for any reader). The Settings tab's three POSTs are the only writes (the user's
-settings file, a saved key, the ChatGPT login); sign-in runs in this window's
+cache is the only file the core may write, as for any reader). The Settings tab's three POSTs and the Export menu's two are the only writes (the user's
+settings file, a saved key, the ChatGPT login; a job's export under its
+`exports/` folder and its `registration.json`, never its state); sign-in runs in this window's
 process, never inside an agent tool call. Nothing in it is model-facing: the
 prompt generator's message is the person's to send, and its labels
 (`job.settings.labels`) are for people.
@@ -172,6 +173,21 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `application/json` (415), at most `MAX_BODY` bytes (413); a refusal is 400
   `{"error"}`. PUT, DELETE, PATCH, HEAD: 405. The Settings code in `server.py` and
   `index.html` sits between `Settings tab` marker comments.
+- `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
+  `visualign`); `run_export(folder, kind)` -> `Written` writes one through
+  the library (`langslice.open_job`: `export_abba`, or `export_stack` for
+  both QUINT files, naming *kind*'s); `Exports(run=)` keeps each job's last
+  `ExportState` (`ExportStatus` idle, running, done, failed; path, message,
+  sections left out, time) and runs each export on a thread of its own
+  (`start`, `ExportError` for an unknown format or one already running);
+  `reveal(folder)` opens the job's `exports/` in the system's file browser.
+  Served as `GET jobs/<n>/export` (the state), `POST jobs/<n>/export`
+  (`{"format"}`) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
+  checks (`server.GuiServer.post`). `static/export.js` / `export.css` (one
+  delimited block in `index.html`, `app.js` naming the shown job with
+  `Exporter.setJob`): the top bar's Export button, its menu, and a note that
+  says the export is running, then its path with Open folder and Copy path,
+  or why it failed.
 - `focus.py` — the agent's focus, as ABBA's follower followed it: `Focus`
   (`sections`, `tool`, `call`, `at`); `is_followed(name)` (a tool of kind
   `write` in `job.settings.tool_table`, a plugin's or an unknown tool, and

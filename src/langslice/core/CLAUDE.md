@@ -581,6 +581,19 @@ the angles in a caption (empty for the flat plane).
   `ANGLE_EPSILON_DEG` read as 0; a plane more than `MAX_TILT_DEG` from the
   job's plane is refused. `plane_angles`, `plane_position_mm`,
   `implied_pixel_size_um`.
+- `maps/abba_world.py` — a placed section in ABBA's own world frame, for a
+  project file opened from the job's images: `reslice_matrix`,
+  `atlas_um_to_world` (ABBA's world = `A(rx, ry) (atlas_mm - CENTRE_MM) + (0,
+  0, AXIS_OFFSET_MM)`, atlas mm in (ML, DV, AP)), `rotations` (`-pitch`,
+  `-yaw`), `check_atlas` (`ABBA_ATLASES`, `asr`, coronal), `abba_placement`
+  (`AbbaPlacement`: the slice's location, the affine step from ABBA's
+  centred source mm to world, `file_to_world` / `native_to_world` for
+  `maps.abba.world_landmarks`; `ValueError` for a section not in one ABBA
+  slice at the rotations). `maps/abba.py`'s `world_landmarks` places a
+  warp's pairs in any such world frame; `warp_world_landmarks` is it on a
+  snapshot's frame.
+- `worker_threads.py` — `thread_share(workers)`, `started_with_threads(n)`:
+  the thread counts a spawned worker process's numerical libraries start with.
 - `maps/itk.py` — images and transforms in the ITK world (SimpleITK), for an
   engine run outside LangSlice: `write_image` (TIFF, or NIfTI / MHA / NRRD on
   a grid of spacing 1, origin 0), `mapped_points` (where a transform file, a

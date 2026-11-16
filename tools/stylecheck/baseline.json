@@ -7614,7 +7614,6 @@
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/generator.py", "symbol": "payload", "count": 4},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/generator.py", "symbol": "tools", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/server.py", "symbol": "<module>", "count": 2},
-{"rule": "ruff:E501", "path": "src/langslice/hosts/gui/server.py", "symbol": "GuiServer.__init__", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/server.py", "symbol": "GuiServer.__init__.Handler.do_GET", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/server.py", "symbol": "GuiServer.__init__.Handler.do_POST", "count": 1},
 {"rule": "ruff:E501", "path": "src/langslice/hosts/gui/server.py", "symbol": "GuiServer.answer", "count": 2},

@@ -284,6 +284,7 @@ const Ui = (() => {
     strip = { busy: false, again: false, last: 0, timer: null, missing: false };
     Viewer.setJob(index);
     AgentLog.setJob(index);
+    if (typeof Exporter !== 'undefined') Exporter.setJob(index, home);
     clearStatus();
     writeAddress();
     renderPicker();

@@ -37,9 +37,8 @@ from langslice.doors.abba.warp_workers import (
     ConvertedWarp,
     WarpInput,
     convert_warp,
-    started_with_threads,
-    thread_share,
 )
+from langslice.core.worker_threads import started_with_threads, thread_share
 from langslice.job.state_file import serialized_mixed_angles, stack_to_json
 
 if TYPE_CHECKING:

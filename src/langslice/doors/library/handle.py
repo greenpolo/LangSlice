@@ -64,6 +64,7 @@ from langslice.doors.jobs import Opened, open_folder
 from langslice.doors.library.replies import Reply, library_reply
 from langslice.doors.library.script_context import ScriptContext
 from langslice.job.settings.spec import JobSpec
+from langslice.tools.abba_export import AbbaExported, export_abba
 from langslice.tools.dmc_export import DmcExported, export_dmc_brainmap
 
 logger = logging.getLogger(__name__)
@@ -264,6 +265,28 @@ class JobHandle:
             self._opened.job, self._opened.ctx,
             channel=channel, section_image=section_image,
         )
+
+    def export_abba(self, *, warps: bool = True) -> AbbaExported:
+        """Write the job as an ABBA project file.
+
+        The file is ``exports/<image folder>.abba``, which ABBA 0.25 opens
+        with File > Load State on its Allen CCFv3 atlas: each placed section
+        at its position and the stack's cutting angles, the in-plane
+        placement as an affine registration and an applied deformation as a
+        BigWarp landmark registration (``tools.abba_export``).
+
+        Parameters
+        ----------
+        warps
+            Whether applied deformations are written (False: linear only).
+
+        Returns
+        -------
+        AbbaExported
+            The file, the sections written and left out, and each warp's
+            distance from the deformation.
+        """
+        return export_abba(self._opened.job, self._opened.ctx, warps=warps)
 
     def wait(self, timeout: float | None = None) -> Reply:
         """Wait for the job's background work (a fit or trace a tool started and

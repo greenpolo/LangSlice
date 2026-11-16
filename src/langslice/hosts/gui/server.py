@@ -23,14 +23,17 @@ Content-Security-Policy and ``no-store``. GET endpoints:
   section is its filename, URL-encoded, and must be one of the job's;
   ``key`` is the page's own (the current state is drawn whatever it says);
 - ``jobs/<n>/render/atlas/<k>?edge=``: the strip's *k*-th atlas thumbnail;
-- ``settings``: the Settings tab's state (``Settings.state``).
+- ``settings``: the Settings tab's state (``Settings.state``);
+- ``jobs/<n>/export``: the job's last export (``export.Exports.state``).
 
 A render that is refused answers 409 with ``{"error"}``, one not drawn
 within ``render.WAIT_S`` 503. Only the folders the job list holds are
-read, and the viewer is read-only: every job endpoint is GET only, and a
-render writes nothing to the job folder. The one kind of POST is the
-Settings tab's (``settings.POSTS``, :meth:`GuiServer.post`), which also
-needs this server's ``Origin``.
+read, and the viewer is read-only: a render writes nothing to the job
+folder. Two kinds of POST, both needing this server's ``Origin``
+(:meth:`GuiServer.post`): the Settings tab's (``settings.POSTS``) and the
+Export menu's, ``jobs/<n>/export`` (``{"format"}``: start writing the job's
+export, under its ``exports/`` folder only) and ``jobs/<n>/export/reveal``
+(open that folder in the system's file browser).
 """
 
 from __future__ import annotations
@@ -46,10 +49,11 @@ from dataclasses import asdict
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from langslice.hosts.gui import generator
+from langslice.hosts.gui.export import ExportError, Exports, reveal
 from langslice.hosts.gui.render import (
     DEFAULT_EDGE_PX,
     JobRenderer,
@@ -80,6 +84,7 @@ _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 _STRIP = re.compile(r"jobs/(\d+)/strip")
 _RENDER = re.compile(r"jobs/(\d+)/render/(overlay|thumb)/([^/]+)")
 _ATLAS = re.compile(r"jobs/(\d+)/render/atlas/(\d+)")
+_EXPORT = re.compile(r"jobs/(\d+)/export(/reveal)?")
 #: An answer: an HTTP error code, or the body, its type and the code.
 Answer = int | tuple[bytes, str] | tuple[bytes, str, int]
 #: A job route's handler: the job, the path's match and the query.
@@ -100,6 +105,11 @@ HEADERS = {
 
 def _int(query: dict[str, list[str]], key: str, default: int) -> int:
     return int(query.get(key, [str(default)])[0])
+
+
+def _exports(exports: Exports | None) -> Exports:
+    """Return the Export menu's exports, a new one for None."""
+    return Exports() if exports is None else exports
 
 
 def port_in_use(exc: OSError) -> bool:
@@ -130,16 +140,19 @@ class GuiServer:
     makes one on BrainGlobe's atlases).
     """
 
-    def __init__(self, jobs: JobList, *, port: int = 0, settings: Settings | None = None,
-                 renders: RenderPool | None = None) -> None:
+    def __init__(self, jobs: JobList, *, port: int = 0,
+                 settings: Settings | None = None,
+                 renders: RenderPool | None = None,
+                 exports: Exports | None = None) -> None:
         self.jobs = jobs
+        self.exports = _exports(exports)
         self.settings = settings if settings is not None else Settings()
         self.renders = renders if renders is not None else RenderPool()
         self.token = secrets.token_urlsafe(24)
         self._routes: tuple[tuple[re.Pattern[str], _Route], ...] = (
             (_SNAPSHOT, self._snapshot), (_PICTURE, self._picture),
             (_STRIP, self._strip), (_RENDER, self._render),
-            (_ATLAS, self._atlas))
+            (_ATLAS, self._atlas), (_EXPORT, self._export_state))
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -266,6 +279,29 @@ class GuiServer:
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
         return self._jpeg(partial(renderer.atlas_thumb, int(match[2]), edge))
 
+    def _export_state(self, watcher: JobWatcher, match: re.Match[str],
+                      _query: dict[str, list[str]]) -> Answer:
+        if match[2]:
+            return 405
+        return self._json(asdict(self.exports.state(watcher.folder)))
+
+    def _export_post(self, resource: str, request: object) -> Answer:
+        """Start a listed job's export, or open its exports folder."""
+        match = _EXPORT.fullmatch(resource)
+        watcher = None if match is None else self.jobs.get(int(match[1]))
+        if match is None or watcher is None:
+            return 404
+        try:
+            if match[2]:
+                reveal(watcher.folder)
+                return self._json({"opened": True})
+            fields = cast("dict[str, object]", request)
+            kind = fields.get("format") if isinstance(request, dict) else None
+            started = self.exports.start(watcher.folder, str(kind))
+            return self._json(asdict(started))
+        except (ExportError, OSError) as exc:
+            return (*self._json({"error": str(exc)}), 400)
+
     def _renderer(self, watcher: JobWatcher) -> JobRenderer:
         return self.renders.renderer(watcher.folder, watcher.current_stack)
 
@@ -309,7 +345,7 @@ class GuiServer:
     # --- Settings tab (hosts/gui/settings.py) ---
     def post(self, raw_path: str, headers: Any,
              body: bytes | None) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
-        """A POST to a Settings resource: the token, the ``Host``, an
+        """A POST to a Settings or Export resource: the token, the ``Host``, an
         ``Origin`` of this server (a page of another site cannot send one),
         ``Sec-Fetch-Site`` same-origin when sent, a JSON body of at most
         :data:`MAX_BODY` bytes. Every other path is GET only (405). A refused
@@ -321,7 +357,7 @@ class GuiServer:
                 or not parsed.path.startswith(prefix)):
             return 404
         resource = parsed.path[len(prefix):]
-        if resource not in POSTS:
+        if resource not in POSTS and _EXPORT.fullmatch(resource) is None:
             return 405
         if (headers.get("Origin") != origin
                 or headers.get("Sec-Fetch-Site", "same-origin") != "same-origin"):
@@ -334,6 +370,8 @@ class GuiServer:
             request = json.loads(body.decode("utf-8") or "null")
         except (UnicodeDecodeError, ValueError):
             return 400
+        if resource not in POSTS:
+            return self._export_post(resource, cast("object", request))
         try:
             return self._json(self.settings.post(resource, request))
         except SettingsError as exc:
