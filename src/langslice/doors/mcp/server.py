@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from io import FileIO, TextIOWrapper
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import anyio
 from anyio import to_thread
@@ -51,6 +51,7 @@ from langslice.doors.mcp.pages import (
     save_page,
 )
 from langslice.doors.reference_card import write_card
+from langslice.doors.stdio import protocol_input
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.host_inputs import opening_spec
 from langslice.job.job import Job
@@ -406,17 +407,20 @@ def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None
 
     Scientific libraries print through Python and native stdout alike, so
     the protocol gets a private duplicate of stdout and everything else that
-    writes there lands on stderr — the host's log.
+    writes there lands on stderr — the host's log. It reads a private
+    duplicate of stdin too (:func:`langslice.doors.stdio.protocol_input`):
+    on Windows a module loaded while the protocol waits on the process's
+    own stdin never finishes loading.
     """
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     sys.stdout.flush()
     wire = os.fdopen(os.dup(sys.stdout.fileno()), "wb", buffering=0)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-    with redirect_stdout(sys.stderr):
+    with redirect_stdout(sys.stderr), protocol_input() as host_input:
         sessions: dict[str, Session] = {}
         server = build_server(spec_for, folder, sessions=sessions)
         try:
-            anyio.run(_run_stdio, server, wire)
+            anyio.run(_run_stdio, server, wire, host_input)
         finally:
             # The host went away: running image-model calls land, pictures
             # are written (Session.close).
@@ -433,12 +437,18 @@ def initialization_options(server: FastMCP) -> InitializationOptions:
     return lowlevel.create_initialization_options(NotificationOptions(tools_changed=True))
 
 
-async def _run_stdio(server: FastMCP, wire: FileIO) -> None:
+async def _run_stdio(
+    server: FastMCP, wire: FileIO, host_input: BinaryIO
+) -> None:
     # bare newlines: Windows would write each message's end as \r\n
     text = TextIOWrapper(wire, encoding="utf-8", newline="\n",
                          write_through=True)
     out = anyio.wrap_file(text)
-    async with stdio_server(stdout=out) as (read_stream, write_stream):
+    # as the SDK reads its own stdin: UTF-8, a bad byte replaced
+    source = anyio.wrap_file(
+        TextIOWrapper(host_input, encoding="utf-8", errors="replace"))
+    streams = stdio_server(stdin=source, stdout=out)
+    async with streams as (read_stream, write_stream):
         # FastMCP.run_stdio_async always writes to sys.stdout; the low-level
         # server takes the protocol stream explicitly.
         lowlevel = server._mcp_server  # pyright: ignore[reportPrivateUsage]

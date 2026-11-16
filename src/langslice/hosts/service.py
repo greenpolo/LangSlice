@@ -16,7 +16,7 @@ import sys
 import threading
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, redirect_stdout
-from typing import TextIO, cast
+from typing import TextIO
 
 from pydantic import ValidationError
 
@@ -33,6 +33,7 @@ from langslice.doors.abba.contract import (
 )
 from langslice.doors.abba.follow import follow
 from langslice.doors.abba.prepare import prepare_job
+from langslice.doors.stdio import protocol_input
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +109,18 @@ def run_stdio(
     input_stream: TextIO | None = None,
     output_stream: TextIO | None = None,
 ) -> int:
-    if input_stream is None and isinstance(sys.stdin, io.TextIOWrapper):
-        # the connector writes UTF-8 whatever the system's code page
-        stdin = cast("io.TextIOWrapper[io.BufferedReader]", sys.stdin)
-        stdin.reconfigure(encoding="utf-8")
     # Scientific libraries may print through Python OR native stdout. Keep both
     # away from the protocol; a dedicated duplicate of stdout carries JSON only.
     with _protocol_output(output_stream) as out_stream:
-        return _run_requests(input_stream, out_stream)
+        if input_stream is not None:
+            return _run_requests(input_stream, out_stream)
+        # A duplicate of stdin too: on Windows a module loaded while the input
+        # thread waits on the process's own stdin never finishes loading
+        # (langslice.doors.stdio). The connector writes UTF-8 whatever the
+        # system's code page.
+        with protocol_input() as host_input:
+            text = io.TextIOWrapper(host_input, encoding="utf-8")
+            return _run_requests(text, out_stream)
 
 
 @contextmanager
@@ -157,9 +162,7 @@ def _input_closed(in_stream: TextIO) -> threading.Event:
     return closed
 
 
-def _run_requests(input_stream: TextIO | None, out_stream: TextIO) -> int:
-    in_stream = input_stream if input_stream is not None else cast(TextIO, sys.stdin)
-
+def _run_requests(in_stream: TextIO, out_stream: TextIO) -> int:
     for raw_line in in_stream:
         line = raw_line.strip()
         if not line:
