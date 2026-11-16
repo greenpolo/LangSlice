@@ -77,8 +77,6 @@ EXPORT_RECORD = "abba_export.json"
 #: one per core and one thread each: most of the work is numpy's element-wise
 #: kernels, which use one thread, so a process per core keeps every core busy.
 MAX_WARP_PROCESSES = 32
-#: The landmark pairs of a warp meant to be edited by hand in BigWarp.
-EDITABLE_LANDMARKS = 100
 #: Micrometres per millimetre.
 UM_PER_MM = 1000.0
 #: What the record tells a person about opening the file.
@@ -340,10 +338,10 @@ def export_abba(
         Whether applied deformations are written as warp steps (False: the
         linear placements only).
     landmarks
-        The most landmark pairs per warp: ``EDITABLE_LANDMARKS`` (100) for
-        a warp a person will edit in BigWarp (about 45 um from the
-        deformation at the median), :data:`MAX_POINTS` (1089, the default)
-        for the closest (about 2.5 um).
+        The most landmark pairs per warp, 16 to :data:`MAX_POINTS` (1089,
+        the default: about 2.5 um from the deformation at the median);
+        fewer follow it less closely (331CTX: 100 about 45 um, 16 about
+        140 um, more than its warps move the tissue).
 
     Returns
     -------

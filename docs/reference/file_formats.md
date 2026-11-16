@@ -613,8 +613,7 @@ section, cut at the stack's angles, lies in one world plane, its location. A
 file pixel `(x, y)` is first ABBA's centred source point `((x - (W - 1)/2)
 v, (y - (H - 1)/2) v)`, then the affine registration takes it to world `x,
 y`, exactly LangSlice's linear map. The warp registration is a thin-plate
-spline through at most `landmarks` pairs (16 to 1089, 1089 by default;
-the menu's editable choice 100) placed where it errs most
+spline through at most `landmarks` pairs (16 to 1089, 1089 by default) placed where it errs most
 (`core/maps/abba.py`, as the Fiji connector's warp rows), stored as ABBA
 stores BigWarp's: `srcPts` the atlas side (where the deformation takes each
 point), `tgtPts` the section side (the point as the affine step placed it).

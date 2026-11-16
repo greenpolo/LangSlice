@@ -282,9 +282,9 @@ class JobHandle:
         warps
             Whether applied deformations are written (False: linear only).
         landmarks
-            The most landmark pairs per warp: 100 for a warp you will edit
-            in BigWarp (about 45 um from the deformation), 1089 (the
-            default) for the closest (about 2.5 um).
+            The most landmark pairs per warp, 16 to 1089 (the default:
+            about 2.5 um from the deformation); fewer follow it less
+            closely (100 about 45 um).
 
         Returns
         -------

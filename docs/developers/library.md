@@ -419,8 +419,8 @@ as an ABBA 0.25 project, `exports/<image folder>.abba` (File ‣ Load State in
 ABBA, on its Allen CCFv3 atlas), each section with its affine registration
 and its applied deformation as a BigWarp landmark registration
 (`warps=False`: linear only; `landmarks`, 16 to 1089, the most landmark
-pairs per warp: 100 to edit them in BigWarp, about 45 um from the
-deformation, 1089 for about 2.5 um), and returns a
+pairs per warp: 1089 for about 2.5 um from the deformation, 100 for
+about 45 um), and returns a
 `langslice.tools.abba_export.AbbaExported`: `path`, `sections`, `warped`,
 `skipped` and `warp_error_um`; the warps are converted in worker processes,
 so a script calling it runs under `if __name__ == "__main__":`.

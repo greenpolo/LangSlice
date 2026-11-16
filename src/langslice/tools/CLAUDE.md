@@ -367,8 +367,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   written; a section that cannot be is `skipped` with its reason. Returns
   `AbbaExported` (`path`, `sections`, `warped`, `skipped`, `warp_error_um`,
   `landmarks`). `landmarks` (16 to `MAX_POINTS`, `BAD_ARGS` outside) is
-  each warp's most pairs (`core.maps.abba.budget`); `EDITABLE_LANDMARKS`
-  (100) is the window's editable choice.
+  each warp's most pairs (`core.maps.abba.budget`); fewer follow the warp
+  less closely (331CTX: 100 miss it by 45 um, 16 by 140 um).
 - `points.py` — section points and atlas points through a section's current
   registration, writing nothing (a script's `job.context.to_atlas_um`,
   `from_atlas_um`, `plane_distance_um`, `region_at`): `atlas_points(job,

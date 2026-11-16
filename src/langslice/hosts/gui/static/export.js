@@ -4,14 +4,15 @@
 // (hosts/gui/export.py). The page starts an export, polls its state while it runs and then
 // says where the file is, with Open folder and Copy path.
 const Exporter = (() => {
-  // An ABBA warp is landmark pairs: many follow LangSlice's warp closely, few are easy to
-  // edit by hand in BigWarp (the accuracies measured on the 331CTX brain).
-  const EXACT = 1089, EDITABLE = 100, MIN_LANDMARKS = 16;
+  // An ABBA warp is landmark pairs: many follow LangSlice's warp closely. Below 100 they
+  // follow it less closely than leaving it out (measured on the 331CTX brain), so a person
+  // who will place their own control points exports the linear placement instead.
+  const EXACT = 1089, MIN_LANDMARKS = 100;
   const FORMATS = [
-    { kind: 'abba', landmarks: EXACT, name: 'ABBA project, exact (.abba)',
+    { kind: 'abba', landmarks: EXACT, name: 'ABBA project (.abba)',
       about: 'Each warp as up to 1,089 landmarks, about 2.5 µm from LangSlice’s. Open with File > Load State.' },
-    { kind: 'abba', landmarks: EDITABLE, name: 'ABBA project, editable (.abba)',
-      about: 'Each warp as 100 landmarks, easy to edit in BigWarp; about 45 µm from LangSlice’s.' },
+    { kind: 'abba_linear', name: 'ABBA project, linear only (.abba)',
+      about: 'Position, angles and affine, no warp: add your own control points in ABBA.' },
     { kind: 'quicknii', name: 'QuickNII (.json)',
       about: 'The linear placement of each section, with its image.' },
     { kind: 'visualign', name: 'VisuAlign (.json)',
@@ -135,7 +136,7 @@ const Exporter = (() => {
     input.min = String(MIN_LANDMARKS);
     input.max = String(EXACT);
     input.step = '1';
-    input.value = '200';
+    input.value = '400';
     input.id = 'export-landmarks';
     label.htmlFor = input.id;
     const go = el('button', '', 'Export');

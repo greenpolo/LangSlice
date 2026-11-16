@@ -161,21 +161,23 @@ comments, to their own file, and the Export menu's files.
 **Export** in the top bar writes the shown job's registration as a file for
 another program, under the job's `exports/` folder:
 
-- **ABBA project, exact** and **ABBA project, editable** (.abba):
-  `exports/<image folder>.abba`, which ABBA 0.25 opens with **File ‣ Load
-  State** on its Allen CCFv3 atlas, started coronal. Each section opens from
-  its own image file at its position and the stack's cutting angles, with
-  its in-plane placement as an affine registration and its warp, when it has
-  one, as a BigWarp landmark registration you can edit with **Edit last
-  registration**. A warp in landmarks is a trade: *exact* gives each warp up
-  to 1,089 landmarks, about 2.5 µm from LangSlice's warp at the median and
-  far too many to edit by hand; *editable* gives 100, easy to move in
-  BigWarp, about 45 µm from it (measured on 331CTX: 200 landmarks are about
-  20 µm, 400 about 9 µm). The menu's last row takes any count from 16 to
-  1,089. Each warp takes 1 to 15 s to convert, one per processor core at
-  once. `exports/abba_export.json` lists the sections left out and why, the
+- **ABBA project (.abba)**: `exports/<image folder>.abba`, which ABBA 0.25
+  opens with **File ‣ Load State** on its Allen CCFv3 atlas, started
+  coronal. Each section opens from its own image file at its position and
+  the stack's cutting angles, with its in-plane placement as an affine
+  registration and its warp, when it has one, as a BigWarp landmark
+  registration of up to 1,089 landmarks, about 2.5 µm from LangSlice's warp
+  at the median: for viewing and analysis, too dense to edit by hand. Each
+  warp takes 1 to 15 s to convert, one per processor core at once.
+  `exports/abba_export.json` lists the sections left out and why, the
   landmark count, and how far each warp's landmarks are from LangSlice's
   deformation; the finished note gives the median.
+- **ABBA project, linear only (.abba)**: the same project without the warp
+  steps, for placing your own control points in ABBA. A warp cannot be
+  written in so few: on 331CTX the warps move tissue about 95 µm at the
+  median, and 100 landmarks miss them by about 45 µm, 50 by 83 µm, 16 to
+  36 by 120 to 140 µm (worse than no warp). The menu's last row writes the
+  warps with a count of your own from 100 to 1,089 (400: about 9 µm).
 - **QuickNII (.json)** and **VisuAlign (.json)**: `exports/quicknii.json`
   and `exports/visualign.json` with the section images they name, the files
   `submit` writes (both are written together).

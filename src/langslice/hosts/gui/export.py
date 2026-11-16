@@ -29,16 +29,22 @@ from enum import StrEnum
 from pathlib import Path
 
 import langslice
-from langslice.core.maps.abba import MAX_POINTS, MIN_POINTS
+from langslice.core.maps.abba import MAX_POINTS
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.public_files import QUICKNII_FILE, VISUALIGN_FILE
 
 #: The formats the menu offers, with the label the page shows.
 FORMATS = {
     "abba": "ABBA project (.abba)",
+    "abba_linear": "ABBA project, linear only (.abba)",
     "quicknii": "QuickNII (.json)",
     "visualign": "VisuAlign (.json)",
 }
+#: The fewest landmarks the menu writes a warp with: fewer follow
+#: LangSlice's warp less closely than leaving it out (on 331CTX the warps
+#: move tissue 95 um at the median; 100 landmarks miss them by 45 um, 50 by
+#: 83 um, 16 to 36 by 120 to 140 um).
+MIN_LANDMARKS = 100
 #: The file each QUINT format is written to.
 QUINT_FILES = {"quicknii": QUICKNII_FILE, "visualign": VISUALIGN_FILE}
 
@@ -130,8 +136,9 @@ def run_export(folder: Path, kind: str, landmarks: int) -> Written:
     """
     if kind in QUINT_FILES:
         return _quint(folder, kind)
+    warps = kind != "abba_linear"
     with langslice.open_job(folder) as job:
-        done = job.export_abba(landmarks=landmarks)
+        done = job.export_abba(warps=warps, landmarks=landmarks)
     message = f"{len(done.sections)} sections"
     if done.warp_error_um:
         medians = [row["median"] for row in done.warp_error_um.values()]
@@ -200,9 +207,9 @@ class Exports:
         """
         if kind not in FORMATS:
             raise ExportError(f"LangSlice cannot export {kind!r}")
-        if not MIN_POINTS <= landmarks <= MAX_POINTS:
+        if not MIN_LANDMARKS <= landmarks <= MAX_POINTS:
             raise ExportError(
-                f"A warp takes {MIN_POINTS} to {MAX_POINTS} landmarks."
+                f"A warp takes {MIN_LANDMARKS} to {MAX_POINTS} landmarks."
             )
         folder = Path(folder)
         with self._lock:

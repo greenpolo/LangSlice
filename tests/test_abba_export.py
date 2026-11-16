@@ -274,14 +274,14 @@ def test_the_export_menu_starts_polls_and_refuses(tmp_path: Path) -> None:
             time.sleep(0.02)
         assert answer["state"] == "done" and answer["path"].endswith("x.abba")
         assert answer["skipped"] == 1 and calls == [(folder, "abba", 1089)]
-        _request(gui, "jobs/0/export", {"format": "abba", "landmarks": 100})
+        _request(gui, "jobs/0/export", {"format": "abba_linear", "landmarks": 100})
         for _ in range(100):
             status, answer = _request(gui, "jobs/0/export", method="GET")
             if answer["state"] != "running":
                 break
             time.sleep(0.02)
-        assert calls[-1] == (folder, "abba", 100)
-        assert _request(gui, "jobs/0/export", {"format": "abba", "landmarks": 5})[0] == 400
+        assert calls[-1] == (folder, "abba_linear", 100)
+        assert _request(gui, "jobs/0/export", {"format": "abba", "landmarks": 50})[0] == 400
 
         _request(gui, "jobs/0/export", {"format": "visualign"})
         for _ in range(100):
