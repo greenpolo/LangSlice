@@ -5,11 +5,24 @@ the project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror
 to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
-generator and Settings (top right). The agent viewer is the arrangement of the
-viewer LangSlice had inside ABBA, on the web: a positioning strip and up to four
-focus panels showing the sections the agent works on under their current
-registration (ABBA's comparison window), beside the agent log and its tool
-images (ABBA's browser log). The window has the docs' look, toned down
+generator and Settings (top right). The agent viewer has two views (Simple |
+Extended at the viewer tab's own top right corner, `v`, kept in `localStorage` as `detail`; `.viewer.simple`
+on `#tab-viewer`). Simple, the start, shows three things: the agent speaking (its
+latest words in a speech bubble beside the LangSlice mark and the agent's
+figure, `#guy`, inline SVGs of which one shows by the model's maker
+(`maker` in `app.js`, class `maker-claude|openai|gemini|plain`: Clawd drawn
+from the pixel map Claude Code carries, in `--clawd`; OpenAI's and Gemini's
+marks, their paths from Simple Icons; a plain face), moving while the words
+come in), the sections it is working on, two to a page with name and position only,
+and the brain strip. Extended is made for a person who wants the whole run,
+read top to bottom: the narration band (the agent's latest words,
+large, what it is doing now and how far the registration is), up to four
+panels showing the sections the agent works on under their current
+registration with the brain strip under them, and on the right the journal (the
+run so far as a timeline of the agent's words, its tool calls quiet lines
+between them) over the pictures the agent looked at. The window is neutral
+graphite around greyscale pictures with one accent colour; the agent's words
+are in a serif face, the window's in a sans-serif face
 (`static/tokens.css`).
 
 ## The rule
@@ -82,10 +95,13 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `at` is UTC, the trace's local; within a second a model turn before the
   calls it made, a session's end after them), then the pictures. Items: `tool`
   (`tool_start` / `tool_end` by `execution_id`; `args` an object or the cut
-  JSON string), `picture` (number, view folder, tool, call, sections, caption
+  JSON string; `title`, the tool's plain-language label from
+  `job.settings.labels`), `picture` (number, view folder, tool and its `title`, call, sections, caption
   from `view.json`; a path outside the folder is refused), `agent` and
-  `reasoning` (the trace's `model` `text` / `thought`), `note` (open, plugins,
-  script writes, session start and end, a trace error). The sections table:
+  `reasoning` (the trace's `model` `text` / `thought`; for a folder with no
+  trace, the same records from Claude Code's transcript, `transcripts.py`),
+  `note` (open, plugins, script writes, session start and end, a trace
+  error). The sections table:
   `core.stack.status.status_rows` of `job.migrations.viewer_stack` (an older
   format migrated in memory as every door opens it, nothing written) with
   each section's registration number (`job.history.SectionHistories`); a state this
@@ -116,11 +132,26 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `path`, `folder`, `atlas`, `changed_at`, `status`, `given`. The recent jobs file is the job layer's
   (`job/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
   `LANGSLICE_RECENT_JOBS`, another file or `off`).
+- `transcripts.py` — a coding agent's words. `TranscriptWords(root)`
+  (`projects_root()`: `~/.claude/projects`, or `LANGSLICE_CLAUDE_TRANSCRIPTS`,
+  another folder or `off`; the test suite sets it off) `.read(job_folder,
+  job_file, until)`: until the job's transcript is known, every `SEARCH_S`
+  it reads on in the candidates (`*/*.jsonl` and `*/*/subagents/*.jsonl`
+  last written between `EARLY_S` before the job's first tool call,
+  `first_call_at`, and `LATE_S` after its last change; at most
+  `MAX_CANDIDATES`, nearest that change first; each by byte offset, so a
+  growing file is never read twice) for an assistant turn whose `start_job`
+  call names one of `job_folders` (the job folder, its images folder, the one
+  `job.json` names; `folder_key`); then it tails that file. Only lines
+  holding `"type":"assistant"` are parsed (`Turn`). It gives trace records:
+  one `session` (`model_name` of the model id, agent `Claude Code`), then a
+  `model` record per reasoning summary that is not empty (`thought`) and per
+  message (`text`), times local as the trace's (`local_time`). Read-only.
 - `server.py` — `GuiServer(jobs, port=, settings=)`: `ThreadingHTTPServer` on
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer).
   `answer(path, host)` (GET): the
-  static files, `jobs`, `generator` (`generator.payload()`; `?job=<n>` adds
+  static files (`.ico` among them: the icon), `jobs` (with `home`, the home folder, which the page writes `~` in the paths it shows), `generator` (`generator.payload()`; `?job=<n>` adds
   `prefill`, `generator.prefill` of that listed job as plain data, null
   without a `job.json`, 404 for an index not listed),
   `jobs/<n>/snapshot?since=&gen=&sv=`,
@@ -156,7 +187,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   cannot be read is `RenderError` with the reason) and draws from the
   watcher's `current_stack`: `overlay(id, edge)` (`look` mode `overlay`, the
   applied deformation; mode `section` for a section with no position),
-  `thumb(id, edge)` (`render_slice`: the `preprocessed` image, oriented),
+  `thumb(id, edge)` (`render_slice`, oriented); both draw the section's raw
+  channels in their own colours (`drawing.py`: `draw_overlay`, `draw_thumb`,
+  `draw_atlas`, `raw_channels`, at most `MAX_OVERLAY_CHANNELS`, `content`),
+  not the `preprocessed` image the fits read,
+  whose contrast enhancement makes a scanner's tile mosaic stand out,
   `atlas_thumb(k, edge)` (`look` mode `atlas` at the stack's view angles: the
   template, `look`'s own atlas default, because the borrowed Nissl of the
   Allen atlases would add over a gigabyte), each with its caption band cut off
@@ -164,15 +199,20 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (`Workspace.position_range` and `axis_ends`, `step_mm` by `strip_step`:
   `NOMINAL_STEP_MM` times `brain_scale`, rounded to `ROUND_STEPS_MM` so
   `MIN_THUMBNAILS` to `MAX_THUMBNAILS` cover the axis, the atlas positions,
-  the view angles in words, each section's id, order, position and render
-  key). A job draws one picture at a time (a workspace's caches are not made
+  the view angles in words, each section's id, order, position, render key
+  and thumb key). A job draws one picture at a time (a workspace's caches are not made
   for concurrent writers); concurrent requests for one picture share one
-  drawing; a request waits `WAIT_S` (60 s), then `RenderBusy`. The JPEGs are
+  drawing; a queued overlay or thumbnail whose section's key has changed
+  by its turn is not drawn (answered `RenderBusy`; asked again, it draws
+  the section as it is then); a request waits `WAIT_S` (60 s), then
+  `RenderBusy`. The JPEGs are
   kept in an LRU of `CACHE_ENTRIES` per job, keyed by kind, section or
-  position, edge and render key, and the workspace's caches are trimmed after
+  position, edge and render key (a thumbnail by its thumb key), and the workspace's caches are trimmed after
   each drawing (`KEPT_SOURCES`, `KEPT_PLANES`, `KEPT_RENDERS`).
   `render_key(state, id)`: `KEY_DIGITS` hex of the section's `look.snapshot`,
-  changing exactly when its overlay would; `edge_px` (`MIN_EDGE_PX` to
+  changing exactly when its overlay would; `thumb_key(state, id)`: the
+  same of its flip, quarter turn and made images' digests, so a new
+  placement does not draw the strip's thumbnail again; `edge_px` (`MIN_EDGE_PX` to
   `MAX_EDGE_PX` in steps of `EDGE_STEP_PX`, `DEFAULT_EDGE_PX` without one);
   `UnknownSection`.
 - `generator.py` — the prompt generator's choices, `payload()` (`GET
@@ -221,15 +261,26 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   never repeats the input), `settings/signin` (`setup.login_oauth` in a
   thread, `SIGNIN_TIMEOUT_S`; a failure is worded without the provider's
   reply); `SettingsError`.
-- `window.py` — `find_browser` (`PATH_NAMES` on the PATH, then
+- `app.py` — LangSlice's own window (`python -m langslice.hosts.gui.app URL
+  [WIDTH HEIGHT]`): pywebview (the `window` extra; imported only here, inside
+  `main`) shows the page in the system's web view, titled `TITLE` with `ICON`
+  (`static/langslice.ico`, made from `assets/logo/logomark_dark_512.png` with
+  rounded corners); on Windows `own_taskbar_identity` (`APP_ID`, so the
+  taskbar files it under LangSlice, not Python) and `dark_title_bar`. A
+  process of its own, private mode: nothing is kept between windows.
+- `window.py` — `own_window_command(url, size)` (the command that starts
+  `app.py`, None without pywebview), `find_browser` (`PATH_NAMES` on the PATH, then
   `candidates(platform, env, home)`: Windows `WINDOWS_ROOTS` x
   `WINDOWS_PATHS`, macOS `/Applications` and `~/Applications` x `MAC_APPS`),
-  `open_window` (`--app=URL`, a private `--user-data-dir`, `--window-size`;
+  `open_window` (LangSlice's own window first, unless a browser was named:
+  one that ends within `OWN_WINDOW_START_S` falls through; then a browser's
+  `--app=URL`, a private `--user-data-dir`, `--window-size`;
   a browser that exits at once, or none, falls back to `webbrowser.open`,
   then to printing the address) -> `Opened` (`app`, `tab`, `none`);
-  `start_address(url, tab, folders=)`: the viewer's address as it is, the
-  prompt generator's with `#tab=prompt`, plus `&job=0` (the first folder
-  given) when folders were given.
+  `start_address(url, tab, folders=)`: the address with `#tab=<tab>&job=0`
+  (the first folder given) when folders were given; without folders the
+  viewer's address as it is (the page then opens Settings while no
+  connection is chosen) and the prompt generator's with `#tab=prompt`.
 - `static/generator.js`, `static/generator.css` — the prompt generator tab
   (loaded by one delimited block in `index.html`). `Generator`, pure
   functions on the payload and a plain form object (`folder`, `atlas`,
@@ -283,58 +334,94 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   `blob:` image (scripts set `element.style` instead); every text goes in by
   `textContent`.
   - `tokens.css` — the window's look, the only place a colour, the font, a
-    size or a spacing is written: the docs' look (`docs/_static/langslice.css`)
-    toned down: one monospace face (JetBrains Mono, bundled as
-    `jetbrains-mono-*.woff2`, SIL OFL 1.1, `jetbrains-mono-ofl.txt`), true
-    black everywhere with 1 px edges, square corners, no glow, gradients or
-    shadows, the logo's colours each with one job (off-white names, lavender
-    what can be followed, violet literal text, pink boundaries and state), and
-    the ABBA viewer's four focus colours. `lockup.svg` and `logomark.svg` are
-    `assets/logo/`'s dark ones.
+    size or a spacing is written: three faces, the system's sans-serif UI
+    face for the window's own words (`--sans`), a system serif face for the
+    agent's own words (`--serif`: the narration and the journal) and the
+    monospace face (JetBrains Mono, bundled as `jetbrains-mono-*.woff2`, SIL
+    OFL 1.1, `jetbrains-mono-ofl.txt`) for literal text only (paths,
+    commands, tool inputs); neutral graphite grounds (`--ground`, panels and
+    controls a step lighter in `--panel`, black `--picture` behind pictures
+    only), 1 px edges, small rounded corners (`--radius`, `--radius-sm`), no
+    glow, gradients or shadows, colours each with one job (off-white names
+    and the agent's latest words, lavender the one accent: what is happening
+    now and what can be clicked, also `--focus`, the sections in focus;
+    grey-violet literal text, pink problems, green Submitted; `--clawd`
+    is the mascot's own). `:root[data-theme="light"]` is the light look:
+    paper grounds and dark words, pictures still on black, and the brain
+    strip on a dark ground of its own (`--stage*`). `theme.js` (loaded
+    before the page is drawn) keeps the choice in `localStorage` and swaps
+    the lockup. `lockup.svg` and `logomark.svg` are `assets/logo/`'s dark
+    ones, `lockup-light.svg` the light one.
   - `index.html` — the top bar (the lockup, the tabs, the job picker,
-    Settings), the status line, the viewer tab, the delimited prompt
-    generator and Settings blocks, the footer and the lightbox.
-  - `app.css`, `app.js` — the element defaults every tab uses (black controls
-    with a 1 px edge, square corners) and the shell: the tabs (the first one
+    Settings), the viewer tab (the narration band `#statusline` with the
+    progress meters, the sections area with the strip under it, the journal
+    and the tray), the delimited prompt generator and Settings blocks, the
+    footer and the lightbox.
+  - `app.css`, `app.js` — the element defaults every tab uses (controls a step
+    above the page with a 1 px edge and small rounded corners; `.mono` for
+    literal text) and the shell: the tabs (the first one
     `#tab=` names, `startTab`, which `settings.js` reads); the address names
     what is shown (`#tab=…&job=n`) once a job was named; the job picker
     (keyboard-navigable, newest first by `changed_at`); the polls (jobs every
     2 s, the snapshot every 300 ms, the strip when the tables change, at most
-    every 1.5 s); the status line; the keys `[`, `]` and `f`. `Ui.loads` is
+    every 1.5 s); Light | Dark (`Theme.toggle`); Simple | Extended (`showDetail`, `Viewer.setSimple`); the narration band's status word, the agent's figure and the run
+    in one sentence (`runWords`: the model, the plane, the atlas); the keys
+    `[`, `]`, `f` and `v`. `Ui.short` is a section's name as the window shows it
+    (the file name without its extension). `Ui.loads` is
     one queue for every picture the server draws: at most three in flight, so
     the polls keep their connections, lowest rank first (the lightbox, the
     focus panels, the focus's thumbnails, the atlas row, the other
     thumbnails).
-  - `viewer.js`, `viewer.css` — the Agent focus: Focus | Sections | Steps,
-    Follow agent (the snapshot's `focus` replaces the targets and returns to
-    page 1; a section clicked in the strip, the table or the log becomes the
-    focus and stops following), four sections to a page in one, two or four
-    cells. A panel asks for `render/overlay` at its size times
+  - `viewer.js`, `viewer.css` — the sections area: its header (whose choice
+    the sections are, how many), Pictures | Table | Steps,
+    Follow the agent (the snapshot's `focus` replaces the targets and returns to
+    page 1; a section clicked in the strip, the table or the journal becomes the
+    focus and stops following), four sections to a page (two in Simple, `PAGE_SIZES`, which also shows the pictures only and follows; one fills the area, two side by
+    side, three as one tall panel beside two, four in a 2 x 2 grid; the page
+    arrows only when there is more than one page). A panel asks for `render/overlay` at its size times
     `devicePixelRatio` (rounded up to 128) and again only when its row's
     `render_key` changes or the panel grows; the old picture stays, tagged
-    `updating`, until the new one fades in; a 409 shows its message, a 503 is
-    asked again; zoom, pan and reset happen in the page; `open` shows the
-    render in the lightbox. The Sections table (a damaged row's pink left
+    `updating`, until the new one fades in (another section's picture stays dimmed, `stale`, until this section's has loaded); a 409 shows its message (the same message on every panel shown is
+    said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `Enlarge` shows the
+    render in the lightbox. A panel's title: its number (the one on its
+    section in the strip), the section, its position, the angles, and tags in
+    plain words (`HOW`: how it was aligned; `warped`; `damaged`; the stored
+    values on hover). `progress`: the band's three meters (sections with a
+    position, a transform, a deformation; a task off in the header's `tasks`
+    has none). The Table (a damaged row's pink left
     edge; a click puts the section in focus), Steps (undo, redo, notes,
     spend). The dividers are remembered in `localStorage`; below 1100 px the
-    log goes under the focus area.
-  - `viewer-strip.js` — the positioning strip, one inline SVG: atlas
-    thumbnails over a millimetre ruler, the placed sections in at most three
+    journal goes under the sections area.
+  - `viewer-strip.js` — the brain strip, one inline SVG under the pictures:
+    atlas thumbnails over a millimetre ruler, the placed sections in at most three
     stair rows (each in the first row where it clears its neighbour) with a
-    handle, a dashed leader and a key on the axis; the focus's sections in
-    their panel's colour, other targets in off-white, a pink bar spanning
+    key on the axis; the focus's sections in the accent with a leader, the
+    shown ones outlined with their panel's number on a handle, a bar spanning
     them; the sections not placed grouped at the right. Thumbnails are asked
-    for only in view (128 px; 256 drawn large) and again on a new render key.
+    for only in view (128 px; 256 drawn large) and again on a new thumb key.
     Hover, click to focus, wheel zoom, drag pan, double-click for the whole
     axis; without the strip route, the handles from the snapshot rows.
-  - `viewer-log.js` — the agent log: agent messages and reasoning summaries
-    (paragraphs, lists and `code` kept, by `textContent`), tool rows
-    (`<details>`, a running, done or failed left edge, section names that
-    focus, the inputs at most 240 px tall, step, status and door),
-    `[View N images]`, notes, the line saying the agent's own words are not
-    in the job folder when it holds no trace, following the end (`Latest
-    activity` when scrolled up); the Tool images tray (four pictures per
-    page, the calls with pictures paged, Follow, resizable); the lightbox (the
+  - `viewer-log.js` — the journal and the narration: agent messages and
+    reasoning summaries as timeline entries in the serif face (paragraphs,
+    lists and `code` kept, by `textContent`; each at its minute of the run,
+    `elapsed`, from the trace's first record; the newest marked `latest`),
+    whose first paragraph `narrate` puts in the band (`#now-words`, one
+    `word-in` span per word, each a little later than the last; the band is
+    `speaking` meanwhile, which makes the figure talk);
+    `renderDoing` writes the band's last line (`Now:` the running call's
+    title and sections, else `Last step:`, else the server's sentence; the
+    band is `wordless` for a run without the agent's words); tool lines
+    (`<details>` named by the tool's plain-language `title`, its name beside
+    it in the monospace face, one section named and focusable or their count, `now`
+    or `failed`, the inputs at most 240 px tall, step, status and door; calls of
+    one tool in a row fold into one run line, `title ×n`, that opens to show
+    each, with the run's `N pictures` while closed),
+    `N pictures`, the pictures read at the start as one line at the top
+    (`GROUP_TITLES`), notes, the line saying the agent's own words were not
+    found when the snapshot holds none, following the end until the
+    person scrolls away (`Latest activity`); the tray "The agent looked at" (four pictures per
+    page, the calls with pictures paged, Newest, resizable, about half the
+    column); the lightbox (a picture with its caption; the
     arrow keys through every picture of the job).
   - `settings.js`, `settings.css` — the Settings tab: built once, updated
     from each answer, so a key being typed survives a refresh; refreshed
@@ -352,6 +439,9 @@ whole, a trace appearing mid-run, time order, missing files, the raw-state
 fallback, undo labels, a path outside the folder, the job list,
 a truncated file, the focus, Idle, the rows' render keys and positions, job
 names; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
+`tests/test_gui_transcripts.py` (the transcript found by its `start_job`
+call among others and tailed, a half-written line, an old transcript and a
+job with no call left alone, `off`, the watcher showing the words),
 `tests/test_gui_render.py` (every picture drawn with nothing written to the
 folder, an overlay as `look`'s with its deformation and without its caption,
 the render key, the strip and its spacing, one drawing for concurrent requests,
@@ -372,7 +462,7 @@ takes, and their flags; the programs ticked named in the request only,
 the command the same as without them, none for a job prepared in ABBA; the
 tab's stylesheet uses only `tokens.css` names and
 no colour value, and its script builds no HTML from strings), `tests/test_gui_window.py` (the candidates per platform with a
-fake `which` and filesystem, the app window, both fallbacks, the start
+fake `which` and filesystem, LangSlice's own window first and the browser when it cannot start, its icon shipped, the app window, both fallbacks, the start
 address per tab, `--tab` reaching `serve`, a port in use in one sentence, the
 address flushed),
 `tests/test_gui_settings.py` (the settings file in a temporary home, the

@@ -2,7 +2,7 @@
 // The LangSlice window's shell: the tabs and the address (`#tab=<tab>&job=<n>`, which
 // always names what the window shows), the job picker, the polling of the local
 // server (the job list every 2 s; the shown job's snapshot every 300 ms, and its
-// positioning strip when its sections change), the status line and the keyboard. The
+// positioning strip when its sections change), the narration band's status and the keyboard. The
 // agent viewer's parts are viewer-strip.js (Strip), viewer.js (Viewer) and
 // viewer-log.js (AgentLog); they start when the page has loaded.
 
@@ -115,7 +115,9 @@ const Ui = (() => {
     }
     return { add, explain };
   })();
-  return { el, store, drag, ago, middle, mm, loads };
+  // A section's name as the window shows it: its file name without the extension.
+  const short = id => String(id).replace(/\.[A-Za-z0-9]{2,5}$/, '');
+  return { el, store, drag, ago, middle, mm, short, loads };
 })();
 
 (() => {
@@ -173,9 +175,34 @@ const Ui = (() => {
     if (job !== null && job !== current && jobs?.some(j => j.index === job)) { chosen = true; select(job); }
   });
 
+  // --- Simple | Extended ----------------------------------------------------------------
+  // Simple (the start) shows three things: the agent speaking, the sections it is working
+  // on and where they sit in the brain. Extended adds the journal of tool calls, the
+  // agent's pictures, the progress meters, the table and the steps. Kept per browser.
+  let detail = Ui.store.get('detail') === 'extended' ? 'extended' : 'simple';
+  function showDetail(name) {
+    detail = name;
+    Ui.store.set('detail', name);
+    for (const button of document.querySelectorAll('[data-detail]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.detail === name));
+    }
+    $('tab-viewer').classList.toggle('simple', name === 'simple');
+    Viewer.setSimple(name === 'simple');
+    AgentLog.shown();
+  }
+  for (const button of document.querySelectorAll('[data-detail]')) {
+    button.addEventListener('click', () => showDetail(button.dataset.detail));
+  }
+
   // --- the job picker -------------------------------------------------------------------
   const changedOf = job => Number(job?.changed_at) || 0;
-  const pathOf = job => String(job?.path ?? job?.folder ?? '');
+  // A job's path as the window shows it: the home folder, which names the computer's
+  // user, is written `~`.
+  let home = '';
+  const pathOf = job => {
+    const path = String(job?.path ?? job?.folder ?? '');
+    return home && path.toLowerCase().startsWith(home.toLowerCase()) ? '~' + path.slice(home.length) : path;
+  };
   let active = null;  // the option the keyboard is on
   function renderPicker() {
     const job = jobs?.find(j => j.index === current);
@@ -277,7 +304,9 @@ const Ui = (() => {
     try {
       const r = await fetch('jobs', { cache: 'no-store' });
       if (r.ok) {
-        jobs = (await r.json()).jobs || [];
+        const answer = await r.json();
+        jobs = answer.jobs || [];
+        home = String(answer.home || '');
         pickJob();
         renderPicker();
         const none = !jobs.length;
@@ -323,9 +352,23 @@ const Ui = (() => {
   function clearStatus() {
     $('status-dot').className = 'dot none';
     $('word').textContent = '';
-    $('sentence').textContent = 'Loading the job…';
     $('facts').textContent = '';
-    AgentLog.setStatus('');
+    AgentLog.setStatus('', 'Loading the job…');
+  }
+  // Whose model is speaking, by its name: the figure shown beside its words.
+  function maker(model) {
+    const name = String(model || '').toLowerCase();
+    if (/claude|fable|mythos|opus|sonnet|haiku|anthropic/.test(name)) return 'claude';
+    if (/gemini|google/.test(name)) return 'gemini';
+    if (/gpt|openai|codex|chatgpt|\bo[0-9]/.test(name)) return 'openai';
+    return 'plain';
+  }
+  // The run in one sentence: who registers what to which atlas.
+  function runWords(h, word) {
+    if (!h.atlas) return h.model || '';
+    const verb = word === 'Submitted' ? 'registered' : word === 'Running' ? 'is registering' : 'registering';
+    const who = h.model || (word === 'Submitted' ? 'The agent' : 'An agent');
+    return `${who} ${verb} ${h.plane ? h.plane + ' ' : ''}sections to ${h.atlas}`;
   }
   function showStatus(snap) {
     const word = snap.status?.word || '';
@@ -333,9 +376,11 @@ const Ui = (() => {
     $('status-dot').className = 'dot ' + word;
     $('word').textContent = word;
     $('word').className = 'word word-' + word;
-    $('sentence').textContent = snap.status?.sentence || '';
-    $('facts').textContent = [h.atlas, h.plane, h.model, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
-    AgentLog.setStatus(word);
+    $('facts').textContent = runWords(h, word);
+    $('facts').title = [h.name, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
+    $('guy-name').textContent = h.model || 'The agent';
+    $('guy').className = 'guy-box maker-' + maker(h.model);
+    AgentLog.setStatus(word, snap.status?.sentence || '');
     Viewer.setHeader(h);
     const job = jobs?.find(j => j.index === watch.index);
     if (job && job.status !== word) { job.status = word; renderPicker(); }
@@ -377,6 +422,7 @@ const Ui = (() => {
     if (event.key === '[') Viewer.pageBy(-1);
     else if (event.key === ']') Viewer.pageBy(1);
     else if (event.key === 'f' || event.key === 'F') Viewer.toggleFollow();
+    else if (event.key === 'v' || event.key === 'V') showDetail(detail === 'simple' ? 'extended' : 'simple');
     else return;
     event.preventDefault();
   });
@@ -384,6 +430,9 @@ const Ui = (() => {
   document.addEventListener('DOMContentLoaded', () => {
     Viewer.init();
     AgentLog.init();
+    Theme.show();
+    $('theme').addEventListener('click', Theme.toggle);
+    showDetail(detail);
     showTab(tab);
     clearStatus();
     pollJobs();

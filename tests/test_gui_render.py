@@ -246,7 +246,7 @@ def test_a_slow_picture_is_busy_after_the_wait_and_kept_when_drawn(
         return Image.new("RGB", (64, 48), (20, 20, 20))
 
     monkeypatch.setattr(render, "WAIT_S", 0.2)
-    monkeypatch.setattr(render, "render_slice", thumb)
+    monkeypatch.setattr(render, "_thumb_picture", thumb)
     renderer = _renderer(job, pool)
     with pytest.raises(RenderBusy):
         renderer.thumb(ID1, 64)
@@ -324,3 +324,17 @@ def test_jobs_not_viewed_lately_let_go_of_their_workspace(
         assert again is viewed and again.thumb(ID1, 64) == picture  # read again
     finally:
         jobs.close()
+
+
+def test_a_thumbnail_key_follows_orientation_not_placement() -> None:
+    from langslice.core.stack.section import Section
+    from langslice.hosts.gui.render import thumb_key
+
+    def stack(**fields: object) -> Stack:
+        return Stack(atlas="allen_mouse_25um", slices=[
+            Section(id="s000.png", index_original=0, index_corrected=0, **fields)])
+
+    plain = thumb_key(stack(), "s000.png")
+    assert thumb_key(stack(position_mm=4.2), "s000.png") == plain
+    assert render_key(stack(position_mm=4.2), "s000.png") != render_key(stack(), "s000.png")
+    assert thumb_key(stack(flip=True), "s000.png") != plain

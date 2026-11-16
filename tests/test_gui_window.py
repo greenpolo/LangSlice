@@ -90,15 +90,63 @@ def test_an_app_window_with_a_private_profile() -> None:
     assert not Path(profile).exists()
 
 
-def test_no_browser_opens_a_tab_and_failing_that_prints_the_address() -> None:
+def test_no_browser_opens_a_tab_and_failing_that_prints_the_address(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(window, "own_window_command", lambda url: None)
     said: list[str] = []
     tabs: list[str] = []
     opened = window.open_window("http://u/", find=lambda: None,
                                 open_tab=lambda url: tabs.append(url) or True, say=said.append)
     assert (opened.how, tabs, said) == ("tab", ["http://u/"], [])
-    opened = window.open_window("http://u/", find=lambda: None, open_tab=lambda url: False,
-                                say=said.append)
+    opened = window.open_window("http://u/", find=lambda: None,
+                                open_tab=lambda url: False, say=said.append)
     assert opened.how == "none" and said == ["Open this address in a browser: http://u/"]
+
+
+def test_langslices_own_window_comes_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(window.importlib.util, "find_spec", lambda name: object())
+    command = window.own_window_command("http://u/")
+    assert command is not None
+    assert command[1:] == ["-m", "langslice.hosts.gui.app", "http://u/",
+                           *[str(edge) for edge in window.WINDOW_SIZE]]
+    launched: list[list[str]] = []
+
+    def popen(args: list[str], **kwargs: Any) -> Any:
+        launched.append(args)
+        return _Process(None)
+
+    opened = window.open_window("http://u/", find=lambda: "/usr/bin/chrome", popen=popen,
+                                open_tab=lambda url: False, say=lambda s: None)
+    assert opened.how == "app" and opened.profile is None
+    assert launched == [command]
+
+
+def test_an_own_window_that_cannot_start_falls_back_to_the_browser(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(window, "own_window_command", lambda url: ["python", "-m", "app", url])
+    launched: list[list[str]] = []
+
+    def popen(args: list[str], **kwargs: Any) -> Any:
+        launched.append(args)
+        return _Process(1 if args[0] == "python" else None)
+
+    opened = window.open_window("http://u/", find=lambda: "/usr/bin/chrome", popen=popen,
+                                open_tab=lambda url: False, say=lambda s: None)
+    assert opened.how == "app" and opened.profile is not None
+    assert [args[0] for args in launched] == ["python", "/usr/bin/chrome"]
+    opened.process = None
+    opened.close()
+
+
+def test_without_pywebview_there_is_no_own_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(window.importlib.util, "find_spec", lambda name: None)
+    assert window.own_window_command("http://u/") is None
+
+
+def test_the_own_windows_icon_ships_with_the_page() -> None:
+    from langslice.hosts.gui import app
+
+    assert app.ICON.is_file() and app.ICON.parent.name == "static"
 
 
 def test_a_browser_that_exits_at_once_falls_back_to_a_tab() -> None:
@@ -126,7 +174,8 @@ def test_linear_run_gui_starts_the_command_on_the_job_folder(
 
 def test_the_window_opens_on_the_tab_asked_for() -> None:
     url = "http://127.0.0.1:5000/token/"
-    assert window.start_address(url, "viewer", folders=True) == url
+    assert window.start_address(url, "viewer", folders=True) == url + "#tab=viewer&job=0"
+    assert window.start_address(url, "viewer", folders=False) == url
     assert window.start_address(url, "prompt", folders=True) == url + "#tab=prompt&job=0"
     assert window.start_address(url, "prompt", folders=False) == url + "#tab=prompt"
 

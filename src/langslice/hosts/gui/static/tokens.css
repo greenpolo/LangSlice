@@ -1,15 +1,17 @@
-/* The LangSlice window's tokens: the docs' look (docs/_static/langslice.css, after the ASCII
-   card: language, microscopy and anatomy), toned down for a tool that stays open for hours:
-   smaller type, plainer furniture, the same family. One monospace face for every word, told
-   apart by colour; true black everywhere, as in a fluorescence image (panels are black with a
-   1 px edge, never a tinted fill); square corners; no glow, gradients or shadows; no all-caps
-   labels. The logo's colours each keep one job:
-     off-white  names (headings, bold text, the chosen tab, a section's name)
-     lavender   what can be followed or clicked (links, buttons, a running call)
-     violet     literal text (paths, commands, tool names, numbers in code)
-     pink       boundaries and state only (keyboard focus, where you are), used sparingly
-   The four focus colours are the ABBA viewer's: they tie a focus panel to its handle in the
-   positioning strip. Every other file uses these names only. */
+/* The LangSlice window's tokens. A calm dark room around the pictures: the sections are
+   greyscale on black, so the window is neutral graphite and keeps colour for meaning.
+   Three faces, each with one job:
+     sans    the window's own words (labels, buttons, tables)
+     serif   the agent's own words (the narration and the journal)
+     mono    literal text only (paths, commands, tool inputs)
+   Grounds a step apart, black only behind pictures; 1 px edges, small rounded corners;
+   no glow, gradients or shadows; no all-caps labels. Colours:
+     off-white  names and the agent's latest words
+     lavender   the one accent: what is happening now, what can be followed or clicked
+     violet     literal text (paths, commands), a quiet grey-violet
+     pink       problems only
+     green      Submitted
+   Every other file uses these names only. */
 
 @font-face {
   font-family: "JetBrains Mono";
@@ -37,51 +39,69 @@
   color-scheme: dark;
 
   /* Grounds. */
-  --ground: #000000;       /* the page, every panel, behind every picture */
-  --wash: #0a0b14;         /* a hovered row or button, only */
-  --selected: #11131f;     /* a chosen row, a pressed button, the on side of a switch */
+  --ground: #121213;       /* the page */
+  --panel: #19191b;        /* a panel, a card, a control, a bar a step above the page */
+  --picture: #000000;      /* behind a picture only */
+  --wash: #222225;         /* a hovered row or button, only */
+  --selected: #2a2a2e;     /* a chosen row, a pressed button, the on side of a switch */
 
   /* Lines. */
-  --line: #262a40;         /* 1 px edges of panels, inputs, tables */
-  --tract: #3e4260;        /* stronger rules, scrollbars, dashed leaders, tree lines */
+  --line: #29292d;         /* 1 px edges of panels, inputs, tables */
+  --tract: #45454b;        /* stronger rules, scrollbars, dashed leaders, tree lines */
 
   /* Text. */
-  --name: #dce3ff;         /* the logo's off-white */
-  --text: #c3cae6;         /* 12.8:1 on black */
-  --muted: #8890b8;        /* captions, the window's own furniture, 6.6:1 */
-  --faint: #5d6488;        /* greyed choices, placeholders */
+  --name: #f2f0eb;         /* names and headings */
+  --text: #c6c4be;         /* body text, 11:1 on the page */
+  --muted: #8f8d87;        /* captions, the window's own furniture, 5.8:1 */
+  --faint: #5f5e5a;        /* greyed choices, placeholders */
 
   /* The logo's colours. */
-  --lavender: #8fa0f5;
-  --violet: #a98bf0;
-  --pink: #ff3daa;
+  --lavender: #a4addf;
+  --violet: #b4aec9;
+  --pink: #d97c8e;
+  --green: #86bfa0;
 
   /* Status words. */
   --running: var(--lavender);
   --waiting: var(--muted);
-  --submitted: var(--violet);
+  --submitted: var(--green);
   --failed: var(--pink);
 
-  /* The ABBA viewer's focus colours, panel 1 to 4. */
-  --focus-1: #6ddeb7;
-  --focus-2: #76b5ff;
-  --focus-3: #f9c76b;
-  --focus-4: #cf9cf4;
-  /* A section the agent is not working on, in the positioning strip. */
-  --idle-handle: rgba(249, 215, 107, 0.42);
+  /* Clawd's own colour, as Claude Code draws it. */
+  --clawd: #d77757;
 
-  /* Type: one face, a few sizes. */
+  /* The sections in focus, in the strip and on their panels: the accent. The others. */
+  --focus: var(--lavender);
+  --idle-handle: var(--stage-line);
+
+  /* The brain strip's own ground: its thumbnails are pictures on black, so it stays
+     dark in the light look. */
+  --stage: var(--ground);
+  --stage-text: var(--muted);
+  --stage-line: var(--tract);
+  --stage-focus: var(--focus);
+
+  /* Type: sans for the window, serif for the agent's words, monospace for literal text. */
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "SF Pro Text", "Helvetica Neue",
+    Roboto, Arial, sans-serif;
+  --serif: "Sitka Text", "Iowan Old Style", Charter, "Bitstream Charter", Cambria, Georgia, serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas,
     "DejaVu Sans Mono", monospace;
   --size-xs: 11px;
   --size-sm: 12px;
-  --size-md: 13px;          /* the window's body text */
+  --size-md: 13.5px;        /* the window's body text */
   --size-lg: 15px;
   --size-xl: 17px;
-  --leading: 1.55;
-  --leading-prose: 1.7;
+  --size-voice-lg: 27px;    /* the same in the Simple view's speech bubble */
+  --size-voice: 21px;       /* the agent's latest words, in the narration */
+  --weight-strong: 600;
+  --leading: 1.5;
+  --leading-prose: 1.6;
 
-  /* Spacing. Corners are square everywhere. */
+  /* Spacing and corners. */
+  --radius: 6px;            /* panels and cards */
+  --radius-sm: 4px;         /* buttons, inputs, tags */
+  --radius-lg: 14px;        /* the agent's speech bubble */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -93,6 +113,30 @@
   --footer-height: 26px;
 }
 
+/* The light look (`<html data-theme="light">`, the Light | Dark button): paper grounds
+   and dark words; pictures keep their black. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #f3f3f1;
+  --panel: #ffffff;
+  --wash: #eaeae7;
+  --selected: #dfdfdb;
+  --line: #dadad6;
+  --tract: #b4b4af;
+  --name: #17171a;
+  --text: #38383c;
+  --muted: #68686d;
+  --faint: #98989c;
+  --lavender: #4f5bb5;
+  --violet: #62589f;
+  --pink: #bd3f5a;
+  --green: #2b8457;
+  --stage: #0e0e0f;
+  --stage-text: #9a9a9e;
+  --stage-line: #4a4a50;
+  --stage-focus: #a4addf;
+}
+
 html {
   background: var(--ground);
   scrollbar-color: var(--tract) var(--ground);
@@ -102,19 +146,18 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--size-md);
   line-height: var(--leading);
-  font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: var(--pink);
+  background: var(--lavender);
   color: var(--ground);
 }
 
 :focus-visible {
-  outline: 2px solid var(--pink);
+  outline: 2px solid var(--lavender);
   outline-offset: 2px;
 }

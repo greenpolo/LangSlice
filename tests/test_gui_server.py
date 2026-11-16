@@ -80,6 +80,7 @@ def test_jobs_snapshot_and_pictures(server: GuiServer) -> None:
     prefix = f"/{server.token}/"
     status, body, _ = _get(server, prefix + "jobs")
     jobs = json.loads(body)["jobs"]
+    assert json.loads(body)["home"] == str(Path.home())
     assert status == 200 and [j["index"] for j in jobs] == [0]
     status, body, _ = _get(server, prefix + "jobs/0/snapshot?since=0&gen=0&sv=-1")
     snap = json.loads(body)

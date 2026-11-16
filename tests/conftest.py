@@ -18,6 +18,9 @@ os.environ.setdefault("LANGSLICE_RECENT_JOBS", "off")
 # Nor read or write the user's settings (~/.langslice/settings.json), which
 # `linear run` reads for its model; their tests point it at a temporary file.
 os.environ.setdefault("LANGSLICE_SETTINGS", "off")
+# Nor Claude Code's transcripts (~/.claude/projects), which the window reads
+# for a coding agent's words; their tests point it at a temporary folder.
+os.environ.setdefault("LANGSLICE_CLAUDE_TRANSCRIPTS", "off")
 # A long verb's CLI call runs in its own process unless a test detaches it
 # (whatever harness runs the tests: Claude Code sets CLAUDECODE).
 os.environ["LANGSLICE_DETACH"] = "0"
