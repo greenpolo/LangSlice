@@ -47,7 +47,9 @@ from langslice.core.pictures.look import (
     look,
     snapshot,
 )
+from langslice.core.pictures.options import MAX_OVERLAY_CHANNELS
 from langslice.core.refusal import Refused
+from langslice.core.sections.images import raw_names
 from langslice.core.sections.renders import render_slice
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -424,7 +426,7 @@ class JobRenderer:
         return self._picture(key, opened, draw, self._still(render_key, section_id, key[3]))
 
     def thumb(self, section_id: str, edge: int) -> bytes:
-        """Draw a section's thumbnail: its ``preprocessed`` image, oriented.
+        """Draw a section's thumbnail: its raw channels, oriented.
 
         Parameters
         ----------
@@ -452,7 +454,7 @@ class JobRenderer:
         section = _section(state, section_id)
         opened = self._open()
         key = ("thumb", section_id, edge, thumb_key(state, section_id))
-        draw = partial(render_slice, opened.workspace, section, long_edge=edge)
+        draw = partial(_thumb_picture, opened, section, edge)
         return self._picture(key, opened, draw, self._still(thumb_key, section_id, key[3]))
 
     def atlas_thumb(self, k: int, edge: int) -> bytes:
@@ -697,11 +699,35 @@ def _drawn_safely(draw: Callable[[], Image.Image], key: _Key) -> Image.Image:
         raise RenderError(DRAWING_FAILED.format(reason=exc)) from exc
 
 
+def _raw_channels(opened: _Opened, section: Section) -> tuple[str, ...]:
+    """Name the channels the window draws a section from.
+
+    The window shows a section as its file holds it, in the channels' own
+    colours, not the ``preprocessed`` image the fits read.
+    """
+    names = raw_names(opened.workspace, section.id)
+    return tuple(names[:MAX_OVERLAY_CHANNELS])
+
+
+def _thumb_picture(opened: _Opened, section: Section, edge: int) -> Image.Image:
+    names = _raw_channels(opened, section)
+    several = len(names) > 1
+    drawn = {"overlay": list(names)} if several else {"image": names[0]}
+    return render_slice(
+        opened.workspace, section, long_edge=edge, look=drawn
+    )
+
+
 def _overlay_picture(
     opened: _Opened, state: Stack, section: Section, edge: int
 ) -> Image.Image:
     mode = "overlay" if section.position_mm is not None else "section"
-    request = LookRequest(mode=mode, sections=(section.id,), long_edge=edge)
+    request = LookRequest(
+        mode=mode,
+        sections=(section.id,),
+        images=_raw_channels(opened, section),
+        long_edge=edge,
+    )
     pictures = look(opened.workspace, state, request, store=opened.store)
     return _content(pictures[0])
 

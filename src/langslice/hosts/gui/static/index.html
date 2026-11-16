@@ -8,6 +8,7 @@
   <link rel="icon" href="logomark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="app.css">
+  <script src="theme.js"></script>
   <script src="app.js" defer></script>
   <link rel="stylesheet" href="viewer.css">
   <script src="viewer-strip.js" defer></script>
@@ -16,12 +17,13 @@
 </head>
 <body>
   <header class="bar">
-    <span class="lockup"><img src="lockup.svg" alt="LangSlice"></span>
+    <span class="lockup"><img id="lockup" src="lockup.svg" alt="LangSlice"></span>
     <nav class="tabs" aria-label="Parts of the window">
       <button data-tab="viewer" class="active" aria-current="page">Agent viewer</button>
       <button data-tab="prompt">Prompt generator</button>
     </nav>
     <div class="bar-end">
+      <button id="theme" class="theme" title="Switch between the dark and the light look">Light</button>
       <div id="detail" class="detail" role="group" aria-label="How much the viewer shows">
         <button data-detail="simple" aria-pressed="true" title="The agent speaking, the sections it is working on and where they sit (v)">Simple</button><button data-detail="extended" aria-pressed="false" title="Adds the journal of tool calls, the agent's pictures, the table and the steps (v)">Extended</button>
       </div>

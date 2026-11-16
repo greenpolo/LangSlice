@@ -69,7 +69,14 @@
 
   /* The sections in focus, in the strip and on their panels: the accent. The others. */
   --focus: var(--lavender);
-  --idle-handle: var(--tract);
+  --idle-handle: var(--stage-line);
+
+  /* The brain strip's own ground: its thumbnails are pictures on black, so it stays
+     dark in the light look. */
+  --stage: var(--ground);
+  --stage-text: var(--muted);
+  --stage-line: var(--tract);
+  --stage-focus: var(--focus);
 
   /* Type: sans for the window, serif for the agent's words, monospace for literal text. */
   --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "SF Pro Text", "Helvetica Neue",
@@ -101,6 +108,30 @@
   --rule: 2px;             /* the left edge of a note or a tool row, a tab's underline */
   --bar-height: 44px;
   --footer-height: 26px;
+}
+
+/* The light look (`<html data-theme="light">`, the Light | Dark button): paper grounds
+   and dark words; pictures keep their black. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #f3f3f1;
+  --panel: #ffffff;
+  --wash: #eaeae7;
+  --selected: #dfdfdb;
+  --line: #dadad6;
+  --tract: #b4b4af;
+  --name: #17171a;
+  --text: #38383c;
+  --muted: #68686d;
+  --faint: #98989c;
+  --lavender: #4f5bb5;
+  --violet: #62589f;
+  --pink: #bd3f5a;
+  --green: #2b8457;
+  --stage: #0e0e0f;
+  --stage-text: #9a9a9e;
+  --stage-line: #4a4a50;
+  --stage-focus: #a4addf;
 }
 
 html {

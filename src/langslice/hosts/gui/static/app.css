@@ -88,6 +88,10 @@ strong, b { color: var(--name); }
 .detail button:hover { color: var(--name); background: var(--wash); }
 .detail button[aria-pressed="true"] { color: var(--name); background: var(--selected); }
 
+/* Light | Dark. */
+.theme { align-self: center; height: 28px; font-size: var(--size-sm); background: none; color: var(--muted); }
+.theme:hover { color: var(--name); }
+
 /* The job picker. */
 .picker { position: relative; display: flex; align-items: center; min-width: 0; }
 .picker.off { visibility: hidden; }

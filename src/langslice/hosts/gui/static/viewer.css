@@ -259,15 +259,15 @@
 /* How to move the strip is said only while the pointer is on it. */
 .strip-hint { margin-left: auto; color: var(--faint); font-size: var(--size-xs); overflow: hidden; text-overflow: ellipsis; min-width: 0; visibility: hidden; }
 .strip:hover .strip-hint { visibility: visible; }
-.strip-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.strip-body { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--stage); }
 .strip-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; user-select: none; touch-action: none; }
 .strip-svg.panning { cursor: grabbing; }
 .strip-body > .empty-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.strip-svg text { font-family: var(--sans); font-size: 10px; fill: var(--muted); }
-.strip-svg .axis-end { fill: var(--muted); }
-.strip-svg .axis { stroke: var(--tract); stroke-width: 1; }
-.strip-svg .tick { stroke: var(--tract); stroke-width: 1; }
-.strip-svg .span { stroke: var(--focus); stroke-width: 2; }
+.strip-svg text { font-family: var(--sans); font-size: 10px; fill: var(--stage-text); }
+.strip-svg .axis-end { fill: var(--stage-text); }
+.strip-svg .axis { stroke: var(--stage-line); stroke-width: 1; }
+.strip-svg .tick { stroke: var(--stage-line); stroke-width: 1; }
+.strip-svg .span { stroke: var(--stage-focus); stroke-width: 2; }
 .strip-svg image { transition: opacity 160ms; }
 .strip-svg image.entering { opacity: 0; }
 .strip-svg .atlas-thumb { opacity: 0.55; }
@@ -280,13 +280,13 @@
 .strip-svg .outline { fill: none; stroke: none; stroke-width: 1.5; }
 .strip-svg .handle.hover { stroke: var(--name); stroke-width: 1.5; }
 /* The sections in focus: the accent, and on the shown ones their panel's number. */
-.strip-svg .leader.target { display: inline; stroke: var(--focus); stroke-opacity: 0.6; }
-.strip-svg .key.target, .strip-svg .handle.target { fill: var(--focus); stroke: none; }
-.strip-svg .outline.shown { stroke: var(--focus); }
+.strip-svg .leader.target { display: inline; stroke: var(--stage-focus); stroke-opacity: 0.6; }
+.strip-svg .key.target, .strip-svg .handle.target { fill: var(--stage-focus); stroke: none; }
+.strip-svg .outline.shown { stroke: var(--stage-focus); }
 /* In focus but on another page: the accent on its key only. */
 .strip-svg .leader.other, .strip-svg .handle.other { display: none; }
-.strip-svg .slot-number { fill: var(--ground); font-size: 10px; font-weight: 700; pointer-events: none; }
-.strip-svg .group-frame { fill: none; stroke: var(--line); stroke-dasharray: 2 3; }
+.strip-svg .slot-number { fill: var(--stage); font-size: 10px; font-weight: 700; pointer-events: none; }
+.strip-svg .group-frame { fill: none; stroke: var(--stage-line); stroke-dasharray: 2 3; }
 .strip-tip {
   position: absolute;
   z-index: 5;

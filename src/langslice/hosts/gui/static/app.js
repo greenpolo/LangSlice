@@ -430,6 +430,8 @@ const Ui = (() => {
   document.addEventListener('DOMContentLoaded', () => {
     Viewer.init();
     AgentLog.init();
+    Theme.show();
+    $('theme').addEventListener('click', Theme.toggle);
     showDetail(detail);
     showTab(tab);
     clearStatus();
