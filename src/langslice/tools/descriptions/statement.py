@@ -299,7 +299,7 @@ NARRATE = (
     "write one short sentence in plain words saying what you are about to "
     "do, to which sections, and why; for example: \"I'm moving the hindbrain "
     "sections 0.2 mm back because their fourth ventricle matches the atlas "
-    "further back.\" A scientist who does not know the tools follows the "
+    'further back." A scientist who does not know the tools follows the '
     "run by these sentences, so leave out tool names, arguments and file "
     "paths."
 )
