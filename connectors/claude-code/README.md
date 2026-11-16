@@ -63,8 +63,15 @@ one fixed system prompt, the same for every job; the job itself (LangSlice's
 job statement, the user's notes) is the message that launched them, made by
 `langslice-job <folder> launch --role register` (or `register-scripting`) and
 passed on unchanged. The job card (`AGENTS.md` in the job folder) is the
-scripting subagent's reference. The skills are not preloaded into the
-subagents (`skills` is empty and `Skill` is not in their `tools`).
+scripting subagent's reference.
+
+The registration skills (`registration-playbook`, `placement`,
+`damage-and-masks`, `landmarks`, `choosing-engines`) teach the subagents how
+to register, with example pictures. Both subagents preload
+`registration-playbook` (`skills` in their frontmatter) and load the others on
+demand (`Skill` is in their `tools`); `Read` lets `register` open the example
+pictures. The skills' one source is `src/langslice/skills/`; each connector
+carries a copy, checked by `tests/test_connector_skills.py`.
 
 Both start with `start_job(image_folder=<folder>)`, named in the launch
 message, which also holds LangSlice's job statement for the job (the one its

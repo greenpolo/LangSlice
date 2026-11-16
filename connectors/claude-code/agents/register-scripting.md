@@ -1,7 +1,9 @@
 ---
 name: register-scripting
 description: Registers ONE brain (one LangSlice job folder) with the LangSlice MCP tools, whose replies carry the pictures, and with scripts of its own that use the LangSlice Python library in the job folder. Needs Bash, Read, Write, Edit and the web. Launch it with the job folder; it does nothing else.
-tools: mcp__plugin_langslice_langslice__*, Bash, Read, Write, Edit, WebFetch, WebSearch
+tools: mcp__plugin_langslice_langslice__*, Skill, Bash, Read, Write, Edit, WebFetch, WebSearch
+skills:
+  - langslice:registration-playbook
 model: inherit
 omitClaudeMd: true
 ---

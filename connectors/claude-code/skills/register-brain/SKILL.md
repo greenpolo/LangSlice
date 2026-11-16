@@ -61,7 +61,7 @@ Pick the agent the user allows:
 
 | Subagent | Can do | Use when |
 | --- | --- | --- |
-| `langslice:register` | only LangSlice's MCP tools, whose replies carry the pictures; no shell, files or web | default |
+| `langslice:register` | only LangSlice's MCP tools, whose replies carry the pictures, and its registration skills (with `Read` for their example pictures); no shell, writing or web | default |
 | `langslice:register-scripting` | the same MCP tools, plus Bash + Read + Write + Edit for scripts of its own with the LangSlice Python library in the job folder (a starting transform it computes, an image it cleans, a method no tool has) | the user wants scripting |
 
 Use the Agent tool with that `subagent_type`, and the `model` and `effort`
