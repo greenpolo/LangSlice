@@ -161,16 +161,21 @@ comments, to their own file, and the Export menu's files.
 **Export** in the top bar writes the shown job's registration as a file for
 another program, under the job's `exports/` folder:
 
-- **ABBA project (.abba)**: `exports/<image folder>.abba`, which ABBA 0.25
-  opens with **File ‣ Load State** on its Allen CCFv3 atlas, started coronal.
-  Each section opens from its own image file at its position and the stack's
-  cutting angles, with its in-plane placement as an affine registration and
-  its warp, when it has one, as a BigWarp landmark registration you can edit
-  with **Edit last registration**. Each warp takes 10 to 20 s to convert,
-  one per processor core at once (about 1.5 minutes for 42 warps on a
-  24-core computer). `exports/abba_export.json` lists the
-  sections left out and why, and how far each warp's landmarks are from
-  LangSlice's deformation.
+- **ABBA project, exact** and **ABBA project, editable** (.abba):
+  `exports/<image folder>.abba`, which ABBA 0.25 opens with **File ‣ Load
+  State** on its Allen CCFv3 atlas, started coronal. Each section opens from
+  its own image file at its position and the stack's cutting angles, with
+  its in-plane placement as an affine registration and its warp, when it has
+  one, as a BigWarp landmark registration you can edit with **Edit last
+  registration**. A warp in landmarks is a trade: *exact* gives each warp up
+  to 1,089 landmarks, about 2.5 µm from LangSlice's warp at the median and
+  far too many to edit by hand; *editable* gives 100, easy to move in
+  BigWarp, about 45 µm from it (measured on 331CTX: 200 landmarks are about
+  20 µm, 400 about 9 µm). The menu's last row takes any count from 16 to
+  1,089. Each warp takes 1 to 15 s to convert, one per processor core at
+  once. `exports/abba_export.json` lists the sections left out and why, the
+  landmark count, and how far each warp's landmarks are from LangSlice's
+  deformation; the finished note gives the median.
 - **QuickNII (.json)** and **VisuAlign (.json)**: `exports/quicknii.json`
   and `exports/visualign.json` with the section images they name, the files
   `submit` writes (both are written together).

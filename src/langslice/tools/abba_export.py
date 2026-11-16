@@ -36,7 +36,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from langslice.core.maps.abba import WarpLandmarks, world_landmarks
+from langslice.core.maps.abba import (
+    MAX_POINTS,
+    WarpLandmarks,
+    budget,
+    world_landmarks,
+)
 from langslice.core.maps.abba_world import (
     LOCATION_TO_ATLAS_Z_MM,
     AbbaPlacement,
@@ -72,6 +77,8 @@ EXPORT_RECORD = "abba_export.json"
 #: one per core and one thread each: most of the work is numpy's element-wise
 #: kernels, which use one thread, so a process per core keeps every core busy.
 MAX_WARP_PROCESSES = 32
+#: The landmark pairs of a warp meant to be edited by hand in BigWarp.
+EDITABLE_LANDMARKS = 100
 #: Micrometres per millimetre.
 UM_PER_MM = 1000.0
 #: What the record tells a person about opening the file.
@@ -100,6 +107,8 @@ class AbbaExported:
     warp_error_um
         Per warped section, the warp step's distance from LangSlice's
         deformation in micrometres (``median``, ``p99``, ``max``).
+    landmarks
+        The most landmark pairs a warp was given.
     written
         Whether the file was written.
     seconds
@@ -111,6 +120,7 @@ class AbbaExported:
     warped: list[str] = field(default_factory=list)
     skipped: list[dict[str, str]] = field(default_factory=list)
     warp_error_um: dict[str, dict[str, float]] = field(default_factory=dict)
+    landmarks: int = MAX_POINTS
     written: bool = True
     seconds: float = 0.0
 
@@ -144,7 +154,10 @@ def project_name(state: Stack) -> str:
 
 
 def warp_pairs(
-    frame: SectionFrame, record: DeformableRecord, placement: AbbaPlacement
+    frame: SectionFrame,
+    record: DeformableRecord,
+    placement: AbbaPlacement,
+    landmarks: int,
 ) -> WarpLandmarks:
     """Place one section's warp landmarks (run in a worker process).
 
@@ -156,6 +169,8 @@ def warp_pairs(
         Its applied deformation.
     placement
         Its placement in ABBA's world.
+    landmarks
+        The most landmark pairs.
 
     Returns
     -------
@@ -163,7 +178,11 @@ def warp_pairs(
         The pairs and their measured accuracy.
     """
     return world_landmarks(
-        frame, record, placement.file_to_world, placement.native_to_world
+        frame,
+        record,
+        placement.file_to_world,
+        placement.native_to_world,
+        max_points=landmarks,
     )
 
 
@@ -262,7 +281,7 @@ class _Warped:
     errors: dict[str, dict[str, float]]
 
 
-def _with_warps(prepared: list[_Section]) -> _Warped:
+def _with_warps(prepared: list[_Section], landmarks: int) -> _Warped:
     """Add each deformation's warp step, placed in worker processes."""
     skipped: list[dict[str, str]] = []
     errors: dict[str, dict[str, float]] = {}
@@ -281,7 +300,7 @@ def _with_warps(prepared: list[_Section]) -> _Warped:
             )
             for entry, record in warped:
                 futures[entry.section.id] = pool.submit(
-                    warp_pairs, entry.frame, record, entry.placement
+                    warp_pairs, entry.frame, record, entry.placement, landmarks
                 )
         slices: list[AbbaSlice] = []
         for entry in prepared:
@@ -303,7 +322,11 @@ def _with_warps(prepared: list[_Section]) -> _Warped:
 
 
 def export_abba(
-    job: Job, workspace: Workspace, *, warps: bool = True
+    job: Job,
+    workspace: Workspace,
+    *,
+    warps: bool = True,
+    landmarks: int = MAX_POINTS,
 ) -> AbbaExported:
     """Write the job's stack as an ABBA project file (see the module text).
 
@@ -316,6 +339,11 @@ def export_abba(
     warps
         Whether applied deformations are written as warp steps (False: the
         linear placements only).
+    landmarks
+        The most landmark pairs per warp: ``EDITABLE_LANDMARKS`` (100) for
+        a warp a person will edit in BigWarp (about 45 um from the
+        deformation at the median), :data:`MAX_POINTS` (1089, the default)
+        for the closest (about 2.5 um).
 
     Returns
     -------
@@ -329,6 +357,10 @@ def export_abba(
         atlas or plane ABBA cannot open; ``NOTHING_EXPORTED`` when no
         section could be written.
     """
+    try:
+        budget(max_points=landmarks)
+    except ValueError as exc:
+        raise Refused(RefusalCode.BAD_ARGS, str(exc)) from exc
     started = time.perf_counter()
     with job.writing():
         state = copy.deepcopy(job.state)
@@ -353,7 +385,7 @@ def export_abba(
                 "Not exported to ABBA: %s", entry[0].id, exc_info=True
             )
             skipped.append({"id": entry[0].id, "reason": str(exc)})
-    warped = _with_warps(prepared)
+    warped = _with_warps(prepared, landmarks)
     skipped += warped.skipped
     errors, slices = warped.errors, warped.slices
     if not slices:
@@ -371,6 +403,7 @@ def export_abba(
         warped=sorted(errors),
         skipped=skipped,
         warp_error_um=errors,
+        landmarks=landmarks,
         written=job.persist,
         seconds=time.perf_counter() - started,
     )
@@ -398,6 +431,7 @@ def _write(
             "rotation_y_rad": angles[1],
             "sections": result.sections,
             "warped": result.warped,
+            "landmarks": result.landmarks,
             "skipped": result.skipped,
             "warp_error_um": result.warp_error_um,
             "note": OPENING_NOTE,

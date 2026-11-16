@@ -608,8 +608,9 @@ the angles in a caption (empty for the flat plane).
   (`AbbaPlacement`: the slice's location, the affine step from ABBA's
   centred source mm to world, `file_to_world` / `native_to_world` for
   `maps.abba.world_landmarks`; `ValueError` for a section not in one ABBA
-  slice at the rotations). `maps/abba.py`'s `world_landmarks` places a
-  warp's pairs in any such world frame; `warp_world_landmarks` is it on a
+  slice at the rotations). `maps/abba.py`'s `world_landmarks(...,
+  max_points=)` places a warp's pairs in any such world frame (`budget`
+  scales the start grids for fewer pairs, 16 to 1089); `warp_world_landmarks` is it on a
   snapshot's frame.
 - `worker_threads.py` — `thread_share(workers)`, `started_with_threads(n)`:
   the thread counts a spawned worker process's numerical libraries start with.

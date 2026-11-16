@@ -266,7 +266,9 @@ class JobHandle:
             channel=channel, section_image=section_image,
         )
 
-    def export_abba(self, *, warps: bool = True) -> AbbaExported:
+    def export_abba(
+        self, *, warps: bool = True, landmarks: int = 1089
+    ) -> AbbaExported:
         """Write the job as an ABBA project file.
 
         The file is ``exports/<image folder>.abba``, which ABBA 0.25 opens
@@ -279,6 +281,10 @@ class JobHandle:
         ----------
         warps
             Whether applied deformations are written (False: linear only).
+        landmarks
+            The most landmark pairs per warp: 100 for a warp you will edit
+            in BigWarp (about 45 um from the deformation), 1089 (the
+            default) for the closest (about 2.5 um).
 
         Returns
         -------
@@ -286,7 +292,10 @@ class JobHandle:
             The file, the sections written and left out, and each warp's
             distance from the deformation.
         """
-        return export_abba(self._opened.job, self._opened.ctx, warps=warps)
+        return export_abba(
+            self._opened.job, self._opened.ctx, warps=warps,
+            landmarks=landmarks,
+        )
 
     def wait(self, timeout: float | None = None) -> Reply:
         """Wait for the job's background work (a fit or trace a tool started and

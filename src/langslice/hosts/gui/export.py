@@ -18,6 +18,7 @@ browser.
 from __future__ import annotations
 
 import os
+import statistics
 import subprocess
 import sys
 import threading
@@ -28,6 +29,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import langslice
+from langslice.core.maps.abba import MAX_POINTS, MIN_POINTS
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.public_files import QUICKNII_FILE, VISUALIGN_FILE
 
@@ -93,7 +95,7 @@ class Written:
 
 
 #: Writes one export of the job in a folder.
-Runner = Callable[[Path, str], Written]
+Runner = Callable[[Path, str, int], Written]
 
 
 def _quint(folder: Path, kind: str) -> Written:
@@ -109,7 +111,7 @@ def _quint(folder: Path, kind: str) -> Written:
     return Written(str(named[0]), f"{count} sections", 0)
 
 
-def run_export(folder: Path, kind: str) -> Written:
+def run_export(folder: Path, kind: str, landmarks: int) -> Written:
     """Write one export of the job in *folder*.
 
     Parameters
@@ -118,6 +120,8 @@ def run_export(folder: Path, kind: str) -> Written:
         The job folder.
     kind
         One of :data:`FORMATS`.
+    landmarks
+        An ABBA project's most landmark pairs per warp.
 
     Returns
     -------
@@ -127,9 +131,15 @@ def run_export(folder: Path, kind: str) -> Written:
     if kind in QUINT_FILES:
         return _quint(folder, kind)
     with langslice.open_job(folder) as job:
-        done = job.export_abba()
-    warped = f", {len(done.warped)} with their warp" if done.warped else ""
-    message = f"{len(done.sections)} sections{warped}"
+        done = job.export_abba(landmarks=landmarks)
+    message = f"{len(done.sections)} sections"
+    if done.warp_error_um:
+        medians = [row["median"] for row in done.warp_error_um.values()]
+        typical = statistics.median(medians)
+        message += (
+            f", {len(done.warped)} with their warp (at most {landmarks}"
+            f" landmarks, {typical:.0f} µm from LangSlice's at the median)"
+        )
     return Written(done.path, message, len(done.skipped))
 
 
@@ -163,7 +173,9 @@ class Exports:
         with self._lock:
             return self._states.get(Path(folder), ExportState())
 
-    def start(self, folder: Path, kind: str) -> ExportState:
+    def start(
+        self, folder: Path, kind: str, *, landmarks: int = MAX_POINTS
+    ) -> ExportState:
         """Start an export of *kind* for the job in *folder*.
 
         Parameters
@@ -172,6 +184,8 @@ class Exports:
             The job folder.
         kind
             One of :data:`FORMATS`.
+        landmarks
+            An ABBA project's most landmark pairs per warp.
 
         Returns
         -------
@@ -181,11 +195,15 @@ class Exports:
         Raises
         ------
         ExportError
-            For a format the menu does not offer, or while an export of
-            the job is running.
+            For a format the menu does not offer, a landmark count out
+            of range, or while an export of the job is running.
         """
         if kind not in FORMATS:
             raise ExportError(f"LangSlice cannot export {kind!r}")
+        if not MIN_POINTS <= landmarks <= MAX_POINTS:
+            raise ExportError(
+                f"A warp takes {MIN_POINTS} to {MAX_POINTS} landmarks."
+            )
         folder = Path(folder)
         with self._lock:
             last = self._states.get(folder)
@@ -199,16 +217,16 @@ class Exports:
             self._states[folder] = running
         threading.Thread(
             target=self._work,
-            args=(folder, kind),
+            args=(folder, kind, landmarks),
             daemon=True,
             name=f"langslice-export-{kind}",
         ).start()
         return running
 
-    def _work(self, folder: Path, kind: str) -> None:
+    def _work(self, folder: Path, kind: str, landmarks: int) -> None:
         started = time.perf_counter()
         try:
-            written = self._run(folder, kind)
+            written = self._run(folder, kind, landmarks)
             done = ExportState(
                 state=ExportStatus.DONE,
                 format=kind,
