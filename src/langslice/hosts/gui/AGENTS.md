@@ -6,7 +6,7 @@ to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
 generator and Settings (top right). The agent viewer has two views (Simple |
-Extended in the top bar, `v`, kept in `localStorage` as `detail`; `.viewer.simple`
+Extended at the viewer tab's own top right corner, `v`, kept in `localStorage` as `detail`; `.viewer.simple`
 on `#tab-viewer`). Simple, the start, shows three things: the agent speaking (its
 latest words in a speech bubble beside the LangSlice mark and the agent's
 figure, `#guy`, inline SVGs of which one shows by the model's maker

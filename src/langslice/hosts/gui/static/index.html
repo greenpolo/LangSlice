@@ -24,9 +24,6 @@
     </nav>
     <div class="bar-end">
       <button id="theme" class="theme" title="Switch between the dark and the light look">Light</button>
-      <div id="detail" class="detail" role="group" aria-label="How much the viewer shows">
-        <button data-detail="simple" aria-pressed="true" title="The agent speaking, the sections it is working on and where they sit (v)">Simple</button><button data-detail="extended" aria-pressed="false" title="Adds the journal of tool calls, the agent's pictures, the table and the steps (v)">Extended</button>
-      </div>
       <div class="picker" id="picker">
         <button id="picker-button" class="picker-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="picker-list">
           <span id="picker-dot" class="dot"></span><span id="picker-name" class="picker-name">Looking for jobs…</span><span class="caret" aria-hidden="true">⌄</span>
@@ -38,6 +35,9 @@
   </header>
 
   <div id="tab-viewer" class="tab viewer">
+    <div id="detail" class="detail" role="group" aria-label="How much the viewer shows">
+      <button data-detail="simple" aria-pressed="true" title="The agent speaking, the sections it is working on and where they sit (v)">Simple</button><button data-detail="extended" aria-pressed="false" title="Adds the journal of tool calls, the agent's pictures, the table and the steps (v)">Extended</button>
+    </div>
     <header class="now" id="statusline" aria-label="What the agent is doing now">
       <div class="speaker">
         <img class="speaker-logo" src="logomark.svg" alt="">

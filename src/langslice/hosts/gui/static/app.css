@@ -79,15 +79,6 @@ strong, b { color: var(--name); }
 }
 .bar-end { margin-left: auto; display: flex; align-items: stretch; gap: var(--space-3); min-width: 0; }
 
-/* Simple | Extended: how much the agent viewer shows. */
-.detail { display: flex; align-items: center; font-size: var(--size-sm); }
-.detail.off { visibility: hidden; }
-.detail button { height: 28px; border-radius: 0; background: none; color: var(--muted); }
-.detail button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
-.detail button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
-.detail button:hover { color: var(--name); background: var(--wash); }
-.detail button[aria-pressed="true"] { color: var(--name); background: var(--selected); }
-
 /* Light | Dark. */
 .theme { align-self: center; height: 28px; font-size: var(--size-sm); background: none; color: var(--muted); }
 .theme:hover { color: var(--name); }

@@ -161,7 +161,6 @@ const Ui = (() => {
     }
     for (const box of document.querySelectorAll('.tab')) box.hidden = box.id !== 'tab-' + name;
     $('picker').classList.toggle('off', name !== 'viewer');
-    $('detail').classList.toggle('off', name !== 'viewer');
     closePicker();
     writeAddress();
     if (name === 'viewer') Viewer.shown();

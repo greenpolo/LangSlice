@@ -38,8 +38,8 @@ your home folder is written from `~`.
 
 ## The agent viewer
 
-The agent viewer has two views, chosen by **Simple | Extended** at the top
-right (or `v`); the window remembers the choice.
+The agent viewer has two views, chosen by **Simple | Extended** at the
+viewer's own top right corner, under the top bar (or `v`); the window remembers the choice.
 
 **Simple**, the view it starts in, shows three things: the agent speaking,
 the sections it is working on, and where they sit in the brain. The agent's

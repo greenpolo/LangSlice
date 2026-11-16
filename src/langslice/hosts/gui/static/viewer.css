@@ -5,7 +5,15 @@
    (the journal on the right, with the pictures the agent looked at). The agent's own
    words are in the serif face; everything the window says is in the sans face. */
 
-.tab.viewer { display: flex; flex-direction: column; }
+.tab.viewer { position: relative; display: flex; flex-direction: column; }
+
+/* Simple | Extended: how much the viewer shows, at its own top right corner. */
+.detail { position: absolute; top: var(--space-2); right: var(--space-4); z-index: 4; display: flex; font-size: var(--size-xs); }
+.detail button { height: 24px; padding: 0 9px; border-radius: 0; background: var(--ground); color: var(--muted); }
+.detail button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.detail button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
+.detail button:hover { color: var(--name); background: var(--wash); }
+.detail button[aria-pressed="true"] { color: var(--name); background: var(--selected); }
 #no-jobs { flex: 1; display: flex; align-items: center; justify-content: center; }
 
 /* The narration band: the agent's figure, and beside it its latest words. Its height is
@@ -24,7 +32,9 @@
 /* The agent's figure: a small face that blinks, and talks while new words come in. */
 .speaker { display: flex; align-items: center; gap: var(--space-3); }
 .speaker-logo { display: none; width: 60px; height: 60px; }
-.guy-box { margin: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+/* The figure is as tall as the LangSlice mark beside it; its name hangs under it, out
+   of the row, so the two stay level. */
+.guy-box { position: relative; margin: 0; display: flex; align-items: center; justify-content: center; }
 .guy { display: none; width: 52px; height: 52px; overflow: visible; }
 .maker-plain .guy-plain, .maker-claude .guy-claude, .maker-openai .guy-openai, .maker-gemini .guy-gemini { display: block; }
 .guy-mark { fill: var(--name); padding: 6px; }
@@ -40,7 +50,7 @@
 .guy-eye { animation: blink 5.6s infinite; }
 .speaking .guy { animation: bob 760ms ease-in-out infinite alternate; }
 .speaking .guy-mouth { animation: talk 240ms ease-in-out infinite alternate; }
-.guy-name { display: none; max-width: 11em; color: var(--muted); font-size: var(--size-xs); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guy-name { display: none; position: absolute; top: calc(100% + var(--space-1)); left: 50%; transform: translateX(-50%); max-width: 11em; color: var(--muted); font-size: var(--size-xs); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97.5% { transform: scaleY(0.1); } }
 @keyframes bob { to { transform: translateY(-2px); } }
 @keyframes talk { to { transform: scaleY(3.4); } }
@@ -71,7 +81,8 @@
 .now.wordless .sentence { color: var(--name); font-size: var(--size-voice); white-space: normal; line-height: 1.38; }
 
 /* How far the registration is: three meters. */
-.progress { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* The meters sit low in the band, clear of Simple | Extended above them. */
+.progress { margin: 0; align-self: end; padding-bottom: var(--space-3); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-2); align-items: baseline; font-size: var(--size-sm); }
 .meter dt { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meter dd { display: contents; }
@@ -478,8 +489,9 @@
 .viewer.simple .panel-angles, .viewer.simple .panel-tags, .viewer.simple .panel-open,
 .viewer.simple .strip-title { display: none; }
 .viewer.simple .speaker-logo, .viewer.simple .guy-name { display: block; }
-.viewer.simple .guy { width: 84px; height: 84px; }
-.viewer.simple .guy-claude { width: 104px; }
+.viewer.simple .speaker-logo { width: 72px; height: 72px; }
+.viewer.simple .guy { width: 72px; height: 72px; }
+.viewer.simple .guy-claude { width: 104px; height: 72px; }
 .viewer.simple .clawd-eye { fill: var(--ground); }
 .viewer.simple .guy-mark { padding: 12px; }
 .viewer.simple .bubble {
@@ -512,6 +524,7 @@
 @media (max-width: 1099px) {
   .tab.viewer { overflow-y: auto; }
   .now, .viewer.simple .now { height: auto; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+  .progress { align-self: auto; padding-bottom: 0; }
   .progress { grid-column: 1 / 3; }
   .progress { flex-direction: row; gap: var(--space-4); }
   .meter { flex: 1; }
