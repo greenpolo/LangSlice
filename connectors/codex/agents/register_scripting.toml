@@ -1,5 +1,5 @@
 name = "register_scripting"
-description = "Registers ONE brain (one LangSlice job folder) with the `langslice-job` CLI and scripts that use the LangSlice Python library. Launch it with the job folder; it does nothing else."
+description = "Registers ONE brain (one LangSlice job folder) with the LangSlice MCP tools, whose replies carry the pictures, and with scripts of its own that use the LangSlice Python library. Launch it with the job folder; it does nothing else."
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

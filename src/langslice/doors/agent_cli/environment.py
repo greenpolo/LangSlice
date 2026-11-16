@@ -177,6 +177,30 @@ def describe(layout: JobLayout) -> dict[str, Any]:
     }
 
 
+def install_command(layout: JobLayout) -> str:
+    """Return the command that installs packages into the job's environment.
+
+    It is what an agent types in its shell, without the packages: uv's when
+    uv is on the PATH (a uv environment has no pip of its own), else the
+    environment's pip. ``scripts/requirements.txt`` lists what it installed
+    when the environment is removed (:func:`remove`).
+
+    Parameters
+    ----------
+    layout
+        The job folder.
+
+    Returns
+    -------
+    str
+        The command, the interpreter's path quoted.
+    """
+    python = python_of(env_dir(layout))
+    if shutil.which("uv"):
+        return f'uv pip install --python "{python}"'
+    return f'"{python}" -m pip install'
+
+
 def _pip(folder: Path, arguments: list[str]) -> None:
     python = python_of(folder)
     uv = shutil.which("uv")

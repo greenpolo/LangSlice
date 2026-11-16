@@ -329,3 +329,25 @@ def test_an_agent_that_never_called_lands_in_the_job_its_launch_names(
     checked = json.loads((job / "trace" / "claude-code_c2.launch.json").read_text(
         encoding="utf-8"))
     assert checked["verbatim"] is True
+
+
+def test_a_submit_the_transcript_does_not_show_still_removes_the_environment(
+        capsys, job, tmp_path, monkeypatch):
+    """An agent that ran ``submit`` through a shell variable or a wrapper script
+    leaves no ``langslice-job FOLDER submit`` in its transcript: the job's own
+    checkpoint says it is submitted."""
+    jobenv.ensure(JobLayout(job))
+    state = json.loads((job / "state.json").read_text(encoding="utf-8"))
+    (job / "state.json").write_text(json.dumps({**state, "submitted": True}),
+                                    encoding="utf-8")
+    transcript = tmp_path / "wrapped.jsonl"
+    transcript.write_text(_lines({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Bash",
+         "input": {"command": f'J="{job}"; L=langslice-job.exe; $L "$J" submit'}},
+        {"type": "tool_use", "name": "Bash",
+         "input": {"command": f'python -c "import langslice; langslice.open_job(r\'{job}\')"'}},
+    ]}}), encoding="utf-8")
+    hook = {"conversationId": "c-wrap", "transcriptPath": str(transcript)}
+    assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
+    assert (job / "trace" / "claude-code_c-wrap.jsonl").is_file()
+    assert not (job / "env").exists()

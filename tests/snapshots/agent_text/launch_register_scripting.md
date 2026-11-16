@@ -1,6 +1,6 @@
 # Launch prompt: register-scripting
 
-Register the brain in job folder <ROOT>/langslice with the langslice-job command line.
+Register the brain in job folder <ROOT>. Call start_job(image_folder="<ROOT>") first: it opens the job and gives you its tools.
 
 You are an expert neuroanatomist working on a stack of 3 coronal histology sections against the allen_mouse_25um (mouse) reference atlas.
 
@@ -52,7 +52,7 @@ Method:
 
 Work with the tools, then call `submit`.
 
-Opening pictures, saved as files, in reading order, each after the text that goes with it. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale when the stack has positions; when a section has none, atlas reference strips at evenly spaced positions follow.
+Opening pictures: read every page with show_stack(page=1) through show_stack(page=1) before any write. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale when the stack has positions; when a section has none, atlas reference strips at evenly spaced positions follow.
 
 The 3 sections of the stack follow in 1 strip, in their current order, left to right and strip after strip. Each section is labelled by its filename above it and drawn with any rotation and flip already applied.
 

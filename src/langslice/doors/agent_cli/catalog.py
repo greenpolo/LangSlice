@@ -52,6 +52,33 @@ logger = logging.getLogger(__name__)
 #: description, summary, arguments and ``long``.
 SCHEMA_VERSION = 3
 
+#: The verbs the command line runs: what the session that sets a job up and
+#: checks it needs. Every other verb is a registration agent's, through the
+#: MCP tools or a script (``langslice.open_job``).
+CLI_VERBS = frozenset({"status", "export_maps"})
+#: Set to ``1`` by LangSlice's own test suite, which drives every verb
+#: through this command's plumbing (the envelope, the flags, the background
+#: runs); nothing a user or an agent is told of.
+ALL_VERBS_ENV = "LANGSLICE_JOB_TEST_ALL_VERBS"
+
+
+def on_command_line(verb: str) -> bool:
+    """Tell whether ``langslice-job FOLDER`` runs a verb (:data:`CLI_VERBS`).
+
+    Parameters
+    ----------
+    verb
+        The verb's name.
+
+    Returns
+    -------
+    bool
+        True for the verbs of a session that sets a job up and checks it,
+        and for every verb under the test suite's switch.
+    """
+    return verb in CLI_VERBS or os.environ.get(ALL_VERBS_ENV) == "1"
+
+
 #: The agent CLI's own commands besides the verbs (``langslice-job FOLDER ...``).
 JOB_COMMANDS: dict[str, str] = {
     "init": "Create the job for a folder of section images (the job flags of "
@@ -59,8 +86,10 @@ JOB_COMMANDS: dict[str, str] = {
             "a job already in the folder is continued).",
     "launch --role register|register-scripting": "The exact prompt that launches a "
         "registration subagent (`result.prompt`): pass it unchanged as the subagent's "
-        "whole prompt. `register` is the MCP subagent, `register-scripting` the "
-        "command-line one; the prompt is also saved in logs/launches/. Run it again "
+        "whole prompt. `register` is the subagent with the MCP tools alone, "
+        "`register-scripting` the one with a shell for scripts of its own as "
+        "well (its launch makes the job's Python environment); the prompt is "
+        "also saved in logs/launches/. Run it again "
         "for each launch: it reflects the job as it stands.",
     "runs [ID]": "The background runs (newest first), or one run: running, finished "
                 "(with its answer) or lost.",
@@ -126,7 +155,7 @@ def command_entry(name: str) -> dict[str, Any]:
     elif name == "launch":
         entry["flags"] = [{"flag": "--role", "aliases": [], "default": None,
                            "help": "The subagent the prompt launches: register (MCP tools) "
-                                   "or register-scripting (the command line)",
+                                   "or register-scripting (and scripts)",
                            "choices": ["register", "register-scripting"], "takes_value": True,
                            "metavar": "ROLE"}]
     elif name == "wait":
@@ -165,7 +194,7 @@ def verbs_table(spec: JobSpec | None = None) -> list[dict[str, Any]]:
     return [{"name": name, "kind": verb.kind, "group": verb.group,
              "summary": summary(name, FULL if name in VERBS else facts),
              **({"long": True} if verb.long else {})}
-            for name, verb in verbs_for(spec).items()]
+            for name, verb in verbs_for(spec).items() if on_command_line(name)]
 
 
 class Declared:
@@ -337,9 +366,10 @@ def tools_text(folder: str, names: list[str], variant: Any, spec: Any) -> str:
     lines = [
         "# LangSlice tools",
         "",
-        f"Every verb of this job as `langslice-job {folder} schema VERB` declares it, "
-        "written by `init` and `launch`; the same words, as text. Call a verb as "
-        f"`langslice-job {folder} VERB --args '{{...}}'`.",
+        f"Every tool of this job as `langslice-job {folder} schema TOOL` declares it, "
+        "written by `init`; the same words, as text. A registration agent has "
+        "them as MCP tools; a script calls one as "
+        f"`langslice.open_job(r\"{folder}\").TOOL(...)`, with the same arguments.",
         "",
     ]
     for name in names:
@@ -405,6 +435,8 @@ def schema(args: argparse.Namespace) -> Envelope:
                                       **declared.facts(), **declared.entry(name)}
             folder = declared.folder or "FOLDER"
             nexts = [f"langslice-job {folder} {name} --args '{{...}}'"]
+            if not on_command_line(name):
+                nexts = [f'langslice.open_job(r"{folder}").{name}(...)']
         else:  # several verbs, or every verb
             chosen = names or [name for name in verbs if declared.has(name)]
             result = {"schema_version": SCHEMA_VERSION, **declared.facts(),

@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 import time
 import typing
@@ -45,7 +46,11 @@ from langslice.core.refusal import FAILED_STATUSES, RefusalCode, ReplyStatus
 from langslice.core.stack.codec import trace_to_json
 from langslice.core.stack.stack import Stack
 from langslice.doors.agent_cli import background
-from langslice.doors.agent_cli.catalog import canonical_verb
+from langslice.doors.agent_cli.catalog import (
+    CLI_VERBS,
+    canonical_verb,
+    on_command_line,
+)
 from langslice.doors.agent_cli.envelope import (
     DISABLED,
     EXIT_ARGUMENTS,
@@ -524,6 +529,8 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     if verb not in verbs_for(_spec_of(folder)):
         raise _Refusal(Envelope.failure(RefusalCode.UNKNOWN_VERB,
                                         f"No verb {verb!r}.", verb=verb))
+    if not on_command_line(verb):
+        raise _not_a_command(verb)
     dry_run = bool(options.get("dry_run"))
     if dry_run and options.get("background"):
         # A background child runs the verb for real; a dry run answers at once.
@@ -582,6 +589,32 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     finally:
         DISABLED.reset(token)
         opened.close()
+
+
+def _not_a_command(verb: str) -> _Refusal:
+    """Return the refusal of a registration tool called as a command.
+
+    Parameters
+    ----------
+    verb
+        The tool's name.
+
+    Returns
+    -------
+    _Refusal
+        ``VERB_OFF``, its fix saying where the tool is.
+    """
+    runs = ", ".join(sorted(CLI_VERBS))
+    return _Refusal(
+        Envelope.failure(
+            RefusalCode.VERB_OFF,
+            f"{verb} is a registration tool, not a command: the command "
+            f"line sets a job up and checks it ({runs}, init, launch, runs).",
+            fix=f"A registration agent calls {verb} as its MCP tool; a "
+            f"script calls `langslice.open_job(FOLDER).{verb}(...)`.",
+            verb=verb,
+        )
+    )
 
 
 def _detached(layout: Any, job_folder: str, verb: str, arguments: dict[str, Any], *,
@@ -928,24 +961,24 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
         layout = JobLayout(find(folder))
     except NoJob as exc:
         return Envelope.failure(RefusalCode.NO_JOB, str(exc))
-    if role == "register":
-        try:
+    try:
+        if role == "register":
             prompt = launches.mcp_prompt(layout.folder, atlas_loader)
-        except ImportError as exc:
-            return Envelope.failure(
-                RefusalCode.MCP_MISSING, f"The register role needs the `mcp` package ({exc}).",
-                fix="Install it in LangSlice's environment (pip install mcp), or use "
-                "--role register-scripting.")
-        except (FileNotFoundError, ValueError) as exc:
-            return Envelope.failure(RefusalCode.JOB_UNREADABLE,
-                                    str(exc), exit=EXIT_REFUSED)
-        made = launches.Launch(role=role, prompt=prompt)
-    else:
-        opened = _open(folder, persist=True, atlas_loader=atlas_loader)
-        try:
-            made = launches.cli_prompt(opened)
-        finally:
-            opened.close()
+        else:
+            prompt = launches.scripting_prompt(
+                layout.folder, atlas_loader=atlas_loader
+            )
+    except ImportError as exc:
+        return Envelope.failure(
+            RefusalCode.MCP_MISSING,
+            f"The {role} role needs the `mcp` package ({exc}).",
+            fix="Install it in LangSlice's environment (pip install mcp).")
+    except (FileNotFoundError, ValueError) as exc:
+        return Envelope.failure(RefusalCode.JOB_UNREADABLE,
+                                str(exc), exit=EXIT_REFUSED)
+    except (OSError, subprocess.SubprocessError) as exc:  # its environment
+        return Envelope.failure(RefusalCode.ENV_FAILED, str(exc))
+    made = launches.Launch(role=role, prompt=prompt)
     saved = launches.save(layout, role, made.prompt)
     return Envelope(result={"role": role, "job_folder": str(layout.folder),
                             "prompt": made.prompt, **made.facts},

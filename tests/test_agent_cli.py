@@ -278,58 +278,38 @@ def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any
     return statement, pictures, opened
 
 
-def test_launch_register_scripting_is_the_native_statement_and_opening(capsys, images):
-    from langslice.core.pictures.opening import DEFAULT_IMAGE_LIMIT
+def test_launch_register_scripting_is_the_mcp_statement_with_the_scripts(capsys, images):
+    """The scripting agent's message is the MCP agent's with a paragraph on
+    scripts after the opening's: the job's own Python (made by the launch),
+    how to add a package, the library, where its files go."""
+    pytest.importorskip("mcp")
+    from langslice.doors.agent_cli import environment
+    from langslice.job.layout import JobLayout
 
-    job = init(capsys, images, "--notes", "Section 2 is torn.", "--viewer", "codex")
+    job = init(capsys, images, "--notes", "Section 2 is torn.")
+    code, plain = cli(capsys, str(images), "launch", "--role", "register")
+    assert code == 0, plain
+    assert not (job / "env").exists()  # the MCP agent runs no script
     code, envelope = cli(capsys, str(images), "launch", "--role", "register-scripting")
     assert code == 0, envelope
     result = envelope["result"]
     prompt = result["prompt"]
     assert result["role"] == "register-scripting"
-    first, _blank, statement = prompt.partition("\n\n")
-    assert first == (f"Register the brain in job folder {job} with the langslice-job "
-                     "command line.")
-    code, status = cli(capsys, str(images), "status")
-    verbs = status["result"]["verbs"]  # this door's verbs: the scripting ones too
-    assert "export_maps" in verbs
-    native, pictures, opened = _native(images, DEFAULT_IMAGE_LIMIT)
-    try:
-        tools = next(line for line in native.splitlines() if line.startswith("Tools ("))
-        expected = native.replace(tools, tools.split(": ", 1)[0] + ": "
-                                  + ", ".join(f"`{name}`" for name in verbs) + ".")
-        assert expected != native and statement.startswith(expected + "\n\n")
-        tail = statement[len(expected):]
-        assert "User notes:\nSection 2 is torn." in tail
-        assert "Open every one of these pictures before any write." in tail
-        assert "brief" not in tail and "BRIEF" not in tail
-        from langslice.tools.descriptions.door_text import status_and_notes
-
-        assert tail.endswith(status_and_notes(opened.job.state))
-    finally:
-        opened.close()
-    # The opening pictures: the native strips, byte for byte, in reading order,
-    # listed inline in the prompt after their text.
-    opening = [item for item in envelope["artifacts"] if item["kind"] == "opening"]
-    assert [item["index"] for item in opening] == list(range(len(pictures)))
-    assert [Path(item["path"]).read_bytes() for item in opening] == pictures
-    assert opening[0]["label"].startswith("Strip 1 of 1: s0.png")
-    for item in opening:
-        assert f"{item['label']}\n- {item['path']}" in prompt
-    # The exact text is saved; TOOLS.md holds every verb's description.
+    python = environment.python_of(job / "env")
+    assert python.is_file()  # made by the launch: the prompt names an interpreter that runs
+    scripts = prompt[prompt.index("\n\nScripts:\n"):prompt.index("\n\nUser notes:")]
+    # Without the paragraph on scripts it is the MCP agent's message, word for word.
+    assert prompt.replace(scripts, "") == plain["result"]["prompt"]
+    assert f'`"{python}" SCRIPT [ARGS ...]`' in scripts
+    assert f"`{environment.install_command(JobLayout(job))} PACKAGE [PACKAGE ...]`" in scripts
+    assert f'langslice.open_job(r"{job}")' in scripts and "help(job.context)" in scripts
+    assert f"`{job}/scripts/`" in scripts and "langslice-job" not in prompt
+    assert "start_job(" in prompt and "show_stack(page=1)" in prompt
+    # The exact text is saved.
     launch = envelope["artifacts"][0]
-    assert launch == {"path": str(job / "logs" / "launches" / "000001_register-scripting.md"),
+    assert launch == {"path": str(job / "logs" / "launches" / "000002_register-scripting.md"),
                       "kind": "launch"}
     assert Path(launch["path"]).read_text(encoding="utf-8") == prompt
-    assert envelope["artifacts"][-1] == {"path": str(job / "TOOLS.md"), "kind": "tools"}
-    tools = (job / "TOOLS.md").read_text(encoding="utf-8")
-    assert "## look" in tools and "## export_maps" in tools and "- `mode`: one of" in tools
-    assert "TOOLS.md" in (job / "AGENTS.md").read_text(encoding="utf-8")
-    assert "BRIEF.md" not in (job / "AGENTS.md").read_text(encoding="utf-8")
-    assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048
-    # The next launch is the next number.
-    code, again = cli(capsys, str(images), "launch", "--role", "register-scripting")
-    assert again["artifacts"][0]["path"].endswith("000002_register-scripting.md")
 
 
 def test_launch_register_is_the_mcp_statement(capsys, images):
@@ -1237,3 +1217,41 @@ def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
     code, envelope = cli(capsys, str(images), "init", "--tasks", "transform",
                          "--disabled", "elastix_affine,interactive_transform")
     assert code == 2 and "every tool that writes its answer" in envelope["error"]["message"]
+
+
+# --- the verbs the command line runs -------------------------------------------------
+
+
+def test_the_command_line_runs_only_the_setup_and_checking_verbs(capsys, images, monkeypatch):
+    """Without the test suite's switch, `langslice-job FOLDER VERB` runs
+    `status` and `export_maps` and refuses a registration tool, saying where
+    it is; `ops` lists what it runs, and `schema` still describes every verb
+    (the library's methods take the same arguments)."""
+    from langslice.doors.agent_cli.catalog import ALL_VERBS_ENV, CLI_VERBS
+
+    job = init(capsys, images)
+    monkeypatch.delenv(ALL_VERBS_ENV)
+    assert CLI_VERBS == {"status", "export_maps"}
+
+    code, status = cli(capsys, str(job), "status")
+    assert code == 0 and len(status["result"]["rows"]) == 3
+    code, exported = cli(capsys, str(job), "export_maps")
+    # it runs: nothing is placed yet, which is its own answer
+    assert exported["error"]["code"] == "NOTHING_EXPORTED", exported
+
+    for verb, arguments in [("position_sections", {"sections": [
+            {"id": ID0, "position_mm": 0.1}]}), ("look", {"mode": "section"}),
+            ("undo", {}), ("submit", {"summary": "done"})]:
+        code, refused = cli(capsys, str(job), verb, "--args", json.dumps(arguments))
+        assert code == 3 and refused["error"]["code"] == "VERB_OFF", refused
+        assert "registration tool, not a command" in refused["error"]["message"]
+        assert f"open_job(FOLDER).{verb}(" in refused["error"]["fix"]
+    code, after = cli(capsys, str(job), "status")
+    assert all(row["position_mm"] is None for row in after["result"]["rows"])
+
+    code, listed = cli(capsys, str(job), "ops")
+    assert code == 0 and {row["name"] for row in listed["result"]["verbs"]} == set(CLI_VERBS)
+    assert "launch --role register|register-scripting" in listed["result"]["job_commands"]
+    code, described = cli(capsys, str(job), "schema", "position_sections")
+    assert code == 0 and "sections" in described["result"]["arguments"]["properties"]
+    assert "open_job" in described["next"][0]

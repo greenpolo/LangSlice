@@ -62,7 +62,7 @@ Pick the agent the user allows:
 | Subagent | Can do | Use when |
 | --- | --- | --- |
 | `langslice:register` | only LangSlice's MCP tools, whose replies carry the pictures; no shell, files or web | default |
-| `langslice:register-scripting` | Bash + Read + Write + Edit: the `langslice-job` command line and scripts with the LangSlice Python library in the job folder | the user wants scripting |
+| `langslice:register-scripting` | the same MCP tools, plus Bash + Read + Write + Edit for scripts of its own with the LangSlice Python library in the job folder (a starting transform it computes, an image it cleans, a method no tool has) | the user wants scripting |
 
 Use the Agent tool with that `subagent_type`, and the `model` and `effort`
 the user chose, if any (otherwise it inherits this session's). Make its
@@ -73,18 +73,20 @@ summarised. The user's notes belong in `init --notes` (the prompt holds them).
 Run `launch` again for each launch: it reflects the job as it stands. Do not
 give the subagent any other task. Run one subagent per job at a time. The
 plugin's MCP server holds one job at a time for this session, so run one
-`langslice:register` subagent at a time; brains registered in parallel need
-`langslice:register-scripting`.
+registration subagent at a time, of either kind; brains registered side by
+side each need a Claude Code session of their own.
 
 You have LangSlice's MCP tools too; do not call them. They are the subagent's.
+`langslice-job` is yours, not the subagent's: it sets the job up and checks
+it (`init`, `launch`, `status`, `export_maps`) and runs no registration tool.
 
 When the subagent finishes, the plugin copies its transcript into
 `FOLDER/trace/`.
 
 Shell restriction: a plugin subagent cannot limit Bash to one command. If the
-user wants `langslice:register-scripting` to run only `langslice-job`, tell
-them to add the permission rule from the plugin README to their settings
-before launching.
+user wants `langslice:register-scripting` to run only the job's own Python,
+tell them to add the permission rules from the plugin README to their
+settings before launching.
 
 Advisor: if you have an advisor tool, the subagent gets it too, and nothing in
 the plugin can remove it. Before launching, tell the user to turn it off with

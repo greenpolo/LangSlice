@@ -467,3 +467,40 @@ def test_a_refused_argument_is_traced(tmp_path: Path, monkeypatch):
     refused = [record for record in records if record["kind"] == "tool_result"]
     assert refused and refused[-1]["name"] == "look"
     assert "UNKNOWN_ARGUMENTS" in refused[-1]["content"][0]["text"]
+
+
+def test_mcp_tools_and_a_script_work_on_one_job(tmp_path: Path):
+    """A registration agent with a shell uses both: what a script writes
+    through the library (a process of its own, here a job handle of its own)
+    the next MCP tool call reads, and the MCP ``undo`` takes back, and what an
+    MCP tool writes the script reads."""
+    import langslice
+
+    folder = _folder(tmp_path)
+    server = build_server(_spec_for, str(folder), atlas_loader=lambda _n: _ATLAS)
+
+    def position(rows: list[dict[str, Any]], name: str) -> Any:
+        return next(row.get("position_mm") for row in rows if row["id"] == name)
+
+    def script() -> Any:
+        with langslice.open_job(str(folder), atlas_loader=lambda _n: _ATLAS) as job:
+            seen = position(job.status()["rows"], "s0.png")
+            job.position_sections(sections=[{"id": "s1.png", "position_mm": 2.0}], view=False)
+        return seen
+
+    async def body(client: Any) -> Any:
+        await client.call_tool("show_stack", {"page": 1})  # three sections: one page
+        wrote = await client.call_tool("position_sections", {
+            "sections": [{"id": "s0.png", "position_mm": 1.0}], "view": False})
+        seen = await asyncio.to_thread(script)
+        after = await client.call_tool("status", {})
+        undone = await client.call_tool("undo", {})
+        return wrote, seen, after, undone, await client.call_tool("status", {})
+
+    wrote, seen, after, undone, last = _session(server, body)
+    assert "error" not in _text(wrote), _text(wrote)
+    assert seen == 1.0  # the script read the MCP tool's write
+    assert position(_text(after)["rows"], "s1.png") == 2.0  # and MCP the script's
+    assert "error" not in _text(undone), _text(undone)
+    rows = _text(last)["rows"]
+    assert position(rows, "s1.png") is None and position(rows, "s0.png") == 1.0

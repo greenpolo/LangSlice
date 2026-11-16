@@ -5,8 +5,10 @@ Registers histology sections to a BrainGlobe atlas from Google's Antigravity
 account. Like the Claude Code plugin ([`../claude-code/`](../claude-code/README.md)),
 it is skills for the main session plus two registration agents that each
 register exactly one brain: `register` through LangSlice's MCP tools, and
-`register-scripting` through the `langslice-job` command line and the Python
-library ([`docs/agents/cli.md`](../../docs/agents/cli.md)).
+`register-scripting` through the same MCP tools and scripts of its own with
+the Python library. The main session sets a job up and checks it with the
+`langslice-job` command line ([`docs/agents/cli.md`](../../docs/agents/cli.md)),
+which runs no registration tool.
 
 ## Install
 
@@ -14,7 +16,7 @@ LangSlice must be installed first (the conda environment of
 `environment.yml`). Antigravity must then find `langslice` and
 `langslice-job` on the PATH it reads from the login shell (`$SHELL -ilc`;
 on Windows, the user and system environment variables): the plugin's MCP
-server runs `langslice mcp`, `register-scripting` runs `langslice-job`, and
+server runs `langslice mcp`, the skills run `langslice-job`, and
 the plugin's hook runs `langslice`. The `setup` skill (below) puts them
 there.
 
@@ -50,7 +52,7 @@ arguments tests the connection.
 | skill `abba` | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands, reaching a running ABBA through abba-mcp, an ABBA registration into a job |
 | MCP server `langslice_mcp` | `register` | `langslice mcp`: `start_job`, `show_stack` and the job's tools, whose replies carry the pictures |
 | agent `register` | registers one brain | the LangSlice MCP tools and `view_file`; no shell, no file writes |
-| agent `register-scripting` | registers one brain | `run_command`, `view_file`, `write_to_file`, `replace_file_content` and the web: the `langslice-job` command line, scripts with the LangSlice Python library, packages installed in the job's own environment (`langslice-job FOLDER env`) |
+| agent `register-scripting` | registers one brain | the LangSlice MCP tools, and `run_command`, `view_file`, `write_to_file`, `replace_file_content` and the web for scripts of its own with the LangSlice Python library, run with the job's own Python (`env/` in the job folder), into which it may install packages |
 | `assets/logo.svg` | the plugin list | LangSlice's logo, a copy of `assets/logo/logomark.svg` |
 | hook `langslice-transcript` | every session | at the end of a session, `langslice session-end --harness antigravity` copies the transcript into the job's `trace/` folder |
 
@@ -68,7 +70,8 @@ other tools are not offered to it.
   last picture inline and the others saved under
   `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/`; the
   reply names each file, and `view_file` opens it.
-- `register-scripting` lists the shell, file and web tools and no MCP access.
+- `register-scripting` lists the shell, file and web tools and inherits the
+  MCP servers too (`inheritMcp: true`).
 
 Both agents are `mainAgent` and `subagent`: the main session starts one with
 `invoke_subagent`, and a run without a chat starts one directly, in the job
@@ -91,9 +94,11 @@ Antigravity runs an agent's commands in an OS sandbox (Linux namespaces):
 the working folder and temporary folders are writable, the paths that
 `read_file` rules allow are visible read-only, and network access is limited
 to the domains `read_url` rules allow. `langslice-job` reads the atlas and the
-images and calls the image model, so `register-scripting` runs it outside the
-sandbox (`BypassSandbox`), which a `command(langslice-job)` rule allows
-without asking. The MCP server is a process Antigravity starts, not an agent's
+images, so the main session runs it outside the sandbox (`BypassSandbox`),
+which a `command(langslice-job)` rule allows without asking. A
+`register-scripting` agent's script reads them too: it runs the job's own
+Python (its launch message names the interpreter) outside the sandbox, which
+asks each time unless a `command(...)` rule names that interpreter. The MCP server is a process Antigravity starts, not an agent's
 command, so it runs outside the sandbox; an `mcp(langslice_mcp/*)` rule lets
 an agent call its tools without asking.
 Permissions live in one file, `~/.gemini/antigravity-cli/settings.json`, for
@@ -120,8 +125,8 @@ this machine's paths:
 
 `register` needs only the `mcp(...)` rule. `read_url(*)` gives sandboxed
 commands the web (package downloads, papers, documentation). The scripting
-agent runs its scripts with `langslice-job FOLDER python SCRIPT`, a
-`langslice-job` command, so they run outside the sandbox too. The `read_file`
+agent runs its scripts with the job's own Python, outside the sandbox when
+allowed (above). The `read_file`
 rules let a script run in the sandbox with the job's own environment's python
 import LangSlice: its checkout or installation, the Python it runs on (for a
 uv environment, `~/.local/share/uv/python`), and the atlases. Antigravity on

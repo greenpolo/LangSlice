@@ -159,19 +159,24 @@ def open_job(
     return Session(job, ctx, box, trace, image_model_off=off)
 
 
-def mcp_statement(session: Session) -> str:
+def mcp_statement(session: Session, *, scripting: str = "") -> str:
     """The job statement as the MCP door words it: the toolbox's tool names, its
     picture limit, the ``show_stack`` pages (drawn now when not yet), the
     user's notes and the image-model line. ``langslice-job FOLDER launch --role
     register`` (:mod:`langslice.doors.agent_cli.launch`) embeds it in the
-    message that launches an MCP registration agent."""
+    message that launches an MCP registration agent; *scripting* is the
+    paragraph on scripts that ``--role register-scripting`` adds after the
+    opening's (``door_text.SCRIPTING``, filled)."""
     if not session.pages:
         session.pages = opening_pages(session)
     facts = StatementFacts.from_run(
         session.spec, session.state, session.ctx, tool_names=session.box.names,
         max_resolution=session.box.max_view_edge)
+    opening = opening_for_mcp(len(session.pages))
+    if scripting:
+        opening = [*opening, "", scripting]
     return job_statement(
-        facts, door="mcp", opening=opening_for_mcp(len(session.pages)),
+        facts, door="mcp", opening=opening,
         notes=session.notes, image_model_off=session.image_model_off,
     )
 

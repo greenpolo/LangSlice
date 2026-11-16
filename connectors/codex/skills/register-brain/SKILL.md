@@ -48,9 +48,6 @@ langslice-job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
   --pixel-size-um 4.0 --nonlinear-provider none
 ```
 
-For `register_scripting`, add `--viewer codex`, which sizes the pictures the
-command line saves for Codex's `view_image`.
-
 It prints one JSON object (`ok`, `result`, `artifacts` with the job's `card`
 and `state`, `warnings`). Report any warning to the user (for example what a
 `--registration` file did not place). A job already in the folder is
@@ -65,7 +62,7 @@ Pick the agent the user allows:
 | Subagent | Can do | Use when |
 | --- | --- | --- |
 | `register` | LangSlice's MCP tools only, no shell; the pictures come in the tool replies | default |
-| `register_scripting` | the shell: the `langslice-job` command line and scripts with the LangSlice Python library in the job folder | the user wants scripting |
+| `register_scripting` | the same MCP tools, plus the shell for scripts of its own with the LangSlice Python library in the job folder (a starting transform it computes, an image it cleans, a method no tool has) | the user wants scripting |
 
 Ask Codex to spawn that custom agent by name. Make its request
 with `langslice-job FOLDER launch --role register` (or `--role
@@ -73,10 +70,13 @@ register-scripting` for `register_scripting`) and pass `result.prompt` as the
 request, unchanged: nothing added, shortened or summarised. The user's notes
 belong in `init --notes` (the prompt holds them). Run `launch` again for each
 launch: it reflects the job as it stands. Do not give the subagent any other
-task. Run one subagent per job at a time, and one `register` at a
-time in this session (the LangSlice MCP server holds one open job).
+task. Run one subagent per job at a time, and one registration subagent at a
+time in this session, of either kind (the LangSlice MCP server holds one open
+job). `langslice-job` is yours, not the subagent's: it sets the job up and
+checks it (`init`, `launch`, `status`, `export_maps`) and runs no
+registration tool.
 
-`register` needs the LangSlice MCP server in Codex's `config.toml`; if no
+Both agents need the LangSlice MCP server in Codex's `config.toml`; if no
 `langslice` MCP tools are listed, follow the `setup` skill and stop. If the
 user wants the agent limited further, "Sandboxing, and the gaps" in
 `connectors/codex/README.md` says what each agent can still do and how the
