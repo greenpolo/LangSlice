@@ -292,6 +292,17 @@ METHODS_CHAINED = (
     "section's current registration, so methods can be chained."
 )
 DEFORMABLE_METHOD = "  - `{name}`: {what}"
+#: Every run: a plain sentence before each step, for the person watching
+#: (the LangSlice window shows the agent's latest words).
+NARRATE = (
+    "- Before each step (one tool call, or several made for one reason), "
+    "write one short sentence in plain words saying what you are about to "
+    "do, to which sections, and why; for example: \"I'm moving the hindbrain "
+    "sections 0.2 mm back because their fourth ventricle matches the atlas "
+    "further back.\" A scientist who does not know the tools follows the "
+    "run by these sentences, so leave out tool names, arguments and file "
+    "paths."
+)
 FIT_REPLY = (
     "- A fit's reply names the section image, atlas image and mask it used."
 )
@@ -587,6 +598,7 @@ def _method(spec: JobSpec, names: Collection[str]) -> list[str]:
         method += _deformation_method(names)
     if "elastix_affine" in names or "fireants_syn" in names:
         method += [FIT_REPLY, FIT_IMAGES]
+    method.append(NARRATE)
     return method
 
 

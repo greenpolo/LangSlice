@@ -31,5 +31,6 @@ Method:
 - Place each section on its own evidence: compare it against candidate atlas positions before writing, and do not let the nominal interval stand in for a look.
 - After writing, review the whole stack against the atlas, watch for spacings that differ from their neighbours, and re-check the sections on either side of any gap before reporting an interval break.
 - Submit when the work is complete; address any missing requirements it returns.
+- Before each step (one tool call, or several made for one reason), write one short sentence in plain words saying what you are about to do, to which sections, and why; for example: "I'm moving the hindbrain sections 0.2 mm back because their fourth ventricle matches the atlas further back." A scientist who does not know the tools follows the run by these sentences, so leave out tool names, arguments and file paths.
 
 Work with the tools, then call `submit`.
