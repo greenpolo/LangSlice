@@ -5,7 +5,7 @@ from __future__ import annotations
 from tools.stylecheck.testing import flagged_lines
 
 
-def test_a_comment_is_flagged_unless_it_describes_a_constant() -> None:
+def test_every_comment_and_every_waiver_is_flagged() -> None:
     source = """
     #: Pixels on the long edge.
     EDGE = 512
@@ -22,6 +22,9 @@ def test_a_comment_is_flagged_unless_it_describes_a_constant() -> None:
         g = 0
     """
     assert flagged_lines(source, "comment") == [4, 5, 10]
+    assert flagged_lines(source, "constant-comment") == [2]
+    assert flagged_lines(source, "except-comment") == [13]
+    assert flagged_lines(source, "directive") == [6, 7, 8, 9, 10]
 
 
 def test_history_in_comments_is_flagged() -> None:
