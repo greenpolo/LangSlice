@@ -1,11 +1,9 @@
-// Who is speaking, and what it says. The LangSlice mark and the agent's figure side by
-// side, its model's name and its state under them (Working, Thinking, Done); beside them a
+// Who is speaking, and what it says. The LangSlice mark, the model's name and its state
+// under it (Working, Thinking, Done); beside them a
 // speech bubble of a fixed height with the agent's latest words, said one by one; under
-// the bubble, the call it is making in plain words. The figure has one gesture per state:
-// it walks while a tool runs, looks up while it thinks, talks while its words come in, and
-// hops once when the run is done.
+// the bubble, the call it is making in plain words.
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_OUT } from '../motion';
 import type { Call, Words } from '../run';
 
@@ -19,28 +17,25 @@ export function Speaker({ model, status, words, call, focusCount }: {
   const speaking = useSpeaking(words);
   const done = status === 'Submitted';
   const state = status === 'Running' && thinking ? 'Thinking' : STATE_WORDS[status] ?? status;
-  const maker = makerOf(model);
   return (
     <header className={['speaker', working && 'working', thinking && 'thinking', speaking && 'speaking', done && 'done'].filter(Boolean).join(' ')}>
       <div className="who">
         <img className="logo-mark" src="logomark.svg" alt="" />
-        <Figure maker={maker} />
         <p className="who-name">{model || 'The agent'}</p>
-        <p className="who-state"><span className={'dot ' + status} />{state}</p>
+        <State word={state} status={status} />
       </div>
       <div className="speaker-said">
         {/* The old line and the new share one cell: the old fades over as the new is said. */}
         <div className="bubble">
           <AnimatePresence initial={false}>
             {words ? (
-              <motion.p
+              <Said
                 key={words.n}
                 className="words"
                 title={words.text}
-                exit={{ opacity: 0, y: -4, transition: { duration: DUR.quick, ease: EASE_OUT } }}
               >
                 {spoken(words.text)}
-              </motion.p>
+              </Said>
             ) : (
               <motion.p key="waiting" className="words waiting" exit={{ opacity: 0, transition: { duration: DUR.quick } }}>
                 {done ? 'The run is finished.' : call ? 'The agent is at work; its words will show here.' : 'Waiting for the agent to begin…'}
@@ -73,6 +68,55 @@ export function Speaker({ model, status, words, call, focusCount }: {
   );
 }
 
+// The agent's state, as a small pill under its name: a glyph that moves the way the
+// state does (dots that take turns while it thinks, a beat while it works, a tick when it
+// is done) and the word.
+function State({ word, status }: { word: string; status: string }) {
+  const kind = word === 'Thinking' ? 'thinking' : status === 'Running' ? 'working' : status === 'Submitted' ? 'done'
+    : status === 'Failed' ? 'failed' : 'idle';
+  return (
+    <p className={'state state-' + kind} aria-live="polite">
+      <span className="state-glyph" aria-hidden="true">
+        {kind === 'thinking' ? <><i /><i /><i /></>
+          : kind === 'done' ? <svg viewBox="0 0 12 12"><path d="M2.5 6.4 5 8.8 9.6 3.6" /></svg>
+            : <i />}
+      </span>
+      <span className="state-word">{word || 'Waiting'}</span>
+    </p>
+  );
+}
+
+// The agent's words in the bubble, whole: a long message is set a little smaller until it
+// fits the bubble's three lines (never below MIN_VOICE px), so nothing is cut off.
+const MIN_VOICE = 15;
+function Said({ className, title, children }: { className: string; title: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const box = el.parentElement!;
+    const fit = () => {
+      el.style.fontSize = '';
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      const room = box.clientHeight - parseFloat(getComputedStyle(box).paddingTop) - parseFloat(getComputedStyle(box).paddingBottom);
+      while (el.scrollHeight > room + 1 && size > MIN_VOICE) {
+        size -= 1;
+        el.style.fontSize = `${size}px`;
+      }
+    };
+    fit();
+    const o = new ResizeObserver(fit);
+    o.observe(box);
+    return () => o.disconnect();
+  }, []);
+  return (
+    <motion.p ref={ref} className={className} title={title}
+      exit={{ opacity: 0, y: -4, transition: { duration: DUR.quick, ease: EASE_OUT } }}>
+      {children}
+    </motion.p>
+  );
+}
+
 // The words, one span each; a word's delay follows its length, as speech does, and the
 // pace quickens a little as the sentence goes on so a long one is never waited for.
 function spoken(text: string) {
@@ -101,37 +145,3 @@ const onWords = (ids: string[], shown: number) => {
   return !n ? '' : n === 1 ? ', on one section' : `, on ${n} sections`;
 };
 
-function makerOf(model: string) {
-  const name = model.toLowerCase();
-  if (/claude|fable|mythos|opus|sonnet|haiku|anthropic/.test(name)) return 'claude';
-  if (/gemini|google/.test(name)) return 'gemini';
-  if (/gpt|openai|codex|chatgpt|\bo[0-9]/.test(name)) return 'openai';
-  return 'plain';
-}
-
-// The agent's figure: Clawd for a Claude model (drawn from the pixel map Claude Code
-// carries), else a plain face. Other makers' marks come with the Extended view's port.
-function Figure({ maker }: { maker: string }) {
-  if (maker === 'claude') {
-    return (
-      <svg className="figure clawd" viewBox="0 0 19 10" role="img" aria-label="Clawd, for a Claude model" shapeRendering="crispEdges">
-        <g className="clawd-body">
-          <rect x="3" y="1" width="13" height="6" />
-          <rect x="1" y="5" width="2" height="1" />
-          <rect x="16" y="5" width="2" height="1" />
-          <g className="legs-a"><rect x="3" y="7" width="1" height="2" /><rect x="13" y="7" width="1" height="2" /></g>
-          <g className="legs-b"><rect x="5" y="7" width="1" height="2" /><rect x="15" y="7" width="1" height="2" /></g>
-        </g>
-        <rect className="eye" x="6" y="3" width="1" height="2" />
-        <rect className="eye" x="12" y="3" width="1" height="2" />
-      </svg>
-    );
-  }
-  return (
-    <svg className="figure plain" viewBox="0 0 48 48" role="img" aria-label="The agent">
-      <path className="face" d="M24 7c10.5 0 17 6.2 17 16.5S34.5 41 24 41 7 33.8 7 23.5 13.5 7 24 7z" />
-      <circle className="eye" cx="17.5" cy="22" r="2.3" />
-      <circle className="eye" cx="30.5" cy="22" r="2.3" />
-    </svg>
-  );
-}

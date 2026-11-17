@@ -44,8 +44,8 @@ export function Journal({ onPictures, onSection }: { onPictures: (numbers: numbe
   }, [lines, following]);
   const latestWords = [...lines].reverse().find(l => l.kind === 'words');
   return (
-    <aside className="journal" aria-label="The run so far">
-      <h2 className="journal-title">The run so far</h2>
+    <aside className="journal" aria-label="Log">
+      <h2 className="journal-title">Log</h2>
       <div
         className="journal-scroll"
         ref={scroller}

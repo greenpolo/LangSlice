@@ -54,13 +54,32 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: 196px minmax(0, 1fr);
   gap: var(--space-5);
 }
-.who { display: grid; grid-template-columns: auto auto; justify-content: center; align-content: start; align-items: center; gap: var(--space-3); padding-top: 14px; }
-.logo-mark { width: 52px; height: 52px; }
-.figure { width: 52px; height: 52px; overflow: visible; }
-.figure.clawd { width: 76px; }
-.who-name, .who-state { grid-column: 1 / 3; margin: 0; text-align: center; }
-.who-name { margin-top: var(--space-1); color: var(--name); font-size: var(--size-md); font-weight: var(--weight-strong); }
-.who-state { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: -8px; color: var(--muted); font-size: var(--size-sm); }
+.who { display: grid; grid-template-columns: auto; justify-items: center; justify-content: center; align-content: start; align-items: center; gap: var(--space-3); padding-top: 14px; }
+.logo-mark { width: 44px; height: 44px; }
+.who-name { margin: var(--space-1) 0 0; text-align: center; color: var(--name); font-size: var(--size-md); font-weight: var(--weight-strong); letter-spacing: -0.005em; }
+/* The state: a pill under the name, its glyph moving the way the state does. */
+.state {
+  justify-self: center; margin: 0;
+  display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 11px 0 9px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  color: var(--text); font-size: var(--size-sm);
+  transition: border-color var(--dur-quick) ease, color var(--dur-quick) ease;
+}
+.state-glyph { display: inline-flex; align-items: center; gap: 3px; height: 10px; }
+.state-glyph i { width: 6px; height: 6px; border-radius: 50%; background: var(--tract); }
+.state-working { border-color: color-mix(in srgb, var(--lavender) 40%, var(--line)); }
+.state-working .state-glyph i { background: var(--lavender); animation: beat 1.6s var(--ease-in-out) infinite; }
+.state-thinking { border-color: color-mix(in srgb, var(--lavender) 40%, var(--line)); }
+.state-thinking .state-glyph i { width: 4px; height: 4px; background: var(--lavender); animation: think 1.2s ease-in-out infinite; }
+.state-thinking .state-glyph i:nth-child(2) { animation-delay: 0.16s; }
+.state-thinking .state-glyph i:nth-child(3) { animation-delay: 0.32s; }
+.state-done { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); color: var(--name); }
+.state-done svg { width: 12px; height: 12px; fill: none; stroke: var(--green); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 12; animation: tick 520ms var(--ease-out) both; }
+.state-failed .state-glyph i { background: var(--pink); }
+.state-idle { color: var(--muted); }
+@keyframes beat { 0%, 100% { scale: 1; opacity: 1; } 50% { scale: 0.7; opacity: 0.55; } }
+@keyframes think { 0%, 60%, 100% { translate: 0 0; opacity: 0.45; } 30% { translate: 0 -2px; opacity: 1; } }
+@keyframes tick { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tract); }
 .dot.Running { background: var(--running); animation: pulse 2.4s ease-in-out infinite; }
 .dot.Submitted { background: var(--submitted); animation: done-dot 900ms var(--ease-out); }
@@ -68,26 +87,8 @@ a { color: inherit; text-decoration: none; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 @keyframes done-dot { 30% { scale: 1.8; } }
 
-/* Clawd: walking legs while a tool runs, eyes up while thinking, eyes narrowing in turn
-   while its words come in, a hop when the run is done. */
-.clawd-body { fill: var(--clawd); }
-.clawd .eye { fill: var(--ground); transform-box: fill-box; transform-origin: center; transition: translate var(--dur-quick) var(--ease-out); animation: blink 5.6s infinite; }
-.legs-a, .legs-b { transform-box: fill-box; }
-.working .legs-a { animation: step 480ms steps(1, end) infinite; }
-.working .legs-b { animation: step 480ms steps(1, end) -240ms infinite; }
-.thinking .clawd .eye { translate: 0 -1px; }
-.speaking .clawd .eye { animation: squint 240ms ease-in-out infinite alternate; }
-.done .clawd { animation: hop 480ms cubic-bezier(0.34, 1.4, 0.64, 1) 1; }
-.plain .face { fill: var(--wash); stroke: var(--name); stroke-width: 1.6; }
-.plain .eye { fill: var(--name); transform-box: fill-box; transform-origin: center; animation: blink 5.6s infinite; }
-.working .plain { animation: bob 720ms ease-in-out infinite alternate; }
-@keyframes step { 50% { translate: 0 -1px; } }
-@keyframes blink { 0%, 95%, 100% { scale: 1 1; } 97.5% { scale: 1 0.1; } }
-@keyframes squint { to { scale: 1 0.5; } }
-@keyframes hop { 40% { translate: 0 -8px; } 75% { translate: 0 1px; } }
-@keyframes bob { to { translate: 0 -2px; } }
 
-/* The speech bubble: a fixed height, its tail towards the figure. */
+/* The speech bubble: a fixed height, its tail towards the mark. */
 .speaker-said { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .bubble {
   position: relative;
@@ -119,9 +120,6 @@ a { color: inherit; text-decoration: none; }
   font-size: var(--size-voice);
   line-height: 1.4;
   color: var(--name);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
   overflow: hidden;
   text-wrap: pretty;
 }
@@ -254,12 +252,10 @@ a { color: inherit; text-decoration: none; }
 .extended { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .extended-head { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: end; gap: var(--space-5); padding-right: var(--space-5); }
 .extended .speaker { width: auto; margin: 0; padding-left: var(--space-5); padding-top: var(--space-6); grid-template-columns: 150px minmax(0, 1fr); gap: var(--space-4); }
-.extended .bubble { height: calc(2 * 1.4 * var(--size-voice) + 28px); padding: 12px 22px; }
-.extended .words { font-size: var(--size-voice); -webkit-line-clamp: 2; }
+.extended .bubble { height: calc(3 * 1.4 * 18px + 24px); padding: 12px 22px; }
+.extended .words { font-size: 18px; }
 .extended .bubble::before { top: 26px; }
-.extended .logo-mark, .extended .figure { width: 40px; height: 40px; }
-.extended .figure.clawd { width: 58px; }
-.extended-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 560px); }
+.extended .logo-mark, .extended .extended .extended-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 560px); }
 .extended-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .extended-tools { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-5) 0; font-size: var(--size-sm); color: var(--muted); }
 .extended-count b { color: var(--name); font-weight: var(--weight-strong); }
@@ -344,8 +340,9 @@ a { color: inherit; text-decoration: none; }
 .lightbox-caption { max-width: 900px; color: var(--muted); font-size: var(--size-xs); white-space: pre-wrap; }
 
 @media (prefers-reduced-motion: reduce) {
-  .word, .working .legs-a, .working .legs-b, .speaking .clawd .eye, .done .clawd, .working .plain,
-  .ftb-line.done .ftb-dot, .ftb-ghost, .dot.Running, .dot.Submitted, .doing.running::before { animation: none; }
+  .word,
+  .ftb-line.done .ftb-dot, .ftb-ghost, .dot.Running, .dot.Submitted, .doing.running::before,
+  .state-glyph i, .state-done svg { animation: none; }
   .word { animation: fade var(--dur-quick) ease both; }
   .ftb-slot { transition: none; }
 }
