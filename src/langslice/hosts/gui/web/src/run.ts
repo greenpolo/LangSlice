@@ -1,7 +1,9 @@
 // The run as the window knows it, learned by polling the local server: the job list every
 // 2 s, the shown job's snapshot every 300 ms (its new items after a cursor, its tables when
 // the state moved), its strip (the axis) when the sections change. One store, read by the
-// components through `useRun`.
+// components through `useRun(select)`, each re-drawn only when what it selects changes.
+// The run's log keeps every entry in order (the agent's words and reasoning, its calls,
+// the pictures it looked at, notes) for the Extended view's journal.
 import { useSyncExternalStore } from 'react';
 
 export type Row = {
@@ -20,7 +22,14 @@ export type Call = {
 export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number };
 export type Axis = { low: string; high: string; min_mm: number; max_mm: number };
 export type Job = { index: number; name: string; path: string; changed_at?: number; status?: string };
+// A review comment: its box as [x0, y0, x1, y1] fractions of the section's picture as
+// the window draws it (the overlay's content, oriented as the section is kept).
 export type Comment = { id: string; section: string; box: number[]; text: string; revised: boolean };
+export type Entry =
+  | { kind: 'words'; n: number; words: Words; full: string }
+  | { kind: 'call'; key: string }
+  | { kind: 'picture'; number: number; call?: string; caption?: string; sections?: string[]; tool?: string; title?: string }
+  | { kind: 'note'; text: string; error?: boolean };
 
 export type RunState = {
   connected: boolean;
@@ -37,26 +46,35 @@ export type RunState = {
   words: Words | null;       // the agent's latest words
   axis: Axis | null;
   comments: Comment[];
+  log: Entry[];              // the run so far, in order (at most LOG_MAX entries)
+  header: Record<string, unknown>;
 };
 
-const SNAPSHOT_MS = 300, JOBS_MS = 2000, STRIP_MS = 1500;
+const SNAPSHOT_MS = 300, JOBS_MS = 2000, STRIP_MS = 1500, LOG_MAX = 4000;
 
 type Item = {
   kind: string; key?: string; phase?: string; name?: string; title?: string;
   sections?: string[]; failed?: boolean; text?: string; at?: string;
+  number?: number; call?: string; caption?: string; tool?: string; error?: boolean;
 };
 
 let state: RunState = {
   connected: false, jobs: null, job: null, status: '', sentence: '', model: '',
   rows: [], loaded: false, focus: null, focusCall: null, calls: [], words: null, axis: null, comments: [],
+  log: [], header: {},
 };
 const listeners = new Set<() => void>();
 function set(patch: Partial<RunState>) {
   state = { ...state, ...patch };
   for (const l of listeners) l();
 }
-export function useRun(): RunState {
-  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => state);
+const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
+// The run, or the part of it *select* picks (return a field of the state, or a value
+// that is the same when nothing it reads changed).
+export function useRun(): RunState;
+export function useRun<T>(select: (s: RunState) => T): T;
+export function useRun<T>(select?: (s: RunState) => T) {
+  return useSyncExternalStore(subscribe, () => (select ? select(state) : state));
 }
 
 let watch = { cursor: 0, gen: 0, sv: -1 };
@@ -76,7 +94,7 @@ function select(index: number) {
   watch = { cursor: 0, gen: 0, sv: -1 };
   set({
     job: index, status: '', sentence: '', model: '', rows: [], loaded: false, focus: null,
-    focusCall: null, calls: [], words: null, axis: null, comments: [],
+    focusCall: null, calls: [], words: null, axis: null, comments: [], log: [], header: {},
   });
   const params = new URLSearchParams(location.hash.slice(1));
   params.set('job', String(index));
@@ -128,7 +146,9 @@ async function pollSnapshot() {
 function take(snap: any) {
   const patch: Partial<RunState> = {};
   let calls = state.calls;
-  if (snap.reset && watch.gen !== 0) { calls = []; patch.words = null; }
+  let log = state.log;
+  if (snap.reset && watch.gen !== 0) { calls = []; log = []; patch.words = null; }
+  const added: Entry[] = [];
   watch.gen = snap.generation;
   watch.cursor = snap.cursor;
   const items: Item[] = snap.items || [];
@@ -146,16 +166,23 @@ function take(snap: any) {
         if (item.phase === 'start') call.running = !call.ended;
         else { call.running = false; call.ended = true; call.failed = Boolean(item.failed); }
         byKey.set(item.key, call);
-        if (!old) calls = [...calls, call];
+        if (!old) { calls = [...calls, call]; added.push({ kind: 'call', key: call.key }); }
         else calls = calls.map(c => (c.key === call.key ? call : c));
         changed = true;
       } else if ((item.kind === 'agent' || item.kind === 'reasoning') && item.text) {
         said += 1;
-        patch.words = { kind: item.kind, text: firstParagraph(item.text), at: item.at || '', n: said };
+        const words: Words = { kind: item.kind, text: firstParagraph(item.text), at: item.at || '', n: said };
+        patch.words = words;
+        added.push({ kind: 'words', n: said, words, full: item.text });
+      } else if (item.kind === 'picture' && typeof item.number === 'number') {
+        added.push({ kind: 'picture', number: item.number, call: item.call, caption: item.caption, sections: item.sections, tool: item.tool, title: item.title });
+      } else if (item.kind === 'note' && item.text) {
+        added.push({ kind: 'note', text: item.text, error: item.error });
       }
     }
-    if (changed) patch.calls = calls.slice(-400);
+    if (changed) patch.calls = calls.slice(-LOG_MAX);
   }
+  if (added.length || log !== state.log) patch.log = [...log, ...added].slice(-LOG_MAX);
   if (snap.sections !== undefined) {
     watch.sv = snap.state_version;
     patch.rows = Array.isArray(snap.sections) ? snap.sections : [];
@@ -173,6 +200,7 @@ function take(snap: any) {
   if (sentence !== state.sentence) patch.sentence = sentence;
   const model = snap.header?.model || '';
   if (model !== state.model) patch.model = model;
+  if (snap.header && JSON.stringify(snap.header) !== JSON.stringify(state.header)) patch.header = snap.header;
   const comments = snap.comments || [];
   if (JSON.stringify(comments) !== JSON.stringify(state.comments)) patch.comments = comments;
   if (Object.keys(patch).length) set(patch);
