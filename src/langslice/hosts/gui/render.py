@@ -648,7 +648,7 @@ def _open_job(
         min_mm, max_mm = workspace.position_range
         low, high = workspace.axis_ends
         step_mm = strip_step(min_mm, max_mm, workspace.brain_scale)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RenderError(
             ATLAS_FAILED.format(atlas=spec.atlas, reason=exc)
         ) from exc
@@ -663,7 +663,7 @@ def _drawn_safely(draw: Callable[[], Image.Image], key: _Key) -> Image.Image:
         return draw()
     except Refused as refusal:
         raise RenderError(str(refusal)) from refusal
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("The viewer could not draw %s", key, exc_info=True)
         raise RenderError(DRAWING_FAILED.format(reason=exc)) from exc
 

@@ -458,7 +458,7 @@ def _section_picture(
             picture, scale = framed_window(ws, record, look_, tuple(request.zoom), long_edge)
             enlarged = FROM_FILE + (f" (file pixels enlarged x{scale:.1f})"
                                     if scale > 1.05 else "")
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("zoom of %s: the image file could not be read; drawn from its "
                            "working copy", record.id, exc_info=True)
     if picture is None:
@@ -706,7 +706,7 @@ def _draw_masks(
         except KeyError:
             entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
                          "make_mask")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
             entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
     return notes

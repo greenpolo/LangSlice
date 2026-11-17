@@ -109,7 +109,7 @@ def body(run: Run, tool: ToolSpec,
                 result = tool.handler(context, **arguments)
         except Refused:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("plugin tool %s failed", tool.name)
             raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
                           message=f"{type(exc).__name__}: {exc}") from exc

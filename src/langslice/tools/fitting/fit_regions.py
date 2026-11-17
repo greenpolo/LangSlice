@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 from langslice.core.atlas.sides import has_sides, split_side
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.fits.deformable.plane_images import (
     regions_mask,
     resolve_entries,
@@ -101,7 +102,7 @@ def region_box(
             workspace, state, record, dict(KNOB_DEFAULTS), "canvas"
         ).geometry
         mask = regions_mask(workspace.atlas, geometry.annotation, names)
-    except Exception as exc:
+    except IMAGE_FAILURES as exc:
         logger.warning("region box failed for %s: %s", record.id, exc)
         return None
     rows = np.flatnonzero(mask.any(axis=1))

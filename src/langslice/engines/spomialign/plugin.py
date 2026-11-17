@@ -283,7 +283,7 @@ def _engine(config: dict[str, Any], mode: str, matches: int,
     try:
         return engine.fit_pairs(inputs, mode=mode, top_k=matches,
                                 device_name=str(config.get("device") or ""))
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         missing = matching.weights_missing()
         if missing:
             raise ToolError(RefusalCode.ENGINE_MISSING,

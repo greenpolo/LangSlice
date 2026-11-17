@@ -332,7 +332,7 @@ def _from_em(
         )
     except Refused:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         from langslice.core.fits.engine_log import failure_message
 
         raise Refused(

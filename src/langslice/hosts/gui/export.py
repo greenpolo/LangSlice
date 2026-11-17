@@ -34,6 +34,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import langslice
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.maps.abba import MAX_POINTS
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.exports.public_files import QUICKNII_FILE, VISUALIGN_FILE
@@ -239,7 +240,7 @@ class Exports:
                 message=written.message,
                 skipped=written.skipped,
             )
-        except Exception as exc:  # noqa: BLE001
+        except IMAGE_FAILURES as exc:
             message = str(exc) or type(exc).__name__
             done = ExportState(
                 state=ExportStatus.FAILED, format=kind, message=message

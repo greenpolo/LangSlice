@@ -597,7 +597,7 @@ def ensure_opening(ws: Workspace, layout: _Layout, state: Stack) -> list[str]:
     def one(section: Section) -> tuple[Section, ImageRef | None]:
         try:
             return section, opening_entry(ws, layout, section.id)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("the opening image of %s could not be made", section.id,
                            exc_info=True)
             return section, None

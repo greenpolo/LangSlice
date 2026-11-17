@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from langslice.core.failures import IMAGE_FAILURES
+
 Image.MAX_IMAGE_PIXELS = None
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
@@ -46,7 +48,7 @@ def read_pixel_size_um(path: str | Path) -> float | None:
     try:
         with Image.open(path) as handle:
             tags = dict(getattr(handle, "tag_v2", None) or {})
-    except Exception:
+    except IMAGE_FAILURES:
         return None
 
     description = tags.get(270)
@@ -396,7 +398,7 @@ def working_size(
             scale = max_edge / float(max(size))
             size = (max(1, round(size[0] * scale)), max(1, round(size[1] * scale)))
         return size, full_width / float(size[0])
-    except Exception:
+    except IMAGE_FAILURES:
         return None
 
 

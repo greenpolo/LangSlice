@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, cast
 from PIL import Image
 
 from langslice.core.atlas.sides import has_sides
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.pictures import drawn as pictures_drawn
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.pictures.options import default_options
@@ -163,7 +164,7 @@ def mark_damage(
                     border_thickness=options.border_thickness,
                 )
             ]
-        except Exception as exc:  # noqa: BLE001
+        except IMAGE_FAILURES as exc:
             failed = {
                 "error": getattr(exc, "code", RefusalCode.RENDER_FAILED),
                 "message": str(exc),

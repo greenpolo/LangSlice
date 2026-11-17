@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 from langslice.core.atlas.tree import structure_table
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.fits import landmarks as geometry
 from langslice.core.geometry.pixel_frames import source_frame
 from langslice.core.jsonable import JsonObject
@@ -544,6 +545,6 @@ def set_landmarks_tool(
             job, workspace, "set_landmarks", pictures, notes, {})
         looked = Looked(pictures=[p.image for p in pictures], entries=entries)
         return pictured(result, looked)
-    except Exception as exc:  # noqa: BLE001
+    except IMAGE_FAILURES as exc:
         result["render_failed"] = str(exc)
         return result

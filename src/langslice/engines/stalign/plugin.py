@@ -384,7 +384,7 @@ def _engine(
     where = {"device": how.device, "threads": how.threads}
     try:
         return engine.run(arrays, {**params, **where})
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
         raise ToolError(RefusalCode.FIT_FAILED,
                         f"STalign failed: {failure}") from exc

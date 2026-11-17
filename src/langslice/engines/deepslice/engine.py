@@ -301,7 +301,7 @@ def run_deepslice(request: EngineRequest) -> EngineRun:
     with RUN_LOCK, contextlib.redirect_stdout(log):
         try:
             return _pipeline(request, started)
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             (request.out_folder / "deepslice_error.log").write_text(
                 traceback.format_exc(), encoding="utf-8", newline="\n"
             )
