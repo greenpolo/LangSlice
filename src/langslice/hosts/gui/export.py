@@ -38,7 +38,6 @@ from langslice.core.maps.abba import MAX_POINTS
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.public_files import QUICKNII_FILE, VISUALIGN_FILE
 
-#: The formats the menu offers, with the label the page shows.
 FORMATS = {
     "abba": "ABBA project (.abba)",
     "abba_linear": "ABBA project, linear only (.abba)",
@@ -46,7 +45,6 @@ FORMATS = {
     "visualign": "VisuAlign (.json)",
 }
 MIN_LANDMARKS = 100
-#: The file each QUINT format is written to.
 QUINT_FILES = {"quicknii": QUICKNII_FILE, "visualign": VISUALIGN_FILE}
 
 
@@ -101,7 +99,6 @@ class Written:
     skipped: int
 
 
-#: Writes one export of the job in a folder.
 Runner = Callable[[Path, str, int], Written]
 
 
@@ -242,7 +239,7 @@ class Exports:
                 message=written.message,
                 skipped=written.skipped,
             )
-        except Exception as exc:  # noqa: BLE001 - the page says every failure
+        except Exception as exc:  # noqa: BLE001
             message = str(exc) or type(exc).__name__
             done = ExportState(
                 state=ExportStatus.FAILED, format=kind, message=message
@@ -272,7 +269,7 @@ def reveal(folder: Path) -> None:
     if not target.is_dir():
         raise ExportError("Nothing has been exported from this job yet.")
     if sys.platform == "win32":
-        os.startfile(target)  # noqa: S606 - the job's folder, for the person
+        os.startfile(target)  # noqa: S606
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     subprocess.Popen(  # noqa: S603

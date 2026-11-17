@@ -35,10 +35,8 @@ from tools.stylecheck.rules.scopes import (
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
-#: How many wrapping calls around a function make a composed wrapper.
 MIN_COMPOSITION_DEPTH = 3
 
-#: The decorators that mark a function as a wrapper of another.
 WRAPS_DECORATORS = frozenset({"wraps", "functools.wraps"})
 
 

@@ -43,13 +43,9 @@ __all__ = [
     "section_key",
 ]
 
-#: The longest comment kept, in characters.
 MAX_TEXT = 500
-#: The hex digits of a section key.
 KEY_DIGITS = 16
-#: The smallest box side kept, as a fraction of the picture.
 MIN_SIDE = 0.005
-#: What a malformed box is told.
 BAD_BOX = "A box is four numbers: [x0, y0, x1, y1]."
 
 _WRITING = threading.Lock()
@@ -63,17 +59,11 @@ class ReviewError(ValueError):
 class Comment:
     """One review comment, as ``review.json`` holds it."""
 
-    #: Its number in the job, as text (``"1"``, ``"2"``...; never reused).
     id: str
-    #: The section's filename.
     section: str
-    #: ``[x0, y0, x1, y1]``, fractions of the overlay picture.
     box: list[float]
-    #: What the person wrote.
     text: str
-    #: When it was written, UTC, ISO 8601.
     at: str
-    #: The section's key when it was written (:func:`section_key`).
     key: str
 
 

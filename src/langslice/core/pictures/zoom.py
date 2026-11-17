@@ -50,12 +50,8 @@ from langslice.core.workspace import Workspace
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import RecordStore
 
-#: The recipe renderer of a picture cropped from a saved image.
 CROP_RENDERER = "crop"
-#: The redraw refusals after which the saved picture is cropped instead: its
-#: section is gone, or another version of LangSlice saved its recipe.
 CROPPED_INSTEAD = (RefusalCode.SECTION_GONE, RefusalCode.UNREADABLE_RECIPE)
-#: How much a crop (no redraw) is enlarged at most: it holds no more detail.
 MAX_CROP_ENLARGE = 4.0
 
 
@@ -72,7 +68,6 @@ class Zoomed:
     stale: bool = False
     sections: tuple[str, ...] = ()
     mode: str | None = None
-    #: Micrometres per pixel of the zoom's content (None for a crop).
     um_per_px: float | None = None
 
 
@@ -128,14 +123,11 @@ def _image(picture: Image.Image | bytes | str | Path | None) -> Image.Image | No
     return Image.open(picture).convert("RGB")
 
 
-#: A recipe's redrawer: ``(recipe, window, workspace, state, store,
-#: long_edge) -> look.LookPicture``.
 Redrawer = Callable[
     [dict[str, Json], Sequence[float], Workspace, Stack, "RecordStore | None",
      int | None],
     looks.LookPicture,
 ]
-#: Redrawers by recipe renderer.
 RENDERERS: dict[str, Redrawer] = {
     looks.RENDERER: lambda recipe, window, ws, state, store, edge: looks.redraw(
         recipe, window, ws, state, store=store, zoom_edge=edge),
@@ -196,8 +188,6 @@ def redraw(
         try:
             drawn = RENDERERS[renderer](recipe, window, workspace, state, store, long_edge)
         except Refused as exc:
-            # A section gone, or a recipe another version of LangSlice saved:
-            # the saved picture is cropped instead.
             if region or exc.code not in CROPPED_INSTEAD or source is None:
                 raise
             return _crop(None, box, source, long_edge or picture_edge(workspace), stale=True,
@@ -211,7 +201,6 @@ def redraw(
         if (frame := source_frame(out_recipe)) is not None:
             draw_grid(image, frame)
         if image is drawn.image:
-            # The renderer's own note (an overlay's frame, for its layers) is kept.
             annotate(image, recipe=out_recipe, caption=text)
         else:
             note(image, sections=drawn.sections, mode=drawn.mode, recipe=out_recipe,

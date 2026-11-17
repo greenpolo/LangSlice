@@ -49,18 +49,12 @@ from langslice.plugin_api import (
     WriteResult,
 )
 
-#: The tool's one writable part.
 PARTS = ("positions",)
-#: The atlas Brainways' rat model was trained on, as this tool reads it:
-#: its shape and voxel size, which ``position_mm = ap * 0.039`` assumes.
 ATLAS = "whs_sd_rat_39um"
 ATLAS_SHAPE = (1024, 512, 512)
 ATLAS_UM = 39.0
-#: What Brainways this is, kept with every call's settings.
 ENGINE_VERSION = "Brainways 0.1.16.3 (1c43b0b), vendored"
-#: The command that installs what the network needs.
 INSTALL = 'pip install "langslice[engines]"'
-#: The options ``plugin_config`` may give.
 OPTIONS = ("device", "long_edge", "cache_folder")
 
 
@@ -233,12 +227,9 @@ class CallRecord:
     timings_s: dict[str, float]
 
 
-# --- the agent-facing declaration -------------------------------------------
-
-
 def brainways_ap(
     *,
-    sections: list[str] = [],  # noqa: B006 - a declaration's default
+    sections: list[str] = [],  # noqa: B006
     channel: str = "",
     write: list[str] | None = None,
     view: bool = False,
@@ -280,9 +271,6 @@ def brainways_ap(
         of the written sections]].
     """
     ...
-
-
-# --- the call ---------------------------------------------------------------
 
 
 def run_brainways_ap(
@@ -344,7 +332,6 @@ def run_brainways_ap(
     result = _write_positions(context, proposals, propose_only)
     written = _written(result)
 
-    # the reply: the table, what was written, the channel read
     columns, table = _table(proposals, prior_mm, result, propose_only)
     reply: dict[str, object] = {
         "written": _written_word(written, propose_only),
@@ -397,7 +384,6 @@ def _listed(values: Sequence[str] | None) -> list[str] | None:
 def _write_positions(
     context: ToolContext, proposals: list[Proposal], propose_only: bool
 ) -> WriteResult | None:
-    # one undo step for every position, or nothing for a proposal
     if propose_only:
         return None
     rows = [
@@ -471,7 +457,6 @@ def _call_folder(context: ToolContext) -> Path:
 
 
 def _network(options: Options) -> tuple[Device, network.Network]:
-    # torch and the weights, or ENGINE_MISSING
     try:
         device = network.resolve_device(options.device)
     except ImportError as error:
@@ -503,7 +488,6 @@ def _propose(
     raster = context.section_raster(
         sid, level=engine.options.long_edge, raw=True, images=[channel]
     )
-    # one channel: the raster holds it as three equal planes
     pixels = np.asarray(raster.array, np.uint8)[:, :, 0]
     name = sid if sid.lower().endswith(".png") else sid + ".png"
     path = engine.folder / "images" / name
@@ -532,7 +516,7 @@ def _written_word(written: set[str], propose_only: bool) -> str:
 
 
 def _round(value: float, digits: int) -> float:
-    return round(value, digits) + 0.0  # + 0.0: no "-0.0"
+    return round(value, digits) + 0.0
 
 
 def _table(
@@ -541,8 +525,6 @@ def _table(
     result: WriteResult | None,
     propose_only: bool,
 ) -> tuple[list[str], list[list[str | float | None]]]:
-    # per section: filename, position, change from the position it held
-    # before the call, and what was written
     written = _written(result)
     errors = _row_errors(result)
     columns = ["section", "position_mm", "change_mm"]
@@ -573,7 +555,7 @@ def _row_errors(result: WriteResult | None) -> dict[str, str]:
     if result is None or not result.ok:
         return {}
     errors: dict[str, str] = {}
-    for row in cast("list[dict[str, object]]", result.rows):  # JSON values
+    for row in cast("list[dict[str, object]]", result.rows):
         if row.get("status") != RowStatus.OK:
             errors[str(row.get("id"))] = str(row.get("error", "NOT_WRITTEN"))
     return errors
@@ -663,9 +645,6 @@ def _save_call(
     (folder / "rows.json").write_text(
         json.dumps(rows, indent=1), encoding="utf-8", newline="\n"
     )
-
-
-# --- the factory ------------------------------------------------------------
 
 
 def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:

@@ -18,10 +18,8 @@ from typing import cast
 from langslice.engines.deepslice.engine import EngineRun
 from langslice.plugin_api import ToolContext
 
-#: Why a section has no row numbers when the reader names no reason.
 NO_PLANE = "not placed by the registration reader"
 
-#: A plane to read a section at: its position (mm) and (pitch, yaw).
 Plane = tuple[float, tuple[float, float]]
 
 
@@ -198,7 +196,6 @@ def _read(
         path, sections=ids, at=at, registered_on="oriented"
     )
 
-    # The reader's reply is JSON values in the shapes it documents.
     rows = cast(
         "list[dict[str, float | str | list[float] | None]]", read["placements"]
     )

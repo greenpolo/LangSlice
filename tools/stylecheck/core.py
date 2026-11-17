@@ -479,17 +479,11 @@ def _layer_packages(container: str, layer: object) -> tuple[str, ...]:
 ModuleCheck = Callable[[Module, Project, Config], Iterator[Violation]]
 ProjectCheck = Callable[[Project, Config], Iterator[Violation]]
 
-#: A check of either kind, as :class:`Registration` records it.
 Check = TypeVar("Check", ModuleCheck, ProjectCheck)
 
-#: Every registered check, by name, for the life of the process. A check
-#: registers itself when the module that defines it is imported;
-#: importing :mod:`tools.stylecheck.rules` imports them all.
 MODULE_CHECKS: dict[str, ModuleCheck] = {}
 PROJECT_CHECKS: dict[str, ProjectCheck] = {}
 
-#: The checks that report at most one error per file, at its module level:
-#: a state of the whole file, which every piece of a split file shares.
 PER_FILE_CHECKS: set[str] = set()
 
 

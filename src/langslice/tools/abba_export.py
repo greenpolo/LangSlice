@@ -76,12 +76,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The record of what the export holds, beside the project file.
 EXPORT_RECORD = "abba_export.json"
 MAX_WARP_PROCESSES = 32
-#: Micrometres per millimetre.
 UM_PER_MM = 1000.0
-#: What the record tells a person about opening the file.
 OPENING_NOTE = (
     "Open in ABBA 0.25 with File > Load State on the Allen Brain Adult Mouse "
     "Brain CCF 2017 (v3p1) atlas, started coronal. Each section opens from "
@@ -211,7 +208,6 @@ def _warp_step(
 def _check_stack(workspace: Workspace, state: Stack) -> None:
     """Refuse a stack ABBA cannot open as one project."""
     try:
-        # the orientation is checked per section, from its frame
         check_atlas(workspace.settings.atlas, "asr", state.plane)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, str(exc)) from exc

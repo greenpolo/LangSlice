@@ -24,12 +24,8 @@ from typing import Any
 
 import numpy as np
 
-#: File suffixes read as transforms (the rest as images).
 TRANSFORM_SUFFIXES = (".mat", ".txt", ".tfm", ".h5", ".hdf5", ".xfm")
-#: Image formats :func:`write_image` writes (by suffix).
 IMAGE_FORMATS = ("tif", "nii.gz", "nii", "mha", "nrrd")
-#: How far from affine a transform may be, in pixels at the grid's corners, to
-#: be read as one (:func:`linear_matrix`).
 LINEAR_TOLERANCE_PX = 1e-3
 
 

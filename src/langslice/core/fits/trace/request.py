@@ -18,19 +18,12 @@ from PIL import Image
 class BorderTraceRequest:
     """Hold one image-model edit: the section, its references, the prompt."""
 
-    #: The references, in prompt order: they follow the slice image as
-    #: Image 2..N. The prompt describes what each one is; providers just
-    #: deliver them in this order.
     reference_images: list[Image.Image]
     slice_image: Image.Image
     prompt: str
     provider: str = "gemini-api"
     model: str | None = None
-    #: Registration is always an EDIT of the slice image (pixel-aligned
-    #: output); each transport translates this its own way.
     mode: str = "edit"
-    #: The output tier the transport passes on (Gemini's image size, the
-    #: OpenAI images quality).
     size_tier: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 

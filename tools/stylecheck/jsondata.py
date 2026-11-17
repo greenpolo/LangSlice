@@ -32,7 +32,6 @@ def load_json(text: str) -> object:
     json.JSONDecodeError
         When the text is not JSON.
     """
-    # cast: the value is narrowed by its readers before any field is used
     return cast(object, json.loads(text))
 
 
@@ -55,7 +54,6 @@ def load_toml(text: str) -> dict[str, object]:
     tomllib.TOMLDecodeError
         When the text is not TOML.
     """
-    # cast: a TOML document is a table whose values are narrowed by readers
     return cast(dict[str, object], tomllib.loads(text))
 
 
@@ -75,7 +73,6 @@ def as_list(value: object) -> list[object] | None:
     """
     if not isinstance(value, list):
         return None
-    # cast: a JSON list's items are themselves values of unknown shape
     return cast(list[object], value)
 
 
@@ -95,7 +92,6 @@ def as_table(value: object) -> dict[str, object] | None:
     """
     if not isinstance(value, dict):
         return None
-    # cast: a JSON object's keys are text and its values of unknown shape
     return cast(dict[str, object], value)
 
 

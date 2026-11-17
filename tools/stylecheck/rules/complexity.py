@@ -56,10 +56,8 @@ from tools.stylecheck.rules.scopes import (
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
-#: The comprehension nodes, which are scored as loops.
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 
-#: The statements that open a block, for the nesting depth.
 BLOCK_STATEMENTS = (
     ast.If,
     ast.For,

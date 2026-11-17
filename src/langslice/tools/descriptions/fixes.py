@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from langslice.core.refusal import RefusalCode
 
-#: What to do about a code (the envelope's ``error.fix``), written with what
-#: it needs (:mod:`langslice.job.settings.needs`); ``{job}`` is the job folder,
-#: ``{verb}`` the verb.
 FIXES: dict[str, str] = {
     RefusalCode.UNKNOWN_VERB: "List the verbs with `langslice-job ops`.",
     RefusalCode.VERB_OFF: (

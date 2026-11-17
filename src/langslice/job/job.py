@@ -226,7 +226,7 @@ class Job(JobBorderTraces):
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
-        with lock.held():  # read and first checkpoint as one write
+        with lock.held():
             state = None
             resumed = False
             if spec.resume:
@@ -243,7 +243,7 @@ class Job(JobBorderTraces):
                 )
                 if changed:
                     raise inputs_changed(layout.folder, changed)
-            removed = _removed_settings(layout)  # this spec replaces them
+            removed = _removed_settings(layout)
             write_job_file(layout, spec=spec.to_dict())
             undo_file = UndoFile(layout)
             lists = undo_file.load()
@@ -253,9 +253,7 @@ class Job(JobBorderTraces):
                     f"[ingest] resuming from {layout.state_file}"
                 )
                 state.spec = spec.to_dict()
-                state.image_folder = str(
-                    images
-                )  # where they are now (a moved folder)
+                state.image_folder = str(images)
                 state.submitted = False
             else:
                 state = ingest(spec, workspace)
@@ -264,8 +262,6 @@ class Job(JobBorderTraces):
                 lists.undo, lists.redo = [], []
             if lists.notice is not None:
                 workspace.progress(f"[job] {lists.notice}")
-            # The opening ``preprocessed`` image of every section without one,
-            # outside undo: part of the job as it opens.
             section_images.ensure_opening(workspace, layout, state)
             job = cls(
                 state,
@@ -282,7 +278,7 @@ class Job(JobBorderTraces):
             if not resumed:
                 job.record_opening()
                 if undo_file.path.exists():
-                    job._save_undo()  # a fresh job empties the steps it read, never another's
+                    job._save_undo()
             job.checkpoint()
         _log_migrated(layout, migration, removed)
         layout.log_event("open", resumed=resumed)
@@ -316,8 +312,6 @@ class Job(JobBorderTraces):
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
         undo_file = UndoFile(layout)
-        # stamped before the unlocked reads: a write landing during them is
-        # reloaded by the first sync, not overwritten by the first commit
         seen = (
             file_stamp(str(layout.state_file)),
             file_stamp(str(undo_file.path)),
@@ -348,9 +342,6 @@ class Job(JobBorderTraces):
             section_images.ensure_opening(workspace, layout, job.state)
             or upgraded
         ):
-            # A job of an older format, or one without its opening images:
-            # written once at the current format (a dry run, or a folder this
-            # process cannot write, keeps it in memory).
             if persist and os.access(layout.folder, os.W_OK):
                 job._write_upgrade_if_writable(migration)
         return job

@@ -230,11 +230,6 @@ def prepare_linear_registration(
     target_key = render_cache_key(ctx, section, long_edge=long_edge)
     um_per_px = um_work * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
 
-    # The six numbers are normalized against the working frame
-    # (PREVIEW_LONG_EDGE), where every picture, registration.json and the
-    # maps place the section; the placement is made there and carried to
-    # this render by its pixel centres, so a render of another size is
-    # placed exactly where they place it.
     plane = cast(Plane, state.plane)
     atlas_to_working, geometry = linear_placement_matrix(
         working.size, um_work, ctx.atlas, float(section.position_mm), plane,

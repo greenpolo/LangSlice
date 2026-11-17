@@ -91,7 +91,7 @@ class ContextPictures(ContextProposals):
                 held.position_mm = float(proposal["position_mm"])
                 held.deformation = None
             if proposal.get("angles") is not None:
-                angles = cast("Sequence[float]", proposal["angles"])  # (pitch, yaw) as given
+                angles = cast("Sequence[float]", proposal["angles"])
                 held.angles = (float(angles[0]), float(angles[1]))
                 held.deformation = None
             record = held
@@ -102,7 +102,7 @@ class ContextPictures(ContextProposals):
                                store=store)
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
-        if proposal:  # a proposal not written shows no registration the section holds
+        if proposal:
             _no_registration(drawn[0].image)
         return drawn[0].image
 
@@ -144,7 +144,7 @@ class ContextPictures(ContextProposals):
                 if change.get("position_mm") is not None:
                     held.position_mm = float(change["position_mm"])
                 if change.get("angles") is not None:
-                    angles = cast("Sequence[float]", change["angles"])  # (pitch, yaw) as given
+                    angles = cast("Sequence[float]", change["angles"])
                     held.angles = (float(angles[0]), float(angles[1]))
                 held.deformation = None
         records = [state.by_id(name) for name in names]
@@ -161,7 +161,7 @@ class ContextPictures(ContextProposals):
             raise as_tool_error(refusal) from refusal
         images = [picture.image for picture in drawn]
         if proposal:
-            for image in images:  # a proposal not written shows no registration held
+            for image in images:
                 _no_registration(image)
             images = [self.caption(image, "proposal: positions and angles drawn as proposed, "
                                    "NOT written") for image in images]
@@ -199,9 +199,8 @@ class ContextPictures(ContextProposals):
             fields["sections"] = shown
             fields["mode"] = drawn.mode if drawn is not None and drawn.mode else "plugin"
         captioned = annotate(caption(image, text), **fields)
-        if drawn is not None and "registrations" in drawn.extra:  # a proposal shows none
+        if drawn is not None and "registrations" in drawn.extra:
             held = note_of(captioned)
             if held is not None:
                 held.extra["registrations"] = dict(drawn.extra["registrations"])
-        # the text is also the picture's caption in the reply's ``pictures`` list
         return captioned

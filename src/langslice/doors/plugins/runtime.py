@@ -68,7 +68,7 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     ``limits["pictures"]`` of them (the rest counted in ``pictures_not_shown``);
     ``PLUGIN_FAILED`` when it is no :class:`ToolResult`."""
     if not isinstance(result, ToolResult):
-        kind = type(result).__name__  # pyright: ignore[reportAny]  # a plugin's own reply
+        kind = type(result).__name__  # pyright: ignore[reportAny]
         raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
                       message=f"{tool.name}'s handler returned {kind}, not a ToolResult")
     reply = to_jsonable(dict(result.reply))
@@ -97,19 +97,19 @@ def body(run: Run, tool: ToolSpec,
     the run of *facts* has, by name."""
 
     def answer(**arguments: Any) -> Any:
-        tool_context = arguments.pop("tool_context", None)  # ADK's: the call's id
+        tool_context = arguments.pop("tool_context", None)
         _check_limit(tool, arguments)
         call_id = getattr(tool_context, "function_call_id", None) or uuid.uuid4().hex[:8]
         context = ToolContext(run, Caller.of_tool(tool), str(call_id))
         try:
             if tool.kind == "write" and not tool.long:
-                with context.writing():  # everything the call writes is one undo step
+                with context.writing():
                     result = tool.handler(context, **arguments)
-            else:  # a long tool takes the lock only to apply; its writes are still one step
+            else:
                 result = tool.handler(context, **arguments)
-        except Refused:  # a ToolError too: the tool door answers it
+        except Refused:
             raise
-        except Exception as exc:  # noqa: BLE001 - a plugin's failure is a reply, not a crash
+        except Exception as exc:  # noqa: BLE001
             logger.exception("plugin tool %s failed", tool.name)
             raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
                           message=f"{type(exc).__name__}: {exc}") from exc

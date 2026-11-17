@@ -70,17 +70,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The knobs of the identity, what a section without a transform is drawn at.
 IDENTITY_KNOBS: dict[str, float] = {
     "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
     "translate_x_mm": 0.0, "translate_y_mm": 0.0,
 }
-#: Placement modes that draw the section under its stored placement, where an
-#: applied deformation can be drawn too (``template`` draws the atlas alone).
 WARPED_PLACEMENT_MODES = ("overlay", "section")
 
-
-# --- the physical canvas --------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -98,7 +93,6 @@ class CanvasFrame:
     """
 
     section_id: str
-    #: The render the picture shows, before any warp (``shown_section``).
     section: Image.Image
     um_per_px: float
     position_mm: float
@@ -171,8 +165,6 @@ def draw_canvas(
     edge = int(long_edge or options.long_edge)
     window: list[float] = []
     if not options.full_view:
-        # The zoom is given in pixels of this picture unzoomed: draw that
-        # first for its content size.
         from dataclasses import replace
 
         whole = draw_canvas(
@@ -183,15 +175,10 @@ def draw_canvas(
         )
         x0, y0, x1, y1 = whole.panels[0].content_box
         window = options.window((x1 - x0, y1 - y0))
-    # The canvas is at least the section on each axis, so a section
-    # render 1/span times the panel puts at least the panel's pixels
-    # inside the zoom (render_slice stops at the working copy).
     span = (min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
             if window else 1.0)
     render_edge = int(math.ceil(edge / span))
     if render_edge > PREVIEW_LONG_EDGE:
-        # Past the working copy every request is the same render: one
-        # cache entry, however deep the zoom.
         render_edge = min(render_edge, max(ws.working_source(record.id)[0].size))
     shown, shown_um, (fx, fy) = shown_section(
         ws, record, section, um_per_px, options.look(state, record),
@@ -268,7 +255,7 @@ def _file_detail(
             wx = (ux + 0.5) * source.size[0] / float(width) - 0.5
             wy = (uy + 0.5) * source.size[1] / float(height) - 0.5
             found = native.section_pixels(ws, record, look, wx, wy)
-        except Exception:  # noqa: BLE001 - the picture stands on the render's own pixels
+        except Exception:  # noqa: BLE001
             logger.warning("zoom of %s: the image file could not be read; drawn from its "
                            "working copy", record.id, exc_info=True)
             return None
@@ -329,12 +316,10 @@ def current_warp(
         return None
     try:
         return store.current(state, section)
-    except Exception:  # a missing record must not break a placement picture
+    except Exception:
         logger.warning("Deformation record unreadable for %s", section.id, exc_info=True)
         return None
 
-
-# --- one section-position pair --------------------------------------------------
 
 
 @dataclass
@@ -348,7 +333,6 @@ class Placed:
     canvas: Canvas | None = None
 
 
-#: Per call, each section's working frame: ``(render, um/px, calibration source)``.
 Working = dict[str, tuple[Image.Image, float, str]]
 
 
@@ -379,8 +363,6 @@ def placement_pictures(
     section, um_per_px, source = working[record.id]
     row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
     params, kind = stored_placement(record, section)
-    # The section under its full placement: the stored warp too, at the
-    # position it was fitted at (the atlas-only view needs no section).
     warp = (current_warp(store, state, record)
             if store is not None and options.deformation == "applied"
             and position == record.position_mm and options.mode in WARPED_PLACEMENT_MODES
@@ -398,12 +380,9 @@ def placement_pictures(
     elif (options.mode in WARPED_PLACEMENT_MODES and record.deformation
           and position == record.position_mm
           and options.deformation == "applied"):
-        # Held but not drawable (stale or unreadable): say so, never pretend.
         row["deformation_drawn"] = False
     return Placed(images=canvas.images, row=row, canvas=canvas)
 
-
-# --- the interactive transform --------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -416,9 +395,7 @@ class Staged:
     calibration_source: str
     geometry: CanvasGeometry
     params: dict[str, float]
-    #: Rotation/scale centre in CANVAS pixels; None is the canvas centre.
     pivot: tuple[float, float] | None
-    #: The same pivot as fractions of the canvas, for the payload.
     pivot_frac: list[float] = field(default_factory=list)
 
     @property

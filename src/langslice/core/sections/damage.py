@@ -44,13 +44,9 @@ if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
 
-#: The hatch inside a marked region: the second ink of the deformable fit's
-#: pictures (excluded regions), so a marked region reads the same everywhere.
 HATCH_COLOR = (255, 64, 160)
-#: Distance between hatch lines and their width, in picture pixels.
 HATCH_SPACING_PX = 9
 HATCH_WIDTH_PX = 2
-#: Strength of the hatch lines over the picture (the tissue shows between them).
 HATCH_ALPHA = 0.8
 
 
@@ -154,7 +150,7 @@ def side_pair_refusal(
         placement = fit_grid(state, workspace, section).placement
     except ValueError:
         return None
-    atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+    atlas = cast("object", workspace.atlas)
     left = placement_left(atlas, placement, names)
     pair = getattr(left, "names", None)
     for name in names:
@@ -201,8 +197,6 @@ def exclusions(
         excluded.append(text)
     return restrict, tuple(excluded)
 
-
-# --- the picture ----------------------------------------------------------------------
 
 
 def _picture_mask(panel: PanelFrame, native: np.ndarray) -> np.ndarray:
@@ -333,9 +327,6 @@ def damage_picture(
         label=f"{record.id} damage", warp_record=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
-    # One arrangement for the whole picture: resolved from the section's own
-    # tissue (the first, "shown" panel), then forced for the atlas panel so
-    # the two sides never pick different ones.
     resolved = shown.panels[0].border_color if shown.panels else None
     atlas_options = replace(options, atlas_channels=("template", "borders"))
     if resolved is not None:

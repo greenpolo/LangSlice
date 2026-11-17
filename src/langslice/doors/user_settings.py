@@ -31,18 +31,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: Another file for the settings, or ``off`` for none.
 SETTINGS_ENV = "LANGSLICE_SETTINGS"
 SETTINGS_FILE = "settings.json"
 VERSION = 1
 _OFF = frozenset({"", "0", "off", "false", "no", "none"})
-#: The connections, in the order the window lists them.
 CONNECTIONS: tuple[str, ...] = ("openai-oauth", "openai-api", "anthropic-api", "gemini-api")
-#: Where registration runs: the user's agent app, or LangSlice's own agent.
 RUNS_IN: tuple[str, ...] = ("app", "langslice")
-#: The reasoning efforts ``langslice linear run --reasoning`` takes.
 REASONING: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
-#: How each connection spells a model for ``--model``.
 _MODEL_PREFIX = {"openai-oauth": "openai-oauth/", "openai-api": "",
                  "anthropic-api": "anthropic-api/", "gemini-api": "gemini-api/"}
 

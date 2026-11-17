@@ -39,10 +39,7 @@ from langslice.job.layout import writable
 logger = logging.getLogger(__name__)
 
 LOCK_FILE = "job.lock"
-#: How long a writer waits for another before giving up (:class:`JobBusy`).
-#: Writes hold the lock for a commit; long fits compute outside it.
 LOCK_TIMEOUT_S = 300.0
-#: How often a waiting thread with an ``abort`` check asks it, in seconds.
 ABORT_POLL_S = 0.05
 
 
@@ -62,13 +59,9 @@ class FolderLock:
         self.timeout = timeout
         self._lock: BaseFileLock | None = None
         self._unusable = False
-        #: The in-process lock taken before the folder's (reentrant).
         self._threads = threading.RLock()
         self._owner: int | None = None
         self._depth = 0
-        #: Called, still holding the lock, as the outermost hold of a
-        #: thread ends (:meth:`langslice.job.job.Job.checkpoint` writes the
-        #: files derived from the state there, once per hold).
         self.before_release: list[Callable[[], None]] = []
 
     def held_here(self) -> bool:
@@ -129,11 +122,11 @@ class FolderLock:
                 return
             except PermissionError:
                 self._unusable = self._is_unwritable()
-                with self.held():  # unwritable: held() works without the lock
+                with self.held():
                     yield True
                 return
             try:
-                with self.held():  # the file lock is reentrant: no wait
+                with self.held():
                     yield True
             finally:
                 lock.release()

@@ -36,15 +36,8 @@ from langslice.job.settings.tool_table import (
     positions_on,
 )
 
-#: The tasks a plugin tool can belong to (the tool is on only while it is).
 TASKS: tuple[str, ...] = tuple(freeze.TASK_PROPERTIES)
-#: A tool's ``task`` beyond the tasks: ``angles`` exists whenever the agent may
-#: write the cutting angles (as ``position_sections`` does: the position task
-#: on, or the transform task leaving the angles to the agent).
 ANGLES = "angles"
-
-
-# --- the declaration checks -----------------------------------------------------------
 
 
 def check_tool(
@@ -94,7 +87,7 @@ def check_tool(
         return f"{where}: the stub has no docstring (it is the tool's description)"
     try:
         inspect.signature(tool.stub, eval_str=True)
-    except Exception as exc:  # noqa: BLE001 - an unevaluable annotation
+    except Exception as exc:  # noqa: BLE001
         return f"{where}: the stub's signature cannot be read ({exc})"
     unknown = [item for item in tool.writes if item not in freeze.PROPERTIES]
     if unknown:
@@ -147,7 +140,7 @@ def not_offered(spec: Any) -> list[str]:
 
 def tool_def(tool: ToolSpec) -> ToolDef:
     """The core's definition of a plugin tool (what the per-spec views list)."""
-    row = TOOLS.get(tool.name)  # an in-tree engine's tool is its row
+    row = TOOLS.get(tool.name)
     if row is not None:
         return row
     task = tool.task
@@ -168,9 +161,6 @@ def tool_def(tool: ToolSpec) -> ToolDef:
         needs=tuple(tuple(group) for group in tool.needs),
         writes=tuple(tool.writes),
     )
-
-
-# --- the registry of loaded plugins ----------------------------------------------------
 
 
 @dataclass(frozen=True, eq=False)
@@ -310,8 +300,6 @@ def tool_defs(spec: Any) -> dict[str, ToolDef]:
 
 def tool_specs(spec: Any) -> dict[str, tuple[LoadedPlugin, ToolSpec]]:
     """Every engine and plugin tool of *spec*, with what it came from."""
-    # the in-tree engines' tools, then the tools the job's plugins add;
-    # without a spec, every engine's
     sources = engines(spec) if spec is None else of_spec(spec)
     return {
         tool.name: (plugin, tool)

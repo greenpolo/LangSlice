@@ -93,7 +93,7 @@ from langslice.tools.events import (
     target_ids,
 )
 
-if TYPE_CHECKING:  # import cycle: a run holds its toolbox
+if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 logger = logging.getLogger(__name__)
@@ -110,38 +110,17 @@ class ToolBox:
     """
 
     job: Job
-    #: The facts of the run the tools are declared in: what ``TOOLS.md``
-    #: is written from.
     variant: DescriptionFacts
     tools: list[Callable[..., object]] = field(default_factory=list)
     submission: dict[str, Any] = field(default_factory=dict)
-    #: The largest picture the driver model takes: the cap of ``look``'s
-    #: ``resolution`` at image resolution "auto".
     max_view_edge: int = DEFAULT_IMAGE_LIMIT[0]
-    #: The opening-read gate of a door that delivers the opening pictures
-    #: on request (MCP's ``show_stack`` pages): the pages not read yet,
-    #: ``None`` while the door has not armed it (:meth:`require_opening`).
-    #: Every write is refused (``OPENING_NOT_READ``) until the set is empty.
     opening_unread: set[int] | None = None
-    #: The provenance of the tool plugins the job loaded (module, factory,
-    #: versions, source digests, each tool's declaration as the model sees
-    #: it); empty without plugins.
     plugins: list[dict[str, Any]] = field(default_factory=list)
-    #: What every tool body of the box shares (the job, the workspace, the
-    #: picture level, the image model): a script's ``job.context`` sits on it.
     run: Run | None = None
-    #: Every verb the job can have, by name: read or write, long or not.
     verbs: Mapping[str, Verb] = field(default_factory=dict[str, Verb])
-    #: The door the job folder's event log names for every call.
     door: str = "agent"
-    #: Who is sent each call's events: a host's display, the event log.
     observers: tuple[LiveCallback, ...] = ()
-    #: Whether a call that crashed is answered with the refusal its exception
-    #: makes (MCP's tools) instead of raising (the built-in agent, the agent
-    #: CLI and the library raise it).
     answers_crashes: bool = False
-    #: One call at a time: a model's several calls of one turn may arrive
-    #: together, and every tool shares one state.
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -185,7 +164,7 @@ class ToolBox:
         for observer in self.observers:
             try:
                 observer(event)
-            except Exception:  # a host's display gone: the call goes on
+            except Exception:
                 logger.warning("Tool execution observer failed", exc_info=True)
 
     def opening_refusal(self) -> Refused | None:
@@ -219,20 +198,12 @@ class ToolCall:
     call before the body leaves the body unrun.
     """
 
-    #: The tool's name, as the model calls it.
     name: str
-    #: The tool's declaration over its body: binds the arguments to the
-    #: declared signature, fills the defaults and runs the body.
     declared: Callable[..., object]
-    #: The toolbox the tool belongs to.
     box: ToolBox
-    #: The arguments as the door passed them, by position and by name.
     args: tuple[object, ...]
     kwargs: dict[str, object]
-    #: The reply, once the body or a step has answered: the tool's own
-    #: (a dict of plain values and pictures, for every native tool).
     reply: object = None
-    #: The paths of the pictures the call saved in the job folder.
     pictures: list[str] = field(default_factory=list[str])
 
     @property
@@ -258,9 +229,6 @@ class ToolCall:
         bound = signature.bind(*self.args, **self.kwargs)
         bound.apply_defaults()
         return bound
-
-
-# --- the steps, in the order a call enters them ------------------------------
 
 
 @contextlib.contextmanager
@@ -307,7 +275,7 @@ def _log_events(call: ToolCall) -> Generator[None]:
             args=plain(arguments),
             target_ids=target_ids(box.job.state, call.name, arguments),
         )
-    except Exception:  # bad display metadata must never change the call
+    except Exception:
         logger.warning("Tool execution metadata unavailable", exc_info=True)
         fields.update(id=None, args={}, target_ids=[])
     box.notify({"kind": "tool_start", **fields})
@@ -337,7 +305,7 @@ def _announce_work(call: ToolCall) -> Generator[None]:
     yield
     reply = call.reply
     if isinstance(reply, dict):
-        fields = cast("dict[str, Any]", reply)  # a tool's reply: by name
+        fields = cast("dict[str, Any]", reply)
         call.reply = with_notices(call.box.job, fields, among=started)
 
 
@@ -346,7 +314,6 @@ def _save_pictures(call: ToolCall) -> Generator[None]:
     """Save the pictures the reply carries and list their numbers."""
     job = call.box.job
     run = call.box.run
-    # a box without its run (before build_tools sets it) saves no layers
     atlas_of = None
     if run is not None:
         atlas_of = functools.partial(getattr, run.workspace, "atlas")
@@ -369,7 +336,7 @@ def _save_pictures(call: ToolCall) -> Generator[None]:
         for number, text in zip(shown.numbers, captions, strict=False):
             caption = {"caption": text} if text else {}
             listed.append({"id": number, **caption})
-        fields = cast("dict[str, object]", reply)  # a tool's reply: by name
+        fields = cast("dict[str, object]", reply)
         fields["pictures"] = listed
 
 
@@ -388,7 +355,7 @@ def _clear_stale_deformations(call: ToolCall) -> Generator[None]:
     cleared = call.box.job.clear_stale_deformations()
     reply = call.reply
     if cleared and isinstance(reply, dict):
-        fields = cast("dict[str, object]", reply)  # a tool's reply: by name
+        fields = cast("dict[str, object]", reply)
         fields["deformation_cleared"] = cleared
 
 
@@ -421,7 +388,6 @@ def _opening_gate(call: ToolCall) -> Generator[None]:
     yield
 
 
-#: What one step does around the body: before its ``yield``, then after.
 StepFunction = Callable[[ToolCall], contextlib.AbstractContextManager[None]]
 
 
@@ -429,14 +395,10 @@ StepFunction = Callable[[ToolCall], contextlib.AbstractContextManager[None]]
 class Step:
     """One step of :data:`TOOL_STEPS`, and the calls it runs for."""
 
-    #: What the step does around the body.
     around: StepFunction
-    #: Whether the step runs for write tools only.
     writes_only: bool = False
 
 
-#: The steps every tool call goes through, in the order it enters them; the
-#: module docstring says what each does.
 TOOL_STEPS: tuple[Step, ...] = (
     Step(_answer_crashes),
     Step(_serialize),
@@ -503,18 +465,15 @@ def declared_tool(
     return tool
 
 
-# --- what the steps add to a reply -------------------------------------------
-
-
 def _new_pictures(reply: object) -> list[Image.Image]:
     """Return the pictures a reply carries that no operation saved yet."""
     if not isinstance(reply, dict):
         return []
-    fields = cast("dict[str, object]", reply)  # a tool's reply: by name
+    fields = cast("dict[str, object]", reply)
     media = fields.get(TOOL_MEDIA_PARTS_KEY)
     if "pictures" in fields or not isinstance(media, list):
         return []
-    items = cast("list[object]", media)  # pictures and lines of text
+    items = cast("list[object]", media)
     return [item for item in items if isinstance(item, Image.Image)]
 
 
@@ -541,15 +500,15 @@ def registrations_named(job: Job, reply: object, mark: int) -> object:
     left = job.registered_since(mark)
     if not left or not isinstance(reply, dict):
         return reply
-    fields = cast("dict[str, object]", reply)  # a tool's reply: by name
+    fields = cast("dict[str, object]", reply)
     if "registration" in fields:
         return fields
     in_rows: dict[object, object] = {}
     for key in ("changed", "rows"):
-        rows = cast("list[object]", fields.get(key) or [])  # status rows
+        rows = cast("list[object]", fields.get(key) or [])
         for row in rows:
             if isinstance(row, dict):
-                columns = cast("dict[str, object]", row)  # a row by column
+                columns = cast("dict[str, object]", row)
                 in_rows[columns.get("id")] = columns.get("registration")
     named = {
         section: number
@@ -585,7 +544,6 @@ def with_notices(
                     **({"caption": text} if text else {}),
                 }
             )
-    # a reply that already opens with notices keeps them first
     notices = [
         *result.get("background", ()),
         *(work.notice for work in finished),
@@ -622,16 +580,16 @@ def work_pictures(
     out: list[dict[str, object]] = []
     if not isinstance(reply, dict):
         return out
-    fields = cast("dict[str, object]", reply)  # a tool's reply: by name
-    entries = cast("list[object]", fields.get("pictures") or [])  # listed
+    fields = cast("dict[str, object]", reply)
+    entries = cast("list[object]", fields.get("pictures") or [])
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        picture = cast("dict[str, object]", entry)  # id, work, caption
+        picture = cast("dict[str, object]", entry)
         work = picture.get("work")
         if not work:
             continue
-        number = cast("int", picture["id"])  # a picture number
+        number = cast("int", picture["id"])
         record = job.views.lookup(int(number))
         if record is None or not record.path:
             continue

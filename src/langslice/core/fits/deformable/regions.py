@@ -18,27 +18,13 @@ import numpy as np
 from scipy import ndimage as ndi
 from scipy.optimize import linear_sum_assignment
 
-#: Gaps in the model's lines shorter than about twice this are closed. This
-#: module's distances and areas are the adult mouse brain's; the fit passes the
-#: atlas's brain scale (``core.atlas.brain_size.brain_scale``), which
-#: multiplies them (areas by its square).
 LINE_GAP_CLOSING_MM = 0.03
-#: An enclosed area below this size that sits wholly inside one placed region
-#: (purity above :data:`SMALL_LOOP_PURITY`) and is a small share of it
-#: (:data:`SMALL_LOOP_SHARE`) is a loop around a bubble or speck, not a region.
 SMALL_LOOP_MM2 = 0.04
 SMALL_LOOP_PURITY = 0.98
 SMALL_LOOP_SHARE = 0.05
-#: An area overlapping its best placed region less than this is left unnamed.
 MIN_NAME_PURITY = 0.1
-#: Minimum normalized overlap for the joint name assignment to rename an area.
 MIN_JOINT_SCORE = 0.02
-#: Gaps in the model's outermost line up to about twice this are closed before
-#: the area it encloses is filled (the section's extent, :func:`model_extent`).
 OUTLINE_GAP_CLOSING_MM = 0.1
-#: The enclosed area stands for the section's extent only when it is within
-#: these multiples of the placed atlas area; otherwise the outline is open or
-#: broken and the fit falls back to the placed footprint.
 OUTLINE_AREA_LIMITS = (0.5, 2.0)
 
 
@@ -85,7 +71,6 @@ def named_regions(
     radius = max(1, round(LINE_GAP_CLOSING_MM * brain_scale / mm_per_px))
     small_loop_mm2 = SMALL_LOOP_MM2 * brain_scale ** 2
     wall = np.asarray(ndi.binary_closing(lines, iterations=radius), dtype=bool) | lines
-    # A one-pixel barrier joins diagonal segments without moving area interiors.
     wall = np.asarray(ndi.binary_dilation(wall), dtype=bool)
     cells, count = cast(tuple[np.ndarray, int], ndi.label(~wall & tissue))
     lut = np.zeros(count + 1, dtype=placed.dtype)
@@ -112,7 +97,6 @@ def named_regions(
             "overlap_fraction": purity, "dropped": reasons,
         })
     _joint_names(cells, count, placed, area_px, named, lut, report)
-    # Fill the thin line barrier from the nearest area; unnamed stays unnamed.
     nearest = np.asarray(ndi.distance_transform_edt(
         cells == 0, return_distances=False, return_indices=True), dtype=int)
     filled = cells[tuple(nearest)]

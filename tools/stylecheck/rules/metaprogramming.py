@@ -27,30 +27,24 @@ from tools.stylecheck.rules.scopes import (
     string_value,
 )
 
-#: The finding for a call of ``globals()``.
 GLOBALS_CALL = (
     "globals() reads or rebinds module names at run time; use an explicit "
     "table (2.7)."
 )
 
-#: The finding for ``setattr`` on a module.
 MODULE_SETATTR = (
     "setattr on a module changes it at run time; define the name in the "
     "module itself (10.2)."
 )
 
-#: Calls that build a class at run time.
 CLASS_FACTORIES = frozenset(
     {"types.new_class", "dataclasses.make_dataclass", "make_dataclass"}
 )
 
-#: The one metaclass allowed: the one ``abc.ABC`` uses.
 ALLOWED_METACLASS = "ABCMeta"
 
-#: Methods that forward attribute access at run time.
 FORWARDING_METHODS = frozenset({"__getattr__", "__getattribute__"})
 
-#: Calls that reach an attribute by a name given as a string.
 ATTRIBUTE_ACCESSORS = frozenset({"getattr", "hasattr", "setattr", "delattr"})
 
 

@@ -46,34 +46,19 @@ from typing import cast
 
 import numpy as np
 
-#: The channel folder names DMC-BrainMap offers (its params widget).
 DMC_CHANNELS = ("dapi", "green", "n3", "cy3", "cy5")
-#: DMC's own bregma voxel per atlas (``utils/atlas_utils.get_bregma``);
-#: any other atlas gets DMC's estimate (:func:`dmc_bregma`).
 DMC_BREGMA: dict[str, tuple[int, int, int]] = {
     "allen_mouse_10um": (540, 0, 570),
     "whs_sd_rat_39um": (371, 72, 266),
     "azba_zfish_4um": (360, 0, 335),
 }
-#: DMC's names of the three anatomical axes (BrainGlobe's
-#: ``axes_description``); its results table knows no others.
 DMC_AXES = frozenset({"ap", "si", "rl"})
-#: DMC fits a section's transform only from this many pairs or more.
 MIN_PAIRS = 5
-#: Grids of candidate pairs over the image, tried in turn until enough
-#: pairs fall on the atlas plane: the coarsest gives at most 25 pairs.
 PAIR_GRIDS = (5, 9, 17)
-#: The grid over the image on which the plane's centre voxel is chosen.
 DEPTH_GRID = 33
-#: Decimals the pairs and angles are written with: 1e-4 voxel, far below
-#: the whole voxels DMC rounds to.
 DECIMALS = 4
-#: How far past its whole-voxel shift an angle's tangent puts the shift, in
-#: voxels: far above the angle's rounding to 1e-6 degree, far below a voxel.
 ANGLE_MARGIN = 0.01
 
-#: BrainGlobe's two-letter axis name for each origin letter (its
-#: ``axes_description``: the letter is where the axis starts).
 _AXIS_NAMES: dict[str, str] = {
     "a": "ap",
     "p": "pa",
@@ -82,7 +67,6 @@ _AXIS_NAMES: dict[str, str] = {
     "r": "rl",
     "l": "lr",
 }
-#: The axis each cutting plane is normal to.
 _NORMAL_AXIS: dict[str, str] = {
     "coronal": "ap",
     "horizontal": "si",
@@ -94,9 +78,7 @@ _NORMAL_AXIS: dict[str, str] = {
 class DmcAxis:
     """One axis of DMC's section frame, as its ``xyz_dict`` holds it."""
 
-    #: BrainGlobe's two-letter name (``ap``, ``si``, ``rl``).
     name: str
-    #: The axis's index in the atlas volume.
     index: int
     size: int
     resolution_um: float
@@ -163,8 +145,6 @@ def dmc_frame(
             f"{atlas} has {', '.join(names)}"
         )
 
-    # the plane's normal is z; DMC's rows and columns are the other two
-    # axes, in the volume's order (BrainGlobe's ``index_pairs``)
     normal = names.index(_NORMAL_AXIS[plane])
     rows, cols = (i for i in range(3) if i != normal)
     axes = [
@@ -273,7 +253,6 @@ def dmc_placement(
     size_x, size_y = frame.x.size, frame.y.size
     voxels = _voxel_map(pixel_to_atlas_um, frame)
 
-    # depth as a function of the atlas plane's x and y
     in_plane = voxels[:2, :2]
     if abs(cast("float", np.linalg.det(in_plane))) < 1e-9:
         raise ValueError(
@@ -286,7 +265,6 @@ def dmc_placement(
     x_angle = _shift_angle(x_shift, size_x)
     y_angle = _shift_angle(y_shift, size_y)
 
-    # the centre voxel that agrees best with LangSlice's depth
     depth_x, depth_y, depth = _points(voxels, width, height, DEPTH_GRID, frame)
     if depth.size == 0:
         raise ValueError("the section does not reach DMC's atlas plane")
@@ -375,8 +353,6 @@ def dmc_depth(
     if x_shift == 0 and y_shift == 0:
         return np.full(np.shape(grid_x), float(z_voxel))
     size_x, size_y = frame.x.size, frame.y.size
-    # the plane through the centre, its right edge and its top edge, each
-    # vector (z, y, x) from the centre; their cross product is its normal
     right = (float(x_shift), 0.0, size_x - 1 - size_x / 2)
     top = (float(-y_shift), -size_y / 2, 0.0)
     normal_z = right[1] * top[2] - right[2] * top[1]

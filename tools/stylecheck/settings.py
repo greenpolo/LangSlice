@@ -19,7 +19,6 @@ at least as strict as at the reference, in the :class:`Direction` the
 setting's kind gives; any other change loosens the checks.
 """
 
-# numpydoc ships no type information; the one function used is typed below.
 # pyright: reportMissingTypeStubs=false
 
 from __future__ import annotations
@@ -53,29 +52,17 @@ from tools.stylecheck.scope import Key, Tool
 class Direction(enum.StrEnum):
     """Say which change of a setting keeps the checks at least as strict."""
 
-    #: A limit, which may only go down.
     LOWER = "lower"
-    #: A minimum, which may only go up.
     HIGHER = "higher"
-    #: A list of what is checked or banned; items may only be added.
     GROWS = "grows"
-    #: A list of exemptions; items may only be removed.
     SHRINKS = "shrinks"
-    #: File patterns to ignored codes; codes and patterns may only go.
     IGNORES = "ignores"
-    #: Names to values; entries may only be added.
     TABLE = "table"
-    #: A basedpyright report level, which may only rise; an unset level
-    #: is its checking mode's default (:mod:`tools.stylecheck.pyright_levels`).
     SEVERITY = "severity"
-    #: basedpyright's ``typeCheckingMode``, which may only rise.
     MODE = "mode"
-    #: Any change needs a reader to judge it.
     FIXED = "fixed"
 
 
-#: The direction of every field of :class:`Config`; a new field is given
-#: one here (tests/stylecheck/test_framework.py checks that each has one).
 CONFIG_DIRECTIONS: dict[str, Direction] = {
     "paths": Direction.GROWS,
     "baseline": Direction.FIXED,
@@ -106,8 +93,6 @@ CONFIG_DIRECTIONS: dict[str, Direction] = {
     "layers": Direction.FIXED,
 }
 
-#: The ``[tool.ruff]`` keys with a direction; every other key is fixed. The
-#: keys whose value is a table are recorded whole, not key by key.
 RUFF_DIRECTIONS: dict[str, Direction] = {
     "ruff.line-length": Direction.LOWER,
     "ruff.include": Direction.GROWS,
@@ -124,7 +109,6 @@ RUFF_DIRECTIONS: dict[str, Direction] = {
     "ruff.lint.flake8-import-conventions.extend-aliases": Direction.TABLE,
 }
 
-#: The other recorded keys with a direction; every other key is fixed.
 OTHER_DIRECTIONS: dict[str, Direction] = {
     "checker-ruff.select": Direction.GROWS,
     "checker-ruff.ignore": Direction.SHRINKS,
@@ -137,15 +121,10 @@ OTHER_DIRECTIONS: dict[str, Direction] = {
     "basedpyright.typeCheckingMode": Direction.MODE,
 }
 
-#: basedpyright's report levels, least strict first; ``false`` and
-#: ``true`` are its spellings of ``none`` and ``error``.
 SEVERITIES = ("none", "hint", "information", "warning", "error")
 
-#: basedpyright's checking modes, least strict first.
 MODES = ("off", "basic", "standard", "strict", "recommended", "all")
 
-#: The ruff table whose ignores the checker's own ruff run keeps; it
-#: replaces ``per-file-ignores``, which holds the main run's alone.
 CHECKER_RUFF_IGNORES = "ruff.lint.extend-per-file-ignores"
 
 
@@ -293,7 +272,6 @@ def current_record(root: Path, config: Config, checks: list[str]) -> Record:
     Record
         The checks, sorted, and every recorded setting.
     """
-    # cast: a dataclass's fields, as the plain data they hold
     fields = as_table(canonical(cast(object, dataclasses.asdict(config))))
     settings: dict[str, object] = {
         f"stylecheck.{name}": value for name, value in (fields or {}).items()
@@ -342,7 +320,7 @@ def loosenings(before: Record, after: Record) -> list[SettingChange]:
         if old == new:
             continue
         if old is None and name.startswith("stylecheck."):
-            continue  # a field the checker gained, with the code that reads it
+            continue
 
         direction = setting_direction(name)
         compared = (old, new)
@@ -591,8 +569,6 @@ def _fixed(old: object, new: object) -> bool:
     return old == new
 
 
-#: The test of each direction: whether a change from the first value to
-#: the second keeps the checks at least as strict.
 _ACCEPTS: dict[Direction, Callable[[object, object], bool]] = {
     Direction.LOWER: _lower,
     Direction.HIGHER: _higher,
@@ -605,7 +581,6 @@ _ACCEPTS: dict[Direction, Callable[[object, object], bool]] = {
     Direction.FIXED: _fixed,
 }
 
-#: What each direction allows, for the report.
 _RULE_WORDS: dict[Direction, str] = {
     Direction.LOWER: "a limit may only go down",
     Direction.HIGHER: "a minimum may only go up",

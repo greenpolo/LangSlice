@@ -12,9 +12,6 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-# Whole-slide microscopy exports routinely exceed PIL's ~179-megapixel
-# decompression-bomb guard, which is meant for untrusted web content; our
-# inputs are the user's local acquisitions.
 Image.MAX_IMAGE_PIXELS = None
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
@@ -23,17 +20,13 @@ DEFAULT_VLM_MAX_PIXELS = 12_000_000
 DEFAULT_VLM_MAX_LONG_EDGE = 4096
 
 
-#: Length units an image tag may name, in micrometres. Micron spellings are
-#: matched separately: a file written by tifffile carries "µm" whose UTF-8
-#: bytes routinely reach us as "Âµm", and a plain "m" lookup would read that
-#: as METRES.
 _LENGTH_UM: dict[str, float] = {"nm": 1e-3, "mm": 1e3, "cm": 1e4, "m": 1e6}
 
 
 def _unit_to_um(unit: str) -> float | None:
     text = unit.strip().lower()
     if not text:
-        return 1.0  # OME's default PhysicalSize unit is micrometres
+        return 1.0
     if "µ" in text or "μ" in text or "micro" in text or text.startswith("u"):
         return 1.0
     return _LENGTH_UM.get(text)
@@ -114,24 +107,12 @@ def adaptive_preprocess(image: Image.Image) -> Image.Image:
     return _blend_channels(planes, coverage_weights(planes), clahe_clip=AUTO_CLAHE_CLIP)
 
 
-# --- host preprocessing: N exported channels -> the one image shown ---
-
-#: The automatic path's CLAHE clip limit (:func:`adaptive_preprocess`, a
-#: host's blend): enough local contrast to show cell-poor borders without
-#: amplifying the background's noise.
 AUTO_CLAHE_CLIP = 4.0
-#: The automatic path's CLAHE tile grid.
 AUTO_CLAHE_TILE = (8, 8)
-#: The one mode a host's blend takes (``JobSpec.host_preprocessing``).
 HOST_PREPROCESS_AUTO = "auto"
 
 
-#: Smallest long edge a section's working copy may have: the largest picture a
-#: run shows, the 768 px overlay at "high". Every render is drawn from the
-#: working copy, so a whole-slide scan is never decoded at full size.
 WORKING_MIN_EDGE = 1536
-#: Largest long edge of a working copy decoded from a file without a usable
-#: pyramid level (it is downsampled once to this).
 WORKING_MAX_EDGE = 3072
 
 
@@ -347,8 +328,6 @@ def coverage_weights(channels: list[np.ndarray]) -> list[float]:
     return weights
 
 
-# --- raw channels and the agent-chosen appearance ---------------------------
-
 
 def read_working_pages(
     path: str | Path, min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
@@ -417,7 +396,7 @@ def working_size(
             scale = max_edge / float(max(size))
             size = (max(1, round(size[0] * scale)), max(1, round(size[1] * scale)))
         return size, full_width / float(size[0])
-    except Exception:  # an odd layout: the caller decodes
+    except Exception:
         return None
 
 
@@ -481,7 +460,6 @@ def _shrink_channel(channel: np.ndarray, max_edge: int) -> np.ndarray:
     return np.asarray(resized, dtype=np.uint8)
 
 
-#: Names of a single-page colour file's channels, in order.
 RGB_CHANNEL_NAMES = ("red", "green", "blue")
 
 
@@ -544,7 +522,7 @@ def _intensity_range(dtype: np.dtype, low: float, high: float,
         span = (float(info.min), float(info.max))
     else:
         span = observed if observed is not None else (low, high)
-    if not high > low:  # a flat page reads as zeros
+    if not high > low:
         high = low + 1.0
     return IntensityRange(str(dtype), span[0], span[1], float(low), float(high))
 
@@ -616,12 +594,7 @@ def working_intensity_ranges(
         return [_array_range(np.asarray(page.asarray())) for page in handle.pages]
 
 
-#: Threads ITK's N4 filter runs on: a multithreaded filter's
-#: last bits depend on the split, so the count is fixed.
 ITK_THREADS = 8
-#: N4: the image and mask shrunk
-#: by 4, four levels of 50 iterations, tolerance 1e-7, a B-spline with 4
-#: control points per axis (mesh 1, order 3).
 N4_SHRINK = 4
 N4_ITERATIONS = (50, 50, 50, 50)
 N4_TOLERANCE = 1e-7
@@ -644,7 +617,6 @@ def _n4_corrected(array: np.ndarray, tissue: np.ndarray | None) -> np.ndarray:
     n4.SetConvergenceThreshold(N4_TOLERANCE)
     n4.SetNumberOfControlPoints([N4_CONTROL_POINTS] * 2)
     n4.Execute(shrunk, shrunk_mask)
-    # The field is fitted on the shrunk plane and evaluated on the whole one.
     field = n4.GetLogBiasFieldAsImage(image)
     return sitk.GetArrayFromImage(image / sitk.Exp(field)).astype(np.float32)
 
@@ -662,8 +634,6 @@ def enhance_plane(plane: np.ndarray, *, n4: bool) -> np.ndarray:
     tissue = plane > 15
     out = _n4_corrected(array, tissue if tissue.any() else None)
     region = tissue if tissue.any() else np.ones(plane.shape, dtype=bool)
-    # Keep the channel's own brightness: a dim channel stays dim, so the
-    # weights still mean what they say and its noise is not stretched up.
     level = float(out[region].mean())
     if not np.isfinite(level) or level <= 0:
         return plane
@@ -700,8 +670,6 @@ def custom_appearance(
     )
 
 
-#: Margin left around the atlas anatomy when framing it, as a fraction of
-#: the anatomy's long side.
 FRAME_MARGIN = 0.06
 
 
@@ -723,8 +691,6 @@ def mask_box(
     scale_x, scale_y = size[0] / float(width), size[1] / float(height)
     x0, x1 = float(xs.min()) * scale_x, (float(xs.max()) + 1.0) * scale_x
     y0, y1 = float(ys.min()) * scale_y, (float(ys.max()) + 1.0) * scale_y
-    # One padding distance for both axes so framing cannot change the apparent
-    # aspect ratio.
     pad = margin * max(x1 - x0, y1 - y0)
     box = (
         max(0, int(x0 - pad)),

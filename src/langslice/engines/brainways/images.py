@@ -33,18 +33,11 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-#: The size Brainways' thumbnail of a section fits in, (height, width).
 THUMBNAIL_HW = (1024, 1024)
-#: The share of pixels ``slice_to_uint8`` saturates at each end.
 SATURATION = 0.001
-#: The number of histogram bins ``slice_to_uint8`` reads the limits from.
 HISTOGRAM_BINS = 1024
-#: The network's input size, pixels (``Resize(height=224, width=224)``).
 INPUT_PX = 224
-#: ``NormalizePercentile(limits=(0.1, 99.8))``, kept in float32 as it is.
 PERCENTILES = np.array((0.1, 99.8), dtype=np.float32)
-#: albumentations' ``Normalize`` defaults (ImageNet) on the 0-255 scale, as
-#: float32 per channel: subtract the mean, multiply by the denominator.
 MEAN = np.multiply((0.485, 0.456, 0.406), 255.0, dtype=np.float32)
 DENOMINATOR = np.reciprocal(
     np.multiply((0.229, 0.224, 0.225), 255.0, dtype=np.float32)
@@ -100,13 +93,11 @@ def resize_size(
 def _resize_image(
     image: npt.NDArray[np.uint8], size: tuple[int, int]
 ) -> npt.NDArray[np.uint8]:
-    # Brainways' resize_image: it fits the size again, halves the image
-    # while it stays at least twice the target, then resizes bilinearly
     height, width = _height_width(image)
     output = resize_size((height, width), size)
     if output <= (height, width):
         factor = min(height / output[0], width / output[1])
-        halvings = int(cast("float", np.log2(factor)))  # a numpy float
+        halvings = int(cast("float", np.log2(factor)))
         for _ in range(halvings):
             height, width = _height_width(image)
             half = (int(width / 2), int(height / 2))
@@ -116,12 +107,11 @@ def _resize_image(
 
 
 def _height_width(image: npt.NDArray[np.generic]) -> tuple[int, int]:
-    shape = cast("tuple[int, ...]", image.shape)  # numpy types it loosely
+    shape = cast("tuple[int, ...]", image.shape)
     return shape[0], shape[1]
 
 
 def _stretch_to_uint8(image: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
-    # slice_to_uint8: clip to the contrast limits, then min-max to 0-255
     low, high = _contrast_limits(image)
     clipped = np.clip(image.astype(np.float64), low, high)
     smallest, largest = np.min(clipped), np.max(clipped)
@@ -131,11 +121,8 @@ def _stretch_to_uint8(image: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
 
 
 def _contrast_limits(image: npt.NDArray[np.uint8]) -> tuple[float, float]:
-    # slice_contrast_values: the limits that saturate SATURATION of the
-    # pixels at each end, read off a histogram whose end bins are dropped
-    # when they hold more than their neighbours
     counts, edges = np.histogram(image.ravel(), bins=HISTOGRAM_BINS)
-    hist = cast("list[int]", counts.tolist())  # tolist is untyped
+    hist = cast("list[int]", counts.tolist())
     bounds = cast("list[float]", edges.tolist())
     if hist[0] > hist[1]:
         hist, bounds = hist[1:], bounds[1:]
@@ -213,7 +200,6 @@ def plane_input(plane: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     resized = np.asarray(_to_input_size(plane), dtype=np.float32)
     lower, upper = _percentiles(resized.astype(np.float64), float32=True)
 
-    # the limits and the span cast to float32, as numpy 1 casts them
     low, high = np.float32(lower), np.float32(upper)
     span = np.float32(upper - lower + 1e-6)
     unit = (np.clip(resized, low, high) - low) / span
@@ -224,7 +210,6 @@ def plane_input(plane: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
 def _to_input_size(
     image: npt.NDArray[np.uint8] | npt.NDArray[np.float32],
 ) -> object:
-    # albumentations' Resize: by area, and only when the size differs
     if _height_width(image) == (INPUT_PX, INPUT_PX):
         return image
     size = (INPUT_PX, INPUT_PX)
@@ -232,7 +217,6 @@ def _to_input_size(
 
 
 def _normalized(levels: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
-    # ToRGB, then Normalize: (level - mean) * denominator per channel
     channels = np.broadcast_to(levels, (3, INPUT_PX, INPUT_PX))
     centred = channels - MEAN[:, np.newaxis, np.newaxis]
     scaled = centred * DENOMINATOR[:, np.newaxis, np.newaxis]
@@ -242,10 +226,6 @@ def _normalized(levels: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
 def _percentiles(
     image: npt.NDArray[np.float64], *, float32: bool
 ) -> tuple[float, float]:
-    # numpy 1's np.percentile(image, PERCENTILES), method "linear", on the
-    # image's values (exact in float64): the quantiles and their index in
-    # float32, the weight and the interpolation in float64, the difference
-    # of neighbours in the image's own dtype (float32 for an atlas plane)
     values = np.sort(image, axis=None)
     quantiles = PERCENTILES / np.float32(100)
     index = np.float32(values.size - 1) * quantiles
@@ -264,5 +244,5 @@ def _percentiles(
     from_low = low + difference * weight
     from_high = high - difference * (1 - weight)
     result = np.where(weight >= 0.5, from_high, from_low)
-    lower, upper = cast("list[float]", result.tolist())  # two floats
+    lower, upper = cast("list[float]", result.tolist())
     return lower, upper

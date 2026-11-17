@@ -7,19 +7,13 @@ import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-#: QuickNII / DeepSlice section numbers: ``_s`` then digits (DeepSlice's
-#: ``number_sections``, non-legacy).
 SECTION_NUMBER = re.compile(r"_s(\d+)")
-#: The section number a LangSlice export adds to the name of its image copy
-#: (``<stem>_sNNN.png``, :mod:`langslice.job.quint_images`).
 COPY_NUMBER = re.compile(r"_s\d+$")
 
 
 class AmbiguousMatch(ValueError):
     """The file's entries cannot be matched to the job's sections one to one."""
 
-
-# --- matching entries to section files -----------------------------------------------
 
 
 def base_name(filename: str) -> str:
@@ -54,8 +48,6 @@ def _same_number(name: str, section_id: str) -> bool:
     return number is not None and number == section_number(section_id)
 
 
-#: The matching rules, tried in this order (the module text of
-#: :mod:`langslice.job.imports.readers` says each).
 RULES = (
     ("exact", _same_name),
     ("stem", _same_stem),

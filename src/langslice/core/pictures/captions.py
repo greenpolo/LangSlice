@@ -13,7 +13,6 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-#: How an atlas caption names a plane's cutting angles (:func:`angles_label`).
 ANGLES_LABEL = " pitch {:.1f} yaw {:.1f}"
 
 
@@ -23,8 +22,6 @@ def angles_label(angles: tuple[float, float], template: str = ANGLES_LABEL) -> s
     return template.format(pitch, yaw) if (pitch or yaw) else ""
 
 
-#: How a caption names the plane an atlas picture without a section is drawn
-#: at when the sections' cutting angles differ (``Stack.view_angles``).
 MEDIAN_ANGLES_LABEL = " at the median of the sections' cutting angles, pitch {:.1f} yaw {:.1f}"
 
 
@@ -39,7 +36,6 @@ def view_angles_label(angles: tuple[float, float], *, median: bool) -> str:
     return angles_label(angles)
 
 
-#: Font size of the label strip :func:`caption` burns into an image.
 CAPTION_PX = 14
 
 
@@ -47,7 +43,7 @@ CAPTION_PX = 14
 def _caption_font() -> Any:
     try:
         return ImageFont.load_default(size=CAPTION_PX)
-    except TypeError:  # Pillow < 10.1 has no sized default font
+    except TypeError:
         return ImageFont.load_default()
 
 
@@ -72,10 +68,6 @@ def caption(image: Image.Image, text: str, *, min_width: int = 0) -> Image.Image
     probe = ImageDraw.Draw(source)
     left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
     band = int(bottom - top + 6)
-    # The band sits BELOW the picture, never over it (a caption drawn on the
-    # pixels covered exactly the magnified dorsal tissue an agent was
-    # reading), and never above it: the picture's pixel (x, y) is then the
-    # content's own, the coordinates a zoom box is given in.
     labelled = Image.new("RGB", (width, source.height + band), (0, 0, 0))
     labelled.paste(source, (0, 0))
     draw = ImageDraw.Draw(labelled)

@@ -17,10 +17,8 @@ import numpy as np
 
 from langslice.plugin_api import RefusalCode, ToolContext, ToolError
 
-#: The default atlas image, resolved by the job's atlas when the frame is made.
 NISSL = "nissl"
 BORROWED_NISSL = "ccfv3augmented_nissl"
-#: The engines that take a section mask, for the refusal of the one that does not.
 MASK_ENGINES = "fireants_syn, elastix_affine, emlddmm_stack and spomialign"
 SORTING_SAVED = "saved with the deformation; make_mask source fit"
 

@@ -79,8 +79,6 @@ class LiveEvents:
                     self.emit(kind, text=text)
             elif text:
                 previous = self._streamed[kind]
-                # Providers aggregate final text after yielding token deltas.
-                # A differing final version is a replacement, not more tokens.
                 if text.startswith(previous):
                     remaining = text[len(previous):]
                     if remaining:

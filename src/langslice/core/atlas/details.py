@@ -30,7 +30,7 @@ _KEY = re.compile(r"`([A-Za-z0-9_.\-]+)`")
 
 def _plain(text: str) -> str:
     """Markdown as plain text: links and badges become their words, spaces collapse."""
-    while _LINK.search(text):  # badges (images) go; a link keeps its words
+    while _LINK.search(text):
         text = _LINK.sub(lambda match: "" if match.group(0).startswith("!") else match.group(1),
                          text)
     return re.sub(r"\s+", " ", text.replace(" (see below)", "")).strip()
@@ -81,7 +81,7 @@ def atlas_description(atlas_name: str) -> str | None:
     return _details().get(atlas_name.lower())
 
 
-def _refresh() -> None:  # pragma: no cover - reads the network
+def _refresh() -> None:  # pragma: no cover
     from urllib.request import urlopen
 
     latest = f"https://api.github.com/repos/{REPOSITORY}/commits?path={PAGE}&per_page=1"

@@ -92,21 +92,9 @@ from langslice.core.geometry.oblique import plane_index_coordinates
 from langslice.core.hardware import gpu_slots
 from langslice.core.space import atlas_space_context
 
-#: Metric weight of each label-map channel; ANTs' own label registration
-#: weights every label pair 1.0, next to 1.0 for the image pair.
 LABEL_CHANNEL_WEIGHT = 1.0
-#: Route B's moving mask reaches this far past the placed atlas when the
-#: model's outline is used, so an outline beyond the atlas can draw it out
-#: (the moving image there is drawn borders, with no slide artifacts to fence off).
-#: Adult mouse; times the brain scale.
 TRACE_MOVING_MARGIN_MM = 1.0
-#: Stain normalization percentiles inside the fixed mask.
 STAIN_PERCENTILES = (1.0, 99.0)
-#: A region-restricted step keeps its full displacement inside the region's
-#: fit neighbourhood and fades it (raised cosine) to none over this distance
-#: beyond: ANTs' masks only limit where the metric is measured, so its smooth
-#: field otherwise moves tissue far from the region. Adult mouse; times the
-#: brain scale.
 RESTRICTED_TAPER_MM = 0.3
 
 
@@ -120,21 +108,14 @@ class PreparedFit:
     grid: WorkingGrid
     inputs: EngineInputs | None
     native: np.ndarray
-    #: The placed atlas footprint the fixed mask starts from, on the section grid.
     footprint: np.ndarray
-    #: Ids excluded on both sides (whole regions; diagnostics skip them).
     excluded: frozenset[int]
     ventricles: frozenset[int]
     atlas_meta: dict[str, Any]
     previous: DeformableRecord | None = None
     details: dict[str, Any] = field(default_factory=dict)
-    #: Native-plane pixels excluded from the fit, one-sided entries included.
     excluded_mask: np.ndarray | None = None
-    #: A restricted step's weight on the section grid (1 in the region's fit
-    #: neighbourhood, fading to 0 over :data:`RESTRICTED_TAPER_MM`); None
-    #: for a fit over the whole section.
     step_weight: np.ndarray | None = None
-    #: The atlas's brain scale every distance of this fit was multiplied by.
     brain_scale: float = 1.0
 
 
@@ -262,7 +243,6 @@ def prepare_fit(
         atlas, placement, (width, height), settings.detail, previous, scale)
     spacing = float(np.mean(grid.spacing_mm))
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
-    # One-sided entries ("CTX:left") need the placement's displayed left.
     left = placement_left(atlas, placement, (*settings.exclude, *settings.structures))
     excluded = whole_region_ids(atlas, settings.exclude)
     excluded_native = (regions_mask(atlas, native, settings.exclude, left)
@@ -293,10 +273,6 @@ def prepare_fit(
     kept = (current != 0) & ~excluded_w
     masks = footprint_masks(current, excluded_w, spacing, scale)
     fixed_mask, moving_mask = masks.fixed.copy(), masks.moving.copy()
-    # Route B with named regions: the section's extent is what the model's
-    # outline encloses. Outside it is not section, and that is information the
-    # fit uses: the masks cover it, so atlas left there costs, and an outline
-    # beyond the placed atlas can pull the atlas out to it.
     extent = extent_ratio = None
     if settings.labels == "model":
         assert lines_w is not None
@@ -379,9 +355,6 @@ def prepare_fit(
         fixed_edges = edge_image(fixed, fixed_mask, sigma_px)
         source = moving
         if excluded_w.any():
-            # Blanking an excluded region draws a false edge around it, which
-            # pulled the tissue in (Elastix); fill the region from its
-            # surroundings first so only real edges remain.
             source = _fill_from_surroundings(moving, dilate(excluded_w, 1.0))
         moving_edges = edge_image(source, moving_mask, sigma_px)
         details["edge_channel"] = {"sigma_um": sigma_um, "weight": EDGE_CHANNEL_WEIGHT}
@@ -579,8 +552,6 @@ def finish_fit(
     if previous is None:
         total, inverse = step_field, step_inverse
     else:
-        # The step composes onto its parent as the parent is saved, so the
-        # record rebuilt on loading (fields.rebuilt_fields) is this one.
         assert previous.inverse_field_mm is not None
         parent_mm = at_storage_precision(previous.field_mm)
         parent_inverse_mm = at_storage_precision(previous.inverse_field_mm)
@@ -596,8 +567,6 @@ def finish_fit(
     acronyms = {int(k): v for k, v in prepared.atlas_meta["acronyms"].items()}
     diag_warped, diag_placed = warped, placed
     if prepared.excluded_mask is not None and prepared.excluded_mask.any():
-        # Area diagnostics leave excluded pixels out, so a region excluded on
-        # one side is still judged on the side the fit used.
         kept_native = np.where(prepared.excluded_mask, 0, prepared.native)
         diag_warped = sample_native(kept_native, _native_coords(
             prepared.placement.atlas_to_section, offset, (height, width)))
@@ -630,9 +599,6 @@ def finish_fit(
                          "origin_mm": list(grid.origin_mm)},
         "step_details": prepared.details,
     }
-    # The record rebuilds its fields from the engine's own when that grid is
-    # coarser than the section's. It stores them whole otherwise, and for a
-    # tapered step: its inverse is a fixed point that takes seconds.
     stored_step = None
     if grid.size != grid.section_size and prepared.step_weight is None:
         stored_step = step
@@ -680,7 +646,7 @@ def run_or_fail(
     """
     try:
         return run_prepared(prepared)
-    except Exception as exc:  # noqa: BLE001 - one candidate must not sink the rest
+    except Exception as exc:  # noqa: BLE001
         failure = f"{type(exc).__name__}: {exc}"
         return CandidateFailure(_engine_args(prepared)[1], failure)
 
@@ -715,7 +681,7 @@ def fit_prepared(
         for item, future in zip(prepared, futures, strict=True):
             try:
                 results.append(finish_fit(item, future.result()))
-            except Exception as exc:  # noqa: BLE001 - one candidate must not sink the rest
+            except Exception as exc:  # noqa: BLE001
                 results.append(CandidateFailure(_engine_args(item)[1],
                                                 f"{type(exc).__name__}: {exc}"))
     return results

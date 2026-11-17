@@ -12,11 +12,8 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 
-#: The nodes that open a function; a check that reads one function stops
-#: at each of these inside it.
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
-#: The nodes that open a new scope of names.
 SCOPE_NODES = (
     ast.FunctionDef,
     ast.AsyncFunctionDef,
@@ -24,7 +21,6 @@ SCOPE_NODES = (
     ast.Lambda,
 )
 
-#: The names a method gives the object it is bound to.
 BOUND_NAMES = frozenset({"self", "cls"})
 
 

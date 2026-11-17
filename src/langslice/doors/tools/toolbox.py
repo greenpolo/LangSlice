@@ -59,10 +59,9 @@ from langslice.tools.events import EventLog, LiveCallback
 from langslice.tools.pipeline import ToolBox, declared_tool
 from langslice.tools.run import Run
 
-if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
+if TYPE_CHECKING:
     from langslice.doors.agent.engine import EngineContext
 
-#: The tools whose body is a function of the tool's module, taking the run.
 TOOL_BODIES: dict[str, Callable[..., object]] = {
     "look": look.look_tool,
     "zoom": zoom.zoom_tool,
@@ -165,8 +164,6 @@ def build_tools(
         raise ValueError("build_tools: the job must hold this state and spec")
     if job.workspace is None:
         job.workspace = ctx
-    # The agent tools and MCP spend a model's context on pictures: capped. The
-    # agent CLI and the library (scripting) leave that to the harness.
     job.picture_cap = None if scripting else MAX_IMAGES_PER_CALL
     level = level or resolution_level(ctx)
     traces_on = spec.nonlinear.uses_image_model and image_model_connected
@@ -192,7 +189,7 @@ def build_tools(
         name: functools.partial(body, run)
         for name, body in TOOL_BODIES.items()
     }
-    if variant.plugins:  # the engines' tools, and the job's plugins'
+    if variant.plugins:
         bodies.update(runtime.bodies(run, variant))
         box.plugins = provenance.records(variant)
         provenance.record(job, box.plugins)

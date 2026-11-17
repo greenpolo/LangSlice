@@ -29,10 +29,7 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
     from langslice.tools.run import Run
 
-#: The tool name zoomed pictures are saved under (the picture index skips it
-#: when it picks the default picture to zoom).
 ZOOM_TOOL = "zoom"
-#: The refusals of a box that, on a zoom, are said in the grid's numbers.
 BOX_CODES = (RefusalCode.EMPTY_BOX, RefusalCode.BAD_BOX)
 
 
@@ -42,20 +39,12 @@ class Zoomed:
 
     pictures: list[Image.Image] = field(default_factory=list)
     entries: list[dict[str, Any]] = field(default_factory=list)
-    #: The number of the picture the box was read on.
     picture: int = 0
-    #: Whether the zoom was drawn again from the source (False: cropped from
-    #: the saved picture, which holds no more detail).
     redrawn: bool = True
-    #: The stack has changed since the source picture; it was redrawn as it was.
     stale: bool = False
-    #: The sheet the box was given on (None: not a sheet); ``picture`` is then
-    #: the tile's picture and ``box`` the box on it.
     sheet: int | None = None
     box: list[float] = field(default_factory=list)
 
-
-# --- zoom --------------------------------------------------------------------------------
 
 
 def zoom_tool(
@@ -189,7 +178,7 @@ def zoom_picture(
     ``BAD_BOX``, ``EMPTY_BOX``, ``PICTURE_NOT_SAVED`` (nothing to redraw
     from and no saved image), ``UNKNOWN_MODE`` and the other look refusals.
     """
-    from langslice.tools import atlas as _atlas  # noqa: F401  (registers its recipe renderer)
+    from langslice.tools import atlas as _atlas  # noqa: F401
 
     target = _target(job, picture)
     if (target.recipe or {}).get("renderer") == sheets.RENDERER:
@@ -216,7 +205,6 @@ def zoom_picture(
     frame = source_frame(recipe)
     asked = list(box)
     if frame is not None and len(asked) == 4 and not region:
-        # On a zoom, a box is in the grid's numbers: the whole picture's pixels.
         try:
             asked = [*frame.edge_to_picture(asked[:2]), *frame.edge_to_picture(asked[2:])]
         except (TypeError, ValueError):
@@ -278,7 +266,7 @@ def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequ
                       + "; ".join(f"{t['picture']} at {t['box']}"
                                   for t in recipe.get("tiles") or []) + ".")
     inner = sheets.to_tile(held, asked)
-    tile_picture = cast("int", held["picture"])  # a sheet recipe's number
+    tile_picture = cast("int", held["picture"])
     number = int(tile_picture)
     done = zoom_picture(job, workspace, inner, picture=number)
     return replace(done, sheet=target.seq, box=inner)

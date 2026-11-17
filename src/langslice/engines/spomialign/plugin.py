@@ -49,26 +49,17 @@ from langslice.plugin_api import (
 NAME = "SPOmiAlign"
 REF = "langslice.engines.spomialign.plugin:tools"
 DEFAULTS = {"device": ""}
-#: What a call without RoMa installed is refused with.
 MISSING = (
     "SPOmiAlign cannot run here: its matcher, RoMa (the romatch package), "
     "is not installed; install LangSlice's engines extra: "
     'pip install "langslice[engines]"'
 )
-#: Long edge of the canvas SPOmiAlign receives, px: above its 1152 x 864 grid, so its own
-#: resize brings both images down to that grid as with its published inputs.
 CANVAS_EDGE = 1536
-#: What a call fits (``fit``), as every engine tool names it: the section's
-#: transform, a warp on top of its registration, or both (an affine, then a warp).
 FITS = ("transform", "warp", "both")
-#: The engine's own modes.
 MODES = engine.MODES
-#: The section properties each mode writes (``frozen`` names).
 WRITES = {"rigid": ("affine",), "affine": ("affine",), "warp": ("deformation",),
           "affine_warp": ("affine", "deformation")}
-#: The SPOmiAlign commit whose method LangSlice runs.
 ENGINE_VERSION = "SPOmiAlign c7f8b7a"
-#: RoMa as SPOmiAlign builds it (``matching.load_matcher``).
 MATCHER = "RoMa roma_outdoor, coarse resolution 560"
 
 
@@ -78,11 +69,8 @@ def mode_of(fit: str, rigid: bool) -> str:
     if fit == "transform":
         return "rigid" if rigid else "affine"
     return "warp" if fit == "warp" else "affine_warp"
-#: The default atlas image, resolved by the job's atlas (its Nissl, else its template).
 NISSL = _blocks.NISSL
-#: SPOmiAlign's registration grid.
 WORK_W, WORK_H = matching.W, matching.H
-#: How many of the most confident pairs ``matches.png`` draws (the CSV holds them all).
 DRAWN_PAIRS = 300
 
 
@@ -235,7 +223,7 @@ def _inputs(frame: Any, plane_image: np.ndarray, on_grid: bool,
     ``um_per_px`` is the atlas micrometres one canvas pixel spans."""
     labels = frame.atlas["annotation"]
     picture = _atlas_picture(plane_image, labels)
-    if frame.excluded is not None:  # marked damage painted as background, as native fits do
+    if frame.excluded is not None:
         picture[frame.excluded] = 255
     zone = frame.damage_zone if frame.damage_zone is not None else np.zeros(labels.shape, bool)
     stain = _blocks.section_pixels(frame)
@@ -263,7 +251,7 @@ def _inputs(frame: Any, plane_image: np.ndarray, on_grid: bool,
         size = (w * k, h * k)
         K = _scale(k)
         start = frame.placed_atlas_to_section
-        to_canvas = K @ np.linalg.inv(start)  # fit-grid px -> canvas px
+        to_canvas = K @ np.linalg.inv(start)
         source = cv2.warpAffine(stain, (start @ np.linalg.inv(K))[:2], size,
                                 flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
                                 borderMode=cv2.BORDER_CONSTANT, borderValue=_slide_fill(stain))
@@ -278,7 +266,6 @@ def _inputs(frame: Any, plane_image: np.ndarray, on_grid: bool,
     return {"target": target, "source": source, "keep": keep, "K": K,
             "to_canvas": to_canvas, "from_canvas": np.linalg.inv(K), "on_grid": on_grid,
             "um_per_px": um_per_px, "section_keep": section_keep,
-            # micrometres one pixel of SPOmiAlign's 1152 x 864 working image spans
             "work_um": um_per_px * float(np.mean([size[0] / WORK_W, size[1] / WORK_H])),
             **extra}
 
@@ -296,7 +283,7 @@ def _engine(config: dict[str, Any], mode: str, matches: int,
     try:
         return engine.fit_pairs(inputs, mode=mode, top_k=matches,
                                 device_name=str(config.get("device") or ""))
-    except Exception as error:  # noqa: BLE001 - the matcher's load or the GPU failed
+    except Exception as error:  # noqa: BLE001
         missing = matching.weights_missing()
         if missing:
             raise ToolError(RefusalCode.ENGINE_MISSING,
@@ -329,7 +316,7 @@ def _to_native(pair: dict[str, Any], canvas_xy: np.ndarray) -> np.ndarray:
         return grid
     applied = pair["applied"]
     n = grid.shape[1]
-    rows = -(-n // 4096)  # remap takes maps under 32767 px a side: fold the points into rows
+    rows = -(-n // 4096)
     pad = np.zeros((2, rows * 4096 - n), np.float32)
     gx, gy = (np.concatenate([grid[c].astype(np.float32), pad[c]]).reshape(rows, 4096)
               for c in range(2))
@@ -357,8 +344,6 @@ def _full_map(frame: Any, pair: dict[str, Any], matrix: np.ndarray,
                                  borderMode=cv2.BORDER_CONSTANT, borderValue=0.0).ravel()
     return _to_native(pair, moved).T.reshape(gh, gw, 2)
 
-
-# --- job files --------------------------------------------------------------------------------
 
 
 def _outline(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -418,8 +403,6 @@ def _files(here: Path, pair: dict[str, Any], got: engine.EngineAnswer,
                 writer.writerow([*(f"{v:.2f}" for v in row[:4]), f"{row[4]:.4g}", flag])
     _pairs_picture(pair, used, dropped, here / "matches.png")
 
-
-# --- the tool ---------------------------------------------------------------------------------
 
 
 def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, object] | None:
@@ -524,7 +507,6 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
             row: dict[str, Any] = {"id": sid, "status": "ok", "fitted": note,
                                    "files": relative, "inputs": inputs, "estimated": None,
                                    "engine_settings": engine_settings,
-                                   # the call's one wait for the GPU queue
                                    **gpu_words(run.gpu_wait_s, got.oom_retries)}
             if mask != "none":
                 row["mask_note"] = "approximated by dropping matches"
@@ -537,7 +519,7 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str
                     continue
                 row["transform"] = proposal.knobs
             if mode in ("warp", "affine_warp"):
-                assert got.residual is not None  # a warp mode answers with its field
+                assert got.residual is not None
                 native = _full_map(frame, pair, got.matrix, got.residual)
                 warp = ctx.deformation_from_map(
                     sid, native, note=note,

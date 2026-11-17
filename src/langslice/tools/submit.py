@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The note the write adds when the corrected order is reversed to run the atlas way.
 REVERSED_NOTE = "submit: corrected order reversed to run the atlas way"
 
 
@@ -29,15 +28,9 @@ class Submitted:
     """What :func:`submit` wrote."""
 
     summary: str
-    #: The notes added from the call (cleaned), the summary line aside.
     notes: list[str] = field(default_factory=list)
-    #: The interval breaks written: the filenames of the sections after each gap.
     interval_breaks: list[str] = field(default_factory=list)
-    #: Whether the corrected order was reversed to run the atlas way.
     reversed: bool = False
-    #: The stack's exports written after the step
-    #: (``tools.exports.export_stack``; no per-section maps), when the call had
-    #: the workspace; None otherwise or when writing failed.
     exported: Exported | None = None
 
 
@@ -111,13 +104,9 @@ def submit(
     state = job.state
     before = job.snapshot()
     state.interval_breaks = sorted(set(breaks))
-    # Direction is a convention, not an inference: a posterior-first stack
-    # is emitted in atlas order without the agent being told about it.
     reversed_order = bool(normalize_to_atlas_order(state))
     if reversed_order:
         state.notes.append(REVERSED_NOTE)
-    # Model output is a trust boundary: a malformed submission must not
-    # take the run down.
     clean_notes = (
         [str(item).strip() for item in notes if str(item).strip()]
         if isinstance(notes, (list, tuple))
@@ -136,7 +125,7 @@ def submit(
 
         try:
             exported = export_stack(job, workspace)
-        except Exception:  # the derived files must never undo a submit
+        except Exception:
             logger.warning(
                 "Could not write the exports at submit", exc_info=True
             )

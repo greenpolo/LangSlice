@@ -22,17 +22,10 @@ from filelock import FileLock, Timeout
 
 from langslice.core.hardware import gpu_slots
 
-#: The GPU's queue, shared by every process on the machine that fits on it:
-#: FireANTs here, and STalign, emlddmm and SPOmiAlign through the plugin API,
-#: take one of its slots (``core.hardware.gpu_slots``), slot 0 this file and
-#: slot k ``gpu.k.lock`` beside it. The folder is the one every engine sandbox
-#: may write.
 GPU_LOCK = Path(
     os.environ.get("LANGSLICE_GPU_LOCK")
     or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock"
 )
-#: A fit that still finds the GPU full (a process outside the queue holds it)
-#: waits OOM_WAIT_S, then twice that, ..., and fits again, OOM_RETRIES times.
 OOM_RETRIES = 4
 OOM_WAIT_S = 5.0
 
@@ -44,7 +37,6 @@ class GpuTurn:
     waited_s: float = 0.0
 
 
-#: How often a fit that found every GPU slot taken looks again, in seconds.
 GPU_SLOT_POLL_S = 0.2
 
 
@@ -65,7 +57,6 @@ def _free_slot(slots: int) -> FileLock | None:
     return None
 
 
-#: The start of every GPU device's name, as torch names it.
 GPU_DEVICE = "cuda"
 
 
@@ -104,7 +95,6 @@ def gpu_turn(device: str) -> Generator[GpuTurn, None, None]:
     GpuTurn
         How long the fit waited for its slot.
     """
-    # filelock: flock on Linux and macOS, as the engine plugins take it
     turn = GpuTurn()
     if not on_gpu(device):
         yield turn
@@ -122,7 +112,6 @@ def gpu_turn(device: str) -> Generator[GpuTurn, None, None]:
         lock.release()
 
 
-#: What cuDNN and cuBLAS write in the error when they cannot allocate.
 GPU_ALLOCATION_FAILURES = (
     "CUDNN_STATUS_INTERNAL_ERROR",
     "CUBLAS_STATUS_ALLOC_FAILED",

@@ -49,7 +49,6 @@ class TransformProposal:
     mirrored: bool
     calibration: dict[str, Any]
     record: dict[str, Any]
-    #: The stored record as the section holds it, for LangSlice's own use.
     affine: StoredAffine | None = field(
         default=None, repr=False, compare=False)
 

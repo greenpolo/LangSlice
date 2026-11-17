@@ -74,7 +74,6 @@ class Restored:
     registration: int = 0
     replaced: int | None = None
     written: bool = False
-    #: Why the section was not restored; None when it was.
     refusal: Refused | None = None
 
 
@@ -396,7 +395,6 @@ def restore(job: Job, sections: Any) -> RestoredMany:
         try:
             for record, item in zip(named, entries, strict=True):
                 try:
-                    # the number as the call gave it
                     number = cast("object", item["registration"])
                     done = _restore_one(job, record, number)
                 except Refused as refusal:
@@ -406,15 +404,11 @@ def restore(job: Job, sections: Any) -> RestoredMany:
                 if done.written:
                     written.append(done.id)
         except BaseException:
-            # all or nothing: a failure partway puts back the sections already changed
             job.state.replace_with(stack_from_json(before))
             raise
         if written:
             job.commit(before)
         return RestoredMany(rows=rows, written=written)
-
-
-# --- the tool ----------------------------------------------------------------
 
 
 def restore_registration_tool(
@@ -488,7 +482,7 @@ def _restored_reply(done: RestoredMany, *, restored: bool) -> dict[str, Any]:
     status = "ok" if restored else "error"
     result: dict[str, Any] = {"status": status}
     first = done.rows[0].refusal
-    if not restored and first is not None:  # the first section's reason leads
+    if not restored and first is not None:
         result["error"] = first.code
         if first.message:
             result["message"] = first.message

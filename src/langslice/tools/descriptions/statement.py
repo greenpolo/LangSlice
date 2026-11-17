@@ -71,8 +71,6 @@ from langslice.tools.descriptions.run_facts import (
     section_channels,
 )
 
-#: The registration agent's system prompt: true of every job, naming no
-#: tool a job can switch off; the job itself comes in the first message.
 SYSTEM_PROMPT = (
     "You are an expert neuroanatomist registering one brain with LangSlice: "
     "a stack of histology sections from one brain, placed in a BrainGlobe "
@@ -81,7 +79,6 @@ SYSTEM_PROMPT = (
     "finish with `submit`."
 )
 
-#: The statement, its slots filled by :func:`build_job_statement`.
 STATEMENT = """\
 You are an expert neuroanatomist working on a stack of {count} {plane} \
 histology sections against the {atlas} ({species}) reference atlas.
@@ -98,9 +95,6 @@ Constraints:
 
 Work with the tools, then call `submit`."""
 
-#: The deformable methods a job can hold (the native fit and the in-tree
-#: engine plugins), in the order the Method lists them, each with what it
-#: is: the claims are the methods' own papers'.
 DEFORMABLE_METHODS: dict[str, str] = {
     "fireants_syn": (
         "ANTs SyN (Avants et al. 2008), the standard symmetric diffeomorphic "
@@ -132,8 +126,6 @@ DEFORMABLE_METHODS: dict[str, str] = {
         "stack; it makes no single-section bends."
     ),
 }
-
-# --- "Your job:", one clause per task that is on ----------------------------
 
 JOB_ANGLES = "give the stack its cutting angles, checked against the atlas"
 JOB_POSITIONS = (
@@ -167,7 +159,6 @@ JOB_TRACES = (
 )
 JOB_REVIEW = "review the stack"
 
-#: Heading of each task's user notes, in the order the tasks are listed.
 TASK_NOTE_TITLES: dict[str, str] = {
     "position": "Positioning",
     "transform": "In-plane alignment",
@@ -176,8 +167,6 @@ TASK_NOTE_TITLES: dict[str, str] = {
 TASK_NOTES = "{title} notes from the user:"
 
 TOOLS = "`{name}`"
-
-# --- "Constraints:" ---------------------------------------------------------
 
 SUBMIT_POSITIONS = (
     "- `submit` is refused unless every section has a position of its own, "
@@ -225,11 +214,7 @@ NO_LIMITS = (
     "registration alone, without regard to the time or tokens it spends."
 )
 
-# --- "Method:" --------------------------------------------------------------
-
 METHOD = "Method:"
-#: Optional coaching (``position.playbook``): the current viewing tools,
-#: uncertain placements revisited, no single batch write prescribed.
 PLAYBOOK = (
     "- Start from the opening stack and identify anatomical progression, "
     "possible interleaved series, missing sections and uncertain "
@@ -292,8 +277,6 @@ METHODS_CHAINED = (
     "section's current registration, so methods can be chained."
 )
 DEFORMABLE_METHOD = "  - `{name}`: {what}"
-#: Every run: a plain sentence before each step, for the person watching
-#: (the LangSlice window shows the agent's latest words).
 NARRATE = (
     "- Before each step (one tool call, or several made for one reason), "
     "write one short sentence in plain words saying what you are about to "
@@ -320,18 +303,13 @@ class StatementFacts:
 
     spec: JobSpec
     state: Stack
-    #: The tools the run has, in the order the doors list them.
     tool_names: tuple[str, ...]
     species: str
-    #: The lowest and highest atlas position, in millimetres.
     position_range: tuple[float, float]
-    #: What the two ends of the slicing axis are in this atlas.
     axis_ends: tuple[str, str]
     channels: Channels | None
     atlas_channels: tuple[str, ...]
     nissl_image: str
-    #: The largest ``look`` picture where the caller sizes pictures; None
-    #: where it does not.
     max_resolution: int | None
 
     @classmethod
@@ -375,7 +353,7 @@ class StatementFacts:
             max_resolution = None
         elif max_resolution is None:
             max_resolution = DEFAULT_IMAGE_LIMIT[0]
-        atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+        atlas = cast("object", workspace.atlas)
         return cls(
             spec=spec,
             state=state,
@@ -424,7 +402,7 @@ def job_statement(
     str
         The whole text.
     """
-    if image_model_off:  # a copy that is not checked again: this door's view
+    if image_model_off:
         spec = copy.copy(facts.spec)
         spec.nonlinear = replace(spec.nonlinear, provider="none")
         facts = replace(facts, spec=spec)

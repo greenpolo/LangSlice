@@ -44,12 +44,7 @@ from langslice.core.fits.deformable.plane_images import (
 )
 from langslice.core.fits.deformable.record import DeformableRecord
 
-#: Atlas-grid blur of each region indicator before bilinear sampling.
-#: 1.0 leaves a ripple along shallow edges (the annotation's own 25 um stair
-#: steps); 2.0 closes thin regions into dotted blobs.
 BORDER_SMOOTHING_PX = 1.4
-#: Second ink, for a marked set of regions (those excluded from a fit).
-#: Fixed and uncased (the cased black/white core is the fitted borders').
 MARKED_COLOR = (255, 64, 160)
 FAINT_ALPHA = 0.35
 
@@ -102,14 +97,11 @@ def warped_border_layers(
     width, height = record.section_size
     leaf = native if native is not None else native_labels(atlas, record.placement)
     highlight, marked = list(highlight), list(marked)
-    # One-sided entries ("CTX:left") are sides of the section as drawn here.
     left = placement_left(atlas, record.placement, (*highlight, *marked))
     flagged = (regions_mask(atlas, leaf, highlight, left) if highlight
                else np.zeros(leaf.shape, dtype=bool))
     flagged_marks = (regions_mask(atlas, leaf, marked, left) if marked
                      else np.zeros(leaf.shape, dtype=bool))
-    # Codes: a highlighted leaf is leaf*4+1, a marked leaf leaf*4+3, any other
-    # pixel its region at *depth* *4 (background stays 0), so the sets never merge.
     big = leaf.astype(np.int64)
     level = labels_at(leaf, atlas, depth).astype(np.int64)
     grouped = np.where(flagged_marks, big * 4 + 3, np.where(flagged, big * 4 + 1, level * 4))
@@ -138,7 +130,6 @@ def warped_border_layers(
 def _without_field(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 
-    # Zero fields are no step's: the copy keeps none to rebuild from.
     return replace(
         record, field_mm=np.zeros_like(record.field_mm), stored_step=None
     )

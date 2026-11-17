@@ -22,11 +22,8 @@ from langslice.engines.deepslice.proposal import (
 )
 from langslice.plugin_api import ToolContext, WriteResult
 
-#: The note a written transform carries.
 TRANSFORM_NOTE = "DeepSlice in-plane fit"
-#: Why a section's transform was not written without a pixel size.
 NO_PIXEL_SIZE = "not written (no pixel size)"
-#: The code a write's row carries when it names none.
 NOT_WRITTEN = "NOT_WRITTEN"
 
 
@@ -38,7 +35,6 @@ class AnswerPart(enum.StrEnum):
     TRANSFORM = "transform"
 
 
-#: The section property each part writes.
 PROPERTY = {
     AnswerPart.POSITIONS: "position",
     AnswerPart.ANGLES: "angles",
@@ -211,7 +207,6 @@ def _write_positions(
     refused = f"{result.error}: {result.message}"
     if angles is None or not position_rows:
         return Written(refused=refused)
-    # the angles were refused whole: the positions alone
     result = context.set_positions(position_rows)
     if not result.ok:
         return Written(refused=refused)
@@ -224,7 +219,6 @@ def _positions_written(
     result: WriteResult, *, angles_written: bool
 ) -> Written:
     """Return what a position write that was not refused whole did."""
-    # A write's rows are JSON values with these keys.
     rows = cast("list[dict[str, str | float]]", result.rows)
     clamped = [
         (
@@ -285,7 +279,6 @@ def _write_transforms(
 
 def _row_errors(result: WriteResult) -> dict[str, str]:
     """Return each section a write left out, with its code."""
-    # A write's rows are JSON values with these keys.
     rows = cast("list[dict[str, str]]", result.rows)
     landed = set(result.written)
     return {

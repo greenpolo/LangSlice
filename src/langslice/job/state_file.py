@@ -46,22 +46,9 @@ from langslice.core.stack.rows import (
 from langslice.core.stack.section import FLAT, Section
 from langslice.core.stack.stack import Stack
 
-#: A reader of a state's fields of its format (the first argument) that
-#: returns them as the current format.
 Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 
-#: The key a job-folder file carries its format version under.
 FORMAT_KEY = "format_version"
-#: The checkpoint's format. Every path on a section record (a deformation's
-#: ``record``, a border trace's ``artifact_dir`` and ``artifact_paths``)
-#: is relative to the job folder (:func:`state_paths`), and every section
-#: carries its own cutting angles (``Section.angles``). A
-#: state whose sections share one angle also writes it as the stack's
-#: ``cutting_angles_deg``; one whose sections differ (a registration
-#: supplied per section) writes the stack's as null. Every section's made
-#: images are entries (``Section.images``) naming files under the job
-#: folder; the stack has no ``appearance``. A section's border trace is
-#: under ``border_trace``, its files in ``sections/<name>/border_trace/``.
 STATE_FORMAT_VERSION = 5
 
 
@@ -76,7 +63,6 @@ def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
                 json.dump(data, handle, separators=(",", ":"))
             else:
                 json.dump(data, handle, indent=indent)
-        # mkstemp creates 0600; a job file is an ordinary output file.
         os.chmod(tmp_path, 0o644)
         replace_file(tmp_path, path)
     except BaseException:
@@ -103,19 +89,16 @@ def json_object(text: str) -> JsonObject | None:
     ValueError
         When the text is not JSON.
     """
-    data = cast("object", json.loads(text))  # json.loads: any JSON value
+    data = cast("object", json.loads(text))
     if not isinstance(data, dict):
         return None
-    return cast("JsonObject", data)  # a JSON object: text keys, JSON values
+    return cast("JsonObject", data)
 
 
-#: The stack's own keys, in the order the state file writes them.
 STACK_KEYS = (
     "image_folder", "atlas", "plane", "interval_mm", "thickness_mm", "spec",
     "interval_breaks", "notes", "slices", "submitted", "debrief",
 )  # fmt: skip
-#: The row keys a row leaves out while they are empty: most jobs have
-#: none, so their state reads as it always has.
 OPTIONAL_ROW_KEYS = ("layers", "masks", "images")
 
 
@@ -343,7 +326,7 @@ def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
             for spelled in dict.fromkeys((os.path.abspath(value), os.path.realpath(value))):
                 try:
                     inside = os.path.commonpath([spelled, base]) == base
-                except ValueError:  # different Windows drives have no common path
+                except ValueError:
                     continue
                 if inside:
                     return os.path.relpath(spelled, base).replace(os.sep, "/")

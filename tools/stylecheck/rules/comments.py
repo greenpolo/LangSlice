@@ -36,45 +36,37 @@ from tools.stylecheck.core import (
 )
 from tools.stylecheck.rules.docstrings import docstrings
 
-#: A calendar date: ISO form, or a month name and a year.
 DATE_PATTERN = re.compile(
     r"\b(?:19|20)\d\d-[01]\d-[0-3]\d\b"
     r"|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
     r"[a-z]*\.?,? (?:19|20)\d\d\b"
 )
 
-#: "Used to" as a past habit: after a subject word, or before "be"/"have".
 USED_TO_PATTERN = re.compile(
     r"\b(?:it|this|that|we|they|which|these|those|code|function|module)"
     r" used to\b|\bused to (?:be|have)\b",
     re.IGNORECASE,
 )
 
-#: Words before "used to" that make it the present passive.
 PASSIVE_WORDS = frozenset(
     {"is", "are", "be", "been", "being", "was", "were", "get", "gets"}
 )
 
-#: Phrases that tell history in a ``#`` comment.
 COMMENT_HISTORY = re.compile(
     r"\b(?:legacy|no longer|earlier version|previously|was changed"
     r"|formerly)\b",
     re.IGNORECASE,
 )
 
-#: Phrases that tell history in a docstring.
 DOCSTRING_HISTORY = re.compile(
     r"\b(?:earlier version|was changed|formerly)\b",
     re.IGNORECASE,
 )
 
-#: A comment a tool reads: a waiver, a type-checker or coverage mark.
 DIRECTIVE = re.compile(
     r"#\s*(?:noqa\b|type:|pyright:|pragma:|fmt:|ruff:|isort:|!)"
 )
 
-#: Each directive that switches a tool's finding off, with what to do
-#: instead of writing it.
 WAIVERS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"#\s*noqa\b"),
@@ -99,13 +91,10 @@ WAIVERS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 
-#: What follows a directive's name: its rule codes and brackets.
 DIRECTIVE_CODES = re.compile(r"^[\s:]*[\w\[\],\s-]*?(?=\s-\s|$)")
 
-#: A waiver of the line-length rule.
 LINE_LENGTH_WAIVER = re.compile(r"noqa:[^#]*\bE501\b")
 
-#: A web address, the one thing a long line may hold.
 URL_PATTERN = re.compile(r"https?://")
 
 

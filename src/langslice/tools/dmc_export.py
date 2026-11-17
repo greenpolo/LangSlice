@@ -57,13 +57,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The export's folder under the job's ``exports/``.
 DMC_FOLDER = "dmc_brainmap"
-#: The record of what the export holds, beside ``params.json``.
 EXPORT_RECORD = "langslice_export.json"
-#: DMC's suffix for its resized section images.
 IMAGE_SUFFIX = "_downsampled.tif"
-#: The record's sentence on deformations, which DMC-BrainMap cannot hold.
 LINEAR_ONLY_NOTE = (
     "DMC-BrainMap holds a linear registration only. Each section is "
     "written with its linear placement (position, cutting angles, in-plane "
@@ -85,17 +81,11 @@ class DmcSkipped:
 class DmcExported:
     """What :func:`export_dmc_brainmap` wrote (on a dry run, would write)."""
 
-    #: The animal folder DMC-BrainMap opens.
     folder: str
-    #: Every file written, absolute paths.
     files: list[str]
-    #: The sections written with their registration.
     registered: list[str]
-    #: The sections written without one (image only) or not at all.
     skipped: list[DmcSkipped]
-    #: The sections whose applied deformation was left out.
     warps_left_out: list[str]
-    #: The DMC channel folder and the section image written.
     channel: str
     section_image: str
     written: bool

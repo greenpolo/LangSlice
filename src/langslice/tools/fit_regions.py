@@ -46,7 +46,7 @@ def region_entries(
             message="restrict_to is a list of atlas regions.",
         )
     try:
-        items = cast("Sequence[object]", entries)  # a list, checked above
+        items = cast("Sequence[object]", entries)
         names = normalized_entries(str(entry) for entry in items)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
@@ -66,11 +66,7 @@ def region_entries(
     return tuple(names)
 
 
-#: Margin added round the regions' bounding box, as a fraction of the canvas.
 BOX_MARGIN = 0.05
-#: The least magnification a restricted fit's picture zooms to its regions'
-#: box for (:func:`zoom_window`); a box covering more of the canvas is drawn
-#: whole, its regions highlighted only.
 MIN_ZOOM_GAIN = 1.5
 
 

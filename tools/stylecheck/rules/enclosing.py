@@ -21,8 +21,6 @@ from collections.abc import Iterator
 from tools.stylecheck.core import ClassInfo, Project
 from tools.stylecheck.rules.scopes import FUNCTION_NODES, dotted_name
 
-#: Bases that give a class no inherited methods worth overriding, so a
-#: class deriving only from these is treated as having no base.
 PLAIN_BASES = frozenset(
     {
         "object",
@@ -40,7 +38,6 @@ PLAIN_BASES = frozenset(
     }
 )
 
-#: The HTTP request handler methods a server calls on a subclass.
 _HTTP_HANDLER_METHODS = frozenset(
     {
         "handle",
@@ -57,12 +54,10 @@ _HTTP_HANDLER_METHODS = frozenset(
     }
 )
 
-#: The language model methods Google ADK calls on a model class.
 _ADK_MODEL_METHODS = frozenset(
     {"supported_models", "generate_content_async", "connect"}
 )
 
-#: The callbacks Google ADK calls on a plugin.
 _ADK_PLUGIN_METHODS = frozenset(
     {
         "on_user_message_callback",
@@ -83,7 +78,6 @@ _ADK_PLUGIN_METHODS = frozenset(
     }
 )
 
-#: The methods numpydoc's validator reads, which its subclass replaces.
 _NUMPYDOC_VALIDATOR_METHODS = frozenset(
     {
         "name",
@@ -96,10 +90,6 @@ _NUMPYDOC_VALIDATOR_METHODS = frozenset(
     }
 )
 
-#: The methods each base from outside the package defines for a subclass
-#: to replace, by the base's bare name: the standard library's classes
-#: whose methods are overridden by design, and the framework classes the
-#: package derives from. A name not listed is the subclass's own method.
 EXTERNAL_METHODS: dict[str, frozenset[str]] = {
     "JSONEncoder": frozenset({"default", "encode", "iterencode"}),
     "JSONDecoder": frozenset({"decode", "raw_decode"}),
@@ -130,7 +120,6 @@ EXTERNAL_METHODS: dict[str, frozenset[str]] = {
     "AstValidator": _NUMPYDOC_VALIDATOR_METHODS,
 }
 
-#: The method-name prefixes a standard library base dispatches on.
 EXTERNAL_PREFIXES: dict[str, tuple[str, ...]] = {
     "NodeVisitor": ("visit_",),
     "NodeTransformer": ("visit_",),
@@ -140,13 +129,10 @@ EXTERNAL_PREFIXES: dict[str, tuple[str, ...]] = {
     "TestCase": ("test",),
 }
 
-#: Decorators that make a method a property, read as an attribute.
 PROPERTY_DECORATORS = frozenset(
     {"property", "cached_property", "functools.cached_property"}
 )
 
-#: How many project base classes deep an override is looked for; a
-#: deeper hierarchy is treated as an override.
 MAX_BASE_DEPTH = 8
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef

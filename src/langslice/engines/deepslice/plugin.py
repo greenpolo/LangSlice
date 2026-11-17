@@ -64,14 +64,9 @@ from langslice.plugin_api import (
     ToolSpec,
 )
 
-#: The plugin's options (``plugin_config``).
 OPTIONS = ("ensemble", "long_edge", "cache_folder")
-#: The reference a job names this plugin by.
 REF = "langslice.engines.deepslice.plugin:tools"
-#: What a ``plugin_config`` value is, as JSON gives it.
 ConfigValue = bool | int | float | str
-#: Why a section is a bad section: the agent named it, or it has marked
-#: damage and the call named none.
 NAMED, MARKED = "named", "marked damage"
 
 
@@ -137,12 +132,9 @@ class Options:
         return Path(self.cache_folder) if self.cache_folder else CACHE_FOLDER
 
 
-# --- the agent-facing declaration -------------------------------------------
-
-
 def deepslice_place(
     *,
-    sections: list[str] = [],  # noqa: B006 - a declaration's default
+    sections: list[str] = [],  # noqa: B006
     order: list[str] = [],  # noqa: B006
     bad_sections: list[str] | None = None,
     write: list[str] | None = None,
@@ -209,9 +201,6 @@ def deepslice_place(
         of the written sections]].
     """
     ...
-
-
-# --- the factory ------------------------------------------------------------
 
 
 def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
@@ -315,9 +304,6 @@ def _listed(names: list[str] | None) -> list[str] | None:
     return None if names is None else list(names)
 
 
-# --- the call ---------------------------------------------------------------
-
-
 def place(
     context: ToolContext, options: Options, arguments: Arguments
 ) -> ToolResult:
@@ -352,7 +338,7 @@ def place(
     interval = _job_interval(context)
     signed = None
     if ordered and interval:
-        signed = -interval  # anterior first: DeepSlice's depth falls
+        signed = -interval
 
     weights = engine.fetched_weights(options.weights_folder)
     folder = _call_folder(context)
@@ -535,14 +521,12 @@ def is_transform_available(context: ToolContext) -> bool:
 
 def _disabled(context: ToolContext) -> set[str]:
     """Return the tools and options the job switches off."""
-    # The spec is JSON values; ``disabled`` is a list of names.
     names = cast("list[str] | None", context.spec.get("disabled"))
     return {str(name) for name in names or []}
 
 
 def _job_interval(context: ToolContext) -> float | None:
     """Return the job's section interval in micrometres, or None."""
-    # The spec is JSON values; ``position`` holds the interval, if any.
     position = cast("dict[str, float | None]", context.spec["position"])
     interval = position.get("interval_um")
     return None if interval is None else float(interval)

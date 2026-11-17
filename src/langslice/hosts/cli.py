@@ -47,8 +47,6 @@ def run_gui(args: argparse.Namespace) -> None:
     folders = []
     for given in args.folders:
         folder = Path(given).expanduser().resolve()
-        # An image folder stands for the job folder beside its images; a folder
-        # that does not exist yet is a job folder a run is about to make.
         if not (folder / JOB_FILE).exists() and (folder / JOB_DIRNAME / JOB_FILE).exists():
             folder = folder / JOB_DIRNAME
         folders.append(folder)

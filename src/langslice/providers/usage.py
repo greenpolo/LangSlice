@@ -119,7 +119,6 @@ def usage_diagnostics(
             row["content"] = [_counters(part) for part in data["content"]]
             row["content_residual"] = _residual(row["tokens"], row["content"])
         items.append(row)
-    # Unknown field names might contain content: hash rather than copying them.
     field_rows = [{"field": key if key in {"tools", "instructions"} else "other",
                    "field_sha256": _digest(key), "tokens": _counters(data)}
                   for key, data in fields.items()]

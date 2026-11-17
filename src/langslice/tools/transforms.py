@@ -74,7 +74,6 @@ def transform_record(
     )
     pivot_at = (pivot_frac[0], pivot_frac[1])
     physical = PhysicalAffine(**knobs, pivot=pivot_at, extra={})
-    # reportAny: the staged calibration and the decomposition are plain dicts
     scale = codec.calibration_from_json(cast("JsonObject", calibration))
     decomposed = cast("JsonObject", physical_decomposition(six, size))
     mirrored = flag_at(decomposed, "mirrored")
@@ -196,31 +195,15 @@ def set_transforms(
         return [record.id for record in records]
 
 
-# --- interactive_transform ---------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Adjustment:
     """One ``interactive_transform`` entry: what it set, or why not."""
 
-    #: Why the entry was refused (``BAD_ARGS``, ``FROZEN``,
-    #: ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``ATLAS_RENDER_FAILED``,
-    #: ``BAD_PIVOT``, ...); None when it was not.
     refusal: Refused | None = None
-    #: The section, its working frame, canvas and pivot
-    #: (:class:`langslice.core.pictures.placement.Staged`), with the knobs
-    #: used.
     staged: Staged | None = None
-    #: The section's transform before the call.
     previous: StoredAffine | None = None
-    #: The stored record these knobs make (:func:`transform_record`).
     transform: StoredAffine | None = None
-    #: Whether it differs from *previous* (the same numbers again write nothing).
     written: bool = False
-    #: The section's id; its flip and quarter turn after the call
-    #: (``{"flip", "rotate_quarter", "changed"}``); and, when the call
-    #: changed them under a stored transform, the knob values the rebuilt
-    #: transform kept.
     id: str = ""
     orientation: dict[str, Any] | None = None
     kept: dict[str, float] | None = None
@@ -245,14 +228,10 @@ class Adjusted:
     written: list[str] = field(default_factory=list)
 
 
-#: ``interactive_transform``'s refusals of one entry (the section's name, an
-#: option's name, filled in).
 _ENTRY = "Each entry is an object: the section's id and what to change."
 _ROTATIONS = "rotate_quarter is 0, 90, 180 or 270."
 _OPTION_OFF = "{} is switched off for this job; leave it out."
-#: The refusal of a transform on a section without a position.
 NO_POSITION = "{} has no position yet; write its position first."
-#: The knobs ``interactive_transform`` takes, with the value of no change.
 KNOB_DEFAULTS: dict[str, float] = {
     "rotation_deg": 0.0,
     "scale_x": 1.0,
@@ -269,7 +248,7 @@ def held_knobs(section: Section) -> dict[str, float]:
     if section.transform is None or section.transform.physical is None:
         return dict(KNOB_DEFAULTS)
     knobs: dict[str, float] = {}
-    for name, default in KNOB_DEFAULTS.items():  # the knobs are its fields
+    for name, default in KNOB_DEFAULTS.items():
         value = cast("float | None", getattr(physical, name))
         knobs[name] = default if value is None else float(value)
     return knobs
@@ -425,7 +404,6 @@ def interactive_transform(
             "changed": changed,
         }
         if held is None and not given:
-            # No transform and none asked for: the orientation alone.
             if changed:
                 pending[name] = (flip, rotation, None)
             done.append(
@@ -461,7 +439,7 @@ def interactive_transform(
             wrote, written_transform = (
                 changed,
                 held,
-            )  # nothing of the affine moves
+            )
         elif "orientation" in frozen_now and reverses_orientation(
             record, transform
         ):
@@ -522,14 +500,11 @@ def _mirror_refusal(job: Job, section_id: str) -> Refused:
     """
     message = mirror_message(section_id)
     frozen = section_refusal(job, section_id, "orientation")
-    if frozen is None:  # the caller saw its orientation frozen
+    if frozen is None:
         return Refused(
             RefusalCode.FROZEN, properties=["orientation"], message=message
         )
     return Refused(frozen.code, **{**frozen.facts, "message": message})
-
-
-# --- the tool ----------------------------------------------------------------
 
 
 def interactive_transform_tool(
@@ -575,8 +550,6 @@ def interactive_transform_tool(
     if not in_picture or not run.shows(view):
         return result
 
-    # A deformation this write made stale goes before the picture is
-    # drawn, so the picture shows the section as it now stands.
     cleared = job.clear_stale_deformations()
     if cleared:
         result["deformation_cleared"] = cleared
@@ -613,7 +586,6 @@ def _entry_row(entry: Adjustment) -> dict[str, Any]:
     line on a changed orientation.
     """
     if entry.refusal is not None:
-        # a refusal that names the section among its facts keeps it there
         first = (
             entry.id if entry.id and "id" not in entry.refusal.facts else None
         )

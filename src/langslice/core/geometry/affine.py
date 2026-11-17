@@ -30,8 +30,6 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-#: The identity's six normalized numbers (:func:`normalized_affine`): what a
-#: section without a transform is drawn and mapped with.
 IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 
 

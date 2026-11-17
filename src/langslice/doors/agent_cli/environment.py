@@ -38,13 +38,9 @@ from langslice.core.shared_files import remove_tree
 from langslice.doors.agent_cli.envelope import Envelope
 from langslice.job.layout import ENV_DIR, JobLayout
 
-#: The list of the packages installed in the job's environment.
 REQUIREMENTS = Path("scripts") / "requirements.txt"
-#: The ``.pth`` file that lets the job's environment import LangSlice's packages.
 PARENT_PTH = "_langslice_parent.pth"
-#: Packages a new environment brings itself, never listed.
 SEEDED = frozenset({"pip", "setuptools", "wheel"})
-#: How long one install may take.
 INSTALL_TIMEOUT_S = 1800
 
 
@@ -80,10 +76,7 @@ def python_of(folder: Path) -> Path:
     return folder / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
-#: Held while the environment is made (``logs/env.lock``): calls started
-#: together on a job without one make it once.
 ENV_LOCK = "env.lock"
-#: Written in ``env/`` once it is made, its packages installed.
 READY = ".langslice-ready"
 
 
@@ -206,8 +199,6 @@ def _pip(folder: Path, arguments: list[str]) -> None:
     uv = shutil.which("uv")
     command = ([uv, "pip", "install", "--quiet", "--python", str(python), *arguments] if uv
                else [str(python), "-m", "pip", "install", "--quiet", *arguments])
-    # The installer's own encoding, not the locale's: Windows' code page
-    # cannot decode every byte of uv's UTF-8.
     done = subprocess.run(command, capture_output=True, encoding="utf-8",
                           errors="replace", timeout=INSTALL_TIMEOUT_S,
                           stdin=subprocess.DEVNULL)
@@ -230,7 +221,6 @@ def _parent_sites() -> list[str]:
     return [path for path in site.getsitepackages() if Path(path).is_dir()]
 
 
-#: ``python``'s usage, in its refusals.
 PYTHON_USAGE = "langslice-job FOLDER python SCRIPT [ARGS ...]"
 
 
@@ -278,7 +268,6 @@ def python(folder: str, rest: list[str]) -> int:
     interpreter = python_of(env_dir(layout))
     sys.stdout.flush()
     sys.stderr.flush()
-    if os.name == "nt":  # no exec there: the script's exit code is passed on
-        # the user's script reads the caller's stdin, as `python` itself would
+    if os.name == "nt":
         return subprocess.call([str(interpreter), *rest], stdin=None)
     os.execv(interpreter, [str(interpreter), *rest])

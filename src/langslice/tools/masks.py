@@ -48,9 +48,7 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
     from langslice.tools.run import Run
 
-#: The kinds of mask.
 SOURCES = ("em", "fit")
-#: The name a fit gives for no section mask.
 NO_MASK = "none"
 
 
@@ -59,10 +57,7 @@ class MaskMade:
     """What :func:`make_mask` did to one section."""
 
     id: str
-    #: The mask's state entry the section holds now; None for a deleted mask
-    #: or a refused section.
     entry: MaskRef | None = None
-    #: Why the section could not get its mask; None when it got it.
     refusal: Refused | None = None
 
 
@@ -94,7 +89,7 @@ def _check_name(name: Any) -> str:
 def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     given = dict(sorting or {})
     held = [key for key in ("method", "artifact") if key in given]
-    if held:  # the keys another engine's sorting takes
+    if held:
         raise Refused(
             RefusalCode.BAD_ARGS,
             message=f"sorting is the fits' EM with an "
@@ -212,7 +207,7 @@ def make_mask(
         check_image(job, workspace, targets, image)
     rows: list[MaskMade] = []
     first: Refused | None = None
-    before = job.snapshot()  # the mask entries are set by the writes below
+    before = job.snapshot()
     for section in targets:
         try:
             entry = (
@@ -312,7 +307,7 @@ def _from_em(
 
     try:
         grid = deformation.fit_grid(job.state, workspace, section)
-    except Refused:  # no position
+    except Refused:
         raise
     except (ValueError, OSError) as exc:
         raise Refused(
@@ -335,7 +330,7 @@ def _from_em(
         )
     except Refused:
         raise
-    except Exception as exc:  # noqa: BLE001 - the sort's failure is the caller's refusal
+    except Exception as exc:  # noqa: BLE001
         from langslice.core.fits.engine_log import failure_message
 
         raise Refused(
@@ -393,7 +388,7 @@ def read(job: Job, section: Section, name: str) -> MaskView:
             ),
             masks=sorted(section.masks),
         ) from exc
-    except ValueError as exc:  # the file cannot be read
+    except ValueError as exc:
         raise Refused(RefusalCode.FIT_FAILED, message=str(exc)) from exc
 
 
@@ -450,9 +445,6 @@ def made_earlier(state: Stack, section: Section, name: str) -> bool:
 
     entry = section.masks.get(name)
     return entry is not None and earlier(state, section, entry)
-
-
-# --- the tool ----------------------------------------------------------------
 
 
 def make_mask_tool(

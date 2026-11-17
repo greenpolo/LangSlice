@@ -187,7 +187,7 @@ class ContextFits(ContextProposals):
                 return np.asarray(deformation.fit_grid(
                     self._run.state, self._run.workspace, record).placement.atlas_to_section,
                     dtype=np.float64)
-            except Refused as refusal:  # no position
+            except Refused as refusal:
                 raise as_tool_error(refusal) from refusal
             except ValueError as exc:
                 raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -243,7 +243,7 @@ class ContextFits(ContextProposals):
             resolve_image(workspace.atlas, str(chosen.atlas_image))
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
-        except (TypeError, ValueError) as exc:  # checked as the settings are made
+        except (TypeError, ValueError) as exc:
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         try:
             fitted = warps.fit_record(self._run.job, workspace, record.id, chosen, start=start,

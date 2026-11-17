@@ -58,38 +58,20 @@ from typing import Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
-
 from langslice.core.geometry.thin_plate import ThinPlateKernel
 
 FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 
-#: Pairs added per round of the greedy placement: few enough that each
-#: round reacts to the last, many enough that a budget of about a thousand
-#: points takes about a dozen rounds.
 BATCH = 64
-#: The fold check around each new pair: a lattice of LOCAL_SIDE points per
-#: side spanning LOCAL_SPAN smallest gaps either side, so its step (a third
-#: of a gap) resolves a fold between two pairs as close as allowed.
 LOCAL_SIDE = 13
 LOCAL_SPAN = 2.0
-#: The most a fold-check lattice is refined where the map stretches the
-#: section: the pull-back is tested at most this many times more finely
-#: per side, so stretched tissue is tested about as densely on the atlas
-#: side as unstretched tissue.
 MAX_REFINE = 4
-#: A new pair within this many smallest gaps of a fold is dropped, and no
-#: pair is sought again that close to it: small enough that a steep part of
-#: the map, where pairs often fold, still gets the pairs that do not.
 BLOCK_GAPS = 2.0
 NEAR_GAPS = 4.0
 WATCH_FRACTION = 0.25
-#: Smallest Jacobian determinant accepted (a fold or collapse below it).
 MIN_JACOBIAN = 1e-6
-#: Newton steps when the pull-back is inverted at a probe point; a step
-#: under :data:`NEWTON_STOP_MM` ends it early.
 NEWTON_STEPS = 12
-#: A Newton step this small (millimetres) has converged.
 NEWTON_STOP_MM = 1e-9
 
 

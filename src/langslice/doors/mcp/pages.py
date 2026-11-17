@@ -35,9 +35,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# --- content conversion ----------------------------------------------------
-
-
 def image_block(image: Image.Image | bytes) -> ImageContent:
     """One core picture (or its JPEG bytes) as an MCP image block (the doors'
     JPEG encoding)."""
@@ -82,7 +79,6 @@ def result_blocks(
             ]
             body["images_attached"] = len(media)
         elif listed is not None:
-            # Already text (e.g. a note that the pictures were not produced).
             body[TOOL_MEDIA_PARTS_KEY] = listed
     else:
         body = result
@@ -95,8 +91,6 @@ def result_blocks(
     fitted, shrunk = fit_reply(items)
     if shrunk is not None:
         if job is not None and isinstance(body, dict):
-            # Each delivered size gets its own immutable picture number. The
-            # old saved picture remains valid for callers who already saw it.
             refs = body.get("pictures") or []
             indexes = [
                 i for i, item in enumerate(fitted) if isinstance(item, bytes)
@@ -159,9 +153,6 @@ def result_blocks(
     return blocks_of(fitted)
 
 
-# --- trace -----------------------------------------------------------------
-
-
 def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
     described: list[dict[str, Any]] = []
     for block in blocks:
@@ -177,8 +168,6 @@ def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
     return described
 
 
-#: The serialized bytes of one ``show_stack`` page, JSON and base64 included
-#: (every MCP reply's budget, :data:`langslice.tools.reply.REPLY_BYTES`).
 PAGE_BYTES = REPLY_BYTES
 
 
@@ -221,7 +210,7 @@ def save_page(
                 pictures=[(data, None) for data in pictures],
             )
         return [str(item.folder / PICTURE_FILE) for item in saved]
-    except Exception:  # saving must never break a page
+    except Exception:
         logger.warning(
             "Could not queue the pictures of show_stack page %s",
             page,

@@ -16,17 +16,9 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-#: Images in context before the working set is cut, and what it is cut to.
-#: Every image is kept; the oldest are cut in ONE batch only at a backstop far
-#: above any run (a third of the 1,500 images the OpenAI lane accepts per
-#: request), as coding agents do. An agent chooses later steps from earlier
-#: pictures (its stain, its channels), and a cut breaks the prompt cache at
-#: the cut point, so cutting rarely is also the cheap choice.
 DEFAULT_MAX_IMAGES = 500
 DEFAULT_KEEP_IMAGES = 250
 
-#: Says the pictures were delivered: "dropped from context" alone reads as
-#: "never shown".
 _DROPPED_TOOL = (
     "were shown when this call returned and have since been dropped from "
     "context to bound the request; call again to see them."
@@ -52,7 +44,7 @@ class WorkingSetImages:
             raise ValueError("need 0 < keep_images <= max_images")
         self.max_images = max_images
         self.keep_images = keep_images
-        self.cut = 0  # media-bearing tool calls dropped, oldest first
+        self.cut = 0
 
     def __call__(self, contents: list[types.Content]) -> list[types.Content]:
         sites = [
@@ -78,8 +70,6 @@ class WorkingSetImages:
             stale = parts[pi]
             assert stale.function_response is not None
             response = stale.function_response.response
-            # The result must not go on saying "attached" about pixels that
-            # are gone: the model reads that as a delivery failure.
             honest = (
                 {**response, "images": _DROPPED_TOOL} if isinstance(response, dict) else response
             )
@@ -140,8 +130,8 @@ class StrictArgumentsPlugin(BasePlugin):
 
         arguments = dict(tool_args or {})
         try:
-            refusal = argument_refusal(func, arguments)  # pyright: ignore[reportAny]  # ADK's
-        except (TypeError, ValueError):  # an unintrospectable tool keeps ADK's behaviour
+            refusal = argument_refusal(func, arguments)  # pyright: ignore[reportAny]
+        except (TypeError, ValueError):
             return None
         return None if refusal is None else refusal.payload()
 
@@ -189,8 +179,6 @@ def part_summary(part: types.Part) -> dict[str, Any]:
     function_response = getattr(part, "function_response", None)
     if function_response is not None:
         response = getattr(function_response, "response", None) or {}
-        # ADK 2.7+ carries tool-returned media here, not as sibling content
-        # parts, so count it or the capture hides the images entirely.
         media_parts = getattr(function_response, "parts", None) or []
         return {
             "kind": "function_response",
@@ -221,8 +209,6 @@ class RequestCapturePlugin(BasePlugin):
         self.capture_dir = Path(capture_dir)
         self.run_label = run_label
         self._counter = 0
-        # Per-instance suffix so concurrent sessions don't clobber each other's
-        # capture files (run_label alone is shared across all single-slice runs).
         import uuid as _uuid
         self._instance = _uuid.uuid4().hex[:8]
 

@@ -25,8 +25,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
-#: The GPT Image 2.5 models a host offers on ``openai-api``, the default
-#: first: the same models as the ``openai-oauth`` lane's.
 OPENAI_IMAGE_MODELS = OPENAI_OAUTH_IMAGE_MODELS
 DEFAULT_IMAGE_MODEL = OPENAI_IMAGE_MODELS[0]
 

@@ -28,16 +28,13 @@ from typing import Any
 from langslice.doors import credentials as setup
 from langslice.doors import user_settings as store
 
-#: The connections as the window names them, with how each is set up.
 LABELS = {
     "openai-oauth": ("ChatGPT account", "signin"),
     "openai-api": ("OpenAI API key", "key"),
     "anthropic-api": ("Claude (Anthropic) API key", "key"),
     "gemini-api": ("Gemini API key", "key"),
 }
-#: The POST resources (under the server's token).
 POSTS = ("settings", "settings/key", "settings/signin")
-#: How long the browser sign-in waits for the person.
 SIGNIN_TIMEOUT_S = 300.0
 
 
@@ -53,8 +50,6 @@ class Settings:
         self._login = login or setup.login_oauth
         self._lock = threading.Lock()
         self._signin: dict[str, Any] = {"running": False, "url": None, "error": None}
-
-    # --- reading -------------------------------------------------------------
 
     def state(self) -> dict[str, Any]:
         """What the tab shows: each connection's presence, the saved choices,
@@ -106,8 +101,6 @@ class Settings:
             "credentials_error": found["credentials_error"],
         }
 
-    # --- changing ------------------------------------------------------------
-
     def post(self, resource: str, body: Any) -> dict[str, Any]:
         """Apply one POST; :class:`SettingsError` for a request it refuses."""
         if not isinstance(body, dict):
@@ -124,7 +117,6 @@ class Settings:
             try:
                 setup.save_api_key(provider, key)
             except ValueError:
-                # The message names no key, but a reply never repeats the input.
                 raise SettingsError("Enter a key without spaces, or check that "
                                     "~/.langslice/provider_credentials.json is readable."
                                     ) from None
@@ -163,7 +155,6 @@ class Settings:
                     raise SettingsError("Unknown reasoning effort.")
                 entry["reasoning"] = reasoning
             saved["agent"][connection] = entry
-        # A connection chosen with no model of its own saved gets LangSlice's default.
         connection = saved["connection"]
         if connection and not (saved["agent"].get(connection) or {}).get("model"):
             default = store.agent_models()[connection]["default"]
@@ -187,7 +178,7 @@ class Settings:
             error = None
             try:
                 self._login(on_url=on_url, timeout_s=SIGNIN_TIMEOUT_S)
-            except Exception as exc:  # a provider's reply may hold anything: say nothing of it
+            except Exception as exc:
                 error = ("The sign-in timed out. Try again." if "Timed out" in str(exc)
                          else "The sign-in did not finish. Try again.")
             with self._lock:

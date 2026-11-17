@@ -66,7 +66,6 @@ class OptionError(Exception):
     """Signal a command-line option the checker cannot use."""
 
 
-#: The errors that stop a run with exit status 2 and a one-line message.
 USAGE_ERRORS = (
     OptionError,
     BaselineError,
@@ -130,7 +129,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--root", default=".", help="the repository root")
 
-    # what to check
     parser.add_argument(
         "--rule",
         action="append",
@@ -141,7 +139,6 @@ def _parser() -> argparse.ArgumentParser:
         "--paths", nargs="+", metavar="PATH", help="only these files"
     )
 
-    # what to print
     parser.add_argument(
         "--explain", metavar="NAME", help="print what a check flags"
     )
@@ -149,7 +146,6 @@ def _parser() -> argparse.ArgumentParser:
         "--show-warnings", action="store_true", help="list each warning"
     )
 
-    # the baseline
     parser.add_argument(
         "--prune", action="store_true", help="lower the baseline's counts"
     )
@@ -162,7 +158,6 @@ def _parser() -> argparse.ArgumentParser:
         help="overwrite an existing baseline with --write-baseline",
     )
 
-    # the baseline's history
     parser.add_argument(
         "--against", metavar="REF", help="fail if the baseline grew since REF"
     )

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.doors import credentials
-from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
+from langslice.doors import plugins as _plugins  # noqa: F401
 from langslice.doors.agent_cli.background import DETACHED
 from langslice.doors.commands.flags import add_flags
 from langslice.job.settings.schema import CLI_TASKS, REGISTRATION_TASKS
@@ -19,8 +19,6 @@ from langslice.job.settings.schema import CLI_TASKS, REGISTRATION_TASKS
 if TYPE_CHECKING:
     from langslice.job.settings.spec import JobSpec
 
-#: The flags ``--registration`` cannot be combined with (it supplies what
-#: they would), by argparse destination.
 REGISTRATION_CLASHES = {
     "positions": "--positions", "transforms": "--transforms",
     "orientation": "--orientation", "pitch": "--pitch", "yaw": "--yaw",
@@ -80,7 +78,7 @@ def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | No
         try:
             candidate = Path(value).expanduser()
             path = candidate if candidate.is_file() else None
-        except OSError:  # not usable as a file name: inline JSON
+        except OSError:
             path = None
     if path is not None:
         try:
@@ -187,7 +185,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value
-    if args.pixel_size_um:  # a number, or a JSON object / file of filename: um
+    if args.pixel_size_um:
         inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
     if args.pitch is not None or args.yaw is not None:
         inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
@@ -248,7 +246,6 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     )
 
 
-#: What ``--enabled trace_borders`` says with no connection to take.
 NO_SAVED_IMAGE_MODEL = (
     "--enabled trace_borders needs an image model, and this computer has no "
     "saved OpenAI sign-in or key: sign in or save a key in the LangSlice "
@@ -391,7 +388,6 @@ def run_linear(args: argparse.Namespace) -> None:
     except ValueError as exc:
         raise SystemExit(f"langslice linear run: {exc}") from exc
     if not os.environ.get(TRACE_DIR_ENV):
-        # Every run keeps its full agent trace: by default in the job folder.
         from langslice.doors.agent.trace import job_trace_dir
         from langslice.job.layout import job_folder_for
 

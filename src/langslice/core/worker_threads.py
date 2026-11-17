@@ -11,7 +11,6 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager
 
-#: The thread-count variables of the numerical libraries a conversion uses.
 THREAD_VARIABLES = (
     "OMP_NUM_THREADS",
     "OPENBLAS_NUM_THREADS",

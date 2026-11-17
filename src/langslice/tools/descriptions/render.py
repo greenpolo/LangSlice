@@ -68,7 +68,6 @@ from langslice.tools.descriptions.description import (
     ToolDescription,
 )
 
-#: Every tool's description, in the order every door lists the tools.
 _FAMILIES: dict[str, ToolDescription] = {
     **looking.DESCRIPTIONS,
     **changing.DESCRIPTIONS,
@@ -80,22 +79,16 @@ DESCRIPTIONS: dict[str, ToolDescription] = {
     name: _FAMILIES[name] for name, tool in TOOLS.items() if not tool.engine
 }
 
-#: The run a caller without a job declares: every argument, LangSlice's
-#: base prompt for coronal sections and the OpenAI image models.
 FULL = DescriptionFacts(
     prompt=border_correction_tool_prompt("coronal", provider="openai-oauth")
 )
 
-#: What every tool returns, as its declaration says: a JSON object.
 RETURNS = dict[str, Any]
 
-#: How far ``doc`` indents every line after the summary (see the module).
 DOC_INDENT = 8
 
-#: How far an ``Args:`` or ``Returns:`` entry sits under its heading.
 ENTRY_INDENT = 4
 
-#: How far a plugin stub's docstring indents its lines: a function body's.
 STUB_INDENT = 4
 
 
@@ -104,11 +97,8 @@ class Declaration:
     """One tool as a door offers it."""
 
     name: str
-    #: The description as ADK and FastMCP read it (see the module text).
     doc: str
-    #: The description below its summary, at no indentation (``TOOLS.md``).
     text: str
-    #: Each argument's text on one line.
     arguments: Mapping[str, str]
     signature: inspect.Signature
     annotations: dict[str, object]
@@ -155,7 +145,6 @@ def _native(
         _rendered, slots=slots, switched_off=facts.switched_off | facts.absent
     )
 
-    # the blocks under the summary: paragraphs, arguments, returns, prompt
     blocks = [rendered(paragraph) for paragraph in description.body]
     blocks = [block for block in blocks if block]
     texts = {
@@ -202,7 +191,6 @@ def _rendered(
     text: str, *, slots: Mapping[str, str], switched_off: frozenset[str]
 ) -> str:
     filled = Template(text).substitute(slots)
-    # a passage left out at a line's end leaves no space behind it
     return render(filled, switched_off).rstrip(" ")
 
 
@@ -281,13 +269,12 @@ def _plugin(name: str, facts: DescriptionFacts) -> Declaration:
     stub = plugin_stub(name, facts)
     written = stub.__doc__ or ""
     first, newline, rest = written.partition("\n")
-    if newline:  # a stub's docstring sits one level in, the doc's two
+    if newline:
         written = f"{first}\n{_indented(rest, DOC_INDENT - STUB_INDENT)}"
     doc = render(written, facts.switched_off | facts.absent)
     _, _, below = render(
         inspect.cleandoc(stub.__doc__ or ""), facts.switched_off | facts.absent
     ).partition("\n")
-    # every tool returns its reply, whatever the stub's return annotation
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
     annotations["return"] = RETURNS
     signature = inspect.signature(stub, eval_str=True)
@@ -377,7 +364,6 @@ def narrowed(
     return _SECTION_TRANSFORMS[no_flip, no_rotate]
 
 
-#: ``interactive_transform``'s section shape by (flip off, rotate off).
 _SECTION_TRANSFORMS: dict[tuple[bool, bool], object] = {
     (False, False): list[SectionTransform],
     (True, False): list[SectionTransformNoFlip],
@@ -410,7 +396,7 @@ def plugin_stub(name: str, facts: DescriptionFacts) -> Callable[..., object]:
         for tool in plugin.tools:
             if tool.name == name:
                 return tool.stub
-    if name in TOOLS and TOOLS[name].engine:  # a caller without a job
+    if name in TOOLS and TOOLS[name].engine:
         return plugins.tool_specs(None)[name][1].stub
     raise KeyError(name)
 

@@ -229,7 +229,7 @@ def _growth(
         if count <= allowed:
             continue
         if before is not None and not before.record.covers(key):
-            n_adopted += count - allowed  # a rule the reference did not run
+            n_adopted += count - allowed
             continue
 
         extra = min(count - allowed, stricter.get(key, 0))

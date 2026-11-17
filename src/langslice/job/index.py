@@ -19,8 +19,6 @@ from typing import Any
 
 from langslice.core.shared_files import replace_file
 
-#: The index entry's format: ``job_id``, ``job_folder``, ``created_at`` and
-#: ``fallback``.
 INDEX_FORMAT_VERSION = 1
 _JOB_ID = re.compile(r"[0-9a-f]{12}")
 

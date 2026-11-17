@@ -35,11 +35,8 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
     from langslice.tools.run import Run
 
-#: The tool name the pictures are saved under.
 REVIEW_TOOL = "review_comments"
-#: A comment whose section is as it was when the person wrote it.
 OPEN = "open"
-#: A comment whose section has changed since.
 REVISED = "revised"
 
 
@@ -47,19 +44,12 @@ REVISED = "revised"
 class ReviewRow:
     """One comment as the tool answers it."""
 
-    #: The comment's id.
     id: str
-    #: The section's filename.
     section: str
-    #: What the person wrote.
     comment: str
-    #: ``[x0, y0, x1, y1]``, fractions of the section's overlay picture.
     box: list[float]
-    #: :data:`OPEN` or :data:`REVISED`.
     state: str
-    #: The number of the picture it is drawn on (open comments only).
     picture: int | None = None
-    #: The box in that picture's pixels, ``[x0, y0, x1, y1]``.
     box_px: list[int] | None = None
 
 
@@ -67,9 +57,7 @@ class ReviewRow:
 class Reviewed:
     """What :func:`review_pictures` found and drew."""
 
-    #: Every comment, oldest first.
     rows: list[ReviewRow] = field(default_factory=list[ReviewRow])
-    #: The pictures, one per section with open comments.
     looked: Looked = field(default_factory=Looked)
 
 
@@ -78,7 +66,6 @@ class _Picture:
     """One section's overlay with its boxes outlined, not yet saved."""
 
     picture: looks.LookPicture
-    #: Per comment drawn on it, its id and its box in pixels.
     boxes: dict[str, list[int]]
 
 
@@ -159,7 +146,7 @@ def _outlined(
     long_edge: int | None,
 ) -> _Picture:
     record = state.by_id(section)
-    assert record is not None  # an open comment's section is here
+    assert record is not None
     mode = "overlay" if record.position_mm is not None else "section"
     request = looks.LookRequest(
         mode=mode, sections=(section,), long_edge=long_edge

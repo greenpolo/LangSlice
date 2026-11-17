@@ -39,10 +39,6 @@ from langslice.core.atlas.disk_cache import cached_volume
 from langslice.core.atlas.load import orient_slice_for_display
 from langslice.core.space import Plane, atlas_space_context, slice_axis_index
 
-# --------------------------------------------------------------------------
-# geometry
-# --------------------------------------------------------------------------
-
 
 def plane_axes(atlas: Any, plane: Plane = "coronal") -> tuple[int, int, int]:
     """``(normal_axis, row_axis, col_axis)`` of *plane* in atlas array order.
@@ -73,12 +69,8 @@ def build_rotation_matrix(
 
 
 _volume_cache: dict[tuple[Any, ...], tuple[np.ndarray, tuple[float, float, float]]] = {}
-#: Spline-prefiltered volumes per (atlas, kind, downsample, order): :func:`_filtered_volume`.
 _filtered_cache: dict[tuple[Any, ...], np.ndarray] = {}
-#: Most filtered volumes kept (each is a whole atlas volume, up to about 1 GB as float32).
 FILTERED_CACHE_SIZE = 4
-#: One lock per volume cache: pictures drawn on several threads (the opening)
-#: wait for a volume being built instead of building it again.
 _volume_lock = threading.Lock()
 _filtered_lock = threading.Lock()
 _annotation_lock = threading.Lock()
@@ -123,8 +115,6 @@ def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.n
     return hit
 
 
-#: Threads for :func:`_spline_filter_threaded`; past about 8 the filter is
-#: limited by memory bandwidth, not cores.
 FILTER_THREADS = 8
 
 
@@ -188,7 +178,7 @@ def _scaled_volume_locked(
         "tuple[float, float, float]",
         tuple(r / 1000.0 * step for r in context.resolution_um),
     )
-    if len(cache) > 8:  # ponytail: tiny manual LRU; atlases are few and huge
+    if len(cache) > 8:
         cache.clear()
     cache[key] = (volume, res_mm)
     return volume, res_mm
@@ -321,7 +311,7 @@ def plane_index_affine(
         shape, res_mm, (normal_axis, row_axis, col_axis), normal_index, pitch_deg, yaw_deg)
     origin = (centre - (shape[row_axis] - 1) / 2.0 * step_row
               - (shape[col_axis] - 1) / 2.0 * step_col)
-    if plane in {"sagittal", "horizontal"}:  # displayed transposed
+    if plane in {"sagittal", "horizontal"}:
         step_row, step_col = step_col, step_row
     return np.column_stack([step_row, step_col, origin])
 
@@ -368,7 +358,6 @@ def sample_oblique_plane(
         ``langslice.core.atlas.load``.
     """
     if isinstance(volume, str) and order > 1:
-        # the coefficients alone: on a disk-cache hit the raw volume is never read
         vol = _filtered_volume(atlas, volume, downsample, order)
         prefilter = False
     elif isinstance(volume, str):
@@ -401,8 +390,6 @@ def _sample_plane(
         _sample(vol, coords, order=order, prefilter=prefilter), plane)
 
 
-#: Planes of at least this many pixels are sampled in row bands on
-#: :func:`_sample_pool`; a smaller one is not worth the hand-off.
 SAMPLE_SPLIT_PIXELS = 1 << 17
 _sample_pools: dict[int, ThreadPoolExecutor] = {}
 
@@ -430,23 +417,16 @@ def _sample(vol: np.ndarray, coords: np.ndarray, *, order: int, prefilter: bool)
 
     height = coords.shape[1]
     if (prefilter and order > 1) or coords[0].size < SAMPLE_SPLIT_PIXELS or height < 2:
-        # a prefiltering call filters its whole input in every band
         return band(slice(None))
     bounds = np.linspace(0, height, min(FILTER_THREADS, height) + 1).astype(int)
     bands = [slice(int(a), int(b)) for a, b in zip(bounds[:-1], bounds[1:], strict=True)]
     return np.concatenate(list(_sample_pool().map(band, bands)), axis=0)
 
 
-#: Per atlas: (sorted ids, the annotation as indices into them), :func:`_compact_annotation`.
 _annotation_index_cache: dict[tuple[Any, ...], tuple[np.ndarray, np.ndarray]] = {}
 
 
-#: Annotation planes already sampled, as dense indices into the atlas's
-#: sorted ids (:func:`sample_oblique_annotation`), least recently used first:
-#: the job's frames, calibration and the pictures' masks sample the same
-#: plane of a section in turn.
 _annotation_plane_cache: OrderedDict[tuple[Any, ...], np.ndarray] = OrderedDict()
-#: Most planes in ``_annotation_plane_cache`` (about 1 MB each on the 39 um rat).
 ANNOTATION_PLANE_CACHE_SIZE = 256
 
 
@@ -469,7 +449,7 @@ def _compact_annotation(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
             return lookup[np.asarray(atlas.annotation)]
 
         index = cached_volume(atlas, "annotation_index", dense)
-        _annotation_index_cache.clear()  # ponytail: one atlas at a time; these are ~300 MB
+        _annotation_index_cache.clear()
         _annotation_plane_cache.clear()
         hit = (np.asarray(ids), index)
         _annotation_index_cache[key] = hit
@@ -503,7 +483,6 @@ def sample_oblique_annotation(
         step = max(1, int(downsample))
         vol = index_volume if step == 1 else np.ascontiguousarray(
             index_volume[::step, ::step, ::step])
-        # nearest neighbour in the indices' own integer type: exact, no float32 copy
         index = np.ascontiguousarray(_sample_plane(
             atlas, vol, step, position_mm, plane, pitch_deg, yaw_deg,
             order=0, prefilter=False))

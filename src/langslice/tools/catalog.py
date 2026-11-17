@@ -81,13 +81,7 @@ class Verb:
     function: Callable[..., Any]
     kind: Kind
     group: Group
-    #: The core's definition: ``when``, ``options``, ``essential``, ``needs``.
     tool: ToolDef
-    #: The most one call takes at every door, by what it counts (``sections``
-    #: named; a plugin's ``pictures`` shown), as the tool door enforces them
-    #: (past a picture limit the rest is named, not shown; past a section limit
-    #: the call is refused). The reference card lists them. The picture cap of
-    #: LangSlice's own agent and MCP is the job's (``Job.picture_cap``).
     limits: Mapping[str, int] = field(default_factory=dict)
 
     @property
@@ -117,7 +111,6 @@ class Verb:
         (:func:`enabled` with ``image_model`` False)."""
         return self.tool.image_model
 
-#: The operation each tool calls.
 _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "look": look.look_pictures,
     "zoom": zoom.zoom_picture,
@@ -146,8 +139,6 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "export_maps": exports.export_maps,
 }
 
-#: The per-call limits every door shares (compute, not pictures: the picture
-#: cap of the agent tools and MCP is the job's, ``Job.picture_cap``).
 _LIMITS: dict[str, dict[str, int]] = {
     "fireants_syn": {"sections": deformable.MAX_FIREANTS_SYN_SECTIONS},
 }
@@ -157,8 +148,6 @@ if set(_FUNCTIONS) != _OWN:
     raise RuntimeError("the registry and the tool table name different "
                        f"tools: {sorted(set(_FUNCTIONS) ^ _OWN)}")
 
-#: Every verb whose operation is in this package, in the order every door
-#: lists them; the engines' follow (:func:`verbs_for`).
 VERBS: dict[str, Verb] = {
     name: Verb(name, _FUNCTIONS[name], tool.kind, tool.group, tool,
                limits=_LIMITS.get(name, {}))

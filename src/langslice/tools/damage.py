@@ -42,29 +42,17 @@ if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 
-# --- mark_damage: by region --------------------------------------------------
-
-
 @dataclass(frozen=True)
 class DamageRegions:
     """What :func:`mark_damage` did to one section."""
 
     id: str
-    #: The section's marked regions after the call.
     regions: list[str] = field(default_factory=list)
-    #: The section's note after the call.
     note: str = ""
-    #: Whether the section is damaged after the call (it has marked regions).
     damaged: bool = False
-    #: Whether the note starts with the host's note (``inputs.damaged``).
     by_user: bool = False
-    #: Whether anything changed (False: the same mark again, no undo step).
     written: bool = False
-    #: With display options and marked regions: the picture
-    #: (:func:`langslice.core.sections.damage.damage_picture`).
     pictures: list[Image.Image] = field(default_factory=list)
-    #: ``{"error", "message"}`` when the picture could not be drawn (the
-    #: write stands).
     render_failed: dict[str, str] | None = None
 
     @property
@@ -124,7 +112,7 @@ def mark_damage(
             RefusalCode.BAD_ARGS,
             message="regions must be a list of acronyms or ids",
         )
-    atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+    atlas = cast("object", workspace.atlas)
     names = checked_entries(atlas, regions, job.state.plane)
 
     with job.writing():
@@ -132,13 +120,12 @@ def mark_damage(
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [str(section)])
-        check_frozen(job, [record.id])  # refused while work runs on it
+        check_frozen(job, [record.id])
         if has_sides(names):
             sides = side_pair_refusal(state, workspace, record, names)
             if sides is not None:
                 raise sides
         if names != list(record.damaged_regions):
-            # a change of the marks: refused where the job froze them
             check_frozen(job, [record.id], "damage")
         by_user = record.id in job.host_damaged
         user = _user_note(job, record)
@@ -176,15 +163,12 @@ def mark_damage(
                     border_thickness=options.border_thickness,
                 )
             ]
-        except Exception as exc:  # noqa: BLE001 - the write stands; say why
+        except Exception as exc:  # noqa: BLE001
             failed = {
                 "error": getattr(exc, "code", RefusalCode.RENDER_FAILED),
                 "message": str(exc),
             }
     return DamageRegions(**result, pictures=drawn, render_failed=failed)
-
-
-# --- the tool ----------------------------------------------------------------
 
 
 def mark_damage_tool(

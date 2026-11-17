@@ -25,22 +25,16 @@ from collections.abc import Iterator
 from tools.stylecheck.core import Config, Project, Violation, project_check
 from tools.stylecheck.rules.scopes import call_name, dotted_name, string_value
 
-#: What an option value looks like: lower-case words joined by ``_``/``-``.
 OPTION_PATTERN = re.compile(r"[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*")
 
-#: Words that parse a boolean from text; they are not the package's options.
 BOOLEAN_WORDS = frozenset({"true", "false", "yes", "no", "on", "off"})
 
-#: Python's builtin names, which code that reads code compares against.
 BUILTIN_NAMES = frozenset(dir(builtins))
 
-#: Values the platform reports, compared with its own names, not options.
 PLATFORM_SUBJECTS = frozenset({"os.name", "sys.platform", "platform.system"})
 
-#: Methods that test a string's ends against a literal.
 END_TESTS = frozenset({"startswith", "endswith"})
 
-#: How many module names a message lists before it says how many more.
 LISTED_MODULES = 3
 
 Site = tuple[str, ast.AST]

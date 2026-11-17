@@ -40,28 +40,20 @@ from tools.stylecheck.rules.scopes import (
     string_value,
 )
 
-#: The name of the layered package.
 PACKAGE_ROOT = "langslice"
 
-#: A dotted path into the package written anywhere in a docstring.
 PACKAGE_PATH_PATTERN = re.compile(r"\blangslice\.(\w+)")
 
-#: A class name worth matching: capitalised, with a lower-case letter.
 CLASS_PATTERN = re.compile(r"[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*")
 
-#: A function name worth matching: lower-case words joined by ``_``.
 FUNCTION_PATTERN = re.compile(r"_?[a-z][a-z0-9]*(?:_[a-z0-9]+)+")
 
-#: The shortest class name worth matching.
 MIN_CLASS_LETTERS = 4
 
-#: The module that lists the tools, one ``ToolDef`` call per tool.
 TOOLSET_MODULE = "langslice.job.settings.tool_table"
 
-#: The call that declares one tool, its name the first argument.
 TOOL_DECLARATION = "ToolDef"
 
-#: The characters that separate parts of a dotted path or a file path.
 PATH_SEPARATORS = re.compile(r"[./]")
 
 

@@ -38,34 +38,21 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-if TYPE_CHECKING:  # a type only: the job modules load with the hook's call
+if TYPE_CHECKING:
     from langslice.job.layout import JobLayout
 
-#: A job folder named on a command line or in a script; unquoted, a Windows
-#: path holds backslashes, which a POSIX shell reads as escapes.
 _UNQUOTED = r"[^\s\"';|&]+" if sys.platform == "win32" else r"[^\s\"'\\;|&]+"
 FOLDER_PATTERNS = (
     re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
     re.compile(r"""open_job\(\s*(?:r?"([^"]+)"|r?'([^']+)')"""),
-    # The launch prompt's first line (``langslice-job FOLDER launch``), so an
-    # agent that stopped before any call still reaches its job.
     re.compile(r"Register the brain in job folder (.+?)(?:\. Call start_job"
                r"| with the langslice-job command line\.)"),
 )
-#: An MCP ``start_job`` call's tool name, as each harness writes it:
-#: ``mcp__plugin_langslice_langslice__start_job`` (Claude Code's plugin),
-#: ``mcp__langslice__start_job``, or ``start_job`` itself (Antigravity's
-#: ``call_mcp_tool`` names it under ``ToolName``).
 START_JOB = re.compile(r"(?:^|__)start_job$")
-#: The ``start_job`` arguments that name a job.
 START_JOB_KEYS = ("image_folder",)
-#: A submit, on the command line or through the library.
 SUBMIT_PATTERN = re.compile(r"langslice-job\s+\S+\s+submit\b|\.submit\(")
-#: The MCP ``submit`` tool under any harness's name, as :data:`START_JOB`.
 MCP_SUBMIT = re.compile(r"(?:^|__)submit$")
-#: Words after ``langslice-job`` that are commands, not folders.
 NOT_FOLDERS = frozenset({"ops", "schema", "-h", "--help"})
-#: A string this long that looks like base64 is inline image data.
 INLINE_DATA_CHARS = 4096
 _BASE64 = re.compile(r"[A-Za-z0-9+/=\s]+")
 
@@ -84,7 +71,7 @@ def run(args: Any) -> None:
         hook = json.loads(sys.stdin.read() or "{}")
         for folder in session_end(hook, args.harness):
             print(f"langslice: transcript copied to {folder}", file=sys.stderr)
-    except Exception as exc:  # noqa: BLE001 - a hook never fails the session
+    except Exception as exc:  # noqa: BLE001
         print(f"langslice session-end: {type(exc).__name__}: {exc}", file=sys.stderr)
     print("{}")
 
@@ -150,7 +137,7 @@ def transcript_path(hook: dict[str, Any]) -> Path | None:
     if named:
         return Path(str(named)).expanduser()
     main, agent = hook.get("transcript_path"), hook.get("agent_id")
-    if main and agent:  # Claude Code keeps a subagent's beside its session's
+    if main and agent:
         main_path = Path(str(main)).expanduser()
         return main_path.with_suffix("") / "subagents" / f"agent-{agent}.jsonl"
     return Path(str(main)).expanduser() if main else None
@@ -297,9 +284,6 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:120] or "session"
 
 
-# --- the launch check ----------------------------------------------------------------
-
-#: Antigravity wraps the user's message in this tag (and adds metadata after it).
 _USER_REQUEST = re.compile(r"<USER_REQUEST>\n?(.*?)\n?</USER_REQUEST>", re.S)
 
 
@@ -376,6 +360,6 @@ def write_launch_check(layout: Any, text: str, target: Path) -> None:
     try:
         target.write_text(json.dumps(launch_check(layout, text), indent=1) + "\n",
                           encoding="utf-8", newline="\n")
-    except Exception as exc:  # noqa: BLE001 - a hook never fails the session
+    except Exception as exc:  # noqa: BLE001
         print(f"langslice session-end: launch check: {type(exc).__name__}: {exc}",
               file=sys.stderr)

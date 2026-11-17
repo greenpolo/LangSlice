@@ -47,9 +47,7 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.pictures.drawn import PictureNote
 from langslice.core.stack.json_reads import as_object, numbers_at, text_at
 
-#: The frame record's format.
 FRAME_FORMAT_VERSION = 1
-#: Stated in every frame record, so a script reading one needs nothing else.
 CONVENTION = (
     "pixel_to_atlas_um maps a picture pixel [row, col, 1] (pixel centres at "
     "integers, row 0 at the top, caption band included) to BrainGlobe atlas "
@@ -58,7 +56,6 @@ CONVENTION = (
     "same map, nearest neighbour; section_to_picture maps the section "
     "render's pixel [row, col, 1] to the picture before any deformation."
 )
-#: Added to a deformable-fit picture's frame record.
 WARP_CONVENTION = (
     " For a deformable-fit picture, residual says how the deformation record "
     "named by deformation was resized (grid_size) and cropped (box) to the "
@@ -67,8 +64,6 @@ WARP_CONVENTION = (
     "residual: the linear placement alone); langslice.coordinate_map applies it."
 )
 
-
-# --- the layers -----------------------------------------------------------------------
 
 
 def _native_rows_cols(panel: PanelFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -146,7 +141,7 @@ def section_to_picture(panel: PanelFrame) -> np.ndarray:
     ])
     xy = canvas_to_picture @ np.asarray(panel.section_matrix, dtype=np.float64)
     swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    return swap @ xy @ swap  # x/y -> row/col on both sides
+    return swap @ xy @ swap
 
 
 def atlas_facts(atlas: Any) -> dict[str, Any]:
@@ -249,10 +244,9 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     facts = atlas_facts(atlas)
     index = plane_index_affine(atlas, placement.position_mm, placement.plane,
                                placement.pitch_deg, placement.yaw_deg)
-    # picture [row, col, 1] -> record grid [x, y, 1] -> native [x, y, 1] -> [row, col, 1]
     swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     down = np.array([[1.0, 0.0, -band], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-    picture_to_grid = swap @ down  # [row, col, 1] -> [x, y, 1] on the record's grid
+    picture_to_grid = swap @ down
     grid_to_native = np.linalg.inv(np.asarray(placement.atlas_to_section, dtype=np.float64))
     to_um = (np.diag(facts["resolution_um"]) @ index @ swap @ grid_to_native
              @ picture_to_grid)
@@ -301,8 +295,6 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     return labels, borders, frame
 
 
-# --- on demand: the coordinate map ------------------------------------------------------
-
 
 def coordinate_map(
     view: dict[str, Any] | str | os.PathLike[str], *,
@@ -343,7 +335,7 @@ def coordinate_map(
         if base is None:
             raise ValueError("This picture's map needs its deformation record: pass the "
                              "view.json path, or folder= with the record")
-        shift = _residual_shift(cast("JsonObject", frame), base)  # view.json is JSON
+        shift = _residual_shift(cast("JsonObject", frame), base)
         rows = rows + shift[0]
         cols = cols + shift[1]
     out = (np.tensordot(matrix[:, :2], np.stack([rows, cols]), axes=1)

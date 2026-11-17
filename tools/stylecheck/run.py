@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from tools.stylecheck import core
-from tools.stylecheck import rules as rules  # registers every check
+from tools.stylecheck import rules as rules
 from tools.stylecheck.core import Config, Project, Violation
 from tools.stylecheck.external import (
     FORMAT_EXPLANATION,
@@ -32,7 +32,6 @@ from tools.stylecheck.numpydoc_hook import (
 )
 from tools.stylecheck.scope import Scope, Tool
 
-#: Each external tool by the name its rules start with.
 EXTERNAL_TOOLS: dict[Tool, Callable[[Project, Config], list[Violation]]] = {
     Tool.RUFF: ruff_violations,
     Tool.FORMAT: format_violations,
@@ -79,7 +78,6 @@ def run_checks(
         if scope.selects_tool(tool):
             violations.extend(run(project, config))
 
-    # the descriptions a model reads are judged by the text snapshot
     stubs = find_stubs(project)
     violations = drop_stub_docstring_findings(violations, stubs)
 
@@ -146,7 +144,7 @@ def _module_check(
     for module in project.modules.values():
         try:
             violations.extend(check(module, project, config))
-        except Exception as error:  # a check's own bug; stop with its name
+        except Exception as error:
             raise CheckFailedError(
                 f"The check {name} failed on {module.relpath}: {error!r}."
             ) from error
@@ -159,7 +157,7 @@ def _project_check(
     """Run one project check, naming it if it fails."""
     try:
         return list(check(project, config))
-    except Exception as error:  # a check's own bug; stop with its name
+    except Exception as error:
         raise CheckFailedError(
             f"The check {name} failed: {error!r}."
         ) from error

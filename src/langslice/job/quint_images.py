@@ -36,9 +36,7 @@ from langslice.job.imports.matching import section_number
 
 logger = logging.getLogger(__name__)
 
-#: Digits a written section number is padded to (``_s001``).
 NUMBER_DIGITS = 3
-#: PNG compression of the copies: fast, since a submit writes every one.
 PNG_COMPRESSION = 1
 
 

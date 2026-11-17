@@ -27,12 +27,12 @@ from typing import TYPE_CHECKING, cast
 
 import cv2
 import numpy as np
+from PIL import Image, ImageFilter
 from SimpleITK import (
     GetArrayFromImage,
     GetImageFromArray,
     SmoothingRecursiveGaussian,
 )
-from PIL import Image, ImageFilter
 
 from langslice.core.pictures.look import LookRequest, look
 from langslice.core.sections.images import raw_names

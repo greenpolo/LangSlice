@@ -37,16 +37,6 @@ from langslice import __version__
 from langslice.core.atlas.images import AUGMENTED_AP_OFFSET_MM, AUGMENTED_ATLAS
 from langslice.core.maps.section_maps import marker_grid
 
-#: The QuickNII ``.cutlas`` target of a BrainGlobe atlas. QuickNII and
-#: VisuAlign ship the Allen CCFv3 at 25 um only
-#: (``ABA_Mouse_CCFv3_2017_25um.cutlas``; DeepSlice writes the same name),
-#: so every Allen resolution is exported to it (:data:`_TARGET_RESOLUTION_UM`).
-#: The augmented CCFv3 atlas is the Allen 25 um volume with 38 more planes at
-#: the front and 24 behind, so it is exported to the Allen target on the Allen
-#: grid, shifted by ``AUGMENTED_AP_OFFSET_MM`` (:func:`_on_allen_grid`).
-#: The rat name is DeepSlice's, the one its QuickNII files open with. The
-#: Kim atlas name follows the same pattern; any other atlas is exported to
-#: ``<name>.cutlas``.
 _KNOWN_TARGETS: dict[str, str] = {
     "allen_mouse_25um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "allen_mouse_10um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
@@ -56,16 +46,11 @@ _KNOWN_TARGETS: dict[str, str] = {
     AUGMENTED_ATLAS: "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "kim_unified_25um": "Kim_UnifiedMouse_v1_25um.cutlas",
 }
-#: A target whose voxels differ from the BrainGlobe atlas's: its voxel size.
-#: QuickNII coordinates are voxel EDGES (physical / voxel size), so an
-#: anchoring moves to the target's grid by the factor of the two sizes (the
-#: Allen volumes at every resolution span the same 13.2 x 8.0 x 11.4 mm).
 _TARGET_RESOLUTION_UM: dict[str, float] = {
     "ABA_Mouse_CCFv3_2017_25um.cutlas": 25.0,
 }
 
 
-#: The Allen CCFv3 25 um volume's shape in BrainGlobe's ``asr`` order.
 _CCFV3_25UM_SHAPE = (528, 320, 456)
 
 
@@ -82,10 +67,6 @@ def _on_allen_grid(atlas: dict[str, Any]) -> tuple[dict[str, Any], np.ndarray]:
     shift[0] = AUGMENTED_AP_OFFSET_MM * 1000.0
     return {**atlas, "name": "allen_mouse_25um", "shape": list(_CCFV3_25UM_SHAPE)}, shift
 
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -138,10 +119,6 @@ class QUINTExport:
     aligner: str = f"langslice_{__version__}"
 
 
-# ---------------------------------------------------------------------------
-# Anchoring computation
-# ---------------------------------------------------------------------------
-
 
 def _resolve_target(atlas_name: str) -> str:
     """Map a BrainGlobe atlas name to a ``.cutlas`` target identifier."""
@@ -184,22 +161,7 @@ def export_to_dict(export: QUINTExport) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# BrainGlobe atlas micrometres <-> QuickNII voxels
-# ---------------------------------------------------------------------------
-#
-# The conversion goes through the two volumes' anatomical spaces
-# (``brainglobe_space``) and the voxel-edge shift below; on the Allen CCFv3
-# 25 um atlas it agrees with DeepSlice and with QUINT registrations made by
-# hand. For other atlases the QuickNII target is taken to share the
-# BrainGlobe voxel grid.
-
-#: QuickNII / VisuAlign volume axes (x, y, z) as a BrainGlobe origin string:
-#: x runs left -> right (ML), y posterior -> anterior (AP), z inferior ->
-#: superior (DV). Against a BrainGlobe ``asr`` volume every axis is reversed.
 QUICKNII_ORIGIN = "lpi"
-#: QuickNII coordinates are continuous voxel-EDGE coordinates (voxel i spans
-#: [i, i+1)); BrainGlobe micrometres put voxel i's CENTRE at i * resolution.
 VOXEL_EDGE_TO_CENTRE = 0.5
 
 _AXIS_OF_LETTER = {"a": "ap", "p": "ap", "s": "dv", "i": "dv", "l": "ml", "r": "ml"}
@@ -283,13 +245,7 @@ def anchoring_from_pixel_map(
     return AnchoringVector(*(round(float(value), 6) for value in (*o, *u, *v)))
 
 
-#: A section whose perpendicular anchoring moves no corner of its image by
-#: more than this many pixels from its exact one needs no markers for the
-#: difference (the rounding of the written numbers moves it far less).
 SHEAR_TOLERANCE_PX = 0.01
-#: Steps of the marker grid of a section without a deformation: its markers
-#: carry the shear alone, an affine change any markers around the image
-#: reproduce exactly, so a few do.
 SHEAR_MARKER_DIVISIONS = 2
 
 
@@ -343,7 +299,6 @@ def perpendicular_anchoring(anchoring: AnchoringVector) -> AnchoringVector:
         raise ValueError("the anchoring's v is parallel to its u")
     e2 = across / v2
 
-    # the axes turned by a, each as long as the old axis along it
     angle = 0.5 * math.atan2(-2.0 * v1 * v2, u1 * u1 + v2 * v2 - v1 * v1)
     r1 = math.cos(angle) * e1 + math.sin(angle) * e2
     r2 = math.cos(angle) * e2 - math.sin(angle) * e1

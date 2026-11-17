@@ -13,10 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 __all__ = ["BOX_COLOUR", "Box", "draw_boxes"]
 
-#: The outline and label chip: a yellow that reads on grey tissue and on
-#: the atlas borders' colours.
 BOX_COLOUR = (255, 214, 10)
-#: The label's text.
 LABEL_COLOUR = (0, 0, 0)
 
 Box = tuple[float, float, float, float]

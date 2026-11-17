@@ -67,13 +67,7 @@ from langslice.core.pictures.canvas import canvas_geometry
 from langslice.core.space import Plane, atlas_space_context
 from langslice.core.stack.section import ROTATIONS
 
-#: Cutting angles smaller than this (degrees) are read as 0: a written file's
-#: rounding (QuickNII anchorings carry six decimals of a voxel, about 1e-8
-#: degrees), never a cut.
 ANGLE_EPSILON_DEG = 1e-6
-#: The largest tilt (degrees) between an imported plane and the job's section
-#: plane: beyond it the registration is of another plane (a sagittal
-#: registration read into a coronal job), refused.
 MAX_TILT_DEG = 45.0
 
 
@@ -111,7 +105,7 @@ def plane_angles(normal: np.ndarray, atlas: Any, plane: Plane) -> tuple[float, f
     yaw = 0.0 if abs(yaw) < ANGLE_EPSILON_DEG else yaw
     check = build_rotation_matrix(pitch, yaw, row_axis=row_axis, col_axis=col_axis)
     miss = np.linalg.norm(np.cross(check[:, normal_axis], unit))
-    if miss > math.radians(1e-3):  # a convention slip, never data
+    if miss > math.radians(1e-3):
         raise ValueError("the cutting angles do not reproduce the registered plane")
     return pitch, yaw
 
@@ -242,8 +236,6 @@ def placement_from_pixel_map(
                 else float(at[0]))
     native_to_um = _native_to_um(atlas, position, plane, pitch, yaw)
 
-    # File pixel -> native plane pixel ([row, col]), least squares onto the
-    # plane LangSlice draws (exact unless the plane was snapped).
     basis = native_to_um[:, :2]
     pinv = np.linalg.pinv(basis)
     linear = pinv @ matrix[:, :2]
@@ -293,13 +285,11 @@ def placement_from_pixel_map(
     placed, render_size, _geometry = candidate(*chosen)
     params = tuple(float(v) for v in normalized_affine(placed[:2], render_size))
 
-    # The round trip, as core.maps.section_maps draws it, at the corners.
     atlas_to_render, _ = linear_placement_matrix(render_size, render_um, atlas, position,
                                                  plane, pitch, yaw, params)
     file_to_render = orientation_matrix(unturned, chosen[0], chosen[1]) @ file_to_unturned
     back = SWAP @ np.linalg.inv(atlas_to_render) @ file_to_render @ SWAP
     in_plane_error = float(np.abs(back @ corners - file_to_native_rc @ corners).max())
-    # Native pixels -> file pixels (along x) for the error in file pixels.
     native_px_in_file = float(np.sqrt(abs(np.linalg.det(np.linalg.inv(linear)))))
     return RecoveredPlacement(
         position_mm=float(position), pitch_deg=float(pitch), yaw_deg=float(yaw),

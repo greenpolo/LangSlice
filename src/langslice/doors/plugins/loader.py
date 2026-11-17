@@ -34,7 +34,6 @@ from langslice.job.plugins import LoadedPlugin, check_tool
 
 logger = logging.getLogger(__name__)
 
-#: Prefix of the reference an in-process list of tools is registered under.
 INLINE_PREFIX = "inline:"
 
 
@@ -82,7 +81,7 @@ def build(ref: str, factory: Callable[..., Any], *, module_name: str,
     check its tools and make the :class:`LoadedPlugin` (not yet registered)."""
     try:
         made = factory(config) if config is not None else factory()
-    except Exception as exc:  # noqa: BLE001 - a plugin's own failure, said in one line
+    except Exception as exc:  # noqa: BLE001
         raise PluginError(f"plugin {ref}: the factory failed: {type(exc).__name__}: {exc}"
                           ) from exc
     if isinstance(made, ToolSpec):
@@ -131,7 +130,7 @@ def load(ref: str, config: dict[str, Any] | None = None) -> LoadedPlugin:
     module_name, factory_name = _split(ref)
     try:
         module = importlib.import_module(module_name)
-    except Exception as exc:  # noqa: BLE001 - import errors of any kind
+    except Exception as exc:  # noqa: BLE001
         raise PluginError(f"plugin {ref}: cannot import {module_name!r}: "
                           f"{type(exc).__name__}: {exc}") from exc
     factory: Any = module

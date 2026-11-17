@@ -28,9 +28,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: Window-share warnings come every this many percentage points.
 QUOTA_STEP = 10
-#: The first dollar warning; each later one doubles it.
 FIRST_DOLLAR_WARNING = 5.0
 
 
@@ -50,20 +48,6 @@ def _r(input: float, cached: float, output: float, write: float | None = None) -
     return Rate(input, cached, output, write)
 
 
-#: Per-token list prices, USD per million tokens, standard tier, short context.
-#: Sources, read 2026-10-15:
-#: - anthropic-api: https://platform.claude.com/docs/en/about-claude/pricing
-#:   (cache write = the 5-minute rate; LangSlice marks the newest message block
-#:   on every call, providers/anthropic_api.py, so the input that is not a
-#:   cache read is billed as a cache write).
-#: - openai-api: https://developers.openai.com/api/docs/pricing (reasoning
-#:   tokens are inside the output count, as OpenAI bills them).
-#: - gemini-api: https://ai.google.dev/gemini-api/docs/pricing (output includes
-#:   thinking tokens; prompts over 200K tokens on 3.1 Pro and 2.5 Pro, and
-#:   over 272K / 100K tokens where noted below, bill higher than listed here).
-#: Entries with several rows are dated: the latest row whose date has come.
-#: Not priced: batch, flex, fast or regional tiers, the Claude Sonnet 5.5
-#: and Opus 5.5 long-context bands (none listed), Gemini audio input.
 _ALWAYS = date.min
 PRICES: dict[str, dict[str, list[tuple[date, Rate]]]] = {
     "anthropic-api": {
@@ -96,7 +80,6 @@ PRICES: dict[str, dict[str, list[tuple[date, Rate]]]] = {
         "gpt-5": [(_ALWAYS, _r(1.25, 0.125, 10))],
     },
     "gemini-api": {
-        # Google announced these increases on the pricing page.
         "gemini-4-argon": [(_ALWAYS, _r(2, 0.10, 10)), (date(2026, 12, 1), _r(4, 0.20, 20))],
         "gemini-3.8-flash": [(_ALWAYS, _r(0.75, 0.075, 3.75)),
                              (date(2027, 1, 1), _r(1.5, 0.15, 7.5))],
@@ -111,10 +94,7 @@ PRICES: dict[str, dict[str, list[tuple[date, Rate]]]] = {
         "gemini-2.5-flash-lite": [(_ALWAYS, _r(0.10, 0.01, 0.4))],
     },
 }
-#: Haiku 5.5 bills a whole prompt over 100,000 tokens at a higher band.
 _HAIKU_LONG = (100_000, _r(0.50, 0.05, 2.5, 0.625))
-#: Lanes whose usage metadata keeps thinking tokens apart from the output count
-#: (ADK reports Gemini and Claude thoughts separately; both bill them as output).
 _THOUGHTS_SEPARATE = {"anthropic-api", "gemini-api"}
 
 

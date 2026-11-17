@@ -32,9 +32,6 @@ def add_mcp_parser(
         "as saved, else a new one. Without it the host names the folder "
         "through the start_job tool",
     )
-    # The job flags of `linear run`, less --no-resume and the agent session's
-    # (the host runs its own model); they make the job of a folder that holds
-    # none (a folder's own job keeps its saved settings).
     add_flags(p, "job")
     add_trace_argument(p)
     p.set_defaults(resume=True)
@@ -49,7 +46,7 @@ def run_mcp(args: argparse.Namespace) -> None:
             f"\n({exc})"
         ) from exc
 
-    try:  # the job flags, checked once before serving
+    try:
         spec_from_args(args, args.image_folder or ".")
     except ValueError as exc:
         raise SystemExit(f"langslice mcp: {exc}") from exc

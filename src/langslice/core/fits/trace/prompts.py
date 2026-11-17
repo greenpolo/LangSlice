@@ -61,9 +61,6 @@ def border_refinement_prompt(plane: Plane = "coronal") -> str:
     )
 
 
-#: Route "supplied" for the GPT image models, as the stack agent's tool sends it.
-#: Image 1 is the clean photograph (the edit target), Image 2 the same
-#: photograph with the linearly placed boundaries.
 _SUPPLIED_GPT = (
     "Image 1: the photograph of a brain coronal section to edit. Image 2: the same "
     "photograph in exactly the same frame, carrying thin yellow region boundaries placed "

@@ -90,7 +90,6 @@ class ContextWrites(ContextProposals):
         try:
             with self.writing():
                 live = self._run.state.by_id(record.id) or record
-                # the script's array, checked by add_image
                 given = cast("object", array)
                 return ops_images.add_image(self._run.job, self._run.workspace, live, str(name),
                                             given, note)
@@ -125,7 +124,7 @@ class ContextWrites(ContextProposals):
             if outermost and self._step is not None and self._caller.merge_calls:
                 start, pushed, top = self._step
                 if job.pushed == pushed and job.undo_stack and job.undo_stack[-1].step == top:
-                    mark = start  # nothing else wrote since the call's last write
+                    mark = start
             self._depth += 1
             try:
                 yield self
@@ -146,7 +145,7 @@ class ContextWrites(ContextProposals):
             if record is None:
                 continue
             now = {section_inputs(self._run.state, record, deformation=flag)
-                   for flag in (False, True)}  # taken with or without the deformation
+                   for flag in (False, True)}
             if expect[name] not in now:
                 rows[name] = stale_refusal().payload(section_id=name)
         return rows
@@ -248,7 +247,7 @@ class ContextWrites(ContextProposals):
                         note = str(row.get("note") or "")
                         stored = self.transform_from_params(
                             name, row["params"], note=note).affine
-                    else:  # reportAny: a plugin's plain dict
+                    else:
                         stored = affine_from_json(cast("JsonObject", record))
                     assert stored is not None
                     done = transforms.set_transforms(job, {name: stored})
@@ -377,7 +376,7 @@ class ContextWrites(ContextProposals):
         layer.check()
         record_id = self._record(section).id
         job = self._run.job
-        if layer.frame == "oriented":  # a raster computed on a section_image array
+        if layer.frame == "oriented":
             held = self._record(section)
             layer = replace(layer, frame="section_px", raster=unorient_raster(
                 np.asarray(layer.raster), held.rotation_deg, held.flip))

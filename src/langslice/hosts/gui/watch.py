@@ -53,26 +53,14 @@ from langslice.job.migrations import viewer_stack
 from langslice.job.settings.labels import label as tool_title
 from langslice.job.settings.tool_table import TOOLS
 
-#: How often a watched job's files are looked at, at most.
 POLL_S = 0.25
-#: A job whose files changed this recently is Running.
 RECENT_S = 30.0
-#: A job with no tool running whose files changed longer ago than this is
-#: Idle: its run ended (or hangs) without a submission.
 IDLE_S = 600.0
-#: The tools whose call is no undo step (``job.settings.tool_table`` kind
-#: ``read``); any other (a write, a plugin tool, a tool of an older version)
-#: may be one.
 _READS = frozenset(name for name, tool in TOOLS.items() if tool.kind == "read")
-#: How many recent jobs the list holds.
 MAX_RECENT = 40
-#: The saved picture inside a view folder.
 PICTURE = "view.jpg"
-#: The longest text of one activity item the page receives.
 MAX_TEXT = 60_000
-#: The longest tool arguments the page receives, as JSON.
 MAX_ARGS = 2048
-#: The trace record kinds the viewer reads (LangSlice's own agent trace).
 _TRACE_KINDS = {"session", "model", "summary", "error", "spend"}
 
 
@@ -281,7 +269,6 @@ class JobWatcher:
         self.items: list[dict[str, Any]] = []
         self.pictures: dict[int, Picture] = {}
         self.open_tools: dict[str, dict[str, Any]] = {}
-        #: What made each undo depth (1 is the oldest step), and the redo side.
         self.step_labels: dict[int, str] = {}
         self.redo_labels: list[str] = []
         self.depth: int | None = None
@@ -293,15 +280,10 @@ class JobWatcher:
         self.rows: list[dict[str, Any]] = []
         self.rows_note = ""
         self.rows_stale = False
-        #: The stack the table shows; None while no state this LangSlice
-        #: reads is there. Replaced whole, never changed in place.
         self.stack: Stack | None = None
-        #: The latest followed call's targets; None before the first.
         self.followed: Focus | None = None
         self.polled_at = 0.0
         self._histories: SectionHistories | None = None
-
-    # --- reading ----------------------------------------------------------------
 
     def poll(self, *, force: bool = False) -> None:
         """Read what changed since the last round (at most every ``POLL_S``)."""
@@ -320,8 +302,6 @@ class JobWatcher:
             self._reset()
             self._poll()
             return
-        # The trace and the events interleaved by time (a first read of a
-        # finished job reads both whole); a call's pictures land after its end.
         for _, _, source, record in _in_time_order(trace_records, events):
             (self._add_trace if source == "trace" else self._add_event)(record)
         for record in views:
@@ -349,13 +329,12 @@ class JobWatcher:
             newest = max(files, key=lambda p: (p.stat().st_mtime_ns, p.name))
             if self.trace is None or self.trace.path != newest:
                 if self.trace is not None:
-                    # A new session's file: finish the old one first.
                     older, _ = self.trace.read()
                     self.trace = _Tail(newest)
                     records, cut = self.trace.read()
                     return older + records, cut
                 self.trace = _Tail(newest)
-        if self.trace is None:  # a coding agent's words: its app's transcript
+        if self.trace is None:
             last = self.last_change()
             said = self.words.read(self.folder, self.job.value, last)  # pyright: ignore[reportAny]
             return [dict(record) for record in said], False
@@ -394,7 +373,6 @@ class JobWatcher:
             self._append({"kind": "note", "text": "Job reopened" if record.get("resumed")
                           else "Job opened", "at": at})
         elif kind == "script_write":
-            # library.ScriptContext: the properties written, on which sections.
             what = ", ".join(str(p) for p in _list(record.get("property")))
             words = _sections_words([str(s) for s in _list(record.get("sections"))])
             self._append({"kind": "note", "at": at,
@@ -506,7 +484,7 @@ class JobWatcher:
                     try:
                         number = self._histories.registration_number(
                             state, record)
-                    except Exception:  # a listing that cannot be read is no number
+                    except Exception:
                         number = None
                 angles = row.get("cutting_angles_deg") or (
                     stack_angles_entry(state) if not state.mixed_angles else None)
@@ -521,7 +499,7 @@ class JobWatcher:
                     "render_key": key,
                 })
             self.stack = state
-        except Exception as exc:  # a state this version does not read
+        except Exception as exc:
             self.rows, self.stack = [], None
             self.rows_note = ("This job's state is not one this LangSlice reads (an older "
                               "or newer format); the table shows its raw fields.")
@@ -558,8 +536,6 @@ class JobWatcher:
             self.job.read()
             if self.state.read():
                 self.rows_stale = True
-
-    # --- what the page gets -------------------------------------------------------
 
     def picture(self, number: int) -> Path | None:
         """The saved ``view.jpg`` of picture *number*, or None."""
@@ -647,7 +623,6 @@ class JobWatcher:
             words = _sections_words(item["sections"])
             sentence = f"{item['label']}" + (f" on {words}" if words else "") + " (running)"
         else:
-            # The last tool call; without tool events (an older folder), the last picture.
             last = next((i for i in reversed(self.items) if i["kind"] == "tool"), None) or next(
                 (i for i in reversed(self.items) if i["kind"] == "picture"), None)
             if last is None:

@@ -11,7 +11,6 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-#: A baseline key: the rule, the file and the enclosing definition.
 Key = tuple[str, str, str]
 
 

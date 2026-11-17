@@ -97,41 +97,26 @@ if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
     from langslice.core.fits.deformation import RecordStore
 
-#: look's modes, in the order the docs list them.
 MODES: tuple[str, ...] = LOOK_MODES
-#: The recipe's renderer name (:mod:`langslice.core.pictures.zoom` dispatches
-#: on it).
 RENDERER = "look"
-#: ``atlas_layers`` when the request gives none, per mode.
 ATLAS_LAYER_DEFAULTS: dict[str, tuple[str, ...]] = {
     "section": (),
     "atlas": ("template",),
     "overlay": ("borders",),
     "positioning": ("template",),
 }
-#: ``warp``: the applied deformation drawn, or the linear placement alone.
 WARP_CHOICES: tuple[str, ...] = ("applied", "none")
-#: The :data:`langslice.core.pictures.options.MODE_RULES` entry each mode is
-#: drawn under.
 _DISPLAY_MODE = {"section": "section", "atlas": "template", "overlay": "overlay",
                  "positioning": "stacked"}
-#: What a zoom's label and caption say when its section was read from the image
-#: file (:mod:`langslice.core.sections.native`).
 FROM_FILE = " from the image file"
-#: The section fields a picture of it depends on (:func:`snapshot`).
 SECTION_FIELDS: tuple[str, ...] = (
     "index_original", "index_corrected", "position_mm", "cutting_angles_deg", "flip",
     "rotation_deg", "transform", "deformation", "damaged_regions", "landmarks", "images",
 )
-#: Default: let `canvas.resolve_border_color` pick the per-picture cased
-#: arrangement (Nash, 2026-10-14: "Just have black with white outlines or
-#: white with black outlines (the outlines having outlines themselves)").
 _BORDER_COLOR = AUTO_BORDER_COLOR
 
 logger = logging.getLogger(__name__)
 
-#: Said after a picture's micrometres per pixel when the section has no pixel
-#: size: its image width is mapped onto the atlas plane's width.
 UNCALIBRATED = " (uncalibrated)"
 
 
@@ -140,47 +125,20 @@ class LookRequest:
     """One look call, sections already resolved to filenames."""
 
     mode: str
-    #: Section ids (empty: every section, in stack order).
     sections: tuple[str, ...] = ()
-    #: Atlas positions (``atlas`` and ``positioning``).
     positions_mm: tuple[float, ...] = ()
-    #: Section images: one alone, or several raw channels together; empty:
-    #: ``preprocessed``.
     images: tuple[str, ...] = ()
-    #: Any of the atlas's images and ``borders``; None: the mode's default.
     atlas_layers: tuple[str, ...] | None = None
-    #: Opacity of atlas images under an overlay; None: 0.5 when one is shown.
     atlas_opacity: float | None = None
     warp: str = "applied"
-    #: Each picture's long edge (positioning: its largest tile); None: the
-    #: run's picture size (:func:`langslice.core.pictures.sizes.picture_edge`).
     long_edge: int | None = None
-    #: A zoom window, ``[x0, y0, x1, y1]`` fractions of the unzoomed picture's
-    #: content (:mod:`langslice.core.pictures.zoom`); empty: the whole picture.
     zoom: tuple[float, ...] = ()
-    #: Positioning: which picture of a split call (0-based); None: every one
-    #: (with ``zoom``: the first).
     part: int | None = None
-    #: Overlay: atlas regions (acronyms, names or ids, ``"CTX:left"`` for one
-    #: side) whose borders are drawn thick, the other borders faint (a
-    #: restricted fit's picture of its ``restrict_to``).
     highlight: tuple[str, ...] = ()
-    #: Region zoom: omit every border except the highlighted region.
     region_only: bool = False
-    #: Section and overlay: names of the plugin layers drawn on the picture
-    #: (``"all"``: every layer the section has); empty: none.
     layers: tuple[str, ...] = ()
-    #: Section and overlay: names of the masks
-    #: (:mod:`langslice.core.sections.masks`) outlined where their weight is
-    #: 0.5 on the picture; empty: none.
     masks: tuple[str, ...] = ()
-    #: Ontology depth of the regions whose boundaries are drawn
-    #: (:func:`langslice.core.atlas.levels.labels_at`).
     depth: int = OVERLAY_DEPTH
-    #: Section and overlay: the registrations the sections are drawn under,
-    #: ``(section, number, held)`` each (the state given carries them; the
-    #: caption says which, and whether the section holds it); empty: the
-    #: registration each section holds.
     registrations: tuple[tuple[str, int, bool], ...] = ()
 
     def registration_of(self, section: str) -> tuple[int, bool] | None:
@@ -211,7 +169,7 @@ class LookRequest:
     @classmethod
     def from_args(cls, args: dict[str, Any]) -> LookRequest:
         unknown = sorted(set(args) - set(cls.__dataclass_fields__))
-        if unknown:  # a recipe another version of LangSlice saved
+        if unknown:
             raise Refused(RefusalCode.UNREADABLE_RECIPE,
                           f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
         layers = args["atlas_layers"]
@@ -244,15 +202,10 @@ class LookPicture:
     recipe: dict[str, Any]
     sections: tuple[str, ...]
     mode: str
-    #: Micrometres per pixel of the picture's content.
     um_per_px: float
-    #: Drawn from the stack as it was when the recipe was made, which has
-    #: changed since (:func:`redraw`).
     stale: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
-
-# --- the stack a picture depends on ------------------------------------------------
 
 
 def snapshot(state: Stack, ids: Sequence[str], *, view_angles: bool = False) -> dict[str, Any]:
@@ -263,7 +216,6 @@ def snapshot(state: Stack, ids: Sequence[str], *, view_angles: bool = False) -> 
     for section_id in ids:
         section = state.by_id(section_id)
         if section is not None:
-            # only a section with plugin layers records them
             names = (*SECTION_FIELDS, "layers") if section.layers else SECTION_FIELDS
             sections[section_id] = fields_to_json(section, names)
     data: dict[str, Any] = {"sections": sections}
@@ -272,10 +224,6 @@ def snapshot(state: Stack, ids: Sequence[str], *, view_angles: bool = False) -> 
     return to_jsonable(data)
 
 
-#: The section fields that change nothing a picture of the stack shows: the
-#: landmark markers (an edit redraws an old picture with the markers it then
-#: had) and the damage marks (only fits read them). An edit to them does not
-#: make a picture stale.
 ANNOTATION_FIELDS: tuple[str, ...] = ("landmarks", "damaged_regions", "layers")
 
 
@@ -294,9 +242,6 @@ def differs_since(state: Stack, held: dict[str, Any]) -> bool:
     return snapshot(state, ids, view_angles="view_angles" in held) != to_jsonable(held)
 
 
-#: The section fields a registration is (``job/history.py``):
-#: a picture of a registration the section did not hold differs in them by
-#: design (:func:`changed_since`'s *besides*).
 REGISTRATION_FIELDS: tuple[str, ...] = ("flip", "rotation_deg", "transform", "deformation")
 
 
@@ -338,8 +283,6 @@ def restored(state: Stack, held: dict[str, Any]) -> Stack:
             out.slices[index] = with_fields(section, {"layers": [], **fields})
     return out
 
-
-# --- options and words ----------------------------------------------------------------
 
 
 def _images_for(ws: Workspace, record: Section,
@@ -466,8 +409,6 @@ def _where(record: Section) -> str:
     return f"at {float(record.position_mm):.2f} mm{angles_label(record.angles)}"
 
 
-# --- the four modes -------------------------------------------------------------------
-
 
 def _records(state: Stack, ids: Sequence[str]) -> list[Section]:
     if not ids:
@@ -513,12 +454,11 @@ def _section_picture(
     picture: Image.Image | None = None
     enlarged = ""
     if request.zoom:
-        # A zoom reads the box from the image file at its own resolution.
         try:
             picture, scale = framed_window(ws, record, look_, tuple(request.zoom), long_edge)
             enlarged = FROM_FILE + (f" (file pixels enlarged x{scale:.1f})"
                                     if scale > 1.05 else "")
-        except Exception:  # noqa: BLE001 - drawn from the working copy instead
+        except Exception:  # noqa: BLE001
             logger.warning("zoom of %s: the image file could not be read; drawn from its "
                            "working copy", record.id, exc_info=True)
     if picture is None:
@@ -529,8 +469,6 @@ def _section_picture(
     working_um, source = calibrate(state, ws, record, working)
     base_um = framed_um_per_px(ws, record, working_um, long_edge=long_edge, look=look_)
     if request.zoom and not enlarged and max(picture.size) < long_edge:
-        # The box holds fewer source pixels than the picture size: shown
-        # larger, and said so (no detail is added).
         factor = min(long_edge / max(picture.size), ATLAS_UPSAMPLE)
         if factor > 1.05:
             from langslice.core.geometry.pixel_frames import cropped_geometry
@@ -768,7 +706,7 @@ def _draw_masks(
         except KeyError:
             entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
                          "make_mask")
-        except Exception as exc:  # noqa: BLE001 - a picture without its outline beats none
+        except Exception as exc:  # noqa: BLE001
             logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
             entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
     return notes
@@ -781,7 +719,6 @@ def _mask_words(notes: list[dict[str, Any]], record: Section) -> str:
     for note_ in notes:
         if not note_.get("drawn"):
             continue
-        # a drawn mask's name
         entry = record.masks.get(cast("str", note_["name"]))
         if note_.get("kind") == "fit":
             source = "copied from the sorting the section's deformation saved"
@@ -830,9 +767,6 @@ def _atlas_picture(
         picture = (whole if whole is not None
                    else framed_atlas(ws, state, position_mm, options, angles=angles))
         um = base_um
-        # A resolution asked for is honoured past the plane's voxels, as a zoom
-        # is: at most ATLAS_UPSAMPLE times, the lines drawn at that size. A
-        # redrawn picture keeps the scale it was drawn at.
         if request.long_edge:
             wanted = (max(base_um * max(picture.size) / int(request.long_edge),
                           voxel / ATLAS_UPSAMPLE) if measured else base_um)
@@ -894,7 +828,7 @@ def _positioning(
         return _options(request, names=names, image=image, layers=(),
                         long_edge=long_edge).look(state, record)
 
-    for record in records:  # refuse a bad image before drawing anything
+    for record in records:
         look_of(record)
     words = sorted(set(shown_words.values()))
     try:
@@ -1008,7 +942,6 @@ def redraw(
     held = recipe.get("state") or {}
     named = {name for name, _number, was_held in request.registrations if not was_held}
     stale = bool(held) and changed_since(state, held, besides=named)
-    # Landmark markers come back as they were even when nothing else changed.
     drawn = restored(state, held) if bool(held) and differs_since(state, held) else state
     angles = held.get("view_angles")
     base = recipe.get("base")

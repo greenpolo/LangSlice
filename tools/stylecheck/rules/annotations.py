@@ -17,22 +17,16 @@ from collections.abc import Iterator
 from tools.stylecheck.core import Module, Project, imported_modules
 from tools.stylecheck.rules.scopes import dotted_name, string_value
 
-#: Subscripted names that only wrap the type they declare.
 WRAPPER_NAMES = frozenset(
     {"Annotated", "Final", "ClassVar", "Required", "NotRequired", "ReadOnly"}
 )
 
-#: Mapping types that become a loose record when keyed by ``str`` and
-#: valued by ``Any`` or ``object``.
 MAPPING_NAMES = frozenset(
     {"dict", "Dict", "Mapping", "MutableMapping", "defaultdict"}
 )
 
-#: The value types that leave a record's fields undeclared.
 LOOSE_VALUE_NAMES = frozenset({"Any", "object"})
 
-#: The modules whose type names a module may import under another name
-#: (``from typing import Any as A``); the alias stands for the name.
 TYPING_MODULES = frozenset(
     {"typing", "typing_extensions", "collections", "collections.abc"}
 )

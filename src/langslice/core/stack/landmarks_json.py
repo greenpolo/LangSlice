@@ -20,17 +20,12 @@ from langslice.core.stack.json_reads import (
 )
 from langslice.core.stack.landmarks import Endpoint, Landmarks, Pair
 
-#: A JSON object as this module writes it.
 Written = dict[str, JsonValue]
 
 
-# --- landmarks ---------------------------------------------------------------
-
-#: The keys of a landmark pair's endpoint.
 ENDPOINT_KEYS = (
     "canonical_xy", "picture", "pixel_xy", "registration_context", "geometry",
 )  # fmt: skip
-#: The keys of a landmark pair.
 PAIR_KEYS = (
     "id", "atlas", "atlas_native_xy", "section", "section_fraction_xy",
     "plane", "stale",

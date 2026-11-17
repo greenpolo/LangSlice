@@ -51,11 +51,7 @@ def resized_recipe(recipe: dict[str, Any] | None, source: tuple[int, int],
     return out
 
 
-# --- the source picture's pixel system a zoom is read in -------------------------------
-
-#: Round grid steps, in source-picture pixels.
 GRID_STEPS = (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000)
-#: At most this many grid lines along a zoom's longer side.
 GRID_LINES = 12
 
 

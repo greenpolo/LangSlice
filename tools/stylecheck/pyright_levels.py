@@ -17,13 +17,11 @@ import importlib.util
 import re
 from pathlib import Path
 
-#: The start of a mode's rule set in the bundle, with the mode's name.
 _RULE_SET_START = re.compile(
     r"^(?:function get(\w+)DiagnosticRuleSet\(\) \{"
     r"|const get(\w+)DiagnosticRuleSet = \(\) => \(\{)$"
 )
 
-#: One rule and its level inside a rule set.
 _RULE_LEVEL = re.compile(r"^\s+(report\w+): '(\w+)',")
 
 

@@ -24,12 +24,9 @@ from langslice.engines.deepslice.proposal import ProposalRow
 from langslice.engines.deepslice.writes import AnswerPart, PartChoice, Written
 from langslice.plugin_api import SectionView, ToolResult
 
-#: A row's in-plane change when the job has no pixel size for the section.
 NO_PIXEL_SIZE = "no transform: the job has no pixel size for this section"
-#: The reply's spacing without an order, and with a job interval unused.
 NO_ORDER = "none: order not given"
 INTERVAL_UNUSED = "none: order not given (the job's interval was not used)"
-#: The reply's last sentence without a picture: a proposal, then a write.
 SEE_PROPOSAL = (
     "To see the stack at its current positions, use the positioning view of "
     "look; view true here draws the proposal."
@@ -37,9 +34,7 @@ SEE_PROPOSAL = (
 SEE_WRITTEN = (
     "The positioning view of look shows the sections at these positions."
 )
-#: The identity's six normalized numbers: a section with no transform.
 IDENTITY = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-#: The cells of a reply row, before the in-plane change and the outcome.
 COLUMNS = (
     "section",
     "position_mm",
@@ -49,7 +44,6 @@ COLUMNS = (
     "bad",
 )
 
-#: One cell of a reply row.
 Cell = str | float | None
 
 

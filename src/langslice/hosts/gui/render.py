@@ -57,61 +57,33 @@ from langslice.job.layout import JOB_FILE
 
 logger = logging.getLogger(__name__)
 
-#: The smallest long edge a picture is drawn at, in pixels.
 MIN_EDGE_PX = 64
-#: The largest: a 4K screen's panel; the sections' working copies hold no
-#: more detail.
 MAX_EDGE_PX = 2048
-#: Requested edges are rounded up to a multiple of this, so nearby panel
-#: sizes share one picture.
 EDGE_STEP_PX = 64
-#: The edge a request that names none gets.
 DEFAULT_EDGE_PX = 512
-#: Encoded pictures kept per job: a strip of thumbnails and a few pages of
-#: panels.
 CACHE_ENTRIES = 96
-#: How long a request waits for its picture before the server says busy.
 WAIT_S = 60.0
-#: Threads drawing for the whole server.
 WORKERS = 2
-#: Hex digits of a render key: collisions among one job's states are
-#: negligible at 48 bits.
 KEY_DIGITS = 12
-#: The atlas thumbnails' spacing on the adult mouse brain (ABBA's 500 um),
-#: times the atlas's brain scale.
 NOMINAL_STEP_MM = 0.5
-#: The round spacings the strip's atlas thumbnails may take.
 ROUND_STEPS_MM = (0.1, 0.2, 0.25, 0.5, 1.0)
-#: How many atlas thumbnails the strip should hold: enough to read the
-#: axis, few enough to stay legible.
 MIN_THUMBNAILS = 12
 MAX_THUMBNAILS = 32
-#: The viewer outlives any run, so its workspace keeps the per-section
-#: caches a job's own process keeps whole to about a page of sections:
-#: working copies and raw channels (up to 20 MB a section), section images
-#: at working size, and renders.
 KEPT_SOURCES = 8
 KEPT_PLANES = 16
 KEPT_RENDERS = 64
-#: Jobs whose workspace and pictures are kept: the one viewed and the last
-#: few; another job's are read again when it is viewed.
 KEPT_JOBS = 3
-#: What a render of a job whose state LangSlice cannot read says.
 NO_STATE = (
     "This job has no state this LangSlice reads yet, so there is nothing "
     "to draw."
 )
-#: What a render says when the job's atlas cannot be loaded.
 ATLAS_FAILED = "The atlas {atlas} could not be loaded: {reason}"
-#: What a render says when drawing failed for another reason.
 DRAWING_FAILED = "The picture could not be drawn: {reason}"
-#: What a request says when its picture took longer than WAIT_S.
 BUSY = (
     "The picture is still being drawn; it will be ready on the next request."
 )
 
 _K = TypeVar("_K")
-#: A picture's key: kind, section or position, edge and the state's digest.
 _Key = tuple[str, str, int, str]
 
 
@@ -135,11 +107,8 @@ class _Superseded(Exception):
 class Axis:
     """The cutting axis the strip is drawn along."""
 
-    #: The anatomical end at the low millimetres (``anterior``).
     low: str
-    #: The end at the high millimetres (``posterior``).
     high: str
-    #: The atlas's position range along the axis.
     min_mm: float
     max_mm: float
 
@@ -157,13 +126,9 @@ class StripSection:
     """One section on the strip, in stack order."""
 
     id: str
-    #: Its place in the stack's order, from 1 (the sections table's).
     order: int
-    #: Its atlas position, None before it has one.
     position_mm: float | None
-    #: :func:`render_key` of the section: its pictures change with it.
     render_key: str
-    #: :func:`thumb_key` of the section: its thumbnail changes with it.
     thumb_key: str
 
 
@@ -172,11 +137,8 @@ class Strip:
     """The positioning strip's facts (``GET jobs/<n>/strip``)."""
 
     axis: Axis
-    #: The spacing of the atlas thumbnails.
     step_mm: float
     atlas: tuple[AtlasThumb, ...]
-    #: The view angles the atlas thumbnails are drawn at, in words (empty
-    #: for the flat plane).
     angles: str
     sections: tuple[StripSection, ...]
 
@@ -190,7 +152,6 @@ class _Opened:
     axis: Axis
     step_mm: float
     positions_mm: tuple[float, ...]
-    #: ``job.json``'s size and time when it was read.
     stamp: tuple[int, int] | None
 
 
@@ -348,8 +309,6 @@ class JobRenderer:
         self._executor = executor
         self._atlas_loader = atlas_loader
         self._opened: _Opened | None = None
-        #: Guards opening the job; drawing; the pictures and the drawings
-        #: in flight.
         self._opening = threading.Lock()
         self._drawing = threading.Lock()
         self._lock = threading.Lock()
@@ -595,7 +554,6 @@ class JobRenderer:
         finally:
             with self._lock:
                 self._flying.pop(key, None)
-                # a picture of a job read again since is not kept
                 if data is not None and self._opened is opened:
                     self._pictures[key] = data
                 while len(self._pictures) > CACHE_ENTRIES:
@@ -623,7 +581,6 @@ class RenderPool:
             max_workers=workers, thread_name_prefix="langslice-render"
         )
         self._atlas_loader = atlas_loader
-        #: Least recently used first.
         self._renderers: OrderedDict[Path, JobRenderer] = OrderedDict()
         self._lock = threading.Lock()
 
@@ -691,7 +648,7 @@ def _open_job(
         min_mm, max_mm = workspace.position_range
         low, high = workspace.axis_ends
         step_mm = strip_step(min_mm, max_mm, workspace.brain_scale)
-    except Exception as exc:  # noqa: BLE001 - an atlas not downloaded or unreadable
+    except Exception as exc:  # noqa: BLE001
         raise RenderError(
             ATLAS_FAILED.format(atlas=spec.atlas, reason=exc)
         ) from exc
@@ -706,7 +663,7 @@ def _drawn_safely(draw: Callable[[], Image.Image], key: _Key) -> Image.Image:
         return draw()
     except Refused as refusal:
         raise RenderError(str(refusal)) from refusal
-    except Exception as exc:  # noqa: BLE001 - an unreadable image file or record
+    except Exception as exc:  # noqa: BLE001
         logger.warning("The viewer could not draw %s", key, exc_info=True)
         raise RenderError(DRAWING_FAILED.format(reason=exc)) from exc
 

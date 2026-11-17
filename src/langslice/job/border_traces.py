@@ -30,12 +30,12 @@ def _job_result(
     try:
         return future.result(timeout=timeout)
     except TimeoutError:
-        if not future.done():  # the wait ran out; a job's own timeout is a result
+        if not future.done():
             raise
         error: BaseException = future.exception() or TimeoutError()
         failure = Refused.from_exception(error).payload()
         return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
-    except Exception as exc:  # the job records its own failures; this is a backstop
+    except Exception as exc:
         failure = Refused.from_exception(exc).payload()
         return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
 
@@ -55,7 +55,6 @@ def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -
 class JobBorderTraces(JobUndo):
     """Run border traces in the background and land their results."""
 
-    #: The job's background work (:attr:`background`), made on first use.
     _background: BackgroundWork | None = None
 
     @property
@@ -111,9 +110,6 @@ class JobBorderTraces(JobUndo):
             for section_id, (fingerprint, future) in running]
         changed = False
         if results:
-            # The calls ran outside the lock; they land under it, and only
-            # then are forgotten: background work waiting for a call finds it
-            # until its result is recorded (wait_image_job).
             with self.writing():
                 for section_id, fingerprint, result in results:
                     changed |= _land(self.state, section_id, fingerprint,

@@ -28,14 +28,12 @@ from tools.stylecheck.rules.scopes import (
     own_nodes,
 )
 
-#: The finding for a local import that is neither slow nor in a cycle.
 MOVE_TO_TOP = (
     "Move the import to the top of the module: an import inside a "
     "function is for a slow dependency (stylecheck.heavy_modules) or a "
     "module that imports this one when it loads (2.3)."
 )
 
-#: The guard whose body only a type checker reads, not Python at load.
 TYPE_CHECKING = "TYPE_CHECKING"
 
 Statement = ast.Import | ast.ImportFrom

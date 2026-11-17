@@ -15,15 +15,9 @@ import numpy as np
 
 from langslice.core.atlas.tree import ancestor_at, structure_table
 
-#: The depth agent overlays draw region contours at unless a call asks for
-#: another (``look``'s ``depth``).
 OVERLAY_DEPTH = 6
-#: The depth of the regions the image model is shown and traces, and of the
-#: atlas regions fits against its lines read. Fixed.
 MODEL_DEPTH = 6
 
-#: ``id(structures) -> (structures, {depth: (ids, ancestors)})``; the table is
-#: held so its id is never reused while cached.
 _LOOKUPS: dict[int, tuple[Any, dict[int, tuple[np.ndarray, np.ndarray]]]] = {}
 
 

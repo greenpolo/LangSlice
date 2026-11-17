@@ -58,13 +58,9 @@ from langslice.plugin_api import gpu_turn
 if TYPE_CHECKING:
     import torch
 
-#: The vendored emlddmm, imported when a tool runs.
 MODULE = "langslice_vendor.emlddmm.emlddmm"
-#: The ``mode`` of the free-plane fit; any other locks the slots' planes.
 PLANE = "plane"
-#: The ``dtype`` option of a single-precision fit; any other is float64.
 SINGLE = "float32"
-#: The plugin's sorting keys and emlddmm's names for them.
 SORTING = {
     "match_sd": "sigmaM",
     "background_sd": "sigmaB",
@@ -72,12 +68,9 @@ SORTING = {
     "background_mean": "muB",
     "artifact_mean": "muA",
 }
-#: How far up the stack the energy hook looks for emlddmm's own frame.
 CALLER_DEPTH = 4
-#: The name of emlddmm's fit function, whose frame holds the energy record.
 FIT_FUNCTION = "emlddmm"
 
-#: A value of the fit's settings as the plugin sets them.
 Setting = (
     str
     | bool
@@ -86,7 +79,6 @@ Setting = (
     | Mapping[str, float]
     | Mapping[str, Sequence[object]]
 )
-#: A value of a call's result.
 Output = np.ndarray | np.int32 | str | float
 
 _LOG = logging.getLogger(__name__)
@@ -126,14 +118,11 @@ class _Calls(threading.local):
     """Hold what the fit running on this thread keeps."""
 
     def __init__(self) -> None:
-        #: emlddmm's ``Esave`` lists, one per scale; None with no fit here.
         self.saved: list[list[list[float]]] | None = None
-        #: What emlddmm printed; None on a thread with no fit here.
         self.printed: list[str] | None = None
 
 
 _CALLS = _Calls()
-#: Serializes installing the hooks on the vendored module.
 _INSTALL = threading.Lock()
 
 
@@ -177,7 +166,7 @@ def run(
     dict of str to Output
         The fit's results by name (see the module text).
     """
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     emlddmm = _emlddmm()
     started = time.monotonic()
@@ -227,7 +216,6 @@ def run(
     out.update(_read_map(emlddmm, result, arrays, stack, params))
     energy = _energy(saved)
     out["energy"] = energy
-    # the hook's hold on emlddmm's locals may break: count the rows
     steps = sum(int(n) for n in cast("list[int]", cfg["n_iter"]))
     out["energy_captured"] = np.int32(len(energy) == steps)
     out["settings"] = _json(
@@ -251,9 +239,7 @@ def _stack(
     """Read the atlas image and place the stack on it."""
     atlas = averaged_image(str(params["atlas"]), str(params["image"]))
     image = atlas.image[None].astype(np.float64)
-    image /= max(float(np.mean(np.abs(image))), 1e-12)  # over its mean
-    # about the volume's centre, as the example's atlas: emlddmm turns each
-    # section about the origin
+    image /= max(float(np.mean(np.abs(image))), 1e-12)
     centre = _numbers(atlas.centre)
     axes = [axis - c for axis, c in zip(atlas.axes, centre, strict=True)]
     rotation = np.asarray(arrays["R"], np.float64)
@@ -283,7 +269,7 @@ def _read_map(
     params: Mapping[str, Setting],
 ) -> dict[str, Output]:
     """Read the fit at the stack's pixels and at the plugin's points."""
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     cpu = torch.float64
     affine = result["A"].detach().cpu().to(dtype=cpu)
@@ -358,7 +344,7 @@ def _atlas_cut(
     warp: bool,
 ) -> np.ndarray:
     """Sample the atlas image under every stack pixel of each section."""
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     cpu = torch.float64
     gy, gx = (np.asarray(arrays[key], np.float64) for key in ("gy", "gx"))
@@ -428,7 +414,7 @@ class _Reader:
         torch.Tensor
             N x 3 atlas um about the volume's centre, float64 on the CPU.
         """
-        import torch  # local: slow to import, needed only when a fit runs
+        import torch
 
         cpu = torch.float64
         n = len(points)
@@ -454,9 +440,7 @@ class _Reader:
 
 def _emlddmm() -> _Emlddmm:
     """Import the vendored module, its ``interp`` and ``print`` hooked."""
-    module = cast(  # emlddmm ships no types: the parts this module uses
-        "_Emlddmm", importlib.import_module(MODULE)
-    )
+    module = cast("_Emlddmm", importlib.import_module(MODULE))
     with _INSTALL:
         if not isinstance(module.interp, _EnergyHook):
             module.interp = _EnergyHook(module.interp)
@@ -517,9 +501,7 @@ def _caller_energy(frame: FrameType | None) -> list[list[float]] | None:
         if frame.f_code.co_name == FIT_FUNCTION:
             energy = frame.f_locals.get("Esave")
             if isinstance(energy, list):
-                return cast(  # emlddmm's local: numbers per iteration
-                    "list[list[float]]", energy
-                )
+                return cast("list[list[float]]", energy)
             return None
         frame = frame.f_back
     return None
@@ -559,24 +541,19 @@ def _json(value: Mapping[str, Setting | torch.Tensor]) -> str:
 
 def _plain(value: object) -> object:
     """Turn a tensor or array into nested lists."""
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     array = np.asarray(value)
     if isinstance(value, torch.Tensor):
         array = value.detach().cpu().double().numpy()
-    # numpy types tolist() as Any: nested lists
     return cast("object", array.tolist())
 
 
 def _numbers(values: np.ndarray) -> list[float]:
     """Read a 1-D array as Python floats."""
-    return cast(  # numpy types tolist() as Any: floats
-        "list[float]", np.asarray(values, np.float64).tolist()
-    )
+    return cast("list[float]", np.asarray(values, np.float64).tolist())
 
 
 def _integers(values: np.ndarray) -> list[int]:
     """Read a 1-D array as Python integers."""
-    return cast(  # numpy types tolist() as Any: integers
-        "list[int]", np.asarray(values, int).tolist()
-    )
+    return cast("list[int]", np.asarray(values, int).tolist())

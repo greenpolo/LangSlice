@@ -17,13 +17,10 @@ from langslice.core.stack.images import ImageRef, LayerRef, MaskRef
 from langslice.core.stack.landmarks import Landmarks
 from langslice.core.stack.trace import BorderTrace
 
-#: Quarter-turns the render applies before the flip.
 ROTATIONS = (0, 90, 180, 270)
 
-#: A plane's cutting angles, ``(pitch_deg, yaw_deg)``.
 Angles = tuple[float, float]
 
-#: The flat plane: no pitch, no yaw.
 FLAT: Angles = (0.0, 0.0)
 
 

@@ -34,8 +34,6 @@ from typing_extensions import TypedDict, is_typeddict
 
 from langslice.core.refusal import RefusalCode, Refused
 
-# --- per-entry arguments ----------------------------------------------------
-
 
 @with_config(ConfigDict(extra="forbid"))
 class SectionPosition(TypedDict, total=False):
@@ -77,7 +75,7 @@ class SectionTransform(TypedDict, total=False):
 
 
 @with_config(ConfigDict(extra="forbid"))
-class SectionTransformNoRotate(TypedDict, total=False):  # without ``rotate_quarter``
+class SectionTransformNoRotate(TypedDict, total=False):
     """One ``interactive_transform`` section: absolute values, each optional."""
 
     id: str
@@ -91,7 +89,7 @@ class SectionTransformNoRotate(TypedDict, total=False):  # without ``rotate_quar
 
 
 @with_config(ConfigDict(extra="forbid"))
-class SectionTransformNoOrientation(TypedDict, total=False):  # without both
+class SectionTransformNoOrientation(TypedDict, total=False):
     """One ``interactive_transform`` section: absolute values, each optional."""
 
     id: str
@@ -104,7 +102,7 @@ class SectionTransformNoOrientation(TypedDict, total=False):  # without both
 
 
 @with_config(ConfigDict(extra="forbid"))
-class SectionTransformNoFlip(TypedDict, total=False):  # SectionTransform without ``flip``
+class SectionTransformNoFlip(TypedDict, total=False):
     """One ``interactive_transform`` section: absolute values, each optional."""
 
     id: str
@@ -143,8 +141,6 @@ class LandmarkPair(TypedDict, total=False):
     atlas: LandmarkPoint
     section: LandmarkPoint
 
-
-# --- the check --------------------------------------------------------------
 
 
 def _typed_dict(annotation: Any) -> tuple[Any, bool] | None:

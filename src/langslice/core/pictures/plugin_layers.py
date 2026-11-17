@@ -48,11 +48,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Marks a layer's colours cycle through (a dark halo is drawn under each).
 PALETTE: tuple[str, ...] = ("#ffa000", "#00e5a0", "#ff4081", "#40c4ff", "#ffee00", "#b388ff")
 
-
-# --- files -------------------------------------------------------------------------------
 
 
 def save_layer(layer: Layer, stem: Path) -> Path:
@@ -176,8 +173,6 @@ def known_names(state: Stack, sections: Sequence[str] = ()) -> list[str]:
     return names
 
 
-# --- geometry -------------------------------------------------------------------------------
-
 
 def _colour(index: int) -> tuple[int, int, int]:
     value = PALETTE[index % len(PALETTE)].lstrip("#")
@@ -217,7 +212,6 @@ def picture_to_fractions(panel: Mapping[str, Any], xy: np.ndarray,
     if warp is not None:
         from langslice.core.fits.deformable.render import warp_source_points
 
-        # cv2.remap takes maps under 32767 on a side: lay the points in rows of 1024.
         count = len(point)
         padded = np.zeros((-(-count // 1024) * 1024, 2))
         padded[:count] = point
@@ -316,8 +310,6 @@ class _Mapper:
         index = np.stack([np.clip(rows, 0, shape[0] - 1), np.clip(cols, 0, shape[1] - 1)])
         return index.reshape(2, *xs.shape), inside.reshape(xs.shape)
 
-
-# --- drawing --------------------------------------------------------------------------------
 
 
 def _halo_line(draw: ImageDraw.ImageDraw, path: list[tuple[float, float]],

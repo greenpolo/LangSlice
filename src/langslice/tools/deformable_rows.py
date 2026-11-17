@@ -22,17 +22,11 @@ from langslice.tools.refusal import refused_row
 class AppliedFit:
     """What one fit applied gave, as its section's row reports it."""
 
-    #: The engine numbers the settings stand for
-    #: (``deformation.engine_settings``).
     engine_settings: JsonObject
-    #: The displacement, folds and flags (``deformation.summary``).
     numbers: JsonObject
     runtime_s: float
-    #: Whether the result was reused from an identical earlier fit.
     cached: bool
-    #: What the row says of the machine's GPU queue (``deformable.gpu_rows``).
     gpu: JsonObject
-    #: What the fit read and estimated itself; None for a traced fit.
     inputs: InputsBlock | None = None
     estimated: EstimatedBlock | None = None
 
@@ -46,22 +40,12 @@ class DeformableRow:
     """
 
     id: str
-    #: The fit's choice by the tools' names; None for a section refused
-    #: before its fit was set up.
     settings: JsonObject | None = None
-    #: The regions a traced fit added from the trace (``include``,
-    #: ``exclude``); None when it used the call's own.
     trace_regions: JsonObject | None = None
-    #: Why the section was not fitted or not written; None for a fit applied.
     refusal: Refused | None = None
-    #: Whether the fit was queued for the engine (its refusal came after).
     queued: bool = False
-    #: What the fit gave: an applied fit, or one whose record could not be
-    #: saved.
     applied: AppliedFit | None = None
-    #: The steps the section's deformation holds now.
     steps: int = 0
-    #: Once drawn (``fit_pictures.draw_fits``): its pictures' indexes.
     image_indexes: tuple[int, ...] | None = None
 
 
@@ -87,7 +71,7 @@ def deformable_row_to_json(row: DeformableRow) -> Written:
         ``written``, ``steps`` and the pictures' ``image_indexes``.
     """
     if row.settings is None:
-        assert row.refusal is not None  # a row holds a fit or a refusal
+        assert row.refusal is not None
         return refused_row(row.id, row.refusal)
     out: Written = {"id": row.id}
     if not row.queued:
