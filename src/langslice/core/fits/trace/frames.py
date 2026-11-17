@@ -40,14 +40,8 @@ def aspect_ratio_limits(
     return None
 
 
-#: Codex-lane (openai-oauth) output: a fixed ~1.573 Mpx budget at the INPUT
-#: aspect, size/quality ignored: width = floor(sqrt(budget * aspect)),
-#: height = round(budget / width), within 1 px of the measured outputs.
 _CODEX_OUTPUT_BUDGET_PX = 1024 * 1536
 
-#: Gemini image models return one fixed frame per (aspect ratio, size tier);
-#: measured on gemini-3.1-flash-lite-image / flash-image.
-#: Portrait entries are the transposed landscape ones (assumed, not measured).
 _GEMINI_FRAMES: dict[str, dict[str, tuple[int, int]]] = {
     "1K": {"1:1": (1024, 1024), "4:3": (1200, 896), "3:2": (1264, 848), "5:4": (1152, 928)},
     "512": {"3:2": (624, 416)},
@@ -100,9 +94,6 @@ def native_output_size(
         out_w = math.floor(math.sqrt(_CODEX_OUTPUT_BUDGET_PX * aspect))
         return out_w, round(_CODEX_OUTPUT_BUDGET_PX / out_w)
     if canon == "openai-api":
-        # Same budget as the Codex lane (lanes stay comparable, same output
-        # tokens) on the endpoint's 16-px grid; the canvas is padded out to
-        # it, so the request IS the canvas and nothing is stretched.
         out_w = max(16, round(math.sqrt(_CODEX_OUTPUT_BUDGET_PX * aspect) / 16) * 16)
         return out_w, max(16, round(_CODEX_OUTPUT_BUDGET_PX / out_w / 16) * 16)
     if canon == "gemini-api" or family == "nano-banana":

@@ -40,14 +40,9 @@ from langslice.core.maps.section_maps import SWAP
 if TYPE_CHECKING:
     from langslice.core.maps.section_maps import SectionFrame
 
-#: ABBA world ``(x, y) = (0, 0)`` sits at this atlas (ML, DV), millimetres.
 CENTRE_MM = (5.69, 4.0)
-#: ABBA's world z of the atlas's anterior edge (``z = AP mm + this``).
 AXIS_OFFSET_MM = 0.985
-#: ABBA's slice location minus the atlas position its slice list gives
-#: (``MoveSliceAction`` writes both).
 LOCATION_TO_ATLAS_Z_MM = 0.99
-#: The BrainGlobe atlases whose coordinates ABBA's Allen CCFv3 atlas shares.
 ABBA_ATLASES = frozenset(
     {
         "allen_mouse_10um",
@@ -56,15 +51,10 @@ ABBA_ATLASES = frozenset(
         "allen_mouse_100um",
     }
 )
-#: The atlas orientations and planes ABBA's frame here holds.
 ABBA_ORIENTATIONS = frozenset({"asr"})
 ABBA_PLANES = frozenset({"coronal"})
-#: Largest change of a section's world z across its image, in millimetres,
-#: for it to lie in one ABBA slice.
 PLANE_TOLERANCE_MM = 1e-4
-#: A float array.
 FloatArray = npt.NDArray[np.float64]
-#: Millimetres per micrometre.
 MM_PER_UM = 1e-3
 
 

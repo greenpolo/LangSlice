@@ -61,12 +61,9 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
-#: What a mask's name may be made of; ``none`` means no mask and is reserved.
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 RESERVED_NAMES = ("none",)
 KINDS = ("em", "fit")
-#: The working resolution of the EM sorting, adult mouse micrometres (times
-#: the brain scale): the ``standard`` fit's.
 WORKING_UM = 20.0
 
 
@@ -97,8 +94,6 @@ class MaskView:
     left_out: float
     earlier_registration: bool = False
 
-
-# --- the registration a mask was made at -----------------------------------------------
 
 
 def registration_parts(state: Stack, section: Section) -> dict[str, Any]:
@@ -149,8 +144,6 @@ def mask_rows(state: Stack, section: Section) -> list[dict[str, Any]]:
              "earlier_registration": made_earlier(state, section, entry)}
             for name, entry in section.masks.items()]
 
-
-# --- making a sorting ------------------------------------------------------------------
 
 
 def _gray(image: np.ndarray) -> np.ndarray:
@@ -240,8 +233,6 @@ def fit_weights(store: RecordStore, state: Stack, record: Section) -> np.ndarray
         return None
     return np.asarray(held.weights, dtype=np.float32)
 
-
-# --- files and entries -----------------------------------------------------------------
 
 
 def _file_for(layout: _Layout, section: Section, name: str) -> Path:

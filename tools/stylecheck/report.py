@@ -18,7 +18,6 @@ from tools.stylecheck.baseline import Comparison, CountChange
 from tools.stylecheck.core import Severity, Violation
 from tools.stylecheck.scope import Key
 
-#: What a refused loosening says: who decides it and how it is made.
 LOOSENING_REFUSAL = (
     "Loosening a check is the designer's decision, never a fix: the "
     "designer makes it in a commit of its own and checks that commit with "

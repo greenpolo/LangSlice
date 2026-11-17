@@ -63,18 +63,11 @@ class FitFrame:
     applied_map: np.ndarray | None = None
     excluded: np.ndarray | None = None
     damage_zone: np.ndarray | None = None
-    #: The margin ``damage_zone`` adds around ``excluded``, in millimetres (always
-    #: set: the margin the native fits report, whether or not damage is marked).
     damage_margin_mm: float | None = None
     stain: np.ndarray | None = None
     section_image: np.ndarray | None = None
     section_image_ref: dict[str, Any] | None = None
-    #: ``{asked name: the atlas image it resolved to}`` for each image in
-    #: ``atlas`` (``"nissl"`` is the atlas's Nissl image, else its template).
     atlas_resolved: dict[str, str] = field(default_factory=dict)
-    #: What the answer to the default ``"nissl"`` request was when it resolved to the
-    #: ``template`` (a Nissl template honours it; an atlas without a Nissl falls back); None
-    #: when ``"nissl"`` was not asked for or has an image of its own.
     atlas_image_note: str | None = None
 
 
@@ -104,8 +97,6 @@ class ContextFrames(ContextReads):
             raise ToolError(RefusalCode.NO_POSITION,
                             f"{record.id} has no position yet; write its "
                             "position first.")
-        # Keyed by what the grid is drawn from: a script's context outlives a
-        # placement change.
         key = (record.id, section_inputs(self._run.state, record))
         if key not in self._grids:
             try:
@@ -161,7 +152,7 @@ class ContextFrames(ContextReads):
                 continue
             try:
                 kind = resolve_image(workspace.atlas, asked)
-            except ValueError:  # an image the atlas does not have is skipped
+            except ValueError:
                 continue
             if kind not in offered and asked not in offered:
                 continue
@@ -176,7 +167,7 @@ class ContextFrames(ContextReads):
                 placed = np.asarray(deformation.fit_grid(
                     self._run.state, workspace, record).placement.atlas_to_section,
                     dtype=np.float64)
-            except ValueError:  # a stored transform no fit can use (stale, turned over)
+            except ValueError:
                 placed = None
         applied = None
         if record.deformation:
@@ -422,7 +413,6 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
 
     to_index = plane_index_affine(atlas, float(placement.position_mm), placement.plane,
                                   float(placement.pitch_deg), float(placement.yaw_deg))
-    # [x, y, 1] -> [row, col, 1]
     swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     native_to_um = np.diag(res) @ to_index @ swap
     return {"center_um": centre.tolist(), "dx": dx.tolist(), "dy": dy.tolist(),

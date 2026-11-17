@@ -47,23 +47,16 @@ from tools.stylecheck.rules.scopes import (
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
-#: The phrase a docstring uses to mark a deliberate alias at a door.
 ALIAS_MARKER = "public alias"
 
-#: Decorators that leave a function's behaviour as written, so a decorated
-#: forwarder is still a forwarder.
 PLAIN_DECORATORS = frozenset({"staticmethod", "classmethod"})
 
-#: The longest nested callback, in lines, that may be handed to a call.
 MAX_CALLBACK_LINES = 10
 
-#: Keywords whose lambda value is a small sort key or fallback.
 LAMBDA_KEYWORDS = frozenset({"key", "default"})
 
-#: The fewest string keys that make a returned dict literal a record.
 MIN_RECORD_KEYS = 3
 
-#: The calls that make a named tuple class from a list of fields.
 NAMED_TUPLE_FACTORIES = frozenset({"namedtuple", "NamedTuple"})
 
 NESTED_NODES = (*FUNCTION_NODES, ast.ClassDef, ast.Lambda)

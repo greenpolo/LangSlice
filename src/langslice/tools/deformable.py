@@ -83,7 +83,6 @@ class Fitted:
     row: DeformableRow
     fit: deformation.Job
     outcome: deformation.DeformableRecord
-    #: The record's folder, relative to the job folder.
     folder: str
 
 
@@ -102,18 +101,11 @@ class DeformableFit:
     fitted: list[Fitted] = field(default_factory=list)
     traced: dict[str, tuple[Image.Image, np.ndarray]] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
-    #: Once drawn (``fit_pictures.draw_fits``): the pictures, in order
-    #: (each drawn row's ``image_indexes`` point into them), ``{"id",
-    #: "image_indexes"}`` per traced section's trace picture, and ``{"id",
-    #: "message"}`` per picture that failed (the write stands).
     pictures: list[Image.Image] = field(default_factory=list)
     traces: list[dict[str, Any]] = field(default_factory=list)
     render_failed: list[dict[str, str]] = field(default_factory=list)
-    #: The call's own settings, as the reply states them (:func:`fireants_syn`).
     settings: dict[str, Any] = field(default_factory=dict)
 
-
-# --- what a fit reads and estimated, named (the reply's and the record's blocks) --------
 
 
 def damage_margin_mm(workspace: Workspace) -> float:
@@ -208,7 +200,6 @@ def fit_regions(fit: deformation.Job) -> tuple[tuple[str, ...], tuple[str, ...]]
             tuple(str(name) for name in fit.settings.exclude))
 
 
-#: A fit's row names its wait for the machine's GPU queue from this many seconds.
 GPU_WAIT_SHOWN_S = 1.0
 
 
@@ -270,7 +261,6 @@ def fit_deformable(
     state = job.state
     store = job.deformations
     rows: list[DeformableRow] = []
-    # the job index of each row whose fit was queued
     queued: dict[int, int] = {}
     jobs: list[deformation.Job] = []
     traced: dict[str, tuple[Image.Image, Any]] = {}
@@ -286,15 +276,13 @@ def fit_deformable(
             continue
         running = False
         if traced_choice:
-            # A traced image waits for the section's trace still running; a
-            # result lands under the job's lock, which may reload the state.
             running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
             record = state.by_id(record.id) or record
         held = record.deformation
         try:
             current = store.current(state, record)
             unreadable = False
-        except ValueError:  # its record.json does not load (the error names it)
+        except ValueError:
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current, unreadable = None, True
         if unreadable or (current is None and held is not None
@@ -314,7 +302,7 @@ def fit_deformable(
             trace=traced_choice)
         try:
             grid = deformation.fit_grid(state, workspace, record)
-        except Refused as refusal:  # no position
+        except Refused as refusal:
             rows.append(DeformableRow(record.id, refusal=refusal))
             continue
         except (ValueError, OSError) as exc:
@@ -347,7 +335,7 @@ def fit_deformable(
             settings = choice.settings(*regions, brain_scale=workspace.brain_scale)
             if overrides:
                 settings = replace(settings, **dict(overrides))
-        except Refused as refusal:  # the trace the fit reads
+        except Refused as refusal:
             rows.append(failure(refusal=refusal))
             continue
         except (ValueError, OSError) as exc:
@@ -418,7 +406,6 @@ def _apply(
         numbers = deformation.summary(outcome, fit.previous)
         record = fit.grid.record
         start = starts[record.id]
-        # The state may have been reloaded: the section as it is now.
         now = state.by_id(record.id)
         if now is None or section_inputs(
                 state, now, deformation=start == deformation.FitStart.CURRENT,
@@ -433,8 +420,6 @@ def _apply(
         estimated = None
         if block is not None:
             estimated = estimated_block(outcome)
-            # The record's provenance holds the same two blocks; what the
-            # fit's choice and image were moves to ``fit``.
             outcome.provenance["fit"] = outcome.provenance.pop("inputs", None)
             outcome.provenance["inputs"] = block.payload()
             outcome.provenance["estimated"] = None
@@ -461,16 +446,12 @@ def _apply(
         step: dict[str, Any] = {
             "method": "trace_borders" if traced_fit else "fireants_syn",
             "start": start, **fit.choice.echo(),
-            # the tool's settings the choice does not hold (a step saved
-            # before they were recorded has none)
             **({} if traced_fit else {"metric": fit.settings.stain_metric,
                                       "edges": bool(fit.settings.stain_edges),
                                       "detail": fit.settings.detail}),
             "include": list(include), "exclude": list(exclude)}
         traced = fit.image_identity.get("trace")
         if traced:
-            # The trace this step fitted (its artifact directory):
-            # a packaged trace called again on it reuses this step.
             step["trace"] = traced
         record.deformation = deformation.reference(
             folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
@@ -484,15 +465,9 @@ def _apply(
     return DeformableFit(rows=rows, fitted=fitted, written=written)
 
 
-#: The metrics and detail levels ``fireants_syn`` takes.
 METRICS = ("mutual_information", "local_correlation")
 DETAILS = ("coarse", "standard", "fine")
-#: Sections one :func:`fireants_syn` call takes: the fits run one after
-#: another on the GPU, but every fitted section is held in memory until the
-#: call writes them as one undo step (measured on 1536-pixel fit grids: about
-#: 3.2 GB for the process, then 170 MB a section; 20 sections peaked at 6.4 GB).
 MAX_FIREANTS_SYN_SECTIONS = 20
-#: Why a call of more sections is refused (``TOO_MANY_SECTIONS``'s message).
 SECTION_CAP_REASON = ("every fitted section is held in memory (about 170 MB) until the call "
                       "writes them all as one undo step")
 
@@ -506,7 +481,7 @@ def engine_ready() -> bool:
 
     try:
         import_fireants()
-    except Exception:  # an install that does not load is as missing as none
+    except Exception:
         logger.warning("FireANTs is installed but does not import", exc_info=True)
         return False
     return True
@@ -603,7 +578,6 @@ def fireants_syn(
     done = fit_deformable(
         job, workspace, records, choice, restrict_to=regions,
         overrides={"stain_metric": metric_name, "stain_edges": bool(edges),
-                   # ``standard`` is the tool's own level (``deformation.DETAIL_LEVEL``)
                    **({} if level == "standard" else {"detail": level})})
     return replace(done, settings={
         "section_image": image, "atlas_image": kind,
@@ -691,8 +665,6 @@ def nothing_fitted(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
         return {"error": code}
     return {"error": code, "message": message}
 
-
-# --- the tool ----------------------------------------------------------------
 
 
 def fireants_syn_tool(

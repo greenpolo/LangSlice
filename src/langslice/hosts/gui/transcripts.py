@@ -35,27 +35,16 @@ from langslice.job.layout import (
     held_image_folder,
 )
 
-#: Another folder of Claude Code projects, or ``off``.
 ENV = "LANGSLICE_CLAUDE_TRANSCRIPTS"
 OFF = "off"
-#: How often the transcripts are searched while the job's is not known.
 SEARCH_S = 3.0
-#: A transcript is a candidate when it changed no earlier than this before
-#: the job's first tool call, and no later than this after its last change.
 EARLY_S = 120.0
 LATE_S = 6 * 3600.0
-#: The most transcripts searched in one round: those last written nearest
-#: to the job's last change first.
 MAX_CANDIDATES = 40
-#: Where a project's sessions and its subagents' sessions are.
 PATTERNS = ("*/*.jsonl", "*/*/subagents/*.jsonl")
-#: What a line of the transcript must hold to be read: an assistant turn.
 ASSISTANT_LINE = b'"type":"assistant"'
-#: The tool call that opens a job, as its name ends on every door.
 START_JOB = "start_job"
-#: The agent's name in the session record.
 AGENT = "Claude Code"
-#: A model id's parts that are a version number have at most this length.
 VERSION_DIGITS = 2
 CLAUDE = "claude"
 

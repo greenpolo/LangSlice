@@ -53,7 +53,6 @@ class PhysicalAffine:
     extra: JsonObject = field(default_factory=empty_object)
 
 
-#: The identity's knobs about the canvas centre: what a section starts from.
 IDENTITY_PHYSICAL = PhysicalAffine(
     rotation_deg=0.0,
     scale_x=1.0,

@@ -21,7 +21,6 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import BinaryIO
 
-#: The standard input's file descriptor.
 STDIN = 0
 
 
@@ -44,8 +43,5 @@ def protocol_input() -> Generator[BinaryIO]:
     try:
         yield wire
     finally:
-        # The duplicate stays open: the protocol's reader may still wait on
-        # it, and closing a pipe under a waiting read can block on Windows.
-        # It closes with the process.
         os.dup2(saved, STDIN)
         os.close(saved)

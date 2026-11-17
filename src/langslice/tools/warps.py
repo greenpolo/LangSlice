@@ -109,7 +109,7 @@ def fit_record(
     weights = ops_masks.section_weights(job, record, label)
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
-    except Refused:  # no position
+    except Refused:
         raise
     except (ValueError, OSError) as exc:
         raise Refused(
@@ -146,7 +146,7 @@ def fit_record(
         )
         with engine_output(job.engine_log, f"FireANTs fit of {record.id}"):
             outcome = run_prepared(prepared)
-    except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
+    except Exception as exc:  # noqa: BLE001
         raise Refused(
             RefusalCode.FIT_FAILED,
             message=f"{record.id}: "
@@ -190,9 +190,6 @@ class MappedWarp:
     record: deformation.DeformableRecord
     step: dict[str, Any]
     numbers: dict[str, Any]
-    #: The key of the deformation it was built on (``start`` ``current``), which
-    #: the section must still hold when it is applied; None: built on the
-    #: linear placement.
     parent_key: str | None = None
 
 
@@ -250,7 +247,7 @@ def warp_from_map(
         )
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
-    except Refused:  # no position
+    except Refused:
         raise
     except (ValueError, OSError) as exc:
         raise Refused(
@@ -391,10 +388,7 @@ class WarpApplied:
     """One warp's answer from :func:`apply_warps`: written, or why not."""
 
     id: str
-    #: Why it was not written; None for a warp written.
     refusal: Refused | None = None
-    #: The record's numbers (:func:`langslice.core.fits.deformation.summary`)
-    #: of a warp written.
     numbers: JsonObject | None = None
 
 

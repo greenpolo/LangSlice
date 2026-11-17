@@ -12,7 +12,6 @@ import io
 
 from PIL import Image
 
-#: JPEG quality of every picture a tool or the opening sends.
 JPEG_QUALITY = 85
 
 

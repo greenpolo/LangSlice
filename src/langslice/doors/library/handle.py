@@ -69,12 +69,9 @@ from langslice.tools.dmc_export import DmcExported, export_dmc_brainmap
 
 logger = logging.getLogger(__name__)
 
-#: ``job.json``'s record of the image model a library job was made with
-#: (provider, model, profile, tested, the profile prompt's digest).
 IMAGE_MODEL_KEY = "image_model"
 
 
-#: The jobs the library holds open, closed at interpreter exit (:func:`_close_open`).
 _OPEN: dict[int, weakref.ref[Opened]] = {}
 _EXIT_HOOKED = False
 
@@ -99,7 +96,7 @@ def _close_open() -> None:
             continue
         try:
             opened.close()
-        except Exception:  # an exiting script has no one to raise to
+        except Exception:
             logger.warning("Could not close the job %s at exit", opened.job.folder,
                            exc_info=True)
     _OPEN.clear()
@@ -127,12 +124,10 @@ class JobHandle:
         def method(*args: Any, **kwargs: Any) -> Reply:
             with captured() as saved:
                 reply = tool(*args, **kwargs)
-            job.views.flush()  # the pictures are on disk before the method returns
+            job.views.flush()
             return library_reply(name, reply, saved)
 
         return method
-
-    # --- the verbs ------------------------------------------------------------------
 
     @property
     def verbs(self) -> list[str]:
@@ -156,8 +151,6 @@ class JobHandle:
     def __dir__(self) -> list[str]:
         return sorted({*super().__dir__(), *self.verbs})
 
-    # --- the job ----------------------------------------------------------------------
-
     @property
     def context(self) -> ScriptContext:
         """The job as a method of the script's own reads and writes it
@@ -165,7 +158,7 @@ class JobHandle:
         conversions and writes a tool plugin has, recorded as ``script``."""
         if self._context is None:
             run = self._opened.tools().run
-            assert run is not None  # build_tools keeps the run it built
+            assert run is not None
             self._context = ScriptContext(run)
         return self._context
 
@@ -266,7 +259,9 @@ class JobHandle:
             channel=channel, section_image=section_image,
         )
 
-    def export_abba(self, *, warps: bool = True) -> AbbaExported:
+    def export_abba(
+        self, *, warps: bool = True, landmarks: int = 1089
+    ) -> AbbaExported:
         """Write the job as an ABBA project file.
 
         The file is ``exports/<image folder>.abba``, which ABBA 0.25 opens
@@ -279,6 +274,10 @@ class JobHandle:
         ----------
         warps
             Whether applied deformations are written (False: linear only).
+        landmarks
+            The most landmark pairs per warp, 16 to 1089 (the default:
+            about 2.5 um from the deformation); fewer follow it less
+            closely (100 about 45 um).
 
         Returns
         -------
@@ -286,7 +285,10 @@ class JobHandle:
             The file, the sections written and left out, and each warp's
             distance from the deformation.
         """
-        return export_abba(self._opened.job, self._opened.ctx, warps=warps)
+        return export_abba(
+            self._opened.job, self._opened.ctx, warps=warps,
+            landmarks=landmarks,
+        )
 
     def wait(self, timeout: float | None = None) -> Reply:
         """Wait for the job's background work (a fit or trace a tool started and
@@ -503,13 +505,13 @@ def create_job(
     )
     from langslice.job.layout import write_job_file
 
-    if "fresh" in settings:  # resume='s old spelling, still read
+    if "fresh" in settings:
         if resume is not None:
             raise TypeError("create_job takes resume= or its old spelling "
                             "fresh=, not both")
         resume = not settings.pop("fresh")
     resume = True if resume is None else resume
-    load_credentials()  # the image model's keys, as open_job loads them
+    load_credentials()
     model = as_image_model(image_model)
     if plugins is not None:
         from langslice.doors.plugins import as_refs
@@ -543,7 +545,6 @@ def create_job(
             supplied["orientation"] = {str(name): dict(value)
                                        for name, value in orientation.items()}
         if pixel_size_um is not None:
-            # JobSpec reads it (supplied_pixel_sizes) and refuses a bad size.
             supplied["pixel_size_um"] = (dict(pixel_size_um) if isinstance(pixel_size_um, Mapping)
                                          else pixel_size_um)
         if registration is not None:

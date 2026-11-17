@@ -75,35 +75,17 @@ from langslice.core.stack.json_reads import (
 
 logger = logging.getLogger(__name__)
 
-#: Regions smaller than this (placed area, mm^2, adult mouse; times the brain
-#: scale squared) are reported but never flagged.
 MIN_FLAG_AREA_MM2 = 0.02
-#: Fraction of footprint pixels with a non-positive Jacobian above which FOLDS is flagged.
 FOLD_FRACTION_LIMIT = 0.001
-#: DISPLACEMENT_OUTSIZED: the largest displacement in the footprint above this
-#: fraction of the footprint's longest extent (about 1 mm on a 10 mm coronal
-#: section): a blow-up can stay under every fold and area flag while it
-#: drags the outline over a millimetre.
 OUTSIZED_MAX_FRACTION = 0.1
-#: DISPLACEMENT_OUTSIZED also fires when the median displacement in the footprint
-#: exceeds this, in mm: a wholesale drift a uniform field would hide from the
-#: maximum rule. It sits above the medians of fits whose borders looked
-#: plausible. Adult mouse; times the brain scale.
 OUTSIZED_MEDIAN_MM = 0.6
 
-#: ``record.json``'s format: 3 (the arrays in ``warp.ome.zarr``, the parent by
-#: reference, the fields as ``fields`` says). Format 2, every field stored
-#: whole on the section grid, is read too; any other is refused on loading.
 RECORD_VERSION = 3
 READ_VERSIONS = (2, 3)
-#: The keys ``record.json`` holds (:meth:`DeformableRecord.metadata`); any
-#: other is refused on loading.
 _RECORD_KEYS = ("version", "step", "parent", "placement", "section_size", "settings",
                 "field_convention", "fields", "inverse_source", "labels",
                 "excluded_ids", "engine", "diagnostics", "atlas", "provenance",
                 "fields_sha256")
-#: ``record.json``'s ``fields``: what ``warp.ome.zarr`` holds of them
-#: (:mod:`~langslice.core.fits.deformable.ome_warp`).
 FIELDS_WHOLE = "section_grid"
 FIELDS_ENGINE = "engine_grid"
 FIELDS_MESH = "landmark_mesh"
@@ -143,7 +125,6 @@ def displacement_report(
     }
 
 
-#: The engine name of a landmark application's record.
 LANDMARK_ENGINE = "landmark_triangulation"
 
 
@@ -204,7 +185,6 @@ def diagnose(
     for k, uid in enumerate(int(i) for i in ids):
         ventricle = uid in ventricles
         placed_mm2 = float(placed_count[k] * pixel_mm2)
-        # None: the warp turns this region inside out (non-positive total Jacobian).
         ratio: float | None = 0.0
         if count[k]:
             ratio = float(count[k] / jac_sum[k]) if jac_sum[k] > 0 else None
@@ -266,7 +246,6 @@ class DeformableRecord:
 
     placement: Placement
     section_size: tuple[int, int]
-    #: The engine's settings; None for a warp no engine computed (the landmark warp).
     settings: FitSettings | None
     field_mm: np.ndarray
     inverse_field_mm: np.ndarray | None
@@ -279,27 +258,10 @@ class DeformableRecord:
     atlas: dict[str, Any]
     step: int = 0
     parent: DeformableRecord | None = field(default=None, repr=False)
-    #: Who made this record and from what: free-form, saved with the metadata
-    #: (the linear agent's tool stores its section id, the linear handoff
-    #: metadata and the fit inputs it chose).
     provenance: dict[str, Any] = field(default_factory=dict)
-    #: Section pixels (on the section grid) the fit's metric left out, for an
-    #: engine that estimates its own weighting; None otherwise. For review
-    #: pictures; nothing reads it back into a fit.
     left_out: np.ndarray | None = None
-    #: The engine's own three-class sorting of the section: P(match), float16
-    #: on the section (fit) grid; None when the engine estimated nothing.
-    #: ``make_mask`` with source ``fit`` copies it into a section mask.
     weights: np.ndarray | None = None
-    #: The folder this record is saved in, or will be (a job's store names it
-    #: by the record's key,
-    #: :class:`langslice.core.fits.deformation.RecordStore`): a child's
-    #: ``record.json`` names its parent by it. Set only once the fields are at
-    #: storage precision (:meth:`round_to_storage`).
     saved_as: str | None = field(default=None, repr=False, compare=False)
-    #: The step the fields are rebuilt from on loading
-    #: (:mod:`~langslice.core.fits.deformable.fields`); None: they are saved
-    #: whole.
     stored_step: StoredStep | None = field(
         default=None, repr=False, compare=False)
 
@@ -339,7 +301,6 @@ class DeformableRecord:
         }
 
         if self.stored_step is not None:
-            # Rebuilt fields are pinned to the bits they were made with.
             meta["fields_sha256"] = fields_digest(
                 self.field_mm, _present(self.inverse_field_mm))
         return meta
@@ -390,7 +351,6 @@ class DeformableRecord:
         meta = cls._metadata(root)
         if root.name in _children:
             raise ValueError(f"{root / 'record.json'}: its parent chain comes back to it")
-        # A parent that cannot be read raises naming its own record.json.
         parent = None if meta["parent"] is None else cls.load(
             root.parent / str(meta["parent"]), _children | {root.name})
         try:

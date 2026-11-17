@@ -12,7 +12,6 @@ renamed or removed tool cannot linger.
 
 from __future__ import annotations
 
-#: One label per tool and per ``tool:option`` name, in tool-table order.
 TOOL_LABELS: dict[str, str] = {
     "look": "See sections and the atlas",
     "look:section": "pictures of a section alone",
@@ -58,22 +57,18 @@ TOOL_LABELS: dict[str, str] = {
     "emlddmm_plane": "emlddmm finds the series' positions and cutting angles",
 }
 
-#: One label per task (:data:`langslice.job.settings.spec.ALL_TASKS`).
 TASK_LABELS: dict[str, str] = {
     "position": "Place along the atlas",
     "transform": "Align in the plane",
     "nonlinear": "Warp to fit",
 }
 
-#: What each task does, in a sentence for people.
 TASK_ABOUT: dict[str, str] = {
     "position": "Put the sections in order and find where each one sits in the atlas.",
     "transform": "Turn, move and scale each section onto its atlas plane.",
     "nonlinear": "Bend the atlas onto each aligned section, region by region.",
 }
 
-#: The tool groups of :data:`langslice.job.settings.tool_table.GROUPS`, for
-#: people, and the task each belongs to (None: every run).
 GROUP_LABELS: dict[str, tuple[str, str | None]] = {
     "Common": ("Every run: looking, notes and undo", None),
     "Positioning": ("Place along the atlas", "position"),

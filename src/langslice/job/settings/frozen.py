@@ -32,22 +32,18 @@ from __future__ import annotations
 from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
-#: Every property, in the order they are listed everywhere.
 PROPERTIES: tuple[str, ...] = (
     "position", "angles", "orientation", "affine", "deformation", "damage",
 )
 
-#: The key of ``frozen`` that names every section.
 EVERY = "*"
 
-#: The properties each task writes (``JobSpec.tasks``).
 TASK_PROPERTIES: dict[str, tuple[str, ...]] = {
     "position": ("position", "angles"),
     "transform": ("orientation", "affine"),
     "nonlinear": ("deformation",),
 }
 
-#: How a property is said to the agent.
 WORDS: dict[str, str] = {
     "position": "position",
     "angles": "cutting angles",
@@ -57,7 +53,6 @@ WORDS: dict[str, str] = {
     "damage": "damage marks (the regions every fit leaves out)",
 }
 
-#: How many sections a statement lists by name before it counts them.
 LISTED_SECTIONS = 8
 
 

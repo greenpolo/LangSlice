@@ -33,22 +33,15 @@ from langslice.job.settings.schema import (
     spec_keys,
 )
 
-#: The keys :attr:`JobSpec.inputs` takes; any other is refused (a misspelled
-#: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
     "order", "positions", "angles", "orientation", "transforms", "damaged",
     "damaged_regions", "pixel_size_um", "channel_names",
 )
 
-#: The two parts of a supplied cutting angle (``inputs.angles``).
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
 
-#: What a fit says of a section with no written in-plane transform.
 NO_TRANSFORM = ("A written affine transform is required: give the section a "
                 "transform first")
-#: ... in a job whose Linear task is off, so nothing in it writes one: what
-#: the caller does instead (written with what it needs). A missing transform
-#: is the identity to the maps, never to the nonlinear step.
 NO_TRANSFORM_LINEAR_OFF = (
     "A written affine transform is required, and Linear is off for this job, "
     "so nothing here writes one. Supply the in-plane transforms with the job "
@@ -143,16 +136,10 @@ def supplied_pixel_sizes(value: Any) -> tuple[float | None, dict[str, float]]:
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""
 
-    #: None means not supplied; the agent infers what the anatomy supports.
     thickness_um: int | None = None
     interval_um: int | None = None
-    #: Sections must sit exactly one interval apart (gated at submit).
     strict_interval: bool = False
-    #: Optional positioning coaching: compare candidate planes and regions,
-    #: write supported placements, revisit uncertainty and review the stack.
-    #: Guidance only, off by default.
     playbook: bool = False
-    #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -169,17 +156,9 @@ class PositionSpec:
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
-    #: User text describing what marks a hemisphere (a notch, an injection...),
-    #: shown where the agent may mirror sections (``interactive_transform``'s
-    #: ``flip``, an option of the tool that ``disabled`` can take off).
     hemisphere_cue: str = ""
-    #: The agent may set the stack-wide cutting angles.
     angles: bool = False
-    #: Most sections one transform-tool call (``elastix_affine``,
-    #: ``interactive_transform``) may take, 1..4. Both tools take at most four
-    #: (the default); below 4 both refuse a call naming more sections.
     max_parallel: int = MAX_PARALLEL_TRANSFORMS
-    #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -212,20 +191,8 @@ class NonlinearSpec:
 
     provider: str = "none"
     image_model: str | None = None
-    #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
-    #: The host requires a deformation on every section: ``submit`` is refused
-    #: until each section carries one at its current placement. Off, a
-    #: deformation is the agent's choice, section by section.
     require_deformation: bool = False
-    #: The base prompt ``trace_borders`` sends the image model for this job, in
-    #: place of LangSlice's own for the provider
-    #: (:func:`langslice.core.fits.trace.prompts.border_correction_tool_prompt`);
-    #: ``{plane}`` in it becomes the section plane. It must describe the
-    #: provider's attachment order (the OpenAI providers: Image 1 the clean
-    #: photograph, Image 2 the placed borders; the others the other way round).
-    #: The agent's per-section edit starts from it, and its traces are recorded
-    #: as an untested profile (``custom``). None: LangSlice's own.
     image_prompt: str | None = None
 
     def __post_init__(self) -> None:
@@ -314,105 +281,25 @@ class JobSpec:
     atlas: str = DEFAULT_ATLAS
     plane: str = "coronal"
     model: str | None = None
-    #: Reasoning effort for models that expose one (low|medium|high|xhigh|
-    #: max). None leaves the provider's own default alone.
     reasoning: str | None = None
     out: str | None = None
-    #: Where the job folder goes (``--job-dir``). None: next to the images,
-    #: ``<images>/langslice`` (:func:`langslice.job.layout.locate_job_folder`).
     job_dir: str | None = None
-    #: How each section's ``preprocessed`` image is made: "auto" runs
-    #: :func:`langslice.core.sections.reading.adaptive_preprocess`, "none"
-    #: takes the file in gray. It is what the agent sees first, what the image
-    #: model is shown and what every fit reads unless the agent names another
-    #: section image; never written back to the user's files.
     preprocess: str = "auto"
-    #: A host's channel blend (``{"mode": "auto"}``, the only one) for
-    #: snapshots exported one page per channel. Set, every section's DEFAULT
-    #: appearance is :func:`langslice.core.sections.reading.host_preprocess`
-    #: over its raw pages; the pages themselves stay readable as channels.
-    #: None: the file is shown through ``preprocess`` as above.
     host_preprocessing: dict[str, Any] | None = None
-    #: Size of every picture the agent sees: "low", "medium", "high" or
-    #: "auto" (:data:`IMAGE_RESOLUTIONS`). Display only: fits, working frames
-    #: and stored transforms are unchanged, and the image model's inputs are
-    #: untouched.
     image_resolution: str = "low"
-    #: The change tools always return their picture: their ``view`` argument
-    #: is not offered, so the agent cannot switch the picture off.
     force_view: bool = False
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
-    #: Tools and tool options switched off on top of what the tasks give:
-    #: ``"zoom"`` (a tool, whole) or ``"look:positioning"`` (``tool:option``).
-    #: The valid names are
-    #: :func:`~langslice.job.settings.tool_table.valid_names`; a name that is
-    #: none, a tool the run cannot do without (``submit``) or a
-    #: list that cannot work is refused when the spec is made
-    #: (:func:`~langslice.job.settings.tool_table.refusal`). A host's
-    #: ``inputs["damaged"]`` notes are shown whatever is disabled.
     disabled: list[str] = field(default_factory=list)
-    #: The tools that start off and this job switches on
-    #: (:func:`~langslice.job.settings.tool_table.default_off_names`:
-    #: ``trace_borders``, ``deepslice_place``, ``brainways_ap``); any other
-    #: name is refused. A tool still needs its task, and its atlas and plane;
-    #: ``trace_borders`` an image model (``nonlinear.provider``), and a job
-    #: that names one has ``trace_borders`` here unless it disables it.
     enabled: list[str] = field(default_factory=list)
-    #: What the agent may not change, per section: ``{"<filename>":
-    #: ["orientation", "affine"], "*": ["angles"]}`` (``"*"``: every section;
-    #: the properties are :data:`langslice.job.settings.frozen.PROPERTIES`). A
-    #: frozen property keeps the value ``inputs`` supplies for it, or its
-    #: "none" (:mod:`langslice.job.settings.frozen`); the ops refuse a write
-    #: that would change it (``FROZEN``), a tool that writes only properties
-    #: frozen on every section is not offered (:attr:`switched_off`) and a
-    #: task whose properties are all frozen on every section is off
-    #: (:meth:`has`).
     frozen: dict[str, list[str]] = field(default_factory=dict)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
     nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
-    #: Free-form user facts, one line each, passed to the agent verbatim.
     facts: list[str] = field(default_factory=list)
-    #: Host-supplied answers for tasks that are OFF, plus the optional
-    #: calibration override:
-    #: ``{"positions": {filename: mm}, "order": [filename, ...],
-    #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float | {filename: float},
-    #: "orientation": {filename: {"flip": bool, "rotation_deg": 0|90|180|270}},
-    #: "transforms": {filename: transform_dict},
-    #: "damaged": {filename: note}}``.
-    #: A supplied transform may be mirrored (negative determinant, as a
-    #: host's own alignment carries a flip); it is kept as supplied. A
-    #: supplied ``orientation`` is the section's flip and quarter turn (a
-    #: supplied transform describes the section after it), kept as supplied.
-    #: ``angles`` is the whole stack's plane, or per section
-    #: ``{filename: {"pitch": deg, "yaw": deg}}`` (a registration made
-    #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
-    #: ``channel_names`` (one name per page of a host's multi-page snapshot)
-    #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
-    #: ``damaged`` supplies notes, not region exclusions;
-    #: ``damaged_regions`` (``{filename: [region, ...]}``,
-    #: :func:`supplied_damaged_regions`) supplies the marked regions
-    #: themselves. What is supplied is a starting point: the agent may
-    #: change it unless ``frozen`` says it may not.
     inputs: dict[str, Any] = field(default_factory=dict)
-    #: Resume from the folder checkpoint when one exists.
     resume: bool = True
-    #: After submit, ask the agent (same context) what tools it missed and
-    #: record the answer on the state. One extra model call.
     debrief: bool = True
-    #: Tools of the user's own the job loads besides LangSlice's, each
-    #: ``module:factory`` (:mod:`langslice.core.plugins`,
-    #: ``docs/developers/plugins.md``): they join the toolbox, and are named in
-    #: ``disabled`` like LangSlice's. One that cannot be loaded, or whose
-    #: tools clash with another's, is refused when the spec is made. Code
-    #: runs on load: only the library and ``linear run`` build specs with
-    #: them. LangSlice's own engines are not named here: they are tools of
-    #: every job (:data:`~langslice.job.settings.tool_table.ENGINES`).
     plugins: list[str] = field(default_factory=list)
-    #: Options an engine's or a plugin's factory is called with, by its
-    #: reference (a JSON object each: an engine's ``device``, the generic
-    #: MCP adapter's server and allow-list). One without an entry is called
-    #: without arguments.
     plugin_config: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -448,8 +335,6 @@ class JobSpec:
                 isinstance(ref, str) and ref.strip() for ref in self.plugins):
             raise ValueError("plugins must be a list of module:factory references")
         self.plugins = list(dict.fromkeys(ref.strip() for ref in self.plugins))
-        # A job made when the engines were plugins names them here: they are
-        # tools of every job now, and one it named is on.
         named = [ref for ref in self.plugins if ref in tool_table.ENGINES]
         if named:
             self.plugins = [ref for ref in self.plugins if ref not in named]
@@ -466,7 +351,7 @@ class JobSpec:
         if (self.nonlinear.uses_image_model
                 and "trace_borders" not in self.disabled
                 and "trace_borders" not in self.enabled):
-            self.enabled.append("trace_borders")  # naming a model asks for it
+            self.enabled.append("trace_borders")
         reason = tool_table.check_enabled(self.enabled)
         if reason is not None:
             raise ValueError(reason)
@@ -485,7 +370,7 @@ class JobSpec:
                 "job and no engine of LangSlice "
                 f"({', '.join(tool_table.ENGINES)})")
         if self.plugins:
-            tool_table.tools_for(self)  # loads them: refused if they cannot be
+            tool_table.tools_for(self)
         self.frozen = freeze.clean(self.frozen)
         supplied = (self.inputs or {}).get("positions") or {}
         unsupplied = sorted(name for name, held in self.frozen.items()
@@ -498,8 +383,6 @@ class JobSpec:
         reason = tool_table.refusal(self)
         if reason is not None:
             raise ValueError(reason)
-
-    # --- views -----------------------------------------------------------
 
     def has(self, task: str) -> bool:
         """Whether *task* is on for this run: in ``tasks``, and not every one
@@ -558,15 +441,13 @@ class JobSpec:
         names = inputs.get("channel_names")
         channel_names = None
         if isinstance(names, list):
-            # reportUnknownArgumentType: a host's list, of anything
             listed = cast("list[object]", names)
             channel_names = tuple(str(name) for name in listed)
         form = self.to_dict()
-        # reportAny: to_dict holds each task's settings as a plain dict
         nonlinear = cast("dict[str, object]", form["nonlinear"])
         return ImageSettings(
             atlas=self.atlas,
-            plane=cast(Plane, self.plane),  # one of PLANES: checked when made
+            plane=cast(Plane, self.plane),
             preprocess=self.preprocess,
             host_preprocessing=self.host_preprocessing,
             supplied_pixel_size=supplied,
@@ -602,27 +483,25 @@ class JobSpec:
         value = self.position.interval_um
         return value / 1000.0 if value is not None else None
 
-    # --- (de)serialization ----------------------------------------------
-
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        if data.get("job_dir") is None:  # the default stays out of saved specs
+        if data.get("job_dir") is None:
             data.pop("job_dir", None)
-        if not data["nonlinear"].get("require_deformation"):  # likewise
+        if not data["nonlinear"].get("require_deformation"):
             data["nonlinear"].pop("require_deformation", None)
-        if data["nonlinear"].get("image_prompt") is None:  # likewise
+        if data["nonlinear"].get("image_prompt") is None:
             data["nonlinear"].pop("image_prompt", None)
-        if not data.get("force_view"):  # likewise
+        if not data.get("force_view"):
             data.pop("force_view", None)
-        if not data.get("disabled"):  # likewise
+        if not data.get("disabled"):
             data.pop("disabled", None)
-        if not data.get("enabled"):  # likewise
+        if not data.get("enabled"):
             data.pop("enabled", None)
-        if not data.get("frozen"):  # likewise
+        if not data.get("frozen"):
             data.pop("frozen", None)
-        if not data.get("plugins"):  # likewise
+        if not data.get("plugins"):
             data.pop("plugins", None)
-        if not data.get("plugin_config"):  # likewise
+        if not data.get("plugin_config"):
             data.pop("plugin_config", None)
         return data
 
@@ -645,6 +524,5 @@ class JobSpec:
         kwargs: dict[str, Any] = {
             name: nested[name](**(value or {})) if name in nested else value
             for name, value in data.items()}
-        # __post_init__ checks this list
         enabled = cast("list[str]", kwargs.pop("enabled", []))
         return cls(**kwargs, enabled=enabled)

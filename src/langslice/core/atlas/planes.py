@@ -32,13 +32,8 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-#: Most atlas sections in the opening's atlas reference (laid out as strips by
-#: :mod:`langslice.core.pictures.opening`, sent when a section has no
-#: position).
 SEED_ATLAS_MAX_IMAGES = 48
 
-#: Most atlas planes kept on ``Workspace.plane_cache`` (one 8-bit plane is
-#: 0.5 MB on the 39 um rat atlas, about 1 MB on the 10 um mouse).
 PLANE_CACHE_SIZE = 128
 _plane_lock = threading.Lock()
 
@@ -132,13 +127,13 @@ def reference_atlas(
     pos_lo, pos_hi = ctx.position_range
     span = pos_hi - pos_lo
     step = max(state.interval_mm or 0.0, span / max(1, max_images - 1))
-    step = math.ceil(step / 0.05) * 0.05  # a round number of 50 um
+    step = math.ceil(step / 0.05) * 0.05
     edge = int(long_edge or opening_edge(ctx))
     pictures: list[tuple[float, Image.Image]] = []
     for k in range(int(span / step) + 1):
         position = pos_lo + k * step
         picture = atlas_section(ctx, state, position, frame=True, angles=state.view_angles)
         if np.asarray(picture).max() < 8:
-            continue  # an oblique plane through the volume's corner: nothing to show
+            continue
         pictures.append((position, atlas_sized(picture, edge)))
     return step, pictures

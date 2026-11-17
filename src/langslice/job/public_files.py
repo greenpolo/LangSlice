@@ -62,9 +62,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: ``registration.json``'s format.
 REGISTRATION_FORMAT_VERSION = 1
-#: ``maps.json``'s format.
 MAPS_FORMAT_VERSION = 1
 COORDS_FILE = "coords.tif"
 LABELS_FILE = "labels.tif"
@@ -72,20 +70,14 @@ LABELS_FIJI_FILE = "labels_fiji.tif"
 LABELS_CSV_FILE = "labels.csv"
 RESIDUAL_FILE = "residual.tif"
 MAPS_FILE = "maps.json"
-#: Under ``exports/``: the QuickNII anchoring of every placed section, and the
-#: same with VisuAlign markers of each applied deformation.
 QUICKNII_FILE = "quicknii.json"
 VISUALIGN_FILE = "visualign.json"
-#: Under ``exports/``: each traced section's image-model reply on its maps'
-#: grid, ``<name>.npz`` (:func:`write_trace_reply`).
 TRACES_DIR = "traces"
-#: Every per-section file, by its artifact kind.
 SECTION_FILES: dict[str, str] = {
     "coords": COORDS_FILE, "labels": LABELS_FILE, "labels_fiji": LABELS_FIJI_FILE,
     "labels_csv": LABELS_CSV_FILE, "residual": RESIDUAL_FILE,
     "maps": MAPS_FILE,
 }
-#: Stated in ``registration.json``, so a script reading it needs nothing else.
 CONVENTION = (
     "Atlas coordinates are BrainGlobe micrometres in the atlas's own axis order "
     "(atlas.orientation; packaged atlases are 'asr': axis 0 anterior to posterior, "
@@ -98,15 +90,12 @@ CONVENTION = (
     "pixel_to_atlas_um @ [row + d_row, col + d_col, 1] on that grid (a section's "
     "maps entry is null until they are written)."
 )
-#: What ``registration.json`` says about itself.
 NOTE = (
     "Derived from state.json on every change and never read back: edit nothing "
     "here. Change a registration through the verbs (langslice-job FOLDER VERB, or "
     "langslice.open_job in Python). Edited maps or label images become a "
     "registration only through a fit (see docs/reference/file_formats.md)."
 )
-
-# --- the registration parameters ----------------------------------------------------
 
 
 @functools.lru_cache(maxsize=1)
@@ -167,7 +156,6 @@ def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
         affine = {
             "kind": transform.kind,
             "params": list(transform.params),
-            # Kept as written: the text is in parameters_digest.
             "params_convention": (
                 "normalized 2x3 [a, b, tx, c, d, ty] on the oriented section render: "
                 "x as a fraction of its width, y of its height (langslice.core.affine)"),
@@ -220,7 +208,7 @@ def section_entry(
         assert workspace is not None
         try:
             frame = section_frame(state, workspace, record)
-        except Exception as exc:  # an unreadable file, a missing atlas: said, not raised
+        except Exception as exc:
             logger.warning("No frame for %s", record.id, exc_info=True)
             problem = str(exc)
         else:
@@ -273,7 +261,7 @@ def registration_document(
             from langslice.core.pictures.layers import atlas_facts
 
             atlas = atlas_facts(workspace.atlas)
-        except Exception:  # an atlas that cannot load: the document says so
+        except Exception:
             logger.warning("registration.json: the atlas could not be read", exc_info=True)
     exports = {kind: layout.relative(layout.exports_dir / name)
                for kind, name in (("quicknii", QUICKNII_FILE), ("visualign", VISUALIGN_FILE))
@@ -286,8 +274,6 @@ def registration_document(
         "convention": CONVENTION,
         "atlas": atlas if atlas is not None else {"name": state.atlas},
         "plane": state.plane,
-        # The stack's one plane; null when the sections' angles differ (a
-        # registration supplied per section): each section's "plane" has its own.
         "cutting_angles_deg": (None if state.mixed_angles else
                                dict(zip(("pitch", "yaw"), state.stack_angles, strict=True))),
         "image_folder": _image_folder(layout, workspace.image_folder if workspace is not None
@@ -322,13 +308,7 @@ def write_registration(
     return path
 
 
-# --- the per-section maps -------------------------------------------------------------
 
-
-#: Float maps are deflate-compressed WITHOUT the floating-point predictor:
-#: ImageJ 1.x cannot decode it (``ij/io/TiffDecoder.java`` logs "unsupported
-#: predictor value of 3" and reads the bytes as they are), so Fiji would show
-#: garbage. The price is file size: the float maps compress far less.
 FLOAT_COMPRESSION = "zlib"
 
 

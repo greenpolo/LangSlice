@@ -84,14 +84,11 @@ RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 IMAGES_EDITS_URL = "https://chatgpt.com/backend-api/codex/images/edits"
 MODEL_PREFIX = "openai-oauth/"
 
-#: The image model :func:`edit_image` calls when none is named.
 DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
 
-#: The default agent model on this lane.
 DEFAULT_REVIEW_MODEL = OPENAI_OAUTH_DEFAULT_AGENT_MODEL
 
 
-# --- request plumbing --------------------------------------------------------
 def _headers(creds: Creds, session_id: str) -> dict[str, str]:
     headers = {
         "Authorization": f"Bearer {creds.access_token}",
@@ -131,8 +128,6 @@ def iter_sse(response: requests.Response) -> Iterator[dict[str, Any]]:
             continue
 
 
-#: Quota headers the Codex backend may send (the CLI's ``/status`` reads
-#: them); ``primary`` is the short window, ``secondary`` the long one.
 QUOTA_HEADERS = (
     "x-codex-primary-used-percent",
     "x-codex-primary-reset-at",
@@ -291,7 +286,6 @@ def _failure_message(event: dict[str, Any]) -> str:
     return str(error.get("message", "unknown error"))
 
 
-# --- image generation --------------------------------------------------------
 def edit_image(
     prompt: str,
     reference_images: Sequence[str],
@@ -356,17 +350,12 @@ def _part_data_uri(blob: Any) -> str | None:
 def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
     """Convert one ADK ``Content`` into Codex Responses ``input`` items."""
     items: list[dict[str, Any]] = []
-    # User content keeps PART ORDER (label text directly before its image —
-    # interleaving is load-bearing for multi-image seed messages); model text
-    # is joined as one assistant message.
     user_content: list[dict[str, Any]] = []
     model_texts: list[str] = []
 
     reasoning_items: list[dict[str, Any]] = []
     for part in content.parts or []:
         if part.thought_signature:
-            # A previous turn's reasoning, replayed verbatim (encrypted) so the
-            # model continues its own chain of thought instead of restarting.
             reasoning_items.append(json.loads(part.thought_signature))
         elif part.function_response is not None:
             items.append(_function_call_output(part.function_response))
@@ -391,7 +380,6 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
                 user_content.append({"type": "input_text", "text": part.text})
 
     if content.role == "model":
-        # Reasoning leads the turn it produced.
         items[:0] = reasoning_items
         if model_texts:
             items.append(
@@ -490,7 +478,7 @@ def _inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
     inlined = resolve(schema, ())
     if any(isinstance(ref, str) for ref in _refs(inlined)):
-        inlined["$defs"] = definitions  # a recursive definition still needs its target
+        inlined["$defs"] = definitions
     return inlined
 
 
@@ -601,7 +589,6 @@ class OpenAIOAuthLlm(BaseLlm):
 
     @property
     def capabilities(self) -> LlmCapabilities:
-        # No structured-output-with-tools support on the subscription backend.
         return LlmCapabilities(output_schema_and_tools=False)
 
     def build_request_body(self, llm_request: LlmRequest) -> dict[str, Any]:
@@ -615,15 +602,10 @@ class OpenAIOAuthLlm(BaseLlm):
             "input": input_items,
             "tools": tools_to_wire(llm_request.config),
             "tool_choice": "auto",
-            # Several tool calls in one model turn: one call's history cost
-            # instead of one per tool. The toolbox serializes them.
             "parallel_tool_calls": True,
             "store": False,
             "stream": True,
             "prompt_cache_key": self.prompt_cache_key,
-            # context=all_turns: render the replayed reasoning of EARLIER turns
-            # into this sample; the default, current_turn, drops it at every
-            # user message.
             "reasoning": {
                 "effort": self.reasoning_effort,
                 "summary": "auto",
@@ -670,12 +652,8 @@ class OpenAIOAuthLlm(BaseLlm):
                         partial=True,
                     )
             elif kind == "response.reasoning_summary_text.delta":
-                # Only the backend's public summary is displayable. Encrypted
-                # reasoning remains on the final item's replay signature below.
                 delta = event.get("delta", "")
                 if stream and isinstance(delta, str) and delta:
-                    # Summary parts have independent text streams. Preserve
-                    # their boundaries to match the finalized summary text.
                     key = (event.get("item_id"), event.get("summary_index", 0))
                     if last_summary_key is not None and key != last_summary_key:
                         delta = "\n" + delta

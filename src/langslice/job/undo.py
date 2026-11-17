@@ -56,7 +56,6 @@ from langslice.job.undo_steps import (
 
 logger = logging.getLogger(__name__)
 
-#: The stack field a step keeps as a change (:class:`NotesBefore`).
 NOTES = "notes"
 
 
@@ -162,9 +161,6 @@ class JobUndo(JobCheckpoint):
         """
         with self.lock.held():
             if not self.undo_stack:
-                # No write to join (an opened state that held a stale
-                # deformation): its lines are written and, like the opening
-                # lines, no step undoes them.
                 self._record(before, self.actor)
                 self.checkpoint()
                 return
@@ -194,7 +190,6 @@ class JobUndo(JobCheckpoint):
         merged = combined_steps(self.undo_stack[-count:])
         del self.undo_stack[-count:]
         self.undo_stack.append(merged)
-        # the steps since an earlier mark are still counted right
         self.pushed -= count - 1
         self._save_undo()
 
@@ -236,9 +231,6 @@ class JobUndo(JobCheckpoint):
         set_stack_fields(self.state, step.stack_before)
         if step.notes_before is not None:
             self.state.notes = step.notes_before.put_back(self.state.notes)
-        # also=step: the step that takes this one back names every section
-        # and stack field this one names, changed or not, so redo puts back
-        # all that undo did.
         back = self._record(before, self.actor, also=step)
         return dataclasses.replace(
             back, step=step.step, by=step.by, at=step.at
@@ -301,7 +293,7 @@ class JobUndo(JobCheckpoint):
         (and those *also* names), as *before* holds them.
         """
         fields = stack_fields(self.state)
-        del fields[NOTES]  # a step keeps the notes' change (NotesBefore)
+        del fields[NOTES]
         changed = {
             key: before.get(key)
             for key in fields
@@ -415,7 +407,7 @@ class JobUndo(JobCheckpoint):
             return number
         if registration_key(self.state, section) is None:
             return None
-        last_write = max(self.next_step - 1, 0)  # 0: none yet, the opening
+        last_write = max(self.next_step - 1, 0)
         line = self.histories.append(
             self.state, section, step=last_write, by=HOST, numbered=True
         )
@@ -433,7 +425,7 @@ class JobUndo(JobCheckpoint):
 
     def load_undo(self) -> None:
         """Read the undo steps on disk into the job (none unreadable)."""
-        lists = self.undo_file.load()  # its notice is logged
+        lists = self.undo_file.load()
         self.undo_stack, self.redo_stack = lists.undo, lists.redo
         self.next_step = max(self.next_step, lists.next_step)
 
@@ -457,9 +449,7 @@ class JobUndo(JobCheckpoint):
         instead. A file that does not parse (a script mid-write) is left
         alone and read at the next call; the job's own next write replaces it.
         """
-        if (
-            self._peeked is not None
-        ):  # a read's view first gives way to the job's own state
+        if self._peeked is not None:
             self.state.replace_with(stack_from_json(self._peeked))
             self._peeked, self._peek_stamp = None, None
         state_stamp = file_stamp(self.checkpoint_path)
@@ -480,7 +470,7 @@ class JobUndo(JobCheckpoint):
             )
             return None
         self._state_stamp = state_stamp
-        if data is None:  # deleted: the next checkpoint writes it again
+        if data is None:
             return None
         held = stack_to_json(self.state)
         loaded = stack_to_json(state_from_file(data, self.checkpoint_path))

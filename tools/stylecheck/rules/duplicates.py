@@ -28,8 +28,6 @@ from tools.stylecheck.rules.scopes import FUNCTION_NODES, parameters
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
-#: The fewest statements, counted at every depth, a body needs before a
-#: repeat of it is worth a shared function.
 MIN_STATEMENTS = 4
 
 
@@ -125,7 +123,6 @@ def body_key(function: Function) -> str:
         return ""
     local_names = _local_names(function)
     statements = [copy.deepcopy(statement) for statement in body]
-    # wrapped in a module so the typed generic_visit visits each statement
     wrapper = ast.Module(body=statements, type_ignores=[])
     renamed = _LocalRenamer(local_names).generic_visit(wrapper)
     return ast.dump(renamed)

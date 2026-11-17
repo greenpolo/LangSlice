@@ -23,16 +23,12 @@ from tools.stylecheck.core import (
 from tools.stylecheck.rules.complexity import statement_blocks
 from tools.stylecheck.rules.scopes import FUNCTION_NODES
 
-#: Words that name no topic, banned as any ``_``-separated part of a
-#: module or package name.
 TOPICLESS_WORDS = frozenset(
     {"utils", "util", "helpers", "helper", "misc", "common"}
 )
 
-#: Endings that mark a module as the rest of another one.
 OVERFLOW_ENDING = re.compile(r"(?:_|^)(?:part\d*|more|extra)$|(?<!\d)\d$")
 
-#: The module-level names an ``__init__.py`` may assign.
 INIT_NAMES = frozenset({"__all__", "__version__"})
 
 

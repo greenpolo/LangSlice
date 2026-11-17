@@ -82,7 +82,6 @@ def reference(root: Path, ref: str, relpath: str) -> Reference:
         description = f"{ref}, where {relpath} is deleted"
         return Reference(ReferenceKind.DELETED, None, description)
 
-    # absent at the reference and before it: created after the reference
     creation = _creating_commit(root, commit, relpath)
     if creation is None:
         description = f"nothing: {relpath} is new since {ref}"

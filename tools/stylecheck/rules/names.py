@@ -26,13 +26,10 @@ from tools.stylecheck.rules.annotations import (
 )
 from tools.stylecheck.rules.scopes import BOUND_NAMES, functions, parameters
 
-#: How many re-exports deep a class name is followed to its definition.
 MAX_REEXPORTS = 8
 
-#: Function name prefixes that promise a ``bool`` result.
 PREDICATE_PREFIXES = ("is_", "has_", "can_")
 
-#: Return annotations a predicate may carry.
 PREDICATE_RETURNS = frozenset({"bool", "TypeGuard", "TypeIs"})
 
 

@@ -24,17 +24,11 @@ if TYPE_CHECKING:
 class CommentRow:
     """One comment as the page gets it."""
 
-    #: The comment's id.
     id: str
-    #: The section's filename.
     section: str
-    #: ``[x0, y0, x1, y1]``, fractions of the section's overlay picture.
     box: list[float]
-    #: What the person wrote.
     text: str
-    #: When it was written, UTC, ISO 8601.
     at: str
-    #: Whether the section has changed since it was written.
     revised: bool
 
 

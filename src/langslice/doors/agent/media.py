@@ -27,7 +27,7 @@ from langslice.core.stack.stack import Stack
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.view_options import image_limit
 
-if TYPE_CHECKING:  # the driver's context imports the toolbox
+if TYPE_CHECKING:
     from langslice.doors.agent.engine import EngineContext
 
 
@@ -45,8 +45,6 @@ def items_to_parts(items: Sequence[Any]) -> list[types.Part]:
         for item in items
     ]
 
-
-# --- tool results ----------------------------------------------------------------
 
 
 def package_result(result: Any) -> Any:
@@ -80,8 +78,6 @@ def packaged_tools(tools: Sequence[Callable[..., Any]]) -> list[Callable[..., An
     """Every tool of a toolbox, :func:`packaged`."""
     return [packaged(tool) for tool in tools]
 
-
-# --- the opening ---------------------------------------------------------------
 
 
 def opening_parts(

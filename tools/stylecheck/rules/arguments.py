@@ -31,12 +31,10 @@ from tools.stylecheck.rules.scopes import functions, parameters
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
-#: Methods that write into a list, dict or set in place.
 MUTATING_METHODS = frozenset(
     {"append", "extend", "insert", "update", "setdefault", "add"}
 )
 
-#: Annotations that make a parameter a container the caller owns.
 CONTAINER_TYPES = frozenset(
     {
         "list",
@@ -54,14 +52,10 @@ CONTAINER_TYPES = frozenset(
     }
 )
 
-#: Methods only a list or dict has, so an unannotated parameter that
-#: calls one is taken to be a container.
 CONTAINER_ONLY_METHODS = frozenset({"append", "extend", "setdefault"})
 
-#: The decorators that make a function a wrapper with another's signature.
 WRAPS_DECORATORS = frozenset({"wraps", "functools.wraps"})
 
-#: The numpy name for a pre-allocated output array, the accepted form.
 NUMPY_OUTPUT = "out"
 
 
@@ -270,8 +264,6 @@ def check_output_parameter(
             if site is None:
                 continue
 
-            # Named by the function that owns the parameter, even when
-            # the write happens in a function nested in it.
             yield Violation(
                 "output-parameter",
                 module.relpath,

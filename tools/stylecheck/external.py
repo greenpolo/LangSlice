@@ -30,10 +30,6 @@ from tools.stylecheck.jsondata import (
     load_toml,
 )
 
-#: The ruff rules of STYLE.md 12 that the main lint run leaves out: line
-#: length and import order (they need the baseline at 79 columns), the
-#: docstring layout rules numpydoc does not check, and the rules of 2.6,
-#: 5.5, 7.4, 8.3 and 10.1. B006 and B904 are on in the main run already.
 RUFF_SELECT = (
     "E501",
     "I001",
@@ -50,11 +46,6 @@ RUFF_SELECT = (
     "N",
 )
 
-#: Rules in those families that another tool owns or the guide allows:
-#: numpydoc owns the summary (SS02, SS03, SS05, SS06 against D205, D400,
-#: D401, D403, D415) and an empty docstring (GL08 against D419); 4.3 allows
-#: a capital for a mathematical symbol (N803, N806); 8.1 names the one
-#: exception ``Refused`` (N818).
 RUFF_IGNORE = (
     "D205",
     "D400",
@@ -67,14 +58,10 @@ RUFF_IGNORE = (
     "N818",
 )
 
-#: The tools' rules that report at most one error per file, at its module
-#: level: the formatter's verdict on the whole file.
 PER_FILE_RULES = frozenset({"format"})
 
-#: ruff's width when ``[tool.ruff]`` gives no ``line-length``.
 DEFAULT_LINE_LENGTH = 88
 
-#: What ``--explain format`` prints.
 FORMAT_EXPLANATION = (
     "STYLE.md 1.1: every file is formatted by `ruff format` at 79 columns. "
     "The check reports one violation per file the formatter would change; "
@@ -128,7 +115,6 @@ def ruff_violations(project: Project, config: Config) -> list[Violation]:
     ExternalToolError
         When ruff fails or prints something that is not its JSON report.
     """
-    # the formatter's width, and the main run's own ignores left out
     width = _line_length(project.root)
     overrides = [
         "--config",

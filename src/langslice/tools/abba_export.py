@@ -8,7 +8,8 @@ its Allen CCFv3 atlas with the job's own image files. Each placed section is
 a slice at its position and the stack's cutting angles, with LangSlice's
 in-plane placement as ABBA's affine registration and an applied deformation
 as a BigWarp landmark registration on top (``core/maps/abba.py``'s
-``world_landmarks``, in worker processes: each takes 10 to 80 s), so the
+``world_landmarks``, in worker processes, one per core: each takes
+10 to 20 s), so the
 project reopens and edits in ABBA without LangSlice. Beside it,
 ``exports/abba_export.json`` records what was written, the sections left
 out and why, and each warp's distance from the deformation.
@@ -20,6 +21,11 @@ or that cannot be carried, is left out with its reason. Nothing in the
 state changes; a job that persists nothing writes nothing. A script that
 calls it runs its body under ``if __name__ == "__main__":``, as for any
 call that starts worker processes.
+
+``MAX_WARP_PROCESSES`` caps the processes placing the deformations'
+landmark pairs side by side, at most one per core and one thread each: most
+of the work is numpy's element-wise kernels, which use one thread, so a
+process per core keeps every core busy.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from __future__ import annotations
 import copy
 import logging
 import multiprocessing
+import os
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
 from contextlib import ExitStack
@@ -34,7 +41,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from langslice.core.maps.abba import WarpLandmarks, world_landmarks
+from langslice.core.maps.abba import (
+    MAX_POINTS,
+    WarpLandmarks,
+    budget,
+    world_landmarks,
+)
 from langslice.core.maps.abba_world import (
     LOCATION_TO_ATLAS_Z_MM,
     AbbaPlacement,
@@ -64,14 +76,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The record of what the export holds, beside the project file.
 EXPORT_RECORD = "abba_export.json"
-#: Processes placing the deformations' landmark pairs side by side, each
-#: with its share of the machine's threads.
-WARP_PROCESSES = 6
-#: Micrometres per millimetre.
+MAX_WARP_PROCESSES = 32
 UM_PER_MM = 1000.0
-#: What the record tells a person about opening the file.
 OPENING_NOTE = (
     "Open in ABBA 0.25 with File > Load State on the Allen Brain Adult Mouse "
     "Brain CCF 2017 (v3p1) atlas, started coronal. Each section opens from "
@@ -97,6 +104,8 @@ class AbbaExported:
     warp_error_um
         Per warped section, the warp step's distance from LangSlice's
         deformation in micrometres (``median``, ``p99``, ``max``).
+    landmarks
+        The most landmark pairs a warp was given.
     written
         Whether the file was written.
     seconds
@@ -108,6 +117,7 @@ class AbbaExported:
     warped: list[str] = field(default_factory=list)
     skipped: list[dict[str, str]] = field(default_factory=list)
     warp_error_um: dict[str, dict[str, float]] = field(default_factory=dict)
+    landmarks: int = MAX_POINTS
     written: bool = True
     seconds: float = 0.0
 
@@ -141,7 +151,10 @@ def project_name(state: Stack) -> str:
 
 
 def warp_pairs(
-    frame: SectionFrame, record: DeformableRecord, placement: AbbaPlacement
+    frame: SectionFrame,
+    record: DeformableRecord,
+    placement: AbbaPlacement,
+    landmarks: int,
 ) -> WarpLandmarks:
     """Place one section's warp landmarks (run in a worker process).
 
@@ -153,6 +166,8 @@ def warp_pairs(
         Its applied deformation.
     placement
         Its placement in ABBA's world.
+    landmarks
+        The most landmark pairs.
 
     Returns
     -------
@@ -160,7 +175,11 @@ def warp_pairs(
         The pairs and their measured accuracy.
     """
     return world_landmarks(
-        frame, record, placement.file_to_world, placement.native_to_world
+        frame,
+        record,
+        placement.file_to_world,
+        placement.native_to_world,
+        max_points=landmarks,
     )
 
 
@@ -189,7 +208,6 @@ def _warp_step(
 def _check_stack(workspace: Workspace, state: Stack) -> None:
     """Refuse a stack ABBA cannot open as one project."""
     try:
-        # the orientation is checked per section, from its frame
         check_atlas(workspace.settings.atlas, "asr", state.plane)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, str(exc)) from exc
@@ -259,7 +277,7 @@ class _Warped:
     errors: dict[str, dict[str, float]]
 
 
-def _with_warps(prepared: list[_Section]) -> _Warped:
+def _with_warps(prepared: list[_Section], landmarks: int) -> _Warped:
     """Add each deformation's warp step, placed in worker processes."""
     skipped: list[dict[str, str]] = []
     errors: dict[str, dict[str, float]] = {}
@@ -269,15 +287,16 @@ def _with_warps(prepared: list[_Section]) -> _Warped:
     futures: dict[str, Future[WarpLandmarks]] = {}
     with ExitStack() as stack:
         if warped:
-            share = thread_share(WARP_PROCESSES)
-            stack.enter_context(started_with_threads(share))
+            cores = os.cpu_count() or 1
+            workers = max(1, min(MAX_WARP_PROCESSES, cores, len(warped)))
+            stack.enter_context(started_with_threads(thread_share(cores)))
             context = multiprocessing.get_context("spawn")
             pool = stack.enter_context(
-                ProcessPoolExecutor(WARP_PROCESSES, mp_context=context)
+                ProcessPoolExecutor(workers, mp_context=context)
             )
             for entry, record in warped:
                 futures[entry.section.id] = pool.submit(
-                    warp_pairs, entry.frame, record, entry.placement
+                    warp_pairs, entry.frame, record, entry.placement, landmarks
                 )
         slices: list[AbbaSlice] = []
         for entry in prepared:
@@ -299,7 +318,11 @@ def _with_warps(prepared: list[_Section]) -> _Warped:
 
 
 def export_abba(
-    job: Job, workspace: Workspace, *, warps: bool = True
+    job: Job,
+    workspace: Workspace,
+    *,
+    warps: bool = True,
+    landmarks: int = MAX_POINTS,
 ) -> AbbaExported:
     """Write the job's stack as an ABBA project file (see the module text).
 
@@ -312,6 +335,11 @@ def export_abba(
     warps
         Whether applied deformations are written as warp steps (False: the
         linear placements only).
+    landmarks
+        The most landmark pairs per warp, 16 to :data:`MAX_POINTS` (1089,
+        the default: about 2.5 um from the deformation at the median);
+        fewer follow it less closely (331CTX: 100 about 45 um, 16 about
+        140 um, more than its warps move the tissue).
 
     Returns
     -------
@@ -325,6 +353,10 @@ def export_abba(
         atlas or plane ABBA cannot open; ``NOTHING_EXPORTED`` when no
         section could be written.
     """
+    try:
+        budget(max_points=landmarks)
+    except ValueError as exc:
+        raise Refused(RefusalCode.BAD_ARGS, str(exc)) from exc
     started = time.perf_counter()
     with job.writing():
         state = copy.deepcopy(job.state)
@@ -349,7 +381,7 @@ def export_abba(
                 "Not exported to ABBA: %s", entry[0].id, exc_info=True
             )
             skipped.append({"id": entry[0].id, "reason": str(exc)})
-    warped = _with_warps(prepared)
+    warped = _with_warps(prepared, landmarks)
     skipped += warped.skipped
     errors, slices = warped.errors, warped.slices
     if not slices:
@@ -367,6 +399,7 @@ def export_abba(
         warped=sorted(errors),
         skipped=skipped,
         warp_error_um=errors,
+        landmarks=landmarks,
         written=job.persist,
         seconds=time.perf_counter() - started,
     )
@@ -394,6 +427,7 @@ def _write(
             "rotation_y_rad": angles[1],
             "sections": result.sections,
             "warped": result.warped,
+            "landmarks": result.landmarks,
             "skipped": result.skipped,
             "warp_error_um": result.warp_error_um,
             "note": OPENING_NOTE,

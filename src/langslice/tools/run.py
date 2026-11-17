@@ -21,7 +21,7 @@ from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.tools.status import stack_status
 
-if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
+if TYPE_CHECKING:
     from langslice.core.fits.trace.request import ImageModel
     from langslice.doors.agent.engine import EngineContext
     from langslice.tools.look import Looked
@@ -35,9 +35,7 @@ class Run:
     workspace: EngineContext
     spec: JobSpec
     box: ToolBox
-    #: The picture-size level the tools work at (``core.pictures.sizes``).
     level: str
-    #: The image model is in this run and reachable (``trace_borders``).
     traces_on: bool
     image_model: ImageModel | None
 
@@ -61,8 +59,6 @@ class Run:
         """
         return bool(view) or bool(self.spec.force_view)
 
-    # --- the status rows -------------------------------------------------------
-
     def rows(self) -> dict[str, Any]:
         """The whole status table, the cutting angles and the interval breaks."""
         table = stack_status(self.job)
@@ -83,8 +79,6 @@ class Run:
     def answered(self, *touched: str) -> dict[str, Any]:
         """A write's answer: ``ok`` and the rows it changed."""
         return {"status": "ok", **self.changed(list(touched))}
-
-    # --- sections ---------------------------------------------------------------
 
     def resolve_many(self, refs: Sequence[Any]) -> tuple[list[Section], list[str]]:
         """The sections *refs* name (each once, in order) and the refs that name none."""

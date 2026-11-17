@@ -53,10 +53,6 @@ _NUDGE_NO_TOOL = (
 )
 _NUDGE_CONTINUE = "Continue; call `submit` when the job is done."
 
-#: Asked once, after submit, in the same context. The answer is recorded on the
-#: state (``debrief``) for the people building this environment; nothing about
-#: the run changes. Answer in text: tools are still live, and a call here would
-#: be a write after submit.
 DEBRIEF_PROMPT = (
     "The job is submitted and nothing you say now changes it. This is a "
     "debrief for the people building this tool environment; answer in text "
@@ -116,8 +112,6 @@ def build_context(
     )
 
 
-# --- the session ---------------------------------------------------------
-
 
 def build_seed_message(state: Stack, ctx: EngineContext, job: str) -> types.Content:
     """The first message: *job* (the job statement and the user's notes), the
@@ -139,7 +133,7 @@ def save_opening(box: ToolBox, seed: types.Content) -> list[str]:
         with captured() as saved:
             box.job.views.save(tool="opening", pictures=[(data, None) for data in pictures])
         return [str(item.folder / PICTURE_FILE) for item in saved]
-    except Exception:  # saving must never break the run
+    except Exception:
         logger.warning("Could not queue the opening pictures", exc_info=True)
         return []
 
@@ -189,14 +183,12 @@ async def run_session(
     facts = StatementFacts.from_run(
         spec, state, ctx, tool_names=box.names,
         max_resolution=box.max_view_edge)
-    # with the user's notes for the job (job.json), as every door says them
     statement = job_statement(facts, door=AGENT_DOOR,
                               notes=read_notes(box.job.layout))
     agent = build_agent(
         model=ctx.model,
         name="linear_stack",
         instruction=SYSTEM_PROMPT,
-        # The tools return plain pictures; ADK takes them as message parts.
         tools=packaged_tools(box.tools),
         reasoning=spec.reasoning,
     )
@@ -232,8 +224,6 @@ async def run_session(
             trace_mirror=box.job.layout.trace_dir,
         )
     finally:
-        # The account is written even when the session fails part-way: the
-        # tokens were spent. A monitoring agent reads it from the job folder.
         write_spend(spend)
     if sink and sink[0]:
         state.debrief = sink[0]
@@ -259,9 +249,6 @@ async def run(
     try:
         tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
     finally:
-        # Background border traces finish and are recorded even when
-        # the session ends without a submit; the pictures are written
-        # (close_job, as every door ends a job).
         close_job(job)
     ctx.progress(
         f"[session] {tool_calls} tool call(s) over {turns} turn(s); "

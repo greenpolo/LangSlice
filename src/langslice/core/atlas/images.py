@@ -17,30 +17,14 @@ import numpy as np
 
 from langslice.core.space import atlas_space_context
 
-#: The name of the atlas's main image (BrainGlobe's ``template``).
 TEMPLATE = "template"
-#: The alias every engine's ``atlas_image`` defaults to: the atlas's Nissl
-#: where it has or borrows one, else its template (:func:`default_image`).
 NISSL = "nissl"
 
-#: On Harry Carey's advice (BrainGlobe), kept as the standing design: the Allen CCFv3 atlases
-#: ship no Nissl, but ``ccfv3augmented_mouse_25um`` is the CCFv3 grid extended
-#: 0.35 mm at the front, and its template is the Blue Brain averaged Nissl
-#: aligned to the CCFv3 annotation (Piluso et al. 2025). An atlas covering
-#: exactly the CCFv3 extent, in the CCFv3 coordinate space, is offered that
-#: template as one more image, resampled onto its own grid.
 BORROWED_NISSL = "ccfv3augmented_nissl"
 AUGMENTED_ATLAS = "ccfv3augmented_mouse_25um"
 AUGMENTED_VOXEL_MM = 0.025
-#: The augmented atlas's front extension beyond the CCFv3 extent: a CCFv3 plane
-#: sits this far (14 planes of 25 um) behind the same plane's index in it.
-#: Checked by annotation agreement (best match at 14 planes, 91 % of a mid plane).
 AUGMENTED_AP_OFFSET_MM = 0.35
 _CCFV3_EXTENT_MM = (13.2, 8.0, 11.4)
-#: BrainGlobe's names for the Allen CCFv3 coordinate space: the earlier
-#: packages' and the 3.x packages' (``allen_mouse_25um`` 3.1). The Allen
-#: CCFv2 atlases share CCFv3's grid but not its anatomy (their borders sit
-#: 100-300 um from CCFv3's), so a grid match alone does not qualify an atlas.
 CCFV3_SPACES = frozenset({"allen-adult-mouse-ccf-space", "allen_mouse-space"})
 _borrowed: dict[tuple[str, tuple[int, ...]], np.ndarray] = {}
 
@@ -55,7 +39,7 @@ def _coordinate_space(atlas: Any) -> str | None:
 def _takes_borrowed_nissl(atlas: Any) -> bool:
     try:
         context = atlas_space_context(atlas)
-    except Exception:  # noqa: BLE001 - not a BrainGlobe-style atlas
+    except Exception:  # noqa: BLE001
         return False
     space = _coordinate_space(atlas)
     if space is not None and space not in CCFV3_SPACES:
@@ -76,13 +60,11 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
     if key not in _borrowed:
         source = np.asarray(load_atlas(AUGMENTED_ATLAS).template)
         step = np.asarray(atlas_space_context(atlas).resolution_um) / 1000.0 / AUGMENTED_VOXEL_MM
-        # Voxel centres: augmented index = step * index + 0.5 * step - 0.5 (+ the AP offset).
         offset = 0.5 * step - 0.5 + np.array([AUGMENTED_AP_OFFSET_MM / AUGMENTED_VOXEL_MM, 0, 0])
-        # The scale as a diagonal matrix: a 1-D one makes SciPy warn on every call.
-        volume = affine_transform(source, np.diag(step), offset=offset,  # pyright: ignore[reportArgumentType]  # scipy takes a per-axis offset; its stub says float
+        volume = affine_transform(source, np.diag(step), offset=offset,  # pyright: ignore[reportArgumentType]
                                   output_shape=annotation.shape, order=1, output=source.dtype)
-        volume[annotation == 0] = 0  # the averaged template glows faintly beyond the tissue
-        _borrowed.clear()  # one atlas at a time: a 10 um volume is gigabytes
+        volume[annotation == 0] = 0
+        _borrowed.clear()
         _borrowed[key] = volume
     return _borrowed[key]
 
@@ -148,4 +130,4 @@ def atlas_volume(atlas: Any, name: str) -> np.ndarray:
     if name == BORROWED_NISSL:
         return _borrowed_nissl(atlas)
     extra = getattr(atlas, "additional_references", None)
-    return np.asarray(extra[name])  # pyright: ignore[reportOptionalSubscript]  # resolve_image checked it
+    return np.asarray(extra[name])  # pyright: ignore[reportOptionalSubscript]

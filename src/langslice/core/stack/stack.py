@@ -134,10 +134,6 @@ class Stack:
             return stems[0]
         return None
 
-    # Each section carries its own plane. Everything LangSlice angles
-    # itself is one plane for the whole stack; a registration supplied
-    # per section may differ section by section.
-
     @property
     def mixed_angles(self) -> bool:
         """Return whether the sections' cutting angles differ."""
@@ -264,12 +260,6 @@ def normalize_to_atlas_order(state: Stack) -> bool:
     return True
 
 
-# --- naming sections ----------------------------------------------------------------
-#
-# A section is named by its filename everywhere a model, a script or a user
-# names one (:meth:`Stack.resolve`); the stack order is internal.
-
-#: How many filenames a refusal lists before it says how many it left out.
 NAMES_LISTED = 40
 
 

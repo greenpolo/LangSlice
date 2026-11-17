@@ -3,7 +3,7 @@
 A *scope* here is a function, class or lambda. The checks often need the
 statements that belong to one function and not to the functions nested in
 it, the parameters a function declares, the dotted name an expression
-spells, and the comments written on a span of lines. This module holds
+spells. This module holds
 nothing that registers a check.
 """
 
@@ -12,13 +12,8 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 
-from tools.stylecheck.core import Module
-
-#: The nodes that open a function; a check that reads one function stops
-#: at each of these inside it.
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
-#: The nodes that open a new scope of names.
 SCOPE_NODES = (
     ast.FunctionDef,
     ast.AsyncFunctionDef,
@@ -26,7 +21,6 @@ SCOPE_NODES = (
     ast.Lambda,
 )
 
-#: The names a method gives the object it is bound to.
 BOUND_NAMES = frozenset({"self", "cls"})
 
 
@@ -185,32 +179,6 @@ def methods(tree: ast.AST) -> Iterator[tuple[ast.ClassDef, ast.AST]]:
         for item in node.body:
             if isinstance(item, FUNCTION_NODES):
                 yield node, item
-
-
-def comment_on(module: Module, first_line: int, last_line: int) -> str:
-    """Join the comments written on a span of lines.
-
-    Parameters
-    ----------
-    module
-        The parsed file whose comments are read.
-    first_line
-        The first 1-based line of the span.
-    last_line
-        The last 1-based line of the span, included.
-
-    Returns
-    -------
-    str
-        The comments' text, with their ``#`` signs, joined by spaces;
-        ``""`` when the span holds none.
-    """
-    texts = [
-        text
-        for line, text in module.comments
-        if first_line <= line <= last_line
-    ]
-    return " ".join(texts)
 
 
 def module_matches(dotted: str, names: tuple[str, ...]) -> bool:

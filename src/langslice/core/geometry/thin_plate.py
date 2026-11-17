@@ -17,9 +17,6 @@ from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
 
-#: Points evaluated per block: a block's distances to a thousand landmarks
-#: (about 2 MB) stay in the processor's cache, several times faster than
-#: blocks that spill to memory.
 CHUNK = 256
 
 
@@ -121,7 +118,6 @@ class ThinPlateKernel:
         coefficients = np.linalg.solve(system, rhs).astype(np.float64)
         self.weights: FloatArray = coefficients[:-3]
         self.affine: FloatArray = coefficients[-3:]
-        # the weights the derivative's three sums take, side by side
         self.gradient_weights: FloatArray = np.hstack(
             (
                 self.weights,
@@ -139,8 +135,6 @@ class ThinPlateKernel:
     def _jacobian(self, points: FloatArray) -> FloatArray:
         radial = _log(_squared(points, self.source))
         radial += 1.0
-        # d/dx_i of sum_k K_k w_k = x_i sum_k radial_k w_k
-        #                           - sum_k radial_k s_ki w_k
         sums = radial @ self.gradient_weights
         columns = [
             points[:, axis, None] * sums[:, :2]

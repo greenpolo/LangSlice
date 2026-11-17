@@ -102,13 +102,9 @@ from langslice.job.state_file import (
 
 logger = logging.getLogger(__name__)
 
-#: A state's fields as a migration returns them.
 Fields = dict[str, JsonValue]
-#: Makes a section image's pixels and what else its entry records.
 MakePixels = Callable[[], tuple[np.ndarray, JsonObject]]
 
-#: The settings an earlier LangSlice wrote to ``job.json`` that this one
-#: does not have (a task section's as ``section.key``).
 REMOVED_SETTINGS = (
     "max_input_tokens",
     "max_quota_percent",
@@ -121,22 +117,13 @@ REMOVED_SETTINGS = (
     "transform.automatic",
     "nonlinear.engine",
 )
-#: A name an earlier LangSlice used for a setting it dropped and this one
-#: uses for another, with the type of the current one's value: a saved value
-#: of any other type is the earlier setting's, left out like the rest.
 REUSED_SETTINGS: dict[str, type] = {"enabled": list}
-#: The tasks an earlier LangSlice's ``job.json`` names that this one lacks.
 REMOVED_TASKS = ("reorder",)
-#: The keys of the stack a state may hold that no reader uses.
 REMOVED_STACK_KEYS = ("appearance",)
-#: The keys of a section row a state may hold that no reader uses.
 REMOVED_SECTION_KEYS = ("position_source", "damaged")
 
-#: A section row's key for its border trace, before format 5 and since.
 OLD_TRACE_KEY, TRACE_KEY = "image_correction", "border_trace"
-#: A section's list of registrations, before its history.
 OLD_REGISTRATION_LIST = "registrations.jsonl"
-#: The fields of a listed registration a history line keeps as the row's.
 _LISTED_ROW_KEYS = (
     "position_mm",
     "cutting_angles_deg",
@@ -167,16 +154,9 @@ class FolderMigration:
     def __init__(self, workspace: Workspace | None, layout: JobLayout) -> None:
         self.workspace = workspace
         self.layout = layout
-        #: The entry of each section image made, by (section, name,
-        #: source); None for one that could not be made.
         self.made: dict[tuple[str, str, str], Fields | None] = {}
-        #: Whether it changed a state it read: one of an older format, or
-        #: one holding a key it dropped.
         self.used = False
-        #: The migrations of the table it ran, by name, in order.
         self.applied: list[str] = []
-        #: Each removed key it dropped (a section's as ``slices.key``),
-        #: with the number of sections that held it where it first was.
         self.dropped: dict[str, int] = {}
 
     def seed(self, data: JsonObject) -> None:
@@ -294,7 +274,7 @@ class FolderMigration:
             image = write_file(
                 self.layout, section_id, name, array, source, extra=extra
             )
-        except Exception:  # noqa: BLE001 - a recipe that cannot be made is left out
+        except Exception:  # noqa: BLE001
             logger.warning(
                 "section image %s of %s could not be made from its recipe",
                 name,
@@ -380,7 +360,7 @@ def _section_3_to_4(
     images: Fields = {}
     workspace = folder.workspace
     for name in names:
-        if workspace is None:  # a viewer's read makes no image
+        if workspace is None:
             break
         entry = _image_3_to_4(
             section_id, name, recipes.get(name), images, folder, workspace
@@ -717,8 +697,6 @@ class Migration:
     migrate: Callable[[Fields, FolderMigration], Fields]
 
 
-#: Every state migration, oldest first; the last one's next format is
-#: the current one, ``state_file.STATE_FORMAT_VERSION``.
 STATE_MIGRATIONS = (
     Migration("state_3_to_4", 3, state_3_to_4),
     Migration("state_4_to_5", 4, state_4_to_5),

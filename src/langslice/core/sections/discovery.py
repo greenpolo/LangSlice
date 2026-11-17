@@ -9,7 +9,6 @@ _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 _NATURAL_SORT_RE = re.compile(r"(\d+)")
 
-#: Engine output written into the image folder — an image, but never an input.
 CONTACT_SHEET_FILENAME = "contact_sheet.png"
 _GENERATED_NAMES = {CONTACT_SHEET_FILENAME}
 

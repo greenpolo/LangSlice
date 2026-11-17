@@ -109,10 +109,12 @@ and `environment.yml` hold the source installation.
   file; `--explain NAME` says what a rule wants. basedpyright's baseline
   only shrinks too: never run `basedpyright --writebaseline`
   (`CONTRIBUTING.md`).
-- No code comments (`STYLE.md` 7.1, the checker's `comment` rule): a name
-  says what a line does and the docstring says why. Only a `#:` line above
-  a constant, a tool's directive (`# noqa`, `# pyright: ignore`) and the
-  words on a broad `except` line are written with `#`. Vendored code
+- No code comments and no waivers (`STYLE.md` 7.1, the checker's `comment`,
+  `constant-comment`, `except-comment` and `directive` rules): only docstrings stay. A name says what a line or
+  a constant is and the docstring says why; no `#` line, no end-of-line
+  note, no `#:` line. A `# noqa`, `# type: ignore`, `# pyright: ignore` or
+  `# pragma` is never added: the code is changed until the tool has nothing
+  to report, and a handler names the exceptions it expects. Vendored code
   (`src/langslice_vendor/`) stays as published.
 - No Markdown file is written unless the owner asked for that file: no
   notes, plans, summaries or reports in the repository. The kinds that

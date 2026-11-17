@@ -121,7 +121,7 @@ def _pass(text: str, off: Collection[str]) -> str:
 
 def _tidy(text: str) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n[ \t]*([.,;:])", r"\1", text)  # a mark left alone on a line
+    text = re.sub(r"\n[ \t]*([.,;:])", r"\1", text)
     return re.sub(r"\n{3,}", "\n\n", text)
 
 

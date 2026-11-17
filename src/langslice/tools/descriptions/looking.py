@@ -19,9 +19,7 @@ from langslice.tools.descriptions.description import (
     ToolDescription,
 )
 
-#: The pictures ``look`` draws, offered as an enum in every door's schema.
 LookMode = Literal["section", "atlas", "overlay", "positioning"]
-#: Whether ``look`` draws each section with its deformation.
 Warp = Literal["applied", "none"]
 
 LOOK = ToolDescription(

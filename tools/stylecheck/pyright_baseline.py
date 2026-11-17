@@ -28,7 +28,6 @@ from tools.stylecheck.jsondata import (
     load_json,
 )
 
-#: Where basedpyright keeps its baseline, relative to the repository root.
 PYRIGHT_BASELINE = ".basedpyright/baseline.json"
 
 

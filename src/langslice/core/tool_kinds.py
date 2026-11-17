@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-#: Whether a tool only reads the job or writes it.
 Kind = Literal["read", "write"]
-#: The groups the tools are listed in.
 Group = Literal["Common", "Positioning", "Linear", "Nonlinear"]
-#: The groups, in the order every door lists them.
 GROUPS: tuple[Group, ...] = ("Common", "Positioning", "Linear", "Nonlinear")

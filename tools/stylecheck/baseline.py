@@ -43,10 +43,8 @@ from tools.stylecheck.jsondata import as_list, as_table, load_json
 from tools.stylecheck.scope import Key, Scope
 from tools.stylecheck.settings import Record, parse_record
 
-#: The fields of one baseline entry, in the order the file writes them.
 ENTRY_FIELDS = ("rule", "path", "symbol", "count")
 
-#: The fields of the file, in the order it writes them.
 FILE_FIELDS = ("checks", "settings", "entries")
 
 

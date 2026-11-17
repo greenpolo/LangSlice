@@ -30,11 +30,7 @@ from langslice.core.atlas.tree import structure_table, with_descendants
 from langslice.core.fits.deformable.geometry import Placement, warp_affine
 from langslice.core.fits.deformable.settings import BORDER_IMAGES
 
-#: Acronym of the ventricular system: it and all its descendants are marked
-#: ``ventricle`` in a fit's region diagnostics (a ventricle collapses or
-#: dilates far more than tissue).
 VENTRICLE_ACRONYMS = ("VS",)
-#: Intensity percentile mapped to 1.0 when normalizing grayscale atlas planes.
 INTENSITY_PERCENTILE = 99.5
 
 
@@ -182,9 +178,7 @@ def soft_lines(lines: np.ndarray, sigma_px: float) -> np.ndarray:
     return np.exp(-0.5 * (np.asarray(distance) / max(sigma_px, 1e-6)) ** 2).astype(np.float32)
 
 
-#: Supersampling for the placed border render on the working grid.
 BORDER_SUPERSAMPLE = 2
-#: Border coverage at or above this counts as a line pixel.
 BORDER_COVERAGE_THRESHOLD = 0.25
 
 
@@ -207,8 +201,6 @@ def placed_atlas_image(
     keep = ~excluded if excluded is not None else np.ones(labels.shape, bool)
     if kind in BORDER_IMAGES:
         source = labels_at(labels, atlas, MODEL_DEPTH) if kind == "borders_merged" else labels
-        # Excluded regions join the background, so their internal lines vanish
-        # and their edge with kept tissue becomes an outline.
         source = np.where(keep, source, 0)
         coverage = placed_border_coverage(
             source, atlas_to_working, working_size, width_px=1.0,

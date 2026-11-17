@@ -8,11 +8,8 @@ sees one, else the CPU), ``cpu``, ``cuda`` or a numbered GPU such as
 
 from __future__ import annotations
 
-#: The device option that picks the GPU when there is one.
 AUTO = "auto"
-#: The start of every GPU device's name, and the option for the first one.
 GPU = "cuda"
-#: The first GPU, as torch names it.
 FIRST_GPU = "cuda:0"
 CPU = "cpu"
 
@@ -32,7 +29,7 @@ def resolve_device(option: str) -> str:
         a numbered GPU as given, else the option as given (``cpu`` for
         ``auto`` without a GPU).
     """
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     if option == AUTO:
         option = GPU if torch.cuda.is_available() else CPU

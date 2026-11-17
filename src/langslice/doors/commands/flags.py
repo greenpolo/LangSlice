@@ -23,16 +23,10 @@ from langslice.job.settings.schema import (
 )
 from langslice.job.settings.tool_table import default_off_names, valid_names
 
-#: Which commands add a flag: ``job`` every command that opens a stack
-#: (``linear run``, ``init``, ``mcp``), ``plugins`` and ``session`` only
-#: ``linear run``, ``resume`` ``linear run`` and ``init``, ``init`` only
-#: ``init``.
 FlagGroup = Literal["job", "plugins", "session", "resume", "init"]
 
-#: The actions of a flag that takes no value: it switches the setting.
 SWITCHES = ("store_true", "store_false")
 
-#: The help of ``--plane``.
 PLANE_HELP = (
     "Slicing plane (normal axis). Position is interpreted along this axis "
     "(AP for coronal, ML for sagittal, DV for horizontal)."
@@ -43,29 +37,16 @@ PLANE_HELP = (
 class Flag:
     """How the commands take one flag of a setting."""
 
-    #: Its ``--help`` text.
     help: str
-    #: Which commands add it.
     group: FlagGroup = "job"
-    #: The attribute it is parsed into; None: the one argparse makes of the
-    #: spelling (the setting's name, ``.`` written ``_``).
     dest: str | None = None
-    #: argparse's action; None: the value is stored. An ``append`` flag
-    #: starts from an empty list.
     action: str | None = None
-    #: What the text is read as (``str``: as it is).
     type: Callable[[str], object] = str
-    #: The value's name in the help.
     metavar: str | None = None
-    #: Without the flag the value is the setting's default; False: None,
-    #: and the command makes the value (``--tasks``) or the flag carries
-    #: JSON text (``--frozen``).
     table_default: bool = True
-    #: argparse refuses a value not among the setting's choices.
     checked: bool = False
 
 
-#: Every job flag, by spelling.
 FLAGS: dict[str, Flag] = {
     "--tasks": Flag(
         table_default=False,
@@ -369,7 +350,7 @@ def add_flags(
         default = row.default if flag.table_default else None
         _add(parser, spelling, flag, dest, default, values)
         if spelling == row.flags[0]:
-            for alias in row.aliases:  # read, never listed, never a default
+            for alias in row.aliases:
                 _add(parser, alias, flag, dest, argparse.SUPPRESS, values)
 
 
@@ -407,7 +388,7 @@ def _add(
         return parser.add_argument(
             spelling, dest=dest, action=flag.action, default=default, help=text
         )
-    if flag.action == "append":  # each parse appends to its own list
+    if flag.action == "append":
         empty: object = default if hidden else []
         return parser.add_argument(
             spelling,

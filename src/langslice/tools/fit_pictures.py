@@ -60,11 +60,6 @@ def draw_fits(
     indexes: dict[str, tuple[int, ...]] = {}
     failed: list[dict[str, str]] = []
     thickness = validate_border_thickness(options.border_thickness)
-    # `color` is the image model's own fixed yellow (`trace_picture` below
-    # draws it plain: its prompt says yellow and its reply is read back by
-    # colour). Each fitted-atlas picture gets its cased core (`core`) per row
-    # below, resolved against that row's own tissue -- never one for the whole
-    # batch, since different sections in one call can need different ones.
     style = pictures_deformation.Style(
         zoom=() if options.full_view else tuple(options.zoom),
         highlight=tuple(name for name, _ids in options.regions),
@@ -79,7 +74,7 @@ def draw_fits(
     for fitted in done.fitted:
         row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
         applied = row.applied
-        assert applied is not None  # a fitted row holds its fit
+        assert applied is not None
         record = fit.grid.record
         include, exclude = fit_regions(fit)
         fit_style = replace(
@@ -138,7 +133,6 @@ def draw_fits(
             failed.append({"id": record.id, "message": str(exc)})
             continue
         indexes[row.id] = tuple(range(first, len(parts)))
-    # Each traced section's trace, once per call, so it can be reviewed.
     traces, pictures, untraced = _trace_pictures(done, style, start=len(parts))
     return replace(
         done,
@@ -183,7 +177,7 @@ def _trace_pictures(
         record = where.get(section_id)
         try:
             picture = _trace_picture(section_id, image, lines, style, record)
-        except Exception as exc:  # a picture that fails leaves the write
+        except Exception as exc:
             logger.warning(
                 "trace picture failed for %s", section_id, exc_info=True
             )
@@ -259,7 +253,6 @@ def _trace_picture(
     )
 
 
-#: How a fit picture's caption names what of the section a fit read.
 _FIT_SECTION_WORDS = {
     images_.PREPROCESSED: "the preprocessed image",
     deformation.TRACED_BORDERS: "the image model's traced borders",

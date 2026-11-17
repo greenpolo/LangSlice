@@ -135,8 +135,6 @@ def draw_atlas(
     Image.Image
         The atlas template there.
     """
-    # The template, look's own atlas default: a borrowed Nissl would add
-    # over a gigabyte to the window for thumbnails a few dozen pixels tall.
     request = LookRequest(
         mode="atlas", positions_mm=(position_mm,), long_edge=edge
     )

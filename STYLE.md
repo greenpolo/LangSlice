@@ -30,8 +30,8 @@ docstring standard, and the Cognitive Complexity definition (SonarSource,
 The formatter decides where lines break; nobody arranges whitespace by
 hand. When a call does not fit on one line it puts one argument per line,
 which lines up keyword names and makes a changed setting one changed line
-in a diff. A `noqa: E501` is allowed only on a URL or a row of a literal
-table [linter `noqa-line-length`].
+in a diff. No `noqa: E501` is written (7.1) [linter `noqa-line-length`,
+`directive`].
 
 **1.2 One idea per line.** [linter `nested-conditional`,
 `conditional-placement`, `nested-comprehension`, `comprehension-clauses`,
@@ -108,15 +108,10 @@ a module that reaches 800 is split by topic, never by halves.
 
 **2.3 Imports at the top.** [linter `local-import`] A reader learns a
 module's dependencies from its first lines. An import inside a function is
-allowed for two reasons, and the line says which: a slow optional dependency
-(`torch`, `SimpleITK`, `fireants`, `itk`, `cv2`), or a cycle the layer rule
-forces, naming the module that would cycle. The linter checks the name
-against the import graph.
-
-```python
-    import torch  # local: slow to import, needed only for a deformable fit
-    from langslice.tools.status import save_view  # local: cycle with tools.status
-```
+allowed for two reasons: a slow optional dependency (`torch`, `SimpleITK`,
+`fireants`, `itk`, `cv2`), or a cycle the layer rule forces, where the
+imported module imports this one when it loads. The linter reads both from
+its settings and the import graph, so the line carries no note.
 
 **2.4 `__init__.py` holds no logic.** [linter `init-logic`] It is empty, sets the
 version, or re-exports the package's public names. Nothing else.
@@ -370,21 +365,26 @@ helpers may go without docstrings when their name says it all.
 
 ## 7. Comments
 
-**7.1 No comments.** [linter `comment`] Code carries no `#` comment. What a
-line does is said by its names; why it has to be this way is said in the
-docstring of its function or module. Three things that start with `#` are
-not comments in this sense and stay: the `#:` line above a constant or a
-field (7.3), a directive a tool reads (`# noqa: ...`, `# type: ignore[...]`,
-`# pyright: ignore[...]`, `# pragma: no cover`), and the words on a broad
-`except` line that name the failure it expects (8.3). The comments written
-before this rule are in the checker's baseline, which only shrinks.
+**7.1 No comments, no waivers.** [linter `comment`, `constant-comment`,
+`except-comment`, `directive`] Code
+carries no `#` comment: not on a line of its own, not at the end of a line,
+not as a `#:` line above a constant. What a line does is said by its names;
+why it has to be this way is said in the docstring of its function or
+module. A directive that switches a tool's finding off (`# noqa`,
+`# type: ignore`, `# pyright: ignore`, `# pragma: no cover`, `# fmt:`) is
+not written either: the code is changed until the tool has nothing to
+report, and the checker's finding says how. Only docstrings stay. Vendored
+code (`src/langslice_vendor/`) stays as published. The comments and
+directives written before this rule are in the checker's baseline, which
+only shrinks.
 
 **7.2 Present tense, no history.** [linter `history-comment`] No dates, no names, no quotes,
-no "used to", "legacy", "no longer" in a `#:` line or a docstring. The reason is stated as it
+no "used to", "legacy", "no longer" in a docstring. The reason is stated as it
 holds now; git keeps the history.
 
-**7.3 Constants carry their reason.** [review] A module-level constant has a
-`#:` comment saying why it has its value.
+**7.3 Constants carry their reason.** [review] A module-level constant's
+name says what it is and its unit; why it has its value is said in the
+module's docstring.
 
 **7.4 No commented-out code.** [ruff ERA001] Delete it; git keeps it.
 
@@ -404,10 +404,10 @@ ones.
 
 **8.3 Never lose data silently.** [ruff BLE001, B904, S110; linter
 `broad-except`] No bare
-`except`. A broad `except Exception` names in its comment the failure it
-expects, and its body raises, returns a value the function's type admits, or
-reports the skip through `report_skip`; a body that only passes, continues,
-or logs at debug level is an error. Re-raise with `from error`.
+`except`. A handler names the exceptions it expects; a broad
+`except Exception` is written only where it raises again, and a body that
+only passes, continues, or logs at debug level is an error. Re-raise with
+`from error`.
 
 **8.4 `assert` is for invariants.** [review] An `assert` states something
 valid input cannot break. Input is validated with the checkers (5.6), which
@@ -480,7 +480,6 @@ Keep these through every refactor:
 - Frozen dataclasses for results.
 - Named constants with a one-line reason.
 - Exceptions chained with `from`.
-- Lint exceptions that say why (`# noqa: BLE001 - an atlas without one`).
 - Stable, machine-readable refusal codes.
 
 

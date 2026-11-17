@@ -67,6 +67,9 @@ LangSlice draws it (ABBA's inverse of the pull-back, by Newton's method),
 and on the section side. The connector's warp row carries the atlas side's
 median, 95th and 99th percentiles and maximum. The exact map's own
 smallest sampled Jacobian (a 65x65 screen) is reported, not enforced.
+
+``MIN_POINTS`` is the fewest pairs a warp takes and ``MIN_GRID_SIDE`` the
+even grid of that smallest budget.
 """
 
 from __future__ import annotations
@@ -108,33 +111,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: ABBA's point budget: its cost grows fast with the point count.
 MAX_POINTS = 33 * 33
-#: Pairs in the even start grid over the overlap's bounding box, about a
-#: quarter of the budget so most pairs go where the spline errs.
 START_POINTS = 17 * 17
-#: The smaller start tried when that one folds.
 SMALL_START_POINTS = 9 * 9
-#: The start box's margin around the overlap, as a fraction of its size.
 START_MARGIN = 0.05
-#: Points per side of the coarse grid over the rest of the snapshot.
 FRAME_SIDE = 9
-#: Search points along the snapshot's long side: about 25-50 um apart on
-#: a whole mouse section, finer than the warps' smoothing.
 SEARCH_SIDE = 320
-#: Smallest distance between a new pair and a placed one, in search steps.
 MIN_GAP_STEPS = 1.5
-#: Smallest distance between two pairs added in one round, in search steps.
 BATCH_GAP_STEPS = 8.0
-#: The even snapshot grids tried when every adaptive start folds, in points
-#: per side.
 GRID_SIDES = (33, 25, 17, 9)
-#: Search error at which pairs stop being added, in millimetres.
+MIN_POINTS = 16
+MIN_GRID_SIDE = 4
 TOLERANCE_MM = 0.005
-#: Points per side of the screen of the exact map's Jacobian (reported).
 SCREEN_SIDE = 65
-#: Smallest fraction of the snapshot the overlap may cover before the whole
-#: snapshot is used instead.
 MIN_REGION_FRACTION = 0.01
 
 
@@ -397,6 +386,55 @@ def warp_world_landmarks(
     )
 
 
+@dataclass(frozen=True)
+class Budget:
+    """How many pairs a placement may use, and its starts and fallbacks.
+
+    The default is :data:`MAX_POINTS`; a smaller budget (a warp a person
+    will edit in BigWarp) scales the start grids by the same fraction and
+    keeps only the even fallback grids that fit.
+    """
+
+    max_points: int
+    start_points: int
+    small_start_points: int
+    frame_side: int
+    grid_sides: tuple[int, ...]
+
+
+def budget(*, max_points: int = MAX_POINTS) -> Budget:
+    """Size a placement's starts for at most *max_points* pairs.
+
+    Parameters
+    ----------
+    max_points
+        The most pairs, at least :data:`MIN_POINTS`.
+
+    Returns
+    -------
+    Budget
+        :data:`MAX_POINTS`'s starts scaled by ``max_points / MAX_POINTS``.
+
+    Raises
+    ------
+    ValueError
+        For fewer than :data:`MIN_POINTS` or more than :data:`MAX_POINTS`.
+    """
+    if not MIN_POINTS <= max_points <= MAX_POINTS:
+        raise ValueError(
+            f"A warp takes {MIN_POINTS} to {MAX_POINTS} landmark pairs"
+        )
+    share = max_points / MAX_POINTS
+    sides = tuple(side for side in GRID_SIDES if side * side <= max_points)
+    return Budget(
+        max_points=max_points,
+        start_points=max(9, round(START_POINTS * share)),
+        small_start_points=max(9, round(SMALL_START_POINTS * share)),
+        frame_side=max(2, round(FRAME_SIDE * math.sqrt(share))),
+        grid_sides=sides or (MIN_GRID_SIDE,),
+    )
+
+
 def world_landmarks(
     frame: SectionFrame,
     record: DeformableRecord,
@@ -404,6 +442,7 @@ def world_landmarks(
     native_to_world: FloatArray,
     *,
     tolerance_mm: float = TOLERANCE_MM,
+    max_points: int = MAX_POINTS,
 ) -> WarpLandmarks:
     """Place a warp step's landmark pairs in any ABBA world frame.
 
@@ -421,6 +460,9 @@ def world_landmarks(
         millimetres (the atlas side).
     tolerance_mm
         The search error at which pairs stop being added.
+    max_points
+        The most pairs (:func:`budget`): fewer are easier to edit by hand
+        and follow the deformation less closely.
 
     Returns
     -------
@@ -430,11 +472,12 @@ def world_landmarks(
     Raises
     ------
     ValueError
-        When the tolerance is not positive, or the spline folds at every
-        start and every grid.
+        When the tolerance is not positive, the budget out of range, or
+        the spline folds at every start and every grid.
     """
     if not np.isfinite(tolerance_mm) or tolerance_mm <= 0:
         raise ValueError("Export tolerance must be positive and finite")
+    sizes = budget(max_points=max_points)
     exact = _WorldMap(
         frame,
         record,
@@ -444,7 +487,6 @@ def world_landmarks(
 
     step_px = max(frame.file_size) / SEARCH_SIDE
     search, region = _samples(exact, step_px, step_px)
-    # held out: every other search step, halfway between search points
     probes, _ = _samples(exact, 2.0 * step_px, step_px, region=region)
     spacing = Spacing(
         min_gap_px=MIN_GAP_STEPS * step_px,
@@ -452,12 +494,12 @@ def world_landmarks(
         step_px=step_px,
     )
 
-    adaptive = _adaptive(exact, search, spacing, tolerance_mm)
+    adaptive = _adaptive(exact, search, spacing, tolerance_mm, sizes)
     if adaptive is not None:
         pairs, placement = adaptive.pairs, "adaptive"
         rounds, dropped = adaptive.rounds, adaptive.dropped
     else:
-        pairs, placement = _even_grid(exact, search), "grid"
+        pairs, placement = _even_grid(exact, search, sizes), "grid"
         rounds = dropped = 0
 
     kernel = pullback(pairs.source_mm, pairs.target_mm)
@@ -539,19 +581,20 @@ def _adaptive(
     search: Samples,
     spacing: Spacing,
     tolerance_mm: float,
+    sizes: Budget,
 ) -> Placed | None:
     """Place pairs greedily from the first start that does not fold.
 
     None when every start folds.
     """
-    for count in (START_POINTS, SMALL_START_POINTS):
-        start = _start(exact.frame.file_size, search, count)
+    for count in (sizes.start_points, sizes.small_start_points):
+        start = _start(exact.frame.file_size, search, count, sizes.frame_side)
         adaptive = refine(
             pairs_at(exact, start),
             exact,
             search,
             spacing,
-            budget=MAX_POINTS,
+            budget=sizes.max_points,
             tolerance_mm=tolerance_mm,
         )
         if adaptive is not None:
@@ -559,11 +602,13 @@ def _adaptive(
     return None
 
 
-def _start(size: tuple[int, int], search: Samples, count: int) -> FloatArray:
+def _start(
+    size: tuple[int, int], search: Samples, count: int, frame_side: int
+) -> FloatArray:
     """Lay the start's file points.
 
     About *count* points evenly spaced over the region's bounding box, and
-    a coarse snapshot grid outside it.
+    a coarse snapshot grid of *frame_side* per side outside it.
     """
     inside = search.points_px[search.in_region]
     x_low, x_high = _padded(inside[:, 0], size[0])
@@ -575,7 +620,7 @@ def _start(size: tuple[int, int], search: Samples, count: int) -> FloatArray:
     box = _even((x_low, x_high), (y_low, y_high), columns, rows)
 
     spacing = max(width / (columns - 1), height / (rows - 1))
-    frame = _even(*_snapshot(size), FRAME_SIDE, FRAME_SIDE)
+    frame = _even(*_snapshot(size), frame_side, frame_side)
     outside_x = np.maximum(x_low - frame[:, 0], frame[:, 0] - x_high)
     outside_y = np.maximum(y_low - frame[:, 1], frame[:, 1] - y_high)
     away = np.maximum(outside_x, outside_y) > spacing
@@ -613,13 +658,11 @@ def _even(
     return np.column_stack((grid_x.ravel(), grid_y.ravel())).astype(np.float64)
 
 
-def _even_grid(
-    exact: _WorldMap,
-    search: Samples,
-) -> Pairs:
+def _even_grid(exact: _WorldMap, search: Samples, sizes: Budget) -> Pairs:
     """Find the largest even snapshot grid whose spline does not fold."""
     snapshot = _snapshot(exact.frame.file_size)
-    for side in GRID_SIDES:
+    sides = sizes.grid_sides
+    for side in sides:
         grid = pairs_at(exact, _even(*snapshot, side, side))
         try:
             kernel = pullback(grid.source_mm, grid.target_mm)
@@ -629,7 +672,7 @@ def _even_grid(
             return grid
     raise ValueError(
         "the deformation's thin-plate spline folds at every start and "
-        f"every grid up to {GRID_SIDES[0]}x{GRID_SIDES[0]} points"
+        f"every grid up to {sides[0]}x{sides[0]} points"
     )
 
 

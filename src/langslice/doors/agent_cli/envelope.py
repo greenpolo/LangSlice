@@ -39,7 +39,6 @@ from langslice.core.refusal import RefusalCode
 from langslice.job.settings.needs import render
 from langslice.tools.descriptions.fixes import FIXES
 
-#: The artifacts that are pictures to open (``picture_files``).
 PICTURE_KINDS = ("view", "opening")
 
 EXIT_OK = 0
@@ -47,9 +46,6 @@ EXIT_ARGUMENTS = 2
 EXIT_REFUSED = 3
 EXIT_INTERNAL = 4
 
-#: Refusal codes that mean the call's arguments are wrong (exit 2) rather
-#: than the job refusing it (exit 3), besides every ``BAD_*``, ``UNKNOWN_*``
-#: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
     RefusalCode.MISSING_ARGUMENTS,
     RefusalCode.DUPLICATE_SLICE_IDS,
@@ -62,8 +58,6 @@ ARGUMENT_CODES = frozenset({
     RefusalCode.NO_SUCH_PATH,
 })
 
-#: The disabled list of the job the call is about, once it is open (set by
-#: ``doors.agent_cli.calls``): the fixes name no tool the job disables.
 DISABLED: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
     "langslice_disabled", default=())
 
@@ -86,8 +80,6 @@ class Envelope:
     next: list[str] = field(default_factory=list)
     error: dict[str, Any] | None = None
     exit: int = EXIT_OK
-    #: The call's arguments as the verb read them (the trace's ``args``);
-    #: never printed.
     call: dict[str, Any] | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:

@@ -23,32 +23,20 @@ from langslice.core.fits.deformable.render import composed_native_grid
 from langslice.core.sections.channels import channel_colors
 from langslice.core.workspace import Workspace
 
-# --- the picture ------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class Style:
     """How one call's pictures are drawn (its display options)."""
 
-    #: Zoom in pixels of the unzoomed picture (``display.zoom_fractions``);
-    #: empty is the whole section.
     zoom: tuple[float, ...]
-    #: Regions drawn strong; empty draws every border strong.
     highlight: tuple[str, ...]
-    #: Regions drawn in the second color (those excluded from the fit).
     marked: tuple[str, ...]
     outlines: str
-    #: The image model's trace colour (:func:`trace_picture`: plain, read back by colour).
     color: tuple[int, int, int]
     thickness: float
     atlas_opacity: float
-    #: Ontology depth of the regions whose boundaries are drawn.
     depth: int
-    #: Long edge of the picture (of the zoomed crop when zoomed), in pixels;
-    #: never more than the fit image's own pixels.
     long_edge: int = 512
-    #: Core colour of the fitted borders in :func:`picture`, ``black`` or
-    #: ``white`` (cased with the other).
     core: str = "black"
 
 
@@ -139,7 +127,6 @@ def trace_picture(
     shown = (max(8, int(round(crop[0] * factor))), max(8, int(round(crop[1] * factor))))
     base = image.convert("RGB").crop(box).resize(shown, Image.Resampling.LANCZOS)
     mask = np.asarray(lines, dtype=np.float32)[box[1]:box[3], box[0]:box[2]]
-    # Area-averaged so a one-pixel line survives the shrink.
     drawn = cv2.resize(mask, shown, interpolation=cv2.INTER_AREA) > 0.02
     radius = int(round((float(style.thickness) - 1.0) / 2.0))
     if radius > 0:
@@ -152,7 +139,6 @@ def trace_picture(
 def _unwarped(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 
-    # Zero fields are no step's: the copy keeps none to rebuild from.
     return replace(
         record, field_mm=np.zeros_like(record.field_mm), stored_step=None
     )

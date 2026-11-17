@@ -32,10 +32,6 @@ from langslice.job.settings.spec import (
     supplied_damaged_regions,
 )
 
-#: The transform a section with a frozen affine and none supplied carries: the
-#: host's snapshot is already registered in-plane, so the identity IS its
-#: alignment. ``kind`` ``"host"`` counts as a transform at submit and is never
-#: written back to the host.
 HOST_TRANSFORM_KIND = "host"
 
 
@@ -245,7 +241,7 @@ def check_damaged_regions(
     """
     given = spec.inputs.get("damaged_regions")
     marks = supplied_damaged_regions(given, spec.plane)
-    atlas = cast("object", workspace.atlas)  # BrainGlobe's, untyped
+    atlas = cast("object", workspace.atlas)
     for name, regions in marks.items():
         record = _section(state, "damaged_regions", name)
         where = f"inputs.damaged_regions[{name!r}]"
@@ -264,7 +260,6 @@ class InputsChanged(ValueError):
     old ones and drop the new without a word (:meth:`Job.open`)."""
 
 
-#: How a caller starts over instead of resuming (the CLI flag and the spec field).
 START_FRESH = ("start a fresh job instead (`--no-resume` on the command line, resume=False in "
                "a spec)")
 
@@ -276,7 +271,6 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     if not isinstance(saved_spec, dict) or "inputs" not in saved_spec:
         return []
 
-    # a checkpoint's spec, read as JSON
     saved = cast("dict[str, object]", saved_spec)
     inputs = saved.get("inputs")
     saved_inputs: Mapping[str, Json] = {}

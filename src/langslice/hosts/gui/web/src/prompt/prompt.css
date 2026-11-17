@@ -1,0 +1,207 @@
+/* The Prompt generator: the form in numbered steps down the left, each step's number in a
+   gutter and a hairline between steps (no box around each); the message on the right, the
+   one panel, sticky and as tall as the tab. */
+
+.prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(400px, 1fr);
+  column-gap: 56px;
+  align-items: start;
+  max-width: 1360px;
+}
+.prompt-form { min-width: 0; display: flex; flex-direction: column; }
+.prompt-form > .lead { margin-bottom: var(--space-5); }
+
+/* A step: its number in the gutter, its title, its body. */
+.step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--line);
+}
+.step-n { grid-row: 1; padding-top: 2px; color: var(--faint); font-size: var(--size-sm); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.step-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3; }
+.step-body { grid-column: 2; margin-top: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+/* Advanced: a step whose title opens it; its chevron in the number's place. */
+.advanced { display: block; }
+.advanced > .disclosure-summary { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: var(--space-3); align-items: center; width: 100%; color: var(--name); }
+.advanced > .disclosure-summary .chevron { justify-self: start; margin-left: 2px; color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  .advanced > .disclosure-summary:hover .chevron { color: var(--lavender); }
+  .advanced > .disclosure-summary:hover { color: var(--name); }
+}
+.advanced > .disclosure-body > .disclosure-inner { padding: var(--space-4) 0 0 40px; gap: 0; }
+.advanced .measure { max-width: 66ch; }
+
+/* How to copy a path, and other small openings. */
+.more .disclosure-inner { padding-left: 14px; }
+.howto { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--size-sm); }
+.howto strong { color: var(--name); font-weight: var(--weight-strong); }
+
+/* The atlas's paragraph: three lines until "more". */
+.about { display: flex; flex-direction: column; gap: 2px; margin-top: calc(-1 * var(--space-2)); }
+.about-text { margin: 0; color: var(--muted); font-size: var(--size-sm); line-height: 1.55; max-width: 72ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.about-text.open { display: block; }
+
+/* The cutting plane: a segmented control whose chosen ground slides. */
+.plane { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+.segments { display: inline-flex; padding: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.segment {
+  position: relative;
+  margin: 0;
+  padding: 5px 16px;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color var(--dur-press) ease, scale var(--dur-press) var(--ease-out);
+}
+.segment:active:not(:disabled) { scale: 0.97; }
+.segment.on { color: var(--name); }
+.segment-ground { position: absolute; inset: 0; border-radius: 3px; background: var(--selected); border: 1px solid var(--tract); }
+.segment-text { position: relative; }
+.segment:disabled { cursor: not-allowed; }
+.segments:has(.segment:disabled) { border-style: dashed; }
+@media (hover: hover) and (pointer: fine) { .segment:hover:not(:disabled):not(.on) { color: var(--text); } }
+
+/* Thickness, interval, pixel size. */
+.units { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+
+/* What to do: the three tasks side by side, in the order a run does them. */
+.tasks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.task {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 14px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color var(--dur-press) ease, border-color var(--dur-press) ease, scale var(--dur-press) var(--ease-out);
+}
+.task:active { scale: 0.985; }
+.task.on { background: var(--selected); border-color: var(--lavender); }
+.task:has(.native:focus-visible) { outline: 2px solid var(--lavender); outline-offset: 2px; }
+.task .native:focus-visible + .task-head .tick { outline: none; }
+.task-head { display: flex; align-items: center; gap: 10px; }
+.task-label { color: var(--text); font-weight: var(--weight-strong); }
+.task.on .task-label { color: var(--name); }
+.task-about { color: var(--muted); font-size: var(--size-sm); line-height: 1.5; }
+@media (hover: hover) and (pointer: fine) { .task:hover:not(.on) { border-color: var(--tract); } }
+
+/* From ABBA: the facts it fixed, a lavender edge because they come from elsewhere. */
+.abba { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-5); padding: var(--space-1) 0 var(--space-1) var(--space-4); border-left: var(--rule) solid var(--lavender); }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-4); margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.slices { max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.slices table { width: 100%; border-collapse: collapse; font-size: var(--size-sm); }
+.slices th { position: sticky; top: 0; padding: 5px 10px; text-align: left; white-space: nowrap; color: var(--muted); font-weight: 400; background: var(--panel); border-bottom: 1px solid var(--line); }
+.slices td { padding: 4px 10px; white-space: nowrap; border-top: 1px solid var(--line); }
+.slices tbody tr:first-child td { border-top: 0; }
+
+/* The tools: a group's title over its rows; options hang from their tool on thin lines. */
+.tools { margin-top: var(--space-5); }
+.tools-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--line); }
+.tools-title { color: var(--name); font-weight: var(--weight-strong); }
+.tools-note { color: var(--muted); font-size: var(--size-sm); }
+.tools.absent .tools-title { color: var(--text); }
+.tool {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 15rem);
+  align-items: center;
+  column-gap: var(--space-3);
+  padding: 6px var(--space-2);
+  border-top: 1px solid var(--line);
+  font-size: var(--size-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-press) ease;
+}
+.tools-head + .tool { border-top: 0; }
+.tool:has(.native:disabled) { cursor: default; }
+@media (hover: hover) and (pointer: fine) { .tool:hover:not(:has(.native:disabled)) { background: var(--wash); } }
+.tool-words { display: flex; flex-direction: column; min-width: 0; }
+.tool-label { color: var(--text); }
+.tool-note { color: var(--muted); font-size: var(--size-xs); }
+.tool-name { font-family: var(--mono); font-size: var(--size-xs); color: var(--violet); overflow-wrap: anywhere; }
+.tool.absent .tool-label, .tool.absent .tool-name { color: var(--faint); }
+.tool.option { border-top: 0; padding-left: 44px; }
+.tool.option::before { content: ""; position: absolute; left: 21px; top: 0; width: 15px; height: 50%; border-left: 1px solid var(--tract); border-bottom: 1px solid var(--tract); border-bottom-left-radius: 3px; }
+.tool.option:not(.last)::after { content: ""; position: absolute; left: 21px; top: 50%; bottom: 0; border-left: 1px solid var(--tract); }
+.tool.parent::after { content: ""; position: absolute; left: 21px; top: calc(50% + 8px); bottom: 0; border-left: 1px solid var(--tract); }
+
+/* The image model. */
+.tools.image > .help { margin-top: var(--space-3); }
+.pair { display: grid; gap: var(--space-3); max-width: 520px; margin: var(--space-3) 0; }
+.tools.image.absent .label { color: var(--muted); }
+
+/* Your message: sticky, as tall as the tab; the message scrolls inside only when longer. */
+.message {
+  position: sticky;
+  top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  max-height: calc(100cqh - 2 * var(--space-6));
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.message > * { flex: none; }
+.message-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.message-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3; }
+.copy { min-width: 104px; padding: 7px 18px; }
+.copied-tick { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.problems, .warnings { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--size-sm); }
+.problems li, .warnings li { padding: 1px 0 1px var(--space-3); border-left: var(--rule) solid var(--pink); color: var(--pink); transition: opacity var(--dur-quick) var(--ease-out), translate var(--dur-quick) var(--ease-out); }
+.warnings li { border-left-color: var(--lavender); color: var(--muted); }
+@starting-style { .problems li, .warnings li { opacity: 0; translate: 0 -3px; } }
+.message-text {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 14px 16px;
+  font: inherit;
+  font-size: var(--size-sm);
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.message-text .code { font-family: var(--mono); font-size: var(--size-xs); line-height: 1.7; }
+.message-text .fence { color: var(--faint); }
+.message-text .command { color: var(--violet); }
+.message-empty { margin: 0; padding: var(--space-6) var(--space-4); text-align: center; color: var(--muted); border: 1px dashed var(--tract); border-radius: var(--radius-sm); }
+
+/* Narrow windows: one column, the message after the form. */
+@container (max-width: 1080px) {
+  .prompt { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-5); max-width: 760px; }
+  .message { position: static; max-height: none; }
+  .message-text { overflow: visible; }
+}
+@container (max-width: 720px) {
+  .page { padding: var(--space-5) var(--space-4) var(--space-6); }
+  .units, .tasks { grid-template-columns: minmax(0, 1fr); }
+  .tool { grid-template-columns: auto minmax(0, 1fr); }
+  .tool-name { grid-column: 2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .problems li, .warnings li { transition-property: opacity; }
+  @starting-style { .problems li, .warnings li { translate: none; } }
+  .task, .segment { transition-property: background-color, border-color, color; }
+}

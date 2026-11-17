@@ -13,7 +13,6 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-#: How long the server outlives its window.
 LINGER_S = 5.0
 
 

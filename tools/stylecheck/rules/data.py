@@ -40,7 +40,6 @@ from tools.stylecheck.rules.scopes import (
     string_value,
 )
 
-#: Calls that read an attribute by a name given as a string.
 ATTRIBUTE_READERS = frozenset({"getattr", "hasattr"})
 
 

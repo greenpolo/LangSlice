@@ -33,38 +33,6 @@ def test_broad_except_that_drops_the_error_is_flagged() -> None:
     assert flagged_lines(source, "broad-except") == [5, 10, 15]
 
 
-def test_broad_except_needs_a_comment_naming_the_failure() -> None:
-    source = """
-    def fit():
-        try:
-            pass
-        except Exception:
-            logger.warning("failed")
-
-        try:
-            pass
-        except Exception:  # noqa: BLE001
-            return 0
-
-        try:
-            pass
-        except Exception:  # noqa: BLE001 - an atlas without one
-            return 0
-
-        try:
-            pass
-        except Exception:
-            cleanup()
-            raise
-
-        try:
-            pass
-        except ValueError:
-            pass
-    """
-    assert flagged_lines(source, "broad-except") == [5, 10]
-
-
 def test_print_and_terminal_writes_are_flagged() -> None:
     source = """
     import sys

@@ -27,15 +27,10 @@ from langslice.core.pictures.captions import (
     wrap_caption,
 )
 
-#: The recipe's renderer name (``zoom`` reads a sheet's tiles, never its pixels).
 RENDERER = "sheet"
-#: The most pictures one sheet tiles; a call with more makes several sheets.
 MAX_TILES = 16
-#: Pixels between tiles.
 GAP_PX = 6
-#: Height of a tile's header band (its picture number and what it shows).
 HEADER_PX = 20
-#: The sheet's background and its header bands' colour.
 BACKGROUND = (24, 24, 24)
 
 

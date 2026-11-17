@@ -39,11 +39,8 @@ from langslice.job.state_file import (
 
 logger = logging.getLogger(__name__)
 
-#: The undo file's format: ``undo`` and ``redo`` steps, ``next_step``.
 UNDO_FORMAT_VERSION = 1
-#: The step files of an older LangSlice's ``history/``.
 _OLD_INDEX, _OLD_STEP_PREFIX = "index.json", "step-"
-#: The undo files whose folder's older step files this process told of.
 _TOLD_OLDER: set[Path] = set()
 
 
@@ -138,7 +135,6 @@ class NotesBefore:
         """
         if self.keep <= later.keep:
             return self
-        # this step kept notes the later one replaced: they are its then
         shared = later.then[: self.keep - later.keep]
         return NotesBefore(later.keep, (*shared, *self.then))
 
@@ -277,8 +273,6 @@ class UndoLists:
     undo: list[UndoStep]
     redo: list[UndoStep]
     next_step: int = 1
-    #: What a reader is told of the steps on disk: why they cannot be
-    #: used, or that an older LangSlice's are ignored; None otherwise.
     notice: str | None = None
 
 
@@ -294,9 +288,6 @@ class UndoFile:
     def __init__(self, layout: JobLayout) -> None:
         self.layout = layout
         self.path = layout.undo_file
-        #: False while the file on disk cannot be read: :meth:`save` leaves
-        #: it. Kept here, not returned, because the save that reads it comes
-        #: many writes after the load that set it.
         self.writable = True
 
     def load(self) -> UndoLists:

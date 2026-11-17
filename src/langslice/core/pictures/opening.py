@@ -35,66 +35,31 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
-#: Longest image edge, in pixels, the OpenAI lanes take in without shrinking
-#: (at detail "high"; Codex CLI's own client resize is the same 2048 px).
 OPENAI_MAX_IMAGE_EDGE = 2048
-#: The OpenAI lanes' per-image budget of 32-px patches at detail "high"
-#: (ceil(w/32) * ceil(h/32)); a larger image is downscaled to fit: a
-#: 2048-px-wide strip may be at most ~1250 px tall.
 OPENAI_MAX_IMAGE_PATCHES = 2500
-#: Claude's recommended largest long edge (the MCP host, ``show_stack``):
-#: older Claude models shrink anything larger, and a request with more than
-#: 20 images caps every image at 2000 px, so 1568 is safe on every model.
 CLAUDE_MAX_IMAGE_EDGE = 1568
-#: Claude's per-image area at that edge, ~1.15 MP (~1600 tokens at w*h/750),
-#: as 32-px patches so one rule serves both lanes.
 CLAUDE_MAX_IMAGE_PATCHES = 1_200_000 // (32 * 32)
-#: The largest picture a Claude host may ask for per call (``look``'s ``resolution``
-#: at image resolution "auto"): a request holding more than 20 images, which
-#: any working session does, takes none past 2000 px. Claude 4.7+ reads up
-#: to ~2576 px alone; older models shrink anything past 1568 px, which costs
-#: bytes, not the request.
 CLAUDE_MAX_VIEW_EDGE = 2000
 
 CLAUDE_IMAGE_LIMIT = (CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES)
-#: ``(long edge, patch budget)`` per canonical provider. A lane not listed
-#: (Gemini, a fake test model) uses the OpenAI numbers: unmeasured there.
 IMAGE_LIMITS: dict[str, tuple[int, int]] = {
     "openai-oauth": (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES),
     "openai-api": (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES),
     "anthropic-api": CLAUDE_IMAGE_LIMIT,
 }
 DEFAULT_IMAGE_LIMIT = (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
-#: The largest picture the agent may ask for, per canonical provider, where it
-#: is not the lane's image edge: Claude's, as the MCP host's.
 VIEW_EDGES: dict[str, int] = {"anthropic-api": CLAUDE_MAX_VIEW_EDGE}
 
-#: The agent CLI's viewers: the coding agent that opens the picture files a
-#: CLI call saves, as ``(opening strip limit, largest later picture)``,
-#: the same numbers as the door that serves the same models.
-#:
-#: - ``claude`` (Claude Code's Read): Read's own resize rule is not
-#:   published; the pictures reach the Claude API, which takes no image past
-#:   2000 px once a request holds more than 20 (any working session) and
-#:   shrinks past 1568 px (~1.15 MP) on models before 4.7 (2576 px on 4.7+),
-#:   so the MCP door's numbers: strips at 1568 px, pictures up to 2000.
-#: - ``codex`` / ``openai`` (Codex's view_image): resized to fit 2048 px and
-#:   2,500 32-px patches (codex-rs ``utils/image``, detail "high", the
-#:   default), the OpenAI lanes' numbers.
 VIEWER_LIMITS: dict[str, tuple[tuple[int, int], int]] = {
     "claude": (CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE),
     "codex": (DEFAULT_IMAGE_LIMIT, OPENAI_MAX_IMAGE_EDGE),
     "openai": (DEFAULT_IMAGE_LIMIT, OPENAI_MAX_IMAGE_EDGE),
 }
-#: The viewer of a job that names none.
 DEFAULT_VIEWER = "claude"
 
-#: Space between two columns of a strip; a grey separator line runs down
-#: its middle so each section reads with the atlas beneath it as one unit.
 COLUMN_GAP = 6
 SEPARATOR_PX = 2
 SEPARATOR_COLOR = (110, 110, 110)
-#: Space between a strip's section row and its atlas row.
 ROW_GAP = 4
 
 
@@ -220,7 +185,6 @@ def pack_strips(columns: Sequence[Sequence[Image.Image]], tile: int, count: int,
 
 ANGLES_WORDS = " (pitch {:.1f}, yaw {:.1f} degrees)"
 
-#: Threads drawing the opening's columns (:func:`opening_items`).
 OPENING_THREADS = 8
 
 
@@ -259,9 +223,6 @@ def opening_items(
             cells.append(_cell(None, "no position", tile))
         return cells
 
-    # The first column alone loads the atlas volumes the rest share; then
-    # the sections are drawn on threads (decoding, resampling and resizing
-    # release the GIL), in order.
     columns = [column(record) for record in ordered[:1]]
     with ThreadPoolExecutor(OPENING_THREADS) as pool:
         columns += pool.map(column, ordered[1:])

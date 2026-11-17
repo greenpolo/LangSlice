@@ -161,16 +161,13 @@ def test_the_agent_reads_the_open_comments_with_their_boxes(
 
 
 def test_the_command_line_runs_it_for_the_main_session(
-        served: tuple[GuiServer, Path], capsys: pytest.CaptureFixture[str],
-        monkeypatch: pytest.MonkeyPatch) -> None:
-    from langslice.doors.agent_cli.catalog import ALL_VERBS_ENV
+        served: tuple[GuiServer, Path], capsys: pytest.CaptureFixture[str]) -> None:
     from langslice.doors.agent_cli.main import main
 
     gui, job = served
     _snapshot(gui)
     assert _post(gui, {"section": ID1, "box": [0.2, 0.2, 0.6, 0.6],
                        "text": "shift it left"})[0] == 200
-    monkeypatch.delenv(ALL_VERBS_ENV, raising=False)
     capsys.readouterr()
     assert main([str(job), "review_comments"]) == 0
     envelope = json.loads(capsys.readouterr().out)

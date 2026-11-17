@@ -46,22 +46,9 @@ from langslice.tools.descriptions.render import (
 
 logger = logging.getLogger(__name__)
 
-#: The version of what ``langslice-job schema`` prints (bumped when a verb's
-#: arguments change incompatibly). 3: the redesigned toolbox (look, zoom,
-#: one tool per registration method); each verb an object with its
-#: description, summary, arguments and ``long``.
 SCHEMA_VERSION = 3
 
-#: The verbs the command line runs: what the session that sets a job up and
-#: checks it needs (``review_comments``: the comments a person left in the
-#: LangSlice window, which the main session briefs a registration agent on).
-#: Every other verb is a registration agent's, through the
-#: MCP tools or a script (``langslice.open_job``).
 CLI_VERBS = frozenset({"status", "export_maps", "review_comments"})
-#: Set to ``1`` by LangSlice's own test suite, which drives every verb
-#: through this command's plumbing (the envelope, the flags, the background
-#: runs); nothing a user or an agent is told of.
-ALL_VERBS_ENV = "LANGSLICE_JOB_TEST_ALL_VERBS"
 
 
 def on_command_line(verb: str) -> bool:
@@ -75,13 +62,11 @@ def on_command_line(verb: str) -> bool:
     Returns
     -------
     bool
-        True for the verbs of a session that sets a job up and checks it,
-        and for every verb under the test suite's switch.
+        True for the verbs of a session that sets a job up and checks it.
     """
-    return verb in CLI_VERBS or os.environ.get(ALL_VERBS_ENV) == "1"
+    return verb in CLI_VERBS
 
 
-#: The agent CLI's own commands besides the verbs (``langslice-job FOLDER ...``).
 JOB_COMMANDS: dict[str, str] = {
     "init": "Create the job for a folder of section images (the job flags of "
             "`langslice linear run`, plus --notes TEXT and --viewer claude|codex|openai; "
@@ -161,7 +146,6 @@ def command_entry(name: str) -> dict[str, Any]:
                            "choices": ["register", "register-scripting"], "takes_value": True,
                            "metavar": "ROLE"}]
     elif name == "wait":
-        # background.WAIT_S, not imported: `schema` runs without the job modules.
         entry["flags"] = [{"flag": "--timeout", "aliases": [], "default": 30.0,
                            "help": "Seconds to wait before answering with the run still "
                                    "running", "choices": None, "takes_value": True,
@@ -176,7 +160,6 @@ def canonical_verb(name: str) -> str:
     return name.strip().replace("-", "_")
 
 
-#: What ``ops`` says of a long verb.
 LONG_WORDS = ("A long verb computes outside the job lock and may take minutes; a call "
               "still running after 30 s answers with its run id and state running (the "
               "run goes on; `wait ID` collects its answer), and --background answers at "
@@ -191,7 +174,7 @@ def verbs_table(spec: JobSpec | None = None) -> list[dict[str, Any]]:
     from langslice.tools.catalog import VERBS, verbs_for
 
     facts = FULL
-    if spec is not None:  # the engines' and the plugins' tools in its run
+    if spec is not None:
         facts = DescriptionFacts.from_spec(spec, auto=True, door="cli")
     return [{"name": name, "kind": verb.kind, "group": verb.group,
              "summary": summary(name, FULL if name in VERBS else facts),
@@ -209,7 +192,6 @@ class Declared:
         self.variant = DescriptionFacts(auto=True, door="cli", uncapped=True,
                                         prompt=FULL.prompt)
         self.disabled: tuple[str, ...] = ()
-        #: The open job's verbs (``Opened.listed_verbs``); None without a job.
         self.verbs: tuple[str, ...] | None = None
         found = job or _job_here()
         if found:
@@ -409,7 +391,7 @@ def schema(args: argparse.Namespace) -> Envelope:
     names = _names(args.verb)
     commands = command_names()
     if len(names) == 1 and names[0] in commands:
-        name = names[0]  # init, launch, runs, wait: no job needed
+        name = names[0]
         entry = command_entry(name)
         return Envelope(result={"schema_version": SCHEMA_VERSION, "verb": name, **entry},
                         next=[entry["usage"]])
@@ -439,7 +421,7 @@ def schema(args: argparse.Namespace) -> Envelope:
             nexts = [f"langslice-job {folder} {name} --args '{{...}}'"]
             if not on_command_line(name):
                 nexts = [f'langslice.open_job(r"{folder}").{name}(...)']
-        else:  # several verbs, or every verb
+        else:
             chosen = names or [name for name in verbs if declared.has(name)]
             result = {"schema_version": SCHEMA_VERSION, **declared.facts(),
                       "verbs": {name: command_entry(name) if name in commands
@@ -449,7 +431,7 @@ def schema(args: argparse.Namespace) -> Envelope:
     except (FileNotFoundError, ValueError) as exc:
         return Envelope.failure(RefusalCode.JOB_UNREADABLE,
                                 str(exc), exit=EXIT_REFUSED)
-    except Exception as exc:  # the envelope reports it; the traceback goes to stderr
+    except Exception as exc:
         logger.exception("langslice-job schema failed")
         return Envelope.failure(RefusalCode.INTERNAL,
                                 f"{type(exc).__name__}: {exc}",

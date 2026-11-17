@@ -35,16 +35,11 @@ from langslice.core.shared_files import replace_file
 
 logger = logging.getLogger(__name__)
 
-#: The setting naming the cache folder; ``off`` (or ``0``, ``none``, empty)
-#: turns the disk cache off.
 ENV = "LANGSLICE_ATLAS_CACHE"
 _OFF = {"", "0", "off", "none", "false", "no"}
 
-#: Bumped whenever what a cached file holds changes, so old files are never read.
 FORMAT = 1
 
-#: Atlases with more voxels than this are not cached on disk: one float32
-#: volume of the 10 um Allen atlas (1.2 billion voxels) is 4.8 GB.
 MAX_VOXELS = 500_000_000
 
 
@@ -102,7 +97,7 @@ def cached_volume(atlas: Any, name: str, build: Callable[[], np.ndarray]) -> np.
         return np.load(path, mmap_mode="r")
     except FileNotFoundError:
         pass
-    except (OSError, ValueError) as exc:  # unreadable or truncated: rebuilt below
+    except (OSError, ValueError) as exc:
         logger.warning("atlas cache: rebuilding %s (%s)", path, exc)
     array = build()
     temporary = path.with_name(f"{path.name}.{os.getpid()}.part")
@@ -112,7 +107,6 @@ def cached_volume(atlas: Any, name: str, build: Callable[[], np.ndarray]) -> np.
         folder.mkdir(parents=True, exist_ok=True)
         with open(temporary, "wb") as handle:
             np.save(handle, np.ascontiguousarray(array))
-        # another process may have it memory-mapped
         replace_file(temporary, path)
     except OSError as exc:
         logger.warning("atlas cache: could not save %s (%s)", path, exc)

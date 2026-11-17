@@ -22,17 +22,14 @@ from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import is_off
 
-#: Said when the job's image model is not connected to LangSlice here.
 _IMAGE_MODEL_OFF = (
     "[[?trace_borders The image-model tool (trace_borders) is off: no image "
     "model is connected to LangSlice (no key or login for this job's image "
     "provider).[[?fireants_syn  Fit each section's deformation to its stain "
     "with fireants_syn.]]]]"
 )
-#: ... as a job that disables nothing reads it.
 IMAGE_MODEL_OFF = render(_IMAGE_MODEL_OFF)
 
-#: What the opening pictures show, said by every door that names them.
 OPENING_SHOWS = (
     "They show every section in strips, in the stack's current order, each "
     "labelled, with the atlas at its current position beneath it at the same "
@@ -71,9 +68,6 @@ SCRIPT_FILES = (
     "`{folder}/scratch/`; `{folder}/AGENTS.md` describes the job folder's "
     "files."
 )
-#: The paragraph on scripts told to a registration agent with a shell:
-#: ``{folder}`` the job folder, ``{python}`` the interpreter of the job's own
-#: Python environment, ``{install}`` the command that installs into it.
 SCRIPTING = "\n".join(
     (
         SCRIPTS,
@@ -85,8 +79,6 @@ SCRIPTING = "\n".join(
     )
 )
 USER_NOTES = "User notes:"
-#: What a statement says of the review comments still open
-#: (:func:`review_lines`).
 REVIEW_OPEN = (
     "A person reviewed this registration in the LangSlice window and left "
     "{comments} on {sections}. review_comments shows each with the box it "
@@ -98,11 +90,8 @@ STATUS_TABLE = (
 )
 NO_RUN_NOTES = "- (none)"
 
-#: How many run notes the status text repeats (the newest).
 RECENT_NOTES = 12
 
-#: ``job.json``'s field holding the user's notes for the job
-#: (``langslice-job FOLDER init --notes``).
 NOTES_KEY = "notes"
 
 

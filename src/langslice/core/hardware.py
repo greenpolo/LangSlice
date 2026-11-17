@@ -33,9 +33,7 @@ from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
-#: Sets the core count LangSlice divides among sections (an integer).
 CORES_VARIABLE = "LANGSLICE_CPU_CORES"
-#: A gibibyte, in bytes.
 GIB = 2**30
 
 logger = logging.getLogger(__name__)
@@ -48,13 +46,9 @@ _R = TypeVar("_R")
 class Hardware:
     """The machine's processor, memory and GPU (:func:`detect`)."""
 
-    #: Logical cores this process may run on.
     cores: int
-    #: Physical memory, in GiB (0 when it cannot be read).
     memory_gib: float
-    #: The first GPU's name, or None without one torch sees.
     gpu: str | None = None
-    #: The first GPU's memory, in GiB (0 without one).
     gpu_memory_gib: float = 0.0
 
     def describe(self) -> str:
@@ -91,7 +85,7 @@ def cpu_cores() -> int:
 class _MemoryStatus(ctypes.Structure):
     length: int
     total_physical: int
-    _fields_ = [  # noqa: RUF012 - ctypes reads the class attribute
+    _fields_ = [  # noqa: RUF012
         ("length", ctypes.c_ulong),
         ("load", ctypes.c_ulong),
         ("total_physical", ctypes.c_ulonglong),
@@ -107,7 +101,7 @@ class _MemoryStatus(ctypes.Structure):
 def _windows_memory() -> float:
     status = _MemoryStatus()
     status.length = ctypes.sizeof(_MemoryStatus)
-    kernel = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue] - Windows only
+    kernel = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]
     if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):  # pyright: ignore[reportUnknownMemberType]
         return 0.0
     return int(status.total_physical) / GIB
@@ -132,13 +126,13 @@ def memory_gib() -> float:
 
 def _first_gpu() -> tuple[str | None, float]:
     try:
-        import torch  # local: slow to import, needed only to name the GPU
+        import torch
 
         if not torch.cuda.is_available():
             return None, 0.0
         name = torch.cuda.get_device_name(0)
         _free, total = torch.cuda.mem_get_info(0)
-    except Exception:  # noqa: BLE001 - no usable torch is no GPU
+    except Exception:  # noqa: BLE001
         return None, 0.0
     return name, total / GIB
 
@@ -359,11 +353,11 @@ def drop_process_pool(name: str, pool: ProcessPoolExecutor) -> None:
 class Threader(Protocol):
     """A library's global default thread count (ITK's and SimpleITK's)."""
 
-    def GetGlobalDefaultNumberOfThreads(self, /) -> int:  # noqa: N802 - ITK's name
+    def GetGlobalDefaultNumberOfThreads(self, /) -> int:  # noqa: N802
         """Return the count."""
         ...
 
-    def SetGlobalDefaultNumberOfThreads(self, count: int, /) -> None:  # noqa: N802 - ITK's name
+    def SetGlobalDefaultNumberOfThreads(self, count: int, /) -> None:  # noqa: N802
         """Set the count.
 
         Parameters
@@ -429,15 +423,12 @@ def simpleitk_threader() -> Threader:
     Threader
         ``SimpleITK.ProcessObject``.
     """
-    import SimpleITK as sitk  # local: slow to import, needed only to filter
+    import SimpleITK as sitk
 
     return sitk.ProcessObject
 
 
-#: Sets how many fits run on the GPU at once (an integer).
 GPU_SLOTS_VARIABLE = "LANGSLICE_GPU_SLOTS"
-#: The GPU memory one fit is given when the slots are counted from the GPU's
-#: memory: a FireANTs, STalign or emlddmm fit of a section needs well under.
 GIB_PER_GPU_FIT = 2.0
 
 

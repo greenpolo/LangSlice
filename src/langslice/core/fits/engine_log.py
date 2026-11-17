@@ -25,7 +25,6 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-#: Guards the shared redirection (its depth and the saved descriptor).
 _LOCK = threading.Lock()
 _HELD: dict[str, int | None] = {"depth": 0, "saved": None}
 
@@ -78,7 +77,6 @@ def engine_output(path: str | Path | None, label: str = "") -> Iterator[None]:
                 _HELD["saved"] = None
 
 
-#: The longest first line of an engine's error a reply carries, in characters.
 FAILURE_CHARS = 240
 
 

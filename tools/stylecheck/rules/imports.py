@@ -1,14 +1,10 @@
 """Check that imports sit at the top of a module, with two named exceptions.
 
-An import inside a function is allowed when its line carries a
-``# local:`` comment and either the module is a slow optional dependency
-whose top-level name is in ``heavy_modules``, or the comment reads
-``# local: cycle with <module>``, ``<module>`` names the module the
-statement imports, and that module, directly or through others, imports
-the module the function is in when it loads. ``<module>`` is the
-imported module's dotted name or a tail of it at a dot (``ops.views``
-for ``langslice.ops.views``); a package that only contains the imported
-module (``ops``, ``langslice``) does not name it. The import graph read
+An import inside a function is allowed when the module is a slow
+optional dependency whose top-level name is in ``heavy_modules``, or when
+every package module the statement imports, directly or through others,
+imports the module the function is in when it loads, so that the import
+at the top would close a cycle. The import graph read
 here is the one Python follows at load time: the module-level imports,
 not those inside functions or under ``if TYPE_CHECKING:``.
 """
@@ -16,7 +12,6 @@ not those inside functions or under ``if TYPE_CHECKING:``.
 from __future__ import annotations
 
 import ast
-import re
 from collections.abc import Iterator
 
 from tools.stylecheck.core import (
@@ -28,34 +23,17 @@ from tools.stylecheck.core import (
     module_check,
 )
 from tools.stylecheck.rules.scopes import (
-    comment_on,
     dotted_name,
     functions,
     own_nodes,
 )
 
-#: The finding for a local import with no reason at all.
-MOVE_TO_TOP = "Move the import to the top of the module (2.3)."
-
-#: The finding for a slow dependency imported without saying so.
-UNMARKED_HEAVY = (
-    "A slow dependency imported in a function needs a '# local:' comment "
-    "saying so (2.3)."
+MOVE_TO_TOP = (
+    "Move the import to the top of the module: an import inside a "
+    "function is for a slow dependency (stylecheck.heavy_modules) or a "
+    "module that imports this one when it loads (2.3)."
 )
 
-#: The finding for a local import of a fast module that names no cycle.
-UNNAMED_CYCLE = (
-    "A local import of a fast module is allowed only for a cycle; write "
-    "'# local: cycle with <module>' or move it to the top (2.3)."
-)
-
-#: The comment that marks an allowed local import.
-LOCAL_PATTERN = re.compile(r"#\s*local:")
-
-#: The reason that names the module an import cycle runs through.
-CYCLE_PATTERN = re.compile(r"#\s*local:\s*cycle with\s+([\w.]+)")
-
-#: The guard whose body only a type checker reads, not Python at load.
 TYPE_CHECKING = "TYPE_CHECKING"
 
 Statement = ast.Import | ast.ImportFrom
@@ -68,9 +46,8 @@ def check_local_import(
     """Flag an import inside a function that has no checked reason.
 
     Guide rule 2.3. See the module docstring for the two reasons that
-    allow one. The cycle is checked against the package's import graph:
-    the comment must name the imported module, and that module must
-    import this one when it loads.
+    allow one. The cycle is read from the package's import graph: the
+    imported module must import this one when it loads.
 
     Parameters
     ----------
@@ -97,44 +74,20 @@ def check_local_import(
 def _local_import_problem(
     module: Module, project: Project, config: Config, node: Statement
 ) -> str:
-    """Say why a local import is not allowed, or return ``""``."""
-    comment = comment_on(module, node.lineno, node.end_lineno or node.lineno)
-    names = imported_modules(module, node)
-    heavy = all(name.split(".")[0] in config.heavy_modules for name in names)
-    if not LOCAL_PATTERN.search(comment):
-        return UNMARKED_HEAVY if heavy else MOVE_TO_TOP
-    if heavy:
-        return ""
+    """Say why a local import is not allowed, or return ``""``.
 
-    match = CYCLE_PATTERN.search(comment)
-    if match is None:
-        return UNNAMED_CYCLE
-    return _cycle_problem(project, module, node, match.group(1))
-
-
-def _cycle_problem(
-    project: Project, module: Module, node: Statement, named: str
-) -> str:
-    """Say why a named cycle does not hold, or return ``""``.
-
-    The comment must name a module the statement imports, and every
-    module the statement imports must reach this one at load time.
+    A slow dependency may be imported where it is used. Any other module
+    may be only when importing it at the top would close a cycle: every
+    package module the statement loads imports this one at load time.
     """
+    names = imported_modules(module, node)
+    if all(name.split(".")[0] in config.heavy_modules for name in names):
+        return ""
     targets = _imported_targets(project, module, node)
-    if not any(_names_module(named, target) for target in targets):
-        listed = ", ".join(repr(target) for target in targets) or "nothing"
-        return (
-            f"The comment names {named!r}, but the statement imports "
-            f"{listed} of the package; name the imported module (2.3)."
-        )
-
-    for target in targets:
-        if module.dotted not in _reachable(project, target):
-            return (
-                f"{target!r} does not import this module when it loads, "
-                "so there is no cycle; move the import to the top (2.3)."
-            )
-    return ""
+    in_cycle = bool(targets) and all(
+        module.dotted in _reachable(project, target) for target in targets
+    )
+    return "" if in_cycle else MOVE_TO_TOP
 
 
 def _imported_targets(
@@ -163,11 +116,6 @@ def _submodule_or_source(project: Project, source: str, name: str) -> str:
     if submodule in project.modules:
         return submodule
     return source
-
-
-def _names_module(named: str, target: str) -> bool:
-    """Tell whether a comment's name is a module's name or a tail of it."""
-    return target == named or target.endswith(f".{named}")
 
 
 def _reachable(project: Project, start: str) -> set[str]:

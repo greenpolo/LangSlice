@@ -16,7 +16,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-#: The brightness scaling of the native engines (FireANTs, Elastix), in words.
 NATIVE_BRIGHTNESS = "1st-99th percentile inside the atlas outline to 0-1"
 
 
@@ -39,21 +38,13 @@ def damage_block(regions: list[str] | tuple[str, ...], margin_mm: float) -> dict
 class InputsBlock:
     """What one fit read, for one section."""
 
-    #: ``{"name", "kind": "raw" | "made", "file", "digest"}``: the section image read.
     section_image: dict[str, Any]
-    #: The atlas image as the call named it (``nissl``) and as it resolved
-    #: (``ccfv3augmented_nissl``).
     atlas_image: str
     atlas_image_resolved: str
-    #: :func:`mask_block`: ``{"name", "kind", "stale", "earlier_registration"}``, the
-    #: name ``"none"`` when no mask was read.
     mask: dict[str, Any]
-    #: ``{"regions", "margin_mm", "side": "atlas"}`` (:func:`damage_block`).
     damage: dict[str, Any]
     restrict_to: list[str] = field(default_factory=list)
-    #: The engine's own scaling of the images, in words.
     brightness: str = NATIVE_BRIGHTNESS
-    #: Said when the default ``nissl`` resolved to the template (``images.nissl_note``).
     atlas_image_note: str | None = None
 
     def payload(self) -> dict[str, Any]:
@@ -72,7 +63,6 @@ class EstimatedBlock:
     """What an engine worked out itself: where its own sorting is saved, and
     the fraction of the section it left out."""
 
-    #: ``saved with the deformation; make_mask source fit``, or None.
     sorting: str | None = None
     left_out_fraction: float | None = None
 

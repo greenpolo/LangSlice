@@ -22,20 +22,17 @@ from langslice.providers.connections import (
     openai_oauth_credentials_path,
 )
 
-# --- constants ---------------------------------------------------------------
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 TOKEN_URL = "https://auth.openai.com/oauth/token"
 ORIGINATOR = "langslice"
-REFRESH_SKEW_S = 5 * 60  # refresh when the access token expires within 5 min
+REFRESH_SKEW_S = 5 * 60
 
-# OAuth callback (the Codex client_id only whitelists this redirect).
 _REDIRECT_URI = "http://localhost:1455/auth/callback"
 _LOGIN_PORT = 1455
 _LOGIN_SCOPE = "openid profile email offline_access"
 
 
-# --- credentials -------------------------------------------------------------
 @dataclass
 class Creds:
     """A ChatGPT-subscription access token and the metadata needed to use it."""
@@ -51,7 +48,7 @@ class Creds:
 def _decode_jwt_payload(token: str) -> dict[str, Any]:
     """Decode a JWT payload without verifying the signature (client-side only)."""
     payload_b64 = token.split(".")[1]
-    payload_b64 += "=" * (-len(payload_b64) % 4)  # fix padding
+    payload_b64 += "=" * (-len(payload_b64) % 4)
     decoded = json.loads(base64.urlsafe_b64decode(payload_b64))
     if not isinstance(decoded, dict):
         raise ValueError("JWT payload is not an object")
@@ -146,7 +143,6 @@ def refresh(creds: Creds) -> Creds:
         source=creds.source,
         raw=creds.raw,
     )
-    # Persist only to our own file; never rewrite the Codex CLI's auth.json.
     if creds.source == str(openai_oauth_credentials_path()):
         _write_creds(new)
     return new
@@ -176,7 +172,6 @@ def load_credentials() -> Creds:
     return creds
 
 
-# --- "Sign in with ChatGPT" (PKCE OAuth) -------------------------------------
 def _pkce() -> tuple[str, str]:
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b"=").decode()
     digest = hashlib.sha256(verifier.encode()).digest()
@@ -186,7 +181,7 @@ def _pkce() -> tuple[str, str]:
 
 def _callback_handler(result: dict[str, str]) -> type[http.server.BaseHTTPRequestHandler]:
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        def do_GET(self) -> None:  # noqa: N802
             parsed = urllib.parse.urlparse(self.path)
             if not parsed.path.startswith("/auth/callback"):
                 self.send_response(404)

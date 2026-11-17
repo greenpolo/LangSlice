@@ -44,22 +44,14 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-#: Radius (working-copy pixels) of the windows the look is fitted over.
 FIT_RADIUS = 4
-#: Regularization of the local fit (channel values 0..1): where the working
-#: copy varies less than about its square root, the gain tends to the one
-#: fitted over the whole region.
 FIT_EPS = 1e-3
-#: Margin (working-copy pixels) read and fitted around the points asked for.
 MARGIN = 3 * FIT_RADIUS
-#: How many file pixels a region read may hold before it is read at a stride.
 MAX_READ_PIXELS = 48_000_000
 
 _ROTATIONS = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180,
               270: Image.Transpose.ROTATE_90}
 
-
-# --- orientation ------------------------------------------------------------------------
 
 
 def unoriented_points(
@@ -109,8 +101,6 @@ def unorient(image: Image.Image, rotation_deg: int, flip: bool) -> Image.Image:
     return image.transpose(turn) if turn is not None else image
 
 
-# --- reading a window of the file -------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class Region:
@@ -145,7 +135,7 @@ def read_region(path: str | Path, box: tuple[int, int, int, int], step: int = 1)
     if Path(path).suffix.lower() in (".tif", ".tiff"):
         try:
             found = _read_tiff_region(path, box, step)
-        except Exception as exc:  # noqa: BLE001 - an odd layout: decode it whole
+        except Exception as exc:  # noqa: BLE001
             logger.debug("windowed read of %s failed (%s); decoding it whole", path, exc)
             found = None
         if found is not None:
@@ -222,8 +212,6 @@ def _read_tiff_region(
                   downsample=downsample)
 
 
-# --- the raw channels of a window --------------------------------------------------------------
-
 
 def _mapped(page: np.ndarray, held: IntensityRange) -> np.ndarray:
     """A page's samples as its working planes hold them (0..255, float)."""
@@ -255,13 +243,11 @@ def window_planes(
     for page, name in zip(pages, names, strict=False):
         page = np.asarray(page)
         mapped = _mapped(page if page.ndim == 2 else page[..., :3], ranges[name]) / 255.0
-        if mapped.ndim == 3:  # a colour page counts as its luminance
+        if mapped.ndim == 3:
             mapped = mapped @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
         planes.append(mapped.astype(np.float32))
     return planes
 
-
-# --- carrying a look to the file's pixels ----------------------------------------------------
 
 
 def _box(image: np.ndarray, radius: int) -> np.ndarray:
@@ -283,7 +269,7 @@ def fit_look(target: np.ndarray, guide: np.ndarray, *, radius: int = FIT_RADIUS,
     g_mean, t_mean = g.mean(axis=0), t.mean(axis=0)
     cov_all = np.cov(g, rowvar=False).reshape(k, k) + 1e-6 * np.eye(k)
     cross_all = ((g - g_mean).T @ (t - t_mean)) / max(len(g) - 1, 1)
-    prior = np.linalg.solve(cov_all, cross_all)  # (k, 3)
+    prior = np.linalg.solve(cov_all, cross_all)
 
     mean_g = np.stack([_box(guide[..., i], radius) for i in range(k)], axis=-1)
     mean_t = np.stack([_box(target[..., c], radius) for c in range(target.shape[2])], axis=-1)
@@ -316,7 +302,7 @@ def working_look(ws: Workspace, record: Section, look: Look) -> np.ndarray:
     source, _factor = ws.working_source(record.id)
     drawn = render_slice(ws, record, long_edge=max(source.size), look=look)
     flat = unorient(drawn, record.rotation_deg, record.flip).convert("RGB")
-    if flat.size != source.size:  # never expected: the render is the working copy
+    if flat.size != source.size:
         flat = flat.resize(source.size, Image.Resampling.BILINEAR)
     return np.asarray(flat, dtype=np.float32) / 255.0
 
@@ -349,20 +335,17 @@ def section_pixels(
     inside = (x >= -0.5) & (x <= width - 0.5) & (y >= -0.5) & (y <= height - 0.5)
     if not inside.any():
         return NativePixels(np.zeros((*x.shape, 3), dtype=np.uint8), inside, 1.0)
-    # The working-copy box the points need, with the fit's margin.
     bx0 = max(0, int(math.floor(x[inside].min())) - MARGIN)
     by0 = max(0, int(math.floor(y[inside].min())) - MARGIN)
     bx1 = min(width, int(math.ceil(x[inside].max())) + MARGIN + 1)
     by1 = min(height, int(math.ceil(y[inside].max())) + MARGIN + 1)
 
-    # The look, fitted on the raw channels over that box.
     names, planes = ws.section_channels(record.id)
     guide = np.stack([_at_size(np.asarray(plane), (width, height))[by0:by1, bx0:bx1]
                       for plane in planes], axis=-1).astype(np.float32) / 255.0
     target = working_look(ws, record, look)[by0:by1, bx0:bx1]
     offset, gain = fit_look(target, guide)
 
-    # The file's pixels around the points.
     path = ws.image_path(record.id)
     file_w, file_h = _file_size(path)
     fx, fy = file_w / float(width), file_h / float(height)
@@ -374,7 +357,6 @@ def section_pixels(
     region = read_region(path, box, step)
     raw = window_planes(region.pages, tuple(names), intensity_ranges(ws, record.id))
     rx, ry = region.to_read(px, py)
-    # Average the read pixels down to about one per picture pixel first.
     shrink = spacing / (region.downsample * region.stride)
     if shrink > 1.5:
         rows, cols = raw[0].shape[:2]
@@ -387,7 +369,6 @@ def section_pixels(
                                cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
                      for plane in raw], axis=-1)
 
-    # The fit, at the points, applied to the file's channels.
     wx, wy = (x - bx0).astype(np.float32), (y - by0).astype(np.float32)
 
     def at_points(values: np.ndarray) -> np.ndarray:

@@ -20,10 +20,6 @@ from typing import Any
 
 import langslice
 
-#: The commands that drive a host (the hosts layer), by module path: command
-#: -> (module, its add-parser function, its run function). The module is
-#: imported when the parser is built, never statically, so the doors never
-#: import a host (import-linter's layers contract).
 HOST_COMMANDS = {
     "gui": ("langslice.hosts.cli", "add_gui_parser", "run_gui"),
 }
@@ -47,16 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # langslice version
     subparsers.add_parser("version", help="Print version info")
 
-    # langslice login
     subparsers.add_parser(
         "login",
         help="Sign in with ChatGPT (OAuth) so LangSlice can use your subscription",
     )
 
-    # langslice linear <cmd> — position / affine estimation
     linear = subparsers.add_parser(
         "linear",
         help="Linear methods: section order, position and in-plane alignment",
@@ -64,14 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
     add_run_parser(linear_sub)
 
-    # langslice gui, serve (the host commands, loaded on demand)
     for command in HOST_COMMANDS:
         _host_command(command, 0)(subparsers)
 
-    # langslice mcp
     add_mcp_parser(subparsers)
 
-    # langslice session-end (the harness plugins' hook)
     add_session_end_parser(subparsers)
 
     return parser
@@ -79,18 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     """Run one ``langslice`` command."""
-    # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
-    # reads it, not only the one whose module happens to be imported. The
-    # keys saved by setup too, except for the commands that need none.
     from langslice.doors.credentials import load_credentials
 
     parser = build_parser()
     args = parser.parse_args(argv)
     load_credentials(saved=args.command not in {"gui", "login", "version", "session-end"})
 
-    # A group command (`linear`) carries the leaf name in `subcommand`;
-    # top-level commands only set `command`. Leaf names are unique across
-    # groups, so one dispatch chain covers both.
     command = getattr(args, "subcommand", None) or args.command
 
     if command == "version":

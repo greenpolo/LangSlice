@@ -22,12 +22,9 @@ from langslice.core.shared_files import replace_file
 
 logger = logging.getLogger(__name__)
 
-#: Another file for the list, or ``off`` for none.
 RECENT_ENV = "LANGSLICE_RECENT_JOBS"
 RECENT_FILE = "recent_jobs.jsonl"
-#: Past this size the file is rewritten, one line per job folder.
 KEEP_BYTES = 256 * 1024
-#: The job folders a rewrite keeps, newest first.
 KEEP_JOBS = 500
 _OFF = frozenset({"", "0", "off", "false", "no", "none"})
 

@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from langslice.core.pictures.placement import CanvasFrame
 
 
-# --- notes: which pictures a call returned ------------------------------------------
-
 
 @dataclass
 class PictureNote:
@@ -29,16 +27,10 @@ class PictureNote:
     mode: str | None = None
     frame: CanvasFrame | None = None
     panel: PanelFrame | None = None
-    #: The section's applied deformation as the job stores it, when drawn.
     deformation: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
-    #: A deformable-fit picture's frame (:class:`WarpNote`): the section on
-    #: its fit grid with the record's borders.
     warp: WarpNote | None = None
-    #: What a later stage needs to redraw the picture: a JSON-able
-    #: ``{"renderer": name, "args": {...}}`` (None: not redrawable).
     recipe: dict[str, Any] | None = None
-    #: The one-line caption sent beside the picture (None: none).
     caption: str | None = None
 
 
@@ -63,9 +55,6 @@ class WarpNote:
     depth: int = OVERLAY_DEPTH
     width_px: float = 2.0
     native: Any = None
-    #: The size the record's grid was resized to and the box of it the
-    #: picture shows (``resampled_record``'s ``size`` and ``box``), so the
-    #: picture's residual is drawn again from the record on demand.
     grid_size: tuple[int, int] = (0, 0)
     box: tuple[int, int, int, int] = (0, 0, 0, 0)
 

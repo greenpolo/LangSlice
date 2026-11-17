@@ -29,9 +29,6 @@ from langslice.core.sections.reading import (
 )
 from langslice.core.workspace import Workspace
 
-#: Colours an overlay gives its channels, in order. A channel NAMED after a
-#: colour (an RGB file's ``red``/``green``/``blue``) keeps that colour, so
-#: the three planes of a colour image overlay back into it.
 OVERLAY_PALETTE: tuple[tuple[str, tuple[int, int, int]], ...] = (
     ("green", (0, 255, 0)),
     ("magenta", (255, 0, 255)),
@@ -43,15 +40,8 @@ OVERLAY_PALETTE: tuple[tuple[str, tuple[int, int, int]], ...] = (
 NAMED_COLORS: dict[str, tuple[int, int, int]] = {
     "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
 }
-#: Percentiles an overlay maps to black and white, per channel, on a light
-#: background (:func:`auto_limits`).
 OVERLAY_STRETCH = (1.0, 99.5)
-#: Percentile of a channel's intensities inside the tissue that its automatic
-#: contrast draws at full colour on a dark background (:func:`auto_limits`):
-#: the brightest twentieth of the tissue saturates, so faint fluorescence is
-#: legible and a bright section is not blown out.
 TISSUE_WHITE_PERCENTILE = 95.0
-#: Pixels per plane :func:`auto_limits` samples.
 AUTO_SAMPLES = 1_000_000
 
 
@@ -77,8 +67,6 @@ def colour_words(names: Sequence[str]) -> str:
                       for name, word, _rgb in channel_colors(list(names)))
 
 
-# --- file intensities ---------------------------------------------------------
-
 
 def intensity_ranges(ctx: Workspace, section_id: str) -> dict[str, IntensityRange]:
     """Each raw channel's map from file intensities to its working plane (a
@@ -96,8 +84,6 @@ def intensity_ranges(ctx: Workspace, section_id: str) -> dict[str, IntensityRang
         ctx.intensity_cache[section_id] = cached
     return cached
 
-
-# --- drawing ------------------------------------------------------------------
 
 
 def auto_limits(planes: Sequence[np.ndarray]) -> list[tuple[float, float]]:

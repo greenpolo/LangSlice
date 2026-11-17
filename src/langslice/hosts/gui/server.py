@@ -59,6 +59,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from langslice.core.maps.abba import MAX_POINTS
 from langslice.hosts.gui import generator
 from langslice.hosts.gui.comments import CommentRow, CommentWatch
 from langslice.hosts.gui.export import ExportError, Exports, reveal
@@ -77,38 +78,26 @@ from langslice.job.layout import JobLayout
 from langslice.job.review import ReviewError, add_comment, remove_comment
 
 STATIC = Path(__file__).with_name("static")
-#: A file of ``static/`` the page may load: a plain name, no folder.
 STATIC_NAME = re.compile(
     r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt|ico)")
-#: Each static file's type, by extension.
 STATIC_TYPES = {"html": "text/html; charset=utf-8", "css": "text/css",
                 "js": "text/javascript", "woff2": "font/woff2",
                 "svg": "image/svg+xml", "txt": "text/plain; charset=utf-8",
                 "ico": "image/x-icon"}
-# --- Settings tab (hosts/gui/settings.py) ---
-#: The largest POST body read.
 MAX_BODY = 16 * 1024
-# --- end Settings tab ---
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
-#: The review comments' POST (:meth:`GuiServer._comment`).
 _COMMENTS = re.compile(r"jobs/(\d+)/comments")
-#: What a comment on a job without sections is told.
 NO_SECTIONS = "This job has no sections to comment on yet."
-#: What a comment that could not be written is told.
 NOT_SAVED = "The comment could not be saved in the job folder."
 _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 _STRIP = re.compile(r"jobs/(\d+)/strip")
 _RENDER = re.compile(r"jobs/(\d+)/render/(overlay|thumb)/([^/]+)")
 _ATLAS = re.compile(r"jobs/(\d+)/render/atlas/(\d+)")
 _EXPORT = re.compile(r"jobs/(\d+)/export(/reveal)?")
-#: An answer: an HTTP error code, or the body, its type and the code.
 Answer = int | tuple[bytes, str] | tuple[bytes, str, int]
-#: A job route's handler: the job, the path's match and the query.
 _Route = Callable[[JobWatcher, re.Match[str], dict[str, list[str]]], Answer]
-#: The pictures of one section a ``render/<kind>/<section>`` path draws.
 _SECTION_PICTURES = {"overlay": JobRenderer.overlay,
                      "thumb": JobRenderer.thumb}
-#: The headers every answer carries.
 HEADERS = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
@@ -185,7 +174,6 @@ class GuiServer:
             def do_HEAD(self) -> None:
                 self.send_error(405)
 
-            # --- Settings tab: the only POSTs (owner.post) ---
             def do_POST(self) -> None:  # noqa: N802
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
@@ -193,7 +181,6 @@ class GuiServer:
                     length = -1
                 body = (self.rfile.read(length) if 0 <= length <= MAX_BODY else None)
                 self._send(owner.post(self.path, self.headers, body))
-            # --- end Settings tab ---
 
             def do_GET(self) -> None:
                 self._send(owner.answer(self.path, self.headers.get("Host", "")))
@@ -238,9 +225,9 @@ class GuiServer:
             if resource == "jobs":
                 return self._json({"jobs": self.jobs.listing(),
                                    "home": str(Path.home())})
-            if resource == "generator":  # prompt generator
+            if resource == "generator":
                 return self._generator(query)
-            if resource == "settings":  # the Settings tab (hosts/gui/settings.py)
+            if resource == "settings":
                 return self._json(self.settings.state())
             return self._job_route(resource, query)
         except (ValueError, TypeError):
@@ -291,8 +278,9 @@ class GuiServer:
         """Draw a section's overlay or thumbnail, named by its filename."""
         draw = _SECTION_PICTURES[match[2]]
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
+        calm = query.get("style", [""])[0] == "calm"
         return self._jpeg(partial(
-            draw, self._renderer(watcher), unquote(match[3]), edge))
+            draw, self._renderer(watcher), unquote(match[3]), edge, calm=calm))
 
     def _atlas(self, watcher: JobWatcher, match: re.Match[str],
                query: dict[str, list[str]]) -> Answer:
@@ -318,7 +306,13 @@ class GuiServer:
                 return self._json({"opened": True})
             fields = cast("dict[str, object]", request)
             kind = fields.get("format") if isinstance(request, dict) else None
-            started = self.exports.start(watcher.folder, str(kind))
+            count = (
+                fields.get("landmarks") if isinstance(request, dict) else None
+            )
+            landmarks = count if isinstance(count, int) else MAX_POINTS
+            started = self.exports.start(
+                watcher.folder, str(kind), landmarks=landmarks
+            )
             return self._json(asdict(started))
         except (ExportError, OSError) as exc:
             return (*self._json({"error": str(exc)}), 400)
@@ -363,7 +357,6 @@ class GuiServer:
             data["prefill"] = asdict(form) if form is not None else None
         return self._json(data)
 
-    # --- Settings tab (hosts/gui/settings.py) ---
     def post(self, raw_path: str, headers: Any,
              body: bytes | None) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
         """A POST to a Settings or Export resource: the token, the ``Host``, an
@@ -405,7 +398,6 @@ class GuiServer:
         except OSError:
             return (*self._json({"error": "The settings could not be saved in ~/.langslice/."}),
                     500)
-    # --- end Settings tab ---
 
     def _comment(
         self, index: int, request: object

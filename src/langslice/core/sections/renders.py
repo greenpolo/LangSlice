@@ -24,9 +24,6 @@ from langslice.core.sections.reading import (
 from langslice.core.stack.section import Section
 from langslice.core.workspace import Workspace
 
-#: Working frame for transform fits and their preview panels. A COMPUTE
-#: size: fits, calibration and the six stored numbers are normalized against
-#: this render, whatever size the pictures are shown at.
 PREVIEW_LONG_EDGE = 512
 
 _ROTATE_OPS = {
@@ -95,11 +92,8 @@ def render_slice(
     if cached is not None:
         return cached
 
-    # The working copy, not the file: a whole-slide scan is read once, small.
     source, file_px_per_px = ctx.working_source(record.id)
     size = prepare_image_for_vlm(source, max_long_edge=long_edge).size
-    # How many FILE pixels one render pixel spans, before any quarter-turn:
-    # the section's own micrometres per pixel times this is the canvas's.
     ctx.render_scale[key] = file_px_per_px * source.width / float(size[0])
     prepped = _look_image(ctx, record, drawn_look(record, look), size)
     rotate = _ROTATE_OPS.get(int(record.rotation_deg) % 360)
@@ -131,12 +125,10 @@ def _look_image(
             image = image.resize(size, Image.Resampling.LANCZOS)
         return image
 
-    if look.get("file"):  # the file as it is, no preprocessing
+    if look.get("file"):
         image, _factor = read_working_image(ctx.image_path(record.id))
         return framed(image.convert("RGB"))
     if "overlay" in look:
-        # Each channel stretched on its whole working plane, then added in
-        # its colour.
         shown = [(str(name), np.asarray(images.raw_plane(ctx, record.id, str(name)),
                                         dtype=np.float32))
                  for name in look["overlay"]]

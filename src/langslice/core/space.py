@@ -73,8 +73,6 @@ def slice_axis_index(context: AtlasSpaceContext, plane: Plane) -> int:
     raise ValueError(f"Unknown plane: {plane!r}")
 
 
-#: Anatomical name of each end of an axis, keyed by the letter naming where
-#: the axis STARTS: 'a' means it runs from anterior to posterior.
 _AXIS_ENDS = {
     "a": ("anterior", "posterior"),
     "p": ("posterior", "anterior"),

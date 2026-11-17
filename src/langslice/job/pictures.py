@@ -44,7 +44,7 @@ tool.
 from __future__ import annotations
 
 import atexit
-import concurrent.futures.thread  # noqa: F401  (its exit hook is registered first: at_exit)
+import concurrent.futures.thread  # noqa: F401
 import contextlib
 import contextvars
 import json
@@ -67,15 +67,11 @@ from langslice.core.pictures.layers import picture_layers, warp_layers
 from langslice.core.shared_files import retried
 from langslice.job.layout import JobLayout
 
-#: Beside ``views.jsonl``: the numbers handed out so far (``seq``: the next
-#: picture's, ``call``: the last call's), and its lock ``views.seq.lock``.
 VIEWS_COUNTER = "views.seq"
-#: How long a store waits for another to finish numbering its pictures.
 NUMBERING_TIMEOUT_S = 30.0
 
 logger = logging.getLogger(__name__)
 
-#: ``view.json``'s format.
 VIEW_FORMAT_VERSION = 1
 VIEW_FILE = "view.json"
 PICTURE_FILE = "view.jpg"
@@ -84,9 +80,7 @@ BORDERS_FILE = "borders.png"
 
 _NAME_PART = re.compile(r"[^a-zA-Z0-9_]+")
 
-#: Every store with pictures queued at some point (for :func:`flush_all`).
 _STORES: weakref.WeakSet[ViewStore] = weakref.WeakSet()
-#: The open :func:`captured` lists of this context, innermost last.
 _CAPTURES: contextvars.ContextVar[tuple[list[Saved], ...]] = contextvars.ContextVar(
     "langslice_view_captures", default=())
 
@@ -98,16 +92,10 @@ class Saved:
     folder: Path
     name: str
     layers: bool
-    #: What the picture shows, from its note: the sections and the mode.
     sections: tuple[str, ...] = ()
     mode: str | None = None
-    #: Its place among the call's pictures (zero-based, the order a reply's
-    #: ``image_indexes`` count in).
     index: int = 0
-    #: The picture's number (``view.json``'s ``seq``): what :meth:`ViewStore.lookup` takes.
     seq: int = 0
-    #: The kind its JPEG is listed as: ``view``, or ``tile`` for a picture a
-    #: sheet shows in its place (saved and numbered, not sent on its own).
     view_kind: str = "view"
 
     def files(self) -> list[tuple[Path, str]]:
@@ -130,7 +118,6 @@ class PictureRecord:
     name: str
     tool: str
     call: int
-    #: The picture's folder relative to the job folder ("" in a dry run).
     path: str
     sections: tuple[str, ...] = ()
     mode: str | None = None
@@ -138,9 +125,7 @@ class PictureRecord:
     caption: str | None = None
     step: int | None = None
     recipe: dict[str, Any] | None = None
-    #: The registration each of its sections was drawn under, by number.
     registrations: dict[str, int] = field(default_factory=dict)
-    #: The picture itself, kept only by :class:`DiscardedViews`.
     image: Image.Image | bytes | None = field(default=None, compare=False, repr=False)
 
     @classmethod
@@ -229,13 +214,11 @@ def at_exit(function: Callable[[], None]) -> None:
         return
     try:
         register(function)
-    except RuntimeError:  # the interpreter is already shutting down
+    except RuntimeError:
         atexit.register(function)
 
 
 at_exit(flush_all)
-# And once more after every thread has been joined, for pictures queued by a
-# thread that was still running a tool when the first flush ran.
 atexit.register(flush_all)
 
 
@@ -279,8 +262,6 @@ class _Picture:
     step: int | None = None
     recipe: dict[str, Any] | None = None
     caption: str | None = None
-    #: The registration each of its sections is drawn under, by number
-    #: (:meth:`ViewStore.save`); None when none is known.
     registrations: dict[str, int] | None = None
 
 
@@ -291,7 +272,6 @@ class _Call:
     call_id: str | None
     arguments: Any
     pictures: list[_Picture]
-    #: The run's atlas object (a BrainGlobe atlas), None without one.
     atlas: object
 
 
@@ -303,9 +283,6 @@ class Shown:
     pictures: list[Image.Image] = field(default_factory=list)
     arguments: Any = None
     call_id: str | None = None
-    #: Once the block has ended: the saved pictures' names and numbers, in
-    #: order, and their captions (from their notes; None when a note gave
-    #: none). Empty when nothing was saved.
     names: list[str] = field(default_factory=list)
     numbers: list[int] = field(default_factory=list)
     captions: list[str | None] = field(default_factory=list)
@@ -328,17 +305,9 @@ class ViewStore:
         self._running = False
         self._seq: int | None = None
         self._call = 0
-        #: Asked for the history depth when a picture is saved (the job sets
-        #: it); None: ``step`` stays unrecorded unless :meth:`save` is given one.
         self.step_source: Callable[[], int] | None = None
-        #: Asked, when a picture is saved, for the registration number each of
-        #: its sections holds (the job sets it, :meth:`Job.wire_views`); None:
-        #: no picture records one.
         self.registration_source: Callable[[Sequence[str]], dict[str, int]] | None = None
-        #: Bytes of the views index already read for the numbering.
         self._index_read = 0
-
-    # --- numbering ----------------------------------------------------------------
 
     def _next_numbers(self) -> tuple[int, int]:
         """The next picture and call numbers, continuing the index's: a
@@ -351,7 +320,7 @@ class ViewStore:
                 handle.seek(self._index_read)
                 for line in handle:
                     if not line.endswith(b"\n"):
-                        break  # a line still being written: read it next time
+                        break
                     self._index_read += len(line)
                     try:
                         entry = json.loads(line)
@@ -397,8 +366,6 @@ class ViewStore:
             write_json_atomic(str(counter), {"seq": self._seq, "call": self._call})
         finally:
             lock.release()
-
-    # --- saving -------------------------------------------------------------------
 
     def save(
         self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
@@ -459,7 +426,7 @@ class ViewStore:
             return None
         try:
             found = self.registration_source(tuple(note.sections))
-        except Exception:  # noqa: BLE001 - a picture is saved without the numbers
+        except Exception:  # noqa: BLE001
             logger.warning("Could not number the registrations of a picture", exc_info=True)
             return None
         return dict(found) or None
@@ -469,8 +436,6 @@ class ViewStore:
             with contextlib.suppress(Exception):
                 return int(self.step_source())
         return step
-
-    # --- the index ----------------------------------------------------------------
 
     def records(self) -> list[PictureRecord]:
         """Every indexed picture, in order (queued pictures are written first)."""
@@ -526,14 +491,12 @@ class ViewStore:
                                    atlas=atlas_of() if placed and atlas_of is not None else None)
             call.numbers = [int(name.split("_", 1)[0]) for name in call.names]
             call.captions = [held.caption if held is not None else None for _p, held in noted]
-        except Exception:  # saving must never break a tool
+        except Exception:
             logger.warning("Could not queue the pictures of %s", tool, exc_info=True)
 
     def flush(self) -> None:
         """Wait until every queued picture is written."""
         self._queue.join()
-
-    # --- the writer ------------------------------------------------------------------
 
     def _work(self) -> None:
         """Write queued calls in order; end once the queue is empty."""
@@ -619,7 +582,6 @@ class ViewStore:
                  "path": self.layout.relative(folder), "tool": call.tool, "call": call.call,
                  "sections": record["sections"], "mode": record["mode"],
                  "layers": bool(record["layers"])}
-        # Left out of the index line when absent (view.json always has them).
         entry.update({key: record[key] for key in ("caption", "step", "recipe", "registrations")
                       if record[key] is not None})
         return json.dumps(entry) + "\n"
@@ -634,7 +596,6 @@ class DiscardedViews(ViewStore):
     newest :data:`KEPT_PICTURES` of those keep the picture itself
     (``PictureRecord.image``)."""
 
-    #: How many of the newest pictures keep their image in memory.
     KEPT_PICTURES = 24
 
     def __init__(self, layout: JobLayout) -> None:
@@ -647,7 +608,7 @@ class DiscardedViews(ViewStore):
         step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
         captions: list[str | None] | None = None, tiles: bool = False,
     ) -> list[str]:
-        del tiles  # nothing is listed: a dry run keeps no files
+        del tiles
         if not pictures:
             return []
         step = self._step(step)

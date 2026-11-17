@@ -122,9 +122,6 @@ def _build_metadata(
     return metadata
 
 
-#: ``size_tier`` values that name a Gemini output resolution (the API's
-#: own spellings). Flash-Lite Image serves 1K only; 512 is Flash Image, 2K/4K
-#: are Flash Image / Pro Image tiers.
 _GEMINI_IMAGE_SIZES = frozenset({"512", "512P", "512PX", "1K", "2K", "4K"})
 
 
@@ -143,8 +140,6 @@ def _gemini_image_config(
     """
     types_mod = importlib.import_module("google.genai.types")
     w, h = request.slice_image.size
-    # The same table the canvas was framed with (native_output_size), so the
-    # aspect asked for is the aspect the canvas already has.
     aspect = gemini_aspect_for(w / h, request.size_tier)
     size = (request.size_tier or "").upper()
     image_config = types_mod.ImageConfig(
@@ -161,9 +156,6 @@ def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegme
     model = request.model or GEMINI_DEFAULT_IMAGE_MODEL
     client = vlm_config.get_client()
 
-    # Histology first: the edited base image leads, references follow. There
-    # is no edit-vs-generate switch on this API: the prompt alone carries the
-    # editing intent, and the config pins the output frame to the canvas.
     contents = [
         request.slice_image,
         *request.reference_images,
@@ -175,7 +167,7 @@ def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegme
     )
     try:
         image = _extract_last_inline_image(response)
-    except Exception:  # noqa: BLE001 — an imageless reply (e.g. IMAGE_RECITATION); once more
+    except Exception:  # noqa: BLE001
         response = client.models.generate_content(  # type: ignore[attr-defined]
             model=model, contents=contents, config=config
         )
@@ -197,7 +189,6 @@ def _generate_openai_images_segmentation(
 ) -> GeneratedSegmentation:
     model = request.model or get_openai_image_model()
     client = get_openai_image_client()
-    # Histology first: the edited base image leads, references follow.
     image_files = [
         _image_to_png_file(request.slice_image, "slice_image.png"),
         *(
@@ -255,7 +246,6 @@ def _generate_openai_oauth_segmentation(
 
     model = request.model or transport.DEFAULT_IMAGE_MODEL
     quality = (request.size_tier or "high").lower()
-    # The images/edits endpoint: the prompt reaches the image model verbatim.
     png_bytes = transport.edit_image(
         request.prompt,
         [

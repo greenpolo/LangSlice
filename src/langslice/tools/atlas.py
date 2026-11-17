@@ -56,13 +56,10 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
     from langslice.tools.run import Run
 
-#: The recipe renderer of :func:`draw_regions`'s pictures.
 REGIONS_RENDERER = "grep_atlas_view"
 
 
-#: Points one ``grep_atlas`` call looks up (as many as it lists region rows).
 MAX_POINTS = GREP_ATLAS_LIMIT
-#: Containing regions named per point, nearest first (the root is left out).
 MAX_CHAIN = 6
 
 
@@ -197,7 +194,7 @@ def _chain(table: dict[int, Any], region_id: int) -> list[str]:
     for parent in reversed(ancestry(entry)):
         held = table.get(parent)
         if held is None or len(path(held)) <= 1:
-            continue  # the root says nothing
+            continue
         out.append(region_words(table, parent))
     return out[:MAX_CHAIN]
 
@@ -251,7 +248,6 @@ def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[st
         recipe = record.recipe or {}
         row: dict[str, Any] = {"picture": seq, "x": x, "y": y}
         if recipe.get("renderer") == zooms.CROP_RENDERER:
-            # A crop of a saved image: its grid numbers are the source picture's pixels.
             source = job.views.lookup(int(recipe.get("source") or 0))
             if source is not None:
                 record, recipe = source, source.recipe or {}
@@ -317,8 +313,6 @@ def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: fl
     return label if inside else None
 
 
-# --- grep_atlas_view ---------------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class RegionsView:
@@ -328,11 +322,8 @@ class RegionsView:
     pictures: list[Image.Image] = field(default_factory=list)
     entries: list[dict[str, Any]] = field(default_factory=list)
     not_shown: list[dict[str, Any]] = field(default_factory=list)
-    #: The regions highlighted, as named.
     regions: list[str] = field(default_factory=list)
-    #: ``{"<mm:.2f>": [regions]}``: the named regions with no pixel in that plane.
     regions_not_in_plane: dict[str, list[str]] = field(default_factory=dict)
-    #: ``(asked, used)`` positions moved into the atlas range.
     clamped: list[tuple[float, float]] = field(default_factory=list)
 
 
@@ -443,7 +434,6 @@ def _redraw_regions(
         extent = (max((earlier[2] - earlier[0]) * base[0], (earlier[3] - earlier[1]) * base[1])
                   if earlier else max(shown))
         base_um = float(um) * extent / max(max(shown), 1)
-    # a recipe's arguments are JSON
     given: object = cast("object", args["regions"])
     regions = _resolved(workspace, drawn, given)
     position = float(args["positions_mm"][0])

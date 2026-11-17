@@ -26,35 +26,19 @@ from tools.stylecheck.rules.scopes import (
     FUNCTION_NODES,
     SCOPE_NODES,
     call_name,
-    comment_on,
     module_matches,
     own_nodes,
     parameters,
     string_value,
 )
 
-#: The exception classes that make a handler broad.
 BROAD_EXCEPTIONS = frozenset({"Exception", "BaseException"})
 
-#: The finding for a broad handler that drops the error.
 INERT_HANDLER = (
     "A broad except only passes, returns None or logs at debug; raise, "
     "return a real value or report the skip (8.3)."
 )
 
-#: The finding for a broad handler without a stated reason.
-UNEXPLAINED_HANDLER = (
-    "A broad except needs a comment on its line naming the failure it "
-    "expects (8.3)."
-)
-
-#: A lint waiver inside a comment, which names a rule and not a failure.
-WAIVER_PATTERN = re.compile(r"(?:noqa|type:\s*ignore)(?::?\s*[\w\[\],\s]*)?")
-
-#: The fewest words a comment needs to name the failure it expects.
-MIN_REASON_WORDS = 2
-
-#: Calls that write to the terminal instead of the log.
 PRINT_CALLS = frozenset(
     {
         "print",
@@ -67,35 +51,24 @@ PRINT_CALLS = frozenset(
     }
 )
 
-#: Modules whose ``print``-like functions write to the terminal.
 PRINT_MODULES = frozenset({"rich", "pprint", "click", "typer"})
 
-#: What an error code looks like anywhere: two or more upper-case words.
 CODE_PATTERN = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
 
-#: What an error code looks like in a code place: one upper-case word of
-#: three letters or more is enough there (``"FROZEN"``).
 WORD_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,}")
 
-#: The logging levels, upper-case words that are not codes.
 LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
-#: The item that marks a dict as an error reply.
 ERROR_ITEM = ("status", "error")
 
-#: Upper-case names that Python itself defines, which are not codes.
 PYTHON_NAMES = frozenset({"TYPE_CHECKING", "KW_ONLY"})
 
-#: Record keys and call keywords under which a value is an error code.
 CODE_KEYS = frozenset({"code", "error"})
 
-#: Name endings of the constructors that take an error code.
 REFUSAL_SUFFIXES = ("Refused", "Refusal", "Error", "Exception")
 
-#: The scopes whose names are read apart: the module and each definition.
 SCOPES = (ast.Module, *SCOPE_NODES)
 
-#: The strings a scope binds to names, by name, with the bound node.
 Bound = dict[str, tuple[ast.expr, str]]
 
 
@@ -103,13 +76,12 @@ Bound = dict[str, tuple[ast.expr, str]]
 def check_broad_except(
     module: Module, project: Project, config: Config
 ) -> Iterator[Violation]:
-    """Flag a broad handler that loses the error or does not say why.
+    """Flag a broad handler that loses the error.
 
     Guide rule 8.3. A broad handler (see the module docstring) whose body
     only passes, continues, breaks, returns None or logs at debug level
-    is flagged. Otherwise it needs a comment on its ``except`` line that
-    names the failure it expects, in at least two words besides any lint
-    waiver. A handler that raises needs neither.
+    is flagged; one that raises is not. Ruff's BLE001 flags every other
+    broad handler, and no waiver is written (7.1).
 
     Parameters
     ----------
@@ -128,20 +100,15 @@ def check_broad_except(
     for node in ast.walk(module.tree):
         if not isinstance(node, ast.ExceptHandler):
             continue
-        problem = _handler_problem(module, node)
-        if problem:
-            yield module.violation("broad-except", node, problem)
+        if _drops_the_error(node):
+            yield module.violation("broad-except", node, INERT_HANDLER)
 
 
-def _handler_problem(module: Module, handler: ast.ExceptHandler) -> str:
-    """Say what is wrong with an exception handler, or return ``""``."""
+def _drops_the_error(handler: ast.ExceptHandler) -> bool:
+    """Tell whether a broad handler neither raises nor answers."""
     if not _is_broad(handler) or _raises(handler):
-        return ""
-    if all(_is_inert(statement) for statement in handler.body):
-        return INERT_HANDLER
-    if not _names_failure(module, handler):
-        return UNEXPLAINED_HANDLER
-    return ""
+        return False
+    return all(_is_inert(statement) for statement in handler.body)
 
 
 def _is_broad(handler: ast.ExceptHandler) -> bool:
@@ -172,17 +139,6 @@ def _is_inert(statement: ast.stmt) -> bool:
     if isinstance(statement.value, ast.Constant):
         return True
     return call_name(statement.value).endswith(".debug")
-
-
-def _names_failure(module: Module, handler: ast.ExceptHandler) -> bool:
-    """Tell whether the ``except`` line's comment names a failure."""
-    last_line = handler.body[0].lineno - 1
-    comment = comment_on(
-        module, handler.lineno, max(last_line, handler.lineno)
-    )
-    reason = WAIVER_PATTERN.sub(" ", comment.replace("#", " "))
-    words = re.findall(r"[A-Za-z]{2,}", reason)
-    return len(words) >= MIN_REASON_WORDS
 
 
 @module_check("print-call")

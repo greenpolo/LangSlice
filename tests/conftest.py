@@ -24,11 +24,6 @@ os.environ.setdefault("LANGSLICE_CLAUDE_TRANSCRIPTS", "off")
 # A long verb's CLI call runs in its own process unless a test detaches it
 # (whatever harness runs the tests: Claude Code sets CLAUDECODE).
 os.environ["LANGSLICE_DETACH"] = "0"
-# `langslice-job FOLDER VERB` runs only the verbs of a session that sets a job
-# up and checks it (agent_cli.catalog.CLI_VERBS). The tests drive every verb
-# through that command's plumbing (the envelope, the flags, the background
-# runs, a child process's too); the tests of the limit itself unset this.
-os.environ["LANGSLICE_JOB_TEST_ALL_VERBS"] = "1"
 
 if os.name == "nt":
     # Tests give a test its own home folder by setting HOME; Python on Windows

@@ -49,20 +49,10 @@ class TraceStarted:
     """What :func:`trace_borders` did for one section."""
 
     id: str
-    #: The section's image-correction record as stored (paths relative to
-    #: the job folder): ``status``, ``cached``, ``attempt``, the geometry
-    #: fingerprint, ``error`` / ``message`` when it failed...
     record: dict[str, Any]
-    #: True when an image call was started in the background now.
     started: bool = False
-    #: True when this section's call at this geometry (or its packaged trace)
-    #: was already running (nothing started, nothing written).
     running: bool = False
-    #: The packaged trace's background work id (:func:`trace_borders`); None
-    #: when nothing was started, and when the trace had already landed.
     work: str | None = None
-    #: The packaged trace at this placement and region choice had already
-    #: landed: the section's deformation holds its fit (nothing started).
     landed: bool = False
 
 
@@ -110,16 +100,16 @@ def _start_trace(
         result, call = registration_tool.start_correction(
             job.state, workspace, section_id, prompt=prompt, image_model=image_model,
             calls_dir=job.layout.border_trace_dir(section_id), include=kept, exclude=dropped)
-    except Refused as refusal:  # its own code: a side, regions that leave nothing
+    except Refused as refusal:
         facts = {"id": section_id, **refusal.facts}
         raise Refused(refusal.code, **facts) from refusal
-    except ValueError as exc:  # the placement the trace starts from
+    except ValueError as exc:
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
                       id=section_id, message=str(exc)) from exc
     except OSError as exc:
         raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
                       id=section_id, message=str(exc)) from exc
-    with job.writing():  # prepared outside the lock; written under it
+    with job.writing():
         before = job.snapshot()
         now = job.state.by_id(section_id)
         fingerprint = result["geometry_fingerprint"]
@@ -131,21 +121,15 @@ def _start_trace(
             job.start_image_job(section_id, fingerprint, call, workers=workers)
         portable = job.portable(result)
         trace = trace_from_json(portable)
-        # A saved reply reused as it stands differs only by its ``cached`` flag:
-        # nothing to write, so no undo step.
         if _without_cached(trace) != _without_cached(now.border_trace):
             now.border_trace = trace
             job.commit(before)
     return TraceStarted(id=section_id, record=portable, started=call is not None)
 
 
-#: The background work's kind (:mod:`langslice.job.background`).
 TRACE_WORK = "trace_borders"
-#: The fit a landed trace gets: the traced lines as named regions against the
-#: atlas borders, FireANTs at 80 um smoothness.
 TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
                                smoothness_um=80.0)
-#: Fit rows that mean the section or its trace changed before the fit applied.
 _STALE_CODES = (
     RefusalCode.STALE_INPUT,
     RefusalCode.TRACE_STALE,
@@ -269,11 +253,11 @@ def land_trace(
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions)
     if options is not None:
         done = draw_fits(workspace, done, options)
-    (fitted,) = done.rows  # one row per section asked
+    (fitted,) = done.rows
     row = deformable_row_to_json(fitted)
     refusal = fitted.refusal
     if refusal is not None or fitted.applied is None:
-        assert refusal is not None  # a row holds a fit or a refusal
+        assert refusal is not None
         if refusal.code in _STALE_CODES:
             return _stale(trace)
         return Landed(status=FAILED, text=f"the fit of the traced borders failed "
@@ -321,9 +305,6 @@ def _stale(trace: dict[str, Any]) -> Landed:
                   result={"error": RefusalCode.STALE_INPUT, "trace": trace})
 
 
-# --- the tool ----------------------------------------------------------------
-
-#: The fields of a section's border trace the tool's reply repeats.
 _REPLY_TRACE_KEYS = ("status", "error", "message", "cached", "prompt_edited",
                      "attempt", "include", "exclude")
 
@@ -348,7 +329,7 @@ def trace_borders_tool(
         ``ok`` with ``landed`` (its fit is already applied) or ``started``
         (the work id), the section's trace record and a ``message``.
     """
-    assert run.image_model is not None  # the tool exists only when traces are on
+    assert run.image_model is not None
     options = default_options("borders", long_edge=picture_edge(run.workspace))
     done = trace_borders(
         run.job, run.workspace, section, image_model=run.image_model,

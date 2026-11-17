@@ -50,17 +50,14 @@ from langslice.core.stack.section import FLAT, Angles, Section
 
 _T = TypeVar("_T")
 
-#: A section row as this module writes it.
 Row = dict[str, JsonValue]
 
-#: The keys of a section row, in the order a row writes them.
 ROW_KEYS = (
     "id", "index_original", "index_corrected", "flip", "rotation_deg",
     "damaged_regions", "damage_note", "position_mm", "transform",
     "border_trace", "deformation", "landmarks", "layers", "masks",
     "images", "caveats", "cutting_angles_deg",
 )  # fmt: skip
-#: The key a row holds a section's cutting angles under.
 ANGLES_KEY = "cutting_angles_deg"
 
 

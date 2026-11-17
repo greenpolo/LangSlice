@@ -25,7 +25,6 @@ from langslice.doors.agent_cli import calls, catalog
 from langslice.doors.agent_cli.envelope import emit, stdout_to_stderr
 from langslice.doors.credentials import load_credentials
 
-#: The catalog commands, read before a job folder.
 CATALOG = ("ops", "schema")
 
 
@@ -49,11 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     of_catalog = bool(argv) and argv[0] in CATALOG
     args = build_parser(of_catalog).parse_args(argv)
-    # `.env` holds the API keys; a verb that needs a model gets the saved
-    # keys when its job opens (doors.jobs).
     load_credentials(saved=False)
     if of_catalog:
-        # A job's atlas opened by schema prints nothing on stdout.
         with stdout_to_stderr():
             commands = {"ops": catalog.ops, "schema": catalog.schema}
             envelope = commands[argv[0]](args)

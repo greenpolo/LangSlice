@@ -30,9 +30,6 @@ from langslice.core.fits.trace.frames import (
 )
 from langslice.core.space import Plane
 
-#: Relative aspect-ratio difference above which a returned image is treated as
-#: letterboxed inside a different frame and cropped back. Lanes with fixed
-#: output frames answer at the nearest legal aspect, a percent or two off.
 _ASPECT_TOLERANCE = 0.005
 
 _MAX_LONG_EDGE = 2048
@@ -82,8 +79,6 @@ def _background_color(image: Image.Image) -> tuple[int, int, int]:
     return (r, g, b)
 
 
-#: The margin kept around the placed atlas's footprint on the canvas, as a
-#: fraction of the footprint box's larger side, on every side.
 FOOTPRINT_MARGIN = 0.15
 
 
@@ -132,7 +127,6 @@ def prepare_canvas(
     limits = aspect_ratio_limits(image_model, provider)
     width, height = image.size
     turn = stance.rotation()
-    # Edge coordinates (pixel i spans [i, i + 1]) about the render's centre.
     centre = np.array([width / 2.0, height / 2.0])
     corners = np.array([[0.0, 0.0], [width, 0.0], [0.0, height], [width, height]]) - centre
     turned = corners @ turn.T
@@ -167,12 +161,10 @@ def prepare_canvas(
     size = snapped(scale)
     frame = native_output_size(image_model, provider, size)
     if frame is not None:
-        # Fit to the frame and pad out to it exactly (never crop): the request IS the frame.
         scale *= min(frame[0] / size[0], frame[1] / size[1])
         size = frame
     offset = np.array([(size[0] - box_w * scale) / 2.0 - scale * left,
                        (size[1] - box_h * scale) / 2.0 - scale * top])
-    # canvas_edge = scale * turn @ (render_edge - centre) + offset; centres are edges - 0.5.
     linear = scale * turn
     shift = linear @ (0.5 - centre) + offset - 0.5
     render_to_canvas = np.array([[*linear[0], shift[0]], [*linear[1], shift[1]], [0.0, 0.0, 1.0]])
@@ -242,7 +234,6 @@ class Upright:
     def turn_deg(self) -> float:
         """The turn, in degrees clockwise on the screen, in (-180, 180]."""
         ux, uy = self.up
-        # The turn R(phi) takes `up` to (0, -1): phi = -90 deg - angle(up).
         phi = -90.0 - math.degrees(math.atan2(uy, ux))
         phi = (phi + 180.0) % 360.0 - 180.0
         return 180.0 if phi == -180.0 else phi
@@ -281,14 +272,12 @@ def upright(
     from langslice.core.space import atlas_space_context
 
     context = atlas_space_context(atlas)
-    # [row, col, 1] -> volume index per axis; gradients below are d index / d (x, y).
     index = plane_index_affine(atlas, position_mm, plane, pitch_deg, yaw_deg)
 
     def gradient(axis: int) -> np.ndarray:
         return np.array([index[axis, 1], index[axis, 0]], dtype=np.float64)
 
     dv = context.dv_axis_index
-    # Toward dorsal on the native plane: down the DV index where index 0 is superior.
     dorsal = gradient(dv) * (-1.0 if context.space.origin[dv] == "s" else 1.0)
     linear = np.asarray(atlas_to_render, dtype=np.float64)[:2, :2]
     if plane == "sagittal":
@@ -296,15 +285,12 @@ def upright(
 
     ml = context.ml_axis_index
     across = gradient(ml)
-    if np.hypot(*across) < 1e-9:  # the plane runs along the midplane: no midline
+    if np.hypot(*across) < 1e-9:
         return Upright()
     along = np.array([-across[1], across[0]])
-    # Coronal: the dorsal end up. Horizontal: the anterior end up (AP index 0
-    # is anterior on every supported atlas, `space.atlas_space_context`).
     aim = dorsal if plane == "coronal" else -gradient(context.ap_axis_index)
     if float(along @ aim) < 0:
         along = -along
-    # The midline point nearest the plane's centre: ML index there is the split.
     count = context.shape[ml]
     split = round(count / 2) - 0.5
     rows, cols = _plane_shape(context, plane)
