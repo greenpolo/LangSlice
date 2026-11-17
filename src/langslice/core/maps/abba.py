@@ -67,6 +67,9 @@ LangSlice draws it (ABBA's inverse of the pull-back, by Newton's method),
 and on the section side. The connector's warp row carries the atlas side's
 median, 95th and 99th percentiles and maximum. The exact map's own
 smallest sampled Jacobian (a 65x65 screen) is reported, not enforced.
+
+``MIN_POINTS`` is the fewest pairs a warp takes and ``MIN_GRID_SIDE`` the
+even grid of that smallest budget.
 """
 
 from __future__ import annotations
@@ -129,7 +132,6 @@ BATCH_GAP_STEPS = 8.0
 #: The even snapshot grids tried when every adaptive start folds, in points
 #: per side.
 GRID_SIDES = (33, 25, 17, 9)
-#: The fewest pairs a warp takes, and the even grid of the smallest budget.
 MIN_POINTS = 16
 MIN_GRID_SIDE = 4
 #: Search error at which pairs stop being added, in millimetres.

@@ -13,6 +13,11 @@ polls. The export opens the job as the library does and writes only under
 its ``exports/`` folder and ``registration.json``; the state is never
 changed. :func:`reveal` opens the exports folder in the system's file
 browser.
+
+``MIN_LANDMARKS`` is the fewest landmarks the menu writes a warp with:
+fewer follow LangSlice's warp less closely than leaving it out (on 331CTX
+the warps move tissue 95 um at the median; 100 landmarks miss them by
+45 um, 50 by 83 um, 16 to 36 by 120 to 140 um).
 """
 
 from __future__ import annotations
@@ -40,10 +45,6 @@ FORMATS = {
     "quicknii": "QuickNII (.json)",
     "visualign": "VisuAlign (.json)",
 }
-#: The fewest landmarks the menu writes a warp with: fewer follow
-#: LangSlice's warp less closely than leaving it out (on 331CTX the warps
-#: move tissue 95 um at the median; 100 landmarks miss them by 45 um, 50 by
-#: 83 um, 16 to 36 by 120 to 140 um).
 MIN_LANDMARKS = 100
 #: The file each QUINT format is written to.
 QUINT_FILES = {"quicknii": QUICKNII_FILE, "visualign": VISUALIGN_FILE}

@@ -41,10 +41,16 @@ the exact source; on the atlas side, how far the spline's forward map (the
 pull-back inverted by Newton's method, as ABBA inverts it) carries a source
 from its exact target. The atlas side is where a user sees the section
 drawn under the atlas borders.
+
+Each round tests folds at the search points within ``NEAR_GAPS`` smallest
+gaps of its new pairs, where adding them changes the spline most, and at the
+search points whose Jacobian, at the last whole test, was below
+``WATCH_FRACTION`` of the median: where a fold could start.
 """
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
@@ -52,8 +58,6 @@ from typing import Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
-# scipy ships no type stubs
-from scipy import spatial  # pyright: ignore[reportMissingTypeStubs]
 
 from langslice.core.geometry.thin_plate import ThinPlateKernel
 
@@ -78,11 +82,7 @@ MAX_REFINE = 4
 #: pair is sought again that close to it: small enough that a steep part of
 #: the map, where pairs often fold, still gets the pairs that do not.
 BLOCK_GAPS = 2.0
-#: A round tests folds at the search points within this many smallest gaps
-#: of its new pairs, where adding them changes the spline most.
 NEAR_GAPS = 4.0
-#: A round also tests the search points whose Jacobian, at the last whole
-#: test, was below this fraction of the median: where a fold could start.
 WATCH_FRACTION = 0.25
 #: Smallest Jacobian determinant accepted (a fold or collapse below it).
 MIN_JACOBIAN = 1e-6
@@ -101,11 +101,13 @@ class _Tree(Protocol):
         ...
 
 
-#: scipy's k-d tree, typed here: scipy ships no type stubs.
-_KD_TREE = cast(
-    "Callable[[FloatArray], _Tree]",
-    spatial.cKDTree,  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-)
+class _Spatial(Protocol):
+    """scipy's ``spatial`` module, typed here: scipy ships no type stubs."""
+
+    KDTree: Callable[[FloatArray], _Tree]
+
+
+_KD_TREE = cast("_Spatial", importlib.import_module("scipy.spatial")).KDTree
 
 
 class ExactMap(Protocol):

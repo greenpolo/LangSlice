@@ -8,6 +8,16 @@ brightest spots are compressed by a soft knee instead of clipping, and the
 atlas borders are a soft light layer over it, found as the difference
 between ``look``'s picture with and without them (so the scale bar, drawn
 in both, goes). Read-only like every drawing of the window.
+
+``NUCLEAR`` matches the channel names that say a channel is the nuclear
+(or Nissl) stain. ``STAGE`` is the window's dark ground (``--stage``) the
+pictures sit on, ``TINT`` the tissue's cool off-white at full brightness,
+``LINE`` the atlas borders' colour and ``LINE_STRENGTH`` how strongly they
+are laid over the tissue. ``BAR_FROM_BOTTOM``, ``BAR_LEFT``, ``BAR_GREY``,
+``MIN_BAR`` and ``BAR_LABEL`` say where ``look`` draws its scale bar
+(``captions._draw_scale_bar``): its row from the bottom, its left end, its
+grey, the shortest bar it draws and the label's height above it. The tissue
+mask is found on a copy at most ``MASK_EDGE`` pixels long.
 """
 
 from __future__ import annotations
@@ -17,7 +27,11 @@ from typing import TYPE_CHECKING, cast
 
 import cv2
 import numpy as np
-import SimpleITK as sitk  # noqa: N813 - SimpleITK's own spelling
+from SimpleITK import (
+    GetArrayFromImage,
+    GetImageFromArray,
+    SmoothingRecursiveGaussian,
+)
 from PIL import Image, ImageFilter
 
 from langslice.core.pictures.look import LookRequest, look
@@ -32,24 +46,16 @@ if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
     from langslice.hosts.gui.drawing import Opened
 
-#: Names that say a channel is the nuclear (or Nissl) stain.
 NUCLEAR = re.compile(r"dapi|hoechst|nuc|nissl|draq|topro", re.IGNORECASE)
-#: The stage the pictures sit on: the window's dark ground (``--stage``).
 STAGE = (18, 18, 19)
-#: The tissue's tint at full brightness, a cool off-white.
 TINT = (206, 210, 232)
-#: The atlas borders' colour and how strongly they are laid over the tissue.
 LINE = (232, 234, 250)
 LINE_STRENGTH = 0.55
-#: Where ``look`` draws its scale bar (``captions._draw_scale_bar``): its row
-#: from the bottom, its left end, its grey, the shortest bar it draws and the
-#: label's height above it.
 BAR_FROM_BOTTOM = 14
 BAR_LEFT = 12
 BAR_GREY = 200
 MIN_BAR = 4
 BAR_LABEL = 22
-#: The tissue mask is found on a copy at most this many pixels long.
 MASK_EDGE = 512
 
 
@@ -252,21 +258,17 @@ def tissue_mask(grey: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
                 size, Image.Resampling.BILINEAR
             )
         ).astype(np.float32)
-    image = sitk.GetImageFromArray(small)
+    image = GetImageFromArray(small)
     wide = 5.0 * scale + 1.0
-    smooth = sitk.GetArrayFromImage(
-        sitk.SmoothingRecursiveGaussian(image, [wide, wide])
-    )
+    smooth = GetArrayFromImage(SmoothingRecursiveGaussian(image, [wide, wide]))
     values = smooth[smooth > 4]
     floor = float(np.percentile(values, 30)) if values.size else 8.0
     bright = smooth > max(12.0, floor * 1.6)
-    fine = sitk.GetArrayFromImage(
-        sitk.SmoothingRecursiveGaussian(image, [1.0, 1.0])
-    )
+    fine = GetArrayFromImage(SmoothingRecursiveGaussian(image, [1.0, 1.0]))
     spread = 4.0 * scale + 1.0
-    texture = sitk.GetArrayFromImage(
-        sitk.SmoothingRecursiveGaussian(
-            sitk.GetImageFromArray(np.abs(small - fine)), [spread, spread]
+    texture = GetArrayFromImage(
+        SmoothingRecursiveGaussian(
+            GetImageFromArray(np.abs(small - fine)), [spread, spread]
         )
     )
     level = (
