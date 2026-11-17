@@ -15,6 +15,7 @@ export default defineConfig({
     assetsInlineLimit: 0,
     cssCodeSplit: false,
     modulePreload: false,
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: 'index.html',
       output: {

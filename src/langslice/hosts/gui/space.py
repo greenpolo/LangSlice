@@ -14,7 +14,7 @@ in the 3D view sits exactly where its pictures say it does:
   top-right and bottom-left corners of its thumbnail (the section turned and
   flipped as it is kept, as ``render/thumb`` draws it) in atlas micrometres,
   in the atlas's own axis order, the fourth corner the parallelogram's;
-- the section thickness the job was given, else :data:`DEFAULT_THICKNESS_UM`.
+- the section thickness the job was given, else 10 micrometres.
 
 Atlas micrometres follow BrainGlobe: voxel ``i``'s centre at
 ``i * resolution``, axes as the atlas's ``orientation`` letters name them.
@@ -24,11 +24,14 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 
+from langslice.core.atlas.load import BrainGlobeAtlas
 from langslice.core.maps.section_maps import (
     orientation_matrix,
     placement_problem,
@@ -95,10 +98,11 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
         The mask of annotated samples, row-major over the atlas's axes,
         packed eight samples to a byte (``numpy.packbits``).
     """
-    atlas = workspace.atlas
+    atlas = cast(BrainGlobeAtlas, workspace.atlas)
     annotation = np.asarray(atlas.annotation)
     resolution_um = tuple(float(value) for value in atlas.resolution)
-    stride = max(1, int(np.ceil(max(annotation.shape) / SHELL_MAX_VOXELS)))
+    full = cast(tuple[int, int, int], annotation.shape)
+    stride = max(1, math.ceil(max(full) / SHELL_MAX_VOXELS))
     sampled = annotation[::stride, ::stride, ::stride] > 0
     packed = np.packbits(sampled.astype(np.uint8), axis=None)
     shape = (sampled.shape[0], sampled.shape[1], sampled.shape[2])
@@ -108,9 +112,9 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
         resolution_um[2] * stride,
     )
     extent_um = (
-        resolution_um[0] * annotation.shape[0],
-        resolution_um[1] * annotation.shape[1],
-        resolution_um[2] * annotation.shape[2],
+        resolution_um[0] * full[0],
+        resolution_um[1] * full[1],
+        resolution_um[2] * full[2],
     )
     return AtlasShell(
         str(atlas.orientation),
@@ -147,8 +151,12 @@ def job_space(
         for order, section in enumerate(state.in_order(), 1)
     )
     given = thickness_um is not None and thickness_um > 0
-    thickness = float(thickness_um) if given else DEFAULT_THICKNESS_UM
-    context = atlas_space_context(workspace.atlas)
+    thickness = (
+        float(thickness_um)
+        if thickness_um is not None and thickness_um > 0
+        else DEFAULT_THICKNESS_UM
+    )
+    context = atlas_space_context(cast(BrainGlobeAtlas, workspace.atlas))
     plane_axis = slice_axis_index(context, workspace.settings.plane)
     return Space(thickness, given, plane_axis, sections)
 
@@ -165,7 +173,7 @@ def section_corners(
     state
         The stack the section belongs to.
     section
-        The section.
+        The section whose thumbnail is placed.
 
     Returns
     -------
@@ -181,9 +189,7 @@ def section_corners(
     except (ValueError, OSError):
         logger.warning("No frame for %s", section.id, exc_info=True)
         return None
-    turn = orientation_matrix(
-        frame.file_size, frame.rotation_deg, frame.flip
-    )
+    turn = orientation_matrix(frame.file_size, frame.rotation_deg, frame.flip)
     turned = turned_corners(frame.file_size, frame.rotation_deg)
     file_xy = np.linalg.inv(turn) @ turned
     rowcol = np.stack([file_xy[1], file_xy[0], np.ones(3)])
@@ -194,7 +200,7 @@ def section_corners(
 def turned_corners(
     file_size: tuple[int, int], rotation_deg: int
 ) -> npt.NDArray[np.float64]:
-    """The turned picture's top-left, top-right and bottom-left corners.
+    """List the turned picture's top-left, top-right and bottom-left corners.
 
     Parameters
     ----------
@@ -224,12 +230,6 @@ def turned_corners(
 
 def _as_corners(atlas_um: npt.NDArray[np.float64]) -> Corners:
     """Round a 3x3 of corner columns to the corners' tuples."""
-    points = [
-        (
-            round(float(atlas_um[0, k]), 2),
-            round(float(atlas_um[1, k]), 2),
-            round(float(atlas_um[2, k]), 2),
-        )
-        for k in range(3)
-    ]
+    columns = cast(list[list[float]], atlas_um.T.tolist())
+    points = [(round(x, 2), round(y, 2), round(z, 2)) for x, y, z in columns]
     return (points[0], points[1], points[2])

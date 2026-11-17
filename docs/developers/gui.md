@@ -84,6 +84,19 @@ the registration look like, and how did it get here.
   **Follow the agent** (on to start with; `f`) keeps the pictures on the
   agent's latest call. Clicking a section on the cutting axis, a picture or
   a name in the journal shows it and stops following.
+- **3D.** **Pictures | 3D** above the pictures (remembered) swaps them for
+  the atlas brain in three dimensions: the sections in focus in a narrow
+  column on the left, and on the right the atlas's brain as glass with every
+  section where its linear placement puts it, as a slab carrying its
+  thumbnail, as thick as the job's sections (10 µm when the job does not say,
+  marked *assumed*). The sections the agent is looking at rise out of the
+  stack, outlined in the accent colour, and the others dim. A section not
+  placed yet waits in a loose cloud around the brain, turned any way; once
+  the agent places it, it flies to its place and settles there with a brief
+  flash. Drag to turn the brain (it turns slowly by itself until you do),
+  scroll to zoom; pointing at a section names it, clicking shows it. With
+  reduced motion the sections move at once and the brain does not turn by
+  itself.
 - **Where the sections sit in the brain.** The cutting axis, as in Simple,
   with the atlas template's pictures at regular steps above the ruler.
 - **Review.** The button at the top right (or `r`) shows one section at a
@@ -308,8 +321,10 @@ address, reachable only from this computer. The agent viewer watches the job fol
 (`logs/events.jsonl`, `views.jsonl`, `trace/`, `state.json`,
 `history/undo.json`, `job.json`, `exports/spend.json`; see
 [file formats](../reference/file_formats.md)) four times a second while a page looks at the
-job, and serves only the folders it lists. The sections' pictures and the cutting axis's
-thumbnails are drawn by the window itself, with LangSlice's own picture code,
+job, and serves only the folders it lists. The sections' pictures, the cutting axis's
+thumbnails, and the 3D view's sections (their thumbnails' corners in the
+atlas, `GET jobs/<n>/space`) and atlas brain (a coarse mask of the annotation,
+`GET jobs/<n>/shell`, whose surface the page draws), are drawn by the window itself, with LangSlice's own picture code,
 from the job's settings, images, state and saved deformations, without
 opening the job: nothing is written to the folder. The pictures are kept in
 memory and drawn again only when a section's registration changes. The prompt generator's choices

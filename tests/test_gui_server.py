@@ -1,13 +1,16 @@
 """The GUI's loopback server (``langslice.hosts.gui.server``): token, Host
 check, GET only, pictures by number, only the listed jobs, plain static names,
 and the viewer's strip and renders (404 for a section the job does not hold,
-409 with the reason for a refusal, 503 when a picture takes too long)."""
+409 with the reason for a refusal, 503 when a picture takes too long), and
+the 3D view's sections and atlas brain."""
 
 from __future__ import annotations
 
+import base64
 import http.client
 import io
 import json
+import math
 import shutil
 import threading
 from collections.abc import Iterator
@@ -155,15 +158,44 @@ def test_the_strip_and_the_pictures_of_a_job(served: tuple[GuiServer, Path]) -> 
         s["render_key"] for s in strip["sections"]]
 
 
+def test_the_3d_view_s_sections_and_atlas_brain(served: tuple[GuiServer, Path]) -> None:
+    gui, _ = served
+    prefix = f"/{gui.token}/jobs/0/"
+    status, body, headers = _get(gui, prefix + "space")
+    space = json.loads(body)
+    assert (status, headers["Content-Type"].split(";")[0]) == (200, "application/json")
+    assert [s["id"] for s in space["sections"]] == [ID0, ID1, ID2]
+    assert [s["order"] for s in space["sections"]] == [1, 2, 3]
+    assert space["given_thickness"] or space["thickness_um"] == 10.0
+    assert space["sections"][2]["corners_um"] is None
+    status, body, _ = _get(gui, prefix + "shell")
+    shell = json.loads(body)
+    assert status == 200 and len(shell["orientation"]) == 3
+    for k in range(3):
+        assert shell["shape"][k] * shell["step_um"][k] >= shell["extent_um"][k] - 1e-6
+    count = math.prod(shell["shape"])
+    bits = base64.b64decode(shell["bits"])
+    assert len(bits) == (count + 7) // 8
+    inside = sum(bin(b).count("1") for b in bits)
+    assert 0 < inside < count
+    for placed in space["sections"][:2]:
+        top_left, top_right, bottom_left = placed["corners_um"]
+        assert math.dist(top_left, top_right) > 0 and math.dist(top_left, bottom_left) > 0
+        centre = [(a + b) / 2 for a, b in zip(top_right, bottom_left, strict=True)]
+        for k in range(3):
+            assert -shell["extent_um"][k] < centre[k] < 2 * shell["extent_um"][k]
+
+
 def test_what_a_job_does_not_hold_is_404(served: tuple[GuiServer, Path]) -> None:
     gui, _ = served
     prefix = f"/{gui.token}/jobs/0/"
     for path in ("render/overlay/nope.png", "render/overlay/..%2Fjob.json",
                  "render/thumb/%2Fetc%2Fpasswd", "render/overlay/", "render/other/s0.png",
                  "render/overlay/s0.png/x", "render/atlas/2", "render/atlas/-1",
-                 "strip/x"):
+                 "strip/x", "space/x", "shell/x"):
         assert _get(gui, prefix + path)[0] == 404, path
-    assert _get(gui, f"/{gui.token}/jobs/1/strip")[0] == 404
+    for path in ("strip", "space", "shell"):
+        assert _get(gui, f"/{gui.token}/jobs/1/{path}")[0] == 404
     assert _get(gui, prefix + "render/overlay/s0.png?edge=big")[0] == 400
 
 

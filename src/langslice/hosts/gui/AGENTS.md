@@ -13,7 +13,10 @@ the call it is making in plain words), the sections it is working on, and the
 cutting axis under them. Extended is made for a person who wants the whole
 run, read top to bottom: the same speaker with the progress meters, up to
 four panels showing the sections the agent works on under their current
-registration with the cutting axis and the atlas's pictures under them, and
+registration with the cutting axis and the atlas's pictures under them (or,
+with **Pictures | 3D** on 3D, kept in `localStorage` as
+`langslice.extended.stage`, those sections in a narrow column beside the
+atlas brain in three dimensions with every section placed in it), and
 on the right the journal (the run so far as a timeline of the agent's words,
 its tool calls quiet lines between them). The window is neutral
 graphite around greyscale pictures with one accent colour; the agent's words
@@ -111,7 +114,28 @@ The page is a React app (`web/`, below), built into `static/`.
   it; wheel zoom, drag pan, double-click for the whole span, hover names,
   click picks). `src/extended/`: `ExtendedView` (the progress box:
   one meter per step the job's `tasks` ask for, counted over its sections;
-  four sections a page), `Journal`, `Lightbox`. `src/review/Review`:
+  four sections a page; Pictures | 3D), `Journal`, `Lightbox`. `src/space/`:
+  the 3D view (three.js). `surface.ts` meshes the shell mask (unpacked, blurred
+  by two [1 2 1] passes per axis, surface nets at the half level, Taubin
+  smoothing, faces turned outward); `scene.ts` (`Space`) maps atlas
+  micrometres to scene millimetres by the orientation letters (anterior +z,
+  superior +y, the animal's right -x, centred on the atlas), draws the brain
+  as fresnel glass (back faces before the sections, front faces after, no
+  depth writes) and each section as a slab whose basis is its thumbnail's
+  corners (`TR-TL`, `BL-TL`, the normal times the thickness; the shear the
+  decomposition leaves is kept), its face's alpha from the thumbnail's
+  luminance; an unplaced section's place is a cloud spot hashed from its id;
+  every slab moves on springs damped just short of critical (position, size, rotation),
+  staggered by order, waits for its picture before its first flight
+  (`PICTURE_WAIT_MS`) and flashes when it lands; the sections in focus rise
+  by `LIFT` of the brain's height, take the accent and the others dim;
+  OrbitControls with damping and a slow turn until the person drags;
+  reduced motion moves everything at once and does not turn; a click on a
+  slab picks its section. `Volume.tsx` fetches the shell once per job, the
+  space again when a row's `render_key` changes (at most every `SPACE_MS`),
+  the calm thumbnails through `pictures.ts` (`THUMB_RANK`, after the
+  stage's), and shows the placed count, the thickness, a hint and the
+  hovered section's name. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
   Prompt generator (its message from `static/generator-logic.js`, the same
@@ -197,7 +221,16 @@ The page is a React app (`web/`, below), built into `static/`.
   without a `job.json`, 404 for an index not listed),
   `jobs/<n>/snapshot?since=&gen=&sv=`,
   `jobs/<n>/picture/<number>` (the `view.jpg` of a picture the job's
-  `views.jsonl` lists, read from disk), `jobs/<n>/strip` (`JobRenderer.strip`),
+  `views.jsonl` lists, read from disk), `jobs/<n>/strip` (`JobRenderer.strip`), `jobs/<n>/space` (`JobRenderer.space`,
+  `space.job_space`: the thickness, the job's or `DEFAULT_THICKNESS_UM`, and
+  whether it was given; the plane's axis; each section's id, order and
+  `corners_um`, its thumbnail's top-left, top-right and bottom-left corners
+  in atlas micrometres in the atlas's axis order, null while unplaced; 409
+  without a state this LangSlice reads) and `jobs/<n>/shell`
+  (`JobRenderer.shell`, `space.atlas_shell`: the atlas's orientation, the
+  sampled shape, step and extent, and `bits`, base64 of the annotation's
+  brain mask sampled every `step` voxels so the longest side has at most
+  `SHELL_MAX_VOXELS`, `numpy.packbits`, row-major),
   `jobs/<n>/render/overlay|thumb/<section>?edge=&key=` (the section's filename
   URL-encoded and one of the job's sections, else 404; `key`, the row's
   `render_key`, is for the browser's cache only), `jobs/<n>/render/atlas/<k>?edge=`,
@@ -254,6 +287,11 @@ The page is a React app (`web/`, below), built into `static/`.
   `write` in `job.settings.tool_table`, a plugin's or an unknown tool, and
   `look` and `zoom`, `FOLLOWED_READS`); `started_focus(record)`: a followed
   `tool_start` with targets gives its `target_ids` in order without repeats.
+- `space.py` — the 3D view's numbers: `atlas_shell(workspace)` ->
+  `AtlasShell`, `job_space(workspace, state, thickness_um=)` -> `Space`
+  (`SpaceSection` per section in stack order), `section_corners` (from
+  `core.maps.section_maps.section_frame`, the frame `registration.json` is
+  written from, through the thumbnail's turn and flip, `turned_corners`).
 - `render.py` — the viewer's pictures of a job's current registration.
   `RenderPool(atlas_loader=, workers=WORKERS)`: one `ThreadPoolExecutor` (2)
   for every job and one `JobRenderer` per job folder (`renderer`); the jobs

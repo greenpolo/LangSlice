@@ -30,13 +30,13 @@ export type Box = { width: number; height: number };
 type Place = { x: number; y: number };
 type Geometry = { cols: number; width: number; height: number; edge: number; named: boolean; places: Place[] };
 
-// Where n pictures go in the box: one row up to three, else the columns that make them
-// largest; each row centred, the whole block centred.
+// Where n pictures go in the box: one row up to three (in a box wider than tall), else
+// the columns that make them largest; each row centred, the whole block centred.
 export function geometry(n: number, box: Box): Geometry {
   const width = Math.min(box.width, STAGE_MAX_W), height = box.height;
   const named = n <= 6;
   let best = { cols: 1, w: 0 };
-  const choices = n <= LARGE_MAX ? [Math.max(1, n)] : Array.from({ length: n }, (_, i) => i + 1);
+  const choices = n <= LARGE_MAX && box.width >= box.height ? [Math.max(1, n)] : Array.from({ length: n }, (_, i) => i + 1);
   for (const cols of choices) {
     const lines = Math.ceil(n / cols);
     const w = Math.min(
@@ -190,11 +190,10 @@ export function useDirector(job: number | null, wanted: string[], rows: Row[], b
   return shown.filter(id => known.has(id));
 }
 
-export function useBox<T extends HTMLElement>(): [React.RefObject<T | null>, Box | null] {
-  const ref = useRef<T>(null);
+export function useBox<T extends HTMLElement>(): [(el: T | null) => void, Box | null] {
+  const [el, setEl] = useState<T | null>(null);
   const [box, setBox] = useState<Box | null>(null);
   useLayoutEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
@@ -204,8 +203,8 @@ export function useBox<T extends HTMLElement>(): [React.RefObject<T | null>, Box
     const o = new ResizeObserver(measure);
     o.observe(el);
     return () => o.disconnect();
-  }, []);
-  return [ref, box];
+  }, [el]);
+  return [setEl, box];
 }
 
 export const short = (id: string) => id.replace(/\.[A-Za-z0-9]{2,5}$/, '');
