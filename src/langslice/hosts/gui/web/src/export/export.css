@@ -1,0 +1,95 @@
+/* The Export menu in the top bar: a quiet button, and a menu (or the export's note) that
+   grows out of the button's corner in 160 ms and leaves in 120. */
+
+.export { position: relative; display: flex; align-items: center; }
+.export.off { visibility: hidden; }
+
+.bar-button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 10px 0 12px;
+  font: inherit;
+  font-size: var(--size-md);
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-press) ease, border-color var(--dur-press) ease, color var(--dur-press) ease, scale var(--dur-press) var(--ease-out);
+}
+.bar-button .chevron { width: 5px; height: 5px; margin: -3px 0 0 2px; rotate: 45deg; color: var(--muted); }
+.bar-button.open { color: var(--name); background: var(--selected); border-color: var(--tract); }
+.bar-button.open .chevron { rotate: 225deg; margin-top: 3px; }
+.bar-button:active:not(:disabled) { scale: 0.97; }
+.bar-button:disabled { color: var(--muted); cursor: default; }
+@media (hover: hover) and (pointer: fine) { .bar-button:hover:not(:disabled):not(.open) { color: var(--name); background: var(--wash); } }
+.busy-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lavender); animation: pulse 2.4s ease-in-out infinite; }
+
+.pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  background: var(--panel);
+  border: 1px solid var(--tract);
+  border-radius: var(--radius);
+  transform-origin: top right;
+}
+/* The menu: out of the button's corner in 160 ms, back in 120 (transitions, so a quick
+   second click turns it round where it is). The note only arrives. */
+.menu {
+  width: 320px;
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  scale: 0.96;
+  translate: 0 -4px;
+  visibility: hidden;
+  transition: opacity 120ms var(--ease-out), scale 120ms var(--ease-out), translate 120ms var(--ease-out), visibility 0s linear 120ms;
+}
+.menu[data-open] { opacity: 1; scale: 1; translate: 0 0; visibility: visible; transition: opacity 160ms var(--ease-out), scale 160ms var(--ease-out), translate 160ms var(--ease-out), visibility 0s; }
+.note { transition: opacity 160ms var(--ease-out), scale 160ms var(--ease-out), translate 160ms var(--ease-out); }
+@starting-style { .note { opacity: 0; scale: 0.96; translate: 0 -4px; } }
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: var(--space-2) 10px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+}
+.menu-item:focus-visible, .menu-item:focus { background: var(--wash); }
+.menu-item:focus-visible { box-shadow: inset var(--rule) 0 0 var(--lavender); }
+.menu-item:active { background: var(--selected); }
+@media (hover: hover) and (pointer: fine) { .menu-item:hover { background: var(--wash); } }
+.menu-item-name { color: var(--name); font-weight: var(--weight-strong); }
+.menu-item-about { color: var(--muted); font-size: var(--size-sm); line-height: 1.45; }
+
+.note { width: min(440px, 92vw); padding: 14px; display: flex; flex-direction: column; gap: 6px; font-size: var(--size-sm); }
+.note p { margin: 0; }
+.note-title { color: var(--name); font-weight: var(--weight-strong); }
+.note.running .note-title { color: var(--lavender); }
+.note.failed .note-title { color: var(--pink); }
+.note-path { font-family: var(--mono); font-size: var(--size-xs); color: var(--violet); overflow-wrap: anywhere; }
+.note-message { color: var(--muted); }
+.note-actions { display: flex; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-2); }
+.note-actions .button { padding: 4px 12px; font-size: var(--size-sm); }
+.note-progress { position: relative; display: block; height: 2px; margin-top: var(--space-1); overflow: hidden; border-radius: 1px; background: var(--line); }
+.note-progress > span { position: absolute; inset: 0 auto 0 0; width: 30%; border-radius: 1px; background: var(--lavender); animation: progress 1.4s linear infinite; }
+@keyframes progress { from { translate: -100% 0; } to { translate: 340% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu, .menu[data-open] { scale: 1; translate: 0 0; }
+  @starting-style { .note { scale: 1; translate: 0 0; } }
+  .note-progress > span { animation: pulse 2.4s ease-in-out infinite; width: 100%; }
+  .busy-dot { animation: none; }
+}
