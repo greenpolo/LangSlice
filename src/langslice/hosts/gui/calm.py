@@ -13,8 +13,9 @@ in both, goes). Read-only like every drawing of the window.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import cv2
 import numpy as np
 import SimpleITK as sitk  # noqa: N813 - SimpleITK's own spelling
 from PIL import Image, ImageFilter
@@ -25,6 +26,8 @@ from langslice.core.sections.renders import render_slice
 from langslice.hosts.gui.drawing import content
 
 if TYPE_CHECKING:
+    import numpy.typing as npt
+
     from langslice.core.stack.section import Section
     from langslice.core.stack.stack import Stack
     from langslice.hosts.gui.drawing import Opened
@@ -189,17 +192,18 @@ def calm(
     rgb = tissue * mask[..., None] + stage * (1 - mask[..., None])
     rgb = np.maximum(rgb, stage)
     if lined is not None:
-        with_lines = np.asarray(lined.convert("RGB")).astype(np.int16)
-        plain = np.asarray(bare.convert("RGB")).astype(np.int16)
-        alpha = np.clip(np.abs(with_lines - plain).max(axis=2) / 110.0, 0, 1)
-        # Small pictures get fainter borders, else they cover the tissue.
+        with_lines = np.asarray(lined.convert("RGB"), dtype=np.int16)
+        plain = np.asarray(bare.convert("RGB"), dtype=np.int16)
+        change = cast(
+            "npt.NDArray[np.int16]", np.max(np.abs(with_lines - plain), axis=2)
+        )
         strength = LINE_STRENGTH * min(1.0, 0.45 + max(bare.size) / 1600)
-        alpha = (alpha * strength)[..., None]
+        alpha = (np.clip(change / 110.0, 0, 1) * strength)[..., None]
         rgb = rgb * (1 - alpha) + np.array(LINE, np.float32) * alpha
     return Image.fromarray(rgb.astype(np.uint8), "RGB")
 
 
-def scale_bar(grey: np.ndarray) -> tuple[slice, slice]:
+def scale_bar(grey: npt.NDArray[np.float32]) -> tuple[slice, slice]:
     """Find the 1 mm scale bar ``look`` draws in the bottom-left corner.
 
     Parameters
@@ -212,7 +216,7 @@ def scale_bar(grey: np.ndarray) -> tuple[slice, slice]:
     tuple of slice
         The rows and columns of the bar and its label (empty without one).
     """
-    height, width = grey.shape
+    height, width = cast("tuple[int, int]", grey.shape)
     row = height - BAR_FROM_BOTTOM
     if row < 0 or width <= BAR_LEFT:
         return slice(0, 0), slice(0, 0)
@@ -225,7 +229,7 @@ def scale_bar(grey: np.ndarray) -> tuple[slice, slice]:
     )
 
 
-def tissue_mask(grey: np.ndarray) -> np.ndarray:
+def tissue_mask(grey: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     """Find the tissue: textured and brighter than the scanner's tile floor.
 
     Parameters
@@ -238,7 +242,7 @@ def tissue_mask(grey: np.ndarray) -> np.ndarray:
     np.ndarray
         The tissue's weight, 0 to 1, its edge feathered, the picture's size.
     """
-    height, width = grey.shape
+    height, width = cast("tuple[int, int]", grey.shape)
     scale = min(1.0, MASK_EDGE / max(height, width))
     small = grey
     if scale < 1.0:
@@ -249,17 +253,20 @@ def tissue_mask(grey: np.ndarray) -> np.ndarray:
             )
         ).astype(np.float32)
     image = sitk.GetImageFromArray(small)
+    wide = 5.0 * scale + 1.0
     smooth = sitk.GetArrayFromImage(
-        sitk.SmoothingRecursiveGaussian(image, 5.0 * scale + 1.0)
+        sitk.SmoothingRecursiveGaussian(image, [wide, wide])
     )
     values = smooth[smooth > 4]
     floor = float(np.percentile(values, 30)) if values.size else 8.0
     bright = smooth > max(12.0, floor * 1.6)
-    # Tissue is textured (nuclei); a tile floor is smooth, however bright.
-    fine = sitk.GetArrayFromImage(sitk.SmoothingRecursiveGaussian(image, 1.0))
+    fine = sitk.GetArrayFromImage(
+        sitk.SmoothingRecursiveGaussian(image, [1.0, 1.0])
+    )
+    spread = 4.0 * scale + 1.0
     texture = sitk.GetArrayFromImage(
         sitk.SmoothingRecursiveGaussian(
-            sitk.GetImageFromArray(np.abs(small - fine)), 4.0 * scale + 1.0
+            sitk.GetImageFromArray(np.abs(small - fine)), [spread, spread]
         )
     )
     level = (
@@ -267,20 +274,63 @@ def tissue_mask(grey: np.ndarray) -> np.ndarray:
         if bright.any()
         else 0.6
     )
-    binary = sitk.GetImageFromArray(
-        (bright & (texture > level)).astype(np.uint8)
+    binary = (bright & (texture > level)).astype(np.uint8)
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary, connectivity=8
     )
-    parts = sitk.RelabelComponent(
-        sitk.ConnectedComponent(binary),
-        minimumObjectSize=max(4, int(small.size * 0.004)),
+    areas = np.asarray(stats, dtype=np.int64)[:, cv2.CC_STAT_AREA]
+    large = areas >= max(4, int(small.size * 0.004))
+    large[0] = False
+    keep = large[np.asarray(labels, dtype=np.int64)].astype(np.uint8)
+    keep = np.asarray(
+        cv2.morphologyEx(keep, cv2.MORPH_CLOSE, disk(3)), dtype=np.uint8
     )
-    keep = sitk.Cast(parts > 0, sitk.sitkUInt8)
-    keep = sitk.BinaryFillhole(sitk.BinaryMorphologicalClosing(keep, [3, 3]))
-    keep = sitk.BinaryDilate(keep, [2, 2])
-    weight = Image.fromarray(
-        sitk.GetArrayFromImage(keep).astype(np.uint8) * 255
-    )
+    keep = fill_holes(keep)
+    keep = np.asarray(cv2.dilate(keep, disk(2)), dtype=np.uint8)
+    weight = Image.fromarray(keep * 255)
     if scale < 1.0:
         weight = weight.resize((width, height), Image.Resampling.BILINEAR)
     weight = weight.filter(ImageFilter.GaussianBlur(2.0))
     return np.asarray(weight).astype(np.float32) / 255.0
+
+
+def disk(radius: int) -> npt.NDArray[np.uint8]:
+    """Make a disk-shaped structuring element.
+
+    Parameters
+    ----------
+    radius
+        The disk's radius in pixels.
+
+    Returns
+    -------
+    np.ndarray
+        One inside the disk, a square of side ``2 * radius + 1``.
+    """
+    side = 2 * radius + 1
+    return np.asarray(
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (side, side)),
+        dtype=np.uint8,
+    )
+
+
+def fill_holes(mask: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Fill the holes of a binary mask: what the outside cannot reach.
+
+    Parameters
+    ----------
+    mask
+        One on the mask, zero off it.
+
+    Returns
+    -------
+    np.ndarray
+        The mask with its enclosed background set to one.
+    """
+    height, width = cast("tuple[int, int]", mask.shape)
+    padded = np.zeros((height + 2, width + 2), np.uint8)
+    padded[1:-1, 1:-1] = mask
+    seeds = np.zeros((height + 4, width + 4), np.uint8)
+    _ = cv2.floodFill(padded, seeds, (0, 0), 1)
+    outside = padded[1:-1, 1:-1] - mask
+    return (1 - outside).astype(np.uint8)
