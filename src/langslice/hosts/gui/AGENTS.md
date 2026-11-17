@@ -118,19 +118,23 @@ The page is a React app (`web/`, below), built into `static/`.
   the 3D view (three.js). `scene.ts` (`Space`) maps atlas micrometres to
   scene millimetres by the orientation letters (anterior +z, superior +y,
   the animal's right -x, centred on the atlas), draws BrainGlobe's root mesh
-  as brainrender shows it (Lambert, light grey, see-through, an ambient and
-  a key light that follows the camera, faces turned outward) and each
-  placed section as a slab whose basis is its thumbnail's corners (`TR-TL`,
-  `BL-TL`, the normal times the thickness; the shear the decomposition
-  leaves is kept), its picture's tissue opaque and its ground (the
-  luminance of the picture's corners) left out, no mipmaps (they blur the
-  tissue into the ground at a slant). A section without a position is not
-  drawn; a newly placed one fades in where it is (`FADE_S`); a changed
-  placement is glided to on critically damped springs (position, size,
-  rotation); nothing else moves. The sections in focus rise by `LIFT` of
-  the brain's height with their tissue's contour in the accent, and the
-  others turn half see-through (no depth writes) so they can be read.
-  OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
+  as brainrender shows it (matte, see-through, lit over the viewer's
+  shoulder, faces turned outward, with a thin grey silhouette where the
+  surface turns away, drawn `INFLATE_MM` outside it so sections reaching the
+  brain's edge do not hide it) and each placed section as an opaque slab
+  whose basis is its thumbnail's corners (`TR-TL`, `BL-TL`, the normal times
+  the thickness; the shear the decomposition leaves is kept), only its
+  picture's ground (the luminance of the picture's corners) left out, no
+  mipmaps (they blur the tissue into the ground at a slant). A section
+  without a written transform sits where the core's identity puts it: its
+  picture as the job keeps it (no turn or flip beyond the job's), centred
+  on the atlas plane at its position, at its true pixel size. A section
+  without a position is not drawn; a newly placed one fades in where it is
+  (`FADE_S`); a changed placement is glided to on critically damped springs
+  (position, size, rotation); the sections a call changed come in stack
+  order over `BATCH_S`; nothing else moves. The sections in focus rise by
+  `LIFT` of the brain's height with a thin frame in the accent, and the
+  others grey a little; sections are never see-through. OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
   to the mesh; reduced motion moves everything at once; a click on a slab
   picks its section. `Volume.tsx` fetches the shell once per job, the space
   again when a row's `render_key` changes (at most every `SPACE_MS`), the

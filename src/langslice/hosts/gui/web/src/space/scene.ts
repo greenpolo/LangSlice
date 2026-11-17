@@ -8,9 +8,11 @@
 // corners span, as thick as the job's sections; a section without a position is not drawn.
 // Nothing moves but what the registration moves: when a section's placement changes, its
 // slab glides from the old placement to the new one (position, rotation, size, on
-// critically damped springs); a newly placed section fades in where it is. The sections
-// the agent is looking at rise a little out of the stack, their tissue outlined in the
-// accent, and the others turn half see-through so the ones in focus can be read.
+// critically damped springs); a newly placed section fades in where it is, and a batch
+// placed by one call comes in stack order over `BATCH_S`. Sections are always opaque. The
+// sections the agent is looking at rise clearly out of the stack (`LIFT` of the brain's
+// height) with a thin frame in the accent, and the others grey a little. The brain keeps
+// a thin grey silhouette so it still reads around the sections.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -26,9 +28,12 @@ export type Shell = {
 };
 
 const FOV = 30;
-const LIFT = 0.1;
+const LIFT = 0.42;
 const OMEGA = 4.6;
 const FADE_S = 0.5;
+const BATCH_S = 1.6;
+const INFLATE_MM = 0.08;
+const STAGGER_MAX_S = 0.06;
 const VIEW = new THREE.Vector3(-0.85, 0.45, 0.85);
 
 type Spring = { x: THREE.Vector3; v: THREE.Vector3 };
@@ -45,6 +50,8 @@ type Slab = {
   focus: number;
   hover: number;
   url: string;
+  wait: number;
+  order: number;
 };
 
 const VERTEX = /* glsl */ `
@@ -59,9 +66,9 @@ const VERTEX = /* glsl */ `
 `;
 
 // The picture as it is: the tissue opaque, the ground around it (the calm pictures' floor,
-// `floor` its luminance, read from the picture's corners) left out; the tissue's contour in
-// the accent for a section in focus, its frame in grey under the pointer; `see` makes a
-// section half see-through while others are in focus.
+// `floor` its luminance, read from the picture's corners) left out; a thin frame in the
+// accent for a section in focus, in grey under the pointer; `see` greys and darkens a
+// section a little while others are in focus (it stays opaque).
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
@@ -81,14 +88,46 @@ const FRAGMENT = /* glsl */ `
     float tissue = hasMap > 0.5 ? smoothstep(floor + 0.012, floor + 0.045, lum) : 0.0;
     vec2 d = min(vUv, 1.0 - vUv) / max(fwidth(vUv), vec2(1e-5));
     float line = 1.0 - smoothstep(0.5, 1.5, min(d.x, d.y));
-    float contour = clamp(fwidth(tissue) * 1.6, 0.0, 1.0) * focus;
-    float frame = line * 0.6 * hover;
+    float frame = line * max(focus, 0.6 * hover);
     float placeholder = hasMap > 0.5 ? 0.0 : line * 0.35;
-    vec3 col = mix(mix(c, edgeColor, frame), accent, contour);
-    float body = tissue * (1.0 - 0.55 * see);
-    float a = max(max(body, contour), max(frame, placeholder)) * shown;
+    vec3 grey = vec3(lum) * 0.62;
+    vec3 tissueColor = mix(c, grey, 0.7 * see);
+    vec3 col = mix(tissueColor, mix(edgeColor, accent, focus), frame);
+    float body = tissue;
+    float a = max(max(body, frame), placeholder) * shown;
     if (a < 0.02) discard;
     gl_FragColor = vec4(mix(col, edgeColor, placeholder * (1.0 - tissue)), a);
+  }
+`;
+
+// The brain as brainrender draws its root: matte and see-through, lit by an ambient and a
+// key light over the viewer's shoulder, with a thin grey silhouette where the surface turns
+// away, so its outline still reads around the sections (drawn `INFLATE_MM` outside the
+// surface, so a section reaching the brain's edge does not hide it).
+const BRAIN_VERTEX = /* glsl */ `
+  uniform float inflate;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position + normal * inflate, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vView = -mv.xyz;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const BRAIN_FRAGMENT = /* glsl */ `
+  uniform vec3 tone;
+  uniform vec3 line;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    vec3 n = normalize(vNormal);
+    float facing = abs(dot(n, normalize(vView)));
+    float light = 0.55 + 0.45 * max(dot(n, normalize(vec3(-0.4, 0.8, 0.6))), 0.0);
+    float silhouette = 1.0 - smoothstep(0.1, 0.3, facing);
+    vec3 col = mix(tone * light, line, silhouette);
+    gl_FragColor = vec4(col, 0.13 + 0.75 * silhouette);
   }
 `;
 
@@ -207,11 +246,6 @@ export class Space {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.domElement.className = 'volume-canvas';
     host.appendChild(this.renderer.domElement);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.1));
-    const key = new THREE.DirectionalLight(0xffffff, 1.6);
-    key.position.set(-0.6, 1, 0.8);
-    this.camera.add(key);
-    this.scene.add(this.camera);
     this.camera.position.set(-14, 9, 17);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = !reduced;
@@ -251,7 +285,7 @@ export class Space {
     for (const s of this.slabs.values()) s.mesh.material.dispose();
     for (const t of this.textures.values()) t.dispose();
     this.geometry.dispose();
-    if (this.brain) { this.brain.geometry.dispose(); (this.brain.material as THREE.Material).dispose(); }
+    if (this.brain) this.drop(this.brain);
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const a of this.axes) a.el.remove();
@@ -286,18 +320,24 @@ export class Space {
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
-    if (this.brain) { this.scene.remove(this.brain); this.brain.geometry.dispose(); (this.brain.material as THREE.Material).dispose(); }
-    this.brain = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({
-      color: 0xd6d6d4, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.FrontSide,
+    if (this.brain) { this.scene.remove(this.brain); this.drop(this.brain); }
+    this.brain = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
+      vertexShader: BRAIN_VERTEX, fragmentShader: BRAIN_FRAGMENT, transparent: true, depthWrite: false,
+      side: THREE.FrontSide, uniforms: { tone: { value: token('--text', '#c6c4be') }, line: { value: token('--text', '#c6c4be') }, inflate: { value: INFLATE_MM } },
     }));
     this.brain.renderOrder = 2;
     this.scene.add(this.brain);
+
     const box = geometry.boundingBox!;
     this.bounds.copy(box);
     this.axes[0].at.set(0, box.min.y, box.max.z + 0.9);
     this.axes[1].at.set(0, box.min.y, box.min.z - 0.9);
     this.axes[2].at.set(0, box.max.y + 0.7, 0);
     this.fit();
+  }
+
+  private drop(root: THREE.Object3D) {
+    root.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } });
   }
 
   // The sections as the job places them now; a changed placement is glided to.
@@ -307,13 +347,20 @@ export class Space {
     for (const [id, s] of this.slabs) {
       if (!known.has(id)) { this.scene.remove(s.mesh); s.mesh.material.dispose(); this.slabs.delete(id); }
     }
+    const changed: Slab[] = [];
     for (const item of list) {
       const s = this.slabs.get(item.id) ?? this.make(item.id);
+      s.order = item.order;
       const was = s.placed;
+      const before = s.goal.pos.clone();
       if (item.corners_um && this.map) this.place(s, item.corners_um);
       else s.placed = false;
       if (s.placed && (!was || this.reduced)) this.snap(s);
+      if (s.placed && (!was || before.distanceToSquared(s.goal.pos) > 1e-8)) changed.push(s);
     }
+    changed.sort((a, b) => a.order - b.order);
+    const gap = changed.length > 2 && !this.reduced ? Math.min(STAGGER_MAX_S, BATCH_S / changed.length) : 0;
+    changed.forEach((s, i) => { s.wait = i * gap; });
   }
 
   setImage(id: string, url: string, img: HTMLImageElement) {
@@ -356,7 +403,7 @@ export class Space {
       size: { x: new THREE.Vector3(1, 1, 1), v: new THREE.Vector3() },
       quat: new THREE.Quaternion(), spin: new THREE.Vector3(),
       goal: { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), size: new THREE.Vector3(1, 1, 1), shear: new THREE.Matrix4() },
-      placed: false, shown: 0, focus: 0, hover: 0, url: '',
+      placed: false, shown: 0, focus: 0, hover: 0, url: '', wait: 0, order: 0,
     };
     this.slabs.set(id, s);
     return s;
@@ -432,15 +479,18 @@ export class Space {
       const on = this.focused.has(s.id) && s.placed;
       u.see.value += ((some && !on ? 1 : 0) - u.see.value) * ease;
       s.mesh.renderOrder = on ? 1 : 0;
-      s.mesh.material.depthWrite = !(some && !on);
       s.focus += ((on ? 1 : 0) - s.focus) * ease;
       s.hover += ((this.hovered === s.id ? 1 : 0) - s.hover) * ease;
-      s.shown = this.reduced ? (s.placed ? 1 : 0) : Math.min(1, Math.max(0, s.shown + (s.placed ? dt : -dt) / FADE_S));
+      const waiting = s.wait > 0;
+      if (waiting) s.wait -= dt;
+      s.shown = this.reduced ? (s.placed ? 1 : 0)
+        : waiting && s.shown === 0 ? 0 : Math.min(1, Math.max(0, s.shown + (s.placed ? dt : -dt) / FADE_S));
       u.focus.value = s.focus;
       u.hover.value = s.hover;
       u.shown.value = s.shown;
       s.mesh.visible = s.shown > 0;
       if (!s.mesh.visible) continue;
+      if (waiting) { this.write(s); continue; }
       const goal = s.goal.pos.clone();
       goal.y += lift * s.focus;
       if (this.reduced) {

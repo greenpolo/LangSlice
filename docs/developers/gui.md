@@ -90,13 +90,17 @@ the registration look like, and how did it get here.
   BrainGlobe root mesh, as brainrender draws it) with every placed section
   where its current linear placement puts it, as a slab carrying its
   picture, as thick as the job's sections (10 µm when the job does not say,
-  marked *assumed*). A section the agent has not placed yet is not drawn;
-  before its in-plane alignment a section sits where its position alone
-  puts it, and it moves only when its registration changes. The sections
-  the agent is looking at rise a little out of the stack with their tissue
-  outlined, and the others turn half see-through. Drag to turn the brain,
-  scroll to zoom; pointing at a section names it, clicking shows it. With
-  reduced motion the sections move at once.
+  marked *assumed*). A section the agent has not placed yet is not drawn.
+  Before its in-plane alignment a section is its picture as the job keeps
+  it, at its true pixel size, centred on the atlas at its position, so
+  shrinkage, turns and offsets show as they are; it moves only when its
+  registration changes, and the sections one call changes come in one after
+  another. The sections the agent is looking at rise clearly out of the
+  stack with a thin frame, and the others grey a little; sections are never
+  see-through. The brain keeps a thin outline so it reads around the
+  sections. Drag to turn the brain, scroll to zoom; pointing at a section
+  names it, clicking shows it. With reduced motion the sections move at
+  once.
 - **Where the sections sit in the brain.** The cutting axis, as in Simple,
   with the atlas template's pictures at regular steps above the ruler.
 - **Review.** The button at the top right (or `r`) shows one section at a
