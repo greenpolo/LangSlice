@@ -5,7 +5,7 @@ import { MotionConfig } from 'motion/react';
 import { useEffect } from 'react';
 import { go, useNav } from './nav';
 import { chooseJob, start, useRun } from './run';
-import { SimpleView } from './simple/SimpleView';
+import { Viewer } from './Viewer';
 
 const older = (tab: string, job: number | null) => `./#tab=${tab}${job !== null ? `&job=${job}` : ''}`;
 
@@ -35,15 +35,7 @@ export function App() {
             <a className="tab" href={older('settings', job)}>Settings</a>
           </div>
         </header>
-        {nav.tab === 'viewer' && (
-          <div className="viewer">
-            <div className="views-switch" role="group" aria-label="How much the viewer shows">
-              <button className={nav.view === 'simple' ? 'on' : ''} aria-pressed={nav.view === 'simple'} onClick={() => go({ view: 'simple' })}>Simple</button>
-              <a href={older('viewer', job)} onClick={() => go({ view: 'extended' })}>Extended</a>
-            </div>
-            <SimpleView />
-          </div>
-        )}
+        {nav.tab === 'viewer' && <Viewer />}
         <footer className="foot">{connected ? '' : 'Waiting for LangSlice…'}</footer>
       </div>
     </MotionConfig>

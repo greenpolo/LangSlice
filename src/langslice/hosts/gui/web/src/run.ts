@@ -18,6 +18,8 @@ export type Row = {
 export type Call = {
   key: string; name: string; title: string; sections: string[];
   running: boolean; ended: boolean; failed: boolean;
+  args?: unknown; step?: number | null; door?: string | null; at?: string; status?: string | null;
+  pictures: number[];        // the pictures the agent looked at in this call
 };
 export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number };
 export type Axis = { low: string; high: string; min_mm: number; max_mm: number };
@@ -56,6 +58,8 @@ type Item = {
   kind: string; key?: string; phase?: string; name?: string; title?: string;
   sections?: string[]; failed?: boolean; text?: string; at?: string;
   number?: number; call?: string; caption?: string; tool?: string; error?: boolean;
+  args?: unknown; step?: number | null; door?: string | null; status?: string | null;
+  views?: string[]; path?: string;
 };
 
 let state: RunState = {
@@ -78,6 +82,9 @@ export function useRun<T>(select?: (s: RunState) => T) {
 }
 
 let watch = { cursor: 0, gen: 0, sv: -1 };
+// A view folder a call's end names -> that call; a picture no call has named yet.
+let claims = new Map<string, string>();
+let loose = new Map<string, number>();
 let said = 0;
 let named: number | null = (() => {
   const n = Number(new URLSearchParams(location.hash.slice(1)).get('job'));
@@ -92,6 +99,7 @@ export function chooseJob(index: number) {
 function select(index: number) {
   if (state.job === index) return;
   watch = { cursor: 0, gen: 0, sv: -1 };
+  claims = new Map(); loose = new Map();
   set({
     job: index, status: '', sentence: '', model: '', rows: [], loaded: false, focus: null,
     focusCall: null, calls: [], words: null, axis: null, comments: [], log: [], header: {},
@@ -160,8 +168,19 @@ function take(snap: any) {
         const old = byKey.get(item.key);
         const call: Call = old ? { ...old } : {
           key: item.key, name: item.name || '', title: item.title || item.name || '',
-          sections: item.sections || [], running: false, ended: false, failed: false,
+          sections: item.sections || [], running: false, ended: false, failed: false, pictures: [],
         };
+        if (item.args !== undefined && item.args !== null) call.args = item.args;
+        if (item.step !== undefined) call.step = item.step;
+        if (item.door) call.door = item.door;
+        if (item.status) call.status = item.status;
+        if (item.phase === 'start' && item.at) call.at = item.at;
+        // The pictures a call's end names are its own, whether they came before or after.
+        for (const path of item.views || []) {
+          claims.set(path, call.key);
+          const number = loose.get(path);
+          if (number !== undefined && !call.pictures.includes(number)) { call.pictures = [...call.pictures, number]; loose.delete(path); }
+        }
         // A call's end may come in the same round as its start, or before it.
         if (item.phase === 'start') call.running = !call.ended;
         else { call.running = false; call.ended = true; call.failed = Boolean(item.failed); }
@@ -175,6 +194,14 @@ function take(snap: any) {
         patch.words = words;
         added.push({ kind: 'words', n: said, words, full: item.text });
       } else if (item.kind === 'picture' && typeof item.number === 'number') {
+        const key = item.path ? claims.get(item.path) : undefined;
+        const owner = key ? calls.find(c => c.key === key) : undefined;
+        if (!owner && item.path) loose.set(item.path, item.number);
+        if (owner) {
+          const updated = { ...owner, pictures: [...owner.pictures, item.number] };
+          calls = calls.map(c => (c === owner ? updated : c));
+          changed = true;
+        }
         added.push({ kind: 'picture', number: item.number, call: item.call, caption: item.caption, sections: item.sections, tool: item.tool, title: item.title });
       } else if (item.kind === 'note' && item.text) {
         added.push({ kind: 'note', text: item.text, error: item.error });
@@ -241,4 +268,22 @@ export function start() {
   started = true;
   pollJobs();
   pollSnapshot();
+}
+
+// Keep or remove a review comment (`POST jobs/<n>/comments`); the server answers with the
+// comments as they now stand. Returns the refusal's words, or '' when it was kept.
+export async function sendComment(body: { section: string; box: number[]; text: string } | { remove: string }): Promise<string> {
+  const job = state.job;
+  if (job === null) return 'No job is shown.';
+  try {
+    const r = await fetch(`jobs/${job}/comments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store',
+    });
+    const answer = await r.json().catch(() => ({}));
+    if (!r.ok) return String(answer.error || 'The comment was not kept.');
+    if (Array.isArray(answer.comments) && job === state.job) set({ comments: answer.comments });
+    return '';
+  } catch {
+    return 'LangSlice is not reachable.';
+  }
 }

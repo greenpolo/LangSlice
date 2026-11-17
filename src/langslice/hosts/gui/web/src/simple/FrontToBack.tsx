@@ -14,8 +14,8 @@ const FEW = 3;
 
 type Ghost = { id: number; x: number };
 
-export function FrontToBack({ rows, axis, focus, shown, done }: {
-  rows: Row[]; axis: Axis | null; focus: string[]; shown: string[]; done: boolean;
+export function FrontToBack({ rows, axis, focus, shown, done, onPick }: {
+  rows: Row[]; axis: Axis | null; focus: string[]; shown: string[]; done: boolean; onPick?: (id: string) => void;
 }) {
   const placed = rows.map(r => r.position_mm).filter((v): v is number => typeof v === 'number');
   const span = placed.length >= 2
@@ -71,6 +71,10 @@ export function FrontToBack({ rows, axis, focus, shown, done }: {
             <span key={r.id} className="ftb-slot" style={{ transform: `translateX(${x}%)`, '--x': Math.round(x) } as React.CSSProperties}>
               <span
                 className={cls}
+                role="button"
+                tabIndex={-1}
+                aria-label={short(r.id)}
+                onClick={() => onPick?.(r.id)}
                 onPointerEnter={() => setTip({ id: r.id, x })}
                 onPointerLeave={() => setTip(t => (t?.id === r.id ? null : t))}
               />

@@ -23,7 +23,7 @@ export function Speaker({ model, status, words, call, focusCount }: {
   return (
     <header className={['speaker', working && 'working', thinking && 'thinking', speaking && 'speaking', done && 'done'].filter(Boolean).join(' ')}>
       <div className="who">
-        <img className="mark" src="logomark.svg" alt="" />
+        <img className="logo-mark" src="logomark.svg" alt="" />
         <Figure maker={maker} />
         <p className="who-name">{model || 'The agent'}</p>
         <p className="who-state"><span className={'dot ' + status} />{state}</p>

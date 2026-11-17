@@ -60,7 +60,9 @@ export function geometry(n: number, box: Box): Geometry {
   return { cols: best.cols, width: w, height: h, edge: snapEdge(w), named, places };
 }
 
-export function Stage({ job, shown, rows, box }: { job: number; shown: string[]; rows: Row[]; box: Box | null }) {
+export function Stage({ job, shown, rows, box, onPick, detailed = false }: {
+  job: number; shown: string[]; rows: Row[]; box: Box | null; onPick?: (id: string) => void; detailed?: boolean;
+}) {
   const byId = new Map(rows.map(r => [r.id, r]));
   if (!box) return null;
   const g = geometry(shown.length, box);
@@ -75,8 +77,9 @@ export function Stage({ job, shown, rows, box }: { job: number; shown: string[];
             <motion.figure
               key={id}
               layout
-              className="tile"
+              className={'tile' + (onPick ? ' pickable' : '')}
               style={{ left: at.x, top: at.y, width: g.width }}
+              onClick={onPick && shown.length > 1 ? () => onPick(id) : undefined}
               initial={many ? { opacity: 0, scale: 0.96 } : { opacity: 0, scale: 0.97, filter: 'blur(6px)' }}
               animate={many ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, transition: { duration: DUR.quick, ease: EASE_OUT } }}
@@ -96,6 +99,7 @@ export function Stage({ job, shown, rows, box }: { job: number; shown: string[];
                 <motion.figcaption layout="position" className="tile-name">
                   {short(id)}
                   {typeof row?.position_mm === 'number' && <span className="tile-where">{row.position_mm.toFixed(2)} mm</span>}
+                  {detailed && row && <Tags row={row} />}
                 </motion.figcaption>
               )}
             </motion.figure>
@@ -103,6 +107,22 @@ export function Stage({ job, shown, rows, box }: { job: number; shown: string[];
         })}
       </AnimatePresence>
     </div>
+  );
+}
+
+// How a section stands, in plain words, for the Extended view's tiles.
+const HOW: Record<string, string> = { elastix: 'aligned automatically', interactive: 'aligned by hand' };
+function Tags({ row }: { row: Row }) {
+  const tags = [
+    row.transform ? HOW[row.transform] || row.transform : '',
+    row.deformation ? 'warped' : '',
+    typeof row.position_mm !== 'number' ? 'not placed' : '',
+  ].filter(Boolean);
+  return (
+    <>
+      {tags.map(t => <span key={t} className="tile-tag">{t}</span>)}
+      {row.damaged && <span className="tile-tag damaged">damaged</span>}
+    </>
   );
 }
 
