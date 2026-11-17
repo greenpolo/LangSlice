@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
@@ -96,7 +96,7 @@ class CanvasFrame:
     section: Image.Image
     um_per_px: float
     position_mm: float
-    plane: str
+    plane: Plane
     pitch_deg: float
     yaw_deg: float
     params: dict[str, float] | np.ndarray
@@ -206,7 +206,7 @@ def draw_canvas(
     panels: list[PanelFrame] = []
     drawn_mode = mode or options.mode
     images = physical_views(
-        shown, shown_um, ws.atlas, position, cast(Plane, state.plane),
+        shown, shown_um, ws.atlas, position, state.plane,
         record.pitch_deg, record.yaw_deg, params,
         mode=drawn_mode, zoom=window, zoom_pixels=options.zoom,
         atlas_opacity=options.atlas_opacity, outlines=options.layer, depth=options.depth,
@@ -445,7 +445,7 @@ def stage(
             um_per_px,
             ws.atlas,
             float(record.position_mm or 0.0),
-            cast(Plane, state.plane),
+            state.plane,
             record.pitch_deg,
             record.yaw_deg,
         )

@@ -42,6 +42,7 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
+from langslice.core.space import as_plane
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.job.border_traces import JobBorderTraces
@@ -93,7 +94,7 @@ def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
     state = Stack(
         image_folder=workspace.image_folder,
         atlas=spec.atlas,
-        plane=spec.plane,
+        plane=as_plane(spec.plane),
         interval_mm=spec.interval_mm,
         thickness_mm=spec.thickness_mm,
         spec=spec.to_dict(),

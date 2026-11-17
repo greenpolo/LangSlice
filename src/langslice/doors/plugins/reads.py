@@ -20,6 +20,7 @@ from PIL import Image
 from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.space import Plane
 from langslice.core.stack.codec import deformation_to_json, physical_to_json
 from langslice.core.stack.section import Section
 from langslice.doors.plugins.caller import Caller
@@ -72,7 +73,7 @@ class AtlasView:
     resolution_um: tuple[float, ...]
     orientation: str
     species: str
-    plane: str
+    plane: Plane
     shape: tuple[int, ...]
 
 
@@ -242,7 +243,7 @@ class ContextReads:
             resolution_um=tuple(float(v) for v in np.asarray(atlas.resolution, dtype=float)),
             orientation=str(getattr(atlas, "orientation", "")),
             species=self._run.workspace.species,
-            plane=str(self._run.state.plane),
+            plane=self._run.state.plane,
             shape=tuple(int(v) for v in np.shape(atlas.annotation)))
 
     def channels(self, section: object) -> tuple[str, ...]:

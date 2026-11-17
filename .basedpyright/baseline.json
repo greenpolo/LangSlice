@@ -6460,14 +6460,6 @@
                 }
             },
             {
-                "code": "reportUnnecessaryCast",
-                "range": {
-                    "startColumn": 12,
-                    "endColumn": 36,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportAny",
                 "range": {
                     "startColumn": 31,

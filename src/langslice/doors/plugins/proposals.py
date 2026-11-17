@@ -141,7 +141,7 @@ class ContextProposals(ContextFrames):
         um_per_px, source = calibrate(state, workspace, record, rendered)
         try:
             geometry = canvas_geometry(rendered.size, um_per_px, workspace.atlas,
-                                       record.position_mm, state.plane,  # type: ignore[arg-type]
+                                       record.position_mm, state.plane,
                                        record.pitch_deg, record.yaw_deg)
         except ValueError as exc:
             raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,

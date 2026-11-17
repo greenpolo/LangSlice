@@ -44,7 +44,6 @@ from langslice.core.sections.renders import (
     canvas_um_per_px,
     render_slice,
 )
-from langslice.core.space import Plane
 from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -67,7 +66,7 @@ def calibrate(
     if known is not None:
         return known, source
     plane = annotation_slice(
-        ctx.atlas, record.position_mm or 0.0, plane=cast(Plane, state.plane),
+        ctx.atlas, record.position_mm or 0.0, plane=state.plane,
         pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
     )
     return plane.shape[1] * atlas_um_per_px(ctx.atlas) / float(section.width), "uncalibrated"
@@ -278,7 +277,7 @@ def fit_elastix(
             um_per_px,
             ctx.atlas,
             section.position_mm,
-            cast(Plane, state.plane),
+            state.plane,
             section.pitch_deg,
             section.yaw_deg,
         )

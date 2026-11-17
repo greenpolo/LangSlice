@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
@@ -235,10 +235,9 @@ class ContextFrames(ContextReads):
             plane_angles,
             plane_position_mm,
         )
-        from langslice.core.space import Plane
 
         atlas = self._run.workspace.atlas
-        plane = cast(Plane, self._run.state.plane)
+        plane = self._run.state.plane
         normal = np.asarray(normal_um, dtype=np.float64)
         point = np.asarray(point_um, dtype=np.float64)
         if normal.shape != (3,) or point.shape != (3,) or not (
@@ -287,7 +286,7 @@ class ContextFrames(ContextReads):
             raise ToolError(RefusalCode.BAD_ARGS,
                             "position_mm, pitch_deg and yaw_deg are finite numbers")
         placement = Placement(atlas_name=str(self._run.state.atlas), position_mm=values[0],
-                              plane=self._run.state.plane,  # type: ignore[arg-type]
+                              plane=self._run.state.plane,
                               pitch_deg=values[1], yaw_deg=values[2],
                               atlas_to_section=np.eye(3), section_mm_per_px=1.0)
         planes: dict[str, np.ndarray] = {}

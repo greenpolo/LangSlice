@@ -168,7 +168,7 @@ def frame_record(atlas: Any, note: PictureNote) -> dict[str, Any]:
     if frame is None or panel is None:
         raise ValueError("frame_record needs a placement picture's frame and panel")
     facts = atlas_facts(atlas)
-    index = plane_index_affine(atlas, frame.position_mm, frame.plane,  # type: ignore[arg-type]
+    index = plane_index_affine(atlas, frame.position_mm, frame.plane,
                                frame.pitch_deg, frame.yaw_deg)
     to_um = np.diag(facts["resolution_um"]) @ index @ picture_to_native(panel)
     params = frame.params
