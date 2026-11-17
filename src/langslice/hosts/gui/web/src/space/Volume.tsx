@@ -1,5 +1,5 @@
 // The 3D view's volume: the scene (`scene.ts`) in a box, fed from the server. The atlas
-// brain's mask (`jobs/<n>/shell`) is asked for once per job and meshed here; the sections'
+// brain's mesh (`jobs/<n>/shell`, BrainGlobe's root mesh) is asked for once per job; the sections'
 // corners (`jobs/<n>/space`) again whenever a section's registration changes, at most every
 // SPACE_MS; each section's quiet thumbnail through the window's picture queue, after the
 // stage's pictures. A slab the person clicks is picked like a picture.
@@ -9,8 +9,7 @@ import { EASE_OUT } from '../motion';
 import { picture } from '../pictures';
 import type { Row, Strip } from '../run';
 import { short } from '../simple/Stage';
-import { Space, type Placed } from './scene';
-import { surface, type Shell } from './surface';
+import { Space, type Placed, type Shell } from './scene';
 
 const SPACE_MS = 1500;
 const THUMB_EDGE = 256;
@@ -52,7 +51,7 @@ export function Volume({ job, rows, strip, focus, onPick }: {
       .then(r => (r.ok ? r.json() : null))
       .then((shell: Shell | null) => {
         if (!alive || !shell || !space.current) return;
-        space.current.setShell(shell, surface(shell));
+        space.current.setShell(shell);
         setReady(true);
       })
       .catch(() => {});

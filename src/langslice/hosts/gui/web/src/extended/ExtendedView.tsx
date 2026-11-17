@@ -41,7 +41,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
   const running = [...run.calls].reverse().find(c => c.running);
   const call = running ?? run.calls.at(-1) ?? null;
   return (
-    <main className="extended">
+    <main className={'extended' + (mode === 'space' && !review ? ' space' : '')}>
       <div className="extended-head">
         <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
         <Progress rows={run.rows} tasks={run.header.tasks} done={done} />

@@ -1,35 +1,39 @@
-// The 3D view's scene: the atlas brain as glass and every section as a thin slab carrying
-// its thumbnail, where its linear placement puts it.
+// The 3D view's scene: the atlas brain as BrainGlobe draws it (its root mesh, matte and
+// see-through, as brainrender shows it) and every placed section as a thin slab carrying
+// its picture, exactly where its current linear placement puts it.
 //
 // Scene axes are millimetres centred on the atlas: anterior +z, superior +y, the animal's
 // right at -x, read from the atlas's orientation letters (BrainGlobe: each letter names the
 // side an axis starts from). A placed section's slab is the parallelogram its thumbnail's
-// corners span, as thick as the job's sections; an unplaced one waits in a loose cloud
-// around the brain, turned any way, until the agent places it. Every slab moves on springs
-// (position, rotation, size), so a placement reads as the section flying in and settling;
-// the sections the agent looks at rise out of the stack and take the accent colour.
+// corners span, as thick as the job's sections; a section without a position is not drawn.
+// Nothing moves but what the registration moves: when a section's placement changes, its
+// slab glides from the old placement to the new one (position, rotation, size, on
+// critically damped springs); a newly placed section fades in where it is. The sections
+// the agent is looking at rise a little out of the stack, their tissue outlined in the
+// accent, and the others turn half see-through so the ones in focus can be read.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import type { Shell, Surface } from './surface';
 
 export type Corners = [number[], number[], number[]];
 export type Placed = { id: string; order: number; corners_um: Corners | null };
+export type Shell = {
+  orientation: string;
+  extent_um: [number, number, number];
+  vertices: number;
+  triangles: number;
+  positions: string;
+  indices: string;
+};
 
 const FOV = 30;
-const LIFT = 0.2;
-const OMEGA = 5.2;
-const ZETA = 0.8;
-const STAGGER_S = 0.055;
-const STAGGER_MAX_S = 1.4;
-const FLASH_S = 0.9;
-const ASPECT = 1.35;
-const AUTO_ROTATE = 0.45;
-const PICTURE_WAIT_MS = 6000;
+const LIFT = 0.1;
+const OMEGA = 4.6;
+const FADE_S = 0.5;
+const VIEW = new THREE.Vector3(-0.85, 0.45, 0.85);
 
 type Spring = { x: THREE.Vector3; v: THREE.Vector3 };
 type Slab = {
   id: string;
-  order: number;
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   pos: Spring;
   size: Spring;
@@ -37,15 +41,10 @@ type Slab = {
   spin: THREE.Vector3;
   goal: { pos: THREE.Vector3; quat: THREE.Quaternion; size: THREE.Vector3; shear: THREE.Matrix4 };
   placed: boolean;
-  wait: number;
-  born: number;
-  arriving: boolean;
-  flash: number;
+  shown: number;
   focus: number;
   hover: number;
-  aspect: number;
   url: string;
-  phase: number;
 };
 
 const VERTEX = /* glsl */ `
@@ -59,77 +58,41 @@ const VERTEX = /* glsl */ `
   }
 `;
 
+// The picture as it is: the tissue opaque, the ground around it (the calm pictures' floor,
+// `floor` its luminance, read from the picture's corners) left out; the tissue's contour in
+// the accent for a section in focus, its frame in grey under the pointer; `see` makes a
+// section half see-through while others are in focus.
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
+  uniform float floor;
   uniform float focus;
-  uniform float dim;
   uniform float hover;
-  uniform float flash;
-  uniform float placed;
+  uniform float shown;
+  uniform float see;
   uniform vec3 accent;
-  uniform vec3 paper;
+  uniform vec3 edgeColor;
   varying vec2 vUv;
   varying float vEdge;
   void main() {
-    float lift = max(focus, flash);
     if (vEdge > 0.5) {
-      vec3 side = mix(paper * 0.55, accent, lift);
-      gl_FragColor = vec4(side, (0.16 + 0.75 * lift) * (1.0 - 0.6 * dim));
+      if (focus < 0.02) discard;
+      gl_FragColor = vec4(accent, shown * focus);
       return;
     }
     vec3 c = hasMap > 0.5 ? texture2D(map, vUv).rgb : vec3(0.0);
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
-    float tissue = smoothstep(0.04, 0.3, lum);
-    vec3 col = c * (1.3 + 0.35 * hover + 0.15 * lift);
-    col = mix(col, col * accent * 1.1 + accent * 0.04, 0.5 * lift);
-    float alpha = tissue * mix(0.62, 0.95, lift) * (1.0 - 0.6 * dim) * mix(0.85, 1.0, placed);
+    float tissue = hasMap > 0.5 ? smoothstep(floor + 0.012, floor + 0.045, lum) : 0.0;
     vec2 d = min(vUv, 1.0 - vUv) / max(fwidth(vUv), vec2(1e-5));
-    float line = 1.0 - smoothstep(0.6, 1.6, min(d.x, d.y));
-    float frame = line * (0.015 + 0.3 * hover + 0.85 * lift) * (1.0 - 0.5 * dim);
-    float card = 0.06 * lift;
-    vec3 frameCol = mix(paper * 0.7, accent, lift);
-    float a = max(alpha, max(frame, card));
-    vec3 outCol = (col * alpha + frameCol * frame + paper * 0.25 * card * (1.0 - alpha)) / max(alpha + frame + card * (1.0 - alpha), 1e-4);
-    if (a < 0.012) discard;
-    gl_FragColor = vec4(outCol, min(a, 1.0));
-  }
-`;
-
-const SHELL_VERTEX = /* glsl */ `
-  varying vec3 vNormal;
-  varying vec3 vView;
-  void main() {
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vNormal = normalize(normalMatrix * normal);
-    vView = -mv.xyz;
-    gl_Position = projectionMatrix * mv;
-  }
-`;
-
-const SHELL_FRAGMENT = /* glsl */ `
-  uniform vec3 rim;
-  uniform vec3 body;
-  uniform float strength;
-  uniform float base;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  void main() {
-    float f = 1.0 - abs(dot(normalize(vNormal), normalize(vView)));
-    float fres = pow(f, 2.6);
-    vec3 col = mix(body, rim, smoothstep(0.15, 0.9, f));
-    gl_FragColor = vec4(col, base + strength * fres);
-  }
-`;
-
-const FLOOR_FRAGMENT = /* glsl */ `
-  uniform vec3 tint;
-  varying vec2 vUv;
-  void main() {
-    float r = length(vUv - 0.5) * 2.0;
-    float a = (1.0 - smoothstep(0.0, 1.0, r)) * 0.07;
-    float ring = (1.0 - smoothstep(0.0, 0.006, abs(r - 0.62))) * 0.05;
-    gl_FragColor = vec4(tint, a + ring);
+    float line = 1.0 - smoothstep(0.5, 1.5, min(d.x, d.y));
+    float contour = clamp(fwidth(tissue) * 1.6, 0.0, 1.0) * focus;
+    float frame = line * 0.6 * hover;
+    float placeholder = hasMap > 0.5 ? 0.0 : line * 0.35;
+    vec3 col = mix(mix(c, edgeColor, frame), accent, contour);
+    float body = tissue * (1.0 - 0.55 * see);
+    float a = max(max(body, contour), max(frame, placeholder)) * shown;
+    if (a < 0.02) discard;
+    gl_FragColor = vec4(mix(col, edgeColor, placeholder * (1.0 - tissue)), a);
   }
 `;
 
@@ -147,11 +110,10 @@ function slabGeometry(): THREE.BufferGeometry {
   const faceUv = [[0, 0], [1, 0], [1, 1], [0, 1]];
   quad([-h, -h, h], [h, -h, h], [h, h, h], [-h, h, h], faceUv, 0);
   quad([-h, -h, -h], [-h, h, -h], [h, h, -h], [h, -h, -h], [[0, 0], [0, 1], [1, 1], [1, 0]], 0);
-  const sideUv = [[0, 0], [1, 0], [1, 1], [0, 1]];
-  quad([-h, -h, -h], [h, -h, -h], [h, -h, h], [-h, -h, h], sideUv, 1);
-  quad([-h, h, -h], [-h, h, h], [h, h, h], [h, h, -h], sideUv, 1);
-  quad([-h, -h, -h], [-h, -h, h], [-h, h, h], [-h, h, -h], sideUv, 1);
-  quad([h, -h, -h], [h, h, -h], [h, h, h], [h, -h, h], sideUv, 1);
+  quad([-h, -h, -h], [h, -h, -h], [h, -h, h], [-h, -h, h], faceUv, 1);
+  quad([-h, h, -h], [-h, h, h], [h, h, h], [h, h, -h], faceUv, 1);
+  quad([-h, -h, -h], [-h, -h, h], [-h, h, h], [-h, h, -h], faceUv, 1);
+  quad([h, -h, -h], [h, h, -h], [h, h, h], [h, -h, h], faceUv, 1);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -160,7 +122,7 @@ function slabGeometry(): THREE.BufferGeometry {
   return g;
 }
 
-// A colour token as the shader's raw sRGB triple (the shaders write sRGB as it comes).
+// A colour token as the slab shader's raw sRGB triple (that shader writes sRGB as it comes).
 function token(name: string, fallback: string): THREE.Vector3 {
   const text = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   const m = text.match(/^#([0-9a-f]{6})$/i);
@@ -168,11 +130,46 @@ function token(name: string, fallback: string): THREE.Vector3 {
   return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
-function hash(text: string, salt: number): number {
-  let h = 2166136261 ^ salt;
-  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
-  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
-  return (h >>> 0) / 4294967296;
+// The luminance of a picture's ground: the darkest of its four corners' 4x4 means.
+function ground(img: HTMLImageElement): number {
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || !w || !h) return 0;
+  ctx.drawImage(img, 0, 0);
+  let low = 1;
+  for (const [x, y] of [[0, 0], [w - 4, 0], [0, h - 4], [w - 4, h - 4]]) {
+    const d = ctx.getImageData(x, y, 4, 4).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    low = Math.min(low, sum / (d.length / 4) / 255);
+  }
+  return low;
+}
+
+// Faces wound so their normals point away from the mesh's centre, on the whole.
+function outward(p: Float32Array, idx: Uint32Array) {
+  let cx = 0, cy = 0, cz = 0;
+  const n = p.length / 3;
+  for (let i = 0; i < p.length; i += 3) { cx += p[i]; cy += p[i + 1]; cz += p[i + 2]; }
+  cx /= n; cy /= n; cz /= n;
+  let sum = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = 3 * idx[t], b = 3 * idx[t + 1], c = 3 * idx[t + 2];
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
+    sum += (uy * vz - uz * vy) * (p[a] - cx) + (uz * vx - ux * vz) * (p[a + 1] - cy) + (ux * vy - uy * vx) * (p[a + 2] - cz);
+  }
+  if (sum >= 0) return;
+  for (let t = 0; t < idx.length; t += 3) { const s = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = s; }
+}
+
+function bytes(b64: string): ArrayBuffer {
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out.buffer;
 }
 
 export class Space {
@@ -182,11 +179,11 @@ export class Space {
   private controls: OrbitControls;
   private geometry = slabGeometry();
   private slabs = new Map<string, Slab>();
-  private shell: THREE.Group | null = null;
-  private floor: THREE.Mesh | null = null;
+  private brain: THREE.Mesh | null = null;
   private axes: { el: HTMLElement; at: THREE.Vector3 }[] = [];
   private map: ((um: number[]) => THREE.Vector3) | null = null;
   private size = new THREE.Vector3(11, 8, 13);
+  private bounds = new THREE.Box3(new THREE.Vector3(-5.5, -4, -6.5), new THREE.Vector3(5.5, 4, 6.5));
   private thickness = 0.01;
   private focused = new Set<string>();
   private hovered: string | null = null;
@@ -200,7 +197,7 @@ export class Space {
   private ray = new THREE.Raycaster();
   private touched = false;
   private accent = token('--lavender', '#a4addf');
-  private paper = token('--name', '#f2f0eb');
+  private edgeColor = token('--muted', '#8f8d87');
   private fitted = false;
   private textures = new Map<string, THREE.Texture>();
 
@@ -214,17 +211,19 @@ export class Space {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.domElement.className = 'volume-canvas';
     host.appendChild(this.renderer.domElement);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(-0.6, 1, 0.8);
+    this.camera.add(key);
+    this.scene.add(this.camera);
     this.camera.position.set(-14, 9, 17);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.07;
+    this.controls.enableDamping = !reduced;
+    this.controls.dampingFactor = 0.1;
     this.controls.rotateSpeed = 0.7;
     this.controls.zoomSpeed = 0.8;
     this.controls.enablePan = false;
-    this.controls.autoRotate = !reduced;
-    this.controls.autoRotateSpeed = AUTO_ROTATE;
     this.controls.addEventListener('start', () => {
-      this.controls.autoRotate = false;
       if (!this.touched) { this.touched = true; this.on.touched(); }
     });
     const el = this.renderer.domElement;
@@ -256,18 +255,16 @@ export class Space {
     for (const s of this.slabs.values()) s.mesh.material.dispose();
     for (const t of this.textures.values()) t.dispose();
     this.geometry.dispose();
-    this.shell?.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } });
+    if (this.brain) { this.brain.geometry.dispose(); (this.brain.material as THREE.Material).dispose(); }
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const a of this.axes) a.el.remove();
   }
 
-  // The atlas: its axes, its size and its surface, drawn as glass.
-  setShell(shell: Shell, surface: Surface) {
-    const [e0, e1, e2] = shell.extent_um;
-    const extent = [e0, e1, e2];
-    const letters = shell.orientation.toLowerCase().split('');
-    const rule = letters.map(l => (
+  // The atlas: its axes and size, and BrainGlobe's root mesh, matte and see-through.
+  setShell(shell: Shell) {
+    const extent = shell.extent_um;
+    const rule = shell.orientation.toLowerCase().split('').map(l => (
       l === 'a' ? { axis: 2, sign: -1 } : l === 'p' ? { axis: 2, sign: 1 }
         : l === 's' ? { axis: 1, sign: -1 } : l === 'i' ? { axis: 1, sign: 1 }
           : l === 'r' ? { axis: 0, sign: 1 } : { axis: 0, sign: -1 }
@@ -280,147 +277,92 @@ export class Space {
     const size = [0, 0, 0];
     for (let k = 0; k < 3; k++) size[rule[k].axis] = extent[k] / 1000;
     this.size.set(size[0], size[1], size[2]);
-    const p = surface.positions;
-    const scene = new Float32Array(p.length);
-    for (let i = 0; i < p.length; i += 3) {
-      const v = this.map([p[i], p[i + 1], p[i + 2]]);
-      scene[i] = v.x; scene[i + 1] = v.y; scene[i + 2] = v.z;
+    const raw = new Float32Array(bytes(shell.positions));
+    const positions = new Float32Array(raw.length);
+    for (let i = 0; i < raw.length; i += 3) {
+      const v = this.map([raw[i], raw[i + 1], raw[i + 2]]);
+      positions[i] = v.x; positions[i + 1] = v.y; positions[i + 2] = v.z;
     }
+    const index = new Uint32Array(bytes(shell.indices));
+    outward(positions, index);
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(scene, 3));
-    geometry.setIndex(new THREE.BufferAttribute(surface.indices, 1));
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex(new THREE.BufferAttribute(index, 1));
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
-    const rim = this.accent.clone().lerp(this.paper, 0.25);
-    const body = token('--muted', '#8f8d87').multiplyScalar(0.35);
-    const glass = (side: THREE.Side, base: number, strength: number, order: number) => {
-      const m = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
-        vertexShader: SHELL_VERTEX, fragmentShader: SHELL_FRAGMENT, transparent: true, depthWrite: false, side,
-        uniforms: { rim: { value: rim }, body: { value: body }, strength: { value: strength }, base: { value: base } },
-      }));
-      m.renderOrder = order;
-      return m;
-    };
-    if (this.shell) { this.scene.remove(this.shell); }
-    this.shell = new THREE.Group();
-    this.shell.add(glass(THREE.BackSide, 0.025, 0.2, -2));
-    this.shell.add(glass(THREE.FrontSide, 0.01, 0.4, 2));
-    this.scene.add(this.shell);
+    if (this.brain) { this.scene.remove(this.brain); this.brain.geometry.dispose(); (this.brain.material as THREE.Material).dispose(); }
+    this.brain = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({
+      color: 0xd6d6d4, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.FrontSide,
+    }));
+    this.brain.renderOrder = 2;
+    this.scene.add(this.brain);
     const box = geometry.boundingBox!;
-    if (!this.floor) {
-      this.floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
-        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: FLOOR_FRAGMENT, transparent: true, depthWrite: false, uniforms: { tint: { value: this.accent.clone().lerp(this.paper, 0.5) } },
-      }));
-      this.floor.rotation.x = -Math.PI / 2;
-      this.floor.renderOrder = -3;
-      this.scene.add(this.floor);
-    }
-    const span = Math.max(this.size.x, this.size.z) * 1.9;
-    this.floor.scale.set(span, span, 1);
-    this.floor.position.set(0, box.min.y - this.size.y * 0.32, 0);
-    this.axes[0].at.set(0, box.min.y, box.max.z + 1.6);
-    this.axes[1].at.set(0, box.min.y, box.min.z - 1.6);
-    this.axes[2].at.set(0, box.max.y + this.size.y * 0.42, 0);
-    for (const s of this.slabs.values()) if (!s.placed) this.cloud(s);
+    this.bounds.copy(box);
+    this.axes[0].at.set(0, box.min.y, box.max.z + 0.9);
+    this.axes[1].at.set(0, box.min.y, box.min.z - 0.9);
+    this.axes[2].at.set(0, box.max.y + 0.7, 0);
     this.fit();
   }
 
-  // The sections as the job places them now; a section's new place is flown to.
+  // The sections as the job places them now; a changed placement is glided to.
   setSections(list: Placed[], thicknessUm: number) {
     this.thickness = Math.max(thicknessUm, 1) / 1000;
     const known = new Set(list.map(s => s.id));
     for (const [id, s] of this.slabs) {
       if (!known.has(id)) { this.scene.remove(s.mesh); s.mesh.material.dispose(); this.slabs.delete(id); }
     }
-    const fresh = !this.slabs.size;
-    const moved: Slab[] = [];
-    const sizes: number[] = [];
     for (const item of list) {
-      if (item.corners_um && this.map) {
-        const [tl, tr] = item.corners_um.map(c => this.map!(c));
-        sizes.push(tr.distanceTo(tl));
-      }
-    }
-    sizes.sort((a, b) => a - b);
-    const width = sizes.length ? sizes[Math.floor(sizes.length / 2)] : this.size.x * 0.8;
-    for (const item of list) {
-      let s = this.slabs.get(item.id);
-      if (!s) { s = this.make(item.id, item.order, width); if (fresh || !this.reduced) moved.push(s); }
-      s.order = item.order;
-      const wasPlaced = s.placed;
-      const before = s.goal.pos.clone();
+      const s = this.slabs.get(item.id) ?? this.make(item.id);
+      const was = s.placed;
       if (item.corners_um && this.map) this.place(s, item.corners_um);
-      else { s.placed = false; this.cloud(s, width); }
-      if (!fresh && (wasPlaced !== s.placed || before.distanceToSquared(s.goal.pos) > 1e-6)) {
-        moved.push(s);
-        if (!wasPlaced && s.placed) s.arriving = true;
-      }
+      else s.placed = false;
+      if (s.placed && (!was || this.reduced)) this.snap(s);
     }
-    if (fresh) {
-      for (const s of this.slabs.values()) {
-        if (s.placed && !this.reduced) {
-          const goal = { pos: s.goal.pos.clone(), quat: s.goal.quat.clone(), size: s.goal.size.clone(), shear: s.goal.shear.clone() };
-          this.cloud(s, width);
-          this.snap(s);
-          s.goal = goal;
-          s.arriving = true;
-        } else this.snap(s);
-      }
-    }
-    moved.sort((a, b) => a.order - b.order);
-    moved.forEach((s, i) => { s.wait = this.reduced ? 0 : Math.min(STAGGER_MAX_S, (fresh ? 0.5 : 0) + i * STAGGER_S); });
-    if (this.reduced) for (const s of this.slabs.values()) this.snap(s);
   }
 
   setImage(id: string, url: string, img: HTMLImageElement) {
     const s = this.slabs.get(id);
     if (!s || s.url === url) return;
     s.url = url;
-    let tex = this.textures.get(id);
-    if (tex) tex.dispose();
-    tex = new THREE.Texture(img);
+    this.textures.get(id)?.dispose();
+    const tex = new THREE.Texture(img);
     tex.flipY = false;
     tex.colorSpace = THREE.NoColorSpace;
-    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
     tex.needsUpdate = true;
     this.textures.set(id, tex);
     s.mesh.material.uniforms.map.value = tex;
     s.mesh.material.uniforms.hasMap.value = 1;
-    const aspect = img.naturalWidth / Math.max(1, img.naturalHeight);
-    if (Math.abs(aspect - s.aspect) > 0.01) {
-      s.aspect = aspect;
-      if (!s.placed) s.goal.size.y = s.goal.size.x / aspect;
-    }
+    s.mesh.material.uniforms.floor.value = ground(img);
   }
 
   setFocus(ids: string[]) {
     this.focused = new Set(ids);
   }
 
-  private make(id: string, order: number, width: number): Slab {
+  private make(id: string): Slab {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: true, depthWrite: true, side: THREE.DoubleSide,
       uniforms: {
-        map: { value: null }, hasMap: { value: 0 }, focus: { value: 0 }, dim: { value: 0 }, hover: { value: 0 },
-        flash: { value: 0 }, placed: { value: 0 }, accent: { value: this.accent }, paper: { value: this.paper },
+        map: { value: null }, hasMap: { value: 0 }, floor: { value: 0 }, focus: { value: 0 }, hover: { value: 0 }, shown: { value: 0 }, see: { value: 0 },
+        accent: { value: this.accent }, edgeColor: { value: this.edgeColor },
       },
     });
     const mesh = new THREE.Mesh(this.geometry, material);
     mesh.matrixAutoUpdate = false;
+    mesh.visible = false;
     mesh.userData.id = id;
     this.scene.add(mesh);
     const s: Slab = {
-      id, order, mesh,
+      id, mesh,
       pos: { x: new THREE.Vector3(), v: new THREE.Vector3() },
       size: { x: new THREE.Vector3(1, 1, 1), v: new THREE.Vector3() },
       quat: new THREE.Quaternion(), spin: new THREE.Vector3(),
       goal: { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), size: new THREE.Vector3(1, 1, 1), shear: new THREE.Matrix4() },
-      placed: false, wait: 0, born: performance.now(), arriving: false, flash: 0, focus: 0, hover: 0, aspect: ASPECT, url: '', phase: hash(id, 7) * Math.PI * 2,
+      placed: false, shown: 0, focus: 0, hover: 0, url: '',
     };
     this.slabs.set(id, s);
-    this.cloud(s, width);
-    this.snap(s);
     return s;
   }
 
@@ -437,22 +379,6 @@ export class Space {
     s.placed = true;
   }
 
-  // A section's place in the cloud of sections not placed yet: anywhere around and
-  // through the brain, turned any way, the size of a placed section.
-  private cloud(s: Slab, width = this.size.x * 0.8) {
-    const r = (k: number) => hash(s.id, k);
-    const pos = new THREE.Vector3(
-      (r(1) - 0.5) * this.size.x * 2.3,
-      (r(2) - 0.5) * this.size.y * 1.7 + this.size.y * 0.15,
-      (r(3) - 0.5) * this.size.z * 1.35,
-    );
-    const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      (r(4) - 0.5) * Math.PI * 1.6, r(5) * Math.PI * 2, (r(6) - 0.5) * Math.PI * 1.2,
-    ));
-    const w = width * (0.6 + 0.25 * r(8));
-    s.goal = { pos, quat, size: new THREE.Vector3(w, w / s.aspect, this.thickness), shear: new THREE.Matrix4() };
-  }
-
   private snap(s: Slab) {
     s.pos.x.copy(s.goal.pos); s.pos.v.set(0, 0, 0);
     s.size.x.copy(s.goal.size); s.size.v.set(0, 0, 0);
@@ -461,14 +387,16 @@ export class Space {
   }
 
   private fit() {
-    const r = 0.5 * Math.hypot(this.size.x, this.size.y * 1.2, this.size.z) * 0.78;
-    const aspect = this.camera.aspect;
+    const centre = this.bounds.getCenter(new THREE.Vector3());
+    const extent = this.bounds.getSize(new THREE.Vector3());
+    const r = 0.5 * Math.hypot(extent.x, extent.y * 1.25, extent.z) * 0.8;
     const half = THREE.MathUtils.degToRad(FOV / 2);
-    const fit = Math.min(half, Math.atan(Math.tan(half) * aspect));
+    const fit = Math.min(half, Math.atan(Math.tan(half) * this.camera.aspect));
     const dist = r / Math.sin(fit);
-    const dir = new THREE.Vector3(-0.8, 0.5, 1.3).normalize();
-    if (!this.fitted || !this.touched) this.camera.position.copy(dir.multiplyScalar(dist));
-    this.controls.target.set(0, this.size.y * 0.06, 0);
+    if (!this.fitted || !this.touched) {
+      this.camera.position.copy(VIEW.clone().normalize().multiplyScalar(dist).add(centre));
+    }
+    this.controls.target.copy(centre);
     this.controls.minDistance = dist * 0.35;
     this.controls.maxDistance = dist * 2.5;
     this.camera.near = dist / 50; this.camera.far = dist * 6;
@@ -490,36 +418,35 @@ export class Space {
     const dt = Math.min(1 / 30, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (!this.visible || document.hidden) return;
-    this.step(dt, now / 1000);
+    this.step(dt);
     this.controls.update(dt);
     this.pick();
     this.renderer.render(this.scene, this.camera);
     this.label();
   };
 
-  private step(dt: number, t: number) {
-    const some = this.focused.size > 0;
+  private step(dt: number) {
     const lift = this.size.y * LIFT;
-    const w2 = OMEGA * OMEGA, damp = 2 * ZETA * OMEGA;
-    const err = new THREE.Quaternion(), inv = new THREE.Quaternion(), turn = new THREE.Quaternion();
+    const w2 = OMEGA * OMEGA, damp = 2 * OMEGA;
+    const ease = this.reduced ? 1 : 1 - Math.exp(-dt * 10);
+    const err = new THREE.Quaternion(), turn = new THREE.Quaternion();
+    const some = [...this.focused].some(id => this.slabs.get(id)?.placed);
     for (const s of this.slabs.values()) {
-      const on = this.focused.has(s.id) && s.placed;
       const u = s.mesh.material.uniforms;
-      const k = this.reduced ? 1 : 1 - Math.exp(-dt * 9);
-      s.focus += ((on ? 1 : 0) - s.focus) * k;
-      s.hover += ((this.hovered === s.id ? 1 : 0) - s.hover) * (this.reduced ? 1 : 1 - Math.exp(-dt * 14));
+      const on = this.focused.has(s.id) && s.placed;
+      u.see.value += ((some && !on ? 1 : 0) - u.see.value) * ease;
+      s.mesh.renderOrder = on ? 1 : 0;
+      s.mesh.material.depthWrite = !(some && !on);
+      s.focus += ((on ? 1 : 0) - s.focus) * ease;
+      s.hover += ((this.hovered === s.id ? 1 : 0) - s.hover) * ease;
+      s.shown = this.reduced ? (s.placed ? 1 : 0) : Math.min(1, Math.max(0, s.shown + (s.placed ? dt : -dt) / FADE_S));
       u.focus.value = s.focus;
       u.hover.value = s.hover;
-      u.dim.value += (((some && !on) ? 0.55 : s.placed ? 0 : 0.2) - u.dim.value) * k;
-      u.placed.value += ((s.placed ? 1 : 0) - u.placed.value) * k;
-      const blank = u.hasMap.value < 0.5 && performance.now() - s.born < PICTURE_WAIT_MS;
-      if (s.wait > 0 || (blank && s.arriving)) { if (!blank) s.wait -= dt; this.write(s); continue; }
+      u.shown.value = s.shown;
+      s.mesh.visible = s.shown > 0;
+      if (!s.mesh.visible) continue;
       const goal = s.goal.pos.clone();
-      if (on) goal.y += lift;
-      if (!s.placed && !this.reduced) {
-        goal.y += Math.sin(t * 0.5 + s.phase) * 0.18;
-        goal.x += Math.cos(t * 0.37 + s.phase) * 0.12;
-      }
+      goal.y += lift * s.focus;
       if (this.reduced) {
         s.pos.x.copy(goal); s.size.x.copy(s.goal.size); s.quat.copy(s.goal.quat);
       } else {
@@ -527,34 +454,21 @@ export class Space {
         s.pos.v.addScaledVector(a, dt); s.pos.x.addScaledVector(s.pos.v, dt);
         const b = s.goal.size.clone().sub(s.size.x).multiplyScalar(w2).addScaledVector(s.size.v, -damp);
         s.size.v.addScaledVector(b, dt); s.size.x.addScaledVector(s.size.v, dt);
-        inv.copy(s.quat).invert();
-        err.copy(s.goal.quat).multiply(inv);
+        err.copy(s.goal.quat).multiply(turn.copy(s.quat).invert());
         if (err.w < 0) { err.x = -err.x; err.y = -err.y; err.z = -err.z; err.w = -err.w; }
         const angle = 2 * Math.acos(Math.min(1, err.w));
         const sin = Math.sqrt(Math.max(0, 1 - err.w * err.w));
         const axis = sin > 1e-6 ? new THREE.Vector3(err.x / sin, err.y / sin, err.z / sin) : new THREE.Vector3();
-        const torque = axis.multiplyScalar(angle * w2).addScaledVector(s.spin, -damp);
-        s.spin.addScaledVector(torque, dt);
-        const spinAngle = s.spin.length() * dt;
-        if (spinAngle > 1e-7) {
-          turn.setFromAxisAngle(s.spin.clone().normalize(), spinAngle);
-          s.quat.premultiply(turn).normalize();
-        }
+        s.spin.addScaledVector(axis.multiplyScalar(angle * w2).addScaledVector(s.spin, -damp), dt);
+        const step = s.spin.length() * dt;
+        if (step > 1e-7) s.quat.premultiply(turn.setFromAxisAngle(s.spin.clone().normalize(), step)).normalize();
       }
-      if (s.arriving && s.placed && s.pos.x.distanceTo(s.goal.pos) < 0.08 && s.pos.v.length() < 0.6) {
-        s.arriving = false;
-        s.flash = this.reduced ? 0 : 1;
-      }
-      s.flash = Math.max(0, s.flash - dt / FLASH_S);
-      u.flash.value = s.flash * s.flash;
       this.write(s);
     }
   }
 
   private write(s: Slab) {
-    const m = s.mesh.matrix;
-    m.compose(s.pos.x, s.quat, s.size.x);
-    if (s.placed) m.multiply(s.goal.shear);
+    s.mesh.matrix.compose(s.pos.x, s.quat, s.size.x).multiply(s.goal.shear);
     s.mesh.matrixWorldNeedsUpdate = true;
   }
 
@@ -571,7 +485,7 @@ export class Space {
   private hit(x: number, y: number): string | null {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), this.camera);
-    const meshes = [...this.slabs.values()].map(s => s.mesh);
+    const meshes = [...this.slabs.values()].filter(s => s.placed).map(s => s.mesh);
     const hits = this.ray.intersectObjects(meshes, false);
     return hits.length ? String(hits[0].object.userData.id) : null;
   }

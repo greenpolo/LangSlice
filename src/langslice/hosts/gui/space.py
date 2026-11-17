@@ -1,15 +1,14 @@
 """The job in three dimensions, for the viewer's 3D view.
 
-The 3D view draws the atlas brain as a shell and every placed section as a
-thin slab where its linear placement puts it. This module gives the page
+The 3D view draws the atlas brain as BrainGlobe's own surface of it and
+every placed section as a thin slab where its linear placement puts it. This module gives the page
 the numbers for that, from the same frames ``registration.json`` is written
 from (:func:`langslice.core.maps.section_maps.section_frame`), so a section
 in the 3D view sits exactly where its pictures say it does:
 
-- the atlas brain as a coarse mask (:func:`atlas_shell`): the annotation
-  sampled every ``step`` voxels, so its longest side has at most
-  :data:`SHELL_MAX_VOXELS` samples, one bit per sample, packed and base64
-  encoded; the page draws its surface;
+- the atlas brain (:func:`atlas_shell`): the atlas's ``root`` mesh, the
+  one brainrender draws, its vertices as float32 and its triangles as
+  uint32, base64 encoded;
 - each section's picture corners (:func:`section_corners`): the top-left,
   top-right and bottom-left corners of its thumbnail (the section turned and
   flipped as it is kept, as ``render/thumb`` draws it) in atlas micrometres,
@@ -24,9 +23,8 @@ from __future__ import annotations
 
 import base64
 import logging
-import math
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -44,8 +42,8 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-SHELL_MAX_VOXELS = 112
 DEFAULT_THICKNESS_UM = 10.0
+ROOT_STRUCTURE = "root"
 
 Corners = tuple[
     tuple[float, float, float],
@@ -54,15 +52,46 @@ Corners = tuple[
 ]
 
 
-@dataclass(frozen=True)
-class AtlasShell:
-    """The atlas brain as a coarse mask of samples ``step_um`` apart."""
+class ShellError(Exception):
+    """An atlas without a brain mesh the 3D view can draw; says why."""
+
+
+class _MeshCells(Protocol):
+    """A block of a mesh's cells, as meshio keeps it."""
+
+    type: str
+    data: npt.NDArray[np.int64]
+
+
+class _Mesh(Protocol):
+    """A mesh as meshio reads it: points and blocks of cells."""
+
+    points: npt.NDArray[np.float64]
+    cells: list[_MeshCells]
+
+
+class _MeshAtlas(Protocol):
+    """An atlas that keeps meshes of its structures (BrainGlobe's)."""
 
     orientation: str
+    resolution: tuple[float, float, float]
     shape: tuple[int, int, int]
-    step_um: tuple[float, float, float]
+
+    def mesh_from_structure(self, structure: str) -> _Mesh:
+        """Read the mesh of *structure*."""
+        ...
+
+
+@dataclass(frozen=True)
+class AtlasShell:
+    """The atlas brain's surface: BrainGlobe's root mesh in atlas um."""
+
+    orientation: str
     extent_um: tuple[float, float, float]
-    bits: str
+    vertices: int
+    triangles: int
+    positions: str
+    indices: str
 
 
 @dataclass(frozen=True)
@@ -85,7 +114,7 @@ class Space:
 
 
 def atlas_shell(workspace: Workspace) -> AtlasShell:
-    """Sample the atlas's annotated brain on a coarse grid.
+    """Read the atlas's root mesh, the brain's surface BrainGlobe ships.
 
     Parameters
     ----------
@@ -95,33 +124,40 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
     Returns
     -------
     AtlasShell
-        The mask of annotated samples, row-major over the atlas's axes,
-        packed eight samples to a byte (``numpy.packbits``).
+        The mesh's vertices (x, y, z in atlas micrometres, the atlas's axis
+        order, the frame of :func:`section_corners`) and triangles.
+
+    Raises
+    ------
+    ShellError
+        When the atlas keeps no root mesh or it cannot be read.
     """
-    atlas = cast(BrainGlobeAtlas, workspace.atlas)
-    annotation = np.asarray(atlas.annotation)
-    resolution_um = tuple(float(value) for value in atlas.resolution)
-    full = cast(tuple[int, int, int], annotation.shape)
-    stride = max(1, math.ceil(max(full) / SHELL_MAX_VOXELS))
-    sampled = annotation[::stride, ::stride, ::stride] > 0
-    packed = np.packbits(sampled.astype(np.uint8), axis=None)
-    shape = (sampled.shape[0], sampled.shape[1], sampled.shape[2])
-    step_um = (
-        resolution_um[0] * stride,
-        resolution_um[1] * stride,
-        resolution_um[2] * stride,
-    )
+    atlas = cast(_MeshAtlas, workspace.atlas)
+    try:
+        mesh = atlas.mesh_from_structure(ROOT_STRUCTURE)
+    except (AttributeError, KeyError, OSError, ValueError) as exc:
+        raise ShellError(
+            f"This atlas has no brain mesh to draw: {exc}"
+        ) from exc
+    triangles = [c.data for c in mesh.cells if c.type == "triangle"]
+    if not triangles:
+        raise ShellError("This atlas's brain mesh has no triangles.")
+    points = np.ascontiguousarray(mesh.points, dtype="<f4")
+    faces = np.ascontiguousarray(np.concatenate(triangles), dtype="<u4")
+    resolution = tuple(float(value) for value in atlas.resolution)
+    full = tuple(int(value) for value in atlas.shape)
     extent_um = (
-        resolution_um[0] * full[0],
-        resolution_um[1] * full[1],
-        resolution_um[2] * full[2],
+        resolution[0] * full[0],
+        resolution[1] * full[1],
+        resolution[2] * full[2],
     )
     return AtlasShell(
         str(atlas.orientation),
-        shape,
-        step_um,
         extent_um,
-        base64.b64encode(packed.tobytes()).decode("ascii"),
+        int(points.shape[0]),
+        int(faces.shape[0]),
+        base64.b64encode(points.tobytes()).decode("ascii"),
+        base64.b64encode(faces.tobytes()).decode("ascii"),
     )
 
 

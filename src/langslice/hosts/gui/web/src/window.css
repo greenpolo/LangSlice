@@ -334,7 +334,9 @@ a { color: inherit; text-decoration: none; }
 }
 @keyframes fade { from { opacity: 0; } }
 
-/* Extended's 3D stage: the sections in focus in a narrow column, the atlas brain beside. */
+/* Extended's 3D stage: the sections in focus in a narrow column, the atlas brain beside;
+   the journal gives up some of its width to it. */
+.extended.space .extended-body { grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 380px); }
 .space-split { display: grid; grid-template-columns: minmax(190px, 21%) minmax(0, 1fr); gap: var(--space-3); }
 .space-side { position: relative; min-width: 0; min-height: 0; }
 .space-side .tile-name { gap: var(--space-1); font-size: var(--size-xs); white-space: nowrap; overflow: hidden; }
