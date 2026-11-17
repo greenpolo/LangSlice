@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.tools.looking.look import show_result
@@ -145,9 +145,14 @@ def position_sections(
                 RefusalCode.BAD_ARGS,
                 message="each section is {id, position_mm}",
             )
+        given = cast("Mapping[str, object]", entry).get("position_mm")
+        if not isinstance(given, (int, float, str)):
+            raise Refused(
+                RefusalCode.BAD_ARGS, message="position_mm must be a number"
+            )
         try:
-            value = float(entry.get("position_mm"))  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+            value = float(given)
+        except ValueError:
             raise Refused(
                 RefusalCode.BAD_ARGS, message="position_mm must be a number"
             ) from None
