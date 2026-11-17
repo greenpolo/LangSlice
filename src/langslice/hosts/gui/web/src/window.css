@@ -221,11 +221,6 @@ a { color: inherit; text-decoration: none; }
 .extended-tools { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-5) 0; font-size: var(--size-sm); color: var(--muted); }
 .extended-count b { color: var(--name); font-weight: var(--weight-strong); }
 .pager { display: flex; gap: 4px; }
-.segmented { display: flex; }
-.segmented button { height: 24px; padding: 0 9px; background: none; border: 1px solid var(--line); color: var(--muted); font: inherit; font-size: var(--size-xs); cursor: pointer; }
-.segmented button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
-.segmented button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
-.segmented button.on { color: var(--name); background: var(--selected); }
 .extended .stage { margin: var(--space-2) var(--space-5) 0; }
 .progress { margin: 0; padding: 12px 16px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; font-size: var(--size-sm); }
@@ -243,17 +238,6 @@ a { color: inherit; text-decoration: none; }
 .progress-note { margin: 10px 0 0; color: var(--faint); font-size: var(--size-xs); }
 
 /* The sections table. */
-.table-scroll { position: absolute; inset: 0; overflow: auto; }
-.sections-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--size-sm); }
-.sections-table th { position: sticky; top: 0; background: var(--ground); color: var(--muted); font-weight: 400; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--tract); white-space: nowrap; }
-.sections-table td { padding: 4px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.sections-table tbody tr { cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .sections-table tbody tr:hover td { background: var(--wash); } }
-.sections-table tr.target td { background: var(--selected); }
-.sections-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.sections-table .name { color: var(--name); }
-.sections-table .none { color: var(--faint); }
-.sections-table .damaged { color: var(--pink); }
 
 /* The journal. */
 .journal { position: relative; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); --gutter: 46px; --text-left: 74px; }
@@ -331,6 +315,7 @@ a { color: inherit; text-decoration: none; }
 .cut-thumb.target { border-color: color-mix(in srgb, var(--lavender) 60%, transparent); }
 .cut-thumb.shown { border-color: var(--lavender); box-shadow: 0 0 0 1px var(--ground); }
 @media (hover: hover) and (pointer: fine) { .cut-thumb:hover { border-color: var(--name); } }
+.cut-thumb:not(:has(.cut-canvas.ready)) { background: none; }
 .cut.done .cut-key { animation: sweep 700ms var(--ease-out) both; }
 .cut-tip { position: absolute; left: 0; translate: -50% -100%; z-index: 5; pointer-events: none; padding: 2px var(--space-2); background: var(--panel); border: 1px solid var(--tract); border-radius: var(--radius-sm); font-size: var(--size-xs); white-space: nowrap; color: var(--muted); }
 .cut-tip b { color: var(--name); font-weight: var(--weight-strong); }

@@ -63,7 +63,7 @@ def test_the_page_needs_the_token_and_the_host(server: GuiServer) -> None:
     assert _get(server, "/wrong-token/")[0] == 404
     assert _get(server, prefix, host="evil.example:80")[0] == 404
     assert _get(server, prefix, host=f"localhost:{server.port}")[0] == 404
-    for name in ("app.js", "app.css"):
+    for name in ("ui.js", "ui.css"):
         assert _get(server, prefix + name)[0] == 200
 
 
@@ -105,8 +105,8 @@ def test_unknown_jobs_pictures_and_paths_are_refused(server: GuiServer) -> None:
 def test_static_files_are_plain_names_with_a_known_extension(server: GuiServer) -> None:
     prefix = f"/{server.token}/"
     assert _get(server, prefix + "tokens.css")[0] == 200
-    for path in ("static/app.js", "fonts/x.woff2", "app.exe", "tokens.json", "APP.JS",
-                 ".app.js", "app.js/", "%2e%2e%2fsecret.txt", "app.js%2f"):
+    for path in ("static/ui.js", "fonts/x.woff2", "app.exe", "tokens.json", "UI.JS",
+                 ".ui.js", "ui.js/", "%2e%2e%2fsecret.txt", "ui.js%2f", "app.js"):
         assert _get(server, prefix + path)[0] == 404, path
 
 
