@@ -86,7 +86,7 @@ const FRAGMENT = /* glsl */ `
     if (vEdge > 0.5) discard;
     vec3 c = hasMap > 0.5 ? texture2D(map, vUv).rgb : vec3(0.0);
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
-    float tissue = hasMap > 0.5 ? smoothstep(floor + 0.012, floor + 0.045, lum) : 0.0;
+    float tissue = hasMap > 0.5 ? smoothstep(floor + 0.008, floor + 0.022, lum) : 0.0;
     vec2 px = max(fwidth(vUv), vec2(1e-5));
     vec2 inner = min(vUv - tissueBox.xy, tissueBox.zw - vUv) / px;
     float inside = step(-1.5, min(inner.x, inner.y));
@@ -190,7 +190,7 @@ function ground(img: HTMLImageElement): { floor: number; box: THREE.Vector4 } {
   }
   let x0 = w, y0 = h, x1 = -1, y1 = -1;
   for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-    if (lum(x, y) > low + 0.03) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    if (lum(x, y) > low + 0.015) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
   }
   if (x1 < x0) return { floor: low, box: whole.box };
   const pad = 0.015;
