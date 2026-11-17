@@ -8,7 +8,7 @@
 // corners span, as thick as the job's sections; a section without a position is not drawn.
 // Nothing moves but what the registration moves: when a section's placement changes, its
 // slab glides from the old placement to the new one (position, rotation, size, on
-// critically damped springs); a newly placed section fades in where it is, and a batch
+// critically damped springs); a newly placed section appears where it is, whole, and a batch
 // placed by one call comes in stack order over `BATCH_S`. Sections are always opaque. The
 // sections the agent is looking at rise clearly out of the stack (`LIFT` of the brain's
 // height) with a thin frame in the accent, and the others grey a little. The brain keeps
@@ -30,7 +30,6 @@ export type Shell = {
 const FOV = 30;
 const LIFT = 0.42;
 const OMEGA = 4.6;
-const FADE_S = 0.5;
 const BATCH_S = 1.6;
 const INFLATE_MM = 0.08;
 const STAGGER_MAX_S = 0.06;
@@ -483,8 +482,7 @@ export class Space {
       s.hover += ((this.hovered === s.id ? 1 : 0) - s.hover) * ease;
       const waiting = s.wait > 0;
       if (waiting) s.wait -= dt;
-      s.shown = this.reduced ? (s.placed ? 1 : 0)
-        : waiting && s.shown === 0 ? 0 : Math.min(1, Math.max(0, s.shown + (s.placed ? dt : -dt) / FADE_S));
+      s.shown = s.placed && !(waiting && s.shown === 0) ? 1 : 0;
       u.focus.value = s.focus;
       u.hover.value = s.hover;
       u.shown.value = s.shown;

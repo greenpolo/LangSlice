@@ -129,8 +129,8 @@ The page is a React app (`web/`, below), built into `static/`.
   without a written transform sits where the core's identity puts it: its
   picture as the job keeps it (no turn or flip beyond the job's), centred
   on the atlas plane at its position, at its true pixel size. A section
-  without a position is not drawn; a newly placed one fades in where it is
-  (`FADE_S`); a changed placement is glided to on critically damped springs
+  without a position is not drawn; a newly placed one appears where it is,
+  whole (never part see-through); a changed placement is glided to on critically damped springs
   (position, size, rotation); the sections a call changed come in stack
   order over `BATCH_S`; nothing else moves. The sections in focus rise by
   `LIFT` of the brain's height with a thin frame in the accent, and the
