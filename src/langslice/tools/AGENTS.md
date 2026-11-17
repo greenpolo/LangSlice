@@ -353,18 +353,22 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `BAD_ARGS` for a channel DMC does not offer (`DMC_CHANNELS`) or an atlas
   whose axes it cannot read. Returns `DmcExported`. A job that persists
   nothing writes nothing.
-- `abba_export.py` — `export_abba(job, workspace, warps=)` (the library's
+- `abba_export.py` — `export_abba(job, workspace, warps=, landmarks=)` (the library's
   `job.export_abba`, the window's Export menu; not a verb, not written at
   submit): `exports/<image folder>.abba` (`job.abba_project`) and
   `abba_export.json`, from the stack as it stands. Each placed section's
   placement in ABBA's world (`core.maps.abba_world.abba_placement`), its
   file and channels, and its applied deformation as warp landmarks
-  (`core.maps.abba.world_landmarks`, in `WARP_PROCESSES` spawned processes,
+  (`core.maps.abba.world_landmarks`, in spawned processes, one per core
+  (at most `MAX_WARP_PROCESSES`), one thread each,
   `core.worker_threads`; a script calling it needs a `__main__` guard).
   `BAD_ARGS` for mixed cutting angles, an atlas other than the Allen CCFv3 or
   a plane other than coronal; `NOTHING_EXPORTED` when nothing could be
   written; a section that cannot be is `skipped` with its reason. Returns
-  `AbbaExported` (`path`, `sections`, `warped`, `skipped`, `warp_error_um`).
+  `AbbaExported` (`path`, `sections`, `warped`, `skipped`, `warp_error_um`,
+  `landmarks`). `landmarks` (16 to `MAX_POINTS`, `BAD_ARGS` outside) is
+  each warp's most pairs (`core.maps.abba.budget`); fewer follow the warp
+  less closely (331CTX: 100 miss it by 45 um, 16 by 140 um).
 - `points.py` — section points and atlas points through a section's current
   registration, writing nothing (a script's `job.context.to_atlas_um`,
   `from_atlas_um`, `plane_distance_um`, `region_at`): `atlas_points(job,

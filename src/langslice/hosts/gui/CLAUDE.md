@@ -197,10 +197,14 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (`start`, `ExportError` for an unknown format or one already running);
   `reveal(folder)` opens the job's `exports/` in the system's file browser.
   Served as `GET jobs/<n>/export` (the state), `POST jobs/<n>/export`
-  (`{"format"}`) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
+  (`{"format", "landmarks"}`: an ABBA project's most landmark pairs per
+  warp, `MIN_LANDMARKS` (100) to 1089, `ExportError` outside; `abba_linear`
+  writes no warp steps) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
   checks (`server.GuiServer.post`). `static/export.js` / `export.css` (one
   delimited block in `index.html`, `app.js` naming the shown job with
-  `Exporter.setJob`): the top bar's Export button, its menu, and a note that
+  `Exporter.setJob`): the top bar's Export button, its menu (ABBA, warps
+  of 1089 landmarks; ABBA editable, 100; ABBA linear only; QuickNII; VisuAlign; a row for an
+  ABBA project with a count of the person's own, 100 to 1089), and a note that
   says the export is running, then its path with Open folder and Copy path,
   or why it failed.
 - `focus.py` — the agent's focus, as ABBA's follower followed it: `Focus`
