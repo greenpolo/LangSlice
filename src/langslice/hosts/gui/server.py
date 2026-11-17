@@ -17,6 +17,8 @@ Content-Security-Policy and ``no-store``. GET endpoints:
 - ``jobs/<n>/picture/<number>``: a saved ``view.jpg`` by its picture number,
   read from disk, never by path;
 - ``jobs/<n>/strip``: the positioning strip's facts (``JobRenderer.strip``);
+- ``jobs/<n>/space`` and ``jobs/<n>/shell``: the 3D view's sections and
+  atlas brain (``JobRenderer.space``, ``JobRenderer.shell``);
 - ``jobs/<n>/render/overlay/<section>?edge=&key=`` and
   ``jobs/<n>/render/thumb/<section>?edge=&key=``: a section under its
   current registration, or its thumbnail, drawn now (``render.py``); the
@@ -91,6 +93,8 @@ NO_SECTIONS = "This job has no sections to comment on yet."
 NOT_SAVED = "The comment could not be saved in the job folder."
 _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 _STRIP = re.compile(r"jobs/(\d+)/strip")
+_SPACE = re.compile(r"jobs/(\d+)/space")
+_SHELL = re.compile(r"jobs/(\d+)/shell")
 _RENDER = re.compile(r"jobs/(\d+)/render/(overlay|thumb)/([^/]+)")
 _ATLAS = re.compile(r"jobs/(\d+)/render/atlas/(\d+)")
 _EXPORT = re.compile(r"jobs/(\d+)/export(/reveal)?")
@@ -158,7 +162,8 @@ class GuiServer:
         self._comments_lock = threading.Lock()
         self._routes: tuple[tuple[re.Pattern[str], _Route], ...] = (
             (_SNAPSHOT, self._snapshot), (_PICTURE, self._picture),
-            (_STRIP, self._strip), (_RENDER, self._render),
+            (_STRIP, self._strip), (_SPACE, self._space),
+            (_SHELL, self._shell), (_RENDER, self._render),
             (_ATLAS, self._atlas), (_EXPORT, self._export_state))
         owner = self
 
@@ -270,6 +275,20 @@ class GuiServer:
                _query: dict[str, list[str]]) -> Answer:
         try:
             return self._json(asdict(self._renderer(watcher).strip()))
+        except RenderError as exc:
+            return self._error(exc, 409)
+
+    def _space(self, watcher: JobWatcher, _match: re.Match[str],
+               _query: dict[str, list[str]]) -> Answer:
+        try:
+            return self._json(asdict(self._renderer(watcher).space()))
+        except RenderError as exc:
+            return self._error(exc, 409)
+
+    def _shell(self, watcher: JobWatcher, _match: re.Match[str],
+               _query: dict[str, list[str]]) -> Answer:
+        try:
+            return self._json(asdict(self._renderer(watcher).shell()))
         except RenderError as exc:
             return self._error(exc, 409)
 
