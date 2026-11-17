@@ -36,7 +36,9 @@ def install(loader: Any, put: Any = setattr) -> None:
 COMMIT_DELAY_ENV = "LANGSLICE_TEST_COMMIT_DELAY"
 
 
-def main() -> int:
+def prepare() -> None:
+    """Install the synthetic atlas and fit settings in this process, and the
+    commit delay when :data:`COMMIT_DELAY_ENV` names one."""
     import os
     import time
 
@@ -55,6 +57,10 @@ def main() -> int:
             commit(self, before)
 
         Job.commit = slow  # type: ignore[method-assign]
+
+
+def main() -> int:
+    prepare()
     from langslice.doors.agent_cli.main import main as cli_main
 
     return int(cli_main(sys.argv[1:]) or 0)

@@ -58,10 +58,6 @@ SCHEMA_VERSION = 3
 #: Every other verb is a registration agent's, through the
 #: MCP tools or a script (``langslice.open_job``).
 CLI_VERBS = frozenset({"status", "export_maps", "review_comments"})
-#: Set to ``1`` by LangSlice's own test suite, which drives every verb
-#: through this command's plumbing (the envelope, the flags, the background
-#: runs); nothing a user or an agent is told of.
-ALL_VERBS_ENV = "LANGSLICE_JOB_TEST_ALL_VERBS"
 
 
 def on_command_line(verb: str) -> bool:
@@ -75,10 +71,9 @@ def on_command_line(verb: str) -> bool:
     Returns
     -------
     bool
-        True for the verbs of a session that sets a job up and checks it,
-        and for every verb under the test suite's switch.
+        True for the verbs of a session that sets a job up and checks it.
     """
-    return verb in CLI_VERBS or os.environ.get(ALL_VERBS_ENV) == "1"
+    return verb in CLI_VERBS
 
 
 #: The agent CLI's own commands besides the verbs (``langslice-job FOLDER ...``).

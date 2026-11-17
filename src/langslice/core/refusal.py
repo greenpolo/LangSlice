@@ -119,8 +119,6 @@ class RefusalCode(TextEnum):
     #: A trace's image call at the same placement is running in another
     #: process (an interrupted one is started again).
     IMAGE_CALL_IN_PROGRESS = "IMAGE_CALL_IN_PROGRESS"
-    #: A verb that needs the job's image model, which is not connected.
-    IMAGE_MODEL_OFF = "IMAGE_MODEL_OFF"
     #: The folder's job was made from other supplied inputs.
     INPUTS_CHANGED = "INPUTS_CHANGED"
     #: A landmark warp asked with fewer than three pairs.

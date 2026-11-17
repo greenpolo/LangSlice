@@ -95,12 +95,6 @@ FIXES: dict[str, str] = {
         "from these inputs (the old one's work is replaced), or with the "
         "inputs the job was made from (job.json, spec.inputs) to continue it."
     ),
-    RefusalCode.IMAGE_MODEL_OFF: (
-        "Connect the job's image model to LangSlice (`langslice login` for "
-        "openai-oauth, or its API key) and call it again[[?fireants_syn ; "
-        "without it, fit each section's deformation to its stain with "
-        "fireants_syn]]."
-    ),
     RefusalCode.INTERVAL_BREAKS_UNSUPPORTED: (
         "Report a break only where the written spacing exceeds "
         "1.5x the stack's median spacing; check the positions "

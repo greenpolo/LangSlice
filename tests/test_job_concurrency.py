@@ -4,9 +4,9 @@ Every write holds the job folder's lock (``job.lock``) and reloads what
 others saved first (``Job.writing``); a long fit computes outside the lock
 and, when it applies, refuses a section whose inputs changed meanwhile
 (``STALE_INPUT``) while the others apply. Here an "agent" (a second job on
-the folder, through the library) writes while a CLI fit computes
-(``fireants_syn``, ``elastix_affine``: long verbs), and several CLI processes
-write at once.
+the folder, through the library) writes while another job's fit computes
+(``fireants_syn``, ``elastix_affine``: long verbs), and several processes
+write at once (``tests/library_child.py``).
 """
 
 from __future__ import annotations
@@ -66,14 +66,14 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                          "position,transform,nonlinear", "--nonlinear-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
-    code, envelope = cli(capsys, str(folder), "position_sections", "--sections", json.dumps(
-        [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}]),
-        "--view", "false")
-    assert code == 0, envelope
-    code, envelope = cli(capsys, str(folder), "interactive_transform", "--sections",
-                         json.dumps([{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}]),
-                         "--view", "false")
-    assert code == 0, envelope
+    with langslice.open_job(folder) as job:
+        placed = job.position_sections(
+            sections=[{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}],
+            view=False)
+        assert placed["status"] == "ok", placed
+        turned = job.interactive_transform(
+            sections=[{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}], view=False)
+        assert turned["status"] == "ok", turned
     return folder
 
 
@@ -111,10 +111,9 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.position_sections(sections=[{"id": ID2, "position_mm": 0.2}],
                                            view=False))
-    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
-                         "--view", "false")
-    assert code == 0, envelope
-    assert envelope["result"]["results"][0]["written"] is True
+    with langslice.open_job(images) as fitter:
+        fitted = fitter.fireants_syn(sections=[ID0], view=False)
+    assert fitted["results"][0]["written"] is True
     held = saved(images)
     assert held[ID2]["position_mm"] == 0.2          # the agent's write
     assert held[ID0]["deformation"]["key"]          # the fit's
@@ -132,13 +131,11 @@ def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
                                            view=False))
-    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections",
-                         json.dumps([ID0, ID1]), "--view", "false")
-    assert code == 0, envelope
-    rows = {row["id"]: row for row in envelope["result"]["results"]}
+    with langslice.open_job(images) as fitter:
+        fitted = fitter.fireants_syn(sections=[ID0, ID1], view=False)
+    rows = {row["id"]: row for row in fitted["results"]}
     assert rows[ID0]["error"] == "STALE_INPUT" and "again" in rows[ID0]["message"]
     assert rows[ID1]["status"] == "ok" and rows[ID1]["written"] is True
-    assert f"{ID0}: STALE_INPUT" in envelope["warnings"]
     held = saved(images)
     assert held[ID0]["position_mm"] == 0.11 and not held[ID0].get("deformation")
     assert held[ID1]["deformation"]["key"]
@@ -152,10 +149,9 @@ def test_a_fit_whose_section_image_was_made_again_meanwhile_is_refused(
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.make_image(name="preprocessed", sections=[ID0],
                                     weights={"gray": 1}, clahe_clip=2, view=False))
-    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections",
-                         json.dumps([ID0, ID1]), "--view", "false")
-    assert code == 0, envelope
-    rows = {row["id"]: row for row in envelope["result"]["results"]}
+    with langslice.open_job(images) as fitter:
+        fitted = fitter.fireants_syn(sections=[ID0, ID1], view=False)
+    rows = {row["id"]: row for row in fitted["results"]}
     assert rows[ID0]["error"] == "STALE_INPUT"
     assert rows[ID1]["status"] == "ok" and rows[ID1]["written"] is True
     held = saved(images)
@@ -172,10 +168,9 @@ def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, 
     during(monkeypatch, transform, "fit_elastix",
            lambda: agent.interactive_transform(sections=[{"id": ID1, **IDENTITY,
                                                           "rotation_deg": 3.0}], view=False))
-    code, envelope = cli(capsys, str(images), "elastix_affine", "--sections",
-                         json.dumps([ID0, ID1]), "--view", "false")
-    assert code == 0, envelope
-    rows = {row["id"]: row for row in envelope["result"]["results"]}
+    with langslice.open_job(images) as fitter:
+        fitted = fitter.elastix_affine(sections=[ID0, ID1], view=False)
+    rows = {row["id"]: row for row in fitted["results"]}
     assert rows[ID0]["status"] == "ok" and rows[ID1]["error"] == "STALE_INPUT"
     held = saved(images)
     assert held[ID0]["transform"]["kind"] == "elastix"
@@ -208,17 +203,16 @@ def test_a_read_never_waits_for_another_writer_and_sees_what_it_saved(capsys, im
         assert code == 0, envelope
         rows = {row["id"]: row for row in envelope["result"]["rows"]}
         assert rows[ID2]["position_mm"] == 0.2      # what the holder saved
-        code, envelope = cli(capsys, str(images), "look", "--mode", "section",
-                             "--sections", ID0)
-        assert code == 0, envelope
+        with langslice.open_job(images) as reader:
+            assert reader.look(mode="section", sections=[ID0])["status"] == "ok"
         assert time.monotonic() - started < 60      # not the lock's 300 s
     finally:
         release.set()
         thread.join()
         holder.close()
     # The history came through whole: undo takes the holder's write back.
-    code, envelope = cli(capsys, str(images), "undo")
-    assert code == 0, envelope
+    with langslice.open_job(images) as later:
+        assert later.undo()["status"] == "ok"
     assert saved(images)[ID2].get("position_mm") is None
 
 
@@ -288,27 +282,27 @@ def test_a_write_landing_while_a_job_loads_is_kept(images, monkeypatch):
 
 
 @pytest.mark.slow
-def test_cli_processes_writing_at_once_all_land(images):
+def test_processes_writing_at_once_all_land(images):
     # Each commit waits 0.4 s inside its write: without the lock, writers
     # that read the state before another's commit would overwrite it.
     # This checkout's src first: the venv's editable install may be another's.
     env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(REPO / "src"), str(REPO))),
            "LANGSLICE_TEST_COMMIT_DELAY": "0.4"}
 
-    def start(*argv: str) -> subprocess.Popen[str]:
-        return subprocess.Popen([sys.executable, "-m", "tests.cli_child", str(images),
-                                 *argv], cwd=REPO, env=env, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True)
+    def start(verb: str, **arguments: Any) -> subprocess.Popen[str]:
+        return subprocess.Popen([sys.executable, "-m", "tests.library_child", str(images),
+                                 verb, json.dumps(arguments)], cwd=REPO, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-    started = [start("position_sections", "--sections",
-                     json.dumps([{"id": ID2, "position_mm": 0.2}]), "--view", "false"),
-               start("position_sections", "--sections",
-                     json.dumps([{"id": ID0, "position_mm": 0.12}]), "--view", "false")]
-    started += [start("note", "--text", f"note {number}") for number in range(2)]
+    started = [start("position_sections", view=False,
+                     sections=[{"id": ID2, "position_mm": 0.2}]),
+               start("position_sections", view=False,
+                     sections=[{"id": ID0, "position_mm": 0.12}])]
+    started += [start("note", text=f"note {number}") for number in range(2)]
     for process in started:
         out, err = process.communicate(timeout=300)
         assert process.returncode == 0, err[-2000:]
-        assert json.loads(out.strip().splitlines()[-1])["ok"] is True
+        assert json.loads(out.strip().splitlines()[-1])["status"] == "ok"
     held = saved(images)
     assert held[ID2]["position_mm"] == 0.2 and held[ID0]["position_mm"] == 0.12
     notes = json.loads((images / "langslice" / "state.json").read_text(

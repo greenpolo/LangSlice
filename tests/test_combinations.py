@@ -163,9 +163,6 @@ def ok(capsys: pytest.CaptureFixture[str], images: Path, verb: str,
     return envelope
 
 
-SUBMIT_FLAGS = ("--summary", "done", "--notes", "[]", "--interval-breaks", "[]")
-
-
 def transforms_file(images: Path) -> str:
     """The supplied transforms as a JSON file (inline JSON works as well:
     ``test_init_takes_a_long_inline_json``)."""
@@ -370,20 +367,6 @@ def test_2_linear_on_supplied_positions_through_the_library(images):
     assert_exported(images / "langslice")
 
 
-def test_2_linear_on_supplied_positions_through_the_cli(capsys, images):
-    job = init(capsys, images, "transform", "--positions", json.dumps(POSITIONS))
-    code, envelope = cli(capsys, str(images), "position_sections", "--sections", "[]")
-    assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
-    code, envelope = cli(capsys, str(images), "submit", *SUBMIT_FLAGS)
-    assert code == 3 and envelope["error"]["code"] == "MISSING_TRANSFORMS"
-    ok(capsys, images, "interactive_transform", "--sections", json.dumps(
-        [{"id": name, **IDENTITY} for name in IDS]))
-    ok(capsys, images, "submit", *SUBMIT_FLAGS)
-    document = assert_exported(job)
-    assert [e["parameters"]["plane"]["position_mm"] for e in document["sections"]] == list(
-        POSITIONS.values())
-
-
 # --- 3. Positioning + Linear ---------------------------------------------------------------
 
 
@@ -401,15 +384,6 @@ def test_3_positioning_and_linear_through_the_library(images):
         assert job.state.by_id(ID1).flip is True
     document = assert_exported(images / "langslice")
     assert document["sections"][1]["parameters"]["orientation"]["flip"] is True
-
-
-def test_3_positioning_and_linear_through_the_cli(capsys, images):
-    job = init(capsys, images, "position,transform")
-    ok(capsys, images, "position_sections", "--sections", json.dumps(_sections(POSITIONS)))
-    ok(capsys, images, "elastix_affine", "--sections", ID0, "--sections", ID1,
-       "--sections", ID2)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS)
-    assert_exported(job)
 
 
 def test_3_positioning_and_linear_through_mcp(images):
@@ -620,7 +594,11 @@ def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
     rows = {row["id"]: row for row in ok(capsys, images, "status")["result"]["rows"]}
     assert rows[ID2]["damage_note"] == "torn" and rows[ID2]["damaged"] is False
     # Sections with a frozen affine carry the host identity: they can be left linear and submitted.
-    ok(capsys, images, "submit", *SUBMIT_FLAGS)
+    import langslice
+
+    with langslice.open_job(images) as handle:
+        submitted = handle.submit(summary="done", notes=[], interval_breaks=[])
+    assert submitted["status"] == "ok", submitted
 
 
 def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):

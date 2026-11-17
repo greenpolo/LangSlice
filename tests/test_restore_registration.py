@@ -65,14 +65,14 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                          "position,transform,nonlinear", "--nonlinear-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
-    code, envelope = cli(capsys, str(folder), "position_sections", "--sections", json.dumps(
-        [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}]),
-        "--view", "false")
-    assert code == 0, envelope
-    code, envelope = cli(capsys, str(folder), "interactive_transform", "--sections",
-                         json.dumps([{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}]),
-                         "--view", "false")
-    assert code == 0, envelope
+    with langslice.open_job(folder) as job:
+        placed = job.position_sections(
+            sections=[{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}],
+            view=False)
+        assert placed["status"] == "ok", placed
+        turned = job.interactive_transform(
+            sections=[{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}], view=False)
+        assert turned["status"] == "ok", turned
     return folder
 
 
@@ -155,10 +155,8 @@ def test_a_transform_alone_goes_back_and_the_numbers_are_refused_with_a_fix(caps
     assert back["results"][0]["written"] is True
     assert affine_to_json(
         job.state.resolve(ID0).transform)["physical"]["scale_x"] == pytest.approx(1.0)
-    code, envelope = cli(capsys, str(images), "restore_registration", "--sections",
-                         json.dumps([{"id": ID0, "registration": 9}]))
-    assert code == 2 and envelope["error"]["code"] == "UNKNOWN_REGISTRATION"
-    assert "restore_registration" in envelope["error"]["fix"]
+    unknown = job.restore_registration(sections=[{"id": ID0, "registration": 9}])
+    assert unknown["error"] == "UNKNOWN_REGISTRATION"
     both = job.restore_registration(section=ID0, sections=[{"id": ID0, "registration": 1}])
     assert both["error"] == "BAD_ARGS"
     job.close()

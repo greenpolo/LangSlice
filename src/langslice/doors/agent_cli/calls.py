@@ -1,8 +1,10 @@
 """``langslice-job FOLDER VERB [arguments]``: one verb on a job folder, for agents.
 
-The agent CLI: every verb of :data:`langslice.tools.catalog.VERBS` under the
-tool's own name (kebab-case accepted: ``set-positions``), plus ``init`` (create
-the job for a folder of images), ``launch --role ROLE`` (the launch prompt of a
+The agent CLI: the verbs of a session that sets a job up and checks it
+(:data:`langslice.doors.agent_cli.catalog.CLI_VERBS`, kebab-case accepted:
+``export-maps``; any other verb is a registration tool and is refused,
+``VERB_OFF``), plus ``init`` (create the job for a folder of images),
+``launch --role ROLE`` (the launch prompt of a
 registration subagent, :mod:`langslice.doors.agent_cli.launch`), ``runs [ID]``
 and ``wait [ID]`` (background runs; ``status`` is only the verb). FOLDER is the
 job folder or the image folder beside it.
@@ -12,20 +14,16 @@ Arguments are the verb's declared arguments
 JSON object with ``--args '{...}'`` or ``--args @file.json``, and/or one flag
 per argument, ``--name value`` (kebab or snake case; a JSON value, or plain
 text for a text argument; a list argument takes the flag again for each item).
-Options: ``--dry-run`` (a write verb runs on the job without writing anything
-and reports what would change; ``elastix_affine``, ``fireants_syn`` and
-``trace_borders``, and every tool of a plugin, are only checked, not run; not
-with ``--background``), ``--background`` (answer at once with a run id; without
+Options: ``--dry-run`` (``export_maps`` lists the files it would write and
+writes none; not with ``--background``), ``--background`` (answer at once with a run id; without
 it a long verb runs as a background run all the same where a process may
 outlive its command, the call waiting up to ``background.WAIT_S`` for it,
 :func:`_detached`), ``--verbose`` (the whole reply: whole-stack rows, the
 descriptions written for a model), ``--timeout SECONDS`` (``wait``).
 
 Each call opens the job as it stands on disk (``doors.jobs.open_folder``), runs
-the verb through the same tool a running agent has (``look``'s ``resolution``
-any size from 128 px to the source's own pixels) and closes it, so calls and a
-running agent interleave on one folder: each picks up the other's writes
-(``Job.sync``) and every write is one undo step. The answer is the JSON
+the verb through the same tool a running agent has and closes it, so a call
+sees what a running agent has written (``Job.sync``). The answer is the JSON
 envelope of :mod:`langslice.doors.agent_cli.envelope` on stdout; anything a
 library prints goes to stderr.
 """
@@ -43,8 +41,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from langslice.core.refusal import FAILED_STATUSES, RefusalCode, ReplyStatus
-from langslice.core.stack.codec import trace_to_json
-from langslice.core.stack.stack import Stack
 from langslice.doors.agent_cli import background
 from langslice.doors.agent_cli.catalog import (
     CLI_VERBS,
@@ -64,10 +60,8 @@ from langslice.doors.agent_cli.envelope import (
 )
 from langslice.doors.jobs import Opened
 from langslice.job.lock import JobBusy
-from langslice.job.state_file import stack_to_json
 from langslice.tools.descriptions.door_text import NOTES_KEY, image_model_state
 from langslice.tools.descriptions.render import Declaration, declaration
-from langslice.tools.refusal import unknown_sections as unknown_refusal
 
 if TYPE_CHECKING:  # a type only: the job module loads with the call
     from collections.abc import Callable
@@ -76,17 +70,14 @@ if TYPE_CHECKING:  # a type only: the job module loads with the call
 
 logger = logging.getLogger(__name__)
 
-#: Verbs a dry run checks without running (a model call, a long fit).
-CHECKED_ONLY = frozenset({"trace_borders", "elastix_affine", "fireants_syn"})
 #: Reply keys worth a warning when present and not empty.
 WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")
 #: A call with one of these answers with the verb's (or command's) schema,
 #: as ``langslice-job schema NAME`` does, and runs nothing.
 HELP_FLAGS = frozenset({"--help", "-h"})
-#: Verbs whose ``rows`` are their answer (kept when concise): the status rows, the
-#: regions a grep_atlas query found.
-ROW_VERBS = frozenset({"status", "grep_atlas"})
+#: Verbs whose ``rows`` are their answer (kept when concise): the status rows.
+ROW_VERBS = frozenset({"status"})
 
 
 def progress(message: str) -> None:
@@ -526,7 +517,7 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Opened:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.tools.catalog import VERBS, verbs_for
+    from langslice.tools.catalog import verbs_for
 
     if verb not in verbs_for(_spec_of(folder)):
         raise _Refusal(Envelope.failure(RefusalCode.UNKNOWN_VERB,
@@ -549,12 +540,6 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         offered = opened.listed_verbs()
         if verb not in tools:
             spec = opened.spec
-            if (verbs_for(spec)[verb].image_model and spec.has("nonlinear")
-                    and spec.nonlinear.uses_image_model and not opened.image_model_connected):
-                raise _Refusal(Envelope.failure(
-                    RefusalCode.IMAGE_MODEL_OFF, f"{verb} needs the job's image model "
-                    f"({spec.nonlinear.provider}), which is not connected to LangSlice here "
-                    "(no key or login).", result={"verbs": offered}, job=job_folder, verb=verb))
             tasks = spec.tasks  # pyright: ignore[reportAny]  # the job's own spec
             raise _Refusal(Envelope.failure(
                 RefusalCode.VERB_OFF, f"This job's settings (tasks {tasks}"
@@ -576,9 +561,6 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         elif long and not dry_run and not options.get("run_id") and background.detaching():
             envelope = _detached(opened.job.layout, job_folder, verb, arguments,
                                  verbose=bool(options.get("verbose")))
-        elif dry_run and (verb in CHECKED_ONLY or verb not in VERBS):
-            # a plugin tool runs an engine of its own: checked, never run
-            envelope = _checked(opened, verb, arguments)
         else:
             envelope = _run(opened, verb, tool, arguments, dry_run=dry_run,
                             verbose=bool(options.get("verbose")))
@@ -646,28 +628,6 @@ def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
             f"'{json.dumps(arguments, default=str)}'")
 
 
-def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
-    """A dry run of a verb that is not simulated: its sections resolved."""
-    refs = [entry.get("id", "") if isinstance(entry, dict) else entry
-            for entry in (arguments.get("sections") or [])]
-    refs += [arguments[key] for key in ("section", "id")
-             if arguments.get(key) not in (None, "")]
-    known = [opened.job.state.resolve(ref) for ref in refs]
-    unknown = [str(ref) for ref, record in zip(refs, known, strict=True) if record is None]
-    if unknown:
-        # the opened job, as its door holds it
-        refusal = unknown_refusal(opened.job.state, unknown)  # pyright: ignore[reportAny]
-        return Envelope.failure(RefusalCode.UNKNOWN_SLICE_IDS, refusal.message,
-                                result={"unknown": unknown,
-                                        "filenames": refusal.facts["filenames"]},
-                                job=str(opened.job.folder))
-    return Envelope(
-        result={"dry_run": True, "simulated": False,
-                "sections": [record.id for record in known if record is not None]},
-        warnings=[f"{verb} is checked, not run, by --dry-run: the arguments and sections "
-                  "are valid; nothing ran and nothing was written."])
-
-
 def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
          dry_run: bool, verbose: bool) -> Envelope:
     from langslice.job.pictures import artifacts as picture_artifacts
@@ -678,11 +638,8 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     verbs = verbs_for(opened.spec)
     job = opened.job
     job_folder = str(job.folder)
-    before = job.snapshot() if dry_run else None
     with captured() as saved:
         reply = tool(**arguments)
-        if verbs[verb].image_model:
-            job.settle_border_traces()  # this process ends: the calls land now
         work = cast("Job", job).background
         work.wait_all()  # and the work started (its pictures saved)
     if isinstance(reply, dict):
@@ -692,13 +649,6 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     artifacts: list[dict[str, Any]] = []
     warnings: list[str] = []
     ok = not (isinstance(reply, dict) and reply.get("status") in FAILED_STATUSES)
-    if ok and verb == "submit" and not dry_run:
-        from langslice.job.public_files import derived_files
-
-        job.emit_results(progress)
-        artifacts.append({"path": str(Path(job.results_path).resolve()), "kind": "results"})
-        artifacts += [{"path": str(path), "kind": kind}
-                      for path, kind in derived_files(job.layout, job.state)]
     if verb == "export_maps" and isinstance(reply, dict) and not dry_run:
         artifacts += [dict(item) for item in reply.get("files") or []]
     job.views.flush()
@@ -708,13 +658,6 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     artifacts += work_pictures(
         cast("Job", job), cast(object, reply), start=len(pictures))
     result = shape(verb, reply, verbose=verbose)
-    if verb == "trace_borders" and isinstance(result, dict):
-        traced = cast("dict[str, object]", result)  # trace_borders' reply
-        traced["border_trace"] = _landed(job, traced.get("id"))
-        work = job.background.get(str(traced.get("work") or ""))
-        if work is not None:  # the packaged trace, landed in this process
-            traced["work_status"] = work.status
-            traced["work_result"] = work.result
     if verb == "status" and isinstance(result, dict):
         result["verbs"] = opened.listed_verbs()
         state = image_model_state(opened.spec, connected=opened.image_model_connected)
@@ -722,12 +665,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
             result["image_model"] = state
     if dry_run and isinstance(result, dict):
         result["dry_run"] = True
-        if verbs[verb].kind == "write":
-            # the open job's stack
-            after = stack_to_json(cast("Stack", job.state))
-            result["would_change"] = changes(
-                before or {}, after, verbose=verbose)
-        elif verbs[verb].scripting:
+        if verbs[verb].scripting:
             warnings.append(f"{verb} wrote nothing under --dry-run; `files` lists what it "
                             "would write.")
         else:
@@ -752,21 +690,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         failed = Envelope.failure(code, message, result=result, job=job_folder, verb=verb)
         failed.artifacts, failed.warnings = artifacts, warnings
         return failed
-    nexts = ([_command(job_folder, verb, arguments)] if dry_run
-             and verbs[verb].kind == "write" else [])
-    return Envelope(result=result, artifacts=artifacts, warnings=warnings, next=nexts)
-
-
-def _landed(job: Any, section: Any) -> dict[str, Any]:
-    """A section's image-model call as it landed (status, error, message,
-    cached, attempt); empty for an unknown section or none."""
-    state = cast("Stack", job.state)  # the open job's stack
-    name = cast("object", section)  # the section the reply named
-    record = state.resolve(name) if name not in (None, "") else None
-    trace = None if record is None else record.border_trace
-    held = {} if trace is None else trace_to_json(trace)
-    return {key: held[key] for key in ("status", "error", "message", "cached", "attempt")
-            if key in held}
+    return Envelope(result=result, artifacts=artifacts, warnings=warnings)
 
 
 def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
@@ -775,19 +699,14 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     :func:`langslice.core.stack.status.with_uniform_rows`); concise unless
     *verbose* (no whole-stack rows on a write; a reply with pictures keeps
     what they are as one line, ``picture_note``; *verbose* keeps the
-    description and the pictures' text lines as written for a model). A
-    plugin tool's reply (a verb that is no native one) is left as it is
-    but for its pictures."""
+    description and the pictures' text lines as written for a model)."""
     from langslice.core.stack.status import with_uniform_rows
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.tools.catalog import VERBS
 
     if not isinstance(reply, dict):
         return reply
     body = with_uniform_rows(dict(reply))
     media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
-    if verb not in VERBS:  # a plugin tool's reply is its own: no key is read as a native one
-        return body
     if verbose:
         texts = [item for item in media if isinstance(item, str)] if isinstance(media, list) \
             else []
@@ -804,26 +723,6 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     if body.get("files_written") and isinstance(body.get("files"), list):
         body["n_files"] = len(body.pop("files"))  # listed under artifacts
     return body
-
-
-def changes(before: dict[str, Any], after: dict[str, Any], *,
-            verbose: bool) -> dict[str, Any]:
-    """What a write changed in the state: per section the fields (with both
-    values when *verbose*), and the stack's own fields."""
-    def by_id(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        return {str(item.get("id")): item for item in state.get("slices") or []}
-
-    sections: dict[str, Any] = {}
-    old, new = by_id(before), by_id(after)
-    for name in sorted(set(old) | set(new)):
-        a, b = old.get(name, {}), new.get(name, {})
-        fields = sorted(key for key in set(a) | set(b) if a.get(key) != b.get(key))
-        if fields:
-            sections[name] = ({key: {"from": a.get(key), "to": b.get(key)} for key in fields}
-                              if verbose else fields)
-    stack = sorted(key for key in set(before) | set(after)
-                   if key != "slices" and before.get(key) != after.get(key))
-    return {"sections": sections, "stack": stack}
 
 
 # --- init ---------------------------------------------------------------------------

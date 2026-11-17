@@ -8,8 +8,10 @@ do in a run, and to choose what to switch off in the
 [job settings](settings.md#disabled).
 
 Every way into LangSlice gives the agent the same tools under the same names:
-the MCP server, the agent CLI, the Python library and the
-built-in agent (`langslice linear run`). The exact arguments of a tool in a
+the MCP server, the Python library and the built-in agent
+(`langslice linear run`). The agent CLI (`langslice-job`) sets a job up and
+checks it: of the tools it runs `status`, `export_maps` and
+`review_comments` only. The exact arguments of a tool in a
 given job are printed by `langslice-job FOLDER schema TOOL`, and the job
 folder's `TOOLS.md` lists them all.
 
@@ -90,8 +92,9 @@ Four things decide which tools the agent gets.
 4. **The image model and the door.** `trace_borders` needs the Nonlinear
    task, an image model in the job (`nonlinear.provider` not `none`) and,
    on MCP and the agent CLI, that model's key or login on this computer.
-   `export_maps` and `look`'s `sheet` argument exist only on the agent CLI
-   and in the library, never for a model on MCP or the built-in agent.
+   `export_maps` exists only on the agent CLI and in the library, and
+   `look`'s `sheet` argument only in the library, never for a model on MCP
+   or the built-in agent.
 
 `look`, `status`, `undo` and `submit` are in every run and cannot be
 switched off.
@@ -149,7 +152,7 @@ own writes through the library's `job.context` are not checked against
 | Where | Limit |
 |---|---|
 | The built-in agent and MCP | `look`, `grep_atlas_view`, `make_image` and `make_mask` show at most 4 pictures per call; the rest are listed under `not_shown` with the call that draws them. `interactive_transform` and `elastix_affine` take at most 4 sections per call. |
-| The agent CLI and the library | No picture limit. `interactive_transform` and `elastix_affine` take any number of sections. |
+| The library | No picture limit. `interactive_transform` and `elastix_affine` take any number of sections. |
 | Every door | `fireants_syn` takes at most 20 sections per call (each fitted section is held in memory, about 170 MB, until the call writes them all). A job's [`transform.max_parallel`](settings.md#transform-settings) below 4 caps both transform tools at that number. |
 
 A call over a limit is refused with `TOO_MANY_SECTIONS` and nothing is done.
@@ -295,13 +298,12 @@ outlines each mask where its weight is 0.5 on `section` and `overlay`
 pictures; the caption says that the ringed patches are what the mask leaves
 out of a fit, and names each mask and its source.
 
-`sheet=True` (agent CLI and library) also tiles the pictures drawn into sheets
+`sheet=True` (library) also tiles the pictures drawn into sheets
 of up to 16, each at most the viewer's largest picture: each tile is one
 picture as drawn, scaled down whole, under a header naming its number. The
 sheet is captioned with every tile's caption and saved as a picture of its own
 (mode `sheet`), whose recipe lists each tile's picture and box. Every picture
-is still saved and numbered (on the agent CLI its JPEG is an artifact of kind
-`tile`, the sheet the one in `picture_files`); the reply's `pictures` lists
+is still saved and numbered; the reply's `pictures` lists
 the sheets with their tiles and `tiled` the pictures they tile.
 
 ### `zoom`
@@ -389,7 +391,7 @@ same file again. A recipe image is likewise computed once on the working copy
 and read back from its file. `weights` empty is every raw channel by its
 tissue coverage; an image cannot be its own source, and a raw channel's name
 cannot be made. Naming `sections` remakes the image for them alone under the
-same name. One undo step per call. Through the agent CLI and the library
+same name. One undo step per call. Through the library
 `view` returns every section. Refusals: `BAD_ARGS`, `UNKNOWN_SLICE_IDS`,
 `UNKNOWN_IMAGE`, `RENDER_FAILED`.
 
@@ -941,14 +943,6 @@ an earlier atlas plane says which picture to draw again, and
 `TOO_MANY_LANDMARK_VIEWS` says to resend with `view=false` or in calls of
 four. A section whose `deformation` is frozen is refused (`FROZEN`) by both
 landmark tools.
-
-On the agent CLI, `pairs` goes through `--args`, as a JSON object or a file:
-
-```bash
-langslice-job JOB set_landmarks --args @pairs.json     # {"section": "s01.tif", "pairs": [...]}
-langslice-job JOB set_landmarks --args '{"section": "s01.tif", "delete": ["L2"]}'
-langslice-job JOB zoom --picture 12 --box 960,230,1300,940   # or --box '[960,230,1300,940]'
-```
 
 The `view` crop carries the atlas region borders as `look` draws them. A zoom
 of it is a saved-image crop and reports `redrawn=False`. Later section views

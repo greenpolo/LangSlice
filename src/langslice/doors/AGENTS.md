@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `langslice.tools.descriptions.render.declare`d | LangSlice's agent (`doors/agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `agent_cli/launch.py`) | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `agent_cli/calls.py`: the commands of the session that sets a job up and checks it (`init`, `launch`, `runs`, `wait`, `env`, `python SCRIPT`) and, over the same toolbox, the verbs `status`, `export_maps` and `review_comments` alone (`catalog.CLI_VERBS`, `on_command_line`; any other verb answers `VERB_OFF` with where it is: an MCP tool, a library method); gates off, `level="auto"`; each call a process of its own. The test suite sets `LANGSLICE_JOB_TEST_ALL_VERBS=1` (`catalog.ALL_VERBS_ENV`, `tests/conftest.py`) to drive every verb through this plumbing | the main session of Claude Code, Antigravity, Codex |
+| agent CLI (`langslice-job`) | `agent_cli/calls.py`: the commands of the session that sets a job up and checks it (`init`, `launch`, `runs`, `wait`, `env`, `python SCRIPT`) and, over the same toolbox, the verbs `status`, `export_maps` and `review_comments` alone (`catalog.CLI_VERBS`, `on_command_line`; any other verb answers `VERB_OFF` with where it is: an MCP tool, a library method); gates off, `level="auto"`; each call a process of its own | the main session of Claude Code, Antigravity, Codex |
 | library | `library/handle.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 The in-tree engines' tools a run has (`ToolDef.engine`; `deepslice_place`
@@ -461,21 +461,17 @@ bodies, and turned into an answer once per door:
     the declaration's `arguments`, and its default, then the
     call without the unknown ones, a short signature's others at their
     defaults), `FOLDER schema [VERB ...]` (catalog's `schema` for that job),
-    `call` (open, `VERB_OFF` /
-    `IMAGE_MODEL_OFF`, `--dry-run` with `--background` refused, background
+    `call` (a verb outside `CLI_VERBS` refused, `VERB_OFF`; open; a verb the
+    job disables refused, `VERB_OFF`; `--dry-run` with `--background` refused, background
     start; a long verb without `--background` where `background.detaching()`
     runs as a background run the call waits for, `_detached`: at most
     `background.WAIT_S`, then answered as `wait` answers, Ctrl-C ending the run
-    too; dry run, run), `_run` (the tool inside `job.pictures.captured()`; an
-    image-model verb's calls settled before answering, each landed outcome
-    shown; `submit` writes the results; pictures listed as artifacts with
-    `index` and `label`, `job.pictures.artifacts`; an image-model verb waits
-    for the background work it started and answers with its notices, the
-    work's pictures listed after the call's own, `_work_pictures`;
-    `would_change` on a dry run), `shape` (status rows uniform,
+    too; dry run, run), `_run` (the tool inside `job.pictures.captured()`;
+    pictures listed as artifacts with `index` and `label`,
+    `job.pictures.artifacts`; `export_maps`' files as artifacts, none on a
+    dry run), `shape` (status rows uniform,
     `core.stack.status.with_uniform_rows`;
-    concise: a reply with pictures keeps its description as `picture_note`,
-    a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
+    concise: a reply with pictures keeps its description as `picture_note`), `init` (its
     parser `init_parser`: the job flags of `linear run`, `--no-resume`,
     `--notes`, `--viewer` (`add_flags`, the viewers from
     `core.pictures.opening.VIEWER_LIMITS`); `--registration`'s report under `result.registration`,
@@ -483,9 +479,7 @@ bodies, and turned into an answer once per door:
     `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or
     while it runs `ok` with its state, `waited_s`, a message and the command
-    that waits again (exit 0), or `RUN_LOST`), and `env` (`environment.command`). `CHECKED_ONLY`:
-    `trace_borders`, `elastix_affine` and `fireants_syn`
-    are checked, not run, by `--dry-run`, and so is every plugin tool (a verb not in `VERBS`).
+    that waits again (exit 0), or `RUN_LOST`), and `env` (`environment.command`).
   - `environment.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
     the job's own Python environment `env/` (uv's or `venv`'s), a `.pth`
     (`PARENT_PTH`) adding the site-packages of the environment LangSlice runs
@@ -566,9 +560,7 @@ where `look` does: both are `Offered.SIZE_CHOSEN`; `TOO_MANY_LANDMARK_VIEWS`
 says how many pairs were sent and what to resend; the landmark codes' `FIXES`
 are specific, written with needs marks; `ATLAS_ENDPOINT_OUTSIDE`, an argument
 code (exit 2), resends the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is
-the option `grep_atlas:points`. The CLI reads a list of numbers from one
-comma-separated flag (`--box 960,230,1300,940`) and returns `grep_atlas`'s rows
-unshortened (`ROW_VERBS`). `status`' `can_change` names the
+the option `grep_atlas:points`. `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /
 `redone` (sections, fields), the rows of those sections and the depth, not the

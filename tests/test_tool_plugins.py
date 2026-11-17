@@ -1042,29 +1042,7 @@ def test_the_library_takes_a_factory_function_and_tool_objects(make, images: Pat
     assert langslice.open_job
 
 
-def test_the_agent_cli_calls_a_plugin_tool_by_name(images: Path, capsys, monkeypatch):
-    from langslice.doors.agent_cli.main import main
-
-    job = _library_job(images)
-    folder = str(job.folder)
-    job.close()
-    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda _n: _slab())
-    from tests.cli_child import install
-
-    install(lambda _n: _slab(), monkeypatch.setattr)
-    code = main([folder, "section_brightness"])
-    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert code == 0 and out["ok"] is True, out
-    assert [row["mean"] for row in out["result"]["rows"]] == [60.0, 80.0]
-    main([folder, "nudge_sections", "--args", json.dumps({"sections": ["s0.png"]})])
-    result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert result["ok"] and result["result"]["written"] == ["s0.png"], result
-    main([folder, "no_such_tool"])
-    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]["code"] == \
-        "UNKNOWN_VERB"
-
-
-def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
+def test_schema_describes_the_plugin_tools_of_the_job_in_the_folder(
         images: Path, capsys, monkeypatch):
     from langslice.doors.agent_cli.main import main
 
@@ -1074,19 +1052,16 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
     install_atlas = __import__("tests.cli_child", fromlist=["install"]).install
     install_atlas(lambda _n: _slab(), monkeypatch.setattr)
     monkeypatch.chdir(folder)
-    main(["ops"])
+    main(["ops"])  # the commands of the session that sets the job up: no plugin tool
     verbs = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
-    assert [item["name"] for item in verbs][-3:] == ["section_brightness", "nudge_sections",
-                                                     "ripple_sections"]
-    assert verbs[-2]["kind"] == "write" and verbs[-2]["group"] == "Linear"
-    assert verbs[-1]["kind"] == "write" and verbs[-1]["group"] == "Nonlinear"
+    assert "nudge_sections" not in [item["name"] for item in verbs]
+    main([str(folder), "nudge_sections"])  # a registration tool, not a command
+    refused = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
+    assert refused["code"] == "VERB_OFF" and "open_job(FOLDER).nudge_sections(" in refused["fix"]
     main(["schema", "nudge_sections"])
     schema = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]
     assert set(schema["arguments"]["properties"]) == {"sections", "dx"}
-    monkeypatch.chdir(images.parent)  # a folder with no job: the native listing
-    main(["ops"])
-    plain = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
-    assert [item["name"] for item in plain] == list(verbs_for())
+    monkeypatch.chdir(images.parent)  # a folder with no job
     # From elsewhere, the job's folder names the job: its plugin verbs with
     # native ones, several at once.
     main([str(folder), "schema", "nudge_sections", "look"])
@@ -1491,30 +1466,6 @@ def tools():
 '''
 
 
-def test_the_agent_cli_waits_for_work_a_plugin_verb_started_and_brings_its_notice(
-        make, images: Path, capsys, monkeypatch):
-    import json
-
-    from langslice.doors.agent_cli.main import main
-    from tests.cli_child import install
-
-    ref = make("mark_later_plugin", MARK_LATER)
-    job = _library_job(images, plugins=[ref])
-    folder = str(job.folder)
-    job.close()
-    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda _n: _slab())
-    install(lambda _n: _slab(), monkeypatch.setattr)
-    code = main([folder, "mark_later", "--args", json.dumps({"section": "s0.png"})])
-    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert code == 0 and out["ok"] is True, out
-    assert out["result"]["background"][0].endswith("mark_later of s0.png finished: moved.")
-    import langslice
-
-    again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
-    assert again.state.by_id("s0.png").position_mm == pytest.approx(3.3)
-    again.close()
-
-
 def test_the_library_waits_for_work_a_plugin_verb_started_and_returns_its_landing(
         make, images: Path):
     ref = make("mark_later_plugin", MARK_LATER)
@@ -1529,31 +1480,6 @@ def test_the_library_waits_for_work_a_plugin_verb_started_and_returns_its_landin
     assert job.state.by_id("s0.png").position_mm == pytest.approx(3.3)
     assert job.wait()["background"] == []  # a notice is handed out once
     job.close()
-
-
-def test_the_agent_cli_dry_run_of_a_plugin_tool_checks_and_runs_nothing(
-        make, images: Path, capsys, monkeypatch):
-    import json
-
-    from langslice.doors.agent_cli.main import main
-    from tests.cli_child import install
-
-    ref = make("mark_later_plugin", MARK_LATER)
-    job = _library_job(images, plugins=[ref])
-    folder = str(job.folder)
-    job.close()
-    monkeypatch.setattr("langslice.core.atlas.load.load_atlas", lambda _n: _slab())
-    install(lambda _n: _slab(), monkeypatch.setattr)
-    main([folder, "mark_later", "--dry-run", "--args", json.dumps({"section": "s0.png"})])
-    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert out["ok"] is True and out["result"]["simulated"] is False, out
-    assert "background" not in out["result"]
-    import langslice
-
-    again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
-    assert again.state.by_id("s0.png").position_mm == pytest.approx(2.0)
-    assert again.job.background.all() == []
-    again.close()
 
 
 # --- offered by atlas and plane -----------------------------------------------------------------
