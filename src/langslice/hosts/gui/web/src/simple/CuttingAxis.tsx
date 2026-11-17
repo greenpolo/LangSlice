@@ -75,7 +75,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
   const some = focus.length < rows.length;
   const axisY = (atlas ? ATLAS_H + TOP : TOP) + RULER_H / 2 - 6;
   const rowTop = axisY + RULER_H / 2 + FAN;
-  const rowStep = layout.h * 0.55;
+  const rowStep = layout.h + GAP + 2;   // rows never overlap
   const height = rowTop + layout.h + (layout.two ? rowStep : 0) + 18;
 
   // Wheel zoom about the pointer, drag to pan, double-click for the whole span.
@@ -122,7 +122,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
         if (x < PAD - w / 2 || x > width - PAD + w / 2) return null;
         return (
           <div key={a.k} className="cut-atlas" style={{ transform: `translateX(${x - w / 2}px)`, width: w, height: ATLAS_H }}>
-            <Thumb url={`jobs/${job}/render/atlas/${a.k}?edge=128`} rank={900} />
+            <Thumb url={`jobs/${job}/render/atlas/${a.k}?edge=128`} rank={900} cutout />
           </div>
         );
       })}
@@ -222,8 +222,9 @@ function spread(ideal: number[], step: number, lo: number, hi: number) {
 }
 
 // A small picture drawn on a canvas from the picture queue, contained, redrawn when its
-// box changes size.
-function Thumb({ url, rank }: { url: string; rank: number }) {
+// box changes size. A `cutout` (the atlas's pictures) loses its black ground: each pixel
+// takes the canvas's text colour, its brightness as its opacity.
+function Thumb({ url, rank, cutout = false }: { url: string; rank: number; cutout?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
@@ -241,14 +242,31 @@ function Thumb({ url, rank }: { url: string; rank: number }) {
       if (c.width === w && c.height === h && c.dataset.src === img.src) return;
       c.width = w; c.height = h; c.dataset.src = img.src;
       const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-      c.getContext('2d')!.drawImage(img, (w - img.naturalWidth * s) / 2, (h - img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+      const ctx = c.getContext('2d', { willReadFrequently: cutout })!;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, (w - img.naturalWidth * s) / 2, (h - img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+      if (cutout) {
+        const [r, g, b] = rgbOf(getComputedStyle(c).color);
+        const data = ctx.getImageData(0, 0, w, h), px = data.data;
+        for (let i = 0; i < px.length; i += 4) {
+          const lum = Math.max(px[i], px[i + 1], px[i + 2]);
+          px[i] = r; px[i + 1] = g; px[i + 2] = b;
+          px[i + 3] = lum < 12 ? 0 : Math.min(255, (lum - 12) * 1.25);
+        }
+        ctx.putImageData(data, 0, 0);
+      }
     };
     draw();
     const o = new ResizeObserver(draw);
     o.observe(c);
     return () => o.disconnect();
   }, [img]);
-  return <canvas ref={ref} className={'cut-canvas' + (img ? ' ready' : '')} />;
+  return <canvas ref={ref} className={'cut-canvas' + (cutout ? ' cutout' : '') + (img ? ' ready' : '')} />;
+}
+
+function rgbOf(css: string): [number, number, number] {
+  const m = css.match(/\d+(\.\d+)?/g);
+  return m && m.length >= 3 ? [Number(m[0]), Number(m[1]), Number(m[2])] : [200, 200, 210];
 }
 
 // Millimetre ticks: finer when the span is short or zoomed in; a label every few.
