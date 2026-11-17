@@ -42,6 +42,27 @@ What the design means in practice:
   marking every lost region is impractical. elastix and FireANTs rely on the
   marks.
 
+## What a visual check found
+
+Blind reviewers compared the engines on a few sections of each kind, each
+engine fitting its own transform and warp from the positions alone. The
+sample was small (four sections per kind, two DAPI brains), so take it as a
+hint of where to start, not a rule:
+
+- **Intact forebrain and the frontal end:** elastix then FireANTs looked best
+  most often and never worst.
+- **Cerebellum and brainstem:** `emlddmm_stack` then a FireANTs warp looked
+  best; FireANTs alone was sometimes worst there.
+- **Torn sections with missing tissue:** SPOmiAlign, on inverted DAPI, was
+  sometimes best and never worst.
+- **Split sections or displaced pieces:** no clear winner. SPOmiAlign could
+  balloon or fold the outline off the tissue; FireANTs was never worst.
+- STalign was most often the worst of the engines tried, on intact and on
+  torn tissue.
+
+Whatever the engine, look at the result: every one of them had sections it
+got wrong.
+
 ## Comparing two fits
 
 On a hard section, fit a second engine and put both registrations side by
