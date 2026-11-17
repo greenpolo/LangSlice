@@ -473,30 +473,49 @@
 .tile img { flex: 1; min-height: 0; width: 100%; object-fit: contain; display: block; }
 .tile-label { flex-shrink: 0; padding: 2px 8px 3px; background: var(--panel); font-size: var(--size-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* The Simple view: three things. The agent speaking, in a speech bubble beside the
-   LangSlice mark and its own figure; the sections it is working on, two at a time; and
-   where they sit in the brain. The journal, the agent's pictures, the meters, the other
-   views and the panels' details are the Extended view's. */
+/* The Simple view: what the agent is doing, at a glance. Three things on one dark ground:
+   the agent speaking (a wide band: the LangSlice mark, the agent's figure, its name and
+   whether it is working, then its latest words in a speech bubble, and under them the call
+   it is making in plain words), the sections it is working on (up to three, large,
+   borderless, drawn quiet: the main stain and soft atlas borders; more as a deck of small
+   pictures, every section once the run is done), and a front-to-back line where every
+   placed section is a dot that glides when the agent moves it. The journal, the agent's
+   pictures, the meters, the other views and the panels' details are the Extended view's. */
 .viewer.simple .now {
-  height: 252px;
-  grid-template-columns: auto minmax(0, 1040px);
-  justify-content: center;
-  background: var(--ground);
+  height: 212px;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: var(--space-5);
+  width: min(1240px, calc(100% - 2 * var(--space-6)));
+  margin: 0 auto;
+  padding: var(--space-5) 0 var(--space-3);
+  background: none;
   border-bottom: 0;
 }
 .viewer.simple .progress, .viewer.simple .log, .viewer.simple #log-divider,
-.viewer.simple .switch, .viewer.simple #follow-agent,
-.viewer.simple .panel-angles, .viewer.simple .panel-tags, .viewer.simple .panel-open,
-.viewer.simple .strip-title { display: none; }
-.viewer.simple .speaker-logo, .viewer.simple .guy-name { display: block; }
-.viewer.simple .speaker-logo { width: 72px; height: 72px; }
-.viewer.simple .guy { width: 72px; height: 72px; }
-.viewer.simple .guy-claude { width: 104px; height: 72px; }
+.viewer.simple .switch, .viewer.simple .now-meta,
+.viewer.simple .panel-slot, .viewer.simple .panel-angles, .viewer.simple .panel-tags, .viewer.simple .panel-open,
+.viewer.simple .strip, .viewer.simple #strip-divider, .viewer.simple .panel-updating { display: none; }
+/* Who is speaking: the mark and the figure side by side, the name and the status under. */
+.viewer.simple .speaker { display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; column-gap: var(--space-3); row-gap: var(--space-3); }
+.viewer.simple .speaker-logo { display: block; width: 52px; height: 52px; }
+.viewer.simple .guy { width: 52px; height: 52px; }
+.viewer.simple .guy-claude { width: 76px; height: 52px; }
 .viewer.simple .clawd-eye { fill: var(--ground); }
-.viewer.simple .guy-mark { padding: 12px; }
+.viewer.simple .guy-mark { padding: 8px; }
+.speaker-id { display: none; }
+.viewer.simple .speaker-id { grid-column: 1 / 3; display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0; }
+.viewer.simple .guy-name { position: static; transform: none; display: block; max-width: 196px; color: var(--name); font-size: var(--size-md); font-weight: var(--weight-strong); }
+.guy-state { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--size-sm); }
+.guy-state .dot { width: 7px; height: 7px; }
+/* The speech bubble, its tail towards the figure. */
+.viewer.simple .now-main { gap: var(--space-2); justify-content: flex-start; padding-top: 2px; }
 .viewer.simple .bubble {
   position: relative;
-  padding: var(--space-4) var(--space-5);
+  height: calc(3 * 1.4 * var(--size-voice-lg) + 36px);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 18px 28px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -505,7 +524,7 @@
   content: "";
   position: absolute;
   left: -8px;
-  top: 30px;
+  top: 40px;
   width: 14px;
   height: 14px;
   background: var(--panel);
@@ -513,11 +532,196 @@
   border-bottom: 1px solid var(--line);
   transform: rotate(45deg);
 }
-.viewer.simple .now-words { font-size: var(--size-voice-lg); -webkit-line-clamp: 4; max-width: none; }
-.viewer.simple .now.wordless .sentence { font-size: var(--size-voice-lg); }
+.viewer.simple .now-words { font-size: var(--size-voice-lg); line-height: 1.4; -webkit-line-clamp: 3; max-width: none; }
+/* Before the agent's first words: what the window is waiting for, in the bubble's place. */
+.viewer.simple .bubble:has(.now-words:empty)::after { content: attr(data-waiting); font-family: var(--serif); font-size: var(--size-voice-lg); color: var(--faint); }
+
+/* What the agent is doing now: a quiet line under the bubble, the call in plain words, then
+   the tool's own name. */
+.viewer.simple .sentence { padding-left: 29px; font-size: var(--size-md); color: var(--muted); }
+.doing-word { color: var(--text); }
+.viewer.simple .doing-tool { display: none; }
+.doing-what { color: var(--text); }
+.sentence.running .doing-word { color: var(--lavender); }
+.sentence.running .doing-what { color: var(--name); }
+.doing-on { color: var(--muted); }
+.doing-tool { margin-left: var(--space-2); color: var(--faint); font-family: var(--mono); font-size: var(--size-xs); font-variant-ligatures: none; }
+.viewer.simple .sentence.running::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: var(--lavender);
+  vertical-align: 2px;
+  animation: pulse 2.4s ease-in-out infinite;
+}
 .viewer.simple .viewer-body { grid-template-columns: minmax(0, 1fr); }
-.viewer.simple .focus-head { padding-right: var(--space-5); }
-.viewer.simple .panels { padding-right: var(--space-5); }
+/* The sections: a quiet line saying whose they are, then the pictures on the ground. */
+.viewer.simple .focus-head { width: min(1240px, calc(100% - 2 * var(--space-6))); margin: 0 auto; padding: var(--space-2) 0 var(--space-1); }
+.viewer.simple .focus-title { font-size: var(--size-sm); }
+.viewer.simple .focus-count { color: var(--text); font-weight: 400; }
+.viewer.simple #follow-agent { display: none; }
+.viewer.simple #follow-agent[aria-pressed="false"] { display: inline-block; }
+.viewer.simple .panels { gap: var(--space-5); padding: var(--space-2) max(var(--space-6), calc((100% - 1240px) / 2)) var(--space-3); }
+/* The name under a picture waits with it while the next section is drawn. */
+.viewer.simple .panel.waiting .panel-title { opacity: 0; transition-duration: 0ms; }
+.viewer.simple .panel-title { transition: opacity var(--dur-quick) var(--ease-out); }
+.viewer.simple .panel-message.drawing { visibility: hidden; }
+/* The count of sections is the doing line's; the header says only when the person chose. */
+.viewer.simple.following .focus-title { visibility: hidden; }
+.viewer.simple .panels.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); }
+.viewer.simple .panels.n3 > .panel:first-child { grid-row: auto; }
+.viewer.simple .panel { border: 0; border-radius: 0; background: none; }
+.viewer.simple .panel-picture { order: 1; background: var(--stage); border-radius: var(--radius); }
+.viewer.simple .panel-picture img.stale { opacity: 0; transition-duration: 0ms; }
+.viewer.simple .panel-title { order: 2; justify-content: center; padding: var(--space-2) 0 0; background: none; border: 0; font-size: var(--size-sm); }
+.viewer.simple .panel-name { color: var(--text); font-weight: 400; }
+.viewer.simple .panel-where { color: var(--muted); }
+/* The deck: every section in focus, small, in a grid that fills the area. */
+.deck {
+  position: absolute;
+  inset: 0;
+  /* As wide as its chosen columns, so rows wrap where the layout chose; the last row is
+     centred under the others. */
+  max-width: calc(var(--deck-cols, 6) * var(--deck-width, 160px) + (var(--deck-cols, 6) - 1) * 10px);
+  margin: var(--space-2) auto var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  align-content: center;
+}
+.deck-tile { flex: none; width: var(--deck-width, 160px); height: calc(var(--deck-width, 160px) / 1.35); }
+.deck-name { display: none; }
+.deck.named .deck-tile { height: calc(var(--deck-width, 160px) / 1.35 + 22px); }
+.deck.named .deck-tile img { height: calc(100% - 22px); }
+.deck.named .deck-name { display: block; position: absolute; left: 0; right: 0; bottom: 0; color: var(--text); font-size: var(--size-sm); text-align: center; }
+.deck[hidden], .panels.decked { display: none; }
+.viewer.simple .stage-in { animation: stage-in var(--dur-enter) var(--ease-out); }
+@keyframes stage-in { from { opacity: 0; scale: 0.985; } }
+.deck-tile { position: relative; padding: 0; border: 0; border-radius: var(--radius-sm); background: var(--stage); overflow: hidden; cursor: pointer; }
+.deck-tile:hover { background: var(--stage); outline: 1px solid var(--tract); }
+.deck-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* A picture still being drawn: a quiet place for it. */
+.deck-tile:not(:has(img)) { background: none; }
+/* Motion in the Simple view. The pictures are the lead: a new section's picture arrives
+   (a little blur and scale resolving, ease-out) while the one before leaves faster; the
+   same section drawn again after the agent moved it morphs in place, slower, so the tissue
+   is seen settling into the outline. The words are support: the old line leaves quickly,
+   the new one is spoken word by word. The doing line and the dots are decoration. */
+.viewer.simple .panel-picture img, .deck-tile img {
+  transition: opacity var(--dur-enter) var(--ease-out), scale var(--dur-enter) var(--ease-out),
+    filter var(--dur-enter) var(--ease-out);
+}
+.viewer.simple .panel-picture img.entering, .deck-tile img.entering { opacity: 0; scale: 0.985; filter: blur(6px); }
+.deck-tile img[data-how="enter"] { transition-delay: var(--deal, 0ms); }
+/* The stage that was: a copy over the new one, fading. */
+.stage-ghost { pointer-events: none; z-index: 2; transition: opacity var(--dur-quick) var(--ease-out), filter var(--dur-quick) var(--ease-out); }
+.stage-ghost.gone { opacity: 0; filter: blur(4px); }
+.viewer.simple .panel-picture img.morphing, .deck-tile img.morphing { opacity: 0; filter: blur(2px); }
+.viewer.simple .panel-picture img[data-how="morph"], .deck-tile img[data-how="morph"] { transition-duration: var(--dur-morph); }
+.viewer.simple .panel-picture img.leaving { opacity: 0; scale: 1.01; filter: blur(4px); transition-duration: var(--dur-quick); transition-timing-function: var(--ease-out); }
+/* The agent's words: the old line leaves, the new one is said word by word. */
+.viewer.simple .now-words.leaving { opacity: 0; translate: 0 -4px; transition: opacity 160ms var(--ease-out), translate 160ms var(--ease-out); }
+.viewer.simple .word-in { display: inline-block; animation: say var(--dur-enter) var(--ease-out) both; }
+@keyframes say { from { opacity: 0; translate: 0 0.25em; filter: blur(2px); } }
+/* Thinking: a summary of its reasoning, in italics and a step quieter than what it says. */
+.viewer.simple .now.thinking .now-words { color: var(--text); }
+/* The doing line arrives with each new call. */
+.sentence.swap { animation: swap var(--dur-enter) var(--ease-out); }
+@keyframes swap { from { opacity: 0; translate: 0 3px; } }
+/* Clawd walks while a tool runs, its two pairs of legs taking turns. */
+.clawd-legs-a, .clawd-legs-b { transform-box: fill-box; }
+.viewer.simple .now.working .clawd-legs-a { animation: step 480ms steps(1, end) infinite; }
+.viewer.simple .now.working .clawd-legs-b { animation: step 480ms steps(1, end) -240ms infinite; }
+@keyframes step { 50% { translate: 0 -1px; } }
+/* Clawd has one gesture per state: walking legs while a tool runs, eyes looking up while
+   it thinks, eyes narrowing in turn while its words come in, a hop when the run is done. */
+.viewer.simple .now .clawd-eye { transition: translate var(--dur-quick) var(--ease-out); }
+.viewer.simple .now.thinking .clawd-eye { translate: 0 -1px; }
+.viewer.simple .now.speaking .guy-claude, .viewer.simple .now.speaking .guy-claude .clawd-eye { animation: none; }
+.viewer.simple .now.speaking .guy-claude .clawd-eye { animation: squint 240ms ease-in-out infinite alternate; }
+@keyframes squint { to { scale: 1 0.5; } }
+.viewer.simple.done .guy-claude { animation: hop 520ms var(--ease-out) 1; }
+@keyframes hop { 40% { translate: 0 -8px; } 75% { translate: 0 1px; } }
+.viewer.simple.done .deck .deck-tile img { animation: shine 500ms var(--ease-out) calc(var(--deal, 0ms) * 2.5 + 400ms) both; }
+@keyframes shine { 30% { filter: brightness(1.2); } }
+.viewer.simple .now.working:not(.speaking) .maker-plain .guy, .viewer.simple .now.working:not(.speaking) .guy-mark { animation: bob 720ms ease-in-out infinite alternate; }
+/* Done: the status dot turns green once, with a small pulse. */
+.guy-state .dot.Submitted { animation: done 900ms var(--ease-out); }
+@keyframes done { 0% { scale: 1; } 30% { scale: 1.8; } 100% { scale: 1; } }
+
+/* The front-to-back line: the axis's two ends named, a dot per placed section. */
+.axis {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+  width: min(1240px, calc(100% - 2 * var(--space-6)));
+  margin: 0 auto;
+  padding: var(--space-3) 0 var(--space-4);
+}
+.axis[hidden], .viewer:not(.simple) .axis { display: none; }
+.axis-end { color: var(--muted); font-size: var(--size-sm); }
+.axis-line { position: relative; height: 22px; }
+.axis-line::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--tract); }
+.axis-slot {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform var(--dur-glide) var(--ease-in-out), opacity var(--dur-enter) var(--ease-out);
+}
+.axis-slot.new { opacity: 0; }
+/* A reshuffle of many sections: they set off front to back. */
+.axis-line.wave .axis-slot { transition-delay: calc(var(--x, 0) * 2.4ms); }
+.axis-dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  pointer-events: auto;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--muted);
+  cursor: pointer;
+  transition: transform var(--dur-quick) var(--ease-out), background-color var(--dur-quick) ease;
+}
+@media (hover: hover) and (pointer: fine) { .axis-dot:hover { background: var(--name); transform: scale(1.5); } }
+.axis-dot.target { background: var(--lavender); transform: scale(1.3); }
+.axis-dot.shown { background: var(--lavender); transform: scale(1.75); box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px var(--lavender); }
+.axis-dot.unplaced { background: var(--tract); transform: scale(0.75); }
+.axis-dot.moved { animation: moved 1200ms var(--ease-out); }
+@keyframes moved { from { background: var(--name); } }
+.axis-tick { position: absolute; top: calc(50% + 4px); width: 1px; height: 4px; background: var(--line); }
+/* Where a moved section was: a mark that fades as the dot glides away. */
+.axis-ghost {
+  position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  border: 1px solid var(--lavender); pointer-events: none; animation: ghost 1400ms var(--ease-out) forwards;
+}
+@keyframes ghost { to { opacity: 0; scale: 0.6; } }
+/* Done: a light passes along the line once, front to back. */
+.viewer.done .axis-slot .axis-dot { animation: sweep 700ms var(--ease-out) calc(var(--x, 0) * 9ms) both; }
+@keyframes sweep { 40% { background: var(--name); scale: 1.6; } }
+.viewer.simple.done #review { border-color: var(--lavender); color: var(--name); background: var(--selected); }
+.axis-waiting { grid-column: 1 / 4; justify-self: end; min-height: 1em; color: var(--faint); font-size: var(--size-xs); }
+.axis-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  z-index: 5;
+  pointer-events: none;
+  padding: 2px var(--space-2);
+  background: var(--panel);
+  border: 1px solid var(--tract);
+  border-radius: var(--radius-sm);
+  font-size: var(--size-xs);
+  white-space: nowrap;
+}
 
 /* Narrow windows: the progress goes under the words, the journal under the sections, full
    width, collapsed to its last lines and the tray; the tab scrolls. */
@@ -545,9 +749,20 @@
   .picker-button { max-width: 26vw; }
 }
 
+@keyframes fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .word-in, .guy-eye, .clawd-eye, .speaking .guy, .speaking .guy-mark, .speaking .guy-mouth { animation: none; }
+  .word-in, .guy-eye, .clawd-eye, .axis-dot.moved, .deck-tile, .viewer.simple .sentence.running::before, .speaking .guy, .speaking .guy-mark, .speaking .guy-mouth { animation: none; }
   .meter-fill { transition: none; }
+  .axis-slot { transition: opacity var(--dur-enter) ease; }
+  .axis-dot { transition: background-color var(--dur-quick) ease; }
+  .stage-ghost { filter: none; }
+  .viewer.done .axis-dot, .axis-ghost, .viewer.simple.done .deck .deck-tile img,
+  .viewer.simple.done .guy-claude, .viewer.simple .now.speaking .guy-claude .clawd-eye { animation: none; }
+  .viewer.simple .stage-in { animation: fade var(--dur-quick) ease; }
+  .viewer.simple .word-in, .sentence.swap { animation: fade var(--dur-quick) ease both; }
+  .viewer.simple .now.working .clawd-legs-a, .viewer.simple .now.working .clawd-legs-b, .viewer.simple .now.working .guy-claude,
+  .viewer.simple .now.working .guy-mark, .viewer.simple .now.working .guy, .guy-state .dot.Submitted { animation: none; }
+  .viewer.simple .panel-picture img, .deck-tile img { scale: none; filter: none; }
 }
 
 /* --- Review: one section at a time, boxes and comments (viewer.js) ------------------------- */

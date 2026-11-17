@@ -188,6 +188,14 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   since, `job.review.revised`), `CommentWatch(folder).rows(state, version)`
   (read again only when `review.json`'s stamp or the watcher's
   `state_version` moved).
+- `calm.py` — the Simple view's pictures (`render/overlay|thumb/...?style=calm`,
+  `JobRenderer.overlay(..., calm=True)`, cached under their own kind):
+  `main_channel` (a channel named for a nuclear or Nissl stain, else
+  `blue`, else the first), `draw_calm_overlay` (two `look` calls on that
+  channel, with and without the borders; their difference is the border
+  layer, so `look`'s scale bar goes), `draw_calm_thumb`, `calm` (the tissue
+  `tissue_mask`ed off the tile floor, `scale_bar` cleared, a soft knee, a
+  cool tint on `STAGE`, the borders at `LINE_STRENGTH`, fainter when small).
 - `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
   `visualign`); `run_export(folder, kind)` -> `Written` writes one through
   the library (`langslice.open_job`: `export_abba`, or `export_stack` for
@@ -432,6 +440,19 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     picture's own transform: an accent box with its words above it, faded
     and `revised` once the section changed; `×` removes one in Review. The
     button counts the open comments (`#review-count`).
+  - `viewer-axis.js` — `Axis`, the Simple view's front-to-back line under
+    the pictures: a dot per section in a slot moved by a transform
+    (unplaced: dim, in stack order; placed: at its position over the placed
+    sections' span plus 0.5 mm), mm ticks, a fading ghost where one of up
+    to three moved sections was, a front-to-back wave for a reshuffle, the
+    focus in the accent and the shown sections ringed; hover names, click
+    picks. In Simple, `viewer.js` holds each new focus at least `DWELL_MS`
+    (a deck `DECK_DWELL_MS`), fetches and decodes its pictures first
+    (`prefetch`, at most `READY_WAIT_MS`; Simple draws at `SIMPLE_EDGE` per
+    count so the fetched picture is the one asked for), fades a copy of the
+    old stage over the new (`fadeStage`), and shows 1 to 3 panels or, from
+    `DECK_FROM`, the deck (`deckGeometry`). Motion tokens are in
+    `tokens.css` (`--ease-out`, `--ease-in-out`, `--dur-*`).
   - `viewer-strip.js` — the brain strip, one inline SVG under the pictures:
     atlas thumbnails over a millimetre ruler, the placed sections in at most three
     stair rows (each in the first row where it clears its neighbour) with a

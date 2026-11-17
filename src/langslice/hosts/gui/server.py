@@ -291,8 +291,9 @@ class GuiServer:
         """Draw a section's overlay or thumbnail, named by its filename."""
         draw = _SECTION_PICTURES[match[2]]
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
+        calm = query.get("style", [""])[0] == "calm"
         return self._jpeg(partial(
-            draw, self._renderer(watcher), unquote(match[3]), edge))
+            draw, self._renderer(watcher), unquote(match[3]), edge, calm=calm))
 
     def _atlas(self, watcher: JobWatcher, match: re.Match[str],
                query: dict[str, list[str]]) -> Answer:
