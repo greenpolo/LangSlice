@@ -1,0 +1,58 @@
+/* Settings: one column of parts, a hairline between them. Each choice is a row of one
+   list; the chosen row sits on --selected with a lavender edge. */
+
+.settings { max-width: calc(720px + 2 * var(--space-6)); }
+
+.part { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5) 0; border-top: 1px solid var(--line); }
+.part-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.part-title { margin: 0; color: var(--name); font-size: var(--size-lg); font-weight: var(--weight-strong); line-height: 1.3; }
+.part-sub { color: var(--muted); }
+
+/* A list of choices, one bordered list, a row each. */
+.choices { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.choice {
+  position: relative;
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: background-color var(--dur-press) ease;
+}
+.choice + .choice { border-top: 1px solid var(--line); }
+.choice:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.choice:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.choice::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: var(--rule); background: var(--lavender); opacity: 0; transition: opacity var(--dur-quick) var(--ease-out); }
+.choice:first-child::before { border-top-left-radius: var(--radius); }
+.choice:last-child::before { border-bottom-left-radius: var(--radius); }
+.choice.chosen { background: var(--selected); }
+.choice.chosen::before { opacity: 1; }
+.choice.disabled { cursor: not-allowed; }
+.choice.disabled .choice-name { color: var(--muted); }
+.choice.disabled .radio { border-color: var(--muted); opacity: 0.8; }
+@media (hover: hover) and (pointer: fine) { .choice:hover:not(.chosen):not(.disabled) { background: var(--wash); } }
+
+.choice-pick { position: relative; display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; cursor: inherit; }
+.choice-pick .radio { margin-top: 2px; }
+.choice-name { color: var(--text); }
+.choice.chosen .choice-name { color: var(--name); font-weight: var(--weight-strong); }
+.choice-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+@media (hover: hover) and (pointer: fine) { .choice:hover .native:not(:checked):not(:disabled) + .radio { border-color: var(--lavender); } }
+
+/* A connection: its choice and status on one line, its sign-in or key under them. */
+.conn { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
+.conn .choice-pick { align-items: center; }
+.conn .choice-pick .radio { margin-top: 0; }
+.tag { justify-self: end; padding: 1px var(--space-2); white-space: nowrap; font-size: var(--size-xs); color: var(--muted); border: 1px dashed var(--tract); border-radius: var(--radius-sm); }
+.tag.present { color: var(--name); border-style: solid; }
+.conn-action { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding-left: 28px; }
+.conn > .said { grid-column: 1 / -1; margin-left: 28px; }
+.key { display: flex; gap: var(--space-2); flex: 1; min-width: 0; max-width: 480px; margin: 0; }
+.key .input { padding: 6px 10px; }
+
+/* Agent model: the two choices, label beside select. */
+.pairs { display: grid; grid-template-columns: max-content minmax(0, 360px); align-items: center; gap: var(--space-3) var(--space-4); }
+
+@container (max-width: 640px) {
+  .conn-action { padding-left: 0; }
+  .conn > .said { margin-left: 0; }
+  .pairs { grid-template-columns: minmax(0, 1fr); }
+}

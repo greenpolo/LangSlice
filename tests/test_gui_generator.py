@@ -1,4 +1,4 @@
-"""The prompt generator (``langslice.hosts.gui.generator``, ``static/generator.js``):
+"""The prompt generator (``langslice.hosts.gui.generator``, ``static/generator-logic.js``):
 the form's tools come from the tool table, the people's labels never reach a
 model, and the message for a few forms, exactly. The message is built in the
 page; these tests run its pure functions under node (skipped without node)
@@ -24,7 +24,8 @@ from langslice.job.settings import tool_table
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "langslice" / "hosts" / "gui" / "static"
-SCRIPT = STATIC / "generator.js"
+SCRIPT = STATIC / "generator-logic.js"  # the message's pure functions
+FORM = STATIC / "generator.js"  # the older page's form
 SNAPSHOTS = ROOT / "tests" / "snapshots" / "agent_text"
 NODE = shutil.which("node")
 
@@ -115,7 +116,7 @@ def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
     css = (STATIC / "generator.css").read_text(encoding="utf-8")
     assert set(re.findall(r"var\((--[a-z0-9-]+)", css)) <= tokens
     assert re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(", css) == []
-    script = SCRIPT.read_text(encoding="utf-8")
+    script = SCRIPT.read_text(encoding="utf-8") + FORM.read_text(encoding="utf-8")
     assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|setAttribute\('style'", script) == []
 
 
@@ -129,7 +130,7 @@ def test_the_server_answers_the_generator_data(tmp_path: Path) -> None:
         answer = gui.answer(f"/{gui.token}/generator", host)
         assert not isinstance(answer, int)
         assert json.loads(answer[0])["default_atlas"] == "allen_mouse_25um"
-        for name in ("generator.js", "generator.css"):
+        for name in ("generator-logic.js", "generator.js", "generator.css"):
             assert not isinstance(gui.answer(f"/{gui.token}/{name}", host), int)
     finally:
         gui.http.server_close()

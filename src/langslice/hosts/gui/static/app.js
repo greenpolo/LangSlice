@@ -355,6 +355,8 @@ const Ui = (() => {
     $('status-dot').className = 'dot none';
     $('word').textContent = '';
     $('facts').textContent = '';
+    $('guy-dot').className = 'dot none';
+    $('guy-word').textContent = '';
     AgentLog.setStatus('', 'Loading the job…');
   }
   // Whose model is speaking, by its name: the figure shown beside its words.
@@ -365,6 +367,14 @@ const Ui = (() => {
     if (/gpt|openai|codex|chatgpt|\bo[0-9]/.test(name)) return 'openai';
     return 'plain';
   }
+  // The status under the agent's name in the Simple view, in a person's words.
+  const GUY_WORDS = { Running: 'Working', Submitted: 'Done', Waiting: 'Waiting', Idle: 'Idle', Failed: 'Stopped' };
+  // While the newest words are a summary of the agent's reasoning, it is thinking.
+  let guyWord = '', thinking = false;
+  Ui.thinking = on => {
+    thinking = on;
+    if (guyWord === 'Working' || guyWord === 'Thinking') $('guy-word').textContent = on ? 'Thinking' : 'Working';
+  };
   // The run in one sentence: who registers what to which atlas.
   function runWords(h, word) {
     if (!h.atlas) return h.model || '';
@@ -382,7 +392,12 @@ const Ui = (() => {
     $('facts').title = [h.name, h.door && 'via ' + h.door].filter(Boolean).join(' · ');
     $('guy-name').textContent = h.model || 'The agent';
     $('guy').className = 'guy-box maker-' + maker(h.model);
+    $('guy-dot').className = 'dot ' + word;
+    guyWord = GUY_WORDS[word] ?? word;
+    $('guy-word').textContent = word === 'Running' && thinking ? 'Thinking' : guyWord;
+    $('tab-viewer').classList.toggle('done', word === 'Submitted');
     AgentLog.setStatus(word, snap.status?.sentence || '');
+    Viewer.setStatus(word);
     Viewer.setHeader(h);
     const job = jobs?.find(j => j.index === watch.index);
     if (job && job.status !== word) { job.status = word; renderPicker(); }
@@ -403,8 +418,8 @@ const Ui = (() => {
     try {
       const r = await fetch(`jobs/${w.index}/strip`, { cache: 'no-store' });
       if (s !== strip) return;
-      if (r.ok) Strip.setInfo(await r.json());
-      else if (r.status === 404) { s.missing = true; Strip.setInfo(null, ''); }
+      if (r.ok) { const info = await r.json(); Strip.setInfo(info); Axis.setInfo(info); }
+      else if (r.status === 404) { s.missing = true; Strip.setInfo(null, ''); Axis.setInfo(null); }
       else {
         const answer = await r.json().catch(() => ({}));
         Strip.setInfo(null, answer.error || '');
