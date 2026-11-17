@@ -81,8 +81,6 @@ def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
     return Path(envelope["result"]["job_folder"])
 
 
-# --- ops and schema -----------------------------------------------------------------
-
 
 def test_schema_of_one_verb_and_of_every_verb(capsys):
     from langslice.doors.agent_cli.catalog import SCHEMA_VERSION
@@ -99,19 +97,15 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     assert {"id", "flip", "rotate_quarter", "rotation_deg", "scale_x", "scale_y", "shear",
             "translate_x_mm", "translate_y_mm"} == set(
         schema["$defs"]["SectionTransform"]["properties"])
-    # What a model reads of the verb: the whole description, the summary, long
-    # or not. The picture options are gone with the view modes.
     assert result["description"] == declaration(
         "interactive_transform",
         DescriptionFacts(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)).doc
     assert "\n" in result["description"] and result["summary"] in result["description"]
     assert "picture_options" not in result
     assert result["long"] is False and result["job"] is None and "--job" in result["hint"]
-    # The CLI's caller sizes each picture: look takes resolution.
     code, look = cli(capsys, "schema", "look")
     assert code == 0 and "resolution" in look["result"]["arguments"]["properties"]
     code, fit = cli(capsys, "schema", "elastix_affine")
-    # A long verb's call is safe in the foreground: no --background suggested.
     assert fit["result"]["long"] is True and not fit["next"][0].endswith("--background")
     code, everything = cli(capsys, "schema")
     assert code == 0 and "fireants_syn" in everything["result"]["verbs"]
@@ -122,7 +116,6 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
     assert "langslice-job ops" in unknown["error"]["fix"]
-    # Without a job, a name that may be a job's plugin verb says how to name the job.
     assert "langslice-job FOLDER schema align_everything" in unknown["error"]["message"]
 
 
@@ -188,7 +181,6 @@ def test_load_atlas_keeps_brainglobe_notices_off_stdout(capsys, monkeypatch):
 
 
 def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
-    # The positions are the host's; the agent sets only the cutting angles.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "transform", "--transform-angles",
                          "--nonlinear-provider", "none", "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM), "--viewer", "codex")
@@ -202,12 +194,10 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     properties = result["arguments"]["properties"]
     assert "sections" not in properties and "cutting_angles" in properties
     assert "sections: [{" not in result["description"]
-    # Run in a job folder, schema declares that job's verbs.
     monkeypatch.chdir(images / "langslice")
     code, here = cli(capsys, "schema", "position_sections")
     assert here["result"]["job"] == str(images / "langslice")
     assert "sections" not in here["result"]["arguments"]["properties"]
-    # Only the job's verbs: no Nonlinear verb for a transform job.
     code, listed = cli(capsys, "schema", "--job", str(images))
     assert "fireants_syn" not in listed["result"]["verbs"]
     assert "interactive_transform" in listed["result"]["verbs"]
@@ -218,13 +208,11 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
 def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
     job = init(capsys, images)
     record = json.loads((job / "job.json").read_text(encoding="utf-8"))
-    record["spec"]["plane"] = "diagonal"  # a spec the job layer refuses
+    record["spec"]["plane"] = "diagonal"
     (job / "job.json").write_text(json.dumps(record), encoding="utf-8")
     code, envelope = cli(capsys, "schema", "fireants_syn", "--job", str(images))
     assert code == 3 and envelope["error"]["code"] == "JOB_UNREADABLE"
 
-
-# --- init, the card, status ---------------------------------------------------------
 
 
 def test_init_creates_the_job_and_its_reference_card(capsys, images):
@@ -233,7 +221,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     agents = (job / "AGENTS.md").read_text(encoding="utf-8")
     assert agents == (job / "CLAUDE.md").read_text(encoding="utf-8")
     from langslice.tools.catalog import VERBS
-    from langslice.tools.deformable import MAX_FIREANTS_SYN_SECTIONS
+    from langslice.tools.fitting.deformable import MAX_FIREANTS_SYN_SECTIONS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " launch --role register`", "STALE_INPUT",
@@ -246,27 +234,22 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    "schema init", "reply.images", "`scripts/`", "never in /tmp",
                    "`env install PACKAGE ...`", "`job.context`"):
         assert needle in agents, needle
-    assert len(agents.splitlines()) < 100  # one screen, its verb list included
+    assert len(agents.splitlines()) < 100
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
-    # The card lists exactly the verbs the job has: none it would refuse.
     listed = [name for name in VERBS if f"- `{name}` (" in agents]
     assert listed == [name for name in VERBS if name in envelope["result"]["verbs"]]
     assert [row["id"] for row in envelope["result"]["rows"]] == [ID0, ID1, ID2]
     assert {"position_sections", "elastix_affine", "fireants_syn", "export_maps"} <= set(
         envelope["result"]["verbs"])
-    # Opening the job folder itself works too; a folder without a job is refused.
     code, _envelope = cli(capsys, str(job), "status")
     assert code == 0
     code, missing = cli(capsys, str(images.parent), "status")
     assert code == 2 and missing["error"]["code"] == "NO_JOB"
-    # A stale card is rewritten on the next open.
     (job / "AGENTS.md").write_text("old", encoding="utf-8")
     cli(capsys, str(images), "status")
     assert (job / "AGENTS.md").read_text(encoding="utf-8") == agents
 
-
-# --- launch: the job statement and the opening, as LangSlice's own agent gets them ------
 
 
 def test_launch_register_scripting_is_the_mcp_statement_with_the_scripts(capsys, images):
@@ -275,28 +258,26 @@ def test_launch_register_scripting_is_the_mcp_statement_with_the_scripts(capsys,
     how to add a package, the library, where its files go."""
     pytest.importorskip("mcp")
     from langslice.doors.agent_cli import environment
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     job = init(capsys, images, "--notes", "Section 2 is torn.")
     code, plain = cli(capsys, str(images), "launch", "--role", "register")
     assert code == 0, plain
-    assert not (job / "env").exists()  # the MCP agent runs no script
+    assert not (job / "env").exists()
     code, envelope = cli(capsys, str(images), "launch", "--role", "register-scripting")
     assert code == 0, envelope
     result = envelope["result"]
     prompt = result["prompt"]
     assert result["role"] == "register-scripting"
     python = environment.python_of(job / "env")
-    assert python.is_file()  # made by the launch: the prompt names an interpreter that runs
+    assert python.is_file()
     scripts = prompt[prompt.index("\n\nScripts:\n"):prompt.index("\n\nUser notes:")]
-    # Without the paragraph on scripts it is the MCP agent's message, word for word.
     assert prompt.replace(scripts, "") == plain["result"]["prompt"]
     assert f'`"{python}" SCRIPT [ARGS ...]`' in scripts
     assert f"`{environment.install_command(JobLayout(job))} PACKAGE [PACKAGE ...]`" in scripts
     assert f'langslice.open_job(r"{job}")' in scripts and "help(job.context)" in scripts
     assert f"`{job}/scripts/`" in scripts and "langslice-job" not in prompt
     assert "start_job(" in prompt and "show_stack(page=1)" in prompt
-    # The exact text is saved.
     launch = envelope["artifacts"][0]
     assert launch == {"path": str(job / "logs" / "launches" / "000002_register-scripting.md"),
                       "kind": "launch"}
@@ -335,14 +316,13 @@ def test_init_keeps_notes_and_viewer(capsys, images):
                          "--notes", "Mind the bulbs.")
     assert code == 0, envelope
     assert "statement" not in envelope["result"]
-    assert envelope["result"]["viewer"] == "claude"  # the default viewer
+    assert envelope["result"]["viewer"] == "claude"
     assert envelope["next"] == [
         f"langslice-job {images / 'langslice'} launch --role register",
         f"langslice-job {images / 'langslice'} launch --role register-scripting"]
     record = json.loads((images / "langslice" / "job.json").read_text(
         encoding="utf-8"))
     assert record["notes"] == "Mind the bulbs." and "viewer" not in record
-    # Continuing the job keeps the notes; --viewer is stored.
     code, again = cli(capsys, str(images), "init", "--tasks", "position",
                       "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                       "--viewer", "openai")
@@ -366,7 +346,7 @@ def test_init_on_an_existing_job_refuses_other_settings(capsys, images):
 
 def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
         capsys, images, monkeypatch):
-    init(capsys, images, "--nonlinear-provider", "openai-oauth")  # HOME is private: no login
+    init(capsys, images, "--nonlinear-provider", "openai-oauth")
     code, status = cli(capsys, str(images), "status")
     assert code == 0
     assert status["result"]["image_model"] == {
@@ -376,7 +356,6 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     from langslice.tools.descriptions.door_text import IMAGE_MODEL_OFF
 
     assert IMAGE_MODEL_OFF in launch["result"]["prompt"]
-    # Connected (a login present), the verb is offered, as the MCP door offers it.
     from langslice.doors import credentials as setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
@@ -391,12 +370,10 @@ def test_status_marks_what_the_user_froze_or_marked_damaged(capsys, images):
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     rows = {row["id"]: row for row in envelope["result"]["rows"]}
-    # Every row carries both fields (uniform rows): set where set, else empty.
     assert rows[ID0]["frozen"] == ["orientation", "affine"]
     assert rows[ID0]["damage_by_user"] is False
     assert rows[ID1]["damage_by_user"] is True and rows[ID1]["frozen"] == []
     assert rows[ID2]["frozen"] == [] and rows[ID2]["damage_by_user"] is False
-    # The user's damage note is a note: damaged regions make a section damaged.
     assert rows[ID1]["damage_note"] == "torn" and rows[ID1]["damaged"] is False
     assert rows[ID1]["damaged_regions"] == []
 
@@ -417,7 +394,6 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     assert seen["arguments"] == ["--verbose"] and seen["ok"] is True
     assert seen["exit"] == 0 and seen["artifacts"] == []
     assert lines[2]["ok"] is False and lines[2]["error"] == "NOTHING_EXPORTED"
-    # Each call's whole envelope, as printed, is kept beside the log; the line names it.
     assert [line["reply"] for line in lines] == [
         "logs/calls/000001_init.json", "logs/calls/000002_status.json",
         "logs/calls/000003_export_maps.json"]
@@ -426,7 +402,6 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     assert json.loads((job / lines[2]["reply"]).read_text(
         encoding="utf-8")) == refused
     assert lines[2]["message"] == refused["error"]["message"]
-    # The trace, as the MCP door writes its own: one file for the job.
     files = list(traces.glob("cli_stack_*.jsonl"))
     assert len(files) == 1
     records = [json.loads(line) for line in files[0].read_text(
@@ -528,10 +503,8 @@ def test_the_gui_watcher_follows_real_calls_on_the_cli_and_library_doors(
     assert shown.resolve() == Path(view_artifact["path"]).resolve()
     assert tools[5]["step"] == 1 and tools[7]["views"]
     assert watcher.undo()["undo"] == [f"position_sections ({ID1})"]
-    assert snapshot["status"]["word"] == "Running"  # files changed seconds ago
+    assert snapshot["status"]["word"] == "Running"
 
-
-# --- writes, pictures, exit codes -----------------------------------------------------
 
 
 def test_exit_codes_and_fix_hints(capsys, images):
@@ -612,10 +585,8 @@ def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
                          "--dry-run")
     assert code == 0 and envelope["result"]["files_written"] is False
     assert envelope["artifacts"] == [] and not (job / "sections/s0/coords.tif").exists()
-    # The real call is what a dry run says to run next.
     assert envelope["next"] == [f"langslice-job {job} export_maps --args "
                                 f"'{json.dumps({'sections': [ID0]})}'"]
-    # A dry run never starts a background run (that child would run the verb).
     code, envelope = cli(capsys, str(images), "export_maps", "--sections", ID0,
                          "--dry-run", "--background")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGS"
@@ -627,12 +598,9 @@ def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
     assert {"coords", "labels", "labels_fiji", "labels_csv", "maps", "quicknii",
             "visualign", "registration"} <= kinds
     assert all(Path(artifact["path"]).is_file() for artifact in envelope["artifacts"])
-    # The verb is the CLI's and the library's: listed by status, never a model's tool.
     code, envelope = cli(capsys, str(images), "status")
     assert "export_maps" in envelope["result"]["verbs"]
 
-
-# --- background runs --------------------------------------------------------------------
 
 
 def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, monkeypatch):
@@ -640,7 +608,6 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
 
     init(capsys, images)
     place(images)
-    # install() pointed background runs at tests.cli_child (the synthetic atlas).
     assert background.CHILD_COMMAND[-1] == "tests.cli_child"
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO / "src"), str(REPO))))
     monkeypatch.chdir(REPO)
@@ -662,7 +629,6 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert listed["result"]["runs"][0]["id"] == run
     code, unknown = cli(capsys, str(images), "runs", "no-such-run")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_RUN"
-    # `status` is only the verb.
     code, status = cli(capsys, str(images), "status", run)
     assert code == 2 and status["error"]["code"] == "BAD_ARGS"
 
@@ -674,14 +640,14 @@ def test_wait_answers_still_running_within_its_default_wait(capsys, images, monk
     import time
 
     from langslice.doors.agent_cli import background
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     job = init(capsys, images)
     layout = JobLayout(job)
     run_id = "20261021-000000-abcdef"
     background._write(layout, {"id": run_id, "verb": "fireants_syn", "arguments": {},
                                "state": "running", "started_at": "2026-10-21T00:00:00+00:00",
-                               "started": time.time(), "pid": os.getpid()})  # alive: this one
+                               "started": time.time(), "pid": os.getpid()})
     monkeypatch.setattr(background, "WAIT_S", 0.5)
     started = time.monotonic()
     code, envelope = cli(capsys, str(images), "wait", run_id)
@@ -691,12 +657,10 @@ def test_wait_answers_still_running_within_its_default_wait(capsys, images, monk
     assert envelope["result"]["waited_s"] == 0.5
     assert "Still running after 0.5 s" in envelope["result"]["message"]
     assert envelope["next"] == [f"langslice-job {job} wait {run_id}"]
-    # --timeout still sets it.
     started = time.monotonic()
     code, envelope = cli(capsys, str(images), "wait", run_id, "--timeout", "1.5")
     assert code == 0 and time.monotonic() - started >= 1.5
     assert envelope["result"]["waited_s"] == 1.5
-    # A run whose process is gone is still a failure.
     background._write(layout, {"id": run_id, "verb": "fireants_syn", "arguments": {},
                                "state": "running", "started_at": "2026-10-21T00:00:00+00:00",
                                "started": time.time(), "pid": 2 ** 22 + 12345})
@@ -727,7 +691,7 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
     when it lands in time, else with its run id and state running (the run
     goes on, and `wait` collects it)."""
     from langslice.doors.agent_cli import background
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     init(capsys, images)
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO / "src"), str(REPO))))
@@ -741,7 +705,6 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
     assert exported["result"]["written"] == [ID0]
     assert all(Path(artifact["path"]).is_file() for artifact in exported["artifacts"])
     assert background.read(JobLayout(images / "langslice"), run)["state"] == "finished"
-    # A wait shorter than the export: the call answers with the run still going.
     monkeypatch.setattr(background, "WAIT_S", 0.01)
     code, running = cli(capsys, str(images), "export_maps", "--sections", ID1)
     assert code == 0 and running["ok"] is True, running
@@ -752,8 +715,6 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
     assert code == 0 and landed["result"]["run"] == later
     assert landed["result"]["written"] == [ID1]
 
-
-# --- live shared editing --------------------------------------------------------------
 
 
 def test_a_script_and_a_running_toolbox_interleave_on_one_folder(capsys, images):
@@ -770,7 +731,6 @@ def test_a_script_and_a_running_toolbox_interleave_on_one_folder(capsys, images)
     job_folder = init(capsys, images)
     code, envelope = cli(capsys, str(images), "status")
     start = {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]}
-    # The agent's side: the job folder opened as a run opens it, its tools.
     spec = JobSpec(image_folder=str(images), preprocess="none", resume=True,
                    tasks=["position", "transform", "nonlinear"],
                    inputs={"pixel_size_um": PIXEL_SIZE_UM}, position=PositionSpec(),
@@ -782,7 +742,6 @@ def test_a_script_and_a_running_toolbox_interleave_on_one_folder(capsys, images)
     assert tools["position_sections"](sections=[{"id": ID0, "position_mm": 0.1}],
                                       view=False)["status"] == "ok"
 
-    # A script sees the agent's write and adds its own; the CLI reads both.
     script = langslice.open_job(images)
     assert script.position_sections(
         sections=[{"id": ID1, "position_mm": 0.15}])["status"] == "ok"
@@ -790,14 +749,12 @@ def test_a_script_and_a_running_toolbox_interleave_on_one_folder(capsys, images)
     positions = {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]}
     assert positions == {ID0: 0.1, ID1: 0.15, ID2: start[ID2]}
 
-    # The agent's next call picks up the script's write, history included.
     rows = tools["status"]()["rows"]
     assert {row["id"]: row.get("position_mm") for row in rows} == positions
-    assert tools["undo"]()["status"] == "ok"  # undoes the script's write
+    assert tools["undo"]()["status"] == "ok"
     assert agent.state.resolve(ID1).position_mm == start[ID1]
     assert agent.state.resolve(ID0).position_mm == 0.1
 
-    # And the script sees the agent's undo; its own undo takes the agent's write back.
     assert script.undo()["status"] == "ok"
     script.close()
     code, envelope = cli(capsys, str(images), "status")
@@ -805,8 +762,6 @@ def test_a_script_and_a_running_toolbox_interleave_on_one_folder(capsys, images)
     assert tools["status"]()["rows"][0].get("position_mm") == start[ID0]
     agent.close()
 
-
-# --- the library ------------------------------------------------------------------------
 
 
 def test_open_job_gives_the_verbs_as_methods(capsys, images):
@@ -816,23 +771,17 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
     with langslice.open_job(images) as job:
         assert "position_sections" in job.verbs and "position_sections" in dir(job)
         reply = job.position_sections(sections=[{"id": ID2, "position_mm": 0.2}])
-        # A plain JSON reply; the pictures as files already on disk (as the
-        # CLI lists them), the images themselves on an attribute.
         assert reply["status"] == "ok" and "images" not in reply
         assert json.loads(json.dumps(reply)) == reply
         views = [item for item in reply["artifacts"] if item["kind"] == "view"]
         assert views and all(Path(item["path"]).is_file() for item in reply["artifacts"])
         assert [item["index"] for item in views] == list(range(len(reply.images)))
         assert job.state.resolve(ID2).position_mm == 0.2
-        # Every status row carries every field: the last placed section's
-        # delta_to_next_mm is null, not missing.
         rows = job.status()["rows"]
         assert len({tuple(row) for row in rows}) == 1
         assert rows[-1]["delta_to_next_mm"] is None
-        # A verb this job's settings have not: said so.
         with pytest.raises(AttributeError, match="This job's settings have no 'trace_borders'"):
             getattr(job, "trace_borders")  # noqa: B009
-        # A section on its atlas: its picture's frame gives atlas coordinates.
         overlay = job.look(mode="overlay", sections=[ID2])
         saved = next(item["path"] for item in overlay["artifacts"]
                      if item["kind"] == "view_json")
@@ -842,12 +791,10 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
     assert xyz.ndim == 3 and xyz.shape[2] == 3 and bool((xyz == xyz).any())
 
 
-# --- a dead background run on Windows ------------------
-
 
 def _dead_run(tmp_path: Path) -> tuple[Any, str]:
     from langslice.doors.agent_cli import background
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
     background._write(layout, {"id": "run-1", "verb": "fireants_syn", "state": "running",
@@ -896,12 +843,10 @@ def test_the_library_caps_no_pictures_or_sections_but_fireants_syn(capsys, image
         most = limits["fireants_syn"]["sections"]
         refused = job.fireants_syn(sections=[ID0] * (most + 1))
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
-        # The refusal says why the cap holds.
         assert most == 20 and refused["message"] == (
             "fireants_syn takes at most 20 sections per call (every fitted section is held in "
             "memory (about 170 MB) until the call writes them all as one undo step); 21 were "
             "named. Nothing was done: split them over calls.")
-        # Past what the ADK door takes: every section written, every picture shown.
         sections = [ID0, ID1, ID2] * 2
         written = job.interactive_transform(
             sections=[{"id": name, "rotation_deg": 0} for name in sections[:3]] * 2, view=False)
@@ -938,8 +883,6 @@ def test_the_door_sets_the_job_picture_cap(tmp_path):
     _state, _spec, adk = box(tmp_path, placed=True)
     assert adk.job.picture_cap == 4
 
-
-# --- a script that exits without closing its job ----------------------------------------
 
 _EXIT_SCRIPT = """
 import sys
@@ -978,8 +921,6 @@ def test_pictures_queued_by_a_script_are_written_when_it_exits(capsys, images):
     for line in placed:
         assert (job / line["path"] / "labels.tif").is_file()
 
-
-# --- tools and options a job disables ----------------------------------------------------
 
 
 def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
@@ -1030,8 +971,6 @@ def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
     assert code == 2 and "every tool that writes its answer" in envelope["error"]["message"]
 
 
-# --- the verbs the command line runs -------------------------------------------------
-
 
 def test_the_command_line_runs_only_the_setup_and_checking_verbs(capsys, images):
     """`langslice-job FOLDER VERB` runs `status` and `export_maps` and refuses
@@ -1045,7 +984,6 @@ def test_the_command_line_runs_only_the_setup_and_checking_verbs(capsys, images)
     code, status = cli(capsys, str(job), "status")
     assert code == 0 and len(status["result"]["rows"]) == 3
     code, exported = cli(capsys, str(job), "export_maps")
-    # it runs: nothing is placed yet, which is its own answer
     assert exported["error"]["code"] == "NOTHING_EXPORTED", exported
 
     for verb, arguments in [("position_sections", {"sections": [

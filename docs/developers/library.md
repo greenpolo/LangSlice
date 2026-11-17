@@ -412,7 +412,7 @@ written. `job.export_dmc_brainmap(channel="dapi",
 section_image="preprocessed")` writes the job as a DMC-BrainMap animal folder,
 `exports/dmc_brainmap/<animal>/`, linear placements only (each applied
 deformation is left out and listed in its `langslice_export.json`), and
-returns a `langslice.tools.dmc_export.DmcExported`: `folder`, `files`,
+returns a `langslice.tools.bookkeeping.dmc_export.DmcExported`: `folder`, `files`,
 `registered`, `skipped` (each section written without a registration and
 why) and `warps_left_out`. `job.export_abba(warps=True, landmarks=1089)` writes the job
 as an ABBA 0.25 project, `exports/<image folder>.abba` (File ‣ Load State in
@@ -421,7 +421,7 @@ and its applied deformation as a BigWarp landmark registration
 (`warps=False`: linear only; `landmarks`, 16 to 1089, the most landmark
 pairs per warp: 1089 for about 2.5 um from the deformation, 100 for
 about 45 um), and returns a
-`langslice.tools.abba_export.AbbaExported`: `path`, `sections`, `warped`,
+`langslice.tools.bookkeeping.abba_export.AbbaExported`: `path`, `sections`, `warped`,
 `skipped` and `warp_error_um`; the warps are converted in worker processes,
 so a script calling it runs under `if __name__ == "__main__":`.
 `langslice.load_atlas(name)` loads a cached

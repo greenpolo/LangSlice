@@ -10,7 +10,7 @@ def test_a_letterboxed_reply_is_cropped_before_resampling():
     """A lane answering in a wider frame letterboxes ours inside it: the line
     lands where it was drawn on the canvas, not stretched."""
     pixels = np.zeros((40, 80, 3), dtype=np.uint8)
-    pixels[7:33, 40] = (255, 255, 0)  # x=30 after the symmetric 10 px crop
+    pixels[7:33, 40] = (255, 255, 0)
     mask = borders.extract_thinned_lines(Image.fromarray(pixels), (60, 40))
     assert mask.shape == (40, 60)
     assert np.all(np.nonzero(mask)[1] == 30)

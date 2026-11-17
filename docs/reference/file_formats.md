@@ -549,10 +549,10 @@ put it on the tissue.
 ### `<image folder>.abba` and `abba_export.json`
 
 Written only on request, by the window's **Export ‣ ABBA project** or the
-library's `job.export_abba(warps=, landmarks=)` (`tools/abba_export.py`): an ABBA 0.25
+library's `job.export_abba(warps=, landmarks=)` (`tools/bookkeeping/abba_export.py`): an ABBA 0.25
 state file, which ABBA's File ‣ Load State opens on its Allen Brain Adult
 Mouse Brain CCF 2017 (v3p1) atlas, started coronal (x RL, y SI, z AP). It is
-a zip of the three files ABBA's own save writes (`job/abba_project.py`):
+a zip of the three files ABBA's own save writes (`job/exports/abba_project.py`):
 
 | File | Holds |
 |---|---|

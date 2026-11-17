@@ -30,6 +30,21 @@ and its picture (`positions.py`, `transforms.py`, `damage.py`, `masks.py`,
 (which resolves the image model through the providers) stays in
 `doors/tools/`.
 
+## Folders
+
+The modules named here by file name sit at the package's top or in one of
+its folders, which follow the groups of `descriptions/`: `looking/`
+(`look.py`, `zoom.py`, `atlas.py`, `status.py`, `files.py`, `points.py`,
+`review.py`, `fit_pictures.py`), `changing/` (`positions.py`,
+`transforms.py`, `damage.py`, `masks.py`, `images.py`, `registrations.py`,
+`warps.py`), `fitting/` (`affine_fit.py`, `deformable.py`,
+`deformable_rows.py`, `fit_regions.py`, `traces.py`), `landmarking/`
+(`landmarks.py`, `landmark_warp.py`) and `bookkeeping/` (`notes.py`,
+`history.py`, `submit.py`, `exports.py`, `abba_export.py`,
+`dmc_export.py`). The top holds what every tool call shares: `catalog.py`,
+`pipeline.py`, `run.py`, `arguments.py`, `reply.py`, `refusal.py`,
+`events.py`, `stale.py`.
+
 ## `descriptions/`: the model-facing text
 
 To change what a tool's description says, open its family's module
@@ -261,7 +276,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   and field groups the steps changed together, `describe_step`, `steps`: how
   many were taken).
 - `registrations.py` — `restore_registration`'s operations over the
-  sections' histories (`job/history.py`): `listing(job, section)` ->
+  sections' histories (`job/steps/history.py`): `listing(job, section)` ->
   `Listed` (`held`, the number the section holds; `rows`: per registration
   `registration`, `by`, `at`, `transform` (`core.stack.status.transform_entry`: kind
   and knobs), `deformation` (`core.stack.status.deformation_entry`: method, steps,

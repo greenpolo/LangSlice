@@ -17,7 +17,8 @@ from langslice.core.stack.codec import affine_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import affine_fit, transforms
+from langslice.tools.changing import transforms
+from langslice.tools.fitting import affine_fit
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,
     _left_half_section,
@@ -98,7 +99,6 @@ def test_an_orientation_change_keeps_the_knob_values_and_says_so(tmp_path: Path)
     assert entry.kept is not None and entry.kept["scale_y"] == 0.9
     assert "knob values were kept" in entry.message
     assert len(job.undo_stack) == 2
-    # No transform and no knob given: the orientation alone, no transform made.
     alone = transforms.interactive_transform(job, ctx, [{"id": "s1.png", "flip": True}])
     assert alone.entries[0].message == "" and _record(job, "s1.png").flip is True
     assert _record(job, "s1.png").transform is None
@@ -125,8 +125,6 @@ def test_refusals_write_nothing(tmp_path: Path):
     assert _record(job, "s0.png").transform is None
 
 
-# --- elastix_affine ----------------------------------------------------------------------
-
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
@@ -151,7 +149,6 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 def test_elastix_affine_restricts_and_carries_the_region_box(
         tmp_path: Path, calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch):
     job, ctx = _open(tmp_path)
-    # The atlas's additional references are fit images too (BrainGlobe's names).
     monkeypatch.setattr(ctx.atlas, "additional_references",
                         {"nissl": np.asarray(ctx.atlas.template)}, raising=False)
     done = affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"],
@@ -165,9 +162,7 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
     assert affine_to_json(record.transform)["regions"] == {"include": ["L"], "exclude": []}
     x0, y0, x1, y1 = done.rows[0].restrict_box or ()
     assert 0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0
-    # The left half of the brain: the box leaves the right side of the canvas out.
     assert x1 < 0.8 and (x0 + x1) / 2 < 0.5
-    # No regions, no box.
     calls.clear()
     everything = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"],
                                            atlas_image="template")
@@ -183,7 +178,6 @@ def test_elastix_affine_leaves_marked_damage_out_on_its_own(
     affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     assert {call["id"]: call["exclude"] for call in calls} == {"s0.png": ("R",),
                                                                "s1.png": ()}
-    # restrict_to another region keeps the mark out; naming the marked region wins.
     calls.clear()
     affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"])
     affine_fit.elastix_affine(job, ctx, ["s0.png"], restrict_to=["R"])

@@ -162,13 +162,13 @@ def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegme
         request.prompt,
     ]
     config = _gemini_image_config(request)
-    response = client.models.generate_content(  # type: ignore[attr-defined]
+    response = client.models.generate_content(
         model=model, contents=contents, config=config
     )
     try:
         image = _extract_last_inline_image(response)
     except Exception:  # noqa: BLE001
-        response = client.models.generate_content(  # type: ignore[attr-defined]
+        response = client.models.generate_content(
             model=model, contents=contents, config=config
         )
         image = _extract_last_inline_image(response)
@@ -198,7 +198,7 @@ def _generate_openai_images_segmentation(
     ]
 
     quality = (request.size_tier or "auto").lower()
-    response = client.images.edit(  # type: ignore[attr-defined]
+    response = client.images.edit(
         model=model,
         image=image_files,
         prompt=request.prompt,

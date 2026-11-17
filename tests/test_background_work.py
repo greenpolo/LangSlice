@@ -17,9 +17,9 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import submit as ops_submit
+from langslice.tools.bookkeeping import submit as ops_submit
+from langslice.tools.fitting.traces import land_trace
 from langslice.tools.stale import section_inputs
-from langslice.tools.traces import land_trace
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -57,7 +57,7 @@ def test_running_work_is_listed_and_its_notice_handed_out_once(tmp_path: Path):
     assert job.background.running() == [work]
     assert job.background.running_for("s0.png") is work
     assert job.background.running_for("s1.png") is None
-    assert job.background.notices() == []  # nothing finished yet
+    assert job.background.notices() == []
     release.set()
     job.background.wait_all()
     assert job.background.running() == []
@@ -65,7 +65,7 @@ def test_running_work_is_listed_and_its_notice_handed_out_once(tmp_path: Path):
     assert [item.id for item in notices] == ["w1"]
     assert notices[0].notice == "w1 note of s0.png finished: the note landed."
     assert notices[0].result == {"note": "landed"}
-    assert job.background.notices() == []  # handed out once
+    assert job.background.notices() == []
     summary = job.background.get("w1").summary()  # type: ignore[union-attr]
     assert summary["status"] == "done" and summary["sections"] == ["s0.png"]
 
@@ -137,7 +137,7 @@ def test_submit_waits_and_the_work_gives_way_under_the_lock(tmp_path: Path):
 
     work = job.background.start("positions", ["s0.png", "s1.png", "s2.png"], land)
     timer = threading.Timer(0.02, release.set)
-    with job.writing():  # as the door holds it around submit
+    with job.writing():
         timer.start()
         done = ops_submit.submit(job, summary="placed")
     assert done.summary == "placed" and job.state.submitted
@@ -157,7 +157,7 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     expected = section_inputs(job.state, record, deformation=True)
     _note_step(job, "a write elsewhere")
     assert section_inputs(job.state, record, deformation=True) == expected
-    record.position_mm = 2.5  # the section moved while the image call ran
+    record.position_mm = 2.5
     depth = len(job.undo_stack)
     landed = land_trace(job, ctx, record.id, expected)
     assert landed.status == FAILED and landed.result["error"] == RefusalCode.STALE_INPUT
@@ -197,7 +197,7 @@ def test_work_waiting_for_a_trace_sees_it_landed_when_the_process_settles_it(
     landing = threading.Event()
     record_landing = border_traces._land
 
-    def slow_land(*args: Any) -> bool:  # the settling thread, about to record
+    def slow_land(*args: Any) -> bool:
         landing.set()
         threading.Event().wait(0.3)
         return record_landing(*args)
@@ -205,7 +205,7 @@ def test_work_waiting_for_a_trace_sees_it_landed_when_the_process_settles_it(
     monkeypatch.setattr(border_traces, "_land", slow_land)
     start_thread = background_module.BackgroundWork._thread
 
-    def late_thread(self: Any, entry: Any) -> None:  # starts waiting late
+    def late_thread(self: Any, entry: Any) -> None:
         assert landing.wait(5)
         start_thread(self, entry)
 

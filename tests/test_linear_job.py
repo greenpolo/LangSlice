@@ -48,8 +48,6 @@ def _edit_on_disk(path: str, edit: Any) -> None:
     Path(path).write_text(json.dumps(data), encoding="utf-8")
 
 
-# --- undo, persisted -----------------------------------------------------------
-
 
 def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     folder = _folder(tmp_path)
@@ -66,8 +64,6 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     assert undone["status"] == "ok" and undone["undo_depth"] == 0
     assert again.state.by_id("s1.png").position_mm == start != 2.0
 
-
-# --- live shared editing ------------------------------------------------------------
 
 
 def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_path: Path):
@@ -86,13 +82,11 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
     assert rows["s1.png"]["position_mm"] == 4.5
     assert job.state.by_id("s0.png").position_mm == 1.0
 
-    # The next write builds on the script's edit instead of overwriting it.
     _tool(box, "note")("after the script")
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved.by_id("s1.png").position_mm == 4.5
     assert saved.notes[-2:] == ["script: placed s1", "after the script"]
 
-    # One undo step per write: the note, then the script's edit, then ours.
     assert _tool(box, "undo")()["status"] == "ok"
     assert job.state.notes[-1] == "script: placed s1"
     assert _tool(box, "undo")()["status"] == "ok"
@@ -105,11 +99,11 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
 def test_an_unchanged_or_half_written_file_is_not_a_step(tmp_path: Path):
     folder = _folder(tmp_path)
     job, ctx = _open(folder)
-    write_checkpoint(job.state, ctx.checkpoint_path)  # rewritten, same content
+    write_checkpoint(job.state, ctx.checkpoint_path)
     assert job.sync() is None and job.undo_stack == []
 
     Path(ctx.checkpoint_path).write_text('{"slices": [',
-        encoding="utf-8")  # a script mid-write
+        encoding="utf-8")
     assert job.sync() is None and job.undo_stack == []
     Path(ctx.checkpoint_path).write_text(json.dumps(
         {"format_version": STATE_FORMAT_VERSION, **stack_to_json(
@@ -129,7 +123,7 @@ def test_another_job_writing_both_files_hands_over_its_history(tmp_path: Path):
 
     assert first.sync() is not None
     assert first.state.by_id("s2.png").position_mm == 6.0
-    assert len(first.undo_stack) == 1  # second's step, not an extra one
+    assert len(first.undo_stack) == 1
     assert first.undo()
     assert first.state.by_id("s2.png").position_mm == start != 6.0
 
@@ -140,7 +134,6 @@ def test_a_job_made_around_a_state_takes_the_files_as_they_stand(tmp_path: Path)
     before = job.snapshot()
     job.state.notes.append("on disk")
     job.commit(before)
-    # A toolbox built without a job makes one; the file it finds is not news.
     fresh_state = load_checkpoint(ctx.checkpoint_path)
     fresh_state.notes.append("in memory only")
     box = build_tools(fresh_state, ctx, job.spec)

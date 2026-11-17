@@ -18,14 +18,14 @@ from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.layers import coordinate_map
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.job import Job
-from langslice.job.layout import (
+from langslice.job.folder.layout import (
     JOB_FORMAT_VERSION,
     JobLayout,
     job_folder_for,
     section_dirname,
     section_dirnames,
 )
+from langslice.job.job import Job
 from langslice.job.pictures import flush_all
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import STATE_FORMAT_VERSION, read_checkpoint
@@ -51,8 +51,6 @@ def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
     return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path), ctx
 
-
-# --- the layout --------------------------------------------------------------------------
 
 
 def test_section_folders_are_stems_unless_two_images_share_one(tmp_path: Path):
@@ -101,12 +99,9 @@ def test_section_folders_are_valid_and_distinct_on_windows():
     assert folders["nul.tif"] == "nul_"
     assert folders["com1.x.png"] == "com1_.x"
     assert folders["LPT9.png"] == "LPT9_"
-    assert folders["s5..png"] == "s5_"  # the stem "s5." would lose its dot on Windows
+    assert folders["s5..png"] == "s5_"
     assert folders["a."] == "a_"
-    # a case-only clash: the first in sorted order keeps the name
     assert (folders["S1.png"], folders["s1.png"]) == ("S1.png", "s1.png_2")
-    # an unchanged filename keeps its name over one whose characters were replaced,
-    # and a number another section's folder already has is skipped
     assert (folders["a_b.png"], folders["a?b.png"]) == ("a_b", "a_b_3")
     assert folders["a_b_2.png"] == "a_b_2"
     assert len({folder.casefold() for folder in folders.values()}) == len(siblings)
@@ -128,12 +123,10 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
         encoding="utf-8"))["format_version"] == STATE_FORMAT_VERSION
     assert "open" in (root / "logs" / "events.jsonl").read_text(
         encoding="utf-8")
-    # The public rendering of the state, written with every checkpoint.
     registration = json.loads((root / "registration.json").read_text(
         encoding="utf-8"))
     assert registration["format_version"] == 1
     assert [entry["id"] for entry in registration["sections"]] == ["s0.png", "s1.png", "s2.png"]
-    # No position is inferred for a fresh section.
     assert all(entry["parameters"]["plane"]["position_mm"] is None
                for entry in registration["sections"])
 
@@ -158,7 +151,7 @@ def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
         job.commit(before)
     assert [(line["by"], line["position_mm"]) for line in lines("s0")] == [
         ("host", None), ("position_sections", 2.5)]
-    assert len(lines("s1")) == 1  # untouched
+    assert len(lines("s1")) == 1
     step = json.loads((root / "history" / "undo.json").read_text(
         encoding="utf-8"))["undo"][-1]
     assert step["sections"] == {"s0.png": 1} and step["by"] == "position_sections"
@@ -166,7 +159,7 @@ def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
         before = job.snapshot()
         job.state.notes.append(f"note {index}")
         job.commit(before)
-    assert len(job.undo_stack) == 61 and len(lines("s0")) == 2  # notes are the stack's
+    assert len(job.undo_stack) == 61 and len(lines("s0")) == 2
     assert job.undo() and job.state.notes[-1] == "note 58"
     again, _ = _open(folder)
     assert len(again.undo_stack) == 60 and len(again.redo_stack) == 1
@@ -206,9 +199,8 @@ def test_undo_steps_that_cannot_be_read_are_never_deleted(tmp_path: Path, damage
     before = again.snapshot()
     again.state.notes.append("after")
     again.commit(before)
-    assert again.undo() and again.state.notes[-1] == "note 2"  # this session's own step
+    assert again.undo() and again.state.notes[-1] == "note 2"
     assert undo_file.read_bytes() == held
-    # A fresh job on the folder leaves it alone too.
     fresh, _ = _open(folder, resume=False)
     assert undo_file.read_bytes() == held
     assert fresh.undo_stack == []
@@ -226,7 +218,7 @@ def test_an_older_langslice_s_undo_steps_are_ignored_and_left(tmp_path: Path, ca
     (history / "step-000001.json").write_text("{}", encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         _open(folder)
-        again, _ = _open(folder)  # said once in a process, not per open
+        again, _ = _open(folder)
     assert again.undo_stack == []
     assert sum("older LangSlice" in record.getMessage() for record in caplog.records) == 1
     before = again.snapshot()
@@ -254,7 +246,6 @@ def test_a_record_no_line_names_is_deleted_and_an_applied_one_stays(tmp_path: Pa
     record.deformation = DeformationRef(key="a" * 64, linear_key="x", steps=(),
                                         record=f"sections/s0/deformable/{'a' * 24}")
     job.commit(before)
-    # "b" was never applied; "c" is the parent of the one applied
     assert sorted(path.name for path in deformable.iterdir()) == ["a" * 24, "c" * 24]
     before = job.snapshot()
     record.deformation = None
@@ -287,7 +278,7 @@ def test_a_line_cut_short_is_skipped_and_the_next_starts_on_its_own(tmp_path: Pa
     path = folder / "langslice" / "sections" / "s0" / "history.jsonl"
     whole = path.read_text(encoding="utf-8")
     path.write_text(whole + '{"seq": 2, "step": 1, "by": "pos',
-        encoding="utf-8")  # a write that died
+        encoding="utf-8")
     record = job.state.by_id("s0.png")
     before = job.snapshot()
     record.position_mm = 4.0
@@ -312,7 +303,7 @@ def test_an_undo_step_keeps_the_notes_change_not_the_notes(tmp_path: Path):
         job.commit(before)
         sizes.append(len(undo_file.read_text(encoding="utf-8")))
     steps = [b - a for a, b in zip(sizes, sizes[1:], strict=False)]
-    assert max(steps) - min(steps) <= 2  # digits of the step numbers
+    assert max(steps) - min(steps) <= 2
     assert json.loads(undo_file.read_text(
         encoding="utf-8"))["undo"][-1]["notes_before"] == {
         "keep": opening + 5, "then": []}
@@ -321,7 +312,6 @@ def test_an_undo_step_keeps_the_notes_change_not_the_notes(tmp_path: Path):
     assert job.state.notes == held[:opening + 4]
     assert job.redo()
     assert job.state.notes == held[:opening + 5]
-    # one call's writes merged: a note replaced, then one added
     mark = job.pushed
     before = job.snapshot()
     job.state.notes[opening + 1] = "changed"
@@ -333,8 +323,6 @@ def test_an_undo_step_keeps_the_notes_change_not_the_notes(tmp_path: Path):
     assert job.undo()
     assert job.state.notes == held[:opening + 5]
 
-
-# --- older formats ---------------------------------------------------------------------------
 
 
 def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
@@ -348,7 +336,6 @@ def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
         _open(folder)
     assert json.loads(path.read_text(
         encoding="utf-8"))["format_version"] == JOB_FORMAT_VERSION + 1
-    # A checkpoint from a newer LangSlice is refused the same way.
     path.write_text(json.dumps({**record, "format_version": JOB_FORMAT_VERSION}),
         encoding="utf-8")
     state = folder / "langslice" / "state.json"
@@ -406,8 +393,6 @@ def test_saved_settings_with_an_unknown_key_are_refused_naming_it_and_the_file(t
         read_spec(folder / "langslice")
 
 
-# --- the saved pictures ---------------------------------------------------------------------
-
 
 def _stack_toolbox(folder: Path) -> tuple[Any, Any]:
     from langslice.job.job import ingest
@@ -434,7 +419,7 @@ def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Pat
     box, _ctx = _stack_toolbox(tmp_path / "stack")
     look = _tool(box, "look")
     shown = look("section", sections=["s0.png", "s1.png"])[TOOL_MEDIA_PARTS_KEY]
-    written = _place(box, view=True)  # a change tool's picture, under its own name
+    written = _place(box, view=True)
     placed = look("overlay", sections=["s1.png"])
     sheet = look("positioning")[TOOL_MEDIA_PARTS_KEY]
     flush_all()
@@ -498,7 +483,7 @@ def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[fl
     labels = tifffile.imread(view / "labels.tif")
     record = json.loads((view / "view.json").read_text(encoding="utf-8"))
     assert coords.shape == labels.shape + (3,) and coords.dtype == np.float32
-    bottom = record["frame"]["content_box"][3]  # the caption band is below the content
+    bottom = record["frame"]["content_box"][3]
     assert np.isnan(coords[bottom:]).all() and np.isfinite(coords[:bottom]).all()
     annotation = np.asarray(SyntheticAtlas().annotation)
     voxel = np.rint(coords[:bottom] / np.asarray(record["frame"]["atlas"]["resolution_um"]))
@@ -509,8 +494,6 @@ def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[fl
     assert (found == labels[:bottom]).mean() > 0.99
 
 
-# --- where the job folder goes: an explicit folder, a read-only image folder ----------------
-
 
 def test_an_explicit_job_folder_per_arm_on_one_image_folder(tmp_path: Path):
     folder = _folder(tmp_path / "dataset")
@@ -518,11 +501,11 @@ def test_an_explicit_job_folder_per_arm_on_one_image_folder(tmp_path: Path):
     second, _ = _open(folder, job_dir=str(tmp_path / "arm-b"))
     assert first.folder == tmp_path / "arm-a" and second.folder == tmp_path / "arm-b"
     assert (tmp_path / "arm-a" / "state.json").exists()
-    assert not (folder / "langslice").exists()  # the dataset folder is never written
+    assert not (folder / "langslice").exists()
     before = first.snapshot()
     first.state.notes.append("arm a")
     first.commit(before)
-    again, _ = _open(folder, job_dir=str(tmp_path / "arm-a"))  # the same images continue
+    again, _ = _open(folder, job_dir=str(tmp_path / "arm-a"))
     assert again.state.notes[-1] == "arm a"
     assert "job_dir" not in JobSpec(image_folder=str(folder)).to_dict()
 
@@ -539,15 +522,13 @@ def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
 
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root writes into read-only folders")
-    from langslice.job import index, layout
+    from langslice.job.folder import index, layout
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr(index, "default_root", lambda: tmp_path / "home" / ".langslice" / "jobs")
     folder = _folder(tmp_path / "shared-drive")
     folder.chmod(0o555)
     if os.name == "nt":
-        # Windows chmod does not remove directory write permission; simulate a
-        # folder with an ACL that denies writes instead.
         original = layout.writable
         monkeypatch.setattr(layout, "writable", lambda target, images:
                             False if images == folder else original(target, images))
@@ -558,7 +539,7 @@ def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
 def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     tmp_path: Path, read_only: Path,
 ):
-    from langslice.job import index
+    from langslice.job.folder import index
 
     messages: list[str] = []
     spec = JobSpec(image_folder=str(read_only), model="fake-model", preprocess="none")
@@ -575,10 +556,9 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     before = job.snapshot()
     job.state.notes.append("kept")
     job.commit(before)
-    again, _ = _open(read_only, tasks=["position"])  # found again on reopen
+    again, _ = _open(read_only, tasks=["position"])
     assert again.folder == target and again.state.notes[-1] == "kept"
 
-    # An MCP host opens that job by its job folder, as saved.
     from langslice.doors.jobs import close_job
     from langslice.doors.mcp.server import open_folder
 
@@ -594,8 +574,6 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     finally:
         session.close()
 
-
-# --- a job folder moves with its images ---------------------------------------------------
 
 
 def _create(folder: Path, **spec_kwargs: Any) -> Any:
@@ -635,7 +613,7 @@ def test_a_job_folder_moves_with_its_images(tmp_path: Path, monkeypatch: Any):
     registration = json.loads((moved / "langslice" / "registration.json").read_text(
         encoding="utf-8"))
     assert registration["image_folder"] == ".."
-    again = _create(moved)  # a host opening the moved folder resumes the job
+    again = _create(moved)
     assert again.job.state.by_id("s0.png").position_mm == 0.1
 
 
@@ -656,11 +634,9 @@ def test_an_explicit_job_folder_whose_images_moved_says_how_to_reattach(
         open_folder(arm, atlas_loader=lambda _n: _ATLAS)
     message = str(raised.value)
     assert str(folder) in message and "--job-dir" in message and "init" in message
-    # Reattached from the images' new place, the same job continues.
     again = _create(moved, job_dir=str(arm))
     assert json.loads((arm / "job.json").read_text(
         encoding="utf-8"))["image_folder"] == str(moved)
     assert again.job.folder == arm
-    # Another image folder's job is still refused while its images exist.
     with pytest.raises(ValueError, match="already holds the job of"):
         _create(_folder(tmp_path / "other"), job_dir=str(arm))

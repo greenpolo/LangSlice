@@ -29,7 +29,6 @@ from tests.synthetic_stack import (
     write_sections,
 )
 
-#: The supplied placement of the synthetic sections (see test_combinations).
 POSITIONS = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
 TRANSFORMS = {
     ID0: [1.02, 0.01, -0.01, 0.0, 0.98, 0.01],
@@ -90,8 +89,6 @@ class Stub:
                                      model=str(request.model), route="stub")
 
 
-# --- image_model and default_prompt --------------------------------------------------
-
 
 def test_image_model_builtin_profiles():
     import langslice
@@ -122,8 +119,6 @@ def test_image_model_custom_profiles(tmp_path):
         langslice.image_model(42)
 
 
-# --- create_job ---------------------------------------------------------------------------
-
 
 def test_create_job_takes_resume_or_fresh_not_both(tmp_path):
     import langslice
@@ -138,7 +133,7 @@ def test_create_job_from_a_folder(images):
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none") as job:
         assert Path(job.folder) == images / "langslice"
-        assert job.job.spec.tasks == ["nonlinear"]  # every section has a transform
+        assert job.job.spec.tasks == ["nonlinear"]
         assert job.job.spec.nonlinear.provider == "none"
         assert "trace_borders" not in job.verbs and "elastix_affine" not in job.verbs
         assert "fireants_syn" in job.verbs
@@ -156,11 +151,10 @@ def test_create_job_from_a_folder(images):
     record = json.loads((elsewhere / "job.json").read_text(
         encoding="utf-8"))["image_model"]
     assert record["provider"] == "custom" and record["tested"] is False
-    with langslice.open_job(elsewhere) as job:  # a model of one's own is never resolved
+    with langslice.open_job(elsewhere) as job:
         assert "trace_borders" not in job.verbs and "fireants_syn" in job.verbs
     with pytest.raises(ValueError, match="Unknown job setting"):
         langslice.create_job(images, no_such_setting=1)
-    # A profile not tested with LangSlice reopens without traces until a model is given.
     langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                          pixel_size_um=PIXEL_SIZE_UM, preprocess="none", resume=False,
                          image_model=langslice.image_model("openai-oauth",
@@ -195,8 +189,6 @@ def test_create_job_takes_angles_per_section(images):
                              resume=False)
 
 
-# --- the custom profile's prompt is the one sent and saved ---------------------------------
-
 
 def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
     import langslice
@@ -214,7 +206,6 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
         record = trace_to_json(job.state.by_id(ID1).border_trace)
     sent = PROFILE_PROMPT.replace("{plane}", "coronal")
     assert [request.prompt for request in stub.requests] == [edited]
-    # photograph_first: Image 1 is the clean photograph, Image 2 the placed borders.
     request = stub.requests[0]
     assert _colour(request.slice_image) < _colour(request.reference_images[0])
     attempt = images / "langslice" / record["artifact_dir"]

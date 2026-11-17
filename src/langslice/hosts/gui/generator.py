@@ -56,7 +56,11 @@ from langslice.doors.credentials import (
     saved_image_provider,
 )
 from langslice.hosts.gui.settings import LABELS as CONNECTION_LABELS
-from langslice.job.layout import JobLayout, held_image_folder, read_job_file
+from langslice.job.folder.layout import (
+    JobLayout,
+    held_image_folder,
+    read_job_file,
+)
 from langslice.job.migrations import without_removed_settings
 from langslice.job.settings import labels as tool_labels
 from langslice.job.settings import tool_table

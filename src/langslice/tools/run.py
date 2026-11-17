@@ -19,12 +19,12 @@ from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import compact_rows
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools.status import stack_status
+from langslice.tools.looking.status import stack_status
 
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import ImageModel
     from langslice.doors.agent.engine import EngineContext
-    from langslice.tools.look import Looked
+    from langslice.tools.looking.look import Looked
     from langslice.tools.pipeline import ToolBox
 
 @dataclass
@@ -93,7 +93,7 @@ class Run:
         return known, unknown
 
 def pictured(result: dict[str, Any], looked: Looked) -> dict[str, Any]:
-    """*result* with the pictures :mod:`langslice.tools.look` drew and saved:
+    """*result* with the pictures ``tools/looking/look.py`` drew and saved:
     ``pictures`` (``{"id", "caption"}`` each, in the order they are
     attached), ``not_shown`` and the pictures themselves. The tool door does
     not save them again (they carry ``pictures``)."""

@@ -7,8 +7,8 @@ from pathlib import Path
 
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
+from langslice.job.folder.layout import JobLayout, job_folder_for
 from langslice.job.job import Job
-from langslice.job.layout import JobLayout, job_folder_for
 from langslice.job.settings.spec import JobSpec
 
 

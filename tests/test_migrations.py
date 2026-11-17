@@ -29,14 +29,11 @@ def test_the_table_runs_from_its_oldest_format_to_the_current_one():
 
 @pytest.mark.parametrize("version", [0, 2])
 def test_a_format_older_than_the_table_is_refused(tmp_path: Path, version: int):
-    # no workspace or folder: the format is refused before either is read
     migration = FolderMigration(workspace=None, layout=None)
     with pytest.raises(ValueError, match="older pre-release LangSlice"):
         current_state({"format_version": version, "slices": []}, migration)
     assert not migration.used
 
-
-# --- what LangSlice no longer has, dropped with a warning ----------------------------------
 
 
 def _old_folder(tmp_path: Path) -> Path:
@@ -90,7 +87,6 @@ def test_an_old_folder_opens_with_one_warning_per_removed_name(
     for name in named:
         assert sum(name in message for message in messages) == 1, name
 
-    # written once without them; the events say what was dropped
     spec = json.loads((folder / "job.json").read_text(
         encoding="utf-8"))["spec"]
     assert "max_input_tokens" not in spec and "flip" not in spec["transform"]
@@ -131,8 +127,6 @@ def test_a_dry_run_of_an_old_folder_warns_and_writes_nothing(
     assert after == before
 
 
-# --- the border trace, renamed at format 5 -------------------------------------------------
-
 CALL = "fedcba9876543210fedcba98"
 OLD_DIR = f"sections/s0/image_correction/{CALL}/attempt-01"
 NEW_DIR = f"sections/s0/border_trace/{CALL}/attempt-01"
@@ -143,7 +137,7 @@ def _format_four_folder(tmp_path: Path) -> Path:
     row key ``image_correction`` and in ``sections/s0/image_correction/``,
     its path also in a picture record and the trace's own reply."""
     folder = _old_folder(tmp_path)
-    langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()  # format 5, clean
+    langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()
     attempt = folder / OLD_DIR
     attempt.mkdir(parents=True)
     (attempt / "raw_reply.png").write_bytes(b"png")
@@ -210,7 +204,7 @@ def test_an_open_that_writes_finds_the_trace_through_its_stored_paths(tmp_path: 
 
     stamp = (folder / "state.json").read_bytes()
     langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()
-    assert (folder / "state.json").read_bytes() == stamp  # nothing left to migrate
+    assert (folder / "state.json").read_bytes() == stamp
 
 
 def test_a_folder_this_process_cannot_write_opens_where_it_stands(tmp_path: Path):

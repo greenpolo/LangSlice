@@ -42,7 +42,6 @@ FILE = (600, 400)
 PIXEL_UM = 20.0
 RENDER_UNTURNED = (300, 200)
 FIT_UNTURNED = (450, 300)
-#: A sheared, scaled, rotated, shifted placement (the six stored numbers).
 PARAMS = (1.04, 0.05, 0.02, -0.03, 0.97, -0.015)
 
 
@@ -51,7 +50,6 @@ def _frame(rotation: int, flip: bool, params=PARAMS) -> SectionFrame:
     render_um = PIXEL_UM * FILE[0] / RENDER_UNTURNED[0]
     file_to_render = (orientation_matrix(RENDER_UNTURNED, rotation, flip)
                       @ pixel_center_map(FILE, RENDER_UNTURNED))
-    # The atlas plane (25 um voxels) drawn at true scale on the render's frame.
     scale = 25.0 / render_um
     atlas_on_frame = np.array([[scale, 0.0, 12.0], [0.0, scale, -7.0], [0.0, 0.0, 1.0]])
     matrix = np.vstack([denormalized_affine(params, render), [0.0, 0.0, 1.0]])
@@ -129,15 +127,13 @@ def test_pairs_tps_reproduces_the_record_off_the_grid(rotation, flip):
                                      pixel_size_um=PIXEL_UM)
     source = landmarks.source_mm
     assert source.shape == landmarks.target_mm.shape and len(source) <= MAX_POINTS
-    # No atlas overlap on this synthetic frame: the whole snapshot counts.
     assert landmarks.region == "whole snapshot" and landmarks.placement == "adaptive"
     atlas = landmarks.accuracy.atlas
     assert atlas.max_mm <= 0.005 and landmarks.within_tolerance
     assert 0 < atlas.median_mm <= atlas.p95_mm <= atlas.p99_mm <= atlas.max_mm
     assert landmarks.accuracy.probes > 1000 and landmarks.accuracy.unconverged == 0
-    # ABBA's pull-back (target -> source), applied at random points of the file.
     before, after = _exact(frame, warp, _random_points(rotation + flip, 2000))
-    assert np.abs(after - before).max() > 0.04  # the warp moves points
+    assert np.abs(after - before).max() > 0.04
     assert _section_error(landmarks, before, after).max() <= 0.005
 
 
@@ -153,7 +149,6 @@ def test_source_points_are_where_the_affine_row_puts_the_section(rotation, flip)
                                      pixel_size_um=PIXEL_UM)
     affine = normalized_to_abba_affine(PARAMS, size=FILE, pixel_size_um=PIXEL_UM,
                                        rotation_deg=rotation)
-    # The file pixels, recovered through the affine row and the centring.
     extent = np.array(frame.render_size) * frame.render_um_per_px / 1000
     world = np.linalg.solve(affine[:2, :2], (landmarks.source_mm - affine[:2, 3]).T).T
     oriented = (world / extent + 0.5) * np.array(frame.render_size)
@@ -195,7 +190,6 @@ def test_a_deformation_whose_spline_folds_everywhere_is_refused():
     fit = FIT_UNTURNED
     yy, xx = np.indices((fit[1], fit[0]), dtype=np.float64)
     mm_per_px = frame.render_um_per_px * frame.render_size[0] / fit[0] / 1000
-    # Pull a band backwards faster than the grid advances: the map folds.
     dx = np.where((xx > 150) & (xx < 250), -1.6 * (xx - 150) * mm_per_px, 0.0)
     field = np.stack([dx, np.zeros_like(dx)], axis=-1)
     with pytest.raises(ValueError, match="folds at every start and every grid"):
@@ -217,7 +211,6 @@ def test_a_deformation_too_fine_for_the_budget_is_sent_with_its_error():
     error = _section_error(landmarks, before, after)
     assert error.max() > 0.005
     assert error.max() == pytest.approx(landmarks.accuracy.section.max_mm, rel=0.3)
-    # Both sides of the map err by about as much.
     assert landmarks.accuracy.atlas.max_mm == pytest.approx(
         landmarks.accuracy.section.max_mm, rel=0.3)
 
@@ -229,10 +222,10 @@ def test_the_error_is_measured_over_the_atlas_overlap_only():
     frame = _frame(0, False)
     fit_w, fit_h = FIT_UNTURNED
     footprint = np.zeros((fit_h, fit_w), dtype=bool)
-    footprint[:, : fit_w // 2] = True  # the left half holds the atlas
+    footprint[:, : fit_w // 2] = True
     yy, xx = np.indices((fit_h, fit_w), dtype=np.float64)
     ripple = 0.02 * np.sin(2 * math.pi * 14 * xx / fit_w) * np.sin(2 * math.pi * 9 * yy / fit_h)
-    ripple[:, : int(fit_w * 0.7)] = 0.0  # only well inside the background
+    ripple[:, : int(fit_w * 0.7)] = 0.0
     field = _smooth_field(0) + np.stack([ripple, ripple], axis=-1)
     warp = _record(frame, field, footprint)
     landmarks = warp_world_landmarks(frame, warp, PARAMS, size=FILE,
@@ -240,8 +233,6 @@ def test_the_error_is_measured_over_the_atlas_overlap_only():
     assert landmarks.region == "atlas overlap"
     assert landmarks.accuracy.atlas.max_mm <= 0.005
 
-    # Inside the overlap, an independent check agrees; outside, the ripple
-    # the pairs were not spent on remains.
     points = _random_points(11, 4000)
     before, after = _exact(frame, warp, points)
     error = _section_error(landmarks, before, after)
@@ -259,7 +250,7 @@ def _folding_above(limit: int):
         def jacobian(self, points_mm):
             result = super().jacobian(points_mm)
             if len(self.source) > limit:
-                result[:, 0] *= -1  # a mirrored map: every determinant negative
+                result[:, 0] *= -1
             return result
 
     return FoldingAbove

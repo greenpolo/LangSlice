@@ -18,7 +18,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
@@ -230,7 +230,7 @@ def prepare_linear_registration(
     target_key = render_cache_key(ctx, section, long_edge=long_edge)
     um_per_px = um_work * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
 
-    plane = cast(Plane, state.plane)
+    plane = state.plane
     atlas_to_working, geometry = linear_placement_matrix(
         working.size, um_work, ctx.atlas, float(section.position_mm), plane,
         section.pitch_deg, section.yaw_deg, six)

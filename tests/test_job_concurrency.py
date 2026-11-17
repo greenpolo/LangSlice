@@ -99,7 +99,7 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
 
 
 def _needs_engine() -> None:
-    from langslice.tools.deformable import engine_ready
+    from langslice.tools.fitting.deformable import engine_ready
 
     if not engine_ready():
         pytest.skip("fireants_syn needs FireANTs")
@@ -115,9 +115,8 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
         fitted = fitter.fireants_syn(sections=[ID0], view=False)
     assert fitted["results"][0]["written"] is True
     held = saved(images)
-    assert held[ID2]["position_mm"] == 0.2          # the agent's write
-    assert held[ID0]["deformation"]["key"]          # the fit's
-    # The agent's next call sees the fit.
+    assert held[ID2]["position_mm"] == 0.2
+    assert held[ID0]["deformation"]["key"]
     agent.status()
     assert deformation_to_json(
         agent.state.resolve(ID0).deformation)["key"] == held[ID0]["deformation"]["key"]
@@ -202,15 +201,14 @@ def test_a_read_never_waits_for_another_writer_and_sees_what_it_saved(capsys, im
         code, envelope = cli(capsys, str(images), "status")
         assert code == 0, envelope
         rows = {row["id"]: row for row in envelope["result"]["rows"]}
-        assert rows[ID2]["position_mm"] == 0.2      # what the holder saved
+        assert rows[ID2]["position_mm"] == 0.2
         with langslice.open_job(images) as reader:
             assert reader.look(mode="section", sections=[ID0])["status"] == "ok"
-        assert time.monotonic() - started < 60      # not the lock's 300 s
+        assert time.monotonic() - started < 60
     finally:
         release.set()
         thread.join()
         holder.close()
-    # The history came through whole: undo takes the holder's write back.
     with langslice.open_job(images) as later:
         assert later.undo()["status"] == "ok"
     assert saved(images)[ID2].get("position_mm") is None
@@ -239,12 +237,11 @@ def test_a_job_that_read_while_locked_out_writes_on_the_state_as_saved(images):
         depth = len(reader.job.undo_stack)
         reader.status()
         assert reader.state.resolve(ID2).position_mm == 0.2
-        assert len(reader.job.undo_stack) == depth   # a read wrote no step
+        assert len(reader.job.undo_stack) == depth
     finally:
         release.set()
         thread.join()
     reader.note(text="after the read")
-    # One step for the writer's write (read back with its history), one for the note.
     assert len(reader.job.undo_stack) == depth + 2
     reader.undo()
     reader.undo()
@@ -283,9 +280,6 @@ def test_a_write_landing_while_a_job_loads_is_kept(images, monkeypatch):
 
 @pytest.mark.slow
 def test_processes_writing_at_once_all_land(images):
-    # Each commit waits 0.4 s inside its write: without the lock, writers
-    # that read the state before another's commit would overwrite it.
-    # This checkout's src first: the venv's editable install may be another's.
     env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(REPO / "src"), str(REPO))),
            "LANGSLICE_TEST_COMMIT_DELAY": "0.4"}
 
@@ -321,7 +315,7 @@ def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch:
     from PIL import Image
 
     from langslice.job import pictures as views
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
     layout.ensure()
@@ -347,7 +341,6 @@ def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch:
         encoding="utf-8").splitlines()]
     assert sorted(entry["seq"] for entry in entries) == sorted(seqs)
     assert len({entry["path"] for entry in entries}) == 4
-    # A reopened store continues after every number handed out.
     third = views.ViewStore(layout)
     assert int(third.save(tool="note", pictures=[(picture, None)])[0][:6]) == max(seqs) + 1
     third.flush()

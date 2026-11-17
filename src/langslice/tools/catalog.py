@@ -45,29 +45,18 @@ from langslice.job.settings.tool_table import (
     positions_on,
     tools_for,
 )
-from langslice.tools import (
-    affine_fit,
-    atlas,
+from langslice.tools.bookkeeping import exports, history, notes, submit
+from langslice.tools.changing import (
     damage,
-    deformable,
-    exports,
-    files,
-    history,
     images,
-    landmark_warp,
-    landmarks,
-    look,
     masks,
-    notes,
     positions,
     registrations,
-    review,
-    status,
-    submit,
-    traces,
     transforms,
-    zoom,
 )
+from langslice.tools.fitting import affine_fit, deformable, traces
+from langslice.tools.landmarking import landmark_warp, landmarks
+from langslice.tools.looking import atlas, files, look, review, status, zoom
 
 __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on", "verbs_for"]
 

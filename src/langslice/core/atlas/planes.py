@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import math
 import threading
-from typing import cast
 
 import numpy as np
 from PIL import Image
@@ -25,7 +24,6 @@ from langslice.core.geometry.affine import resize_long_edge
 from langslice.core.geometry.pixel_frames import cropped_geometry
 from langslice.core.pictures.sizes import opening_edge
 from langslice.core.sections.reading import mask_box
-from langslice.core.space import Plane
 from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack, plane_angles
 from langslice.core.workspace import Workspace
@@ -44,7 +42,7 @@ def atlas_mask(
 ) -> np.ndarray:
     """Binary tissue silhouette of the atlas section, at the plane's angles."""
     pitch, yaw = plane_angles(state, angles)
-    return get_root_mask(ctx.atlas, position_mm, size, plane=cast(Plane, state.plane),
+    return get_root_mask(ctx.atlas, position_mm, size, plane=state.plane,
                          pitch_deg=pitch, yaw_deg=yaw)
 
 
@@ -76,7 +74,7 @@ def atlas_section(
     image = get_reference_slice(
         ctx.atlas,
         position_mm,
-        plane=cast(Plane, state.plane),
+        plane=state.plane,
         pitch_deg=pitch,
         yaw_deg=yaw,
     )

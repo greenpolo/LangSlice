@@ -1,7 +1,7 @@
 """Every registration a section holds is numbered, and sections go back to one.
 
 A section's registration is its orientation, transform and deformation
-(``langslice.job.history``). Each write that leaves a new one numbers it
+(``langslice.job.steps.history``). Each write that leaves a new one numbers it
 with the next number (replies and status rows name it); the list names each
 one's transform, deformation method and settings and the pictures its write
 saved; ``look`` draws an earlier one without writing it; ``restore_registration``
@@ -77,7 +77,7 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 
 
 def _needs_engine() -> None:
-    from langslice.tools.deformable import engine_ready
+    from langslice.tools.fitting.deformable import engine_ready
 
     if not engine_ready():
         pytest.skip("fireants_syn needs FireANTs")
@@ -90,13 +90,10 @@ def rows(job: Any) -> dict[str, dict[str, Any]]:
 def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     _needs_engine()
     job = langslice.open_job(images)
-    # The hand transforms of the fixture are each section's registration 1.
     assert rows(job)[ID0]["registration"] == 1 and rows(job)[ID1]["registration"] == 1
-    # The reply's row names the registration the write left.
     first = job.fireants_syn(sections=[ID0], view=False)
     assert first["changed"][0]["registration"] == 2 and "registration" not in first
     fitted = deformation_to_json(job.state.resolve(ID0).deformation)["key"]
-    # Another section's write comes between, then another fit replaces the first.
     turned = job.interactive_transform(sections=[{"id": ID1, **IDENTITY, "rotation_deg": 3.0}],
                                        view=False)
     assert turned["changed"][0]["registration"] == 2
@@ -117,7 +114,7 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     assert second["transform"]["kind"] == "interactive"
     assert second["transform"]["scale_x"] == pytest.approx(1.0)
     assert third["held"] is True
-    assert "pictures" not in second  # its write drew none (view false)
+    assert "pictures" not in second
 
     depth = len(job.job.undo_stack)
     restored = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
@@ -130,12 +127,10 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
         job.state.resolve(ID1).transform)["physical"]["rotation_deg"] == pytest.approx(3.0)
     assert len(job.job.undo_stack) == depth + 1
     assert rows(job)[ID0]["registration"] == 2
-    # The same one again writes nothing; undo takes the restore back.
     again = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
     assert again["results"][0]["written"] is False
     job.undo()
     assert rows(job)[ID0]["registration"] == 3
-    # The section's history on disk holds every line, each with its number.
     text = (images / "langslice" / "sections" / Path(ID0).stem / HISTORY).read_text(
         encoding="utf-8")
     lines = [json.loads(line) for line in text.splitlines()]
@@ -193,7 +188,7 @@ def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, image
                                                                  monkeypatch):
     """Not a refusal but an error on the second section: the first section put
     back is put back again as it was, in memory too, and nothing is written."""
-    from langslice.tools import registrations as ops_registrations
+    from langslice.tools.changing import registrations as ops_registrations
 
     job = langslice.open_job(images)
     job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1},
@@ -223,7 +218,7 @@ def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, image
 def test_look_draws_an_earlier_registration_and_writes_nothing(capsys, images):
     job = langslice.open_job(images)
     turned = job.interactive_transform(
-        sections=[{"id": ID0, **IDENTITY, "rotation_deg": 20.0}])          # registration 2
+        sections=[{"id": ID0, **IDENTITY, "rotation_deg": 20.0}])
     drawn = turned["pictures"][0]["id"]
     depth = len(job.job.undo_stack)
     state = json.dumps(stack_to_json(job.job.state), sort_keys=True, default=str)
@@ -235,13 +230,10 @@ def test_look_draws_an_earlier_registration_and_writes_nothing(capsys, images):
     assert json.dumps(stack_to_json(job.job.state), sort_keys=True, default=str) == state
     held = job.look(mode="overlay", sections=[ID0], registrations={ID0: 2})
     assert "registration 2 (held)" in held["pictures"][0]["caption"]
-    # The picture index records which registration each picture shows, and the
-    # list names the pictures the write that left a registration saved.
     record = job.job.views.lookup(looked["pictures"][0]["id"])
     assert record is not None and record.registrations == {ID0: 1}
     listed = job.restore_registration(section=ID0)["registrations"]
     assert listed[1]["pictures"] == [drawn] and "pictures" not in listed[0]
-    # A zoom of it draws registration 1 again and is not stale for it.
     zoomed = job.zoom(box=[10, 10, 200, 200], picture=looked["pictures"][0]["id"])
     assert "stale" not in zoomed
     refused = job.look(mode="overlay", registrations={ID0: 9})
@@ -256,9 +248,9 @@ def test_look_draws_an_earlier_registration_and_writes_nothing(capsys, images):
 def test_a_frozen_property_and_a_deformation_fitted_elsewhere_are_refused(capsys, images):
     _needs_engine()
     job = langslice.open_job(images)
-    job.fireants_syn(sections=[ID0], view=False)                      # registration 2
+    job.fireants_syn(sections=[ID0], view=False)
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.12}], view=False)
-    assert job.state.resolve(ID0).deformation is None                # made stale
+    assert job.state.resolve(ID0).deformation is None
     elsewhere = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
     assert elsewhere["error"] == "REGISTRATION_ELSEWHERE"
     assert "0.1 mm" in elsewhere["message"] and "0.12 mm" in elsewhere["message"]

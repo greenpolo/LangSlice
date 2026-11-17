@@ -17,8 +17,8 @@ from langslice.core import shared_files
 from langslice.core.fits.deformable import gpu_queue
 from langslice.core.hardware import GPU_SLOTS_VARIABLE
 from langslice.doors.agent_cli import background
-from langslice.job import index, lock, recent
-from langslice.job.layout import JobLayout
+from langslice.job.folder import index, lock, recent
+from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
 
@@ -118,7 +118,7 @@ def test_only_an_unwritable_folder_leaves_the_lock_off(tmp_path, monkeypatch):
     monkeypatch.setattr(folder_lock, "_file_lock", lambda: refused)
     with folder_lock.held():
         pass
-    assert not folder_lock._unusable  # the folder is writable: tried again
+    assert not folder_lock._unusable
 
     monkeypatch.setattr(lock, "writable", lambda folder, image_folder: False)
     with folder_lock.held():
@@ -157,7 +157,7 @@ def test_gpu_fits_run_at_once_up_to_the_slots(tmp_path, monkeypatch):
     def fit() -> None:
         with gpu_queue.gpu_turn("cuda") as turn:
             waited.append(turn.waited_s)
-            inside.wait()  # all three hold a slot at once
+            inside.wait()
 
     fits = [threading.Thread(target=fit) for _ in range(3)]
     for one in fits:
@@ -167,12 +167,11 @@ def test_gpu_fits_run_at_once_up_to_the_slots(tmp_path, monkeypatch):
     assert len(waited) == 3 and max(waited) < 0.3
 
 
-#: A background run's process: it says it runs, then waits to be cancelled.
 _RUN = """
 import sys, time
 from pathlib import Path
 from langslice.doors.agent_cli import background
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 folder = Path(sys.argv[1])
 background.begin(JobLayout(folder), sys.argv[2])
 try:

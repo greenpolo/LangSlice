@@ -5,7 +5,7 @@ import numpy as np
 
 from langslice.core.geometry.triangulation import visualign_mesh
 from langslice.core.maps.section_maps import MARKER_MARGIN_PX, marker_grid
-from langslice.job.quint import (
+from langslice.job.exports.quint import (
     AnchoringVector,
     anchoring_from_pixel_map,
     job_export,
@@ -25,8 +25,6 @@ def test_finer_and_coarser_allen_atlases_export_to_the_25um_target() -> None:
                 "resolution_um": [res] * 3}
 
     def pixel_map(res: float) -> np.ndarray:
-        # A physical (CCF, voxel-edge) placement, in each atlas's own
-        # BrainGlobe micrometres (voxel i's centre at i * res: CCF - res / 2).
         physical = np.array([[0.0, 0.0, 6000.0], [20.0, 0.0, 2000.0], [0.0, 20.0, 1500.0]])
         physical[:, 2] -= res / 2.0
         return physical
@@ -41,9 +39,6 @@ def test_finer_and_coarser_allen_atlases_export_to_the_25um_target() -> None:
                                    reference["slices"][0]["anchoring"], atol=1e-4)
 
 
-# --- shear: the perpendicular anchoring and the markers that carry it ---------------
-
-#: A sheared anchoring (QuickNII voxels): u and v about 80 degrees apart.
 SHEARED = [100.0, 300.0, 200.0, 250.0, -20.0, 10.0, 50.0, 5.0, -300.0]
 SIZE = (400, 300)
 ALLEN = {"name": "allen_mouse_25um", "orientation": "asr", "shape": [528, 320, 456],
@@ -100,14 +95,12 @@ def test_the_perpendicular_anchoring_is_the_nearest_in_the_same_plane():
     old = np.asarray(SHEARED)
     u, v = values[3:6], values[6:9]
     assert abs(u @ v) < 1e-6 * (u @ u)
-    # the same plane and the same image centre
     normal = np.cross(old[3:6], old[6:9])
     for axis in (u, v):
         assert abs(axis @ normal) < 1e-6 * np.linalg.norm(axis) * np.linalg.norm(normal)
     np.testing.assert_allclose(values[:3] + (u + v) / 2, old[:3] + (old[3:6] + old[6:9]) / 2,
                                atol=1e-5)
 
-    # nearer the sheared axes than any other perpendicular pair in the plane
     def miss(new_u: np.ndarray, new_v: np.ndarray) -> float:
         return float(np.sum((new_u - old[3:6]) ** 2) + np.sum((new_v - old[6:9]) ** 2))
 
@@ -117,9 +110,7 @@ def test_the_perpendicular_anchoring_is_the_nearest_in_the_same_plane():
     for angle in np.linspace(-0.5, 0.5, 2001):
         r1 = np.cos(angle) * e1 + np.sin(angle) * e2
         r2 = np.cos(angle) * e2 - np.sin(angle) * e1
-        # (the written numbers are rounded to 1e-6 voxels)
         assert best <= miss((r1 @ old[3:6]) * r1, (r2 @ old[6:9]) * r2) + 1e-4
-    # QuickNII and VisuAlign read it as written
     np.testing.assert_allclose(orthonormalize(values), values, atol=1e-4)
 
 
@@ -143,7 +134,6 @@ def test_visualign_json_reproduces_a_sheared_linear_placement():
     x, y = x.ravel(), y.ravel()
     truth = place(exact, x, y)
     assert np.abs(visualign_map(visualign, x, y) - truth).max() < 1e-3
-    # quicknii.json alone misses by the shear it drops
     assert np.abs(visualign_map(quicknii, x, y) - truth).max() > 1.0
 
 
@@ -190,6 +180,5 @@ def test_the_marker_grid_surrounds_the_image_off_the_pixel_lattice():
     again = marker_grid((2048, 1389))
     np.testing.assert_array_equal(x, again[0])
     np.testing.assert_array_equal(y, again[1])
-    # a small image: steps no shorter than the minimum, still around the image
     small_x, small_y = marker_grid((100, 60))
     assert len(small_x) <= 16 and small_x.max() == 101.0 and small_y.max() == 61.0

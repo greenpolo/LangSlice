@@ -56,8 +56,6 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     return folder
 
 
-# --- the spec and the flags ------------------------------------------------------------
-
 
 def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     prompt_file = tmp_path / "prompt.txt"
@@ -68,7 +66,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
         "--nonlinear-image-prompt", str(prompt_file), "--position-notes", "Olfactory bulb first",
         "--transform-notes", "Ventral side down", "--nonlinear-notes", "Ignore the tear"])
     spec = spec_from_args(args, str(tmp_path))
-    assert spec.nonlinear.image_prompt == JOB_PROMPT  # stripped
+    assert spec.nonlinear.image_prompt == JOB_PROMPT
     assert (spec.position.notes, spec.transform.notes, spec.nonlinear.notes) == (
         "Olfactory bulb first", "Ventral side down", "Ignore the tear")
     assert JobSpec.from_dict(spec.to_dict()).nonlinear.image_prompt == JOB_PROMPT
@@ -76,7 +74,7 @@ def test_the_flags_set_the_task_notes_and_the_image_prompt(tmp_path):
     plain = spec_from_args(build_parser().parse_args(["linear", "run", str(tmp_path)]),
                            str(tmp_path))
     assert plain.nonlinear.image_prompt is None
-    assert "image_prompt" not in plain.to_dict()["nonlinear"]  # saved specs unchanged
+    assert "image_prompt" not in plain.to_dict()["nonlinear"]
 
     missing = build_parser().parse_args(
         ["linear", "run", str(tmp_path), "--nonlinear-image-prompt", str(tmp_path / "none.txt")])
@@ -92,8 +90,6 @@ def test_a_bad_image_prompt_is_refused(settings, message):
     with pytest.raises(ValueError, match=message):
         NonlinearSpec(**settings)
 
-
-# --- the prompt sent ---------------------------------------------------------------------
 
 
 def test_the_jobs_prompt_is_the_base_the_model_is_sent_and_the_agent_is_shown(images):
@@ -126,8 +122,6 @@ def test_a_profile_with_its_own_prompt_and_a_job_prompt_is_refused(images):
                              image_model=profile, nonlinear={"image_prompt": JOB_PROMPT})
 
 
-# --- the exported reply ------------------------------------------------------------------
-
 
 def _borders(labels: np.ndarray) -> np.ndarray:
     out = np.zeros(labels.shape, bool)
@@ -136,7 +130,6 @@ def _borders(labels: np.ndarray) -> np.ndarray:
     return out
 
 
-#: The grey section: no tissue the yellow-line extraction could take for a line.
 SECTION = ID0
 
 
@@ -156,7 +149,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         path = folder / "exports" / "traces" / "s0.npz"
         assert any(item["path"] == str(path) and item["kind"] == "trace_reply"
                    for item in reply["files"])
-        assert not (folder / "exports" / "traces" / "s1.npz").exists()  # not traced
+        assert not (folder / "exports" / "traces" / "s1.npz").exists()
 
         grid = json.loads((folder / "sections" / "s0" / "maps.json").read_text(
             encoding="utf-8"))["grid_size"]
@@ -167,9 +160,6 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         assert picture.dtype == np.uint8 and picture.shape == (grid[1], grid[0], 3)
         assert info["grid_size"] == grid and info["section"] == SECTION
         assert info["placement_current"] is True and info["untested"] is True
-        # The stub answers with the placed borders: in the file's frame they
-        # lie on the borders of the section's label map at the traced
-        # placement, so the deformation fitted to them is undone first.
         job.undo()
         assert job.state.by_id(SECTION).deformation is None
         job.export_maps(sections=[SECTION])
@@ -178,8 +168,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         assert borders.sum() > 50
         assert np.percentile(distance[borders], 90) <= 1.5
 
-        # A section with no completed trace now loses the reply an earlier export left.
-        while job.state.by_id(SECTION).border_trace is not None:  # its fit, then the trace
+        while job.state.by_id(SECTION).border_trace is not None:
             job.undo()
         again = job.export_maps(sections=[SECTION])
         assert again.get("status") != "error", again

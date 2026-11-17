@@ -38,7 +38,6 @@ from langslice.providers.connections import resolve_image_model
 from tests.deformable_synthetic import SyntheticAtlas
 
 POSITION_MM = 0.1
-#: About the canvas's own size, so a canvas pixel is about a section pixel.
 RENDER_SIZE = (1260, 1080)
 
 
@@ -69,7 +68,7 @@ def _midline_on_canvas(atlas: SyntheticAtlas, placement: np.ndarray) -> np.ndarr
     ml = context.ml_axis_index
     split = round(context.shape[ml] / 2) - 0.5
     points = []
-    for row in (10.0, 110.0):  # row 10 is dorsal on the synthetic plane
+    for row in (10.0, 110.0):
         col = (split - index[ml, 2] - index[ml, 0] * row) / index[ml, 1]
         points.append(placement @ np.array([col, row, 1.0]))
     return np.array(points)[:, :2]
@@ -87,13 +86,9 @@ def test_the_canvas_midline_is_vertical_centred_and_dorsal_up(turn_deg, mirror):
     centre_x = (canvas.width - 1) / 2.0
     assert top_x == pytest.approx(centre_x, abs=1e-6)
     assert bottom_x == pytest.approx(centre_x, abs=1e-6)
-    assert top_y < bottom_y  # dorsal up
-    # The section's own turn undone; a mirror kept (a turn never changes handedness).
+    assert top_y < bottom_y
     assert stance.turn_deg == pytest.approx(-turn_deg, abs=1e-6)
     assert np.sign(np.linalg.det(placement[:2, :2])) == (-1.0 if mirror else 1.0)
-    # The provider's frame (the fixed Codex-lane budget), cropped to the placed
-    # atlas plus 15% of its box's larger side on every side, symmetric about the
-    # midline: the footprint box with that margin fits, and fills the frame.
     assert canvas.width * canvas.height == pytest.approx(1024 * 1536, rel=2e-3)
     outline = tool.footprint(np.asarray(annotation_slice(atlas, POSITION_MM, plane="coronal")),
                              placement)
@@ -103,7 +98,6 @@ def test_the_canvas_midline_is_vertical_centred_and_dorsal_up(turn_deg, mirror):
     assert y0 - margin >= -1e-6 and y1 + margin <= canvas.height + 1e-6
     half = max(canvas.width / 2 - (x0 - margin), x1 + margin - canvas.width / 2)
     assert max(2 * half / canvas.width, (y1 - y0 + 2 * margin) / canvas.height) > 0.99
-    # The padding is the slide's background colour.
     assert canvas.getpixel((0, 0)) == (60, 60, 60)
 
 
@@ -113,7 +107,7 @@ def test_a_sagittal_canvas_points_the_dorsal_direction_up():
     stance = upright(atlas, "sagittal", 0.1, 0.0, 0.0, atlas_to_slice)
     assert stance.through is None
     index = plane_index_affine(atlas, 0.1, "sagittal")
-    dv = atlas_space_context(atlas).dv_axis_index  # index 0 is superior ("asr")
+    dv = atlas_space_context(atlas).dv_axis_index
     dorsal_native = -np.array([index[dv, 1], index[dv, 0]])
     on_canvas = stance.rotation() @ atlas_to_slice[:2, :2] @ dorsal_native
     assert on_canvas[0] == pytest.approx(0.0, abs=1e-9) and on_canvas[1] < 0
@@ -139,7 +133,7 @@ def test_lines_drawn_on_the_turned_canvas_read_back_onto_the_section_borders(
     state = Stack(atlas=atlas.atlas_name, slices=[record])
     ctx = SimpleNamespace(atlas=atlas)
 
-    def hand_back(request):  # the GPT twin: Image 2 is the placed borders
+    def hand_back(request):
         return SimpleNamespace(image=request.reference_images[0], route="test")
 
     model = ImageModel("openai-oauth", resolve_image_model("openai-oauth").model, hand_back)
@@ -157,8 +151,6 @@ def test_lines_drawn_on_the_turned_canvas_read_back_onto_the_section_borders(
     shown = tool.shown_labels(atlas, labels, prepared)
     truth = placed_border_coverage(shown, atlas_to_slice, render.size, width_px=1.0) > 0.25
     distance = cv2.distanceTransform((~truth).astype(np.uint8), cv2.DIST_L2, 5)
-    # Every read-back line pixel is on the placed borders (a band about two
-    # section pixels wide), and every border pixel is within a pixel or so of a line.
     assert distance[lines].max() <= 1.0
     missed = cv2.distanceTransform((~lines).astype(np.uint8), cv2.DIST_L2, 5)[truth]
     assert np.percentile(missed, 99) <= 1.5 and missed.max() <= 2.5

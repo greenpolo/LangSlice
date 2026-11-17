@@ -28,7 +28,7 @@ def _atlas() -> SlabAtlas:
     atlas = SlabAtlas()
     ann = np.zeros((20, 12, 16), dtype=np.int32)
     ann[:, 2:10, 2:14] = 1
-    ann[:10, 3:6, 3:6] = 4  # CA1 only in the anterior half
+    ann[:10, 3:6, 3:6] = 4
     ann[:, 6:9, 6:9] = 6
     atlas.annotation = ann
     atlas.structures = {  # type: ignore[attr-defined]
@@ -71,11 +71,11 @@ def test_lookup_by_acronym_name_and_id_with_ancestry(tmp_path: Path):
 def test_presence_flag_follows_the_section_placement(tmp_path: Path):
     state, grep = _grep(tmp_path)
     record = state.slices[0]
-    record.position_mm = 2.0  # anterior: CA1 present
+    record.position_mm = 2.0
     rows = {r["acronym"]: r["in_section"] for r in grep("a", record.id)["rows"]}
-    assert rows["HPF"] and rows["CTX"] and rows["TH"]  # HPF and CTX via descendant CA1
+    assert rows["HPF"] and rows["CTX"] and rows["TH"]
     assert "in_section" not in grep("a")["rows"][0]
-    record.position_mm = 15.0  # posterior: no CA1
+    record.position_mm = 15.0
     rows = {r["acronym"]: r["in_section"] for r in grep("a", record.id)["rows"]}
     assert not rows["HPF"] and not rows["CTX"] and rows["TH"]
     assert grep("o", "missing.png")["error"] == "UNKNOWN_SLICE_IDS"

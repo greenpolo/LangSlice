@@ -25,6 +25,7 @@ from langslice.doors.plugins.proposals import (
     TransformProposal,
 )
 from langslice.doors.plugins.reads import as_tool_error
+from langslice.tools.changing import warps
 
 
 class ContextFits(ContextProposals):
@@ -222,7 +223,7 @@ class ContextFits(ContextProposals):
         marked damage regions in the fit."""
         from langslice.core.atlas.images import resolve_image
         from langslice.core.fits.deformable.render import composed_native_grid
-        from langslice.tools import deformable, fit_regions, warps
+        from langslice.tools.fitting import deformable, fit_regions
 
         record = self._record(section)
         workspace = self._run.workspace
@@ -282,7 +283,7 @@ class ContextFits(ContextProposals):
         :meth:`fit_fireants`; an array is refused ``BAD_ARGS``), *edges*;
         *exclude* adds regions to leave out; *marked* False keeps the section's
         marked damage regions in the fit."""
-        from langslice.tools.affine_fit import elastix_fit
+        from langslice.tools.fitting.affine_fit import elastix_fit
 
         record = self._record(section)
         label = _mask_name(mask)

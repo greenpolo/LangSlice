@@ -26,8 +26,6 @@ def _score(source: str) -> int:
     return cognitive_complexity(function, is_method=is_method)
 
 
-# Each case's score agrees with complexipy 8.3, except those marked
-# "paper", where complexipy departs from the SonarSource definition.
 CASES = [
     ("def f(a):\n    return a\n", 0),
     ("def f(a):\n    if a:\n        return 1\n", 1),
@@ -97,23 +95,18 @@ CASES = [
         "        else:\n            pass\n",
         8,
     ),
-    # paper: a nested function's body sits one level deeper
     (
         "def f(a):\n    def inner(b):\n        if b:\n            return 1\n"
         "    return inner(a)\n",
         2,
     ),
-    # paper: complexipy skips a conditional in a keyword argument
     ("def f(a):\n    return g(k=1 if a else 2)\n", 1),
-    # paper: complexipy skips the operand of `not`
     ("def f(a):\n    if not g([x for x in a]):\n        return 1\n", 2),
-    # paper: a method calling itself through self is recursion
     (
         "class C:\n    def m(self, a):\n        if a:\n"
         "            return self.m(a)\n",
         2,
     ),
-    # a method calling a module function of the same name is not
     ("class C:\n    def m(self, a):\n        return m(a)\n", 0),
 ]
 
@@ -209,8 +202,6 @@ def test_nesting_depth_keeps_elif_chains_flat() -> None:
 
 
 def test_nesting_depth_measures_a_nested_function_alone() -> None:
-    # the game: move the inner loop into a nested def; the nested
-    # definition check catches that, and depth starts again inside it
     source = """
     def outer(a):
         for x in a:

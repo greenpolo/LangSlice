@@ -106,41 +106,24 @@ pytestmark = pytest.mark.golden
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "tests" / "golden"
-#: The sections and goldens are kept out of the repository (the sections
-#: are unpublished data): ``tests/golden/data/`` (git-ignored), or the
-#: folder this variable names.
 DATA_ENV = "LANGSLICE_GOLDEN_DATA"
 DATA = Path(os.environ.get(DATA_ENV) or GOLDEN / "data")
 SECTIONS = DATA / "sections"
 EXPECTED = DATA / "expected"
 ACTUAL = DATA / "actual"
 UPDATE_ENV = "LANGSLICE_UPDATE_GOLDEN"
-#: Set with ``UPDATE_ENV`` to regenerate on a branch other than ``main``.
 FORCE_ENV = "LANGSLICE_GOLDEN_FORCE"
-#: The branch whose goldens every branch is compared with.
 MAIN_BRANCH = "main"
-#: The doors, each with its scenario ``tests/golden/<door>_door.py``.
 DOORS = ("library", "cli", "mcp")
-#: The caller's environment names a child keeps: what finds programs and
-#: decodes text. Every other name (the user's LangSlice settings, model
-#: keys, display) stays behind.
 KEPT_ENV = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME",
-            # Windows: what the system itself needs (platform.machine() reads
-            # PROCESSOR_ARCHITECTURE)
             "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PROCESSOR_ARCHITECTURE",
             "NUMBER_OF_PROCESSORS")
-#: Model keys set empty: python-dotenv reads a ``.env`` above the checkout
-#: into a child and never replaces a name that is set.
 EMPTY_ENV = (
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "OPENAI_API_KEY",
 )
-#: A child has no GPU, so FireANTs runs its deterministic CPU path; no
-#: atlas cache, recent-jobs list or user settings; BrainGlobe asks no
-#: server for a newer atlas; the agent CLI runs a long verb in the calling
-#: process, so no process outlives the scenario.
 CHILD_ENV = {
     "CUDA_VISIBLE_DEVICES": "",
     "LANGSLICE_ATLAS_CACHE": "off",
@@ -150,46 +133,28 @@ CHILD_ENV = {
     "LANGSLICE_SETTINGS": "off",
     "PYTHONPATH": str(ROOT / "src"),
 }
-#: A fixed mtime for the copied sections (2026-01-01 UTC).
 FIXED_MTIME = 1767225600
-#: Job folder parts that are not outputs: undo steps, locks and counters.
 SKIPPED_PARTS = frozenset({"history"})
 SKIPPED_SUFFIXES = frozenset({".lock", ".seq"})
-#: Folder names whose zarr store is read as arrays, not as files.
 ZARR_SUFFIX = ".zarr"
-#: Tokens for what changes between runs of identical code.
 ROOT_TOKEN = "<ROOT>"
 TIME_TOKEN = "<time>"
 SECONDS_TOKEN = "<seconds>"
 ID_TOKEN = "<id>"
-#: ISO times (2026-10-29T01:17:00.81+00:00) and local times (2026-10-28
-#: 21:17:01), as the job files write them.
 TIME_PATTERN = re.compile(
     r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?"
 )
-#: Keys whose numbers are wall-clock durations.
 SECONDS_KEYS = frozenset(
     {"runtime_s", "elapsed_s", "seconds", "wall_s", "gpu_wait_s"}
 )
-#: Keys whose values are random per run: each tool call's id in the event
-#: log.
 ID_KEYS = frozenset({"execution_id"})
-#: The ``source`` fields that name the checkout's commit, not the code's
-#: outputs.
 SOURCE_KEY = "source"
 SOURCE_FIELDS = frozenset({"commit", "uncommitted_changes"})
 SOURCE_TOKEN = "<source>"
-#: Tiles per side of the grid a picture's digest is cut into.
 TILES = 8
-#: Changed keys listed per file or call before the rest are counted.
 MAX_LINES = 25
-#: Lines of the diff the failure prints; the whole diff is written to
-#: ``actual/<door>/diff.txt``.
 MAX_PRINTED = 150
-#: Characters of a changed text shown before and after its first
-#: difference.
 CONTEXT = 50
-#: Tools whose pictures are kept whole: the writes.
 KEPT_TOOLS = (
     "position_sections",
     "interactive_transform",
@@ -202,8 +167,6 @@ KEPT_TOOLS = (
     "landmark_triangulation",
 )
 
-
-# --- the run ---------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -236,7 +199,6 @@ def child_environment(root: Path) -> dict[str, str]:
     environment.update(CHILD_ENV)
     environment.update(
         HOME=str(home),
-        # Windows finds the home folder and its app data here, not in HOME / XDG
         USERPROFILE=str(home),
         APPDATA=str(home / "AppData" / "Roaming"),
         LOCALAPPDATA=str(home / "AppData" / "Local"),
@@ -247,7 +209,7 @@ def child_environment(root: Path) -> dict[str, str]:
         XDG_RUNTIME_DIR=str(runtime),
         BRAINGLOBE_CONFIG_DIR=str(brainglobe_config),
         TMPDIR=str(root / "tmp"),
-        TEMP=str(root / "tmp"),  # Windows reads TEMP / TMP, not TMPDIR
+        TEMP=str(root / "tmp"),
         TMP=str(root / "tmp"),
     )
     return environment
@@ -285,16 +247,12 @@ def run_door(door: str, root: Path) -> Run:
     return Run(root=root, job=images / "langslice", calls=calls)
 
 
-# --- normalising -------------------------------------------------------------
-
 
 class Normaliser:
     """Replace a run's paths, clock times, durations and ids with tokens."""
 
     def __init__(self, root: Path) -> None:
         spellings = {str(root), os.path.realpath(root)}
-        # a path inside JSON text has its backslashes escaped (Windows), and a
-        # path may be written with forward slashes
         spellings |= {json.dumps(s)[1:-1] for s in spellings}
         spellings |= {s.replace("\\", "/") for s in spellings}
         self.roots = sorted(spellings, key=len, reverse=True)
@@ -327,8 +285,6 @@ class Normaliser:
             return self.text(value)
         return value
 
-
-# --- reading the job folder ---------------------------------------------
 
 
 def array_entry(array: np.ndarray) -> dict[str, object]:
@@ -445,7 +401,6 @@ class Outputs:
 
     calls: object
     files: dict[str, object]
-    #: Every ``view.jpg`` by its flat name (``000012_elastix_affine...``).
     pictures: dict[str, Path]
 
 
@@ -472,8 +427,6 @@ def is_kept(picture: str) -> bool:
     tool = picture.split("_", 1)[1]
     return picture.startswith("000001_") or tool.startswith(KEPT_TOOLS)
 
-
-# --- writing and reading the goldens ------------------------------------
 
 
 def dump(value: object) -> str:
@@ -546,8 +499,6 @@ def check_update_allowed() -> None:
         "here on purpose."
     )
 
-
-# --- the readable diff -------------------------------------------------------
 
 
 def flatten(value: object, prefix: str = "") -> dict[str, object]:
@@ -701,8 +652,6 @@ def calls_diff(old: object, new: object) -> list[str]:
     return lines
 
 
-# --- the test ----------------------------------------------------------------
-
 
 def differences(outputs: Outputs, door: str) -> list[str]:
     """List what *outputs* change against the goldens; empty when nothing."""
@@ -710,7 +659,6 @@ def differences(outputs: Outputs, door: str) -> list[str]:
     expected_calls = (expected / "calls.json").read_text(encoding="utf-8")
     expected_files = (expected / "files.json").read_text(encoding="utf-8")
     actual_calls, actual_files = dump(outputs.calls), dump(outputs.files)
-    # compared as text: a NaN in a file never equals itself as a value
     if actual_calls == expected_calls and actual_files == expected_files:
         return []
 
@@ -757,8 +705,6 @@ def test_golden_outputs(door: str, tmp_path: Path) -> None:
     write_outputs(outputs, actual, every_picture=True)
     (actual / "diff.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     if updating:
-        # the goldens are not under version control: the failure carries
-        # the diff, so a regeneration is always reviewed
         write_outputs(outputs, expected, every_picture=False)
         (expected / "provenance.json").write_text(dump(provenance()),
             encoding="utf-8")

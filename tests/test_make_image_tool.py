@@ -57,7 +57,6 @@ def test_make_image_writes_a_file_per_section_and_shows_it(tmp_path: Path, atlas
     assert made["image"] == "reds" and made["sections"] == "every section"
     assert made["recipe"] == {"weights": {"red": 1.0}, "clahe_clip": 2.0, "clahe_tiles": 8}
     assert made["section_images"] == ["red", "green", "blue", "preprocessed", "reds"]
-    # One picture per section, drawn as look's section mode draws the image.
     assert len(made["pictures"]) == 2 and len(made[TOOL_MEDIA_PARTS_KEY]) == 2
     assert all("section image reds (weights red 1, CLAHE 2 on 8x8 tiles)" in picture["caption"]
                for picture in made["pictures"])
@@ -81,7 +80,7 @@ def test_remade_for_some_sections_and_deleted_and_undone(tmp_path: Path, atlas):
     again = tool("blues", sections=["s1"], weights={"blue": 1}, invert=True, view=False)
     assert again["sections"] == ["s1.png"]
     assert job.state.by_id("s1.png").images["blues"].file.endswith("blues.2.png")
-    assert (job.folder / first).is_file()  # files are never deleted
+    assert (job.folder / first).is_file()
     held = _tool(box, "status")()["section_images"]["blues"]
     assert held["varies"]["s1.png"]["invert"] is True and "invert" not in held
     gone = tool("blues", sections=["s0.png"], delete=True)
@@ -97,11 +96,11 @@ def test_remade_for_some_sections_and_deleted_and_undone(tmp_path: Path, atlas):
 def test_make_image_refuses_before_writing(tmp_path: Path, atlas):
     job, _ctx, box = _box(tmp_path, atlas)
     tool = _tool(box, "make_image")
-    assert tool("red", weights={"green": 1})["error"] == "BAD_ARGS"  # a raw channel's name
+    assert tool("red", weights={"green": 1})["error"] == "BAD_ARGS"
     assert tool("bad name!")["error"] == "BAD_ARGS"
     assert tool("none")["error"] == "BAD_ARGS"
     assert tool("x", weights={"nope": 1})["error"] == "UNKNOWN_IMAGE"
-    assert tool("x", weights={"x": 1})["error"] == "BAD_ARGS"  # an image from itself
+    assert tool("x", weights={"x": 1})["error"] == "BAD_ARGS"
     assert tool("x", clahe_clip=-1)["error"] == "BAD_ARGS"
     assert tool("x", sections=["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"
     assert tool("x", delete=True)["error"] == "UNKNOWN_IMAGE"
@@ -120,7 +119,6 @@ def test_preprocessed_remade_then_made_with_the_defaults_is_the_opening_again(
     assert record.images["preprocessed"].file.endswith("preprocessed.2.png")
     changed = np.asarray(render_slice(ctx, record, long_edge=160))
     assert not np.array_equal(changed, default)
-    # The look's default draws it, and the fits read it.
     looked = _tool(box, "look")("section", sections=["s0.png"])
     assert "section image preprocessed (weights green 1" in looked["pictures"][0]["caption"]
     _tool(box, "make_image")("preprocessed", view=False)
@@ -136,7 +134,7 @@ def test_look_draws_preprocessed_by_default_and_raw_channels_when_named(tmp_path
     plain = look("section", sections=["s0.png"])
     assert "section image preprocessed" in plain["pictures"][0]["caption"]
     pixels = np.asarray(plain[TOOL_MEDIA_PARTS_KEY][0])
-    assert (pixels[..., 0] == pixels[..., 1]).all()  # one image, in gray
+    assert (pixels[..., 0] == pixels[..., 1]).all()
     together = look("section", sections=["s0.png"], images=["red", "green", "blue"])
     assert "raw red + green + blue" in together["pictures"][0]["caption"]
     assert look("section", images=["red", "preprocessed"])["error"] == "MIXED_IMAGES"
@@ -170,8 +168,6 @@ def test_remaking_an_image_makes_the_section_stale_for_a_long_verb(tmp_path: Pat
     _tool(box, "make_image")("preprocessed", sections=["s0.png"], weights={"red": 1},
                              view=False)
     assert section_inputs(job.state, job.state.by_id("s0.png")) != before
-    other = job.state.by_id("s1.png")
-    assert section_inputs(job.state, other) == section_inputs(job.state, other)
 
 
 def test_a_scripts_image_from_the_raw_plane_is_not_mirrored_on_a_flipped_section(

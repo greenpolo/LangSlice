@@ -36,6 +36,7 @@ from langslice.core.fits.deformable.plane_images import (
 from langslice.core.fits.deformation import fit_grid
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.space import Plane
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import RecordStore
@@ -73,7 +74,7 @@ def normalized_entries(entries: Iterable[str | int]) -> list[str]:
 
 
 def checked_entries(
-    atlas: object, regions: Sequence[str | int], plane: str
+    atlas: object, regions: Sequence[str | int], plane: Plane
 ) -> list[str]:
     """Check region entries against the atlas and return them normalized.
 
@@ -231,7 +232,7 @@ def _hatched(image: Image.Image, mask: np.ndarray) -> Image.Image:
 
 def _native_marks(
     ws: Workspace, panel: PanelFrame, regions: Sequence[tuple[str, frozenset[int]]],
-    position_mm: float, plane: str, pitch_deg: float, yaw_deg: float,
+    position_mm: float, plane: Plane, pitch_deg: float, yaw_deg: float,
 ) -> np.ndarray:
     """The marked regions on the panel's native atlas plane, sides resolved
     through its placement exactly as ``canvas.physical_views`` resolves them

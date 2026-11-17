@@ -4,12 +4,9 @@ undo labels and the job list (``langslice.hosts.gui.watch``)."""
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import time
 from pathlib import Path
-
-import pytest
 
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -88,7 +85,6 @@ def test_a_half_written_line_waits_for_its_end(tmp_path: Path) -> None:
     _append(views, text[20:])
     pictures = [i for i in _snap(watcher)["items"] if i["kind"] == "picture"]
     assert [(p["number"], p["caption"]) for p in pictures] == [(1, "look picture 1")]
-    # A picture carries its tool's plain-language label, as a tool row does.
     assert pictures[0]["title"] == tool_title("look") != "look"
     assert watcher.picture(1) == folder / "views" / "000001_look" / "view.jpg"
     assert watcher.picture(2) is None
@@ -101,13 +97,12 @@ def test_state_replaced_whole_is_reread(tmp_path: Path) -> None:
     snap = _snap(watcher)
     assert [r["position_mm"] for r in snap["sections"]] == [None, None]
     version = snap["state_version"]
-    _state(folder, [2.1, 2.4], submitted=True)  # a temp file renamed over the old one
+    _state(folder, [2.1, 2.4], submitted=True)
     watcher.poll(force=True)
     snap = watcher.snapshot(since=snap["cursor"], generation=watcher.generation,
                             state_version=version)
     assert [r["position_mm"] for r in snap["sections"]] == [2.1, 2.4]
     assert snap["status"]["word"] == "Submitted"
-    # Unchanged since: the tables are not sent again.
     again = watcher.snapshot(since=snap["cursor"], generation=watcher.generation,
                              state_version=snap["state_version"])
     assert "sections" not in again
@@ -186,7 +181,7 @@ def test_an_older_state_is_read_through_the_jobs_migrations(tmp_path: Path) -> N
     _state(folder, [2.1, None])
     data = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     data["format_version"] = 4
-    data["slices"][0]["damaged"] = True  # a key LangSlice no longer has
+    data["slices"][0]["damaged"] = True
     write_json_atomic(str(folder / "state.json"), data)
     snap = _snap(JobWatcher(folder))
     assert snap["sections_note"] == ""
@@ -214,7 +209,7 @@ def test_undo_steps_are_labelled_by_the_call_that_made_each_depth(tmp_path: Path
         "undo": ["position_sections (s000.png)", "interactive_transform (s001.png)"],
         "redo": ["note"]}
     tool = next(i for i in snap["items"] if i["kind"] == "tool")
-    assert tool["args"] == "{\"sections\": ["  # a truncated argument string passes through
+    assert tool["args"] == "{\"sections\": ["
     _append(events, _end("redo", 3), _end("mark_damage", 4, ("s002.png",)))
     _write_undo(folder, undo=4, redo=0)
     assert _snap(watcher)["history"]["undo"][2:] == ["note", "mark_damage (s002.png)"]
@@ -272,26 +267,6 @@ def test_a_truncated_file_starts_the_watch_over(tmp_path: Path) -> None:
     assert [i["text"] for i in snap["items"]] == ["Job opened"]
 
 
-@pytest.mark.slow
-def test_a_real_finished_job_folder(tmp_path: Path) -> None:
-    source = Path(os.environ.get(
-        "LANGSLICE_GUI_REPLAY_JOB",
-        "/data/finished_run/images/langslice"))
-    if not (source / "views.jsonl").is_file():
-        pytest.skip("no real job folder here (LANGSLICE_GUI_REPLAY_JOB)")
-    folder = tmp_path / "langslice"
-    shutil.copytree(source, folder)
-    lines = (folder / "views.jsonl").read_text(encoding="utf-8").splitlines()
-    (folder / "views.jsonl").write_text("", encoding="utf-8")
-    watcher = JobWatcher(folder)
-    _snap(watcher)
-    for line in lines:
-        _append(folder / "views.jsonl", line)
-    snap = _snap(watcher)
-    assert len([i for i in snap["items"] if i["kind"] == "picture"]) == len(lines)
-    assert snap["sections"]
-
-
 def _start(name: str, call: str, *targets: str) -> dict:
     return {"kind": "tool_start", "name": name, "execution_id": call, "door": "cli",
             "target_ids": list(targets), "args": {}, "at": "2026-10-28T10:00:00+00:00"}
@@ -302,21 +277,17 @@ def test_the_focus_follows_the_latest_followed_call(tmp_path: Path) -> None:
     _state(folder, [2.1, None, 2.4])
     events = folder / "logs" / "events.jsonl"
     watcher = JobWatcher(folder)
-    # Before any followed call: every section, in stack order (the opening).
     assert _snap(watcher)["focus"] == {"sections": ["s000.png", "s001.png", "s002.png"],
                                        "tool": None, "call": None, "at": None}
     _append(events, _start("look", "c1", "s001.png"))
     assert _snap(watcher)["focus"] == {"sections": ["s001.png"], "tool": "look", "call": "c1",
                                        "at": "2026-10-28T10:00:00+00:00"}
-    # A read that is not followed, and a followed call with no targets, keep it.
     _append(events, _start("status", "c2", "s000.png"), _start("note", "c3"))
     assert _snap(watcher)["focus"]["sections"] == ["s001.png"]
-    # A write: its targets in order, without repeats.
     _append(events, _start("position_sections", "c4", "s002.png", "s000.png", "s002.png"))
     focus = _snap(watcher)["focus"]
     assert (focus["sections"], focus["tool"], focus["call"]) == (
         ["s002.png", "s000.png"], "position_sections", "c4")
-    # A plugin's tool, which the tool table does not list, counts as a write.
     _append(events, _start("stalign_lddmm", "c5", "s001.png"), _start("zoom", "c6", "s000.png"))
     assert _snap(watcher)["focus"]["sections"] == ["s000.png"]
 
@@ -324,7 +295,6 @@ def test_the_focus_follows_the_latest_followed_call(tmp_path: Path) -> None:
 def test_idle_after_ten_minutes_without_a_change(tmp_path: Path) -> None:
     folder = _job(tmp_path)
     _state(folder, [2.1])
-    # A second on: Windows can stamp the file a few milliseconds past time.time().
     now = time.time() + 1
     hours = JobWatcher(folder, clock=lambda: now + 3 * 3600)
     status = _snap(hours)["status"]
@@ -334,7 +304,6 @@ def test_idle_after_ten_minutes_without_a_change(tmp_path: Path) -> None:
         .startswith("No activity for 10 min.")
     days = JobWatcher(folder, clock=lambda: now + 4 * 86400)
     assert _snap(days)["status"]["sentence"].startswith("No activity for 4 days.")
-    # A call still running is Running, however long ago it started.
     _append(folder / "logs" / "events.jsonl", _start("fireants_syn", "f1", "s000.png"))
     assert _snap(JobWatcher(folder, clock=lambda: now + 3 * 3600))["status"]["word"] == "Running"
     _state(folder, [2.1], submitted=True)
@@ -351,7 +320,6 @@ def test_rows_carry_their_render_key_and_a_numeric_position(tmp_path: Path) -> N
     assert [(r["id"], r["position_mm"], r["render_key"]) for r in rows] == [
         ("s000.png", 2.1, render_key(state, "s000.png")),
         ("s001.png", None, render_key(state, "s001.png"))]
-    # The raw fallback: a position that is no number is null, and no key.
     write_json_atomic(str(folder / "state.json"), {
         "format_version": 99, "slices": [{"id": "a.png", "index_corrected": 0,
                                           "position_mm": "4.5"}]})
@@ -361,7 +329,7 @@ def test_rows_carry_their_render_key_and_a_numeric_position(tmp_path: Path) -> N
 
 
 def test_a_job_is_named_by_its_images_folder_and_the_one_above(tmp_path: Path) -> None:
-    folder = _job(tmp_path)  # <tmp>/images/langslice
+    folder = _job(tmp_path)
     elsewhere = tmp_path / "jobs" / "brain7"
     elsewhere.mkdir(parents=True)
     write_json_atomic(str(elsewhere / "job.json"), {

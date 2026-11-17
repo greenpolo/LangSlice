@@ -82,7 +82,6 @@ def test_predicate_must_return_bool() -> None:
     assert [violation.line for violation in hits] == [2]
 
 
-#: A pretend package with two classes named ``Job`` and one ``Workspace``.
 TYPES = {
     "src/langslice/job/job.py": "class Job:\n    pass\n",
     "src/langslice/job/__init__.py": "from langslice.job.job import Job\n",
@@ -90,7 +89,6 @@ TYPES = {
     "src/langslice/core/deformation.py": "class Job:\n    pass\n",
 }
 
-#: The table naming the ambiguous ``Job`` by its dotted name.
 TABLE = {"Workspace": "workspace", "langslice.job.job.Job": "job"}
 
 

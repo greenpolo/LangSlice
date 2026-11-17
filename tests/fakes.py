@@ -1,11 +1,9 @@
-"""Test doubles: ADK LlmAgent model invocations, plus a synthetic atlas.
+"""Test doubles: ADK LlmAgent model invocations, plus a synthetic section.
 
-## Synthetic atlas
+## Synthetic section
 
-``EllipseAtlas``/``ellipse_section`` are the smallest pair of shapes the
-silhouette affine can actually register — one ellipse of tissue in a 20-slice,
-1 mm-per-voxel volume, and a section holding another. Small enough to build in
-a test, real enough that the moments fit has something to fit.
+``ellipse_section`` draws one ellipse of tissue, the smallest shape the
+silhouette affine can register.
 
 ## ADK model doubles
 
@@ -39,32 +37,6 @@ from google.genai import types
 from PIL import Image
 
 
-class EllipseAtlas:
-    """A 20-slice atlas, 1 mm per voxel, whose tissue is one ellipse.
-
-    1 mm voxels keep the volume tiny while leaving positions in the same
-    0-19 mm ballpark the real coronal atlases use.
-    """
-
-    atlas_name = "fake_ellipse_1mm"
-    orientation = "asr"
-    resolution = (1000.0, 1000.0, 1000.0)
-    metadata = {"species": "mouse"}
-
-    #: Id of the one structure the ellipse is made of.
-    BODY_ID = 2
-
-    def __init__(
-        self, *, height: int = 96, width: int = 128, axes: tuple[int, int] = (46, 30)
-    ):
-        plane = np.zeros((height, width), dtype=np.uint8)
-        cv2.ellipse(
-            plane, (width // 2, height // 2), axes, 0, 0, 360, self.BODY_ID, -1
-        )
-        self.annotation = np.repeat(plane[None, :, :], 20, axis=0)
-        self.template = (self.annotation > 0).astype(np.uint8) * 200
-
-
 class SlabAtlas:
     """A 20-slice, 1 mm-per-voxel atlas with a ``root`` tissue shell.
 
@@ -80,7 +52,7 @@ class SlabAtlas:
 
     def __init__(self, *, n_slices: int = 20, height: int = 12, width: int = 16):
         annotation = np.zeros((n_slices, height, width), dtype=np.int32)
-        annotation[:, 2 : height - 2, 2 : width - 2] = 1  # tissue on every slice
+        annotation[:, 2 : height - 2, 2 : width - 2] = 1
         self.annotation = annotation
         self.template = (annotation > 0).astype(np.uint8) * 200
 
@@ -111,13 +83,8 @@ class _StackLlm(BaseLlm):
     """
 
     positions: dict[str, float] | None = None
-    #: Input tokens reported per call, so budget handling can be tested.
     input_tokens_per_call: int = 0
-    #: Usage-window percent the fake reports as used, stepping this much per
-    #: call from 40, the way the OAuth lane's quota headers do.
     quota_percent_per_call: int = 0
-    #: Raise on the call after this many (0: never), the way a failing
-    #: provider ends a run that has not submitted.
     fail_after_calls: int = 0
 
     async def generate_content_async(
@@ -126,11 +93,9 @@ class _StackLlm(BaseLlm):
         del stream
         available = set(llm_request.tools_dict or {})
         for response in _function_responses(llm_request, "position_sections"):
-            # A fake that places nothing would let a test pass on an empty stack.
             if (response or {}).get("status") != "ok":
                 raise AssertionError(f"the fake's position_sections was refused: {response}")
         if _has_function_response(llm_request, "submit"):
-            # The job is done; anything after this is the debrief question.
             part = types.Part.from_text(text="Debrief: nothing was missing.")
         elif (
             self.positions
@@ -153,7 +118,6 @@ class _StackLlm(BaseLlm):
             )
         else:
             part = types.Part.from_text(text="Nothing to submit.")
-        # ADK resolves a fresh instance per turn, so the call count lives here.
         _QUOTA_CALLS[0] += 1
         if self.fail_after_calls and _QUOTA_CALLS[0] > self.fail_after_calls:
             raise RuntimeError("the fake model failed")

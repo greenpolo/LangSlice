@@ -15,8 +15,6 @@ from langslice.engines import _blocks
 ENGINES = Path(_blocks.__file__).resolve().parent
 
 
-# --- the GPU queue ------------------------------------------------------------------------------
-
 
 def _imports_from(name: str, module: str) -> bool:
     tree = ast.parse((ENGINES / name / "engine.py").read_text(encoding="utf-8"))
@@ -31,7 +29,6 @@ def test_every_gpu_engine_takes_the_shared_queue_and_none_imports_fcntl():
         imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
                     for alias in node.names}
         assert "fcntl" not in imported, name
-        # in LangSlice's process, through the plugin API (the core's gpu_turn)
         assert _imports_from(name, "langslice.plugin_api"), name
 
 
@@ -44,8 +41,6 @@ def test_no_engine_default_names_a_machine_folder():
         for key, value in plugin.DEFAULTS.items():
             assert "Software" not in str(value), (plugin.NAME, key)
 
-
-# --- paths in replies ---------------------------------------------------------------------------
 
 
 def test_a_reply_names_a_job_path_with_forward_slashes(tmp_path: Path):

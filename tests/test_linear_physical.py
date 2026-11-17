@@ -29,9 +29,7 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec
 
-#: The atlas fake below is 25 um per voxel, like allen_mouse_25um.
 ATLAS_UM = 25.0
-#: ... and its anatomy is exactly 40 voxels = 1.000 mm wide.
 BLOB_VOXELS = 40
 
 
@@ -82,8 +80,6 @@ _IDENTITY = {
 }
 
 
-# --- reading the pixel size off a file -----------------------------------
-
 
 def test_pixel_size_comes_off_centimetre_tags_and_imagej_calibration(tmp_path: Path):
     """IMAGING-8: inch dpi (72/300 placeholders, or no unit) is not a calibration;
@@ -93,7 +89,7 @@ def test_pixel_size_comes_off_centimetre_tags_and_imagej_calibration(tmp_path: P
     path = tmp_path / "tagged.tif"
     Image.new("RGB", (32, 32)).save(path, resolution_unit=3, x_resolution=1000.0,
                                     y_resolution=1000.0)
-    assert read_pixel_size_um(path) == pytest.approx(10.0, rel=1e-6)  # 1000 px per cm
+    assert read_pixel_size_um(path) == pytest.approx(10.0, rel=1e-6)
     for dpi in (72.0, 300.0):
         inch = tmp_path / f"dpi{int(dpi)}.tif"
         Image.new("RGB", (32, 32)).save(inch, dpi=(dpi, dpi))
@@ -122,8 +118,6 @@ def test_ome_xml_pixel_size_wins_over_the_tags(tmp_path: Path):
     assert read_pixel_size_um(path) == pytest.approx(0.75488, rel=1e-6)
 
 
-# --- millimetres on the canvas -------------------------------------------
-
 
 def test_one_millimetre_is_a_thousand_micrometres_of_pixels():
     for um_per_px in (10.0, 0.75488, 25.0):
@@ -138,8 +132,6 @@ def test_one_millimetre_is_a_thousand_micrometres_of_pixels():
 
 def test_a_one_millimetre_shift_moves_the_tissue_by_that_many_pixels():
     def centroid(rgb: np.ndarray) -> tuple[float, float]:
-        # The tissue square only: the outlines, the bar and the caption do
-        # not move with the section.
         ys, xs = np.nonzero((rgb == 200).all(axis=2))
         return float(xs.mean()), float(ys.mean())
 
@@ -147,11 +139,9 @@ def test_a_one_millimetre_shift_moves_the_tissue_by_that_many_pixels():
     moved = _overlay({**_IDENTITY, "translate_x_mm": 1.0})
     x0, y0 = centroid(still)
     x1, y1 = centroid(moved)
-    assert x1 - x0 == pytest.approx(100.0, abs=2.0)  # 1 mm at 10 um/px
+    assert x1 - x0 == pytest.approx(100.0, abs=2.0)
     assert y1 - y0 == pytest.approx(0.0, abs=2.0)
 
-
-# --- the atlas at true scale ---------------------------------------------
 
 
 def test_a_known_atlas_width_lands_at_the_pixel_width_it_should():
@@ -161,8 +151,6 @@ def test_a_known_atlas_width_lands_at_the_pixel_width_it_should():
     outlines = region_outlines(TwoRegionAtlas(), 0.2, depth=OVERLAY_DEPTH, plane="coronal")
     points = np.concatenate(outlines)
     drawn = (points[:, 0].max() - points[:, 0].min()) * geometry.atlas_scale
-    # 40 voxels x 25 um = 1.000 mm, and 1 mm on a 10 um/px canvas is 100 px.
-    # Contours run along the voxels' outer edges, so the span is the region's.
     assert drawn == pytest.approx(100.0, abs=1.0)
 
 
@@ -178,8 +166,6 @@ def test_two_neighbouring_regions_share_one_outline():
     contours = region_contours(labels, smooth_window=1)
     left = np.concatenate(contours[1])
     right = np.concatenate(contours[2])
-    # The left region's rightmost edge and the right region's leftmost edge
-    # are the same column boundary, between pixels 39 and 40.
     assert left[:, 0].max() == pytest.approx(39.5, abs=0.01)
     assert right[:, 0].min() == pytest.approx(39.5, abs=0.01)
     assert left[:, 0].min() == pytest.approx(9.5, abs=0.01)
@@ -191,8 +177,6 @@ def test_the_canvas_grows_when_the_atlas_would_not_fit():
     assert small.size[0] >= 100 and small.size[1] >= 100
     assert small.section_offset[0] == (small.size[0] - 40) // 2
 
-
-# --- the outlines --------------------------------------------------------
 
 
 def test_outlines_follow_the_region_boundaries_of_the_filled_map():
@@ -209,8 +193,6 @@ def test_outlines_follow_the_region_boundaries_of_the_filled_map():
     assert near[rows, cols].mean() > 0.98
 
 
-# --- calibration in a run ------------------------------------------------
-
 
 def _ctx(folder: Path, **inputs):
     spec = JobSpec(
@@ -225,12 +207,11 @@ def _ctx(folder: Path, **inputs):
 
 def test_calibration_reads_the_file_and_follows_the_downsample(tmp_path: Path):
     _section((1024, 1024)).save(tmp_path / "s.tif",
-        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
 
     assert ctx.calibration(record.id)[0] == pytest.approx(10.0)
-    # The 512-long-edge render halves the resolution, so the canvas doubles.
     um, source = canvas_um_per_px(ctx, record, long_edge=512)
     assert source == "file"
     assert um == pytest.approx(20.0)
@@ -245,7 +226,7 @@ def test_the_host_pixel_size_overrides_the_file(tmp_path: Path):
 
 def test_the_host_pixel_size_can_be_given_per_file(tmp_path: Path):
     _section((512, 512)).save(tmp_path / "a.tif",
-        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     _section((512, 512)).save(tmp_path / "b.tif",
         resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path, pixel_size_um={"a.tif": 3.0})
@@ -272,12 +253,9 @@ def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
     section = render_slice(ctx, record, long_edge=512)
     um, source = calibrate(state, ctx, record, section)
     assert source == "uncalibrated"
-    # The section image's width is mapped onto the atlas plane's width.
     plane = annotation_slice(ctx.atlas, 0.2, plane=state.plane)
     assert um == pytest.approx(plane.shape[1] * 25.0 / section.width)
 
-
-# --- the reasoning knob --------------------------------------------------
 
 
 def test_reasoning_effort_reaches_a_model_that_has_one():
@@ -297,7 +275,6 @@ def test_reasoning_effort_reaches_a_model_that_has_one():
         model=OpenAIOAuthLlm(model="gpt-5.6-sol"), name="t", instruction="i", tools=[]
     )
     assert getattr(default.model, "reasoning_effort", None) == "medium"
-    # A plain model string has no such knob and must survive untouched.
     assert build_agent(
         model="gemini-3-pro", name="t", instruction="i", tools=[], reasoning="high"
     ).model == "gemini-3-pro"
@@ -314,7 +291,7 @@ def _half_section(tmp_path: Path):
     from langslice.doors.tools.toolbox import build_tools
 
     arr = np.zeros((120, 120, 3), dtype=np.uint8)
-    arr[10:110, 10:60] = 200  # left half of the centred 100 px (= 1 mm) square
+    arr[10:110, 10:60] = 200
     Image.fromarray(arr, mode="RGB").save(tmp_path / "s.tif",
         resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path)

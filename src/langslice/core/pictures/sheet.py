@@ -1,6 +1,7 @@
 """A sheet: several saved pictures tiled into one, each tile one picture.
 
-``look`` with ``sheet`` (:func:`langslice.tools.look.look`) draws its pictures
+``look`` with ``sheet`` (:func:`langslice.tools.looking.look.look`) draws its
+pictures
 as usual, saves each with its number, and tiles them into one picture of at
 most a given long edge, for a viewer that pays per image: :func:`tile` lays the
 pictures out in a grid, each scaled down whole (its own caption band included),

@@ -26,7 +26,6 @@ SCHEMAS = Path(__file__).parent / "fixtures" / "ngff_0.6"
 H, W = 60, 80
 MM = 0.02
 ATLAS_TO_SECTION = np.array([[1.1, 0.1, 3.0], [0.05, 0.9, -2.0], [0.0, 0.0, 1.0]])
-# volume index = M @ [nx, ny, 1]: a coronal plane at slab 200 of an "asr" volume.
 NATIVE_TO_VOLUME = [[0.0, 0.0, 200.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]
 
 
@@ -62,10 +61,8 @@ def test_a_record_round_trips_at_float16_precision(tmp_path: Path):
     assert sorted(p.name for p in (tmp_path / "a").iterdir()) == ["record.json", "warp.ome.zarr"]
     loaded = DeformableRecord.load(tmp_path / "a")
     assert loaded.field_mm.dtype == np.float32 and loaded.field_mm.shape == (H, W, 2)
-    # float16 rounding: half a unit in the last place, under 0.25 um below 0.5 mm.
     small = np.abs(exact) < 0.5
     assert np.abs(loaded.field_mm - exact)[small].max() <= 0.25e-3
-    # The saved record was rounded too, so memory and disk agree exactly.
     assert np.array_equal(loaded.field_mm, record.field_mm)
     assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
     assert np.array_equal(loaded.labels, record.labels) and loaded.labels.dtype == np.uint32
@@ -84,14 +81,12 @@ def test_weights_round_trip_as_float16_and_none_is_allowed(tmp_path: Path):
     assert np.array_equal(loaded.weights, record.weights)
     assert "weights" in {name for name, _ in __import__("zarr").open_group(
         str(tmp_path / "a" / "warp.ome.zarr"), mode="r").members()}
-    # A float32 sorting is rounded to the precision it is saved at, as the fields are.
     wide = _record(weights=False)
     wide.weights = np.random.default_rng(3).random((H, W)).astype(np.float32)
     wide.save(tmp_path / "b")
     again = DeformableRecord.load(tmp_path / "b")
     assert again.weights is not None and np.array_equal(again.weights, wide.weights)
     assert wide.weights.dtype == np.float16
-    # None stays None: no array in the store.
     _record().save(tmp_path / "c")
     assert DeformableRecord.load(tmp_path / "c").weights is None
 
@@ -106,20 +101,18 @@ def test_a_record_names_its_parent_and_loads_it_from_the_sibling_folder(tmp_path
     meta = json.loads((tmp_path / "second" / "record.json").read_text(
         encoding="utf-8"))
     assert meta["parent"] == "first" and meta["version"] == RECORD_VERSION
-    assert meta["fields"] == "section_grid"  # no engine step: stored whole
+    assert meta["fields"] == "section_grid"
     assert not (tmp_path / "second" / "parent").exists()
     loaded = DeformableRecord.load(tmp_path / "second")
     assert loaded.inverse_field_mm is None and loaded.left_out is None
     assert loaded.parent is not None and loaded.parent.saved_as == "first"
     assert np.array_equal(loaded.parent.field_mm, first.field_mm)
-    # A chain that comes back to itself is unreadable, not endless.
     looped = json.loads((tmp_path / "first" / "record.json").read_text(
         encoding="utf-8"))
     (tmp_path / "first" / "record.json").write_text(json.dumps({**looped, "parent": "second"}),
         encoding="utf-8")
     with pytest.raises(ValueError, match="comes back to it"):
         DeformableRecord.load(tmp_path / "second")
-    # A parent that is gone: the error names the parent's record.json.
     (tmp_path / "first" / "record.json").unlink()
     with pytest.raises(ValueError, match=r"first[/\\]record\.json"):
         DeformableRecord.load(tmp_path / "second")
@@ -129,14 +122,14 @@ def test_the_store_saves_a_parent_beside_its_child_and_rounds_what_it_holds(tmp_
     store = RecordStore(root=tmp_path)
     first, key1 = _record(0), "a" * 64
     exact = first.field_mm.copy()
-    store.put(key1, first)  # held in memory, not saved
+    store.put(key1, first)
     assert not np.array_equal(first.field_mm, exact)
     assert np.array_equal(first.field_mm, ome_warp.at_storage_precision(exact))
     second, key2 = _record(1, parent=first), "b" * 64
     store.put(key2, second)
     folder = store.save("s1.tif", key2, second)
     assert folder.name == key2[:24]
-    assert (folder.parent / key1[:24] / "record.json").exists()  # the parent, saved first
+    assert (folder.parent / key1[:24] / "record.json").exists()
     store.cache.clear()
     loaded = store.get("s1.tif", key2)
     assert loaded is not None and loaded.parent is not None
@@ -170,7 +163,7 @@ def test_a_format_2_record_is_read_as_it_was_saved(tmp_path: Path):
     record.save(tmp_path / "a")
     meta = json.loads((tmp_path / "a" / "record.json").read_text(
         encoding="utf-8"))
-    del meta["fields"]  # format 2 stored every field whole and had no such key
+    del meta["fields"]
     (tmp_path / "a" / "record.json").write_text(json.dumps({**meta, "version": 2}),
         encoding="utf-8")
     loaded = DeformableRecord.load(tmp_path / "a")
@@ -198,7 +191,7 @@ def test_the_store_metadata_is_valid_ome_zarr_0_6(tmp_path: Path, inverse: bool)
     root = _attributes(store)
     for name in ("scene.schema", "ome_zarr.schema"):
         _validator(name).validate(root)
-    broken = json.loads(json.dumps(root))  # the schemas do refuse: a transform without its output
+    broken = json.loads(json.dumps(root))
     del broken["ome"]["scene"]["coordinateTransformations"][1]["output"]
     assert not _validator("scene.schema").is_valid(broken)
     groups = [ome_warp.FIELD_GROUP, *ome_warp.IMAGE_GROUPS.values()]
@@ -208,7 +201,6 @@ def test_the_store_metadata_is_valid_ome_zarr_0_6(tmp_path: Path, inverse: bool)
         attributes = _attributes(store / group)
         for name in ("image.schema", "strict_image.schema", "ome_zarr.schema"):
             _validator(name).validate(attributes)
-    # Every coordinate system the transformations name exists where they say.
     scene = root["ome"]["scene"]
     names = {system["name"] for system in scene["coordinateSystems"]}
     for transform in scene["coordinateTransformations"]:
@@ -256,14 +248,12 @@ def test_the_store_transformations_reproduce_the_records_mapping(tmp_path: Path)
     warp, placement = _attributes(store)["ome"]["scene"]["coordinateTransformations"][:2]
     inverse = np.linalg.inv(ATLAS_TO_SECTION)
     for row, col in [(0, 0), (17, 33), (H - 1, W - 1)]:
-        section = np.array([row, col], dtype=float) * MM  # (y, x) mm
+        section = np.array([row, col], dtype=float) * MM
         atlas_um = _apply(placement, _apply(warp, section, store), store)
-        # The record's own composition (core.maps.section_maps.native_points).
         field = record.field_mm[row, col].astype(np.float64)
         native = inverse @ [col + field[0] / MM, row + field[1] / MM, 1.0]
         expected = 25.0 * (np.asarray(NATIVE_TO_VOLUME) @ native)
         assert np.allclose(atlas_um, expected, atol=1e-6)
-    # The inverse is the stored inverse field on the placed grid.
     placed = np.array([17, 33], dtype=float) * MM
     back = _apply(warp["inverse"], placed, store)
     assert np.allclose(back - placed, record.inverse_field_mm[17, 33, ::-1], atol=1e-9)
@@ -312,8 +302,6 @@ def test_an_engine_step_is_stored_on_its_grid_and_rebuilt_bit_for_bit(tmp_path: 
         loaded = DeformableRecord.load(tmp_path / str(saved.saved_as))
         assert np.array_equal(loaded.field_mm, saved.field_mm)
         assert np.array_equal(loaded.inverse_field_mm, saved.inverse_field_mm)
-    # The scene states the first record's step as its whole deformation (on the
-    # working grid: scale, then the first pixel's centre), the second's not.
     for name in ("scene.schema", "ome_zarr.schema"):
         _validator(name).validate(_attributes(tmp_path / "first" / ome_warp.WARP_STORE))
         _validator(name).validate(_attributes(tmp_path / "second" / ome_warp.WARP_STORE))
@@ -339,7 +327,6 @@ def test_rebuilt_fields_are_checked_against_the_bits_they_were_made_with(
     with caplog.at_level(logging.WARNING):
         DeformableRecord.load(tmp_path / "a")
     assert not caplog.records
-    # Other bits: loaded as rebuilt, with a warning naming the record.
     meta["fields_sha256"] = "0" * 64
     path.write_text(json.dumps(meta), encoding="utf-8")
     with caplog.at_level(logging.WARNING):
@@ -347,14 +334,12 @@ def test_rebuilt_fields_are_checked_against_the_bits_they_were_made_with(
     assert np.array_equal(loaded.field_mm, record.field_mm)
     assert [r.levelno for r in caplog.records] == [logging.WARNING]
     assert str(path) in caplog.text and "different bits" in caplog.text
-    # A record saved before the digest loads silently.
     caplog.clear()
     del meta["fields_sha256"]
     path.write_text(json.dumps(meta), encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         DeformableRecord.load(tmp_path / "a")
     assert not caplog.records
-    # Fields stored whole carry no digest.
     _record(1).save(tmp_path / "b")
     whole = json.loads((tmp_path / "b" / "record.json").read_text(
         encoding="utf-8"))
@@ -382,8 +367,6 @@ def test_a_landmark_mesh_is_rebuilt_from_record_json(tmp_path: Path):
     loaded = DeformableRecord.load(tmp_path / "a")
     assert np.array_equal(loaded.field_mm, record.field_mm)
     assert np.array_equal(loaded.inverse_field_mm, record.inverse_field_mm)
-    # Triangles stored otherwise than this scipy makes them (one triangle's
-    # vertices in another order) are the same mesh, read as stored.
     meta = json.loads((tmp_path / "a" / "record.json").read_text(
         encoding="utf-8"))
     meta["engine"]["native_parameters"]["simplices"][0].reverse()

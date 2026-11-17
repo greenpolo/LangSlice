@@ -57,14 +57,9 @@ from tests.test_import_registrations import perpendicular_pixel_map
 
 IDS = (ID0, ID1, ID2)
 STEMS = ("s0", "s1", "s2")
-#: Positions inside the synthetic atlas, in stack order.
 POSITIONS = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
-#: An identity transform per section (the Linear task's cheapest write).
 IDENTITY = {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
             "translate_x_mm": 0.0, "translate_y_mm": 0.0}
-#: A registration made elsewhere: per section the stored affine (one plain,
-#: one mirrored: the flip carried as a negative determinant, as a host's own
-#: alignment does), plus stack-wide cutting angles.
 EXTERNAL_TRANSFORMS = {
     ID0: {"kind": "interactive", "params": [1.02, 0.01, -0.01, 0.0, 0.98, 0.01],
           "mirrored": False},
@@ -74,8 +69,6 @@ EXTERNAL_TRANSFORMS = {
 }
 EXTERNAL_ANGLES = {"pitch": 1.0, "yaw": -0.5}
 
-
-# --- the stack, the atlas, the image model -----------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -137,8 +130,6 @@ def external_inputs() -> dict[str, Any]:
         EXTERNAL_TRANSFORMS)), "angles": dict(EXTERNAL_ANGLES)}
 
 
-# --- the CLI -----------------------------------------------------------------------------
-
 
 def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, Any]]:
     code = main(list(argv))
@@ -173,14 +164,12 @@ def transforms_file(images: Path) -> str:
 
 def test_init_takes_a_long_inline_json(capsys, images):
     long_inline = json.dumps(EXTERNAL_TRANSFORMS)
-    assert len(long_inline) > 255  # longer than any file name
+    assert len(long_inline) > 255
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
                "--transforms", long_inline)
     spec = json.loads((job / "job.json").read_text(encoding="utf-8"))["spec"]
     assert spec["inputs"]["transforms"] == EXTERNAL_TRANSFORMS
 
-
-# --- what a finished job must hold ---------------------------------------------------------
 
 
 def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = (),
@@ -244,10 +233,7 @@ def tool_names(images: Path, tasks: list[str], provider: str = "none",
     return box.names
 
 
-# --- the tools each combination has (ADK / MCP tool building) ------------------------------
 
-
-#: The tools of every run, whatever the tasks (unless the job disables one).
 COMMON = {"look", "zoom", "make_image",
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
           "read_file", "review_comments", "mark_damage", "note", "undo", "redo", "submit"}
@@ -255,7 +241,6 @@ LINEAR = {"interactive_transform", "elastix_affine", "make_mask", "restore_regis
           "spomialign"}
 NONLINEAR = {"fireants_syn", "set_landmarks", "landmark_triangulation", "make_mask",
              "restore_registration", "stalign_lddmm", "spomialign", "emlddmm_stack"}
-#: Positioning's tools: the engines' plane searches come with position_sections.
 POSITIONING = {"position_sections", "stalign_plane_search", "emlddmm_plane"}
 
 
@@ -277,8 +262,6 @@ def test_each_combination_builds_exactly_its_tools(images, tasks, provider, extr
 
 
 @pytest.mark.parametrize(("tasks", "fields", "absent", "present"), [
-    # The stack's cutting angles left to a Linear-only run: position_sections
-    # comes for the angles alone.
     (["transform"], {"transform": TransformSpec(angles=True)}, set(),
      {"position_sections"} | LINEAR),
     (["transform"], {"disabled": ["interactive_transform"]},
@@ -293,8 +276,6 @@ def test_host_switches_add_and_remove_their_tools(images, tasks, fields, absent,
     assert present <= names and not absent & names
 
 
-# --- 1. Positioning only ------------------------------------------------------------------
-
 
 REVERSED = {ID0: 0.2, ID1: 0.15, ID2: 0.1}
 
@@ -308,7 +289,6 @@ def test_1_positioning_only_through_the_library(images):
 
     create(spec_for(images, ["position"]))
     with langslice.open_job(images) as job:
-        # The order follows the positions: written back to front, the stack is renumbered.
         backwards = job.position_sections(sections=_sections(REVERSED))
         assert backwards["status"] == "ok" and backwards["order"] == [ID2, ID1, ID0]
         assert backwards["reordered"]
@@ -348,8 +328,6 @@ def _mcp_server(spec: JobSpec) -> Any:
     return server
 
 
-# --- 2. Linear without positioning (positions supplied) -------------------------------------
-
 
 def test_2_linear_on_supplied_positions_through_the_library(images):
     import langslice
@@ -366,8 +344,6 @@ def test_2_linear_on_supplied_positions_through_the_library(images):
         assert all(record.transform for record in job.state.slices)
     assert_exported(images / "langslice")
 
-
-# --- 3. Positioning + Linear ---------------------------------------------------------------
 
 
 def test_3_positioning_and_linear_through_the_library(images):
@@ -397,8 +373,6 @@ def test_3_positioning_and_linear_through_mcp(images):
     assert_exported(images / "langslice")
 
 
-# --- 4. Nonlinear with an image model, no agent -------------------------------------------
-
 
 def test_4_nonlinear_verbs_called_directly_through_the_library(images):
     import langslice
@@ -409,7 +383,7 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         assert job.position_sections(sections=_sections(POSITIONS))["status"] == "ok"
         assert job.interactive_transform(sections=[{"id": n, **IDENTITY} for n in IDS])[
             "status"] == "ok"
-        for name in (ID0, ID1):  # started in the background; submit waits for them
+        for name in (ID0, ID1):
             started = job.trace_borders(section=name)
             assert started["status"] == "started" and started["work"], started
         fit = job.fireants_syn(sections=[ID2])
@@ -422,8 +396,6 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         assert job.state.by_id(ID2).border_trace is None
     assert_exported(images / "langslice", residual=IDS, maps_exported=True)
 
-
-# --- 5. Nonlinear without an image model --------------------------------------------------
 
 
 def test_5_nonlinear_without_an_image_model_through_the_library(images):
@@ -452,19 +424,16 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
     with langslice.open_job(images) as job:
         fit = job.fireants_syn(sections=[ID0])
         assert fit["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT", fit
-        # The refusal says what to do: supply transforms, or switch Linear on.
         message = fit["results"][0]["message"]
         assert "--transforms" in message and "inputs.transforms" in message, message
         assert "Linear on" in message, message
     fresh = spec_for(images, ["nonlinear"], positions=dict(POSITIONS))
     fresh.frozen = {"*": ["orientation", "affine"]}
-    fresh.resume = False  # a new job on the same images, not the one above
+    fresh.resume = False
     create(fresh)
     with langslice.open_job(images) as job:
         assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
 
-
-# --- 6. Nonlinear on a registration made elsewhere ------------------------------------------
 
 
 def test_6_external_registration_then_nonlinear_through_the_library(images):
@@ -479,13 +448,12 @@ def test_6_external_registration_then_nonlinear_through_the_library(images):
         assert started["status"] == "started", started
         status = job.status()
         assert [work["id"] for work in status.get("background_running", [])] in (
-            [started["work"]], [])  # it may land before status reads it
+            [started["work"]], [])
         fit = job.fireants_syn(sections=[ID1])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
-        assert_external_kept(job.state)  # the linear placement, verbatim, after submit
-        # A trace whose fit has landed is not fitted again.
+        assert_external_kept(job.state)
         again = job.trace_borders(section=ID0)
         assert again["status"] == "ok" and again["landed"] is True, again
     document = assert_exported(images / "langslice", residual=(ID0, ID1))
@@ -517,7 +485,6 @@ def test_6_a_supplied_orientation_is_kept(images):
     with langslice.open_job(images) as job:
         assert job.state.by_id(ID1).flip is True
         assert job.state.by_id(ID1).rotation_deg == 90
-        # kept as supplied
         assert affine_to_json(job.state.by_id(ID1).transform) == EXTERNAL_TRANSFORMS[ID1]
         assert job.state.by_id(ID0).flip is False and job.state.by_id(ID0).rotation_deg == 0
         assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
@@ -537,8 +504,8 @@ def test_6_an_unknown_input_is_refused(images):
     with pytest.raises(ValueError, match="transfroms") as refused:
         create(spec_for(images, ["nonlinear"], positions=dict(POSITIONS),
                         transfroms=EXTERNAL_TRANSFORMS))
-    assert "'transforms'" in str(refused.value)  # the allowed keys are named
-    with pytest.raises(ValueError, match="transfroms"):  # a saved spec too
+    assert "'transforms'" in str(refused.value)
+    with pytest.raises(ValueError, match="transfroms"):
         JobSpec.from_dict({"image_folder": str(images), "inputs": {"transfroms": {}}})
 
 
@@ -552,7 +519,6 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
         _code, status = cli(capsys, str(images), "status")
         return {row["id"]: row["position_mm"] for row in status["result"]["rows"]}
 
-    # Different inputs: refused, naming --no-resume; nothing rewritten.
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(moved))
     assert code == 3 and envelope["error"]["code"] == "INPUTS_CHANGED", envelope
@@ -562,11 +528,9 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     spec = json.loads((job / "job.json").read_text(encoding="utf-8"))["spec"]
     assert spec["inputs"]["positions"] == POSITIONS
     assert positions() == POSITIONS
-    # The same inputs: resumed as before.
     code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(POSITIONS))
     assert code == 0, envelope
-    # --no-resume: a new job from the new inputs.
     code, envelope = cli(capsys, str(images), "init", *flags, "--no-resume",
                          "--positions", json.dumps(moved))
     assert code == 0, envelope
@@ -586,14 +550,11 @@ def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
 
     state = load_checkpoint(str(job / "state.json"))
     assert state is not None
-    # The host's damage note is the section's note; it marks no regions, so the
-    # section is not damaged.
     record = state.by_id(ID2)
     assert record.damage_note == "torn" and record.damaged is False
     assert record.damaged_regions == []
     rows = {row["id"]: row for row in ok(capsys, images, "status")["result"]["rows"]}
     assert rows[ID2]["damage_note"] == "torn" and rows[ID2]["damaged"] is False
-    # Sections with a frozen affine carry the host identity: they can be left linear and submitted.
     import langslice
 
     with langslice.open_job(images) as handle:
@@ -602,8 +563,6 @@ def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
 
 
 def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
-    # A job placed by LangSlice exports quicknii.json; a new job from it must
-    # land at the same placement.
     source = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
                   "--transforms", transforms_file(images))
     ok(capsys, images, "export_maps")
@@ -614,12 +573,9 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
                          "--registration", str(quicknii))
     assert code == 0, envelope
     result = envelope["result"]
-    assert result["tasks"] == ["nonlinear"]  # the imported placement kept as it is
+    assert result["tasks"] == ["nonlinear"]
     assert [row["id"] for row in result["registration"]["sections"]] == list(IDS)
     assert result["registration"]["format"] == "quicknii-json"
-    # The new job maps every section's file as the source job's quicknii.json
-    # does: the source's placement with its anchoring made perpendicular
-    # (QuickNII anchorings are rounded to 1e-6 voxels).
     document = json.loads((source / "registration.json").read_text(
         encoding="utf-8"))
     after = json.loads((tmp_path / "again" / "registration.json").read_text(
@@ -649,7 +605,7 @@ def test_6_external_registration_then_nonlinear_through_mcp(images, monkeypatch)
         ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ])
     assert [reply["status"] for reply in replies[:3]] == ["started"] * 3, replies
-    assert replies[3]["status"] == "ok", replies  # submit waits for the three traces
+    assert replies[3]["status"] == "ok", replies
     assert_exported(images / "langslice", residual=IDS)
 
 
@@ -664,7 +620,6 @@ def _mcp_listing_and_statement(server: Any) -> tuple[dict[str, str], str]:
             started = await client.call_tool("start_job", {})
             first = started.content[0]
             assert isinstance(first, TextContent), started
-            # A host reads every opening page before it writes (the gate).
             import re
 
             pages = int(re.findall(r"(\d+)[:.]", first.text.split("pages 1 to ")[-1])[0]) \
@@ -704,7 +659,7 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
         assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
         spec = json.loads((images / "langslice" / "job.json").read_text(
             encoding="utf-8"))["spec"]
-        assert spec["nonlinear"]["provider"] == "openai-oauth"  # the job keeps its provider
+        assert spec["nonlinear"]["provider"] == "openai-oauth"
 
 
 def test_the_library_can_create_a_job(images):
@@ -714,8 +669,6 @@ def test_the_library_can_create_a_job(images):
     with langslice.create_job(spec) as job:
         assert_external_kept(job.state)
 
-
-# --- 7. The agent: every task, no image model -----------------------------------------------
 
 
 def install_script(monkeypatch: pytest.MonkeyPatch, script: list[tuple[str, dict[str, Any]]],

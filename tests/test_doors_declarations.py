@@ -26,7 +26,6 @@ from langslice.tools.descriptions.render import (
     declare,
 )
 
-#: The change tools: each returns its picture unless ``view`` is false.
 VIEW_TOOLS = [name for name, description in DESCRIPTIONS.items()
               if "view" in description.arguments
               and description.arguments["view"].offered is Offered.VIEW_CHOSEN]
@@ -62,7 +61,6 @@ def test_the_run_facts_change_only_what_they_declare():
 def test_trace_borders_carries_the_base_prompt_and_the_border_rules():
     gpt = border_correction_tool_prompt("coronal", provider="openai-oauth")
     doc = declaration("trace_borders").doc
-    # Every line of the base prompt, as the run's image model receives it.
     for line in gpt.split("\n"):
         assert line.strip() in doc
     assert "BASE_PROMPT" not in doc
@@ -70,7 +68,6 @@ def test_trace_borders_carries_the_base_prompt_and_the_border_rules():
     sagittal = border_correction_tool_prompt("sagittal", provider="gemini-api")
     other = declaration("trace_borders", DescriptionFacts(prompt=sagittal)).doc
     assert sagittal.split("\n")[0] in other and gpt.split("\n")[0] not in other
-    # The CLI door says how its command answers.
     cli = declaration("trace_borders", DescriptionFacts(door="cli", prompt=gpt)).doc
     assert "--background" in cli and "returns at once" not in cli
 

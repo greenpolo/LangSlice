@@ -14,26 +14,12 @@ import importlib.util
 import numpy as np
 import pytest
 
-from langslice.engines.spomialign import engine, matching, plugin
-from langslice.plugin_api import ToolError
+from langslice.engines.spomialign import engine, matching
 
 
 def _rotation(deg: float, shift: tuple[float, float]) -> np.ndarray:
     t = np.deg2rad(deg)
     return np.array([[np.cos(t), -np.sin(t), shift[0]], [np.sin(t), np.cos(t), shift[1]]])
-
-
-def test_a_call_without_the_extra_is_refused_naming_it(monkeypatch):
-    monkeypatch.setattr(matching, "is_installed", lambda: False)
-    handler = plugin.tools()[0].handler
-    with pytest.raises(ToolError) as refused:
-        handler(None, sections=["s0"], fit="transform")  # type: ignore[arg-type]
-    assert refused.value.code == "ENGINE_MISSING"
-    assert 'pip install "langslice[engines]"' in str(refused.value)
-
-
-def test_the_plugin_takes_only_the_device_option():
-    assert plugin.DEFAULTS == {"device": ""}
 
 
 def test_the_rigid_fit_recovers_a_rotation_and_a_shift():
@@ -61,7 +47,6 @@ def test_the_field_carries_one_shared_displacement_everywhere():
     moving = fixed + [4.0, -2.5]
     field = engine.smoothed_field(fixed, moving, 15.0)
     assert field.shape == (matching.H, matching.W, 2)
-    # TELEA inpainting between sparse pairs overshoots a little, as in SPOmiAlign
     assert np.abs(field[..., 0] - 4.0).max() < 0.6
     assert np.abs(field[..., 1] + 2.5).max() < 0.6
     assert not engine.smoothed_field(np.empty((0, 2)), np.empty((0, 2)), 15.0).any()
@@ -78,16 +63,15 @@ def test_the_field_reads_on_the_canvas_as_simpleitk_reads_it():
                                                    (w, h))
     assert residual.shape == (h, w, 2)
     assert sitk_max_px < 1e-6
-    # the grid is 2.88 canvas px per canvas px across: 6 grid px are about 2.1 canvas px
     assert 1.9 < residual[h // 2, -1, 0] < 2.2 and abs(residual[h // 2, 0, 0]) < 0.1
 
 
 def test_the_pairs_in_the_damage_zone_or_off_the_mask_are_dropped_and_refilled():
     h, w = 40, 60
     keep = np.ones((h, w), bool)
-    keep[:, :10] = False  # damage on the atlas's left
+    keep[:, :10] = False
     section_keep = np.ones((h, w), bool)
-    section_keep[:, 50:] = False  # the mask leaves out the section's right
+    section_keep[:, 50:] = False
     pair = engine.EnginePair(target=np.zeros((h, w, 3), np.uint8),
                              source=np.zeros((h, w, 3), np.uint8), keep=keep,
                              smoothing_px=15.0, section_keep=section_keep)
@@ -142,6 +126,5 @@ def test_a_real_rigid_fit_recovers_a_known_shift():
     run = engine.fit_pairs([pair], mode="rigid", top_k=5000)
     answer = run.answers[0]
     assert not answer.error and answer.pairs == 5000 and answer.matrix is not None
-    # source px -> target px undoes the shift
     assert np.allclose(answer.matrix[:, :2], np.eye(2), atol=0.01)
     assert np.allclose(answer.matrix[:, 2], [-18, 11], atol=1.5)

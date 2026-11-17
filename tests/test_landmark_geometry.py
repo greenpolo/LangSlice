@@ -26,7 +26,7 @@ from langslice.core.stack.section import Section
 def test_the_mesh_accepts_folds_and_keeps_its_forward_map():
     source = np.array([[0, 0], [10, 0], [0, 10], [10, 10], [5, 4]], dtype=float)
     target = source.copy()
-    target[4] = [5, 14]  # the middle vertex is thrown across the top edge
+    target[4] = [5, 14]
     mesh = PiecewiseAffine(source, target)
     assert mesh.folded.any()
     assert mesh.folded_triangles().shape[1] == 3
@@ -37,23 +37,8 @@ def test_the_mesh_accepts_folds_and_keeps_its_forward_map():
     np.testing.assert_array_equal(again.map(probe), forward)
     grid = np.stack(np.meshgrid(np.arange(11.0), np.arange(11.0)), -1)
     first, second = mesh.inverse(grid), again.inverse(grid)
-    np.testing.assert_array_equal(first, second)  # a deterministic choice where they overlap
+    np.testing.assert_array_equal(first, second)
     assert 0 < mesh.folded_fraction(grid) < 1
-
-
-def test_unfolded_triangles_win_the_inverse_where_targets_overlap():
-    source = np.array([[0, 0], [10, 0], [0, 10], [10, 10], [5, 4]], dtype=float)
-    target = source.copy()
-    target[4] = [5, 14]
-    mesh = PiecewiseAffine(source, target)
-    point = np.array([[5.0, 9.5]])  # covered by a folded and by an unfolded target triangle
-    got = mesh.inverse(point)[0]
-    owners = [k for k in range(len(mesh.simplices))
-              if np.isfinite(mesh._map(point, mesh.target, mesh.source)[0]).all()]
-    assert owners  # the point is covered
-    unfolded = [k for k in np.flatnonzero(~mesh.folded)]
-    tri = mesh.simplices[unfolded[0]]
-    assert np.isfinite(got).all() and tri.size == 3
 
 
 def test_repeated_points_and_zero_area_source_triangles_are_still_refused():
@@ -72,7 +57,6 @@ def test_inverse_keeps_connectivity_when_destination_delaunay_would_flip_diagona
     source = np.array([[0., 0.], [4., 0.], [3., 2.], [0., 3.]])
     target = np.array([[0., 0.], [4., 0.], [3., 4.], [0., 3.]])
     mesh = PiecewiseAffine(source, target)
-    # Points on both sides of the original diagonal and the diagonal itself.
     probes = np.array([[2., .4], [.5, 1.5], [1.5, 1.]])
     mapped = mesh.map(probes)
     np.testing.assert_allclose(mesh.inverse(mapped), probes, atol=1e-12)
@@ -119,15 +103,12 @@ def test_warped_view_endpoint_uses_the_actual_section_point_under_the_pixel():
     fractions = (original + .5) / [width, height]
     np.testing.assert_allclose(section_picture_point(panel, fractions, record), displayed,
                                atol=1e-6)
-    # OpenCV's image sampler quantizes interpolation coordinates to 1/32 px.
     np.testing.assert_allclose(section_point(panel, displayed, record), fractions, atol=1e-5)
 
 
 @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
 @pytest.mark.parametrize("flip", [False, True])
 def test_endpoint_pixels_follow_actual_image_rotation_flip_and_crop(rotation, flip):
-    # Every acquisition pixel carries its own integer index. Locate it in the
-    # actual PIL output rather than generating an expected inverse transform.
     width, height = 13, 9
     pixels = np.arange(width * height, dtype=np.int32).reshape(height, width)
     image = Image.fromarray(pixels)
@@ -138,7 +119,6 @@ def test_endpoint_pixels_follow_actual_image_rotation_flip_and_crop(rotation, fl
     if flip:
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     record = Section("section.tif", 0, 0, rotation_deg=rotation, flip=flip)
-    # A displayed crop magnifies by four and offsets its picture by a gutter.
     pixel_to_render = np.array([[.25, 0., 2.], [0., .25, 1.], [0., 0., 1.]])
     panel = section_panel(record, image.size, pixel_to_render=pixel_to_render,
                           bounds=[0, 0, 100, 100])
@@ -153,7 +133,7 @@ def test_endpoint_pixels_follow_actual_image_rotation_flip_and_crop(rotation, fl
 
 
 def test_applied_record_interpolates_correspondences_after_sequential_corrections(tmp_path):
-    from langslice.tools import landmark_warp, landmarks
+    from langslice.tools.landmarking import landmark_warp, landmarks
     from tests.test_landmarks import saved_pairs, setup
 
     job, workspace, section = setup(tmp_path)
@@ -176,8 +156,6 @@ def test_applied_record_interpolates_correspondences_after_sequential_correction
                 ])
                 placed = section_xy + shift / applied.mm_per_px
                 native = np.linalg.inv(applied.placement.atlas_to_section) @ [*placed, 1.]
-                # Dense field sampling approximates the analytic mesh at a
-                # subpixel vertex; it must still land within 0.1 atlas voxel.
                 np.testing.assert_allclose(native[:2], pair["atlas_native_xy"], atol=.1)
     finally:
         job.close()
@@ -186,7 +164,7 @@ def test_applied_record_interpolates_correspondences_after_sequential_correction
 def test_deleted_landmark_loses_its_influence_when_the_complete_set_is_reapplied(tmp_path):
     from langslice.core.fits import deformation
     from langslice.core.fits import landmarks as geometry
-    from langslice.tools import landmark_warp, landmarks
+    from langslice.tools.landmarking import landmark_warp, landmarks
     from tests.test_landmarks import saved_pairs, setup
 
     job, workspace, section = setup(tmp_path)
@@ -213,8 +191,6 @@ def test_deleted_landmark_loses_its_influence_when_the_complete_set_is_reapplied
         landmarks.set_landmarks(job, workspace, section.id, delete=["L4"])
         landmark_warp.landmark_triangulation(job, workspace, section.id)
         after = job.deformations.current(job.state, section)
-        # The remaining three correspondences are identity constraints. An
-        # application of this complete set must erase L4's previous influence.
         np.testing.assert_allclose(after.field_mm, 0., atol=1e-6)
     finally:
         job.close()

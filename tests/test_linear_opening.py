@@ -81,12 +81,9 @@ def test_a_40_section_stack_takes_more_strips_at_higher_levels(
     for _text, image in found:
         assert image.width <= OPENAI_MAX_IMAGE_EDGE
         assert patches(image.size) <= OPENAI_MAX_IMAGE_PATCHES
-    # Every full strip is the strip's long edge to within one tile.
     assert all(image.width > OPENAI_MAX_IMAGE_EDGE - tile for _text, image in found[:-1])
-    # Ordered, labelled, every section once.
     named = [name for text, _ in found for name in text.split(": ", 1)[1].split(", ")]
     assert named == [r.id for r in state.in_order()]
-    # All positioned: no atlas reference.
     assert not any(p.text and p.text.startswith("Atlas reference") for p in parts)
 
 
@@ -96,7 +93,7 @@ def test_tall_paired_strips_stay_inside_the_patch_budget(tmp_path: Path, level: 
     state, ctx = _stack(tmp_path / level, 4, size=(600, 900), level=level)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 1.0 + 0.2 * index
-        record.damaged_regions = ["CTX"]  # a longer label
+        record.damaged_regions = ["CTX"]
     for limit in (None, CLAUDE_IMAGE_LIMIT):
         edge, budget = limit or (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
         for _text, image in _strips(opening_parts(state, ctx, limit=limit)):
@@ -110,7 +107,6 @@ def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
     assert "Beneath each section" not in (bare[0].text or "")
     assert any(p.text and p.text.startswith("Atlas reference strip") for p in bare)
     ((_, unplaced),) = _strips(bare)
-    # The reference is atlas strips at the tile size.
     reference = next(p.text for p in bare if p.text and p.text.startswith("Atlas reference"))
     count = int(reference.split("the atlas at ")[1].split()[0])
     atlas = _strips(bare, "Atlas strip ")
@@ -121,7 +117,6 @@ def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
     state.in_order()[0].position_mm = 2.0
     mixed = opening_parts(state, ctx)
     assert "Beneath each section" in (mixed[0].text or "")
-    # A section without a position: the reference is still sent.
     assert any(p.text and p.text.startswith("Atlas reference strip") for p in mixed)
     ((_, paired),) = _strips(mixed)
     assert paired.height > unplaced.height and paired.width == unplaced.width
@@ -138,5 +133,4 @@ def test_a_column_past_the_budget_starts_the_next_strip():
     columns = [tall for _ in range(5)]
     strips = pack_strips(columns, 100, 5, budget=patches((210, 1804)))
     assert [start for start, _ in strips] == [0, 2, 4]
-    # A single column always makes a strip, whatever it costs.
     assert len(pack_strips(columns[:1], 100, 5, budget=1)) == 1

@@ -21,8 +21,6 @@ CONFIG = Config.load(REPOSITORY / "pyproject.toml")
 
 PLUGIN = "src/langslice/engines/example/plugin.py"
 
-#: A plugin module: a stub handed to ``ToolSpec`` by position, one handed
-#: through the module attribute, and functions that are not stubs.
 PLUGIN_SOURCE = '''
 def fit_stub(job, sections):
     """Fit the sections.
@@ -53,11 +51,9 @@ def tools(meta):
     ]
 '''
 
-#: Where each docstring of the plugin module starts and ends.
 FIT_STUB_DOCSTRING = (3, 6)
 BODY_DEF_LINE = 13
 
-#: Every rule that judges a docstring's form or wording, by family.
 DOCSTRING_RULES = (
     "numpydoc:GL08",
     "numpydoc:PR01",

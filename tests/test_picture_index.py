@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.pictures import DiscardedViews, ViewStore, captured
 
 RECIPE = {"renderer": "section_picture", "args": {"id": "s0.png", "long_edge": 512}}
@@ -67,7 +67,7 @@ def test_a_dry_run_indexes_pictures_in_memory(tmp_path: Path):
     store.step_source = lambda: 7
     assert store.save(tool="view", pictures=[
         (_picture(), PictureNote(sections=("s0.png",), recipe=RECIPE, caption="x"))]) == [
-            "000001_view"]  # named as a saved picture would be, written nowhere
+            "000001_view"]
     store.save(tool="zoom", pictures=[(_picture(), None)])
     found = store.lookup(1)
     assert found is not None and found.recipe == RECIPE and found.step == 7

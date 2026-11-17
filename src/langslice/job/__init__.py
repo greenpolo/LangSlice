@@ -1,15 +1,18 @@
 """The job layer's files: one job folder per stack, next to its images.
 
 ``<images>/langslice/`` holds everything LangSlice writes for a stack
-(:mod:`langslice.job.layout`): ``job.json`` (settings and the folder's format
+(:mod:`langslice.job.folder.layout`): ``job.json`` (settings and the folder's
+format
 version), the state checkpoint, the section histories and undo steps
-(:mod:`langslice.job.history`), the per-section folders, the pictures the model
+(:mod:`langslice.job.steps.history`), the per-section folders, the pictures the
+model
 was shown with their layers (:mod:`langslice.job.pictures`), exports and logs.
 Saved host jobs are found by id through a small index
-(:mod:`langslice.job.index`). The :class:`~langslice.job.job.Job`
+(:mod:`langslice.job.folder.index`). The :class:`~langslice.job.job.Job`
 (:mod:`langslice.job.job`) owns the state, undo, the checkpoint
 (:mod:`langslice.job.state_file`) and the submit gates;
-:mod:`langslice.job.public_files` and :mod:`langslice.job.quint` write the
+:mod:`langslice.job.exports.public_files` and
+:mod:`langslice.job.exports.quint` write the
 public files and exports.
 
 Layer: the job layer. It imports the core only, never an operation

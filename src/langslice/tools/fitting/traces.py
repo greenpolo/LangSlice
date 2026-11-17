@@ -1,0 +1,357 @@
+"""The image model's border trace of a section, and the fit that follows it.
+
+:func:`trace_borders` is LangSlice's own nonlinear method packaged: the image
+call runs in the background, and when it lands a fit of the traced borders is
+applied as background work (:mod:`langslice.job.background`,
+:func:`land_trace`). It takes the image model as an argument
+(:class:`langslice.core.fits.trace.request.ImageModel`, resolved by the
+door), so this module never chooses or imports a provider. The section's
+current geometry is the core's
+(:func:`langslice.core.fits.frame.correction_fingerprint`) and the edit is
+prepared by ``registration_tool.start_correction``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, cast
+
+from langslice.core.fits import deformation
+from langslice.core.fits import frame as handoff
+from langslice.core.fits.trace import trace as registration_tool
+from langslice.core.jsonable import JsonValue
+from langslice.core.pictures.options import default_options
+from langslice.core.pictures.sizes import picture_edge
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.sections.damage import exclusions
+from langslice.core.stack.codec import trace_from_json, trace_to_json
+from langslice.core.stack.trace import BorderTrace
+from langslice.job.background import DONE, FAILED, Landed
+from langslice.tools.fitting.deformable import (
+    fit_deformable,
+    refuse_without_engine,
+)
+from langslice.tools.fitting.deformable_rows import deformable_row_to_json
+from langslice.tools.fitting.fit_regions import region_entries
+from langslice.tools.looking.fit_pictures import draw_fits
+from langslice.tools.refusal import section_refusal, unknown_sections
+from langslice.tools.run import Run, as_list
+from langslice.tools.stale import section_inputs
+
+if TYPE_CHECKING:
+    from langslice.core.fits.trace.request import ImageModel
+    from langslice.core.pictures.options import DisplayOptions
+    from langslice.core.stack.section import Section
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
+
+
+@dataclass(frozen=True)
+class TraceStarted:
+    """What :func:`trace_borders` did for one section."""
+
+    id: str
+    record: dict[str, Any]
+    started: bool = False
+    running: bool = False
+    work: str | None = None
+    landed: bool = False
+
+
+_STALE_MESSAGE = ("The section's placement changed while the image call was prepared; "
+                  "nothing was started or written for it.")
+
+
+def _trace_json(section: Section) -> dict[str, JsonValue]:
+    """Return the section's border trace in its JSON form (empty: none)."""
+    if section.border_trace is None:
+        return {}
+    return trace_to_json(section.border_trace)
+
+
+def _without_cached(trace: BorderTrace | None) -> BorderTrace | None:
+    return None if trace is None else replace(trace, cached=None)
+
+
+def _start_trace(
+    job: Job,
+    workspace: Workspace,
+    ref: object,
+    *,
+    image_model: ImageModel,
+    prompt: str,
+    chosen: tuple[str, ...],
+    workers: int,
+) -> TraceStarted:
+    """Start one section's border trace in the background, or reuse it
+    (the trace alone; :func:`trace_borders` adds the fit). The call is
+    prepared outside the job's write lock and started under it."""
+    record = job.state.resolve(ref)
+    if record is None:
+        raise unknown_sections(job.state, [str(ref)])
+    section_id = record.id
+    refusal = section_refusal(job, section_id, "deformation")
+    if refusal is not None:
+        raise Refused(refusal.code, id=section_id, **refusal.facts)
+    try:
+        current = handoff.correction_fingerprint(job.state, workspace, section_id)
+        if job.image_job_running(section_id, current):
+            return TraceStarted(id=section_id, running=True,
+                                record=_trace_json(record))
+        kept, dropped = exclusions(record, chosen)
+        result, call = registration_tool.start_correction(
+            job.state, workspace, section_id, prompt=prompt, image_model=image_model,
+            calls_dir=job.layout.border_trace_dir(section_id), include=kept, exclude=dropped)
+    except Refused as refusal:
+        facts = {"id": section_id, **refusal.facts}
+        raise Refused(refusal.code, **facts) from refusal
+    except ValueError as exc:
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                      id=section_id, message=str(exc)) from exc
+    except OSError as exc:
+        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
+                      id=section_id, message=str(exc)) from exc
+    with job.writing():
+        before = job.snapshot()
+        now = job.state.by_id(section_id)
+        fingerprint = result["geometry_fingerprint"]
+        if now is None or handoff.correction_fingerprint(
+                job.state, workspace, section_id) != fingerprint:
+            raise Refused(RefusalCode.STALE_INPUT, id=section_id,
+                          message=_STALE_MESSAGE + " Call it again.")
+        if call is not None:
+            job.start_image_job(section_id, fingerprint, call, workers=workers)
+        portable = job.portable(result)
+        trace = trace_from_json(portable)
+        if _without_cached(trace) != _without_cached(now.border_trace):
+            now.border_trace = trace
+            job.commit(before)
+    return TraceStarted(id=section_id, record=portable, started=call is not None)
+
+
+TRACE_WORK = "trace_borders"
+TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
+                               smoothness_um=80.0)
+_STALE_CODES = (
+    RefusalCode.STALE_INPUT,
+    RefusalCode.TRACE_STALE,
+    RefusalCode.TRACE_RUNNING,
+    RefusalCode.NO_TRACE,
+)
+
+
+def trace_borders(
+    job: Job,
+    workspace: Workspace,
+    ref: object,
+    *,
+    image_model: ImageModel,
+    prompt: str = "",
+    restrict_to: Any = (),
+    options: DisplayOptions | None = None,
+    workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
+) -> TraceStarted:
+    """LangSlice's own nonlinear method on one section, packaged: the image
+    model traces the atlas borders onto the section, then FireANTs fits what it
+    drew and the deformation is applied. Returns at once (``work``: the id
+    of the background work, :mod:`langslice.job.background`).
+
+    Now: the section's border trace is started in the background, or a
+    saved reply at its geometry reused (``cached``), the section's
+    ``border_trace`` record written as ONE undo step when it changed, and a
+    piece of background work started. The model is shown the section's
+    ``preprocessed`` image and the same picture with the placed atlas borders
+    (``registration_tool.start_correction``): with *restrict_to*, only those
+    regions' borders (descendants included, ``"CTX:left"`` for one side), and
+    the section's marked regions left out
+    (:func:`langslice.core.sections.damage.exclusions`). *prompt* replaces the
+    base prompt (blank sends it unchanged); the prompt sent is saved with each
+    attempt in the job folder (``sections/<name>/border_trace/``).
+
+    When the reply lands (:func:`land_trace`): the trace is recorded on the
+    section, then a fit of the traced borders runs (:data:`TRACE_FIT`, on
+    top of the section's applied deformation where it holds one, else its
+    linear placement; with *restrict_to*, by those regions only) and is
+    applied as its own undo step. A section whose inputs (placement,
+    section images, damage, deformation) changed since this call gets
+    nothing, its notice saying ``STALE_INPUT``. With *options*, the fit and
+    the trace are drawn and saved with the work.
+
+    A section whose packaged trace is still running is not started again
+    (``running``, that work's id). A call whose trace is the saved reply at
+    this placement and region choice, and whose fit the section's applied
+    deformation already holds, fits nothing again (``landed``, no work).
+    Refused before any image call:
+    ``ENGINE_MISSING``; ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES``
+    (a bad *restrict_to*, or one that leaves no region on the plane);
+    ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` (other background work runs on
+    the section); ``FROZEN`` (the section's deformation is frozen);
+    ``NO_POSITION``; ``INVALID_LINEAR_PLACEMENT`` (no usable transform);
+    ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
+    while the call was prepared).
+    """
+    refuse_without_engine()
+    regions = region_entries(workspace, job.state, restrict_to)
+    record = job.state.resolve(ref)
+    if record is None:
+        raise unknown_sections(job.state, [str(ref)])
+    held = job.background.running_for(record.id, TRACE_WORK)
+    if held is not None:
+        return TraceStarted(id=record.id, running=True, work=held.id,
+                            record=_trace_json(record))
+    started = _start_trace(job, workspace, record.id, image_model=image_model, prompt=prompt,
+                           chosen=regions, workers=workers)
+    now = job.state.by_id(record.id) or record
+    if not started.started and _landed(job, now):
+        return replace(started, landed=True)
+    expected = section_inputs(job.state, now, deformation=True)
+    section_id = record.id
+
+    def land() -> Landed:
+        return land_trace(job, workspace, section_id, expected, regions=regions,
+                          options=options)
+
+    work = job.background.start(TRACE_WORK, (section_id,), land)
+    return replace(started, work=work.id)
+
+
+def land_trace(
+    job: Job,
+    workspace: Workspace,
+    section_id: str,
+    expected: str,
+    *,
+    regions: tuple[str, ...] = (),
+    options: DisplayOptions | None = None,
+) -> Landed:
+    """A packaged trace's landing (background work, after the image call):
+    the fit of the traced borders, applied as its own undo step, or why not.
+
+    *expected* is :func:`~langslice.tools.stale.section_inputs` (with the
+    deformation) when the trace was asked for: a section whose inputs moved
+    since gets nothing (``STALE_INPUT``), as does one whose trace was undone or
+    made at another placement. A failed image call is a failed work.
+    """
+    state = job.state
+    record = state.by_id(section_id)
+    if record is None:
+        return Landed(status=FAILED, text=f"{section_id} is no longer in the stack; nothing "
+                      "was applied.",
+                      result={"error": RefusalCode.UNKNOWN_SLICE_IDS})
+    held = record.border_trace
+    form = _trace_json(record)
+    trace = {key: form[key] for key in ("status", "attempt", "cached", "prompt_edited",
+                                        "include", "exclude", "error", "message")
+             if key in form}
+    if held is not None and held.status == "error":
+        reason = held.message or held.error or "no image"
+        return Landed(status=FAILED, text=f"the image model's call failed ({reason}); "
+                      "nothing was applied.",
+                      result={"error": RefusalCode.TRACE_FAILED,
+                              "trace": trace})
+    if (section_inputs(state, record, deformation=True) != expected
+            or held is None or held.status != "ok"):
+        return _stale(trace)
+    done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions)
+    if options is not None:
+        done = draw_fits(workspace, done, options)
+    (fitted,) = done.rows
+    row = deformable_row_to_json(fitted)
+    refusal = fitted.refusal
+    if refusal is not None or fitted.applied is None:
+        assert refusal is not None
+        if refusal.code in _STALE_CODES:
+            return _stale(trace)
+        return Landed(status=FAILED, text=f"the fit of the traced borders failed "
+                      f"({refusal.code}: {refusal.message}); nothing was applied.",
+                      result={"error": refusal.code, "row": row, "trace": trace})
+    summary = fitted.applied.numbers
+    moved = cast("dict[str, object]", summary.get("displacement_mm") or {})
+    built_on = ("its previous deformation" if fitted.steps > 1
+                else "its linear placement")
+    facts = (f"Displacement median {moved.get('median')} mm, max {moved.get('max')} mm; "
+             f"fold fraction {summary.get('fold_fraction')}"
+             + (f"; flags {deformation.flag_words(dict(summary))}"
+                if summary.get("flags") else "") + ".")
+    text = ("the trace landed and FireANTs fitted the traced borders (80 um smoothness"
+            + (f", restricted to {', '.join(regions)}" if regions else "")
+            + f") on top of {built_on}. The deformation is applied as its own undo "
+            "step: undo removes it while it is the latest step. " + facts)
+    return Landed(status=DONE, text=text, pictures=list(done.pictures),
+                  result={"row": row, "trace": trace})
+
+
+def _landed(job: Job, section: Section) -> bool:
+    """Whether *section*'s saved trace has landed: its border trace is a
+    completed reply and a step of its applied deformation, at its current
+    linear placement, fitted that very trace
+    (:func:`~langslice.tools.fitting.deformable.fit_deformable`
+    records the trace a traced step read)."""
+    held = section.border_trace
+    applied = section.deformation
+    if held is None or held.status != "ok":
+        return False
+    if applied is None or not applied.steps:
+        return False
+    if applied.linear_key != deformation.linear_key(job.state, section):
+        return False
+    trace = held.artifact_dir or ""
+    return bool(trace) and any(step.get("trace") == trace for step in applied.steps)
+
+
+def _stale(trace: dict[str, Any]) -> Landed:
+    return Landed(status=FAILED,
+                  text=f"{RefusalCode.STALE_INPUT}: the section's placement, section "
+                  "images, damage, deformation or trace changed before the trace landed; "
+                  "nothing was applied. Run trace_borders again.",
+                  result={"error": RefusalCode.STALE_INPUT, "trace": trace})
+
+
+_REPLY_TRACE_KEYS = ("status", "error", "message", "cached", "prompt_edited",
+                     "attempt", "include", "exclude")
+
+
+def trace_borders_tool(
+    run: Run, section: str, prompt: str, restrict_to: Sequence[str]
+) -> dict[str, Any]:
+    """Run the ``trace_borders`` tool: start the packaged trace, answer at once.
+
+    Parameters
+    ----------
+    run
+        The run the tool is called in.
+    section, prompt, restrict_to
+        The declared arguments as the model sent them
+        (``tools/descriptions/fitting.py``).
+
+    Returns
+    -------
+    dict
+        The reply: ``running`` (the section's trace already runs as work),
+        ``ok`` with ``landed`` (its fit is already applied) or ``started``
+        (the work id), the section's trace record and a ``message``.
+    """
+    assert run.image_model is not None
+    options = default_options("borders", long_edge=picture_edge(run.workspace))
+    done = trace_borders(
+        run.job, run.workspace, section, image_model=run.image_model,
+        prompt=str(prompt or ""), restrict_to=as_list(restrict_to),
+        options=options)
+    trace = {key: done.record[key] for key in _REPLY_TRACE_KEYS
+             if key in done.record}
+    if done.running:
+        return {"status": "running", "id": done.id, "work": done.work,
+                "message": f"This section's trace is already running as work "
+                f"{done.work}; its notice comes when it finishes."}
+    if done.landed:
+        return {"status": "ok", "id": done.id, "landed": True, "trace": trace,
+                "message": "This trace has already been fitted: the section's "
+                "deformation holds its fit, so nothing was fitted again."}
+    reused = ""
+    if not done.started:
+        reused = " (the saved answer at this placement and region choice is reused)"
+    return {"status": "started", "id": done.id, "work": done.work, "trace": trace,
+            "message": f"Started in the background as work {done.work}{reused}. "
+            "Carry on; its notice comes at the head of a later reply, and "
+            "submit waits for it."}

@@ -70,7 +70,7 @@ class AnthropicApiLlm(AnthropicLlm):
     max_tokens: int = MAX_TOKENS
     reasoning_effort: str | None = None
 
-    def _build_anthropic_kwargs(  # type: ignore[override]
+    def _build_anthropic_kwargs(
         self, llm_request, messages, tools, tool_choice, thinking,
     ):
         kwargs = super()._build_anthropic_kwargs(
@@ -96,7 +96,7 @@ class AnthropicApiLlm(AnthropicLlm):
         return kwargs
 
     @cached_property
-    def _anthropic_client(self):  # type: ignore[override]
+    def _anthropic_client(self):
         import httpx2 as httpx
         from anthropic import AsyncAnthropic
 

@@ -4,7 +4,8 @@ Two routes to the same field. :func:`fit_elastix` (``elastix_affine``) refines
 the section's current placement with an Elastix intensity affine on the
 deformable package's prepared stain and atlas images. The interactive route is
 the agent's own hand (``interactive_transform``,
-:mod:`langslice.tools.transforms`), whose arithmetic (calibration and the
+:mod:`langslice.tools.changing.transforms`), whose arithmetic (calibration and
+the
 decomposition it reports) lives here.
 
 The fit returns numbers, never pictures. Parameters are ABBA's — rotation
@@ -43,7 +44,6 @@ from langslice.core.sections.renders import (
     canvas_um_per_px,
     render_slice,
 )
-from langslice.core.space import Plane
 from langslice.core.stack.affine import Calibration, PhysicalAffine
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -66,7 +66,7 @@ def calibrate(
     if known is not None:
         return known, source
     plane = annotation_slice(
-        ctx.atlas, record.position_mm or 0.0, plane=cast(Plane, state.plane),
+        ctx.atlas, record.position_mm or 0.0, plane=state.plane,
         pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
     )
     return plane.shape[1] * atlas_um_per_px(ctx.atlas) / float(section.width), "uncalibrated"
@@ -151,8 +151,8 @@ def elastix_settings(
     from langslice.core.fits.deformable.settings import neighbourhood_um_for
 
     return FitSettings(
-        engine="elastix", detail=ELASTIX_DETAIL,  # type: ignore[arg-type]
-        atlas_image=atlas_image,  # type: ignore[arg-type]
+        engine="elastix", detail=ELASTIX_DETAIL,
+        atlas_image=atlas_image,
         section_image="stain", stain_metric="mutual_information", stain_edges=bool(edges),
         exclude=tuple(exclude), structures=tuple(include),
         neighbourhood_um=neighbourhood_um_for(brain_scale),
@@ -277,7 +277,7 @@ def fit_elastix(
             um_per_px,
             ctx.atlas,
             section.position_mm,
-            cast(Plane, state.plane),
+            state.plane,
             section.pitch_deg,
             section.yaw_deg,
         )

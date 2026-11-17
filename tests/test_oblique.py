@@ -12,7 +12,7 @@ from langslice.core.geometry.oblique import (
 )
 
 RES_UM = 100.0
-SHAPE = (120, 96, 96)  # (AP, DV, ML) for an "asr" atlas
+SHAPE = (120, 96, 96)
 
 
 def _phantom(asymmetric: bool = True) -> tuple[np.ndarray, np.ndarray]:
@@ -32,8 +32,6 @@ def _phantom(asymmetric: bool = True) -> tuple[np.ndarray, np.ndarray]:
     ap = np.arange(n_ap)[:, None, None]
     dv = np.arange(n_dv)[None, :, None]
     ml = np.arange(n_ml)[None, None, :]
-    # (n - 1) / 2, not n / 2: the sampler's mirror axis is the array centre,
-    # and a half-voxel offset here would make the phantom subtly asymmetric.
     c_ap, c_dv, c_ml = (n_ap - 1) / 2.0, (n_dv - 1) / 2.0, (n_ml - 1) / 2.0
 
     radial = np.sqrt(
@@ -41,16 +39,9 @@ def _phantom(asymmetric: bool = True) -> tuple[np.ndarray, np.ndarray]:
     )
     inside = (radial < 1.0) & (dv < 0.78 * n_dv)
 
-    # Long AP periods on purpose. Texture that repeats faster than the AP swing
-    # a 15-degree tilt produces aliases into a needle-sharp score peak that no
-    # coarse grid could find — an artefact of a synthetic section being a
-    # pixel-exact copy of the atlas, not something real histology does.
     texture = 60.0 * np.sin(2.0 * np.pi * ap / 46.0) + 35.0 * np.cos(2.0 * np.pi * ap / 62.0)
     body = 130.0 + texture * (radial < 0.55)
 
-    # A pair of dark "ventricles" whose height drifts with AP. Without a feature
-    # that MOVES along AP, a global intensity modulation is all there is, and
-    # neither the position nor the tilt is well localised.
     drift = (c_dv - 8.0) + 20.0 * (ap - c_ap) / n_ap
     ventricles = ((dv - drift) ** 2 + (np.abs(ml - c_ml) - 15.0) ** 2) < 36.0
     body = np.where(ventricles, 25.0, body)
@@ -126,15 +117,11 @@ def test_pitch_is_lr_symmetric_but_yaw_is_not() -> None:
     assert not np.allclose(yawed, yawed[:, ::-1], atol=1.0)
 
 
-# NCC, not MI: on a 96x96 phantom plane the masked region is only ~3.4k pixels,
-# and a joint-histogram MI over that few samples is noise-dominated. On the real
-# 25 um atlas (~19k pixels) the two agree.
 def test_annotation_sampling_keeps_large_ids_exact() -> None:
     """Allen ids exceed float32's exact integer range; the sampler must not round."""
     from langslice.core.geometry.oblique import sample_oblique_annotation
 
     atlas = _Phantom()
-    # 484682516 (ccb) is the id that exposed this: float32 lands it on ...528.
     atlas.annotation = np.where(atlas.annotation != 0, 484682516, 0).astype(np.int64)
     flat = sample_oblique_annotation(atlas, 55 * RES_UM / 1000.0, "coronal", 0.0, 0.0)
     tilted = sample_oblique_annotation(atlas, 55 * RES_UM / 1000.0, "coronal", 6.0, -3.0)

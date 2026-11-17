@@ -32,7 +32,6 @@ TOOLS = {
     "spomialign": ["spomialign"],
     "emlddmm": ["emlddmm_stack", "emlddmm_plane"],
 }
-#: The first argument set that gets each tool past its argument checks.
 CALLS = {
     "stalign_lddmm": {"sections": ["s0"]},
     "stalign_plane_search": {"sections": ["s0"]},
@@ -101,8 +100,6 @@ def test_nothing_of_the_engine_environments_is_imported():
                           check=False)
     assert done.returncode == 0, done.stdout + done.stderr
 
-
-# --- the contract: argument order, the mask rules, the blocks ----------------------------------
 
 ARGUMENTS = {
     "stalign_lddmm": ["sections", "section_image", "atlas_image", "mask", "kernel_um",

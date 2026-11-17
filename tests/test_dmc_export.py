@@ -1,4 +1,4 @@
-"""The DMC-BrainMap export (``job/dmc_brainmap.py``, ``tools/dmc_export.py``).
+"""The DMC-BrainMap export (``job/exports/dmc_brainmap.py``, ``tools/bookkeeping/dmc_export.py``).
 
 DMC-BrainMap itself is not imported: its reader is replicated here from its
 source (napari-dmc-brainmap 0.2.0b2: ``results_creator._scale_positions``,
@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from langslice.job.dmc_brainmap import (
+from langslice.job.exports.dmc_brainmap import (
     DmcFrame,
     DmcPlacement,
     dmc_decimals,
@@ -41,8 +41,6 @@ ALLEN_25 = ("allen_mouse_25um", "asr", (528, 320, 456), (25.0, 25.0, 25.0))
 RAT_39 = ("whs_sd_rat_39um", "asr", (1024, 512, 512), (39.0, 39.0, 39.0))
 ALLEN_10 = ("allen_mouse_10um", "asr", (1320, 800, 1140), (10.0, 10.0, 10.0))
 
-
-# --- DMC-BrainMap's reader, replicated ---------------------------------------
 
 
 def _homography(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
@@ -109,8 +107,6 @@ def _scale_positions(
     ).astype(int)
 
 
-# --- synthetic linear maps ---------------------------------------------------
-
 
 def _rotation(axis: int, degrees: float) -> np.ndarray:
     c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
@@ -166,7 +162,6 @@ def test_dmc_reads_the_linear_map_back(
     matrix = _linear_map(frame, *tilt, size)
     placement = dmc_placement(matrix, size, frame)
 
-    # every pair where DMC's window accepts it, at least five
     atlas_dots = np.asarray(placement.atlas_dots)
     sample_dots = np.asarray(placement.sample_dots)
     assert len(atlas_dots) >= 5
@@ -175,7 +170,6 @@ def test_dmc_reads_the_linear_map_back(
         assert np.all(dots[:, 0] < frame.x.size) and np.all(
             dots[:, 1] < frame.y.size
         )
-    # the angles give DMC exactly the shifts the conversion chose
     assert (
         int(math.tan(math.radians(placement.x_angle_deg)) * frame.x.size / 2)
         == placement.x_shift
@@ -185,7 +179,6 @@ def test_dmc_reads_the_linear_map_back(
         == placement.y_shift
     )
 
-    # LangSlice's continuous voxel at probe pixels over the section
     cols, rows = np.meshgrid(
         np.linspace(0, size[0] - 1, 41), np.linspace(0, size[1] - 1, 37)
     )
@@ -198,7 +191,6 @@ def test_dmc_reads_the_linear_map_back(
         ]
     )
 
-    # DMC's transform reproduces the in-plane map (half a voxel on)
     exact = np.column_stack(
         [
             cols * (frame.x.size - 1) / (size[0] - 1) + 0.5,
@@ -211,14 +203,10 @@ def test_dmc_reads_the_linear_map_back(
     assert np.array_equal(
         read[off_half, :2], np.rint(voxel[off_half, :2]).astype(int)
     )
-    # DMC's plane is held to whole voxels: its centre voxel (half a voxel
-    # at most), its slopes (half a voxel at the plane's edge) and the
-    # truncation of its depth (half a voxel, after the half voxel added)
     depth_error = read[:, 2] - voxel[:, 2]
     assert np.max(np.abs(depth_error)) <= 1.5
     assert float(np.mean(np.abs(depth_error))) < 0.6
 
-    # through the results path (cells rounded up onto the resized image)
     xs = _scale_positions(cols, size[0] - 1, frame.x.size - 1)
     ys = _scale_positions(rows, size[1] - 1, frame.y.size - 1)
     _post, read = _dmc_read(
@@ -233,7 +221,6 @@ def test_dmc_frame_matches_dmc_get_xyz_and_bregma() -> None:
     coronal = dmc_frame(*ALLEN_25, "coronal")  # type: ignore[arg-type]
     sagittal = dmc_frame(*ALLEN_25, "sagittal")  # type: ignore[arg-type]
     horizontal = dmc_frame(*ALLEN_25, "horizontal")  # type: ignore[arg-type]
-    # as DMC 0.2.0b2's get_xyz answers for allen_mouse_25um
     assert [(a.name, a.size) for a in (coronal.x, coronal.y, coronal.z)] == [
         ("rl", 456),
         ("si", 320),
@@ -245,7 +232,6 @@ def test_dmc_frame_matches_dmc_get_xyz_and_bregma() -> None:
     assert [
         (a.name, a.size) for a in (horizontal.x, horizontal.y, horizontal.z)
     ] == [("rl", 456), ("ap", 528), ("si", 320)]
-    # DMC's estimate for an atlas it has no bregma for, and its own table
     assert coronal.bregma == (264, 0, 228)
     assert dmc_frame(*RAT_39, "coronal").bregma == (371, 72, 266)  # type: ignore[arg-type]
     assert dmc_frame(*ALLEN_10, "coronal").bregma == (540, 0, 570)  # type: ignore[arg-type]
@@ -274,11 +260,11 @@ def test_z_mm_reads_back_to_the_centre_voxel() -> None:
 def test_a_plane_dmc_would_refuse_is_refused() -> None:
     frame = dmc_frame(*ALLEN_25, "coronal")  # type: ignore[arg-type]
     matrix = _linear_map(frame, -12.0, 0.0, (900, 700))
-    matrix[frame.z.index, 2] -= 6000.0  # near the front of the volume
+    matrix[frame.z.index, 2] -= 6000.0
     with pytest.raises(ValueError, match="leaves the atlas volume"):
         dmc_placement(matrix, (900, 700), frame)
     away = _linear_map(frame, 0.0, 0.0, (900, 700))
-    away[frame.x.index, 2] += 50000.0  # beside the atlas plane
+    away[frame.x.index, 2] += 50000.0
     with pytest.raises(ValueError, match="does not reach"):
         dmc_placement(away, (900, 700), frame)
 
@@ -301,8 +287,6 @@ def test_natural_key_orders_as_natsort() -> None:
         "s10_downsampled.tif",
     ]
 
-
-# --- a job exported whole ----------------------------------------------------
 
 
 @pytest.fixture
@@ -411,7 +395,6 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
         )
     x_angle, y_angle, z_mm = registration["atlasLocation"]["0"]
     assert (x_angle, y_angle) == (0.0, 0.0)
-    # 0.1 mm from the front is voxel 2 of the 50 um volume; bregma voxel 3
     assert z_mm == pytest.approx((3 - 2) * 0.05)
 
     record = json.loads((folder / "langslice_export.json").read_text(
@@ -425,7 +408,6 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
         {"section": ID2, "reason": "no position"}
     ]
 
-    # an image an earlier export left is removed: DMC numbers images by place
     (channel / "old_downsampled.tif").write_bytes(b"")
     exported_job.export_dmc_brainmap(channel="green")
     assert not (channel / "old_downsampled.tif").exists()

@@ -133,7 +133,6 @@ def test_returned_values_counts_the_fields_of_a_named_tuple() -> None:
 
 
 def test_returned_values_flags_a_dict_of_results() -> None:
-    # the game: return a dict, or dict(...), instead of a tuple
     source = """
     def results(a):
         return {"shift": a, "error": a, "phase": a}
@@ -159,7 +158,7 @@ def test_returned_values_allows_dicts_in_json_modules() -> None:
     violations = check_source(
         source,
         "returned-values",
-        relpath="src/langslice/job/public_files.py",
+        relpath="src/langslice/job/exports/public_files.py",
     )
     assert violations == []
 
@@ -198,7 +197,6 @@ def test_nested_definition_flags_a_long_callback() -> None:
 
 
 def test_nested_definition_flags_a_lambda_outside_key() -> None:
-    # the game: a lambda in place of a nested def
     source = """
     def order(items, cache):
         ranked = sorted(items, key=lambda item: item.rank)
@@ -273,7 +271,6 @@ def test_forwarder_flags_an_attribute_rename() -> None:
 
 
 def test_forwarder_sees_through_a_no_op_statement() -> None:
-    # the game: pad the forwarder with a statement that does nothing
     source = """
     def run_fit(inputs, settings):
         pass

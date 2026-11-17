@@ -21,30 +21,19 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-#: Stand-in for the temporary folder every run works in.
 ROOT_TOKEN = "<ROOT>"
 ROOTED_PATH = re.compile(re.escape(ROOT_TOKEN) + r"[^\s`'\"]*")
-#: Stand-in for a hex digest.
 HEX_TOKEN = "<hex>"
-#: Hex runs this long or longer are digests (cache keys and record folders
-#: derive from absolute paths and mtimes, never stable across folders).
 HEX_RUN = re.compile(r"[0-9a-f]{16,}")
-#: Keys whose values are wall-clock durations, normalised to this token.
 SECONDS_TOKEN = "<seconds>"
 SECONDS_KEYS = frozenset({"runtime_s", "elapsed_s", "seconds", "wall_s"})
 
-#: Fixed mtime for the section files (2026-01-01 UTC), so nothing derived
-#: from it varies.
 FIXED_MTIME = 1767225600
 
 ID0, ID1, ID2 = "s0.png", "s1.png", "s2.png"
-#: The synthetic sections are drawn at 25 um/px (tests/deformable_synthetic)
-#: and shrunk by this factor.
 SECTION_SHRINK = 0.8
 PIXEL_SIZE_UM = 25.0 / SECTION_SHRINK
 
-
-# --- the stack ----------------------------------------------------------------
 
 
 def write_sections(folder: Path) -> None:
@@ -66,10 +55,6 @@ def write_sections(folder: Path) -> None:
     )
 
     def smooth(image: Image.Image) -> np.ndarray:
-        # The helper's pixel noise only inflates the PNGs; the template's
-        # texture (a ~25 px period) survives this blur. Shrunk by
-        # SECTION_SHRINK (the pixel size grows to match, PIXEL_SIZE_UM) so
-        # every picture is smaller.
         plane = cv2.GaussianBlur(np.asarray(image)[..., 0], (0, 0), 1.2)
         size = (round(plane.shape[1] * SECTION_SHRINK), round(plane.shape[0] * SECTION_SHRINK))
         return cv2.resize(plane, size, interpolation=cv2.INTER_AREA)
@@ -87,7 +72,7 @@ def write_sections(folder: Path) -> None:
     blue = np.full_like(red, 30)
     Image.fromarray(np.stack([red, green, blue], axis=-1)).save(folder / ID1)
     width, height = SECTION_SIZE
-    remove = np.zeros((height, width), dtype=bool)  # on the helper's grid
+    remove = np.zeros((height, width), dtype=bool)
     remove[:, int(width * 0.68):] = True
     s2, _ = render_section(atlas, bump_field([(120, 140, 40, 0.04, -0.04)]), remove=remove,
                            seed=2)
@@ -103,9 +88,6 @@ def atlas_loader() -> Callable[[str], Any]:
     return lambda _name: atlas
 
 
-#: Module attributes every test runs with: fits run in this process (no
-#: spawn pool, whose start-up costs seconds per call) at the coarse detail
-#: level. Same code path, smaller pyramid.
 def _reference_brain(atlas: Any) -> float:
     """Every test atlas is the size of the adult mouse brain (brain scale 1):
     the fakes are a few planes, not brains; ``tests/test_brain_scale.py``
@@ -151,7 +133,6 @@ def stub_image_model(spec: Any) -> Any:
 
     def generate(request: Any) -> GeneratedSegmentation:
         images = [request.slice_image, *request.reference_images]
-        # The rough overlay is the one with drawn borders (more colour).
         def colour(image: Image.Image) -> float:
             pixels = np.asarray(image.convert("RGB")).astype(np.int16)
             return float(np.abs(pixels[..., 0] - pixels[..., 2]).mean())
@@ -174,7 +155,6 @@ class Normaliser:
     def text(self, value: str) -> str:
         for root in self.roots:
             value = value.replace(root, ROOT_TOKEN)
-        # A path under the root is written with "/" on every platform.
         value = ROOTED_PATH.sub(lambda m: m.group(0).replace("\\", "/"), value)
         return HEX_RUN.sub(HEX_TOKEN, value)
 

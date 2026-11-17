@@ -32,7 +32,6 @@ def test_a_panel_frame_per_picture_on_the_pictures_grid():
     images, panels = _draw(mode="overlay", zoom=[0.1, 0.1, 0.9, 0.8])
     assert len(panels) == len(images) == 1
     for image, panel in zip(images, panels, strict=True):
-        # The content starts at the top; the caption band is below it.
         assert panel.size == image.size and panel.content_box[1] == 0
         assert panel.content_box[3] < image.height
         assert layers.labels_layer(panel).shape == image.size[::-1]
@@ -43,7 +42,7 @@ def test_a_section_pixel_lands_where_the_placement_puts_it():
     _images, panels = _draw(mode="overlay")
     panel = panels[0]
     to_picture = layers.section_to_picture(panel)
-    canvas_xy = panel.section_matrix @ np.array([10.0, 20.0, 1.0])  # section x=10, y=20
+    canvas_xy = panel.section_matrix @ np.array([10.0, 20.0, 1.0])
     x0, y0 = panel.content_box[:2]
     expected = [(canvas_xy[1] - panel.crop_box[1]) * panel.factor + y0,
                 (canvas_xy[0] - panel.crop_box[0]) * panel.factor + x0]
@@ -61,8 +60,6 @@ def test_the_plane_affine_is_the_sampled_plane():
         np.testing.assert_allclose(mapped, grid, atol=1e-9)
 
 
-#: Which picture edge a positive angle puts at the larger position, per plane:
-#: the convention the angle conventions in `core.geometry.oblique` keep.
 ANGLE_EDGES = {
     "coronal": {"pitch": "top", "yaw": "right"},
     "sagittal": {"pitch": "left", "yaw": "bottom"},
@@ -78,7 +75,6 @@ def test_the_cutting_angle_directions_are_the_described_ones():
         normal = plane_axes(atlas, plane)[0]
         flat = plane_index_coordinates(atlas, 0.1, plane)
         h, w = flat.shape[1:]
-        # The sign that turns the normal index into position (mm).
         step = plane_index_coordinates(atlas, 0.15, plane)[normal, h // 2, w // 2]
         sign = 1.0 if step > flat[normal, h // 2, w // 2] else -1.0
         for angle, edge in edges.items():

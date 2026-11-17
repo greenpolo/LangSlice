@@ -33,14 +33,14 @@ def test_a_light_picture_gets_a_black_core_and_a_dark_one_a_white_core():
     assert pick_border_core(_flat(235), _band()) == "black"
     assert pick_border_core(_flat(40), _band()) == "white"
     assert resolve_border_color("auto", 1.0, rgb=_flat(40), coverage=_band()) == ("white", 1.0)
-    assert resolve_border_color("auto", 1.0) == ("black", 1.0)  # nothing drawn: unused
+    assert resolve_border_color("auto", 1.0) == ("black", 1.0)
     assert border_words("black") == "black, white-edged"
     assert border_words("white") == "white, black-edged"
 
 
 def test_the_lightness_is_read_under_the_lines_only():
     rgb = _flat(30)
-    rgb[:20] = 240  # a pale band away from the lines
+    rgb[:20] = 240
     assert pick_border_core(rgb, _band()) == "white"
 
 
@@ -56,11 +56,11 @@ def test_a_line_has_its_core_and_a_casing_on_both_sides(core, ground):
     _draw_polys(canvas, LINE, core, thickness=1.0)
     column = canvas[:, 30, 0].astype(int)
     ink = 0 if core == "black" else 255
-    assert column[30] == pytest.approx(ink, abs=40)  # the core
+    assert column[30] == pytest.approx(ink, abs=40)
     other = 255 - ink
-    for side in (28, 32):  # the casing, one pixel either side of the core
+    for side in (28, 32):
         assert abs(column[side] - other) < abs(column[side] - ink)
-    assert column[30 - 4] == ground and column[30 + 4] == ground  # nothing beyond it
+    assert column[30 - 4] == ground and column[30 + 4] == ground
     assert CASING_PX >= 1.0
 
 

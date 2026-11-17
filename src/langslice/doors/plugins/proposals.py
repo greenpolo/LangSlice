@@ -32,7 +32,7 @@ from langslice.doors.plugins.reads import as_tool_error
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import Grid
-    from langslice.tools.warps import MappedWarp
+    from langslice.tools.changing.warps import MappedWarp
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,7 @@ class ContextProposals(ContextFrames):
         um_per_px, source = calibrate(state, workspace, record, rendered)
         try:
             geometry = canvas_geometry(rendered.size, um_per_px, workspace.atlas,
-                                       record.position_mm, state.plane,  # type: ignore[arg-type]
+                                       record.position_mm, state.plane,
                                        record.pitch_deg, record.yaw_deg)
         except ValueError as exc:
             raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -220,7 +220,7 @@ class ContextProposals(ContextFrames):
         transform."""
         import json
 
-        from langslice.tools import warps
+        from langslice.tools.changing import warps
 
         record = self._record(section)
         try:

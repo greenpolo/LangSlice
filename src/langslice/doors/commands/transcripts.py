@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
 _UNQUOTED = r"[^\s\"';|&]+" if sys.platform == "win32" else r"[^\s\"'\\;|&]+"
 FOLDER_PATTERNS = (
@@ -79,7 +79,7 @@ def run(args: Any) -> None:
 def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
     """Copy the hook's transcript into each job folder it names; the copies."""
     from langslice.doors.agent_cli import environment as jobenv
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     transcript = transcript_path(hook)
     if transcript is None or not transcript.is_file():
