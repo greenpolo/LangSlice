@@ -409,7 +409,7 @@ def job_statement(
         ``agent``, ``mcp`` or ``cli``.
     opening
         The door's own paragraph on its opening pictures
-        (:func:`opening_for_mcp`, :func:`opening_for_cli`).
+        (:func:`opening_for_mcp`).
     notes
         The user's notes for the job (:func:`read_notes`).
     image_model_off

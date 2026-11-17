@@ -168,7 +168,7 @@ bodies, and turned into an answer once per door:
   connectors' agent files carry the same text,
   `tests/test_connector_agents.py`), `StatementFacts.from_run` and
   `job_statement(facts, door=, opening=, notes=, image_model_off=)`; what
-  each door adds after it (`opening_for_mcp`, `opening_for_cli`,
+  each door adds after it (`opening_for_mcp`,
   `status_and_notes`, `read_notes`, `image_model_state`) is
   `tools/descriptions/door_text.py`.
 - `jobs.py` — opening a job without the agent: `JobContext` (the workspace,

@@ -81,7 +81,6 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   and atlas, what the run changes, the raw channels and section images, the
   atlas images, the picture size, the deformable engine.
 - `door_text.py` — what the doors add: `opening_for_mcp`,
-  `opening_for_cli` (the opening files and the commands, `long_verbs`),
   `IMAGE_MODEL_OFF`, `status_and_notes`, `user_notes_lines`, `read_notes`,
   `NOTES_KEY`, `image_model_state`.
 - `fixes.py` — the agent CLI's fix sentence per refusal code.
