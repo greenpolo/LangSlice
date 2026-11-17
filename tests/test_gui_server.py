@@ -15,14 +15,19 @@ import shutil
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from urllib.parse import quote
 
+import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.workspace import Workspace
 from langslice.hosts.gui import render
 from langslice.hosts.gui.render import RenderPool
 from langslice.hosts.gui.server import HEADERS, GuiServer
+from langslice.hosts.gui.space import ShellError, atlas_shell
 from langslice.hosts.gui.watch import JobList
 from tests.synthetic_stack import ID0, ID1, ID2
 from tests.test_gui_render import LOADER, synthetic_job
@@ -168,21 +173,40 @@ def test_the_3d_view_s_sections_and_atlas_brain(served: tuple[GuiServer, Path]) 
     assert space["given_thickness"] or space["thickness_um"] == 10.0
     assert space["sections"][2]["corners_um"] is None
     status, body, _ = _get(gui, prefix + "shell")
-    shell = json.loads(body)
-    assert status == 200 and len(shell["orientation"]) == 3
-    for k in range(3):
-        assert shell["shape"][k] * shell["step_um"][k] >= shell["extent_um"][k] - 1e-6
-    count = math.prod(shell["shape"])
-    bits = base64.b64decode(shell["bits"])
-    assert len(bits) == (count + 7) // 8
-    inside = sum(bin(b).count("1") for b in bits)
-    assert 0 < inside < count
+    assert status == 409 and "brain mesh" in json.loads(body)["error"]
+    atlas = LOADER("x")
+    extent = [n * r for n, r in zip(np.shape(atlas.annotation), atlas.resolution, strict=True)]
     for placed in space["sections"][:2]:
         top_left, top_right, bottom_left = placed["corners_um"]
         assert math.dist(top_left, top_right) > 0 and math.dist(top_left, bottom_left) > 0
         centre = [(a + b) / 2 for a, b in zip(top_right, bottom_left, strict=True)]
         for k in range(3):
-            assert -shell["extent_um"][k] < centre[k] < 2 * shell["extent_um"][k]
+            assert -extent[k] < centre[k] < 2 * extent[k]
+
+
+def test_the_atlas_brain_is_its_root_mesh() -> None:
+    triangle = SimpleNamespace(type="triangle", data=np.array([[0, 1, 2], [0, 2, 3]]))
+    mesh = SimpleNamespace(
+        points=np.array([[0.0, 0, 0], [100, 0, 0], [100, 50, 0], [0, 50, 25]]),
+        cells=[SimpleNamespace(type="vertex", data=np.array([[0]])), triangle])
+    asked: list[str] = []
+
+    def mesh_from_structure(name: str) -> SimpleNamespace:
+        asked.append(name)
+        return mesh
+
+    atlas = SimpleNamespace(orientation="asr", resolution=(25.0, 25.0, 25.0),
+                            shape=(8, 4, 6), mesh_from_structure=mesh_from_structure)
+    shell = atlas_shell(cast(Workspace, SimpleNamespace(atlas=atlas)))
+    assert asked == ["root"]
+    assert (shell.orientation, shell.extent_um) == ("asr", (200.0, 100.0, 150.0))
+    assert (shell.vertices, shell.triangles) == (4, 2)
+    points = np.frombuffer(base64.b64decode(shell.positions), dtype="<f4").reshape(-1, 3)
+    faces = np.frombuffer(base64.b64decode(shell.indices), dtype="<u4").reshape(-1, 3)
+    assert np.allclose(points, mesh.points) and (faces == triangle.data).all()
+    without = SimpleNamespace(orientation="asr", resolution=(25.0,) * 3, shape=(8, 4, 6))
+    with pytest.raises(ShellError, match="brain mesh"):
+        atlas_shell(cast(Workspace, SimpleNamespace(atlas=without)))
 
 
 def test_what_a_job_does_not_hold_is_404(served: tuple[GuiServer, Path]) -> None:

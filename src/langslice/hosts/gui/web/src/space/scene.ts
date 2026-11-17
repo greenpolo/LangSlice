@@ -75,11 +75,7 @@ const FRAGMENT = /* glsl */ `
   varying vec2 vUv;
   varying float vEdge;
   void main() {
-    if (vEdge > 0.5) {
-      if (focus < 0.02) discard;
-      gl_FragColor = vec4(accent, shown * focus);
-      return;
-    }
+    if (vEdge > 0.5) discard;
     vec3 c = hasMap > 0.5 ? texture2D(map, vUv).rgb : vec3(0.0);
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
     float tissue = hasMap > 0.5 ? smoothstep(floor + 0.012, floor + 0.045, lum) : 0.0;

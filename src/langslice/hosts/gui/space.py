@@ -1,10 +1,11 @@
 """The job in three dimensions, for the viewer's 3D view.
 
 The 3D view draws the atlas brain as BrainGlobe's own surface of it and
-every placed section as a thin slab where its linear placement puts it. This module gives the page
-the numbers for that, from the same frames ``registration.json`` is written
-from (:func:`langslice.core.maps.section_maps.section_frame`), so a section
-in the 3D view sits exactly where its pictures say it does:
+every placed section as a thin slab where its linear placement puts it.
+This module gives the page the numbers for that, from the same frames
+``registration.json`` is written from
+(:func:`langslice.core.maps.section_maps.section_frame`), so a section in
+the 3D view sits exactly where its pictures say it does:
 
 - the atlas brain (:func:`atlas_shell`): the atlas's ``root`` mesh, the
   one brainrender draws, its vertices as float32 and its triangles as
@@ -154,8 +155,8 @@ def atlas_shell(workspace: Workspace) -> AtlasShell:
     return AtlasShell(
         str(atlas.orientation),
         extent_um,
-        int(points.shape[0]),
-        int(faces.shape[0]),
+        len(points),
+        len(faces),
         base64.b64encode(points.tobytes()).decode("ascii"),
         base64.b64encode(faces.tobytes()).decode("ascii"),
     )

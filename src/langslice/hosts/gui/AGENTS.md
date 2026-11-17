@@ -115,27 +115,28 @@ The page is a React app (`web/`, below), built into `static/`.
   click picks). `src/extended/`: `ExtendedView` (the progress box:
   one meter per step the job's `tasks` ask for, counted over its sections;
   four sections a page; Pictures | 3D), `Journal`, `Lightbox`. `src/space/`:
-  the 3D view (three.js). `surface.ts` meshes the shell mask (unpacked, blurred
-  by two [1 2 1] passes per axis, surface nets at the half level, Taubin
-  smoothing, faces turned outward); `scene.ts` (`Space`) maps atlas
-  micrometres to scene millimetres by the orientation letters (anterior +z,
-  superior +y, the animal's right -x, centred on the atlas), draws the brain
-  as fresnel glass (back faces before the sections, front faces after, no
-  depth writes) and each section as a slab whose basis is its thumbnail's
-  corners (`TR-TL`, `BL-TL`, the normal times the thickness; the shear the
-  decomposition leaves is kept), its face's alpha from the thumbnail's
-  luminance; an unplaced section's place is a cloud spot hashed from its id;
-  every slab moves on springs damped just short of critical (position, size, rotation),
-  staggered by order, waits for its picture before its first flight
-  (`PICTURE_WAIT_MS`) and flashes when it lands; the sections in focus rise
-  by `LIFT` of the brain's height, take the accent and the others dim;
-  OrbitControls with damping and a slow turn until the person drags;
-  reduced motion moves everything at once and does not turn; a click on a
-  slab picks its section. `Volume.tsx` fetches the shell once per job, the
-  space again when a row's `render_key` changes (at most every `SPACE_MS`),
-  the calm thumbnails through `pictures.ts` (`THUMB_RANK`, after the
-  stage's), and shows the placed count, the thickness, a hint and the
-  hovered section's name. `src/review/Review`:
+  the 3D view (three.js). `scene.ts` (`Space`) maps atlas micrometres to
+  scene millimetres by the orientation letters (anterior +z, superior +y,
+  the animal's right -x, centred on the atlas), draws BrainGlobe's root mesh
+  as brainrender shows it (Lambert, light grey, see-through, an ambient and
+  a key light that follows the camera, faces turned outward) and each
+  placed section as a slab whose basis is its thumbnail's corners (`TR-TL`,
+  `BL-TL`, the normal times the thickness; the shear the decomposition
+  leaves is kept), its picture's tissue opaque and its ground (the
+  luminance of the picture's corners) left out, no mipmaps (they blur the
+  tissue into the ground at a slant). A section without a position is not
+  drawn; a newly placed one fades in where it is (`FADE_S`); a changed
+  placement is glided to on critically damped springs (position, size,
+  rotation); nothing else moves. The sections in focus rise by `LIFT` of
+  the brain's height with their tissue's contour in the accent, and the
+  others turn half see-through (no depth writes) so they can be read.
+  OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
+  to the mesh; reduced motion moves everything at once; a click on a slab
+  picks its section. `Volume.tsx` fetches the shell once per job, the space
+  again when a row's `render_key` changes (at most every `SPACE_MS`), the
+  calm thumbnails through `pictures.ts` (`THUMB_RANK`, after the stage's),
+  and shows the placed count, the thickness, a hint and the hovered
+  section's name; in 3D the journal's column is narrower. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
   Prompt generator (its message from `static/generator-logic.js`, the same
@@ -227,10 +228,11 @@ The page is a React app (`web/`, below), built into `static/`.
   `corners_um`, its thumbnail's top-left, top-right and bottom-left corners
   in atlas micrometres in the atlas's axis order, null while unplaced; 409
   without a state this LangSlice reads) and `jobs/<n>/shell`
-  (`JobRenderer.shell`, `space.atlas_shell`: the atlas's orientation, the
-  sampled shape, step and extent, and `bits`, base64 of the annotation's
-  brain mask sampled every `step` voxels so the longest side has at most
-  `SHELL_MAX_VOXELS`, `numpy.packbits`, row-major),
+  (`JobRenderer.shell`, `space.atlas_shell`: the atlas's orientation and
+  extent, and its `root` mesh (`mesh_from_structure`, the mesh brainrender
+  draws, in the atlas micrometres the corners use): the vertex and triangle
+  counts, `positions` base64 of little-endian float32 x, y, z and `indices`
+  of uint32 triangles; 409 for an atlas without one),
   `jobs/<n>/render/overlay|thumb/<section>?edge=&key=` (the section's filename
   URL-encoded and one of the job's sections, else 404; `key`, the row's
   `render_key`, is for the browser's cache only), `jobs/<n>/render/atlas/<k>?edge=`,
@@ -288,7 +290,7 @@ The page is a React app (`web/`, below), built into `static/`.
   `look` and `zoom`, `FOLLOWED_READS`); `started_focus(record)`: a followed
   `tool_start` with targets gives its `target_ids` in order without repeats.
 - `space.py` — the 3D view's numbers: `atlas_shell(workspace)` ->
-  `AtlasShell`, `job_space(workspace, state, thickness_um=)` -> `Space`
+  `AtlasShell` (`ShellError` without a root mesh), `job_space(workspace, state, thickness_um=)` -> `Space`
   (`SpaceSection` per section in stack order), `section_corners` (from
   `core.maps.section_maps.section_frame`, the frame `registration.json` is
   written from, through the thumbnail's turn and flip, `turned_corners`).
