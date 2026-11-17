@@ -36,9 +36,12 @@ import warnings
 from collections.abc import Generator, Iterator
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from itk import Image, ParameterObject
 
 from langslice.core.fits.deformable.gpu_queue import (
     OOM_RETRIES,
@@ -519,7 +522,11 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
 ELASTIX_METRIC = "AdvancedMattesMutualInformation"
 
 
-def _elastix_image(array: np.ndarray, inputs: EngineInputs, pixel: type = np.float32) -> Any:
+def _elastix_image(
+    array: np.ndarray,
+    inputs: EngineInputs,
+    pixel: type[np.generic] = np.float32,
+) -> Image:
     """An ITK image on the working grid (x = columns, y = rows, millimetres)."""
     import itk
 
@@ -530,8 +537,10 @@ def _elastix_image(array: np.ndarray, inputs: EngineInputs, pixel: type = np.flo
 
 
 def _elastix_register(
-    inputs: EngineInputs, parameter_object: Any, extra_pairs: list[tuple[Any, Any]],
-) -> tuple[Any, Any]:
+    inputs: EngineInputs,
+    parameter_object: ParameterObject,
+    extra_pairs: list[tuple[Image, Image]],
+) -> tuple[Image, ParameterObject]:
     """Run one Elastix registration of the intensity pair plus *extra_pairs*.
 
     Every pair shares the fixed and moving masks. Returns the moving image
@@ -543,8 +552,8 @@ def _elastix_register(
     moving = _elastix_image(inputs.moving, inputs)
     fixed_mask = _elastix_image(inputs.fixed_mask.astype(np.uint8), inputs, np.uint8)
     moving_mask = _elastix_image(inputs.moving_mask.astype(np.uint8), inputs, np.uint8)
-    with global_threads(itk.MultiThreaderBase, FIT_THREADS):  # type: ignore[attr-defined]
-        method = itk.ElastixRegistrationMethod.New(fixed, moving)  # type: ignore[attr-defined]
+    with global_threads(itk.MultiThreaderBase, FIT_THREADS):
+        method = itk.ElastixRegistrationMethod.New(fixed, moving)
         method.SetFixedMask(fixed_mask)
         method.SetMovingMask(moving_mask)
         for extra_fixed, extra_moving in extra_pairs:
@@ -558,7 +567,7 @@ def _elastix_register(
     return moving, method.GetTransformParameterObject()
 
 
-def _parameter_maps(transform: Any) -> list[dict[str, list[str]]]:
+def _parameter_maps(transform: ParameterObject) -> list[dict[str, list[str]]]:
     return [
         {key: list(transform.GetParameterMap(i)[key])
          for key in transform.GetParameterMap(i).keys()}
@@ -648,7 +657,7 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     start = time.perf_counter()
     edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
     metrics = 2 if edges else 1
-    parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
+    parameter_object = itk.ParameterObject.New()
     pm = parameter_object.GetDefaultParameterMap("affine")
     pm["Transform"] = ("AffineTransform",)
     pm["AutomaticTransformInitialization"] = ("false",)
@@ -673,7 +682,7 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     pm["WriteResultImage"] = ("false",)
     parameter_object.AddParameterMap(pm)
     requested = {key: list(value) for key, value in pm.items()}
-    extra_pairs: list[tuple[Any, Any]] = []
+    extra_pairs: list[tuple[Image, Image]] = []
     if edges:
         assert inputs.fixed_edges is not None and inputs.moving_edges is not None
         extra_pairs = [(_elastix_image(inputs.fixed_edges, inputs),
