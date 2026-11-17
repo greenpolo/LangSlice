@@ -59,6 +59,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from langslice.core.maps.abba import MAX_POINTS
 from langslice.hosts.gui import generator
 from langslice.hosts.gui.comments import CommentRow, CommentWatch
 from langslice.hosts.gui.export import ExportError, Exports, reveal
@@ -319,7 +320,13 @@ class GuiServer:
                 return self._json({"opened": True})
             fields = cast("dict[str, object]", request)
             kind = fields.get("format") if isinstance(request, dict) else None
-            started = self.exports.start(watcher.folder, str(kind))
+            count = (
+                fields.get("landmarks") if isinstance(request, dict) else None
+            )
+            landmarks = count if isinstance(count, int) else MAX_POINTS
+            started = self.exports.start(
+                watcher.folder, str(kind), landmarks=landmarks
+            )
             return self._json(asdict(started))
         except (ExportError, OSError) as exc:
             return (*self._json({"error": str(exc)}), 400)

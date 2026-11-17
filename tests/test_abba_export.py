@@ -187,6 +187,18 @@ def test_linear_only_and_what_abba_cannot_open(job_folder: Path,
     from langslice.core.refusal import RefusalCode, Refused
 
     with _open(job_folder) as job:
+        few = job.export_abba(landmarks=30)
+        state, _sources, _dataset = _read(Path(few.path))
+        pairs = [json.loads(entry["actions"][-1]["registration"]["transform"])
+                 for entry in state["slices_state_list"]
+                 if entry["actions"][-1]["registration"]["type"]
+                 == "BigWarpSource2DRegistration"]
+        assert few.landmarks == 30 and pairs
+        for transform in pairs:
+            spline = transform["realTransform"]["wrappedTransform"]["wrappedTransform"]
+            assert len(spline["srcPts"][0]) <= 30
+        with pytest.raises(Refused):
+            job.export_abba(landmarks=5000)
         done = job.export_abba(warps=False)
         assert done.warped == [] and done.sections == [ID0, ID1]
         state, _sources, _dataset = _read(Path(done.path))
@@ -241,8 +253,8 @@ def test_the_export_menu_starts_polls_and_refuses(tmp_path: Path) -> None:
     folder.mkdir(parents=True)
     calls: list[tuple[Path, str]] = []
 
-    def fake_run(job: Path, kind: str) -> Written:
-        calls.append((job, kind))
+    def fake_run(job: Path, kind: str, landmarks: int) -> Written:
+        calls.append((job, kind, landmarks))
         if kind == "visualign":
             raise ValueError("no section has a placement to write")
         return Written(str(job / "exports" / f"x.{kind}"), "2 sections", 1)
@@ -261,7 +273,15 @@ def test_the_export_menu_starts_polls_and_refuses(tmp_path: Path) -> None:
                 break
             time.sleep(0.02)
         assert answer["state"] == "done" and answer["path"].endswith("x.abba")
-        assert answer["skipped"] == 1 and calls == [(folder, "abba")]
+        assert answer["skipped"] == 1 and calls == [(folder, "abba", 1089)]
+        _request(gui, "jobs/0/export", {"format": "abba_linear", "landmarks": 100})
+        for _ in range(100):
+            status, answer = _request(gui, "jobs/0/export", method="GET")
+            if answer["state"] != "running":
+                break
+            time.sleep(0.02)
+        assert calls[-1] == (folder, "abba_linear", 100)
+        assert _request(gui, "jobs/0/export", {"format": "abba", "landmarks": 50})[0] == 400
 
         _request(gui, "jobs/0/export", {"format": "visualign"})
         for _ in range(100):

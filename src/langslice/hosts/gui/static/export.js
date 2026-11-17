@@ -4,15 +4,23 @@
 // (hosts/gui/export.py). The page starts an export, polls its state while it runs and then
 // says where the file is, with Open folder and Copy path.
 const Exporter = (() => {
+  // An ABBA warp is landmark pairs: many follow LangSlice's warp closely, about 100 are
+  // still editable by hand in BigWarp (ABBA's own splines hold about 30). Below 100 they
+  // follow it less closely than leaving it out (measured on the 331CTX brain).
+  const EXACT = 1089, EDITABLE = 100, MIN_LANDMARKS = 100;
   const FORMATS = [
-    { kind: 'abba', name: 'ABBA project (.abba)',
-      about: 'Open in ABBA with File > Load State: each section with its affine and its warp.' },
+    { kind: 'abba', landmarks: EXACT, name: 'ABBA project (.abba)',
+      about: 'Each warp as up to 1,089 landmarks, about 2.5 µm from LangSlice’s. Open with File > Load State.' },
+    { kind: 'abba', landmarks: EDITABLE, name: 'ABBA project, editable (.abba)',
+      about: 'Each warp as 100 landmarks you can move in BigWarp; about 45 µm from LangSlice’s.' },
+    { kind: 'abba_linear', name: 'ABBA project, linear only (.abba)',
+      about: 'Position, angles and affine, no warp: add your own control points in ABBA.' },
     { kind: 'quicknii', name: 'QuickNII (.json)',
       about: 'The linear placement of each section, with its image.' },
     { kind: 'visualign', name: 'VisuAlign (.json)',
       about: 'The placement and each warp as VisuAlign markers.' },
   ];
-  const NAMES = Object.fromEntries(FORMATS.map(f => [f.kind, f.name]));
+  const NAMES = { abba: 'ABBA project', quicknii: 'QuickNII file', visualign: 'VisuAlign file' };
   const POLL_MS = 700;
   let job = null;
   let root = null;
@@ -109,16 +117,41 @@ const Exporter = (() => {
     }
   }
 
-  async function start(kind) {
+  async function start(kind, landmarks) {
     closeMenu();
     const index = job;
     note.dataset.asked = '1';
     try {
-      show(await post(`jobs/${index}/export`, { format: kind }));
+      show(await post(`jobs/${index}/export`, { format: kind, landmarks: landmarks || EXACT }));
       poll(index);
     } catch (error) {
       fail(error.message);
     }
+  }
+
+  // The menu's last row: an ABBA project with a landmark count of the person's own.
+  function otherCount() {
+    const row = el('div', 'export-other');
+    const label = el('label', 'export-other-label', 'ABBA, landmarks per warp');
+    const input = el('input', 'export-other-count');
+    input.type = 'number';
+    input.min = String(MIN_LANDMARKS);
+    input.max = String(EXACT);
+    input.step = '1';
+    input.value = '400';
+    input.id = 'export-landmarks';
+    label.htmlFor = input.id;
+    const go = el('button', '', 'Export');
+    go.setAttribute('role', 'menuitem');
+    const send = () => {
+      const count = Math.round(Number(input.value));
+      if (count >= MIN_LANDMARKS && count <= EXACT) start('abba', count);
+      else fail(`A warp takes ${MIN_LANDMARKS} to ${EXACT} landmarks.`);
+    };
+    go.addEventListener('click', send);
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') send(); });
+    row.append(label, input, go);
+    return row;
   }
 
   function build() {
@@ -136,9 +169,10 @@ const Exporter = (() => {
       const item = el('button', 'export-item');
       item.setAttribute('role', 'menuitem');
       item.append(el('span', 'export-item-name', format.name), el('span', 'export-item-about', format.about));
-      item.addEventListener('click', () => start(format.kind));
+      item.addEventListener('click', () => start(format.kind, format.landmarks));
       menu.append(item);
     }
+    menu.append(otherCount());
     note = el('div', 'export-note');
     note.setAttribute('role', 'status');
     note.hidden = true;
