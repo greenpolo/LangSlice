@@ -25,11 +25,8 @@ import langslice
 from tests.test_mcp_server import _folder
 
 REPO = Path(__file__).resolve().parents[1]
-#: Seconds a reply may take: the first includes the server's start-up.
 DEADLINE_S = 120.0
 
-#: `langslice mcp` with the test atlas (`tests/fakes.py`), which needs no
-#: download; everything else is the command as a host starts it.
 FAKE_ATLAS_SERVER = """
 import functools, sys
 from langslice.doors.mcp import server
@@ -47,7 +44,6 @@ class Server:
 
     def __init__(self, argv: list[str], stderr: Path) -> None:
         env = dict(os.environ)
-        # The child imports the langslice under test, and `tests` from the checkout.
         source = str(Path(langslice.__file__).resolve().parents[1])
         env["PYTHONPATH"] = os.pathsep.join(
             [source, str(REPO), *filter(None, [env.get("PYTHONPATH")])])
@@ -92,8 +88,6 @@ class Server:
             if line is None:
                 self.fail(f"the server closed stdout before answering {method}")
                 raise AssertionError
-            # One JSON message per line, ended by a newline (on Windows the
-            # server's text stream writes it as CRLF, which JSON reads as space).
             body = line.rstrip(b"\r\n")
             assert line.endswith(b"\n") and b"\n" not in body and b"\r" not in body, line[-40:]
             message = json.loads(body)

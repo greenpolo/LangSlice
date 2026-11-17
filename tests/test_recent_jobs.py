@@ -19,7 +19,7 @@ def test_every_open_adds_the_job_to_the_list_in_a_private_home(
 ):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))  # Windows' home
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv(recent.RECENT_ENV, raising=False)
     images = tmp_path / "stack"
     images.mkdir()
@@ -45,7 +45,7 @@ def test_the_list_can_be_moved_or_switched_off(tmp_path: Path, monkeypatch: pyte
     assert [entry["folder"] for entry in recent.read()] == [str(tmp_path / "a" / "langslice")]
     monkeypatch.setenv(recent.RECENT_ENV, "off")
     assert recent.recent_file() is None
-    recent.remember(tmp_path / "b", None, None)  # nothing, no error
+    recent.remember(tmp_path / "b", None, None)
     assert len(recent.read(elsewhere)) == 1
 
 
@@ -54,7 +54,7 @@ def test_a_long_list_keeps_the_newest_line_of_each_job(
 ):
     listed = tmp_path / "recent.jsonl"
     monkeypatch.setenv(recent.RECENT_ENV, str(listed))
-    monkeypatch.setattr(recent, "KEEP_BYTES", 1)  # every append compacts
+    monkeypatch.setattr(recent, "KEEP_BYTES", 1)
     monkeypatch.setattr(recent, "KEEP_JOBS", 3)
     for round_ in range(3):
         for name in "abcd":

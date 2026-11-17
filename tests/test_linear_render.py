@@ -44,12 +44,12 @@ def test_render_rotates_before_flipping(tmp_path: Path):
         ys, xs = np.nonzero(array > 128)
         return int(ys.mean() < array.shape[0] / 2), int(xs.mean() < array.shape[1] / 2)
 
-    assert corner(render_slice(ctx, record, long_edge=40)) == (1, 1)  # top-left
+    assert corner(render_slice(ctx, record, long_edge=40)) == (1, 1)
 
-    record.rotation_deg = 90  # counter-clockwise: top-left -> bottom-left
+    record.rotation_deg = 90
     assert corner(render_slice(ctx, record, long_edge=40)) == (0, 1)
 
-    record.flip = True  # then mirrored: bottom-left -> bottom-right
+    record.flip = True
     assert corner(render_slice(ctx, record, long_edge=40)) == (0, 0)
 
 
@@ -84,7 +84,7 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     rows = status_rows(state)
     assert [row["id"] for row in rows] == ["s0.png", "s1.png", "s2.png"]
     assert rows[0]["delta_to_next_mm"] == 0.5
-    assert rows[1]["delta_to_next_mm"] is None  # nothing placed after it
+    assert rows[1]["delta_to_next_mm"] is None
     assert rows[1]["flip"] is True
     assert rows[2]["position_mm"] is None
     assert rows[2]["damage_note"] == "half the section is gone"
@@ -92,7 +92,6 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     assert rows[0]["transform"]["mirrored"] is True
     assert rows[1]["transform"] is None
 
-    # A note alone (a host's ``inputs.damaged``) does not make a section damaged.
     assert rows[2]["damaged"] is False and rows[2]["damaged_regions"] == []
 
     state.slices[2].damaged_regions = ["CTX", "OB"]
@@ -100,7 +99,7 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     assert rows[2]["damaged"] is True and rows[2]["damaged_regions"] == ["CTX", "OB"]
 
     state.slices[0].position_mm = 5.0
-    state.slices[1].position_mm = 4.0  # the stack runs backwards: the delta is signed
+    state.slices[1].position_mm = 4.0
     assert status_rows(state)[0]["delta_to_next_mm"] == -1.0
 
 

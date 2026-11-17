@@ -58,7 +58,7 @@ def _job(tmp_path: Path, *, persist: bool = True):
             assert source is not None
             record.position_mm = source.position_mm
         job.commit(before)
-    if not persist:  # a dry run's job: it writes nothing, its pictures in memory
+    if not persist:
         job = Job.load(spec, ws, folder=ws.job_folder, results_path=ws.results_path,
                        persist=False)
     return job, ws
@@ -89,7 +89,6 @@ def test_look_numbers_every_picture_and_indexes_its_recipe(tmp_path: Path):
         json.dumps(found.recipe)
     assert _record(job, 2).sections == (SECTIONS[1],)
     assert _record(job, 3).mode == "overlay"
-    # No arguments reads no state: every section, in stack order.
     every = ops_look.look_pictures(job, ws, LookRequest("section"))
     assert len(every.entries) == 4 == len(every.pictures)
 
@@ -109,24 +108,24 @@ def test_look_refusals(tmp_path: Path):
         with pytest.raises(Refused) as caught:
             ops_look.look_pictures(job, ws, LookRequest(**kwargs))  # type: ignore[arg-type]
         assert caught.value.code == code, (kwargs, caught.value.code)
-    assert job.views.latest(exclude_tool=None) is None  # nothing saved
+    assert job.views.latest(exclude_tool=None) is None
 
 
 def test_a_job_with_a_picture_cap_names_the_pictures_past_it_not_shown(tmp_path: Path):
     job, ws = _job(tmp_path)
-    job.picture_cap = 4  # the agent tools and MCP set this (build_tools)
+    job.picture_cap = 4
     positions = [0.05, 0.08, 0.11, 0.14, 0.17]
     looked = ops_look.look_pictures(job, ws, LookRequest("atlas", positions_mm=positions))
     assert len(looked.pictures) == len(looked.entries) == 4
     (left_out,) = looked.not_shown
     assert left_out["positions_mm"] == [0.17] and left_out["mode"] == "atlas"
     assert "positions_mm=[0.17]" in left_out["how"] and left_out["caption"]
-    assert [r.seq for r in job.views.records()] == [1, 2, 3, 4]  # the fifth was not saved
+    assert [r.seq for r in job.views.records()] == [1, 2, 3, 4]
 
 
 def test_a_job_without_a_picture_cap_shows_every_picture(tmp_path: Path):
     job, ws = _job(tmp_path)
-    assert job.picture_cap is None  # the agent CLI and the library
+    assert job.picture_cap is None
     positions = [0.05, 0.08, 0.11, 0.14, 0.17, 0.2]
     looked = ops_look.look_pictures(job, ws, LookRequest("atlas", positions_mm=positions))
     assert len(looked.pictures) == len(looked.entries) == 6 and looked.not_shown == []
@@ -145,7 +144,6 @@ def test_zoom_defaults_to_the_latest_picture_that_is_not_a_zoom(tmp_path: Path):
     assert first.entries[0]["id"] == entry["id"] + 1
     saved = job.views.lookup(first.entries[0]["id"])
     assert saved is not None and saved.tool == "zoom" and saved.sections == (MARKED,)
-    # The latest picture is now a zoom; the default still reads the look.
     second = tools_zoom.zoom_picture(job, ws, [0, 0, width / 4, height / 4])
     assert second.picture == entry["id"]
     assert second.entries[0]["id"] == entry["id"] + 2
@@ -170,22 +168,19 @@ def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
     assert zoomed.redrawn and zoomed.entries[0]["caption"]
     window = _recipe(job, zoomed.entries[0]["id"])["args"]["zoom"]
     assert window[0] == pytest.approx(box[0] / width, abs=1e-6)
-    # On a zoom, a box is in the grid's numbers: the whole picture's pixels.
     again = tools_zoom.zoom_picture(job, ws, [box[0], box[1], box[0] + 10, box[1] + 10],
                           picture=zoomed.entries[0]["id"])
     inner = _recipe(job, again.entries[0]["id"])
-    assert inner["base"] == recipe["base"]  # redrawn from the original, not enlarged
+    assert inner["base"] == recipe["base"]
     assert inner["args"]["zoom"][0] == pytest.approx(window[0])
     assert inner["args"]["zoom"][2] < window[2]
     assert again.picture == zoomed.entries[0]["id"] and again.redrawn
-    # The box was read on the picture: the white square fills the middle of
-    # the zoom's content, framed by the slab's gray margin.
     zoom_width, zoom_height = _recipe(job, zoomed.entries[0]["id"])["shown"]
     shown = np.asarray(zoomed.pictures[0].convert("L"))[:zoom_height, :zoom_width]
     middle = shown[zoom_height * 2 // 5:zoom_height * 3 // 5,
                    zoom_width * 2 // 5:zoom_width * 3 // 5]
-    assert np.median(middle) > 240  # the grid draws thin lines over it
-    assert shown[:, :zoom_width // 20].mean() < 200  # the margin left of the square
+    assert np.median(middle) > 240
+    assert shown[:, :zoom_width // 20].mean() < 200
 
 
 def test_a_changed_stack_is_redrawn_as_it_was_and_flagged_stale(tmp_path: Path):
@@ -212,7 +207,6 @@ def test_a_picture_without_a_recipe_is_cropped_and_a_crop_of_a_crop_maps_back(tm
     held = job.views.lookup(crop_id)
     assert held is not None and held.recipe is not None
     assert held.recipe["renderer"] == "crop" and held.recipe["source"] == number
-    # A box on the crop is in the source picture's pixels (the grid's numbers).
     again = tools_zoom.zoom_picture(job, ws, [300, 100, 400, 200], picture=crop_id)
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["args"]["box"] == [300.0, 100.0, 400.0, 200.0] and inner["source"] == number
@@ -228,7 +222,6 @@ def test_a_picture_that_is_not_saved_is_refused_and_a_dry_run_zooms_from_memory(
     with pytest.raises(Refused) as caught:
         tools_zoom.zoom_picture(job, ws, [0, 0, 20, 20], picture=number)
     assert caught.value.code == "PICTURE_NOT_SAVED"
-    # A dry run keeps no pictures between processes: an unknown number is "not saved".
     (tmp_path / "dry").mkdir()
     dry, dry_ws = _job(tmp_path / "dry", persist=False)
     with pytest.raises(Refused) as caught:
@@ -237,7 +230,6 @@ def test_a_picture_that_is_not_saved_is_refused_and_a_dry_run_zooms_from_memory(
     with pytest.raises(Refused) as caught:
         tools_zoom.zoom_picture(dry, dry_ws, [0, 0, 20, 20])
     assert caught.value.code == "NO_PICTURE"
-    # ... but within the process a dry run zooms from memory.
     (entry,) = ops_look.look_pictures(
         dry, dry_ws, LookRequest("section", sections=[SECTIONS[0]])).entries
     zoomed = tools_zoom.zoom_picture(dry, dry_ws, [0, 0, 60, 40])
@@ -250,7 +242,7 @@ def _border_color_mask(plain: Image.Image, picture: Image.Image) -> np.ndarray:
     from the plain atlas template (*plain*) at the same plane and size (the
     faint context lines move a pixel by less). Cased lines are black or white,
     which the tissue also is, so a colour test cannot find them."""
-    rows = 100  # the picture above its caption band, whose height varies
+    rows = 100
     assert plain.width == picture.width
     diff = np.abs(np.asarray(picture.convert("RGB")).astype(int)[:rows]
                   - np.asarray(plain.convert("RGB")).astype(int)[:rows]).max(axis=-1)
@@ -280,15 +272,13 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     striatum = _centre_x(plain, view.pictures[0])
     thalamus_view = ops_atlas.draw_regions(job, ws, ["TH"], [0.1])
     thalamus = _centre_x(plain, thalamus_view.pictures[0])
-    assert striatum < 0.45 < 0.55 < thalamus  # STR sits left of TH in the synthetic plane
-    # One side of a region: the highlight is the half on that side only.
+    assert striatum < 0.45 < 0.55 < thalamus
     both_view = ops_atlas.draw_regions(job, ws, ["CTX"], [0.1])
     both = _border_color_mask(plain, both_view.pictures[0]).sum()
     left_view = ops_atlas.draw_regions(job, ws, ["CTX:left"], [0.1])
     left = _border_color_mask(plain, left_view.pictures[0]).sum()
     assert 0 < left < both
     assert not view.regions_not_in_plane
-    # More than four positions: the rest are named, and a zoom redraws through the recipe.
     job.picture_cap = 4
     many = ops_atlas.draw_regions(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
     assert len(many.entries) == 4 and many.not_shown[0]["positions_mm"] == [0.14]

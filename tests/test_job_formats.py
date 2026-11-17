@@ -87,8 +87,6 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     job.look(mode="overlay", sections=[ID1], resolution=700)
     job.look(mode="overlay", sections=[ID2], resolution=300)
     job.zoom(box=[30, 25, 270, 200])
-    # A picture smaller than the fit grid, so the residual is resampled (the
-    # fit is a second step on top of the first).
     again = _fit_and_draw(job, [ID0], long_edge=160)
     assert again.rows[0].refusal is None and again.written == [ID0]
     exported = job.export_maps()
@@ -97,7 +95,6 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     patch.undo()
 
 
-#: The tools whose saved pictures are placement pictures (one atlas plane).
 PLACEMENT_TOOLS = ("look", "zoom")
 
 
@@ -128,7 +125,6 @@ def test_export_writes_every_file_with_its_kind(placed):
                            ("labels_fiji.tif", "labels_fiji"), ("labels.csv", "labels_csv"),
                            ("maps.json", "maps")):
             assert (f"sections/{stem}/{name}", kind) in kinds
-    # Only the warped section has a residual.
     assert ("sections/s0/residual.tif", "residual") in kinds
     assert not (root / "sections/s1/residual.tif").exists()
     assert {("exports/quicknii.json", "quicknii"), ("exports/visualign.json", "visualign"),
@@ -192,7 +188,6 @@ def test_coordinates_are_the_matrix_after_the_residual(placed):
                                               np.ones_like(rows)]), axes=1)
     tissue = np.isfinite(coords[0])
     assert np.abs(composed[:, tissue] - coords[:, tissue]).max() < 0.01
-    # The residual is a real deformation, not zero.
     assert np.abs(residual).max() > 0.5
 
 
@@ -249,9 +244,7 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     current = job.job.deformations.current(job.state, record)
     frame = section_frame(job.state, job.workspace, record)
     folders = _views(root, "trace_borders")
-    # No copy of the field beside the picture: the frame names the record.
     assert folders and not any((folder / "residual.tif").exists() for folder in folders)
-    # The first picture shows the first fit, the second the step on top of it.
     assert len(folders) == 2 and current.parent is not None
     for folder, warp in zip(folders, (current.parent, current), strict=True):
         picture = json.loads((folder / "view.json").read_text(
@@ -268,7 +261,6 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
         nx, ny = native_points(frame, warp, fx[None], fy[None])
         expected = frame.native_to_um @ np.stack([ny[0], nx[0], np.ones_like(nx[0])])
         got = coordinate_map(folder / "view.json")[rows, cols].T
-        # Under 1 um on a 31 um/px section: two bilinear samplings of one field.
         assert np.abs(got - expected).max() < 1.0, folder.name
 
 
@@ -302,11 +294,10 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
             assert [item["width"], item["height"]] == entry["image"]["size"]
             anchoring = np.asarray(item["anchoring"])
             u, v = anchoring[3:6], anchoring[6:9]
-            assert abs(u @ v) <= 1e-7 * (u @ u + v @ v)  # rounded to 1e-6 voxels
+            assert abs(u @ v) <= 1e-7 * (u @ u + v @ v)
             assert item["anchoring"] == twin["anchoring"]
             if name == "quicknii.json":
                 assert item["markers"] == []
-    # the copies the files name: the preprocessed image, beside the files
     for copy, section in zip(copies, (ID0, ID1, ID2), strict=True):
         with Image.open(root / "exports" / copy) as picture:
             assert picture.mode == "L"
@@ -320,7 +311,6 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
         warp = job.job.deformations.current(job.state, record)
         markers = np.asarray(item["markers"]).reshape(-1, 4)
         if not len(markers):
-            # no deformation and no shear: the anchoring is the linear map
             assert warp is None
             markers = np.array([[5.5, 3.5, 5.5, 3.5], [200.5, 150.5, 200.5, 150.5]])
         nx, ny = native_points(frame, warp, markers[None, :, 2] - 0.5,
@@ -334,7 +324,7 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
         assert np.abs(composed - anchored).max() < 1e-3, section
     warped = np.asarray(documents["visualign.json"]["slices"][0]["markers"])
     assert len(warped) > 20
-    assert np.abs(warped[:, :2] - warped[:, 2:]).max() > 0.5  # a real deformation
+    assert np.abs(warped[:, :2] - warped[:, 2:]).max() > 0.5
 
 
 def test_quicknii_axes_reverse_brainglobe_asr():
@@ -343,7 +333,6 @@ def test_quicknii_axes_reverse_brainglobe_asr():
 
     atlas = {"orientation": "asr", "shape": [528, 320, 456], "resolution_um": [25.0] * 3}
     point = atlas_um_to_quicknii_points([[0.0, 0.0, 0.0]], atlas)[0]
-    # QuickNII (x ML, y AP, z DV): every axis reversed against asr.
     assert np.allclose(point, [456 - 0.5, 528 - 0.5, 320 - 0.5])
 
 
@@ -364,7 +353,6 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     entry = before["sections"][2]
     assert entry["mapping"].startswith("linear (identity")
     assert entry["maps"]["current"] is True
-    # A dry run writes nothing.
     stamp = path.stat().st_mtime_ns
     opened = open_folder(images, atlas_loader=atlas_loader(), persist=False)
     tools = {tool.__name__: tool for tool in opened.tools().tools}
@@ -373,14 +361,12 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     opened.close()
     assert dry["files_written"] is False and dry["files"]
     assert path.stat().st_mtime_ns == stamp
-    # A write rewrites it; the maps written before are no longer current.
     job = langslice.open_job(str(images), atlas_loader=atlas_loader())
     job.position_sections(sections=[{"id": ID2, "position_mm": 0.25}], view=False)
     job.close()
     after = json.loads(path.read_text(encoding="utf-8"))
     moved = after["sections"][2]
     assert moved["parameters"]["plane"]["position_mm"] == 0.25
-    # A flat plane sits on its nearest atlas slab (50 um here), as its pictures do.
     assert moved["pixel_to_atlas_um"][0][2] == 250.0 != entry["pixel_to_atlas_um"][0][2]
     assert moved["maps"]["current"] is False
     assert after["sections"][0]["maps"]["current"] is True
@@ -452,8 +438,6 @@ def test_orientation_matrix_is_the_render_order(rotation, flip):
             == np.arange(width * height).reshape(height, width)).all()
 
 
-# --- sections without a pixel size -------------
-
 
 def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """The shared stack with no pixel size anywhere (no host input, the PNGs
@@ -502,12 +486,8 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
                                          "translate_y_mm": 0.0}], view=False)
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.25}], view=False)
     job.look(mode="overlay", sections=[ID0], resolution=512)
-    # The nonlinear start (the trace's canvas, every fit's grid, the Elastix
-    # affine's start) uses the same scale.
     handoff = prepare_linear_registration(job.state, job.workspace, ID0,
                                           long_edge=PREVIEW_LONG_EDGE).metadata
-    # No transform: the identity at the uncalibrated scale; no traceback per
-    # section per checkpoint.
     with caplog.at_level(logging.WARNING):
         job.position_sections(sections=[{"id": ID2, "position_mm": 0.2}], view=False)
         job.look(mode="overlay", sections=[ID2], resolution=512)
@@ -543,8 +523,6 @@ def prepared_render_size(path: Path) -> tuple[int, int]:
         return prepared_size(image.size, max_long_edge=PREVIEW_LONG_EDGE)
 
 
-# --- export_maps beside other writers-----------------
-
 
 def _two_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: Any) -> tuple[Any, Any]:
     import shutil
@@ -566,7 +544,7 @@ def test_export_maps_syncs_before_it_writes(placed, tmp_path, monkeypatch):
     from langslice.tools.exports import export_maps
 
     first, second = _two_jobs(tmp_path, monkeypatch, placed)
-    first.status()  # first holds the state as it was
+    first.status()
     second.position_sections(sections=[{"id": ID2, "position_mm": 0.25}], view=False)
     done = export_maps(first.job, first.workspace, [ID2])
     first.close()
@@ -595,7 +573,6 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
     seen: list[bool] = []
 
     def meanwhile(workspace: Any, frame: Any, warp: Any, **kwargs: Any) -> Any:
-        # Another process could take the lock now; this thread does not hold it.
         other = FolderLock(Path(first.folder), timeout=0.5)
         with other.held():
             seen.append(True)

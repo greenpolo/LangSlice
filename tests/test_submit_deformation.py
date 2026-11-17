@@ -87,7 +87,7 @@ def test_supplied_positions_place_only_their_sections(tmp_path: Path, tasks, inp
 
 def test_saved_pictures_record_the_history_depth(tmp_path: Path):
     job, _ = _open(tmp_path, tasks=["position"])
-    for position in (2.0, 3.0):  # two writes: the depth is not the store's default
+    for position in (2.0, 3.0):
         with job.writing():
             before = job.snapshot()
             job.state.by_id("s0.png").position_mm = position  # type: ignore[union-attr]

@@ -66,7 +66,6 @@ def test_shear_nonsquare_round_trip(tmp_path, monkeypatch):
 def test_rotation_then_flip_and_requested_grid_calibration(tmp_path, monkeypatch):
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch)
     record.rotation_deg, record.flip = 90, True
-    # preprocess "none": the opening image is the file as read, in gray
     original = Image.open(tmp_path / record.id).convert("L").convert("RGB")
     expected = original.transpose(Image.Transpose.ROTATE_90).transpose(
         Image.Transpose.FLIP_LEFT_RIGHT
@@ -79,7 +78,6 @@ def test_rotation_then_flip_and_requested_grid_calibration(tmp_path, monkeypatch
     assert small.metadata["section_um_per_px"] == 20
     assert full.metadata["section_um_per_px"] == 10
     assert full.metadata["atlas_mirror_lr"] is False
-    # The padded canvas may round by half a pixel; physical linear scale is exact.
     np.testing.assert_allclose(small.atlas_to_slice[:2, :2] * 2, full.atlas_to_slice[:2, :2])
 
 

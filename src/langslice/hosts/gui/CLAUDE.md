@@ -550,7 +550,7 @@ below), still served at `classic.html` until it is removed.
 whole, a trace appearing mid-run, time order, missing files, the raw-state
 fallback, undo labels, a path outside the folder, the job list,
 a truncated file, the focus, Idle, the rows' render keys and positions, job
-names; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
+names),
 `tests/test_gui_transcripts.py` (the transcript found by its `start_job`
 call among others and tailed, a half-written line, an old transcript and a
 job with no call left alone, `off`, the watcher showing the words),

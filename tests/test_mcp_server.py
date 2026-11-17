@@ -94,12 +94,10 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
     assert len(_text(status)["rows"]) == 3
     looked = _text(view)
     assert "images" not in looked
-    # Every picture is numbered, in the order the pictures are attached.
     assert [entry["id"] for entry in looked["pictures"]] == [1, 2]
     assert [entry["caption"].split(" ", 1)[0] for entry in looked["pictures"]] == [
         "s0.png", "s1.png"]
     assert sum(isinstance(block, ImageContent) for block in view.content) == 2
-    # The submit gates hold: nothing is positioned yet.
     assert _text(submit)["error"] == "MISSING_POSITIONS"
 
 
@@ -160,7 +158,6 @@ def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
                 "cutting_angles": {"pitch_deg": 1.0, "yaw_deg": 0.0, "roll_deg": 2.0}}),
             await client.call_tool("look", {"mode": "section", "sections": ["s0.png"],
                                             "glow": 1}),
-            # Claude Desktop may send a nested object as a JSON string.
             await client.call_tool("position_sections", {
                 "cutting_angles": '{"pitch_deg": 1.5, "yaw_deg": -2.0}'}),
         )
@@ -180,7 +177,6 @@ def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
     applied = _text(encoded)
     assert applied["status"] == "ok"
     assert applied["cutting_angles_deg"] == {"pitch": 1.5, "yaw": -2.0}
-    # The change shows its positioning picture.
     assert len(applied["pictures"]) == 1
     assert sum(isinstance(block, ImageContent) for block in encoded.content) == len(
         applied["pictures"])
@@ -213,7 +209,6 @@ def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
     assert refused["filenames"] == ["s0.png", "s1.png", "s2.png"]
     assert "named by filename" in refused["message"]
     assert not any(isinstance(block, ImageContent) for block in numbers.content)
-    # A null inside an entry is "not given": the flip stays as it was.
     written = _text(nulls)
     assert written["status"] == "ok"
     entry, = written["results"]
@@ -221,11 +216,9 @@ def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
     assert entry["transform"]["rotation_deg"] == 5.0
     row, = written["changed"]
     assert row["id"] == "s1.png" and row["flip"] is False
-    # A null object argument is its default: the angles are left as they are.
     placed = _text(no_angles)
     assert placed["written"] == [{"id": "s2.png", "position_mm": 9.8}]
     assert placed["cutting_angles_deg"] == {"pitch": 0.0, "yaw": 0.0}
-    # A null under an unknown key is still an unknown key.
     assert _text(stray)["error"] == "UNKNOWN_ARGUMENTS"
 
 
@@ -248,7 +241,6 @@ def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path:
     for tool in tools:
         text = json.dumps(tool.inputSchema) + (tool.description or "")
         assert "zoom takes" not in text and "positioning mode" not in text
-    # A mode the schema does not offer is refused before the tool runs.
     assert looked.isError or _text(looked).get("error") in ("OPTION_OFF", "UNKNOWN_ARGUMENTS")
 
 
@@ -261,7 +253,6 @@ def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_pat
                    disabled=["fireants_syn", "set_landmarks", "landmark_triangulation",
                              "stalign_lddmm", "spomialign", "emlddmm_stack"],
                    nonlinear=NonlinearSpec(provider="openai-api"))
-    # Valid with the image model; the door that cannot reach it has no writer.
     with pytest.raises(ValueError, match="image model is not connected"):
         open_job(spec, atlas_loader=lambda _n: _ATLAS)
 
@@ -284,7 +275,6 @@ def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Pat
     assert before == {"start_job"}
     assert _text(refused)["error"] == "NO_FOLDER"
     assert {"status", "submit"} <= during
-    # The second folder replaced the first job.
     assert len(_text(status)["rows"]) == 2
 
 
@@ -316,7 +306,6 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
     named = [name for text in strips for name in text.split(": ", 1)[1].split(", ")]
     assert named == [record.id for record in job.state.in_order()]
     assert len(strips) > 1
-    # Every strip text is followed by its picture, at Claude's size and area.
     for index, block in enumerate(blocks):
         if isinstance(block, TextContent) and block.text.startswith(("Strip ", "Atlas strip ")):
             picture = blocks[index + 1]
@@ -369,7 +358,6 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     async def first(client: Any) -> Any:
         briefing = await client.call_tool("start_job", {"image_folder": str(folder)})
         tools = {tool.name for tool in (await client.list_tools()).tools}
-        # Every write waits until the opening pages were read.
         early = await client.call_tool("note", {"text": "too early"})
         await client.call_tool("show_stack", {"page": 1})
         note = await client.call_tool("note", {"text": "checked s0"})
@@ -380,18 +368,14 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     refused = json.loads(early.content[0].text)
     assert refused["error"] == "OPENING_NOT_READ" and refused["pages"] == [1]
     assert "show_stack(page=1)" in refused["message"]
-    # The job comes in the launching message, not in start_job's reply.
     assert briefing.content[0].text == (
         f"Job opened: {folder / 'langslice'}. 3 sections. The opening is show_stack "
         "page 1: read every page before any write.")
     assert "position_sections" in tools and "interactive_transform" not in tools
     job_dir = folder / "langslice"
-    # The sections are untouched; the job folder sits beside them.
     assert sorted(path.name for path in folder.iterdir()) == [
         "langslice", "s0.png", "s1.png", "s2.png"]
 
-    # A new server (a restarted Claude Desktop) resumes the checkpoint, named
-    # by its job folder this time.
     async def again(client: Any) -> Any:
         await client.call_tool("start_job", {"image_folder": str(job_dir)})
         return await client.call_tool("status", {})
@@ -400,8 +384,6 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     saved = json.loads((job_dir / "state.json").read_text(encoding="utf-8"))
     assert any("checked s0" in line for line in saved["notes"])
 
-
-# --- door parity: reply budget, parallel calls, closing, the opening at its size ---------
 
 
 def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
@@ -417,11 +399,10 @@ def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
     body = json.loads(blocks[0].text)
     assert body["images_attached"] == 5
     images = [block for block in blocks if isinstance(block, ImageContent)]
-    assert len(images) == 4  # nothing dropped
+    assert len(images) == 4
     note = blocks[-1]
     assert isinstance(note, TextContent) and "shrunk together" in note.text
     assert "from 2000 to" in note.text and "fewer sections" in note.text
-    # A reply that fits is untouched and says nothing.
     small = result_blocks({"status": "ok", TOOL_MEDIA_PARTS_KEY: [noise[0].resize((200, 150))]})
     assert len(small) == 2 and isinstance(small[1], ImageContent)
 
@@ -429,7 +410,6 @@ def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
 def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, monkeypatch):
     from concurrent.futures import Future
 
-    from langslice.doors.mcp import server as door
 
     sessions: dict[str, Any] = {}
     first, second = _folder(tmp_path, "one"), _folder(tmp_path, "two")
@@ -446,10 +426,9 @@ def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, m
         return await client.call_tool("start_job", {"image_folder": str(second)})
 
     _session(built, body)
-    assert settled == ["one"]  # replaced: its calls landed before the new job opened
+    assert settled == ["one"]
     assert sessions["job"].ctx.image_folder == str(second)
-    sessions["job"].close()  # what serve() does when the host goes away
-    assert door.Session.close is not None
+    sessions["job"].close()
 
 
 def test_a_refused_argument_is_traced(tmp_path: Path, monkeypatch):
@@ -489,7 +468,7 @@ def test_mcp_tools_and_a_script_work_on_one_job(tmp_path: Path):
         return seen
 
     async def body(client: Any) -> Any:
-        await client.call_tool("show_stack", {"page": 1})  # three sections: one page
+        await client.call_tool("show_stack", {"page": 1})
         wrote = await client.call_tool("position_sections", {
             "sections": [{"id": "s0.png", "position_mm": 1.0}], "view": False})
         seen = await asyncio.to_thread(script)
@@ -499,8 +478,8 @@ def test_mcp_tools_and_a_script_work_on_one_job(tmp_path: Path):
 
     wrote, seen, after, undone, last = _session(server, body)
     assert "error" not in _text(wrote), _text(wrote)
-    assert seen == 1.0  # the script read the MCP tool's write
-    assert position(_text(after)["rows"], "s1.png") == 2.0  # and MCP the script's
+    assert seen == 1.0
+    assert position(_text(after)["rows"], "s1.png") == 2.0
     assert "error" not in _text(undone), _text(undone)
     rows = _text(last)["rows"]
     assert position(rows, "s1.png") is None and position(rows, "s0.png") == 1.0

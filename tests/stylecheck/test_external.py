@@ -64,8 +64,6 @@ def _rules(violations: list[Violation]) -> list[tuple[str, str]]:
     return sorted((item.rule, item.symbol) for item in violations)
 
 
-# --- ruff ----------------------------------------------------------------
-
 LONG = "x" * 80
 
 
@@ -117,7 +115,6 @@ def test_ruff_leaves_out_the_rules_another_tool_owns(tmp_path: Path) -> None:
         },
     )
     codes = {item.rule for item in ruff_violations(project, config)}
-    # summary rules belong to numpydoc, capital maths names are allowed
     for owned in ("ruff:D400", "ruff:D401", "ruff:N803", "ruff:N806"):
         assert owned not in codes
 
@@ -152,8 +149,6 @@ def test_ruff_explanation_is_ruff_s_own_text() -> None:
     assert "E501" in explain("ruff", REPO)
 
 
-# --- the formatter -------------------------------------------------------
-
 
 def test_format_reports_each_unformatted_file_once(tmp_path: Path) -> None:
     project, config = _project(
@@ -175,8 +170,6 @@ def test_format_wraps_at_79_columns(tmp_path: Path) -> None:
     project, config = _project(tmp_path, {"a.py": call + "\n"})
     assert len(format_violations(project, config)) == 1
 
-
-# --- numpydoc ------------------------------------------------------------
 
 
 def _numpydoc(tmp_path: Path, source: str) -> list[tuple[str, str]]:
@@ -359,7 +352,6 @@ def test_numpydoc_checks_the_module_docstring(tmp_path: Path) -> None:
 
 
 def test_numpydoc_reads_the_declarations_module_too(tmp_path: Path) -> None:
-    # the runner drops the findings on tool stubs (test_model_text.py)
     project, config = _project(
         tmp_path,
         {
@@ -418,5 +410,4 @@ def test_ruff_keeps_the_shared_ignores_and_drops_the_main_runs(
         for item in ruff_violations(project, config)
         if item.rule == "ruff:E501"
     }
-    # 79 columns, not the main run's 100; its own ignores are left out
     assert long_lines == {"pkg/a.py"}

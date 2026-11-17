@@ -29,8 +29,6 @@ def test_root_mask_is_binary_alpha_at_target_size():
 
 
 @pytest.mark.parametrize(("size", "padded", "offset"), [
-    # gpt-image-2.5-sunburst accepts 1:3..3:1: a 4:1 strip black-pads down to 3:1,
-    # centred; an in-range section is left untouched.
     ((48, 12), (48, 16), (0.0, 2.0)),
     ((24, 9), (24, 9), (0.0, 0.0)),
 ])

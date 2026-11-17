@@ -41,7 +41,7 @@ def test_an_additional_reference_named_for_nissl_is_the_default():
     atlas = _Atlas(extra=("mri", "Nissl_average", "stpt"))
     assert default_image(atlas) == "Nissl_average"
     assert resolve_image(atlas, "nissl") == "Nissl_average"
-    assert atlas_volume(atlas, "nissl")[0, 0, 0] == 2  # the second reference
+    assert atlas_volume(atlas, "nissl")[0, 0, 0] == 2
     assert atlas_images(atlas) == ("template", "mri", "Nissl_average", "stpt", "nissl")
 
 
@@ -51,13 +51,12 @@ def test_the_augmented_atlas_is_its_own_nissl():
 
 
 def test_a_ccfv3_atlas_takes_the_borrowed_nissl(monkeypatch):
-    shape = (264, 160, 228)  # 50 um CCFv3
+    shape = (264, 160, 228)
     atlas = _Atlas(name="allen_mouse_50um", shape=shape, resolution=(50.0, 50.0, 50.0))
     monkeypatch.setattr(images, "_takes_borrowed_nissl", lambda a: a is atlas)
     assert default_image(atlas) == images.BORROWED_NISSL
     assert resolve_image(atlas, "nissl") == images.BORROWED_NISSL
     assert atlas_images(atlas) == ("template", images.BORROWED_NISSL, "nissl")
-    # A Nissl-named reference does not outrank the borrowed one.
     other = _Atlas(extra=("nissl_stack",))
     assert default_image(other) == "nissl_stack"
 
@@ -70,16 +69,15 @@ def test_other_names_are_checked_against_the_atlas():
         resolve_image(atlas, "gfp")
     with pytest.raises(ValueError, match="has no image"):
         atlas_volume(atlas, "gfp")
-    # The borrowed Nissl exists only on an atlas that takes it.
     with pytest.raises(ValueError, match="has no image"):
         resolve_image(atlas, images.BORROWED_NISSL)
 
 
 @pytest.mark.parametrize(("space", "takes"), [
     ("allen-adult-mouse-ccf-space", True),
-    ("allen_mouse-space", True),  # the 3.x atlas packages' name for the same space
-    (None, True),  # an older package that names no space: the grid decides
-    ("ccfv2_mouse-space", False),  # the 2011 atlas: CCFv3's grid, not its anatomy
+    ("allen_mouse-space", True),
+    (None, True),
+    ("ccfv2_mouse-space", False),
 ])
 def test_only_the_ccfv3_space_borrows_the_nissl(space, takes):
     atlas = _Atlas(name="grid_100um", shape=(132, 80, 114), resolution=(100.0, 100.0, 100.0))

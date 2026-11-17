@@ -12,12 +12,11 @@ from langslice.core.fits.trace.canvas import crop_to_aspect
 
 @pytest.mark.parametrize("size", [(1536, 1024), (1024, 1536)])
 def test_an_output_in_a_wider_or_taller_frame_is_cropped_back(size) -> None:
-    # the section's frame letterboxed inside a 3:2 answer (either way up)
     assert crop_to_aspect(Image.new("RGB", size), 1.0).size == (1024, 1024)
 
 
 def test_an_output_already_in_the_frame_is_returned_untouched() -> None:
-    returned = Image.new("RGB", (1024, 683))  # 1.4993 vs 1.5 — within tolerance
+    returned = Image.new("RGB", (1024, 683))
     assert crop_to_aspect(returned, 1.5) is returned
 
 

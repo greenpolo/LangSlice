@@ -44,12 +44,9 @@ from tests.test_combinations import (
     transforms_file,
 )
 
-# The combination tests' fixtures: the synthetic stack, and a fresh copy of it
-# with the synthetic atlas and the stub image model wherever a door opens a job.
 stack = combinations.stack
 images = combinations.images
 
-#: A registration made elsewhere: every section on its own plane.
 SECTION_ANGLES = {
     ID0: {"pitch": 1.0, "yaw": -0.5},
     ID1: {"pitch": 2.5, "yaw": 1.0},
@@ -69,8 +66,6 @@ def _external(**extra: Any) -> dict[str, Any]:
             "angles": copy.deepcopy(SECTION_ANGLES), **extra}
 
 
-# --- the state ----------------------------------------------------------------------------
-
 
 def test_a_mixed_state_keeps_each_sections_angles_and_round_trips():
     state = _stack([(1.0, 0.0), (2.0, -1.0), (1.0, 0.0)])
@@ -82,12 +77,10 @@ def test_a_mixed_state_keeps_each_sections_angles_and_round_trips():
     again = stack_from_json(json.loads(json.dumps(data)))
     assert [record.angles for record in again.slices] == [(1.0, 0.0), (2.0, -1.0), (1.0, 0.0)]
     assert stack_to_json(again) == data
-    # No stack-wide angle to read: a reader that should use the section's own fails loudly.
     with pytest.raises(MixedAngles):
         _ = state.pitch_deg
     with pytest.raises(MixedAngles):
         _ = state.stack_angles
-    # A picture without a section is drawn at the median of the sections' angles.
     assert state.view_angles == (1.0, 0.0)
 
 
@@ -125,8 +118,6 @@ def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_p
     assert written["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
     assert all("cutting_angles_deg" not in row for row in written["slices"])
 
-
-# --- the supplied inputs ------------------------------------------------------------------
 
 
 def test_supplied_angles_reads_both_forms():
@@ -169,8 +160,6 @@ def test_a_section_not_named_keeps_the_flat_plane(images):
             (0.0, 0.0), (2.0, 0.0), (0.0, 0.0)]
 
 
-# --- kept verbatim from the input to the exports ------------------------------------------
-
 
 def _uniform_copy(state: Stack, angles: tuple[float, float]) -> Stack:
     copied = stack_from_json(stack_to_json(state))
@@ -206,7 +195,6 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
     quicknii = json.loads((job_folder / "exports" / "quicknii.json").read_text(
         encoding="utf-8"))
     facts = atlas_facts(job.workspace.atlas)
-    # in the stack's order, each naming its section's image copy
     anchorings = {section["id"]: entry["anchoring"]
                   for section, entry in zip(document["sections"], quicknii["slices"],
                                             strict=True)}
@@ -225,7 +213,6 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
         u, v = np.asarray(anchoring[3:6]), np.asarray(anchoring[6:9])
         normal = np.cross(u, v)
         normals.append(normal / np.linalg.norm(normal))
-    # Three different planes: no two sections share a normal.
     for i in range(3):
         for j in range(i + 1, 3):
             assert abs(float(np.dot(normals[i], normals[j]))) < 1 - 1e-6
@@ -247,7 +234,6 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         for name in IDS:
             handoff = prepare_linear_registration(state, job.workspace, name)
             assert (handoff.pitch_deg, handoff.yaw_deg) == state.by_id(name).angles
-        # The packaged trace (image call, then its SyN fit, in the background).
         assert job.trace_borders(section=ID1)["status"] == "started"
         fit = job.fireants_syn(sections=[ID0])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
@@ -257,13 +243,10 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         assert {name: angles_to_json(job.state.by_id(name).angles) for name in IDS} == (
             SECTION_ANGLES)
         folder = Path(job.folder)
-        # Submit writes the traced section's reply, never its maps;
-        # export_stack writes it again without submitting.
         reply = folder / "exports" / "traces" / "s1.npz"
         assert reply.is_file() and not (folder / "sections" / "s1" / "coords.tif").exists()
         reply.unlink()
         assert str(reply) in job.export_stack() and reply.is_file()
-        # Each fitted record was fitted on its section's own plane.
         for name, stem in ((ID0, "s0"), (ID1, "s1")):
             records = [json.loads(path.read_text(encoding="utf-8")) for path in
                        (folder / "sections" / stem / "deformable").rglob("*.json")]
@@ -294,12 +277,10 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
             coords = tifffile.imread(folder / "sections" / stem / "coords.tif")
             np.testing.assert_allclose(np.moveaxis(np.squeeze(coords), 0, -1), single.coords,
                                        rtol=0, atol=1e-3, equal_nan=True)
-            # The library's in-memory maps are the files' arrays.
             held = job.section_maps(name)
             np.testing.assert_array_equal(held.labels, labels)
             np.testing.assert_array_equal(np.moveaxis(held.coords, -1, 0), np.squeeze(coords))
             assert held.residual is None
-            # The plane matters: the flat plane gives other coordinates.
             from langslice.core.maps.section_maps import section_frame
 
             flat = _uniform_copy(job.state, (0.0, 0.0))
@@ -321,15 +302,12 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     assert {name: angles_to_json(state.by_id(name).angles) for name in IDS} == SECTION_ANGLES
     saved = json.loads((job / "state.json").read_text(encoding="utf-8"))
     assert saved["format_version"] == 5 and saved["cutting_angles_deg"] is None
-    # --section-angles and --pitch exclude each other.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--nonlinear-provider", "none", "--pitch", "1",
                          "--section-angles", json.dumps(SECTION_ANGLES))
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGS", envelope
     assert "--pitch/--yaw" in envelope["error"]["message"]
 
-
-# --- position_sections' cutting angles: one plane for the whole stack ----------------------
 
 
 def _linear_spec(images: Path, **inputs: Any) -> JobSpec:
@@ -345,10 +323,8 @@ def test_cutting_angles_flatten_a_mixed_stack_and_undo_restores_it(images):
     create(_linear_spec(images, **_external()))
     with langslice.open_job(images) as job:
         assert job.state.mixed_angles
-        # Positions are supplied (no Positioning task): the angles alone are written.
         reply = job.position_sections(cutting_angles={"pitch_deg": 2.0, "yaw_deg": -0.5})
         assert reply["status"] == "ok" and reply["written"] == []
-        # Without the Positioning task the call takes no sections at all.
         refused = job.position_sections(sections=[{"id": ID0, "position_mm": 0.12}])
         assert refused["error"] == "UNKNOWN_ARGUMENTS" and "sections" in refused["message"]
         assert reply["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -0.5}

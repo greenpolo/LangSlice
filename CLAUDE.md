@@ -114,7 +114,8 @@ and `environment.yml` hold the source installation.
   a constant is and the docstring says why; no `#` line, no end-of-line
   note, no `#:` line. A `# noqa`, `# type: ignore`, `# pyright: ignore` or
   `# pragma` is never added: the code is changed until the tool has nothing
-  to report, and a handler names the exceptions it expects. Vendored code
+  to report, and a handler names the exceptions it expects. The tests carry
+  no comments either (`tests/test_test_comments.py`). Vendored code
   (`src/langslice_vendor/`) stays as published.
 - No Markdown file is written unless the owner asked for that file: no
   notes, plans, summaries or reports in the repository. The kinds that

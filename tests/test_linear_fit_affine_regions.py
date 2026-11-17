@@ -19,8 +19,6 @@ from langslice.job.settings.spec import JobSpec
 LEFT, RIGHT, CORE = 2, 3, 4
 
 
-# HalvesAtlas and _left_half_section are used by tests/test_damage_regions.py,
-# tests/test_ops_interactive_transform.py and tests/test_tool_plugins.py
 class HalvesAtlas:
     """One ellipse of brain split into a left and a right half, 100 um voxels.
 
@@ -109,7 +107,6 @@ def test_tiny_region_is_refused_before_elastix_and_does_not_write(tmp_path: Path
     from langslice.core.fits.deformable import engines
 
     atlas = HalvesAtlas()
-    # Three atlas pixels across: the case that can crash the native engine.
     atlas.annotation[atlas.annotation == CORE] = LEFT
     atlas.annotation[:, 47:50, 39:42] = CORE
     state, box = _box(tmp_path, atlas, _left_half_section(),

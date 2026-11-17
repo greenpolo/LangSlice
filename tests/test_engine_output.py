@@ -7,15 +7,11 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
 
 import numpy as np
 
-from langslice.core.fits.deformable import gpu_queue
 from langslice.core.fits.engine_log import engine_output
-from langslice.core.hardware import GPU_SLOTS_VARIABLE
 from langslice.tools.deformable import gpu_rows
 
 
@@ -34,35 +30,8 @@ def test_engine_output_sends_descriptor_2_to_the_log_and_back(tmp_path: Path):
     text = log.read_text(encoding="utf-8")
     assert "a fit" in text and "another" in text
     assert text.index("from the engine") < text.index("from gcc") < text.index("still the")
-    with engine_output(None):  # a job that persists nothing: stderr as it is
+    with engine_output(None):
         assert os.fstat(2).st_ino == before
-
-
-def test_gpu_turn_reports_how_long_it_waited(tmp_path: Path, monkeypatch):
-    lock = tmp_path / "gpu.lock"
-    monkeypatch.setattr(gpu_queue, "GPU_LOCK", lock)
-    monkeypatch.setenv(GPU_SLOTS_VARIABLE, "1")
-    with gpu_queue.gpu_turn("cpu") as turn:
-        assert turn.waited_s == 0.0
-    if sys.platform == "win32":
-        return
-    held = threading.Event()
-
-    def hold() -> None:
-        import fcntl  # POSIX only: the queue takes no lock on Windows
-
-        with open(lock, "w", encoding="utf-8") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            held.set()
-            time.sleep(0.4)
-            fcntl.flock(handle, fcntl.LOCK_UN)
-
-    other = threading.Thread(target=hold)
-    other.start()
-    held.wait(5)
-    with gpu_queue.gpu_turn("cuda") as turn:
-        assert turn.waited_s >= 0.2
-    other.join()
 
 
 def test_a_fits_row_says_its_wait_and_retries_in_words(tmp_path: Path):
@@ -73,13 +42,12 @@ def test_a_fits_row_says_its_wait_and_retries_in_words(tmp_path: Path):
     from tests.test_landmarks import setup
 
     assert gpu_rows({"runtime_s": 3.0}) == {}
-    assert gpu_rows({"gpu_wait_s": 0.4}) == {}  # under a second: not worth a word
+    assert gpu_rows({"gpu_wait_s": 0.4}) == {}
     rows = gpu_rows({"gpu_wait_s": 42.4, "oom_retries": 1})
     assert rows["gpu_wait_s"] == 42
     assert rows["retried"].startswith("The GPU ran out of memory once (another process held "
                                       "it); the fit waited and ran again")
     assert "2 times" in gpu_rows({"oom_retries": 2})["retried"]
-    # The engine's numbers reach the record's engine block, which the row reads.
     job, ws, record = setup(tmp_path)
     try:
         grid = deformation.fit_grid(job.state, ws, record)

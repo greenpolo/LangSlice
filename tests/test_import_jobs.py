@@ -53,9 +53,7 @@ from tests.test_import_registrations import (
 )
 
 SUBMIT_FLAGS = ("--summary", "done", "--notes", "[]", "--interval-breaks", "[]")
-#: Through a QuickNII file (anchorings rounded to 1e-6 voxels), in um.
 ROUNDED_UM = 1e-3
-#: Through registration.json, in um.
 EXACT_UM = 1e-6
 
 
@@ -86,7 +84,6 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, atlas: DeepAtlas) ->
         return stub_image_model(holder)
 
     monkeypatch.setattr(toolbox, "resolve_image_model", resolve)
-    # The stub stands for a connected image model (its key or login present).
     from langslice.doors import credentials as setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
@@ -195,13 +192,10 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
     mapping = {entry["id"]: entry["mapping"] for entry in document["sections"]}
     assert mapping == {**{name: "linear + residual" for name in ids[:-1]},
                        ids[-1]: "linear"}, mapping
-    # Submit writes no maps; they are written on demand (export_maps).
     ok(capsys, folder, "export_maps")
     for entry in document["sections"]:
         assert (folder / entry["folder"] / "maps.json").is_file(), entry
 
-
-# --- from a LangSlice job's exports ------------------------------------------------------
 
 
 @pytest.mark.parametrize("export", ["quicknii", "registration"])
@@ -218,11 +212,10 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
     result = envelope["result"]
     assert result["tasks"] == ["nonlinear"]
     assert {"trace_borders", "fireants_syn"} <= set(result["verbs"])
-    assert "elastix_affine" not in result["verbs"]  # the imported placement is kept
+    assert "elastix_affine" not in result["verbs"]
     imported = result["registration"]
     assert imported["format"] == ("quicknii-json" if export == "quicknii"
                                   else "langslice-registration")
-    # quicknii.json names the export's image copies (<stem>_sNNN.png)
     rule = "export copy" if export == "quicknii" else "exact"
     assert [row["match"] for row in imported["sections"]] == [rule] * 3
     assert (imported["unmatched"], imported["missing"], imported["refused"]) == ([], [], {})
@@ -234,12 +227,10 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
         assert np.allclose(again[name], matrix, atol=tolerance, rtol=0), name
     spec = json.loads((folder / "job.json").read_text(
         encoding="utf-8"))["spec"]
-    # Per-section angles arrive as the per-section form (they differ here).
     assert set(spec["inputs"]["angles"]) == {ID0, ID1, ID2}
     assert spec["inputs"]["transforms"][ID0]["kind"] == "imported"
     assert set(spec["inputs"]["transforms"][ID0]["physical"]) >= {
         "rotation_deg", "scale_x", "scale_y", "shear", "translate_x_mm", "translate_y_mm"}
-    # The same init again continues the job (the same inputs).
     code, envelope = cli(capsys, str(images), "init", "--atlas",
                          "synthetic_deep_50um", "--preprocess", "none",
                          "--nonlinear-provider", "openai-oauth", "--pixel-size-um",
@@ -257,8 +248,6 @@ def test_the_nonlinear_step_runs_on_an_imported_placement(capsys, images, atlas,
     nonlinear_on_top(capsys, Path(envelope["result"]["job_folder"]), (ID0, ID1, ID2))
 
 
-# --- from DeepSlice's own files ---------------------------------------------------------
-
 
 @pytest.mark.parametrize("name", ["deepslice.json", "deepslice.csv"])
 def test_a_new_job_from_deepslice(capsys, stack, tmp_path, monkeypatch, name):
@@ -273,7 +262,7 @@ def test_a_new_job_from_deepslice(capsys, stack, tmp_path, monkeypatch, name):
                     atlas_name="allen_mouse_50um")
     imported = envelope["result"]["registration"]
     assert [row["match"] for row in imported["sections"]] == ["section number"] * 3
-    if name.endswith(".csv"):  # no target in a DeepSlice CSV: said
+    if name.endswith(".csv"):
         assert any("names no target" in warning for warning in envelope["warnings"])
     else:
         assert envelope["warnings"] == []
@@ -284,8 +273,6 @@ def test_a_new_job_from_deepslice(capsys, stack, tmp_path, monkeypatch, name):
         assert np.allclose(found[given.section_id], pixel_map(workspace, given),
                            atol=ROUNDED_UM, rtol=0), given.section_id
 
-
-# --- what is reported and what is refused ------------------------------------------------
 
 
 def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_path):
@@ -310,7 +297,7 @@ def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_p
     state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     held = {row["id"]: row for row in state["slices"]}
     assert held[ID2]["position_mm"] is None and held[ID2]["transform"] is None
-    assert held[ID0]["deformation"] is None  # the markers are not a deformation
+    assert held[ID0]["deformation"] is None
 
 
 def test_refusals(capsys, images, atlas, tmp_path):
@@ -329,7 +316,6 @@ def test_refusals(capsys, images, atlas, tmp_path):
         code, envelope = cli(capsys, *base, *flags)
         assert code == 2 and envelope["error"]["code"] == "BAD_ARGS", envelope
         assert named in envelope["error"]["message"]
-    # Two entries naming one section: ambiguous, refused.
     rows = export_rows(workspace, PER_SECTION)
     twice = tmp_path / "twice.json"
     twice.write_text(json.dumps(job_export(
@@ -339,7 +325,6 @@ def test_refusals(capsys, images, atlas, tmp_path):
                          "--nonlinear-provider", "none", "--registration", str(twice))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
     assert "several entries" in envelope["error"]["message"]
-    # Nothing placed: refused, naming why.
     nothing = tmp_path / "nothing.json"
     nothing.write_text(json.dumps(job_export([dict(row, filename=f"x{i}.png")
                                               for i, row in enumerate(rows)],
@@ -353,8 +338,6 @@ def test_refusals(capsys, images, atlas, tmp_path):
                          "--registration", str(tmp_path / "missing.json"))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
 
-
-# --- the library -----------------------------------------------------------------------
 
 
 class Stub:

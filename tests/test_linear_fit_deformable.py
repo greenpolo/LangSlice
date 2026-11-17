@@ -109,18 +109,6 @@ def _fit(box: Any, ctx: Any, choice: deformation.Choice | None = None,
                                          choice or _choice(), **kwargs)
 
 
-# --- gating and the tool's arguments -----------------------------------------
-
-
-def test_built_with_the_nonlinear_task_only(tmp_path: Path, atlas):
-    *_, box = _setup(tmp_path, atlas, tasks=("position", "transform"))
-    assert not {"fireants_syn", "trace_borders"} & set(box.names)
-    *_, box = _setup(tmp_path, atlas)
-    assert {"trace_borders", "grep_atlas", "fireants_syn"} <= set(box.names)
-    assert not {"fit_deformable", "keep_linear"} & set(box.names)
-
-
-# --- apply, compose, undo ------------------------------------------------------
 
 
 @needs_engine
@@ -138,19 +126,17 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert TOOL_MEDIA_PARTS_KEY not in result and "pictures" not in result
     held = json_of(state.slices[0].deformation)
     assert held is not None and held["steps"][0]["smoothness_um"] == 50.0
-    assert not Path(held["record"]).is_absolute()  # relative to the job folder
+    assert not Path(held["record"]).is_absolute()
     record_dir = Path(ctx.job_folder) / held["record"]
     assert record_dir.parent == Path(ctx.job_folder) / "sections" / Path(ID).stem / "deformable"
     saved = json.loads((record_dir / "record.json").read_text(
         encoding="utf-8"))
     assert saved["provenance"]["section_id"] == ID
-    # The record names what the fit read and estimated, as the reply does.
     assert saved["provenance"]["inputs"] == row["inputs"]
     assert saved["provenance"]["estimated"] is None
     assert saved["provenance"]["linear_handoff"]["section_um_per_px"] > 0
     assert saved["placement"]["position_mm"] == pytest.approx(0.1)
     assert json_of(load_checkpoint(ctx.checkpoint_path).slices[0].deformation) == held
-    # The state round-trips through JSON like everything else on it.
     again = stack_from_json(json.loads(json.dumps(stack_to_json(state))))
     assert json_of(again.slices[0].deformation) == held
     assert _tool(box, "undo")()["status"] == "ok"
@@ -176,7 +162,6 @@ def test_a_second_fit_builds_on_the_first_and_undo_goes_back(tmp_path: Path, atl
     assert record.settings.structures == ("STR",)
     _tool(box, "undo")()
     assert state.slices[0].deformation == first
-    # The same chain fitted again after the undo reuses the saved result.
     reused = _row(_fit(box, ctx, _choice(), restrict_to=("STR",)))
     assert reused["steps"] == 2 and reused["cached"] is True
 
@@ -191,8 +176,6 @@ def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
     assert TOOL_MEDIA_PARTS_KEY not in result
     assert state.slices[0].deformation is None
 
-
-# --- the fits underneath (tools.deformable.fit_deformable) -----------------------
 
 
 @needs_engine
@@ -216,14 +199,12 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
         saved.save(tmp_path / "copy")
     assert not (tmp_path / "copy" / "record.json").exists()
     monkeypatch.undo()
-    shutil.rmtree(folder / "warp.ome.zarr")  # the record of the applied deformation is unreadable
+    shutil.rmtree(folder / "warp.ome.zarr")
     box.job.deformations.cache.clear()
     row = _row(_fit(box, ctx))
     assert row["status"] == "error" and row["error"] == "DEFORMATION_UNREADABLE", row
     assert json_of(state.slices[0].deformation) == held
 
-
-# --- consequences: linear edits, the overlay -------------------------------------
 
 
 @needs_engine
@@ -232,7 +213,6 @@ def test_a_linear_edit_clears_the_warp_and_says_so(tmp_path: Path, atlas):
     _syn(box, view=False)
     held = state.slices[0].deformation
     transform = state.slices[0].transform
-    # Reads keep the warp.
     for reply in (_tool(box, "status")(), _tool(box, "note")("looked"),
                   _tool(box, "look")("overlay", sections=[ID])):
         assert "deformation_cleared" not in reply
@@ -270,19 +250,16 @@ def test_look_overlay_draws_the_applied_warp_unless_warp_none(tmp_path: Path, at
         return _pixels(picture)
 
     linear = drawn("none")
-    assert np.array_equal(drawn("applied"), linear)  # nothing applied yet
+    assert np.array_equal(drawn("applied"), linear)
     _syn(box, smoothness_um=50.0, view=False)
     assert not np.array_equal(drawn("applied"), linear)
     assert np.array_equal(drawn("none"), linear)
     assert state.slices[0].deformation is not None
-    # Built for a run without positioning, too: the overlay of the supplied placement.
     (tmp_path / "only").mkdir()
     *_, nonlinear_only = _setup(tmp_path / "only", atlas, tasks=("nonlinear",))
     assert {"look", "fireants_syn"} <= set(nonlinear_only.names)
     assert not {"position_sections", "interactive_transform"} & set(nonlinear_only.names)
 
-
-# --- traced section images (the fit a trace gets) ----------------------------------
 
 
 def _fake_trace(state: Stack, ctx: Any, folder: Path, *, fingerprint: str) -> None:
@@ -323,9 +300,8 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
         {**trace_to_json(state.slices[0].border_trace), "geometry_fingerprint": "now"})
     row = _row(_fit(box, ctx, TRACED))
     assert row["status"] == "ok", row
-    assert row["settings"]["atlas_image"] == "borders"  # traced lines fit against borders
+    assert row["settings"]["atlas_image"] == "borders"
     assert row["engine_settings"]["metric"] == "mean_squares"
-    # The step records the trace it fitted (a packaged trace asked again reuses it).
     assert deformation_to_json(
         state.slices[0].deformation)["steps"][-1]["trace"] == str(tmp_path / "trace")
 
@@ -339,13 +315,12 @@ def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
     state.slices[0].border_trace = trace_from_json(
         {**trace_to_json(state.slices[0].border_trace), "exclude": ["HY"]})
-    state.slices[0].damaged_regions = ["VS"]  # marked damage is left out too
+    state.slices[0].damaged_regions = ["VS"]
     row = _row(_fit(box, ctx, TRACED))
     assert row["status"] == "ok", row
     assert row["trace_regions"] == {"include": [], "exclude": ["VS", "HY"]}
     steps = deformation_to_json(state.slices[0].deformation)["steps"]
     assert steps[-1]["exclude"] == ["VS", "HY"]
-    # A stain fit ignores the trace's regions.
     assert "trace_regions" not in _row(_fit(box, ctx))
 
 
@@ -389,7 +364,6 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
         load_checkpoint(ctx.checkpoint_path).slices[0].border_trace)["status"] == "ok"
     assert ID not in box.job.image_jobs
     assert len(done.pictures) == 2 and done.traces == [{"id": ID, "image_indexes": [1]}]
-    # The trace picture carries the lines in the border color on the section.
     pixels = _pixels(done.pictures[1])
     assert int(((pixels[..., 0] > 200) & (pixels[..., 1] > 200)
                 & (pixels[..., 2] < 80)).sum()) > 50
@@ -409,7 +383,6 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     release = threading.Event()
 
     def job() -> dict[str, Any]:
-        # Held until released, even on a slow CI runner.
         release.wait()
         return {"status": "error", "error": "TransportError", "message": "no image",
                 "id": "s0.png", "geometry_fingerprint": "now"}

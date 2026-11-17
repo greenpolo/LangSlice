@@ -56,7 +56,6 @@ def test_positions_are_clamped_written_and_one_undo_step(tmp_path: Path):
     assert len(job.undo_stack) == 1
     assert job.undo()
     assert _record(job, "s1.png").position_mm == start != high
-    # Nothing to write: no undo step.
     assert positions.position_sections(
         job, ctx, [{"id": "nope.png", "position_mm": 0.0}]).written == []
     assert job.undo_stack == []
@@ -67,8 +66,6 @@ def test_cutting_angles_drop_the_render_cache(tmp_path: Path):
     ctx.render_cache["stale"] = object()
     positions.position_sections(job, ctx, [], {"pitch_deg": 2.0, "yaw_deg": -1.0})
     assert stack_angles_entry(job.state) == {"pitch": 2.0, "yaw": -1.0}
-    # Dropped (the checkpoint's registration.json may render the placed
-    # sections again at the new angles).
     assert "stale" not in ctx.render_cache and len(job.undo_stack) == 1
 
 
@@ -79,7 +76,6 @@ def test_a_host_damage_note_is_a_note_alone(tmp_path: Path):
     record = _record(job, "s1.png")
     assert record.damage_note == "host note" and not record.damaged
     assert record.damaged_regions == []
-    # Clearing marks the section does not have writes nothing; the note stays.
     done = damage.mark_damage(job, ctx, "s1.png", [], "ignored")
     assert not done.written and done.by_user and not done.damaged
     assert done.note == "host note" and job.undo_stack == []

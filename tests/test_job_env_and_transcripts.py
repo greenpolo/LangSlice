@@ -69,8 +69,6 @@ def wheel(folder: Path, name: str = "lsdemo", version: str = "0.1") -> Path:
     return path
 
 
-# --- env -------------------------------------------------------------------------------
-
 
 def test_env_imports_langslice_installs_lists_and_rebuilds(capsys, job, tmp_path):
     code, envelope = cli(capsys, str(job), "env")
@@ -107,8 +105,6 @@ def test_env_of_a_folder_without_a_job(capsys, tmp_path):
     code, envelope = cli(capsys, str(tmp_path), "env")
     assert envelope["error"]["code"] == "NO_JOB" and code != 0
 
-
-# --- session-end ----------------------------------------------------------------------
 
 
 def _lines(*records: dict[str, Any]) -> str:
@@ -154,7 +150,7 @@ def test_a_claude_code_subagent_transcript_lands_in_its_job(capsys, job, tmp_pat
         encoding="utf-8")
     assert "<30000 bytes of inline data>" in copied
     assert "x" * 1000 not in copied and "langslice-job" in copied
-    assert not (job / "env").exists()  # the session submitted: the environment is pruned
+    assert not (job / "env").exists()
 
 
 def test_an_antigravity_session_that_did_not_submit_keeps_the_environment(
@@ -199,7 +195,7 @@ def test_an_mcp_agent_transcript_lands_in_the_job_its_start_job_opened(
                                     also=transcripts.started_jobs(transcript.read_text(
                                         encoding="utf-8")))
     assert found == [job]
-    if harness != "codex":  # the session-end hook is Claude Code's and Antigravity's
+    if harness != "codex":
         hook = {"conversationId": "c-mcp", "transcriptPath": str(transcript)}
         assert _run_hook(hook, harness, monkeypatch, capsys) == "{}"
         assert (job / "trace" / f"{harness}_c-mcp.jsonl").is_file()
@@ -231,7 +227,6 @@ def test_a_start_job_names_its_folder_and_nothing_else(capsys, job, tmp_path, mo
          "input": {"image_folder": str(job)}}]}}), encoding="utf-8")
     assert transcripts.started_jobs(transcript.read_text(
         encoding="utf-8")) == [str(job)]
-    # A start_job with any other argument, or none, names nothing.
     assert transcripts.started_jobs(_lines(
         {"name": "mcp__langslice__start_job", "input": {"job_id": "a1b2c3d4e5f6"}},
         {"name": "mcp__langslice__start_job", "input": {}})) == []
@@ -259,8 +254,6 @@ def test_slim_keeps_text_and_replaces_inline_data():
         slimmed["data"]
 
 
-# --- the launch check ------------------------------------------------------------------
-
 PROMPT = "Register the brain in job folder X.\n\nThe job.\nSecond line of the job.\n"
 
 
@@ -285,7 +278,6 @@ def _saved_launch(job: Path, text: str = PROMPT) -> None:
 
 def test_launch_check_verbatim_changed_and_unchecked(capsys, job, tmp_path, monkeypatch):
     user = {"type": "user", "message": {"role": "user", "content": PROMPT.rstrip() + "\n\n"}}
-    # No saved launch file: not checked.
     checked = _hook_run(job, user, tmp_path, monkeypatch, capsys)
     assert checked["checked"] is False and "launch" in checked["reason"]
     _saved_launch(job)
@@ -294,14 +286,12 @@ def test_launch_check_verbatim_changed_and_unchecked(capsys, job, tmp_path, monk
                        "similarity": 1.0, "first_difference": None,
                        "expected_chars": len(PROMPT.rstrip()),
                        "got_chars": len(PROMPT.rstrip())}
-    # Text blocks join; a summarised prompt is not verbatim and says where it differs.
     short = {"type": "user", "message": {"role": "user", "content": [
         {"type": "text", "text": "Register the brain in job folder X.\n\nThe job."}]}}
     checked = _hook_run(job, short, tmp_path, monkeypatch, capsys)
     assert checked["verbatim"] is False and checked["first_difference"] == len(
         "Register the brain in job folder X.\n\nThe job.")
     assert 0 < checked["similarity"] < 1
-    # No first user message: not checked.
     none = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     assert _hook_run(job, none, tmp_path, monkeypatch, capsys)["checked"] is False
 

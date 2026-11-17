@@ -24,19 +24,17 @@ from langslice.job.settings import tool_table
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "langslice" / "hosts" / "gui" / "static"
-SCRIPT = STATIC / "generator-logic.js"  # the message's pure functions
-FORM = STATIC / "generator.js"  # the older page's form
+SCRIPT = STATIC / "generator-logic.js"
+FORM = STATIC / "generator.js"
 SNAPSHOTS = ROOT / "tests" / "snapshots" / "agent_text"
 NODE = shutil.which("node")
 
-#: A form as the page starts it, the folder filled in.
 BASE: dict[str, Any] = {
     "folder": "/data/brain1", "atlas": "allen_mouse_25um", "plane": "", "thickness": "",
     "interval": "", "pixelSize": "", "tasks": ["position", "transform"], "off": [],
     "ordered": False, "damaged": "", "keep": {}, "notes": "",
 }
 
-#: Every program the form offers to prepare the results for.
 ALL_INTEGRATIONS = ["quint", "verso", "dmc-brainmap"]
 
 REQUEST = ("Please register my brain sections with LangSlice, following its register-brain "
@@ -51,8 +49,6 @@ def _names() -> set[str]:
         names.update(tool_table.option_names(tool))
     return names
 
-
-# --- the form's data ------------------------------------------------------------
 
 
 def test_the_tools_are_the_catalogs_without_the_scripting_verbs() -> None:
@@ -105,7 +101,7 @@ def test_the_payload_lists_atlases_tasks_and_what_a_kept_property_switches_off()
     assert [t["name"] for t in data["tasks"] if t["default"]] == ["position", "transform"]
     assert data["frozen_off"]["orientation"] == ["interactive_transform:flip",
                                                  "interactive_transform:rotate"]
-    json.dumps(data)  # plain data
+    json.dumps(data)
 
 
 def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
@@ -136,8 +132,6 @@ def test_the_server_answers_the_generator_data(tmp_path: Path) -> None:
         gui.http.server_close()
 
 
-# --- the message ------------------------------------------------------------------
-
 
 def _run(forms: list[dict[str, Any]]) -> list[dict[str, Any]]:
     node = NODE
@@ -156,7 +150,7 @@ def _run(forms: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _command(text: str) -> list[str]:
     block = text.split("```bash\n", 1)[1].split("\n```", 1)[0]
-    return shlex.split(block.replace("\\\n", " "))  # a line continuation, as bash reads it
+    return shlex.split(block.replace("\\\n", " "))
 
 
 def _spec(argv: list[str]) -> Any:
@@ -215,7 +209,7 @@ def test_a_filled_form_gives_every_setting_and_init_reads_it() -> None:
     assert (spec.atlas, spec.plane) == ("whs_sd_rat_39um", "coronal")
     assert (spec.position.thickness_um, spec.position.interval_um) == (40, 120)
     assert spec.inputs["pixel_size_um"] == 0.65
-    assert spec.disabled == ["look:atlas", "zoom"]  # no image model: no trace_borders
+    assert spec.disabled == ["look:atlas", "zoom"]
     assert spec.frozen == {"*": ["angles", "orientation"]}
     assert spec.inputs["damaged"] == {"s012.tif": "left cortex torn", "s013.tif": "damaged"}
     assert spec.facts == ["The file names sort in the order the sections were cut."]
@@ -228,7 +222,7 @@ def test_a_switched_off_tool_of_a_task_not_chosen_is_left_out() -> None:
     (made,) = _run([form])
     argv = _command(made["text"])
     assert argv[argv.index("--disabled") + 1] == "zoom"
-    assert "--frozen" not in argv  # orientation is the transform task's, which is off
+    assert "--frozen" not in argv
     assert "elastix_affine" not in made["text"] and "fireants_syn" not in made["text"]
 
 
@@ -252,7 +246,7 @@ def test_a_choice_of_tools_the_spec_would_refuse_gives_no_message() -> None:
         '(Elastix)" and "Return a section to an earlier result" need "See sections and the '
         'atlas: atlas outlines drawn over a section": turn it back on, or turn those off too.']
     assert made[4]["problems"] == ["Section thickness is a whole number of micrometres (µm)."]
-    for form in forms[1:4]:  # the spec refuses the same lists
+    for form in forms[1:4]:
         with pytest.raises(ValueError):
             from langslice.job.settings.spec import JobSpec
             JobSpec(image_folder=".", tasks=form["tasks"], disabled=form["off"])
@@ -300,10 +294,6 @@ def test_the_programs_ticked_are_named_to_the_main_agent_only() -> None:
                    for word in ("QUINT", "VERSO", "DMC", "PyNutil"))
 
 
-# --- a job's own settings: the form started from job.json ---------------------------
-
-#: Two snapshots of a job prepared in ABBA (``abba.prepare``): the first
-#: registered in ABBA, with a warp of its own.
 ABBA_FILES = ("section_0001.tif", "section_0002.tif")
 
 
@@ -354,7 +344,7 @@ def test_the_prefill_of_a_job_prepared_in_abba(tmp_path: Path) -> None:
     assert prefill["folder"] == str(folder.parent)
     assert (prefill["atlas"], prefill["plane"], prefill["pixel_size"]) == (
         "allen_mouse_25um", "coronal", "25")
-    assert (prefill["thickness"], prefill["interval"]) == ("40", "120")  # ABBA's
+    assert (prefill["thickness"], prefill["interval"]) == ("40", "120")
     assert prefill["tasks"] == ["position", "transform"] and prefill["off"] == []
     assert prefill["keep"] == {"angles": False, "orientation": False}
     assert prefill["frozen"] == {ABBA_FILES[0]: ["orientation", "affine", "deformation"]}
@@ -419,7 +409,7 @@ def test_the_server_adds_the_prefill_of_a_listed_job(tmp_path: Path) -> None:
         assert not isinstance(second, int) and json.loads(second[0])["prefill"] is None
         assert gui.answer(f"/{gui.token}/generator?job=2", host) == 404
         assert gui.answer(f"/{gui.token}/generator?job=x", host) == 400
-        listed = gui.jobs.listing()  # the prepared job, without state.json, is listed
+        listed = gui.jobs.listing()
         assert [job["folder"] for job in listed] == [str(folder), str(empty)]
     finally:
         gui.http.server_close()
@@ -455,7 +445,6 @@ def test_the_message_for_a_job_prepared_in_abba(tmp_path: Path) -> None:
         {"pixelSize": "not a number", "atlas": "", "plane": ""},
         {"integrations": ALL_INTEGRATIONS},
     ])
-    # A folder bash would split is quoted, and the message says so (a Windows path).
     folder = shlex.quote(images)
     command = (f"```bash\nlangslice-job {folder} init \\\n"
                "  --tasks position,transform \\\n"
@@ -463,15 +452,14 @@ def test_the_message_for_a_job_prepared_in_abba(tmp_path: Path) -> None:
                "  --position-interval-um 120")
     quoted = " The command is quoted for bash; if your shell is another, quote it for yours."
     plain = "" if folder == images else quoted
-    # The job holds its atlas, plane and pixel size: no flag, nothing left out.
     assert kept["text"] == f"{REQUEST}{plain}\n\n{command}\n```\n"
     assert freed["text"] == f"{REQUEST}{quoted}\n\n{command} \\\n  --frozen '{{}}'\n```\n"
     assert kept_straight["text"] == (
         f"{REQUEST}{quoted}\n\n{command} \\\n  --frozen '{{\"*\":[\"angles\"],"
         f"\"{ABBA_FILES[0]}\":[\"orientation\",\"affine\",\"deformation\"]}}'\n```\n")
     assert freed_upright["text"].endswith("  --frozen '{\"*\":[\"orientation\"]}'\n```\n")
-    assert odd["problems"] == [] and odd["text"] == kept["text"]  # fixed fields
-    assert programs["text"] == kept["text"]  # its results already go to ABBA
+    assert odd["problems"] == [] and odd["text"] == kept["text"]
+    assert programs["text"] == kept["text"]
     for made in (kept, freed, kept_straight):
         assert "--atlas" not in made["text"] and "--pixel-size-um" not in made["text"]
     spec = _spec(_command(freed["text"]))
@@ -506,15 +494,12 @@ def test_a_prefill_without_abba_gives_the_message_of_the_same_form() -> None:
     assert from_prefill == from_form
 
 
-# --- the image model ------------------------------------------------------------------
-
 
 def test_the_image_models_are_the_providers_a_job_accepts(
         monkeypatch: pytest.MonkeyPatch) -> None:
     from langslice.core.connections import CANONICAL_PROVIDERS
     from langslice.providers import connections as registry
 
-    # "Not set" is the connection saved on this computer
     monkeypatch.setattr(generator, "saved_image_provider", lambda: "openai-api")
     saved = [row["provider"] for row in generator.payload()["image_models"] if row["default"]]
     assert saved == ["openai-api"]
@@ -529,7 +514,7 @@ def test_the_image_models_are_the_providers_a_job_accepts(
     assert by_name["gemini-api"]["models"] == list(registry.GEMINI_IMAGE_MODELS)
     assert by_name["gemini-api"]["default_model"] == registry.GEMINI_DEFAULT_IMAGE_MODEL
     assert [t["name"] for t in generator.tools() if t["image_model"]] == ["trace_borders"]
-    for row in rows:  # every choice is one init takes
+    for row in rows:
         for model in [None, *row["models"]]:
             argv = ["--nonlinear-provider", row["provider"]]
             if model is not None:
@@ -540,7 +525,7 @@ def test_the_image_models_are_the_providers_a_job_accepts(
 
 def test_the_image_model_flags() -> None:
     plain = {**BASE, "tasks": ["position", "transform", "nonlinear"]}
-    warp = {**plain, "on": ["trace_borders"]}  # the border trace starts off
+    warp = {**plain, "on": ["trace_borders"]}
     chosen, provider_only, none, not_warping, tracing_off, unset, saved = _run([
         {**warp, "imageProvider": "gemini-api", "imageModel": "gemini-3-pro-image"},
         {**warp, "imageProvider": "openai-api"},
@@ -550,7 +535,6 @@ def test_the_image_model_flags() -> None:
         plain,
         warp,
     ])
-    # switched on with no provider chosen: the job takes the saved connection
     assert saved["text"].endswith(
         "  --atlas allen_mouse_25um \\\n  --enabled trace_borders\n```\n")
     assert chosen["text"].endswith(

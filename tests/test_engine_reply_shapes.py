@@ -29,7 +29,7 @@ def test_the_default_nissl_request_is_said_honoured_where_the_template_is_a_niss
     assert "honoured" in (nissl_note(augmented, "nissl") or "")
     assert nissl_note(augmented, "template") is None
     other = SimpleNamespace(atlas_name="other", additional_references={})
-    assert nissl_note(other, "nissl") is None  # an atlas without one is not claimed to have one
+    assert nissl_note(other, "nissl") is None
 
 
 def _frame(margin: float | None, note: str | None = None) -> SimpleNamespace:
@@ -70,7 +70,7 @@ def test_a_sorting_that_set_nothing_aside_draws_no_picture():
     weights[5:15, 5:15] = 0.0
     picture = _sorting_picture(ctx, frame, weights, "t")
     assert isinstance(picture, Image.Image) and captions == ["t"]
-    assert shown == [["s0.png"]]  # the picture names its section
+    assert shown == [["s0.png"]]
 
 
 def test_a_notice_names_each_flag_once_with_its_regions():

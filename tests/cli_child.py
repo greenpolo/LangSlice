@@ -31,8 +31,6 @@ def install(loader: Any, put: Any = setattr) -> None:
     put(background, "CHILD_COMMAND", [sys.executable, "-m", "tests.cli_child"])
 
 
-#: Seconds every commit waits before writing (tests widen the window in
-#: which two processes writing at once would overwrite each other).
 COMMIT_DELAY_ENV = "LANGSLICE_TEST_COMMIT_DELAY"
 
 

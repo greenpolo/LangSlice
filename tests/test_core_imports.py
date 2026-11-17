@@ -87,8 +87,6 @@ CORE_MODULES = (
 
 FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 
-#: Doors that return plain pictures and data (the ADK driver and the MCP
-#: server package them): they load no agent framework or model client either.
 PLAIN_DOORS = (
     "langslice.doors.tools.toolbox",
     "langslice.tools.pipeline",
@@ -104,8 +102,6 @@ PLAIN_DOORS = (
     "langslice.doors.agent_cli.calls",
 )
 
-#: The child interpreters import this tree's sources (not whichever checkout
-#: the environment's editable install points at).
 _SOURCES = {**os.environ, "PYTHONPATH": os.pathsep.join(
     [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"),
      os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)}

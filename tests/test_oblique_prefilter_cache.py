@@ -25,7 +25,7 @@ def test_cubic_samples_match_uncached_and_filter_once():
         atlas, 0.1, "coronal", 3.0, -2.0, volume="template", order=3)
     second = oblique.sample_oblique_plane(
         atlas, 0.15, "coronal", 3.0, -2.0, volume="template", order=3)
-    assert len(oblique._filtered_cache) == 1  # one filter for both planes
+    assert len(oblique._filtered_cache) == 1
     vol, res = oblique._scaled_volume(atlas, "template", 1)
     axes = oblique.plane_axes(atlas, "coronal")
     coords = oblique._plane_coordinates(vol.shape, res, axes, 0.1 / res[axes[0]], 3.0, -2.0)
@@ -76,6 +76,6 @@ def test_banded_sampling_matches_one_call(monkeypatch):
 def test_annotation_planes_sampled_once_and_handed_out_as_copies():
     atlas = SyntheticAtlas()
     first = oblique.sample_oblique_annotation(atlas, 0.1, "coronal", 3.0, -2.0)
-    first[:] = 0  # a caller's own array: the cache is untouched
+    first[:] = 0
     second = oblique.sample_oblique_annotation(atlas, 0.1, "coronal", 3.0, -2.0)
     assert second.any() and second.dtype == np.asarray(atlas.annotation).dtype

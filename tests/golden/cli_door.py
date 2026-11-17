@@ -32,9 +32,7 @@ from stack import (
     placements,
 )
 
-#: The agent CLI as installed: the console script of this environment.
 COMMAND = Path(sys.executable).with_name("langslice-job")
-#: The calls that name no job folder.
 CATALOG = ("ops", "schema")
 
 

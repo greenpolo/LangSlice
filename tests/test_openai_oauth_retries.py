@@ -180,7 +180,7 @@ def test_never_replays_partially_delivered_stream(transport):
     response = Response(broken=True)
     outcomes.append(response)
     stream = oauth.stream_events({})
-    next(stream)  # quota
+    next(stream)
     assert next(stream)["item"]["type"] == "function_call"
     with pytest.raises(requests.ConnectionError, match="stream interrupted"):
         next(stream)
@@ -220,7 +220,6 @@ def test_http_and_early_event_failures_share_retry_budget(transport):
 @pytest.mark.parametrize('code', ['insufficient_quota', 'usage_limit_reached', 'invalid_request'])
 def test_permanent_failure_events_are_not_retried(transport, code):
     outcomes, calls, waits = transport
-    # A hard quota code wins even when the message happens to mention overload.
     message = 'invalid request' if code == 'invalid_request' else None
     event = failure(code, message) if message else failure(code)
     outcomes.append(Response(events=[event]))

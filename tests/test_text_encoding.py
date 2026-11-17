@@ -20,7 +20,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 FOLDERS = ("src", "tests", "tools")
-#: Third-party code kept as published; LangSlice calls none of its file I/O.
 VENDORED = REPO / "src" / "langslice_vendor"
 
 

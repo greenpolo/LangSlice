@@ -28,8 +28,6 @@ from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
 
-# --- _serialize ---------------------------------------------------------------------
-
 
 def test_tools_keep_their_identity_and_run_one_at_a_time(tmp_path: Path):
     """ADK runs a turn's several calls concurrently; every tool shares one
@@ -74,12 +72,9 @@ def test_tool_events_name_the_pictures_and_whether_the_call_failed(tmp_path: Pat
     box.job.views.flush()
     assert Path(path).is_file()
     assert end["failed"] is False
-    # One rule for every host: a reply whose status is ``error`` or ``refused`` failed.
     reply = _tool(box, "look")("overlay", sections=["nope.png"])
     assert reply["status"] in ("error", "refused") and events[-1]["failed"] is True
 
-
-# --- what ADK reads -----------------------------------------------------------------------
 
 
 def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
@@ -113,8 +108,6 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
         assert set(endpoint["required"]) == {"picture", "x", "y"}
         assert set(endpoint["properties"]) == {"picture", "x", "y"}
 
-
-# --- strict_arguments -----------------------------------------------------------------------------
 
 
 def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_path: Path):
@@ -161,8 +154,6 @@ def test_the_adk_plugin_refuses_what_adk_would_drop(tmp_path: Path):
         tool=FunctionTool(look), tool_args={"mode": "section"}, tool_context=None)) is None
 
 
-# --- _save_pictures ----------------------------------------------------------------------------
-
 
 def test_pictures_an_operation_saved_are_not_saved_again(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, n=2, placed=True)
@@ -178,8 +169,6 @@ def test_pictures_an_operation_saved_are_not_saved_again(tmp_path: Path):
     assert result["pictures"] == listed
     assert job.views.records() == []
 
-
-# --- announce_work ------------------------------------------------------------------------
 
 
 def test_background_notices_open_the_next_reply_with_their_pictures_last(tmp_path: Path):
@@ -198,12 +187,9 @@ def test_background_notices_open_the_next_reply_with_their_pictures_last(tmp_pat
     own, theirs = result["pictures"]
     assert "caption" in own and theirs == {"id": work.pictures[0], "work": work.id}
     assert result[TOOL_MEDIA_PARTS_KEY][1] is work_picture
-    # Each notice is handed out once.
     again = _tool(box, "status")()
     assert "background" not in again and "pictures" not in again
 
-
-# --- the opening-read gate --------------------------------------------------------------------
 
 
 def test_the_opening_gate_refuses_writes_until_every_page_is_read(tmp_path: Path):
@@ -214,17 +200,15 @@ def test_the_opening_gate_refuses_writes_until_every_page_is_read(tmp_path: Path
     assert refused["status"] == "refused" and refused["error"] == "OPENING_NOT_READ"
     assert refused["pages"] == [1, 2]
     assert "show_stack(page=1), show_stack(page=2)" in refused["message"]
-    assert _tool(box, "status")()["status"] == "ok"  # reads pass
+    assert _tool(box, "status")()["status"] == "ok"
     box.opening_read(1)
     assert note("first")["pages"] == [2]
     box.opening_read(2)
     assert note("first")["status"] == "ok"
-    box.require_opening(2)  # armed once; a host that read the pages is not asked again
+    box.require_opening(2)
     assert note("second")["status"] == "ok"
     assert state.notes[-2:] == ["first", "second"]
 
-
-# --- target_ids -------------------------------------------------------------------------
 
 
 def test_host_display_targets_follow_each_tools_scope():

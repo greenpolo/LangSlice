@@ -35,8 +35,6 @@ def clean_registry():
     core_plugins._LOADED.update(held)
 
 
-# --- the declaration and where it is offered --------------------------------
-
 
 def test_the_tool_keeps_its_name_kind_and_arguments():
     (spec,) = plugin.tools()
@@ -107,14 +105,8 @@ def test_the_package_imports_without_torch():
     assert done.stdout.strip() == "[]"
 
 
-# --- the inputs: Brainways' arithmetic under numpy 1 ---------------------------
-
 
 def test_the_percentiles_are_numpy_1s():
-    # np.percentile(x, float32 (0.1, 99.8)) under numpy 1.26, as Brainways
-    # pins it; numpy 2 answers 1.1098171270873536e-09 / 0.9944179058074951
-    # and 7.0 / 250.87600708007812. The plane is cubed by multiplying: a
-    # float32 power's last bits differ between numpy builds and CPUs
     rng = np.random.default_rng(7)
     rng.integers(0, 256, (224, 224), dtype=np.uint8)
     unit = rng.random((224, 224), dtype=np.float32)
@@ -134,7 +126,6 @@ def test_the_thumbnail_and_the_inputs_have_brainways_shapes():
     assert thumbnail.min() == 0 and thumbnail.max() == 255
     section = images.section_input(thumbnail)
     assert section.shape == (3, 224, 224) and section.dtype == np.float32
-    assert np.array_equal(section[0] * 0.229, section[0] * 0.229)  # finite
     plane = images.plane_input(rng.random((512, 512), dtype=np.float32))
     assert plane.shape == (3, 224, 224) and plane.dtype == np.float32
     assert np.isfinite(plane).all()
@@ -142,13 +133,10 @@ def test_the_thumbnail_and_the_inputs_have_brainways_shapes():
 
 def test_the_network_reads_the_checkpoints_tensors():
     names = network.tensor_names()
-    # the checkpoint holds 778 tensors, 109 of them num_batches_tracked
     assert len(names) == len(set(names)) == 778 - 109
     assert names[0] == "_backbone._model.conv_stem.weight"
     assert names[-1] == "classifier.2.bias"
 
-
-# --- the real network (slow) ---------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -211,7 +199,7 @@ def test_the_tool_proposes_and_writes_positions(tmp_path: Path, rat_atlas, cpu_n
     proposed = tool(write=[])
     assert proposed["written"] == "nothing: proposal only"
     assert proposed["columns"] == ["section", "position_mm", "change_mm"]
-    assert proposed["channel"] == "gray"  # three equal planes read as one
+    assert proposed["channel"] == "gray"
     by_name = {row[0]: row[1] for row in proposed["rows"]}
     assert abs(by_name["a.png"] - 300 * 0.039) <= 3 * 0.039
     assert abs(by_name["b.png"] - 600 * 0.039) <= 3 * 0.039
@@ -220,7 +208,7 @@ def test_the_tool_proposes_and_writes_positions(tmp_path: Path, rat_atlas, cpu_n
     written = tool()
     assert written["written"] == "positions"
     assert [row[3] for row in written["rows"]] == ["position", "position"]
-    assert [row[2] for row in written["rows"]] == [None, None]  # no position before
+    assert [row[2] for row in written["rows"]] == [None, None]
     again = tool(write=[])
     assert [row[2] for row in again["rows"]] == [0.0, 0.0]
     calls = sorted((Path(spec.image_folder) / "langslice" / "plugins" / "brainways_ap"

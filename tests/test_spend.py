@@ -29,8 +29,6 @@ def test_the_lane_comes_from_the_model_object():
 
 def test_a_claude_run_is_estimated_with_cache_writes_and_warned_at_five_dollars():
     monitor = SpendMonitor(AnthropicApiLlm())
-    # 200K prompt, 150K read from the cache, 50K written, 4K output + 6K thinking:
-    # 50K * $5 + 150K * $0.20 + 10K * $20 per million = $0.48 a call.
     said = []
     for _ in range(10):
         said += monitor.add(usage(prompt=200_000, cached=150_000, out=4_000, thoughts=6_000))
@@ -43,7 +41,7 @@ def test_a_claude_run_is_estimated_with_cache_writes_and_warned_at_five_dollars(
 
 def test_dollar_warnings_double():
     monitor = SpendMonitor("gemini-2.5-pro")
-    said = monitor.add(usage(prompt=0, out=1_000_000))  # $10 of output: crosses 5 and 10
+    said = monitor.add(usage(prompt=0, out=1_000_000))
     assert [w["threshold"] for w in said] == [5.0, 10.0]
     assert [w["threshold"] for w in monitor.add(usage(out=1_000_000))] == [20.0]
     assert monitor.add(usage(out=1)) == []

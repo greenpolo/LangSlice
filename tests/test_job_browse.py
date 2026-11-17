@@ -48,7 +48,6 @@ def test_paths_outside_the_job_folder_are_refused(tmp_path: Path):
         _refused(files.list_folder, job, bad)
         _refused(files.search_folder, job, "outside", bad)
     missing = _refused(files.read_folder_file, job, "history/no_such_file.txt", code="NOT_FOUND")
-    # A path that does not exist names the nearest folder above it and what it holds.
     assert missing.facts["nearest"] == "history"
     assert "the nearest folder above it that does, 'history', holds:" in str(
         missing.facts["message"])
@@ -100,7 +99,7 @@ def test_listing_search_and_reading_are_capped_and_paged(tmp_path: Path):
     job = _open(tmp_path)
     folder = job.layout.folder
     listed = files.list_folder(job)
-    assert listed.text.index("history/") < listed.text.index("state.json")  # folders first
+    assert listed.text.index("history/") < listed.text.index("state.json")
     only = files.list_folder(job, glob="*.json")
     assert only.entries and all(e.path.endswith(".json") for e in only.entries)
     many = folder / "many"
@@ -117,7 +116,7 @@ def test_listing_search_and_reading_are_capped_and_paged(tmp_path: Path):
     found = files.search_folder(job, "^alpha", glob="*.txt")
     assert found.matches == ("a.txt:1: alpha", "a.txt:3: alpha again")
     assert files.search_folder(job, "beta").matches == ("a.txt:2: Beta two",)
-    assert files.search_folder(job, "alpha(", glob="*.txt").matches == ()  # invalid regex: plain
+    assert files.search_folder(job, "alpha(", glob="*.txt").matches == ()
     assert not files.search_folder(job, "no-such-text-anywhere").matches
     assert not any(m.startswith("bin.dat") for m in files.search_folder(job, "alpha").matches)
     with pytest.raises(Refused) as caught:
@@ -155,7 +154,7 @@ def test_picture_files_answer_with_their_index_record(tmp_path: Path):
     reply = files.read_folder_file(job, f"{record.path}/view.jpg")
     assert reply.kind == "picture" and reply.picture == record.seq
     assert "A red test picture" in reply.text
-    assert "JFIF" not in reply.text  # no pixels, no bytes
+    assert "JFIF" not in reply.text
     assert files.read_folder_file(job, f"{record.path}/view.json").kind == "text"
 
     stray = job.layout.folder / "stray.png"
@@ -200,11 +199,9 @@ def test_a_picture_is_seen_again_with_zoom_or_drawn_again_with_look(tmp_path: Pa
     atlas = files.read_folder_file(job, _saved(job, "look", _look_recipe(
         mode="atlas", sections=[], positions_mm=[4.5]))).text
     assert "call look with mode='atlas', positions_mm=[4.5]" in atlas
-    # A picture look did not draw (a crop, a sheet, no recipe) gets no line.
     for recipe in ({"renderer": "crop", "source": 1, "box": [0, 0, 5, 5]}, None):
         other = files.read_folder_file(job, _saved(job, "zoom", recipe)).text
         assert "To draw" not in other and "To see" not in other
-    # A look mode the job switches off is not offered either.
     no_atlas = _open(tmp_path / "noatlas", disabled=["zoom", "look:atlas"])
     text = files.read_folder_file(no_atlas, _saved(no_atlas, "look", _look_recipe(
         mode="atlas", sections=[], positions_mm=[4.5]))).text
@@ -240,6 +237,5 @@ def test_the_agent_transcripts_are_neither_listed_searched_nor_read(tmp_path: Pa
             refused = _refused(call, job, *args)
             assert "the agent transcripts, which these tools do not open" in str(
                 refused.facts["message"])
-    # A missing path's refusal does not name the folder among the job folder's names.
     missing = _refused(files.read_folder_file, job, "no_such_file", code="NOT_FOUND")
     assert "trace/" not in missing.facts["holds"]

@@ -66,11 +66,9 @@ from tests.deformable_synthetic import CTX, STR, SyntheticAtlas
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "deepslice"
-#: Recovered six numbers and angles agree with the given ones to this.
 TOL_PARAMS = 1e-9
 TOL_DEG = 1e-7
 TOL_MM = 1e-9
-#: Through a QuickNII file: its anchorings are rounded to 1e-6 voxels.
 ROUNDED = 1000.0
 
 
@@ -202,8 +200,6 @@ def knobs(rotation: float, sx: float, sy: float, tx: float, ty: float,
             "translate_y_mm": ty, "shear": shear}
 
 
-#: Three sections, every orientation knob and an affine of each kind, with
-#: DIFFERENT cutting angles per section (QuickNII files carry them per section).
 PER_SECTION = [
     Given(ID0, 0.62, 3.5, -2.0, 0, False, knobs(12.0, 1.1, 0.92, 0.2, -0.1, 0.08)),
     Given(ID1, 0.91, -1.25, 4.75, 90, True, knobs(-30.0, 0.85, 1.2, -0.3, 0.25, -0.15)),
@@ -217,8 +213,6 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Path:
     write_sections(folder)
     return folder
 
-
-# --- the core inversion --------------------------------------------------------------
 
 
 def test_angle_convention_inverts_the_rotation_builder():
@@ -242,7 +236,6 @@ def test_core_round_trip_is_exact(stack: Path, plane: str):
         flat = trial % 4 == 0
         given = Given(
             section_id=(ID0, ID1, ID2)[trial % 3],
-            # A flat plane is drawn on a voxel: give one that lies on it.
             position_mm=(0.05 * int(rng.integers(8, 30)) if flat
                          else float(rng.uniform(0.4, 1.5))),
             pitch_deg=0.0 if flat else float(rng.uniform(-6, 6)),
@@ -267,7 +260,7 @@ def test_a_fixed_orientation_still_reproduces_the_map(stack: Path):
     found = placement_from_pixel_map(matrix, atlas=atlas, plane="coronal", sizes=sizes,
                                      file_um_per_px=PIXEL_SIZE_UM, orientation=(0, False))
     assert (found.rotation_deg, found.flip) == (0, False)
-    assert found.in_plane["mirrored"]  # the flip is carried by the six numbers
+    assert found.in_plane["mirrored"]
     again = Given(given.section_id, found.position_mm, found.pitch_deg, found.yaw_deg, 0,
                   False, {})
     state = state_of(workspace, [again])
@@ -308,7 +301,7 @@ def test_a_flat_plane_between_voxels_is_drawn_on_the_nearest(stack: Path):
     workspace = make_workspace(stack, atlas)
     given = Given(ID0, 0.5, 0.0, 0.0, 0, False, knobs(5.0, 1.0, 1.0, 0.0, 0.0, 0.0))
     matrix = pixel_map(workspace, given).copy()
-    matrix[0, 2] += 12.0  # 12 um further along AP: between voxels (50 um apart)
+    matrix[0, 2] += 12.0
     found = placement_from_pixel_map(matrix, atlas=atlas, plane="coronal",
                                      sizes=render_sizes(workspace, ID0),
                                      file_um_per_px=PIXEL_SIZE_UM)
@@ -338,8 +331,6 @@ def test_tiny_angles_are_rounding_and_other_planes_are_refused(stack: Path):
                                  file_um_per_px=PIXEL_SIZE_UM)
 
 
-# --- through the job's own exports ---------------------------------------------------
-
 
 def write_export(path: Path, document: dict[str, Any]) -> Path:
     path.write_text(json.dumps(document), encoding="utf-8")
@@ -360,7 +351,6 @@ def test_quicknii_json_round_trip_with_per_section_angles(stack: Path, tmp_path:
         placement = found[given.section_id]
         assert placement.match == "exact" and placement.problems == []
         assert_recovered(placement, given, params_for(workspace, given), ROUNDED)
-    # Per section, not one stack angle: the reader keeps each section's own.
     assert len({(p.pitch_deg, p.yaw_deg) for p in result.placements}) == 3
     transform = found[ID1].transform()
     assert transform["kind"] == "imported" and transform["mirrored"] is False
@@ -385,7 +375,6 @@ def test_quicknii_on_a_downsampled_copy_carries_over(stack: Path, tmp_path: Path
     for given in PER_SECTION:
         placement = _by_section(result)[given.section_id]
         assert placement.match == "stem"
-        # half sizes are floored: a slightly different aspect, said, same fractions
         assert all("fractions" in problem for problem in placement.problems)
         assert (placement.rotation_deg, placement.flip) == (given.rotation_deg, given.flip)
         assert placement.position_mm == pytest.approx(given.position_mm, abs=1e-6)
@@ -404,7 +393,6 @@ def test_allen_target_grid_round_trip(stack: Path, tmp_path: Path):
     for given in PER_SECTION:
         assert_recovered(_by_section(result)[given.section_id], given,
                          params_for(workspace, given), ROUNDED)
-    # Another target for this atlas is refused, section by section.
     document["target"] = "WHS_Rat_v4_39um.cutlas"
     refused = imports_placements.import_placements(write_export(tmp_path / "rat.json", document),
                                         workspace)
@@ -451,7 +439,6 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
             assert record is not None and record.transform is not None
             assert np.allclose(placement.params, affine_to_json(
                 record.transform)["params"], atol=TOL_PARAMS)
-    # The same registration into a job on another atlas of the same target.
     other = DeepAtlas("allen_mouse_50um")
     elsewhere = make_workspace(stack, other)
     document_allen = registration_document(state_of(elsewhere, shared), elsewhere,
@@ -462,12 +449,7 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
     assert "no common QuickNII target" in refused.refused[ID0]
 
 
-# --- DeepSlice's own files ---------------------------------------------------------------
 
-
-#: The DeepSlice case: the stack's files renamed with QuickNII section
-#: numbers, the registration made on files named otherwise (DeepSlice keeps
-#: the folder it read them from), an Allen atlas (its 25 um target).
 DEEPSLICE_NAMES = {ID0: "M1_s001.png", ID1: "M1_s002.png", ID2: "M1_s003.png"}
 DEEPSLICE_SECTIONS = [
     Given(DEEPSLICE_NAMES[g.section_id], g.position_mm, g.pitch_deg, g.yaw_deg,
@@ -505,7 +487,6 @@ def test_deepslice_files_round_trip(stack: Path, tmp_path: Path, name: str):
     for given in DEEPSLICE_SECTIONS:
         placement = _by_section(result)[given.section_id]
         assert placement.match == "section number"
-        # The export rounds anchorings to 1e-6 voxels.
         assert (placement.rotation_deg, placement.flip) == (given.rotation_deg, given.flip)
         assert placement.position_mm == pytest.approx(given.position_mm, abs=1e-6)
         assert placement.pitch_deg == pytest.approx(given.pitch_deg, abs=1e-5)
@@ -532,8 +513,6 @@ def test_an_old_deepslice_xml_parses(tmp_path: Path):
         0: ("x_s004.tif", "section number")}
 
 
-# --- matching ---------------------------------------------------------------------------
-
 
 def test_matching_rules_in_order():
     ids = ["a.tif", "B_s002.tif", "c_s010.png", "c_s010_copy.png", "d_s003.png"]
@@ -542,19 +521,14 @@ def test_matching_rules_in_order():
         ids)
     assert found == {0: ("a.tif", "exact"), 1: ("B_s002.tif", "stem"),
                      2: ("d_s003.png", "section number"), 3: ("c_s010_copy.png", "stem")}
-    # The exact name wins over a stem two files share.
     assert imports_matching.match_sections(["a.png"], ["a.tif", "a.png"]) == {0: ("a.png", "exact")}
-    # "other_s010" names two sections by number: refused.
     with pytest.raises(imports_matching.AmbiguousMatch, match="several sections"):
         imports_matching.match_sections(["other_s010.png"], ids)
     with pytest.raises(imports_matching.AmbiguousMatch, match="several entries"):
         imports_matching.match_sections(["a.png", "a.jpg"], ids)
-    # Two section numbers in one name: no number at all.
     assert imports_matching.match_sections(["x_s1_s2.png"], ["y_s1.png"]) == {}
     assert imports_matching.section_number("folder/name_s0042_10x.png") == 42
 
-
-# --- as a job's supplied inputs ----------------------------------------------------------
 
 
 def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -565,10 +539,9 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     found = imports_placements.registration_inputs(path, workspace)
     inputs = found.inputs
     assert set(inputs) == {"positions", "angles", "orientation", "transforms"}
-    assert set(inputs["angles"]) == {ID0, ID1, ID2}  # they differ: per section
+    assert set(inputs["angles"]) == {ID0, ID1, ID2}
     assert inputs["orientation"][ID1] == {"flip": True, "rotation_deg": 90}
     assert found.report["warnings"] == [] and found.report["markers_imported"] is False
-    # No pixel size anywhere: the imported one is used, and the maps hold at it.
     bare = make_workspace(stack, atlas, pixel_size=None)
     result = imports_placements.import_placements(path, bare)
     assert result.pixel_size_source == "imported" and result.pixel_size_um is not None
@@ -578,8 +551,6 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     for placement in result.placements:
         assert placement.pixel_size_source == "imported"
         _assert_redraws(redrawn, placement)
-    # Only one file carries its own pixel size: the job gets one size, and
-    # every section is placed against it (the maps still hold exactly).
     import langslice.core.workspace as module
 
     monkeypatch.setattr(module, "read_pixel_size_um",
@@ -664,8 +635,6 @@ def test_augmented_export_import_round_trip_is_the_identity(stack: Path, tmp_pat
     for given in PER_SECTION:
         assert_recovered(_by_section(result)[given.section_id], given,
                          params_for(workspace, given), ROUNDED)
-    # Written onto the Allen grid: the Allen job at the same position minus
-    # 0.350 mm anchors identically.
     allen = BareCCFAtlas("allen_mouse_25um")
     shifted = [Given(g.section_id, g.position_mm - 0.35, g.pitch_deg, g.yaw_deg,
                      g.rotation_deg, g.flip, g.knobs) for g in PER_SECTION]

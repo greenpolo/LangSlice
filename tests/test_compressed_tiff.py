@@ -39,4 +39,4 @@ def test_an_lzw_tiff_opens_through_a_job(tmp_path: Path, monkeypatch: pytest.Mon
         reply = job.look(mode="section", sections=["s0.tif"])
         assert reply["status"] == "ok", reply
         picture = np.asarray(reply.images[0].convert("L"))
-        assert picture.std() > 1  # the section, not a blank tile
+        assert picture.std() > 1

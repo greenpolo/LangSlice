@@ -28,10 +28,6 @@ def _positions(state) -> dict[str, float | None]:
     return {record.id: record.position_mm for record in state.slices}
 
 
-# --- which tools ------------------------------------------------------------------
-
-
-# --- position_sections -------------------------------------------------------------
 
 
 def test_a_write_checkpoints_the_whole_state(tmp_path: Path):
@@ -74,12 +70,10 @@ def test_undo_and_redo_take_several_steps_in_one_call(tmp_path: Path):
     assert undone["status"] == "ok" and undone["steps"] == 2 and undone["undo_depth"] == 1
     assert sorted(undone["undone"]["sections"]) == ["s1.png", "s2.png"]
     assert [_positions(state)[n] for n in ("s0.png", "s1.png", "s2.png")] == [1.0, None, None]
-    # More than the history holds: all of it, and the reply says so.
     redone = _tool(box, "redo")(steps=5)
     assert redone["steps"] == 2 and redone["redo_depth"] == 0
     assert "the history held 2" in redone["message"]
     assert [_positions(state)[n] for n in ("s0.png", "s1.png", "s2.png")] == [1.0, 2.0, 3.0]
-    # One step (the default) answers as before, with no count.
     assert "steps" not in _tool(box, "undo")()
     assert _tool(box, "undo")(steps=0)["error"] == "BAD_ARGS"
     assert _tool(box, "undo")(steps=1.5)["error"] == "BAD_ARGS"
@@ -114,16 +108,14 @@ def test_the_stack_is_renumbered_by_position_after_every_write(tmp_path: Path):
                                              view=False)
     order = ["s1.png", "s2.png", "s3.png", "s4.png", "s0.png"]
     assert result["order"] == order
-    assert result["reordered"] == order  # every section changed its place
+    assert result["reordered"] == order
     assert [s.id for s in state.in_order()] == order
     assert [s.index_corrected for s in state.in_order()] == list(range(5))
     assert result["changed"][0]["id"] == "s0.png" and "index" not in result["changed"][0]
-    # Moving one section within its neighbours renumbers only the pair.
     swapped = _tool(box, "position_sections")([{"id": "s2.png", "position_mm": 2.4}],
                                               view=False)
     assert swapped["order"][:2] == ["s2.png", "s1.png"]
     assert sorted(swapped["reordered"]) == ["s1.png", "s2.png"]
-    # The order is part of the write: undo puts it back.
     _tool(box, "undo")()
     _tool(box, "undo")()
     assert [s.id for s in state.in_order()] == before
@@ -138,41 +130,34 @@ def test_cutting_angles_are_one_write_for_the_stack(tmp_path: Path):
     assert stack_angles_entry(state) == {"pitch": 2.0, "yaw": -1.0}
     assert len(box.job.undo_stack) == 1
     assert write(cutting_angles={"pitch_deg": "steep", "yaw_deg": 0})["error"] == "BAD_ARGS"
-    assert write()["error"] == "BAD_ARGS"  # neither sections nor angles
+    assert write()["error"] == "BAD_ARGS"
     _tool(box, "undo")()
     assert stack_angles_entry(state) == {"pitch": 0.0, "yaw": 0.0}
 
-
-# --- interactive_transform --------------------------------------------------------------
 
 
 def test_one_section_is_written_shown_and_undone(tmp_path: Path):
     state, ctx, box = _box(tmp_path, placed=True)
     transform = single_transform(_tool(box, "interactive_transform"))
     state.by_id("s1.png").position_mm = None
-    # A section with no position has nothing to align against.
     assert transform("s1.png", 2.0)["error"] == "NO_POSITION"
 
     row = transform("s0.png", 5.0, 1.1, 1.0, 0.25, -0.1)
     assert row["status"] == "ok" and row["id"] == "s0.png" and row["written"] is True
     assert row["transform"]["rotation_deg"] == 5.0 and row["transform"]["scale_x"] == 1.1
     assert row["orientation"] == {"flip": False, "rotate_quarter": 0, "changed": False}
-    # The write and the look are one call: the result comes back as a picture.
     (picture,) = row["pictures"]
     assert "s0.png overlay" in picture["caption"]
     assert "interactive transform" in picture["caption"]
     assert len(row[TOOL_MEDIA_PARTS_KEY]) == 1
     assert row["changed"][0]["transform"]["kind"] == "interactive"
-    # The status row carries the transform's numbers, as the write's reply gives them.
     assert row["changed"][0]["transform"]["rotation_deg"] == 5.0
     stored = affine_to_json(state.by_id("s0.png").transform)
     assert stored["kind"] == "interactive" and len(stored["params"]) == 6
     assert stored["physical"]["rotation_deg"] == 5.0
-    # Nothing states a pixel size here, and the record says so.
     assert stored["calibration"]["source"] == "uncalibrated"
     assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
 
-    # The same numbers again draw, and write nothing.
     again = transform("s0.png", 5.0, 1.1, 1.0, 0.25, -0.1)
     assert again["written"] is False and len(again["pictures"]) == 1
     assert "changed" not in again
@@ -190,7 +175,6 @@ def test_values_left_out_keep_the_sections_current_ones(tmp_path: Path):
     assert row["transform"]["translate_x_mm"] == 0.2
     assert row["transform"]["scale_x"] == 1.2
     assert affine_to_json(state.by_id("s0.png").transform)["physical"]["rotation_deg"] == 5.0
-    # A new orientation keeps the transform values.
     flipped = transform("s0.png", flip=True)
     assert flipped["orientation"]["changed"] is True
     assert flipped["transform"]["rotation_deg"] == 5.0 and state.by_id("s0.png").flip is True
@@ -202,8 +186,6 @@ def test_values_left_out_keep_the_sections_current_ones(tmp_path: Path):
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True, disabled=["interactive_transform:flip"])
     tool = _tool(box, "interactive_transform")
-    # The option is not in the tool's schema: a call that sends it is refused
-    # whole, and nothing is written.
     result = tool([{"id": "s0.png", "flip": True}, {"id": "s1.png", "rotate_quarter": 90}])
     assert result["error"] == "UNKNOWN_ARGUMENTS" and "flip" in result["message"]
     assert state.by_id("s0.png").flip is False and state.by_id("s1.png").rotation_deg == 0
@@ -252,8 +234,6 @@ def test_a_picture_that_fails_leaves_the_write_standing(tmp_path: Path, monkeypa
     assert len(box.job.undo_stack) == 1
 
 
-# --- mark_damage ------------------------------------------------------------------------
-
 
 def _regions_box(tmp_path: Path, **kwargs):
     state, ctx, spec = _stack(tmp_path, n=3, atlas=SyntheticAtlas(), **kwargs)
@@ -270,7 +250,6 @@ def test_mark_damage_marks_regions_shows_them_and_undoes(tmp_path: Path):
     assert (result["id"], result["regions"], result["note"], result["damaged"]) == (
         "s0.png", ["TH"], "torn", True)
     assert result["changed"][0]["damaged_regions"] == ["TH"]
-    # Its picture is saved by the door, with a number.
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1 and len(result["pictures"]) == 1
     assert box.job.views.records()[0].tool == "mark_damage"
     record = state.by_id("s0.png")
@@ -281,7 +260,7 @@ def test_mark_damage_marks_regions_shows_them_and_undoes(tmp_path: Path):
     assert again["written"] is False and len(box.job.undo_stack) == 1
     cleared = mark("s0.png", [], "")
     assert cleared["damaged"] is False and cleared["note"] == ""
-    assert TOOL_MEDIA_PARTS_KEY not in cleared  # nothing marked, nothing to draw
+    assert TOOL_MEDIA_PARTS_KEY not in cleared
     _tool(box, "undo")()
     assert state.by_id("s0.png").damaged_regions == ["TH"]
     _tool(box, "undo")()
@@ -297,10 +276,6 @@ def test_mark_damage_refuses_unknown_regions_and_sections(tmp_path: Path):
     assert box.job.undo_stack == []
 
 
-# --- note, undo, redo --------------------------------------------------------------------
-
-
-# --- submit ------------------------------------------------------------------------------
 
 
 def test_submit_refuses_an_unplaced_stack(tmp_path: Path):
@@ -337,7 +312,7 @@ def test_submit_accepts_a_stack_that_runs_backwards_and_emits_atlas_order(tmp_pa
     for index, record in enumerate(ordered):
         record.position_mm = 10.0 - index
     ids_before = [r.id for r in ordered]
-    for record in ordered[3:]:  # a real gap between old index 2 and 3
+    for record in ordered[3:]:
         record.position_mm = float(record.position_mm) - 4.0
     result = _submit(box, interval_breaks=[ids_before[3]])
     assert result["status"] == "ok"
@@ -345,7 +320,7 @@ def test_submit_accepts_a_stack_that_runs_backwards_and_emits_atlas_order(tmp_pa
     assert [r.id for r in after] == ids_before[::-1]
     positions = [float(r.position_mm) for r in after]
     assert positions == sorted(positions)
-    assert state.interval_breaks == [n - 3]  # the same physical gap
+    assert state.interval_breaks == [n - 3]
     assert box.submission["interval_breaks"] == [after[n - 3].id]
     assert any("reversed" in note for note in state.notes)
 
@@ -373,7 +348,7 @@ def test_submit_accepts_a_break_the_positions_do_show(tmp_path: Path):
 def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"], placed=True,
                          position=PositionSpec(strict_interval=True, interval_um=500))
-    assert _submit(box)["status"] == "ok"  # 0.5 mm apart, exactly the interval
+    assert _submit(box)["status"] == "ok"
     state.submitted = False
     state.by_id("s4.png").position_mm = 5.0
     refusal = _submit(box)

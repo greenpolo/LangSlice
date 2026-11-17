@@ -51,6 +51,6 @@ def test_hosted_gemma_and_the_failures(monkeypatch):
         model_resolver.resolve_adk_model("ollama:gemma4:26b")
 
     monkeypatch.undo()
-    monkeypatch.setitem(sys.modules, "google.adk.models.lite_llm", None)  # import fails
+    monkeypatch.setitem(sys.modules, "google.adk.models.lite_llm", None)
     with pytest.raises(RuntimeError, match="LiteLLM support requires"):
         model_resolver.resolve_adk_model("litellm-proxy:langslice-qwen36-plus")

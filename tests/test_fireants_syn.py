@@ -60,8 +60,6 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     assert row["status"] == "ok" and row["written"]
     assert row["settings"] == {"smoothness_um": 80.0, "mask": "none",
                                "section_image": "preprocessed", "atlas_image": "nissl"}
-    # The reply names what the fit read; the synthetic atlas has no Nissl, so
-    # "nissl" is its template. FireANTs sorts nothing by itself any more.
     assert first.settings == {
         "section_image": "preprocessed", "atlas_image": "nissl",
         "atlas_image_resolved": "template", "mask": "none", "restrict_to": [],
@@ -87,7 +85,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     assert held["steps"][1]["smoothness_um"] == 50.0
     assert again["inputs"]["restrict_to"] == ["TH"]
     assert len(job.undo_stack) == depth + 2
-    assert job.undo()  # undo is how to start over
+    assert job.undo()
     assert len(deformation_to_json(job.state.slices[0].deformation)["steps"]) == 1  # type: ignore[index]
 
 

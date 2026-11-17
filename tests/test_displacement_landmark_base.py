@@ -39,23 +39,20 @@ def test_a_large_landmark_move_is_not_outsized_and_fits_count_only_their_additio
         landmark_warp.landmark_triangulation(job, ws, record.id)
         extent_mm = _added_step(job, ws, record, None, 0.0).diagnostics[
             "displacement"]["tissue_extent_mm"]
-        # Replace the pairs by a 38 px move.
         record.landmarks = landmarks_from_json({})
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(
             job, ws, record, delta=(38., 0.)))
         reply = landmark_warp.landmark_triangulation(job, ws, record.id).reply()
         moved = job.deformations.current(job.state, record)
         whole = np.linalg.norm(moved.field_mm, axis=-1)[moved.footprint]
-        assert whole.max() > 0.1 * extent_mm  # past the old limit
+        assert whole.max() > 0.1 * extent_mm
         assert "DISPLACEMENT_OUTSIZED" not in _codes(moved)
         assert all(f["code"] != "DISPLACEMENT_OUTSIZED" for f in reply["flags"])
-        # A fit composed on it: measured from the landmark warp.
         small = _added_step(job, ws, record, moved, 0.02 * extent_mm)
         assert small.diagnostics["displacement"]["beyond_landmark_warp"]
         assert "DISPLACEMENT_OUTSIZED" not in _codes(small)
         large = _added_step(job, ws, record, moved, 0.2 * extent_mm)
         assert "DISPLACEMENT_OUTSIZED" in _codes(large)
-        # Landmarks applied over that fit make the combined field the base.
         folder = job.deformations.save(record.id, "large", large)
         job.deformations.put("large", large)
         record.deformation = deformation_from_json({
@@ -81,7 +78,6 @@ def test_a_chain_without_landmarks_is_measured_from_the_placement(tmp_path):
         assert "DISPLACEMENT_OUTSIZED" not in _codes(first)
         big = _added_step(job, ws, record, None, 0.2 * extent_mm)
         assert "DISPLACEMENT_OUTSIZED" in _codes(big)
-        # Two steps that add up past the limit are flagged as a whole.
         half = _added_step(job, ws, record, None, 0.06 * extent_mm)
         assert "DISPLACEMENT_OUTSIZED" not in _codes(half)
         both = _added_step(job, ws, record, half, 0.06 * extent_mm)

@@ -97,8 +97,6 @@ def call(toolbox, name: str, /, **arguments: Any) -> dict[str, Any]:
     return tool(**arguments)
 
 
-# --- loading ------------------------------------------------------------------------------------
-
 
 def test_a_valid_plugin_adds_its_tools_after_the_native_ones(images: Path):
     state, ctx, box = box_of(images, EXAMPLE)
@@ -187,8 +185,6 @@ def test_a_disabled_name_must_exist_and_a_plugin_tool_can_be_disabled(images: Pa
     assert "section_brightness" in enabled(spec)
 
 
-# --- gating -------------------------------------------------------------------------------------
-
 
 def test_a_tool_is_absent_while_its_task_is_off(images: Path):
     _s, _c, box = box_of(images, EXAMPLE, tasks=["position"])
@@ -215,8 +211,6 @@ def test_a_per_call_limit_refuses_a_longer_call(images: Path):
     reply = call(box, "nudge_sections", sections=[f"s{i}.png" for i in range(5)])
     assert reply["error"] == "TOO_MANY_SECTIONS" and reply["max_sections"] == 4
 
-
-# --- writes -------------------------------------------------------------------------------------
 
 
 def test_a_context_write_is_one_undo_step_that_undo_reverts(images: Path):
@@ -374,7 +368,7 @@ def test_a_long_calls_writes_are_one_undo_step_unless_another_write_came_between
     start = {record.id: record.position_mm for record in state.slices}
     depth = len(box.job.undo_stack)
     assert call(box, "place_twice")["status"] == "ok"
-    assert len(box.job.undo_stack) == depth + 1  # three writes, no ctx.writing(): one step
+    assert len(box.job.undo_stack) == depth + 1
     call(box, "undo")
     assert {record.id: record.position_mm for record in state.slices} == start
     assert not state.by_id("s0.png").damage_note
@@ -385,7 +379,6 @@ def test_a_long_calls_writes_are_one_undo_step_unless_another_write_came_between
         box.job, ctx, [{"id": "s2.png", "position_mm": 9.0}])
     depth = len(box.job.undo_stack)
     assert call(box, "place_twice")["status"] == "ok"
-    # The other write sits between the call's: three steps; undo takes back the call's last.
     assert len(box.job.undo_stack) == depth + 3
     call(box, "undo")
     assert state.by_id("s1.png").position_mm == start["s1.png"]
@@ -440,8 +433,6 @@ def test_the_fit_frame_carries_the_marked_damage_on_the_native_plane(make, image
     assert reply["excluded"] > 0 and reply["same_grid"] and reply["inside"] and reply["zone"]
 
 
-# --- the context's reads and conversions --------------------------------------------------------
-
 
 def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
     ref = make("reader_plugin", '''
@@ -474,8 +465,8 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
     reply = call(box, "read_it")
     assert reply["id"] == "s1.png" and reply["position"] == 2.5 and reply["size"] == [40, 30]
     assert reply["shape"][2] == 3 and reply["matrix"] == 3 and "annotation" in reply["planes"]
-    assert reply["placed"]  # no transform yet: no current placement to start from
-    assert reply["stain"]  # the preprocessed channel on the fit grid
+    assert reply["placed"]
+    assert reply["stain"]
     assert Path(reply["work"]).parts[-2:] == ("plugins", "read_it") and Path(reply["work"]).is_dir()
     assert reply["spec_tasks"] == ["position", "transform"] and reply["layers"] == []
 
@@ -511,8 +502,6 @@ def test_a_matrix_becomes_the_transform_an_elastix_fit_would_store(make, images:
     assert reply["row"] == "s0.png"
 
 
-# --- layers -------------------------------------------------------------------------------------
-
 
 MARKS = '''
 import numpy as np
@@ -545,7 +534,7 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
     state, _c, box = box_of(images, ref)
     depth = len(box.job.undo_stack)
     assert call(box, "mark", sections=["s0.png"])["status"] == "ok"
-    assert len(box.job.undo_stack) == depth + 1  # the call, not each layer
+    assert len(box.job.undo_stack) == depth + 1
     record = state.by_id("s0.png")
     assert [item.name for item in record.layers] == ["marks", "box", "regions", "map", "shot"]
     assert record.layers[0].file.startswith("plugins/mark/layers/s0_")
@@ -575,7 +564,7 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
     assert call(box, "redo")["status"] == "ok"
     assert len(state.by_id("s0.png").layers) == 5
     first = [item.id for item in state.by_id("s0.png").layers]
-    call(box, "mark", sections=["s0.png"])  # a layer of the same name replaces the earlier one
+    call(box, "mark", sections=["s0.png"])
     second = [item.id for item in state.by_id("s0.png").layers]
     assert len(second) == 5 and not set(first) & set(second)
     assert call(box, "look", mode="positioning", layers=["marks"])["error"] == "BAD_ARGS"
@@ -660,8 +649,6 @@ def test_export_maps_copies_the_layers_with_their_manifest(make, images: Path):
     assert any(kind == "plugin_layer" for _path, kind in exported.files)
 
 
-# --- deformations -------------------------------------------------------------------------------
-
 
 NONLINEAR = {"tasks": ["position", "transform", "nonlinear"]}
 
@@ -696,8 +683,6 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
     assert warp is not None and warp.engine["name"] == "plugin:ripple_sections"
     assert warp.provenance["plugin"]["tool"] == "ripple_sections"
     assert warp.provenance["plugin"]["note"] == "ripple 1.5 px"
-    # The map as the plugin computed it: the ripple on the section's current
-    # placement (a shift), ctx.fit_frame's placed_atlas_to_section.
     from types import SimpleNamespace
 
     from langslice.core.fits import deformation
@@ -707,15 +692,12 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
         image=np.asarray(grid.image), atlas_to_section=None,
         placed_atlas_to_section=grid.placement.atlas_to_section), 1.5)
     assert affine_to_json(record.transform)["params"][2] == 0.05
-    # The ripple alone: 1.5 fit-grid pixels at most, nothing of the placement.
     assert reply["rows"][0]["displacement_mm"]["max"] <= 1.5 * warp.mm_per_px + 1e-3
     frame = section_frame(state, ctx, record)
     assert tuple(frame.file_size) == (40, 30) and frame.rotation_deg == 0 and not frame.flip
     gy, gx = np.indices((30, 40), dtype=np.float64)
     nx, ny = native_points(frame, warp, gx, gy)
-    # Within the record's float16 storage of the field (well under 1e-3 native px).
     np.testing.assert_allclose(np.stack([nx, ny], -1), expected, atol=1e-3)
-    # The exported coordinate map is those native points in atlas micrometres.
     exported = export_maps(job, ctx, ids=["s0.png"])
     assert "s0.png" in exported.sections, exported
     import tifffile
@@ -725,7 +707,6 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
                  + frame.native_to_um[:, 1] * expected[..., 0, None] + frame.native_to_um[:, 2])
     inside = np.isfinite(coords).all(axis=-1)
     assert inside.mean() > 0.5
-    # Within the field's float16 storage (under half a micrometre here).
     np.testing.assert_allclose(coords[inside], native_um[inside], rtol=1e-5, atol=0.5)
     registration = json.loads((job.layout.folder / "registration.json").read_text(
         encoding="utf-8"))
@@ -914,7 +895,6 @@ def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path
     assert record.engine["version"] == "ripple 1"
     assert record.provenance["start"] == "current"
     assert record.provenance["settings"] == {"amplitude_px": 0.5}
-    # The record on disk names its parent, and reads back with it.
     saved = json.loads((job.layout.resolve(chained["record"]) / "record.json").read_text(
         encoding="utf-8"))
     assert saved["parent"] == held["record"].rsplit("/", 1)[-1]
@@ -922,7 +902,6 @@ def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path
     assert rows["s0.png"]["deformation"] == {
         "method": "plugin:ripple_chain", "steps": ["plugin:ripple_chain", "plugin:ripple_chain"],
         "settings": {"amplitude_px": 0.5}}
-    # Undo takes the second step back to the first.
     call(box, "undo")
     assert deformation_to_json(state.by_id("s0.png").deformation)["key"] == held["key"]
 
@@ -983,8 +962,6 @@ def test_a_proposed_deformation_is_drawn_and_not_written(make, images: Path):
     assert state.by_id("s0.png").deformation is None and len(box.job.undo_stack) == depth
 
 
-# --- the doors ----------------------------------------------------------------------------------
-
 
 def _library_job(images: Path, plugins: Any = (EXAMPLE,), **settings: Any):
     import langslice
@@ -1014,7 +991,7 @@ def test_the_library_gets_the_tools_as_methods_and_reopens_them(images: Path):
     assert written["written"] == ["s0.png"] and written["artifacts"]
     folder = job.folder
     job.close()
-    core_plugins.forget(EXAMPLE)  # a new process starts without it
+    core_plugins.forget(EXAMPLE)
     again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
     assert again.verbs[-2:] == ["section_brightness", "nudge_sections"]
     assert affine_to_json(again.state.by_id("s0.png").transform)["params"][2] == 0.03
@@ -1022,16 +999,15 @@ def test_the_library_gets_the_tools_as_methods_and_reopens_them(images: Path):
 
 
 def test_the_library_takes_a_factory_function_and_tool_objects(make, images: Path):
-    import langslice
     from tests.fixtures import example_plugin
 
     job = _library_job(images, plugins=[example_plugin.tools])
-    assert job.job.spec.plugins == [EXAMPLE]  # a module-level factory is named by its path
+    assert job.job.spec.plugins == [EXAMPLE]
     assert "section_brightness" in job.verbs
     job.close()
     second = images.parent / "second"
     second.mkdir()
-    again = _library_job(second, plugins=example_plugin.tools())  # the tools themselves
+    again = _library_job(second, plugins=example_plugin.tools())
     assert again.job.spec.plugins[0].startswith("inline:")
     assert "nudge_sections" in again.verbs
     again.close()
@@ -1039,7 +1015,6 @@ def test_the_library_takes_a_factory_function_and_tool_objects(make, images: Pat
         from langslice.doors.plugins import as_refs
 
         as_refs(lambda: [])
-    assert langslice.open_job
 
 
 def test_schema_describes_the_plugin_tools_of_the_job_in_the_folder(
@@ -1052,23 +1027,21 @@ def test_schema_describes_the_plugin_tools_of_the_job_in_the_folder(
     install_atlas = __import__("tests.cli_child", fromlist=["install"]).install
     install_atlas(lambda _n: _slab(), monkeypatch.setattr)
     monkeypatch.chdir(folder)
-    main(["ops"])  # the commands of the session that sets the job up: no plugin tool
+    main(["ops"])
     verbs = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
     assert "nudge_sections" not in [item["name"] for item in verbs]
-    main([str(folder), "nudge_sections"])  # a registration tool, not a command
+    main([str(folder), "nudge_sections"])
     refused = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
     assert refused["code"] == "VERB_OFF" and "open_job(FOLDER).nudge_sections(" in refused["fix"]
     main(["schema", "nudge_sections"])
     schema = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]
     assert set(schema["arguments"]["properties"]) == {"sections", "dx"}
-    monkeypatch.chdir(images.parent)  # a folder with no job
-    # From elsewhere, the job's folder names the job: its plugin verbs with
-    # native ones, several at once.
+    monkeypatch.chdir(images.parent)
     main([str(folder), "schema", "nudge_sections", "look"])
     both = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
     assert list(both) == ["nudge_sections", "look"]
     assert set(both["nudge_sections"]["arguments"]["properties"]) == {"sections", "dx"}
-    main(["schema", "nudge_sections"])  # no job here: how to name one
+    main(["schema", "nudge_sections"])
     refused = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
     assert refused["code"] == "UNKNOWN_VERB"
     assert "langslice-job FOLDER schema nudge_sections" in refused["message"]
@@ -1123,8 +1096,6 @@ def test_the_mcp_server_loads_a_jobs_plugins(make, images: Path):
         session.close()
 
 
-# --- provenance ---------------------------------------------------------------------------------
-
 
 def test_job_json_carries_the_plugins_provenance_and_a_changed_file_is_a_new_digest(
         make, images: Path):
@@ -1161,15 +1132,12 @@ def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
     assert box.plugins == [] and "plugins" not in (read_job_file(box.job.layout) or {})
     assert "layers" not in stack_to_json(state)["slices"][0] and "plugins" not in spec.to_dict()
     assert "layers" not in call(box, "status")["rows"][0]
-    # look's layers draws what plugins and scripts leave: on every job.
     assert "layers" in inspect.signature(tool_named(box, "look")).parameters
     assert "layers" in declaration("look", FULL).signature.parameters
     with_plugins = JobSpec(image_folder=str(images), plugins=[EXAMPLE])
     declared = declaration("look", DescriptionFacts.from_spec(with_plugins, auto=True))
     assert "layers" in declared.signature.parameters
 
-
-# --- frames: array pixels and section_px ---------------------------------------------------------
 
 
 def test_many_points_through_a_warp_are_sampled_in_rows_not_one_column():
@@ -1179,14 +1147,14 @@ def test_many_points_through_a_warp_are_sampled_in_rows_not_one_column():
 
     height, width = 48, 64
     field = np.zeros((height, width, 2))
-    field[..., 0] = 0.005  # half a pixel of shift at 0.01 mm per pixel
+    field[..., 0] = 0.005
     warp = SimpleNamespace(mm_per_px=0.01, section_size=(width, height), field_mm=field,
                            inverse_field_mm=field)
     panel = {"role": "section", "render_size": [width, height], "orientation": np.eye(3).tolist(),
              "pixel_to_render": np.eye(3).tolist()}
     xs, ys = np.meshgrid(np.arange(width), np.arange(height))
     xy = np.stack([xs.ravel(), ys.ravel()], axis=1).astype(float)
-    xy = np.tile(xy, (40, 1))  # 120 thousand points: past what one cv2 map column takes
+    xy = np.tile(xy, (40, 1))
     assert len(xy) > 100_000
     fractions = picture_to_fractions(panel, xy, warp)
     expected = (xy + np.array([0.5, 0.0]) + 0.5) / np.array([width, height])
@@ -1252,7 +1220,7 @@ def test_a_mark_made_from_section_image_pixels_is_drawn_on_the_feature(
     state, ctx, box = box_of(images, ref)
     picture = ellipse_section((400, 240), (150, 80))
     pixels = np.asarray(picture).copy()
-    pixels[60:100, 270:330] = (230, 20, 20)  # the feature, right of centre and above
+    pixels[60:100, 270:330] = (230, 20, 20)
     Image.fromarray(pixels).save(images / "s0.png")
     record = state.by_id("s0.png")
     record.rotation_deg, record.flip = rotation, flip
@@ -1280,11 +1248,9 @@ def test_a_mark_made_from_section_image_pixels_is_drawn_on_the_feature(
         return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
     size = max(plain.shape[:2])
-    assert np.hypot(*(centre(drawn, rgb(0)) - feature)) < 0.03 * size  # the point
-    assert np.hypot(*(centre(drawn, rgb(2)) - feature)) < 0.03 * size  # the mask's outline
+    assert np.hypot(*(centre(drawn, rgb(0)) - feature)) < 0.03 * size
+    assert np.hypot(*(centre(drawn, rgb(2)) - feature)) < 0.03 * size
 
-
-# --- background work, SECTION_BUSY, the applied map, planes, the angles task ------------------
 
 
 LATER = '''
@@ -1368,10 +1334,10 @@ def test_a_write_to_a_section_with_work_running_is_refused_section_busy(later):
     again = call(box, "ripple_later", sections=["s0.png"])
     assert again["error"] == "SECTION_BUSY"
     angles = call(box, "position_sections", cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0})
-    assert angles["error"] == "SECTION_BUSY"  # one plane for the stack, s0 among it
+    assert angles["error"] == "SECTION_BUSY"
     module.GATE.set()
     box.job.background.wait_all()
-    assert state.by_id("s0.png").deformation is not None  # its own landing is not refused
+    assert state.by_id("s0.png").deformation is not None
     assert call(box, "mark_damage", section="s0.png", regions=[])["status"] == "ok"
 
 
@@ -1472,17 +1438,15 @@ def test_the_library_waits_for_work_a_plugin_verb_started_and_returns_its_landin
     job = _library_job(images, plugins=[ref])
     started = job.mark_later(section="s0.png")
     assert started["work"] == "w1"
-    assert "background" not in started  # however soon it lands: its notice comes later
+    assert "background" not in started
     landed = job.wait()
     assert landed["status"] == "ok" and landed["running"] == []
     assert landed["background"][0].endswith("mark_later of s0.png finished: moved.")
     assert landed["work"][0]["id"] == "w1" and landed["work"][0]["status"] == "done"
     assert job.state.by_id("s0.png").position_mm == pytest.approx(3.3)
-    assert job.wait()["background"] == []  # a notice is handed out once
+    assert job.wait()["background"] == []
     job.close()
 
-
-# --- offered by atlas and plane -----------------------------------------------------------------
 
 BY_ATLAS = '''
 from langslice.plugin_api import ToolResult, ToolSpec
@@ -1524,7 +1488,7 @@ def test_a_tool_is_offered_only_on_its_atlases_and_planes_and_no_text_names_it(
     spec = JobSpec(image_folder=str(images), plugins=[ref], atlas=atlas, plane=plane)
     names = {"mouse_only", "rat_only", "plain"}
     assert names & set(enabled(spec)) == expected
-    assert names & set(tools_for(spec)) == names  # defined everywhere, on only where offered
+    assert names & set(tools_for(spec)) == names
     assert set(spec.switched_off) >= names - expected
     from langslice.job.settings.needs import render
 
@@ -1534,7 +1498,7 @@ def test_a_tool_is_offered_only_on_its_atlases_and_planes_and_no_text_names_it(
             assert f"`{absent}`" not in text, (name, absent, text)
     plain_text = declaration("plain", _variant(spec)).doc
     for present in expected - {"plain"}:
-        assert f"`{present}`" in plain_text  # the sentence is there where the tool is
+        assert f"`{present}`" in plain_text
     assert render("[[?mouse_only `mouse_only`]]", spec.switched_off) == (
         "`mouse_only`" if "mouse_only" in expected else "")
 
@@ -1565,7 +1529,6 @@ def test_a_plugin_sentence_naming_a_tool_of_a_task_that_is_off_is_dropped(make, 
         spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=tasks, disabled=disabled)
         text = declaration("tasked", _variant(spec)).doc
         assert ("It also fits transforms." in text) is named, (tasks, disabled, text)
-    # the native declarations render by the same tools
     for tasks, named in ((["position", "transform"], True), (["position"], False)):
         spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=tasks)
         doc = declaration("mark_damage", _variant(spec)).doc
@@ -1585,8 +1548,6 @@ def test_atlas_and_plane_patterns_are_checked_and_recorded(make, images: Path):
     assert tools["mouse_only"]["planes"] == ["coronal"]
     assert "atlases" not in tools["plain"] and "planes" not in tools["plain"]
 
-
-# --- the positioning picture, the raw section, a registration read ----------------------------
 
 PICTURES = '''
 import numpy as np
@@ -1615,7 +1576,6 @@ def test_positioning_picture_draws_the_stack_and_a_proposal_without_writing(make
     drawn = call(box, "draw", proposed=True)
     assert plain["status"] == drawn["status"] == "ok" and plain["count"] == drawn["count"] == 1
     assert stack_to_json(state) == before and len(box.job.undo_stack) == depth
-    # the proposal's picture carries one more caption band
     assert drawn["sizes"][0][0] == plain["sizes"][0][0]
     assert drawn["sizes"][0][1] > plain["sizes"][0][1]
 
@@ -1648,7 +1608,7 @@ def tools():
 def test_raw_section_raster_is_the_oriented_file_not_the_preprocessed_blend(make, images: Path):
     ref = make("raw_plugin", RAW)
     rng = np.random.default_rng(3)
-    delivered = rng.integers(0, 120, size=(30, 40, 3), dtype=np.uint8)  # dim, like a stain
+    delivered = rng.integers(0, 120, size=(30, 40, 3), dtype=np.uint8)
     Image.fromarray(delivered).save(images / "s0.png")
     state, ctx, box = box_of(images, ref, n=0)
     ctx.settings = dataclasses.replace(ctx.settings, preprocess="auto")
@@ -1658,10 +1618,9 @@ def test_raw_section_raster_is_the_oriented_file_not_the_preprocessed_blend(make
         ctx.source_cache.clear()
         ctx.render_cache.clear()
         reply = call(box, "rasters", section="s0.png")
-        expected = np.rot90(delivered, k=rotation // 90)  # PIL's ROTATE_90 turns counter-clockwise
+        expected = np.rot90(delivered, k=rotation // 90)
         expected = expected[:, ::-1] if flip else expected
         np.testing.assert_array_equal(np.array(reply["raw"], dtype=np.uint8), expected)
-    # the default appearance preprocesses (CLAHE, blend): not the file
     assert not np.array_equal(np.array(reply["default"], dtype=np.uint8), expected)
 
 
@@ -1683,12 +1642,9 @@ def test_raw_section_raster_of_one_channel_is_that_page_as_gray(make, images: Pa
     plane = np.array(pages[1][:, ::-1])
     assert (raw[..., 0] == raw[..., 1]).all() and (raw[..., 1] == raw[..., 2]).all()
     np.testing.assert_array_equal(raw[..., 0], plane)
-    # without raw one raw channel is the same section image, as the file holds it
     np.testing.assert_array_equal(np.array(reply["tinted"], dtype=np.uint8), raw)
-    # a name the section has no image of is refused
     again = call(box, "rasters", section="s0.tif", channel="nope")
     assert again["error"] == "UNKNOWN_IMAGE"
-    # the preprocessed image is no raw read
     made = call(box, "rasters", section="s0.tif", channel="preprocessed")
     assert made["error"] == "BAD_ARGS"
 
@@ -1769,7 +1725,6 @@ def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_st
         Given("s2.png", 1.33, 3.5, -2.0, 90, False, knobs(5.0, 0.95, 1.05, 0.0, 0.0, 0.0)),
     ]
     state, ctx, box = box_of(images, ref, atlas=atlas, inputs={"pixel_size_um": 25.0})
-    # the agent's orientation: s1 flipped, s2 turned a quarter
     state.by_id("s1.png").flip = True
     state.by_id("s2.png").rotation_deg = 90
     ctx.render_cache.clear()
@@ -1783,10 +1738,10 @@ def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_st
     rows = {row["id"]: row for row in reply["read"]["placements"]}
     assert [(rows[g.section_id]["rotation_deg"], rows[g.section_id]["flip"]) for g in given] \
         == [(0, False), (0, True), (90, False)]
-    for g in given:  # the six numbers are for the oriented render
+    for g in given:
         np.testing.assert_allclose(rows[g.section_id]["params"], params_for(ctx, g), atol=1e-6)
         assert rows[g.section_id]["out_of_plane_um"] < 1e-3
-    assert len(box.job.undo_stack) == depth + 1  # positions + transforms: one undo step
+    assert len(box.job.undo_stack) == depth + 1
     held = state.by_id("s1.png")
     assert held.position_mm == pytest.approx(1.0, abs=1e-4)
     assert held.transform is not None and affine_to_json(held.transform)["note"] == "from file"
@@ -1839,7 +1794,7 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
         record.flip, record.rotation_deg = g.flip, g.rotation_deg
     ctx.render_cache.clear()
     rows = []
-    for index, g in enumerate(given):  # the registration was made on the ORIENTED image
+    for index, g in enumerate(given):
         size = render_sizes(ctx, g.section_id).file_size
         turned = (size[1], size[0]) if g.rotation_deg % 180 == 90 else size
         to_oriented = SWAP @ orientation_matrix(size, g.rotation_deg, g.flip) @ SWAP
@@ -1852,12 +1807,11 @@ def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientatio
     reply = call(box, "read_file_registration", path=str(file), on="oriented")
     assert reply["status"] == "ok" and not reply["refused"], reply
     found = {row["id"]: row for row in reply["placements"]}
-    for g in given:  # the placement and numbers a file made on the stored file would give
+    for g in given:
         row = found[g.section_id]
         assert (row["rotation_deg"], row["flip"]) == (g.rotation_deg, g.flip)
         assert row["position_mm"] == pytest.approx(g.position_mm, abs=1e-3)
         np.testing.assert_allclose(row["params"], params_for(ctx, g), atol=1e-6)
-    # read as a file-frame registration the same entries put a mirror or a turn in the numbers
     as_file = call(box, "read_file_registration", path=str(file))["placements"]
     wrong = {row["id"]: row for row in as_file}
     assert not np.allclose(wrong["s1.png"]["params"], params_for(ctx, given[1]), atol=1e-3)
@@ -1886,7 +1840,6 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
     reply = call(box, "place_from_file", path=str(file), at_stack=True)
     assert reply["status"] == "ok", reply
     rows = reply["read"]["placements"]
-    # drawn at the stack's mean angles, not at the sections' own
     assert {round(r["pitch_deg"], 3) for r in rows} == {4.0}
     assert [r["out_of_plane_um"] > 1 for r in rows] == [True, False, True]
     assert all(r["out_of_plane_um"] < 500 for r in rows)
@@ -1919,7 +1872,7 @@ def test_a_registration_read_without_a_pixel_size_gives_no_numbers(
     ''')
     atlas = DeepAtlas()
     given = [Given("s0.png", 1.0, 0.0, 0.0, 0, False, knobs(0.0, 1.0, 1.0, 0.0, 0.0, 0.0))]
-    state, _ctx, box = box_of(images, ref, atlas=atlas)  # no pixel size
+    state, _ctx, box = box_of(images, ref, atlas=atlas)
     file = tmp_path / "x.json"
     file.write_text(json.dumps(exact_export(
         export_rows(make_workspace(images, atlas), given), atlas_facts(atlas))),

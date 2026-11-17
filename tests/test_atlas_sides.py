@@ -40,7 +40,6 @@ from tests.deformable_synthetic import (
     render_section,
 )
 
-#: The synthetic atlas's ML axis has 160 voxels: BrainGlobe's split is at 80.
 SPLIT = 80
 
 
@@ -48,8 +47,6 @@ SPLIT = 80
 def atlas() -> SyntheticAtlas:
     return SyntheticAtlas()
 
-
-# --- the grammar ---------------------------------------------------------------
 
 
 def test_entries_name_a_region_and_optionally_a_side():
@@ -63,23 +60,17 @@ def test_entries_name_a_region_and_optionally_a_side():
     assert has_sides(["STR", "CTX:left"]) and not has_sides(["STR", "CTX"])
 
 
-# --- left and right in the displayed frame ---------------------------------------
-
 
 def test_left_follows_the_placement_not_the_atlas_labels(atlas):
     high, gradient = ml_halves(atlas, 0.1, "coronal")
-    # Coronal asr: native columns are the ML axis; the second half starts at 80.
     assert gradient == pytest.approx([1.0, 0.0])
     assert not high[:, :SPLIT].any() and high[:, SPLIT:].all()
     upright = native_left(atlas, 0.1, "coronal", 0, 0, np.eye(2))
     assert upright[:, :SPLIT].all() and not upright[:, SPLIT:].any()
-    # A placement that mirrors the atlas swaps the sides, as it swaps the tissue.
     mirrored = native_left(atlas, 0.1, "coronal", 0, 0, np.diag([-2.0, 2.0]))
     assert np.array_equal(mirrored, ~upright)
-    # Upside down (180 degrees) is a mirror in x as well.
     turned = native_left(atlas, 0.1, "coronal", 0, 0, -np.eye(2))
     assert np.array_equal(turned, ~upright)
-    # A small tilt keeps the sides.
     angle = np.deg2rad(20)
     tilt = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
     assert np.array_equal(native_left(atlas, 0.1, "coronal", 0, 0, tilt), upright)
@@ -88,11 +79,9 @@ def test_left_follows_the_placement_not_the_atlas_labels(atlas):
 def test_a_horizontal_midline_has_a_top_and_a_bottom(atlas):
     upright = native_left(atlas, 0.1, "coronal", 0, 0, np.eye(2))
     assert upright.names == ("left", "right")
-    # A quarter turn lays the midline across: the halves are top and bottom.
     quarter = np.array([[0.0, -1.0], [1.0, 0.0]])
     turned = native_left(atlas, 0.1, "coronal", 0, 0, quarter)
     assert turned.names == ("top", "bottom")
-    # native x -> display y: the low-ML half (upright's left) is now on top.
     assert np.array_equal(np.asarray(turned), np.asarray(upright))
     labels = atlas.annotation[0]
     both = regions_mask(atlas, labels, ["CTX"])
@@ -100,13 +89,11 @@ def test_a_horizontal_midline_has_a_top_and_a_bottom(atlas):
     bottom = regions_mask(atlas, labels, ["CTX:bottom"], turned)
     assert top.any() and bottom.any() and not (top & bottom).any()
     assert np.array_equal(top | bottom, both)
-    # The pair the picture does not have is refused, naming the right pair.
     with pytest.raises(Refused, match="'top' and 'bottom'") as wrong:
         regions_mask(atlas, labels, ["CTX:left"], turned)
     assert wrong.value.code == "WRONG_SIDE_PAIR"
     with pytest.raises(Refused, match="'left' and 'right'"):
         regions_mask(atlas, labels, ["CTX:top"], upright)
-    # Left/right masks are unchanged by the extension (coronal behaviour).
     assert np.array_equal(regions_mask(atlas, labels, ["CTX:left"], upright),
                           both & np.asarray(upright))
 
@@ -116,7 +103,6 @@ def test_sides_are_refused_where_they_mean_nothing(atlas):
     with pytest.raises(Refused) as turned:
         native_left(atlas, 0.1, "coronal", 0, 0, diagonal)
     assert turned.value.code == "SIDES_AMBIGUOUS"
-    # A rotation by 45 degrees is diagonal up to floating-point rounding.
     c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)
     with pytest.raises(Refused) as rotated:
         native_left(atlas, 0.1, "coronal", 0, 0, np.array([[c, -s], [s, c]]))
@@ -130,7 +116,7 @@ def test_an_asymmetric_atlas_is_split_by_its_own_hemispheres(atlas):
     lopsided = SyntheticAtlas()
     lopsided.metadata = {"species": "mouse", "symmetric": False}
     hemispheres = np.ones(lopsided.annotation.shape, dtype=np.uint8)
-    hemispheres[..., 70:] = 2  # the midline is NOT the volume's centre here
+    hemispheres[..., 70:] = 2
     lopsided.hemispheres = hemispheres  # type: ignore[attr-defined]
     high, _ = ml_halves(lopsided, 0.1, "coronal")
     assert not high[:, :70].any() and high[:, 70:].all()
@@ -148,8 +134,6 @@ def test_region_masks_take_one_side(atlas):
         regions_mask(atlas, labels, ["CTX:left"])
 
 
-# --- the deformable fit ----------------------------------------------------------
-
 
 def test_a_one_sided_exclusion_keeps_the_other_side(atlas):
     image, _ = render_section(atlas, SMOOTH_FIELD())
@@ -160,17 +144,13 @@ def test_a_one_sided_exclusion_keeps_the_other_side(atlas):
     cortex = atlas.annotation[0] == CTX
     assert mask[cortex & (np.arange(160) < SPLIT)].all()
     assert not mask[:, SPLIT:].any()
-    # Whole-region ids (skipped by the diagnostics) do not include CTX.
     assert CTX not in prepared.excluded
-    # The moving (atlas) image is blanked on the left only (intensities are
-    # renormalized over what is kept, so compare where it is blank).
     both = prepare_fit(image, atlas, placement(), replace(settings, exclude=("CTX",)))
     third = prepared.inputs.moving.shape[1] // 3
     blank, blank_both = prepared.inputs.moving == 0, both.inputs.moving == 0
     assert np.array_equal(blank[:, :third], blank_both[:, :third])
     assert blank[:, -third:].sum() < blank_both[:, -third:].sum()
     assert prepared.inputs.moving_mask.sum() > both.inputs.moving_mask.sum()
-    # A one-sided structure restricts the fit to that side's neighbourhood.
     restricted = prepare_fit(image, atlas, placement(),
                              FitSettings(engine="elastix", detail="coarse",
                                          structures=("STR:left",)))
@@ -187,16 +167,13 @@ def test_one_sided_highlights_and_marks_are_drawn_on_that_side(atlas):
                          FitSettings(engine="fireants", detail="coarse", exclude=("CTX:left",)))
     pink = np.asarray(draw_warped_borders(image, record, atlas, marked=["CTX:left"]))
     marked = (pink[..., 0] > 200) & (pink[..., 1] < 140)
-    # Native column 80 sits at section x = 2 * 80 + 10 = 170.
     assert marked[:, :160].sum() > 50 and marked[:, 180:].sum() == 0
 
-
-# --- outsized displacement -------------------------------------------------------
 
 
 def test_outsized_displacement_is_flagged_by_median_or_by_max():
     tissue = np.zeros((200, 200), dtype=bool)
-    tissue[20:180, 20:180] = True  # 160 px at 0.05 mm: an 8 mm section
+    tissue[20:180, 20:180] = True
     mm = 0.05
     labels = np.where(tissue, 7, 0)
 
@@ -209,7 +186,7 @@ def test_outsized_displacement_is_flagged_by_median_or_by_max():
     small[..., 0] = 0.1
     assert "DISPLACEMENT_OUTSIZED" not in flags(small)
     drift = np.zeros((200, 200, 2))
-    drift[..., 0] = OUTSIZED_MEDIAN_MM + 0.05  # a uniform shift: only the median sees it
+    drift[..., 0] = OUTSIZED_MEDIAN_MM + 0.05
     assert "DISPLACEMENT_OUTSIZED" in flags(drift)
     spike = np.zeros((200, 200, 2))
     yy, xx = np.indices((200, 200))

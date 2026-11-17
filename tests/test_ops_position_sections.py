@@ -69,7 +69,7 @@ def test_angles_alone_and_nothing_to_write(tmp_path: Path):
     assert len(job.undo_stack) == 1
     ghost = positions.position_sections(job, ctx, [{"id": "nope.png", "position_mm": 1.0}])
     assert ghost.unknown == ["nope.png"] and ghost.written == []
-    assert len(job.undo_stack) == 1  # unknown ids write nothing
+    assert len(job.undo_stack) == 1
     with pytest.raises(Refused) as bad:
         positions.position_sections(job, ctx, [])
     assert bad.value.code == "BAD_ARGS"
@@ -83,7 +83,7 @@ def test_angles_alone_and_nothing_to_write(tmp_path: Path):
 def test_order_follows_position(tmp_path: Path):
     job, ctx = _open(tmp_path)
     low, high = ctx.position_range
-    unplaced = job.state.by_id("s2.png")  # an unplaced section
+    unplaced = job.state.by_id("s2.png")
     assert unplaced is not None
     unplaced.position_mm = None
     step = (high - low) / 10
@@ -92,12 +92,10 @@ def test_order_follows_position(tmp_path: Path):
         {"id": "s1.png", "position_mm": low + 1 * step},
         {"id": "s3.png", "position_mm": low + 2 * step},
     ])
-    # s2 has no position and keeps its place (third); the placed sections fill the rest.
     assert _ids(job) == ["s1.png", "s3.png", "s2.png", "s0.png"]
     assert done.order == _ids(job)
     assert "s2.png" not in done.reordered and "s0.png" in done.reordered
     assert [record.index_corrected for record in job.state.in_order()] == [0, 1, 2, 3]
-    # A later write renumbers again, in its own undo step.
     positions.position_sections(job, ctx, [{"id": "s1.png", "position_mm": low + 5 * step}])
     assert _ids(job) == ["s3.png", "s0.png", "s2.png", "s1.png"]
     assert len(job.undo_stack) == 2

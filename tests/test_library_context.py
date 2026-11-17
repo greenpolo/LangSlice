@@ -73,8 +73,6 @@ def shift(frame: Any, dx: float) -> np.ndarray:
     return (np.linalg.inv(placed) @ move)[:2]
 
 
-# --- the context ----------------------------------------------------------------------
-
 
 def test_the_context_is_one_per_handle_and_refuses_what_a_script_does_itself(images: Path):
     from langslice.core.plugins import Layer, ToolError
@@ -152,7 +150,6 @@ def test_frozen_properties_and_tasks_that_are_off_refuse_a_scripts_write(images:
         c = job.context
         done = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
         assert done.rows[0]["error"] == "FROZEN"
-    # Switching a tool off does not gate a script's write of what it writes.
     with make(images, disabled=["fireants_syn"], resume=False) as job:
         c = job.context
         done = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
@@ -171,7 +168,7 @@ def test_a_section_moved_since_the_digest_is_stale_and_nothing_is_written(images
         assert late.rows[0]["error"] == "STALE_INPUT" and not late.written
         assert job.state.by_id(ID0).deformation is None
         landed = c.set_deformations([{"id": ID0, "map": ripple_map(c.fit_frame(ID0), 1.0)}])
-        assert landed.written == [ID0]  # without expect= the script chose not to check
+        assert landed.written == [ID0]
         assert not [entry for entry in events(job) if not entry["sections"]]
         assert len(events(job)) == 1
 
@@ -237,8 +234,6 @@ def test_a_preview_is_saved_numbered_and_writes_nothing(images: Path):
         assert not events(job)
 
 
-# --- the engine I/O bridge, points, atlas planes ------------------------------------------
-
 
 def test_an_outside_engines_field_and_affine_come_back_through_the_bridge(images: Path,
                                                                           tmp_path: Path):
@@ -251,7 +246,6 @@ def test_an_outside_engines_field_and_affine_come_back_through_the_bridge(images
         width, height = frame["fit_size"]
         assert sitk.ReadImage(str(files["stain"])).GetSize() == (width, height)
         assert sitk.ReadImage(str(files["placed_template"])).GetSize() == (width, height)
-        # An engine with the section fixed answering "move 3 px right": an ITK field file.
         field = np.zeros((height, width, 2))
         field[..., 0] = 3.0
         image = sitk.GetImageFromArray(field, isVector=True)
@@ -263,10 +257,8 @@ def test_an_outside_engines_field_and_affine_come_back_through_the_bridge(images
         yy, xx = np.indices((height, width))
         np.testing.assert_allclose(back[..., 0], xx + 3.0, atol=1e-6)
         np.testing.assert_allclose(back[..., 1], yy, atol=1e-6)
-        # The same shift with the atlas fixed: inverted on the fit grid.
         flipped = c.map_from_itk(ID0, -field, fixed="atlas")
         np.testing.assert_allclose(flipped[5:-5, 5:-5], native[5:-5, 5:-5], atol=0.05)
-        # An affine (ANTs writes .mat; any ITK transform file reads the same).
         affine = sitk.TranslationTransform(2, (3.0, 0.0))
         sitk.WriteTransform(affine, str(tmp_path / "affine.tfm"))
         proposal = c.transform_from_itk(ID0, tmp_path / "affine.tfm", note="itk")
@@ -313,8 +305,6 @@ def test_an_atlas_plane_anywhere_matches_the_sections_own(images: Path):
         assert c.atlas_volume().shape == c.atlas_volume("annotation").shape
 
 
-# --- the native engines with settings of the script's own ----------------------------------
-
 
 def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: Path):
     with make(images) as job:
@@ -323,7 +313,7 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
         from langslice.tools import masks as ops_masks
 
         frame = c.fit_frame(ID0)
-        with pytest.raises(ToolError) as array_refused:  # a mask is a name, not an array
+        with pytest.raises(ToolError) as array_refused:
             c.fit_fireants(ID0, mask=np.ones(frame.image.shape[:2], dtype=bool))
         assert array_refused.value.code == "BAD_ARGS"
         assert "an array is not taken" in str(array_refused.value)
@@ -339,7 +329,6 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
         assert done.written == [ID0], done.rows
         record = job.job.deformations.current(job.state, job.state.by_id(ID0))
         assert record.provenance["script"]["meta"]["engine"] == "fireants"
-        # The tool's names: the step and the record keep the call's settings by them.
         step = deformation_to_json(job.state.by_id(ID0).deformation)["steps"][-1]
         assert step["method"] == "script"
         assert step["settings"]["smoothness_um"] == 50.0 and step["settings"]["mask"] == "tissue"
@@ -372,8 +361,6 @@ def test_elastix_with_a_mask_is_a_proposal_recorded_with_its_settings(images: Pa
         assert c.set_transforms([proposal.row()]).written == [ID1]
 
 
-# --- the script's layers on look ---------------------------------------------------------
-
 
 def test_a_scripts_layer_is_drawn_by_look_on_a_job_without_plugins(images: Path):
     from langslice.core.plugins import Layer
@@ -392,10 +379,6 @@ def test_a_scripts_layer_is_drawn_by_look_on_a_job_without_plugins(images: Path)
         assert not job.state.by_id(ID0).layers
 
 
-# --- the fit grid and the maps are one frame ------------------------------------------------
-
-#: A placement that turns, scales and shifts the section: no sub-pixel slip
-#: between the fit grid and the frame the six numbers are stored on hides in it.
 TURNED = [0.97, 0.06, 0.031, -0.05, 1.04, -0.022]
 
 
@@ -410,7 +393,7 @@ def test_the_fit_grid_places_the_section_where_the_maps_do(images: Path):
 
     import langslice
 
-    with Image.open(images / ID0) as small:  # the same tissue at 6.3 times the pixels
+    with Image.open(images / ID0) as small:
         factor = 1714 / small.width
         small.resize((1714, round(small.height * factor)),
                      Image.Resampling.BILINEAR).save(images / ID0)

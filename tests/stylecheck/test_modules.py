@@ -35,7 +35,6 @@ def test_module_size_accepts_the_limit() -> None:
     ],
 )
 def test_module_name_flags_a_topicless_name(name: str) -> None:
-    # the game: split an 800-line module into x_part2.py or x_more.py
     violations = check_source(
         "X = 1\n", "module-name", relpath=f"src/langslice/core/{name}.py"
     )
@@ -83,7 +82,6 @@ def test_init_logic_accepts_imports_and_version() -> None:
 
 
 def test_init_logic_flags_code_moved_into_init() -> None:
-    # the game: move the overflow of a long module into __init__.py
     source = '''
     """The package."""
 

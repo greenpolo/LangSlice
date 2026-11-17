@@ -53,8 +53,8 @@ def test_state_round_trips_and_resolves_by_filename_only():
     again = stack_from_json(stack_to_json(state))
     assert again == state
     assert again.resolve("s1.png") is again.slices[1]
-    assert again.resolve(" s2 ") is again.slices[2]  # the stem names one file
-    assert again.resolve(2) is None and again.resolve("2") is None  # never a number
+    assert again.resolve(" s2 ") is again.slices[2]
+    assert again.resolve(2) is None and again.resolve("2") is None
     assert again.resolve("nope.png") is None
 
 
@@ -69,7 +69,6 @@ def test_masks_are_left_out_of_the_serialized_state_while_empty():
     rows = stack_to_json(state)["slices"]
     assert "masks" not in rows[0] and rows[1]["masks"] == {"hole": entry}
     assert stack_from_json(stack_to_json(state)) == state
-    # A state written before masks existed still loads.
     assert stack_from_json(stack_to_json(_stack())).slices[1].masks == {}
 
 
@@ -78,7 +77,7 @@ def test_a_stem_two_files_share_names_neither_and_the_refusal_says_why():
                                Section("3.png", 2, 2)])
     assert state.resolve("a") is None
     assert state.resolve("a.tif") is state.slices[1]
-    assert state.resolve("3") is state.slices[2]  # a file named by a number is a name
+    assert state.resolve("3") is state.slices[2]
     facts = unknown_sections(state, ["a", "1"])
     assert facts["unknown"] == ["a", "1"]
     assert facts["filenames"] == ["3.png", "a.png", "a.tif"]

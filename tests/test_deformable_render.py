@@ -34,7 +34,7 @@ def case():
     pytest.importorskip("fireants", reason="the deformable fit needs FireANTs")
     atlas = SyntheticAtlas()
     remove = np.zeros((260, 340), dtype=bool)
-    remove[:, 250:] = True  # the right side of the section is missing
+    remove[:, 250:] = True
     image, _ = render_section(atlas, SMOOTH_FIELD(), remove=remove)
     record = fit_section(image, atlas, placement(), FitSettings(engine="fireants", detail="coarse"))
     return atlas, image, record
@@ -42,19 +42,16 @@ def case():
 
 def test_border_layers_strong_faint_and_marked(case):
     atlas, image, record = case
-    # Without a highlight every border is strong.
     faint, strong = warped_border_coverage(record, atlas)
     assert strong.max() > 0.5 and not faint.any()
-    # A highlight is strong over a faint outline of the rest.
     h_faint, h_strong = warped_border_coverage(record, atlas, highlight=["STR"])
     assert h_faint.max() > 0.2 and h_strong.max() > 0.5
-    assert h_strong.sum() < strong.sum()  # only the selected region's edges
+    assert h_strong.sum() < strong.sum()
     assert ((h_faint + h_strong) > 0.5).sum() >= 0.9 * (strong > 0.5).sum()
     out = draw_warped_borders(image, record, atlas, highlight=["STR"])
     assert out.size == image.size
     with pytest.raises(ValueError):
         warped_border_coverage(record, atlas, highlight=["NOPE"])
-    # Marked regions get their own layer; no edge is drawn twice.
     layers = warped_border_layers(record, atlas, highlight=["STR"], marked=["HY"])
     assert layers["marked"].max() > 0.5 and layers["strong"].max() > 0.5
     assert ((layers["marked"] > 0.5) & (layers["strong"] > 0.5)).sum() == 0
@@ -77,7 +74,7 @@ def test_smooth_borders_follow_the_nearest_label_edges(case):
     near = cv2.dilate(edge, np.ones((7, 7), np.uint8)) > 0
     drawn = strong > 0.5
     assert drawn.sum() > 100
-    assert (drawn & near).sum() / drawn.sum() > 0.9  # drawn lines sit on the label edges
+    assert (drawn & near).sum() / drawn.sum() > 0.9
 
 
 def test_resampled_record_draws_the_same_borders_smaller(case):
@@ -116,10 +113,9 @@ def test_smooth_borders_draw_one_antialiased_line_per_shared_edge():
     labels[4:16, 4:10] = 1
     labels[4:16, 10:16] = 2
     photo = Image.new("RGB", (100, 100), (0, 0, 0))
-    atlas_to_image = np.array([[5.0, 0, 2.0], [0, 5.0, 2.0], [0, 0, 1]])  # 5x magnification
+    atlas_to_image = np.array([[5.0, 0, 2.0], [0, 5.0, 2.0], [0, 0, 1]])
     drawn = np.asarray(smooth_border_overlay(photo, labels, atlas_to_image, width_px=2.0))
-    row = drawn[50, 30:70, 0].astype(int)  # across the shared edge at x ~ 52
+    row = drawn[50, 30:70, 0].astype(int)
     lit = np.flatnonzero(row > 0)
-    # One stroke about two pixels wide, not one line per region an atlas pixel apart.
     assert lit.size and lit.max() - lit.min() <= 3
-    assert ((row > 0) & (row < 255)).any()  # antialiased edge pixels
+    assert ((row > 0) & (row < 255)).any()

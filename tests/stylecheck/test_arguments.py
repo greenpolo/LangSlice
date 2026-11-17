@@ -16,8 +16,6 @@ def test_keyword_only_options_flags_a_positional_default() -> None:
 
 
 def test_keyword_only_options_accepts_options_after_star() -> None:
-    # the game: make everything keyword-only, the data too; allowed,
-    # as is a required positional first parameter
     source = """
     def fit_affine(section, plane, *, metric="mi"):
         pass
@@ -121,7 +119,6 @@ def test_kwargs_forwarding_accepts_one_whole_forward() -> None:
 
 
 def test_kwargs_forwarding_flags_kwargs_read_in_the_body() -> None:
-    # the game: take options through **kwargs and read them
     source = """
     def fit(section, **kwargs):
         metric = kwargs.pop("metric", "mi")
@@ -143,7 +140,6 @@ def test_kwargs_forwarding_flags_kwargs_read_in_the_body() -> None:
 
 
 def test_kwargs_forwarding_flags_indexed_args() -> None:
-    # the game: hidden positional parameters behind *args
     source = """
     def place(*args):
         section, plane = args
