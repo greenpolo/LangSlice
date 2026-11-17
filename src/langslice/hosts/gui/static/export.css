@@ -11,7 +11,7 @@
   border: 1px solid var(--tract);
   border-radius: var(--radius);
 }
-.export-menu { width: 300px; padding: var(--space-1) 0; }
+.export-menu { width: 340px; padding: var(--space-1) 0; }
 .export-item {
   display: block;
   width: 100%;
@@ -31,3 +31,6 @@
 .export-note-path { color: var(--violet); overflow-wrap: anywhere; }
 .export-note-message { color: var(--muted); }
 .export-note-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
+.export-other { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--line); }
+.export-other-label { flex: 1; color: var(--muted); font-size: var(--size-sm); }
+.export-other-count { width: 6em; }

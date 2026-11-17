@@ -22,6 +22,12 @@ Folds. A spline whose pull-back has a Jacobian determinant at or below
 finer lattice around each new pair, folds. Both are refined where the map
 stretches the section (its derivative from the caller), so that the
 pull-back, which lives on the atlas side, is tested about as densely there.
+A round tests the fine lattice around its new pairs, the search points
+within ``NEAR_GAPS`` smallest gaps of them, and the search points where
+the last whole test found the spline near a fold (its Jacobian below
+``WATCH_FRACTION`` of the median); the whole search grid is tested
+when the placement ends, and should it fold there, the placement goes back
+to the last round whose spline does not (each tested whole, newest first).
 A round whose new pairs make the spline fold drops the new pairs within
 :data:`BLOCK_GAPS` smallest gaps of a folded point (all of them when none
 is that near), blocks the search points around them, and fits again; the
@@ -39,11 +45,15 @@ drawn under the atlas borders.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
+
+# scipy ships no type stubs
+from scipy import spatial  # pyright: ignore[reportMissingTypeStubs]
 
 from langslice.core.geometry.thin_plate import ThinPlateKernel
 
@@ -68,6 +78,12 @@ MAX_REFINE = 4
 #: pair is sought again that close to it: small enough that a steep part of
 #: the map, where pairs often fold, still gets the pairs that do not.
 BLOCK_GAPS = 2.0
+#: A round tests folds at the search points within this many smallest gaps
+#: of its new pairs, where adding them changes the spline most.
+NEAR_GAPS = 4.0
+#: A round also tests the search points whose Jacobian, at the last whole
+#: test, was below this fraction of the median: where a fold could start.
+WATCH_FRACTION = 0.25
 #: Smallest Jacobian determinant accepted (a fold or collapse below it).
 MIN_JACOBIAN = 1e-6
 #: Newton steps when the pull-back is inverted at a probe point; a step
@@ -75,9 +91,21 @@ MIN_JACOBIAN = 1e-6
 NEWTON_STEPS = 12
 #: A Newton step this small (millimetres) has converged.
 NEWTON_STOP_MM = 1e-9
-#: Points whose nearest centre is sought per block, which bounds the memory
-#: a distance query holds.
-NEAREST_BLOCK = 2048
+
+
+class _Tree(Protocol):
+    """scipy's k-d tree, typed here: scipy ships no type stubs."""
+
+    def query(self, points: FloatArray) -> tuple[FloatArray, object]:
+        """Return each point's distance to its nearest centre, and which."""
+        ...
+
+
+#: scipy's k-d tree, typed here: scipy ships no type stubs.
+_KD_TREE = cast(
+    "Callable[[FloatArray], _Tree]",
+    spatial.cKDTree,  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+)
 
 
 class ExactMap(Protocol):
@@ -386,8 +414,11 @@ def refine(
     except ValueError:
         return None
     checked = _refined(exact, search, spacing.step_px)
-    if np.any(folded_at(kernel, checked.target_mm)):
+    jacobian = _jacobians(kernel, checked.target_mm)
+    if np.any(_folds(jacobian)):
         return None
+    watched = _watched(jacobian)
+    history = [(start, kernel)]
 
     current = start
     candidates = search.points_px[search.in_region]
@@ -406,13 +437,22 @@ def refine(
 
         added = pairs_at(exact, candidates[batch])
         stretch = search.stretch[search.in_region][batch]
-        grown = _grow(current, added, stretch, exact, checked, spacing)
+        nearby = _near(
+            checked.points_px, added.points_px, NEAR_GAPS * spacing.min_gap_px
+        )
+        tested = checked.subset(nearby | watched)
+        grown = _grow(current, added, stretch, exact, tested, spacing)
         block_px = BLOCK_GAPS * spacing.min_gap_px
         blocked |= _near(candidates, grown.dropped_px, block_px)
         dropped += len(grown.dropped_px)
         if grown.kernel is not None:
             current, kernel = grown.pairs, grown.kernel
+            history.append((current, kernel))
             error = _atlas_error(kernel, search)
+    final = _whole(history, checked)
+    if final is not history[-1]:
+        current, kernel = final
+        error = _atlas_error(kernel, search)
     return Placed(
         pairs=current,
         rounds=rounds,
@@ -440,9 +480,10 @@ def _grow(
 ) -> _Grown:
     """Add pairs to a non-folding set, dropping those that make it fold.
 
-    Folds are tested at the *checked* points over the whole image and on
-    a finer lattice around each new pair (refined by its *stretch*), where
-    two close pairs can fold the spline between search points.
+    Folds are tested at the *checked* points (the round's share of the
+    search grid) and on a finer lattice around each new pair (refined by
+    its *stretch*), where two close pairs can fold the spline between
+    search points.
     """
     around = _around(added.points_px, stretch, spacing.min_gap_px)
     local = pairs_at(exact, around)
@@ -485,6 +526,35 @@ def _around(
         centres = points_px[factors == factor]
         lattices.append((centres[:, None, :] + square[None]).reshape(-1, 2))
     return np.vstack(lattices)
+
+
+def _jacobians(kernel: ThinPlateKernel, target_mm: FloatArray) -> FloatArray:
+    """Take the pull-back's Jacobian determinant at atlas-side points."""
+    return determinants(kernel.jacobian(target_mm))
+
+
+def _folds(jacobian: FloatArray) -> BoolArray:
+    """Mark the determinants of a fold or collapse."""
+    return ~np.isfinite(jacobian) | (jacobian <= MIN_JACOBIAN)
+
+
+def _watched(jacobian: FloatArray) -> BoolArray:
+    """Mark the points whose Jacobian is low enough to watch for folds."""
+    median = float(np.median(jacobian))
+    return jacobian < WATCH_FRACTION * median
+
+
+def _whole(
+    history: list[tuple[Pairs, ThinPlateKernel]], checked: Pairs
+) -> tuple[Pairs, ThinPlateKernel]:
+    """Return the newest round whose spline folds nowhere on the grid.
+
+    The start passed the whole test already, so one is always found.
+    """
+    for entry in reversed(history[1:]):
+        if not np.any(_folds(_jacobians(entry[1], checked.target_mm))):
+            return entry
+    return history[0]
 
 
 def _refined(exact: ExactMap, search: Samples, step_px: float) -> Pairs:
@@ -554,14 +624,9 @@ def _near(
 
 def _nearest(points_px: FloatArray, centres_px: FloatArray) -> FloatArray:
     """Measure each point's distance to its nearest centre."""
-    nearest = np.empty(len(points_px))
-    for start in range(0, len(points_px), NEAREST_BLOCK):
-        block = points_px[start : start + NEAREST_BLOCK]
-        dx = block[:, None, 0] - centres_px[None, :, 0]
-        dy = block[:, None, 1] - centres_px[None, :, 1]
-        squared = cast("FloatArray", np.min(dx * dx + dy * dy, axis=1))
-        nearest[start : start + NEAREST_BLOCK] = np.sqrt(squared)
-    return nearest
+    tree = _KD_TREE(centres_px)
+    distances, _index = tree.query(points_px)
+    return distances
 
 
 def _batch(

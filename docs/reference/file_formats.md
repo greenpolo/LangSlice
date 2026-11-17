@@ -549,7 +549,7 @@ put it on the tissue.
 ### `<image folder>.abba` and `abba_export.json`
 
 Written only on request, by the window's **Export ‣ ABBA project** or the
-library's `job.export_abba(warps=)` (`tools/abba_export.py`): an ABBA 0.25
+library's `job.export_abba(warps=, landmarks=)` (`tools/abba_export.py`): an ABBA 0.25
 state file, which ABBA's File ‣ Load State opens on its Allen Brain Adult
 Mouse Brain CCF 2017 (v3p1) atlas, started coronal (x RL, y SI, z AP). It is
 a zip of the three files ABBA's own save writes (`job/abba_project.py`):
@@ -567,13 +567,13 @@ section, cut at the stack's angles, lies in one world plane, its location. A
 file pixel `(x, y)` is first ABBA's centred source point `((x - (W - 1)/2)
 v, (y - (H - 1)/2) v)`, then the affine registration takes it to world `x,
 y`, exactly LangSlice's linear map. The warp registration is a thin-plate
-spline through at most 1089 landmark pairs placed where it errs most
+spline through at most `landmarks` pairs (16 to 1089, 1089 by default) placed where it errs most
 (`core/maps/abba.py`), stored as ABBA
 stores BigWarp's: `srcPts` the atlas side (where the deformation takes each
 point), `tgtPts` the section side (the point as the affine step placed it).
 
 `abba_export.json` beside it: `project`, `rotation_x_rad`, `rotation_y_rad`,
-`sections`, `warped`, `skipped` (each section left out and why: no
+`sections`, `warped`, `landmarks`, `skipped` (each section left out and why: no
 placement, a file Bio-Formats cannot be told about, a warp whose spline
 folds everywhere), `warp_error_um` (per warped section, the spline's
 distance from the deformation over the atlas overlap: `median`, `p99`,
