@@ -49,6 +49,7 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.doors.jobs import JobContext, NoJob, context, read_spec
+from langslice.hosts.gui.calm import draw_calm_overlay, draw_calm_thumb
 from langslice.hosts.gui.drawing import draw_atlas as _atlas_picture
 from langslice.hosts.gui.drawing import draw_overlay as _overlay_picture
 from langslice.hosts.gui.drawing import draw_thumb as _thumb_picture
@@ -393,7 +394,9 @@ class JobRenderer:
             opened.axis, opened.step_mm, thumbs, words.strip(), sections
         )
 
-    def overlay(self, section_id: str, edge: int) -> bytes:
+    def overlay(
+        self, section_id: str, edge: int, *, calm: bool = False
+    ) -> bytes:
         """Draw a section under its current registration.
 
         Parameters
@@ -402,6 +405,9 @@ class JobRenderer:
             The section's filename.
         edge
             The picture's long edge in pixels (:func:`edge_px`).
+        calm
+            The Simple view's quiet picture (:mod:`.calm`): the main stain
+            alone, the borders soft; else the raw channels in colour.
 
         Returns
         -------
@@ -422,12 +428,16 @@ class JobRenderer:
         state = self._state()
         section = _section(state, section_id)
         opened = self._open()
-        key = ("overlay", section_id, edge, render_key(state, section_id))
-        draw = partial(_overlay_picture, opened, state, section, edge)
+        kind = "calm-overlay" if calm else "overlay"
+        key = (kind, section_id, edge, render_key(state, section_id))
+        drawer = draw_calm_overlay if calm else _overlay_picture
+        draw = partial(drawer, opened, state, section, edge)
         still = self._still(render_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
 
-    def thumb(self, section_id: str, edge: int) -> bytes:
+    def thumb(
+        self, section_id: str, edge: int, *, calm: bool = False
+    ) -> bytes:
         """Draw a section's thumbnail: its raw channels, oriented.
 
         Parameters
@@ -437,6 +447,8 @@ class JobRenderer:
         edge
             The thumbnail's long edge in pixels, at most the working
             copy's (nothing is upsampled).
+        calm
+            The Simple view's quiet picture: the main stain alone.
 
         Returns
         -------
@@ -455,8 +467,10 @@ class JobRenderer:
         state = self._state()
         section = _section(state, section_id)
         opened = self._open()
-        key = ("thumb", section_id, edge, thumb_key(state, section_id))
-        draw = partial(_thumb_picture, opened, section, edge)
+        kind = "calm-thumb" if calm else "thumb"
+        key = (kind, section_id, edge, thumb_key(state, section_id))
+        drawer = draw_calm_thumb if calm else _thumb_picture
+        draw = partial(drawer, opened, section, edge)
         still = self._still(thumb_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
 

@@ -21,6 +21,11 @@ or that cannot be carried, is left out with its reason. Nothing in the
 state changes; a job that persists nothing writes nothing. A script that
 calls it runs its body under ``if __name__ == "__main__":``, as for any
 call that starts worker processes.
+
+``MAX_WARP_PROCESSES`` caps the processes placing the deformations'
+landmark pairs side by side, at most one per core and one thread each: most
+of the work is numpy's element-wise kernels, which use one thread, so a
+process per core keeps every core busy.
 """
 
 from __future__ import annotations
@@ -73,9 +78,6 @@ logger = logging.getLogger(__name__)
 
 #: The record of what the export holds, beside the project file.
 EXPORT_RECORD = "abba_export.json"
-#: Processes placing the deformations' landmark pairs side by side, at most
-#: one per core and one thread each: most of the work is numpy's element-wise
-#: kernels, which use one thread, so a process per core keeps every core busy.
 MAX_WARP_PROCESSES = 32
 #: Micrometres per millimetre.
 UM_PER_MM = 1000.0
