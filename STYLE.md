@@ -68,17 +68,13 @@ else:
 warning] Separate the steps
 of a function with blank lines. A paragraph longer than 15 lines (comments
 count, blank lines end it) is two steps that need a blank line, or a step
-that needs its own function. A step that is not obvious opens with a short
-comment naming it:
+that needs its own function. A step that is not obvious gets a name of its
+own, as a variable or a function:
 
 ```python
-    # whole-pixel shift from the cross-correlation peak
-    peak = np.unravel_index(np.argmax(np.abs(correlation)), correlation.shape)
-    shift_px = np.array(peak, dtype=float)
-    shift_px[shift_px > midpoints] -= np.array(shape)[shift_px > midpoints]
+    whole_pixel_shift = shift_at_correlation_peak(correlation)
 
-    # refine to a fraction of a pixel around that estimate
-    ...
+    shift_px = refined_to_subpixel(correlation, whole_pixel_shift)
 ```
 
 **1.4 Narrate a pipeline.** [review] A function that runs a sequence of
@@ -249,8 +245,8 @@ are whole words. Banned as any part of a variable or parameter name, because
 each has come to mean many things here: `held`, `shown`, `drawn`, `placed`,
 `asked`, `wanted`, `picked`, `found`, `thing`, `stuff`. Short names are
 allowed for loop indices (`i`, `j`), coordinates (`x`, `y`, `z`), `key,
-value` pairs, and mathematics where a comment or the docstring names the
-symbol (`R  # rotation part of the affine`). Accepted abbreviations: `n_`
+value` pairs, and mathematics where the docstring names the
+symbol (`R`, the rotation part of the affine). Accepted abbreviations: `n_`
 for counts, `idx`, `img`, `df`, `src`, `dst`, `np`, `pd`, `npt`.
 
 **4.4 One name per type.** [linter `type-name`, from annotations] A parameter of a given
@@ -374,13 +370,17 @@ helpers may go without docstrings when their name says it all.
 
 ## 7. Comments
 
-**7.1 Two kinds of comment.** [review] A step header ("# refine to a
-fraction of a pixel") or a reason the code has to be this way ("# plane by
-plane: the 3D version needs more memory than a 25 µm atlas allows"). A
-comment does not restate the line below it.
+**7.1 No comments.** [linter `comment`] Code carries no `#` comment. What a
+line does is said by its names; why it has to be this way is said in the
+docstring of its function or module. Three things that start with `#` are
+not comments in this sense and stay: the `#:` line above a constant or a
+field (7.3), a directive a tool reads (`# noqa: ...`, `# type: ignore[...]`,
+`# pyright: ignore[...]`, `# pragma: no cover`), and the words on a broad
+`except` line that name the failure it expects (8.3). The comments written
+before this rule are in the checker's baseline, which only shrinks.
 
 **7.2 Present tense, no history.** [linter `history-comment`] No dates, no names, no quotes,
-no "used to", "legacy", "no longer" in comments. The reason is stated as it
+no "used to", "legacy", "no longer" in a `#:` line or a docstring. The reason is stated as it
 holds now; git keeps the history.
 
 **7.3 Constants carry their reason.** [review] A module-level constant has a

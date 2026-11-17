@@ -1,4 +1,11 @@
-"""Checks on comments: no history, and line-length waivers only for URLs.
+"""Checks on comments: none but a constant's, no history, URL waivers.
+
+A ``#`` comment is allowed in three places only: a ``#:`` line, which
+describes the constant or field below it, a directive a tool reads
+(``DIRECTIVE``), and the line of a broad ``except``, which the
+``broad-except`` check has name the failure it expects. What a line does
+is said by its names, and why by the docstring of the function or module
+it is in.
 
 *History* is text that tells how the code came to be rather than why it
 is so now: a calendar date (in ISO form, or a month name followed by a
@@ -59,11 +66,53 @@ DOCSTRING_HISTORY = re.compile(
     re.IGNORECASE,
 )
 
+#: A comment a tool reads: a waiver, a type-checker or coverage mark.
+DIRECTIVE = re.compile(
+    r"#\s*(?:noqa\b|type:|pyright:|pragma:|fmt:|ruff:|isort:|!)"
+)
+
 #: A waiver of the line-length rule.
 LINE_LENGTH_WAIVER = re.compile(r"noqa:[^#]*\bE501\b")
 
 #: A web address, the one thing a long line may hold.
 URL_PATTERN = re.compile(r"https?://")
+
+
+@module_check("comment")
+def check_comment(
+    module: Module, project: Project, config: Config
+) -> Iterator[Violation]:
+    """Flag a comment that the guide does not allow.
+
+    Guide rule 7.1: a ``#:`` line, a directive and the comment on an
+    ``except`` line pass. A comment that ends in a directive after its
+    own words (``# why  # noqa: B008``) is flagged for the words.
+
+    Parameters
+    ----------
+    module
+        The parsed file whose comments are read.
+    project
+        The package index, unused by this check.
+    config
+        The settings, unused by this check.
+
+    Yields
+    ------
+    Violation
+        One finding per comment.
+    """
+    for line, text in module.comments:
+        if text.startswith("#:") or DIRECTIVE.match(text):
+            continue
+        if module.lines[line - 1].lstrip().startswith("except"):
+            continue
+        yield module.violation(
+            "comment",
+            line,
+            "A comment; say it in a name or in the docstring, or as a "
+            "`#:` line above the constant it describes (7.1).",
+        )
 
 
 @module_check("history-comment")

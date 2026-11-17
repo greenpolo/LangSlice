@@ -5,6 +5,25 @@ from __future__ import annotations
 from tools.stylecheck.testing import flagged_lines
 
 
+def test_a_comment_is_flagged_unless_it_describes_a_constant() -> None:
+    source = """
+    #: Pixels on the long edge.
+    EDGE = 512
+    # why the edge is 512
+    a = 1  # pixels
+    b = 2  # noqa: E501
+    c = 3  # type: ignore[assignment]
+    d = 4  # pyright: ignore[reportUnknownMemberType]
+    e = 5  # pragma: no cover
+    f = 6  # a reason  # noqa: B008
+    try:
+        g = 7
+    except Exception:  # the atlas file is absent
+        g = 0
+    """
+    assert flagged_lines(source, "comment") == [4, 5, 10]
+
+
 def test_history_in_comments_is_flagged() -> None:
     source = """
     a = 1  # changed on 2026-10-14

@@ -107,6 +107,15 @@ and `environment.yml` hold the worker's source installation.
   file; `--explain NAME` says what a rule wants. basedpyright's baseline
   only shrinks too: never run `basedpyright --writebaseline`
   (`CONTRIBUTING.md`).
+- No code comments (`STYLE.md` 7.1, the checker's `comment` rule): a name
+  says what a line does and the docstring says why. Only a `#:` line above
+  a constant, a tool's directive (`# noqa`, `# pyright: ignore`) and the
+  words on a broad `except` line are written with `#`. Vendored code
+  (`src/langslice_vendor/`) stays as published.
+- No Markdown file is written unless the owner asked for that file: no
+  notes, plans, summaries or reports in the repository. The kinds that
+  exist are listed in `tests/test_markdown_files.py`, which fails on any
+  other; a new kind is added there only on the owner's word.
 - Markdown is literal to the code: a behavior change updates the relevant page
   in `docs/` in the same change. Docs state what the code does now, without
   plans or history. Do not document or commit `_local/`, `references/`, `out/`
