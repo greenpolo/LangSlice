@@ -27,6 +27,7 @@
 .choice.chosen::before { opacity: 1; }
 .choice.disabled { cursor: not-allowed; }
 .choice.disabled .choice-name { color: var(--muted); }
+.choice.disabled .radio { border-color: var(--muted); opacity: 0.8; }
 @media (hover: hover) and (pointer: fine) { .choice:hover:not(.chosen):not(.disabled) { background: var(--wash); } }
 
 .choice-pick { position: relative; display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; cursor: inherit; }

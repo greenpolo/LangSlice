@@ -1,4 +1,4 @@
-// Builds the window's page into ../static as ui.html, ui.js and ui.css: fixed names
+// Builds the window's page into ../static as index.html, ui.js and ui.css: fixed names
 // directly in static/ (the server serves only those), no inline script or style (the
 // page's content policy allows 'self' only), the fonts and logos the page already ships
 // left where they are.
@@ -16,7 +16,7 @@ export default defineConfig({
     cssCodeSplit: false,
     modulePreload: false,
     rollupOptions: {
-      input: 'ui.html',
+      input: 'index.html',
       output: {
         entryFileNames: 'ui.js',
         chunkFileNames: 'ui-[name].js',

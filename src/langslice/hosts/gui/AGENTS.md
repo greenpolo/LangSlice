@@ -81,6 +81,42 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 
 ## Files
 
+The page is a React app (`web/`, below); `static/classic.html` is the window's
+previous page (vanilla scripts `app.js`, `viewer*.js`, `generator.js`,
+`settings.js`, `export.js` and their stylesheets, described under `static/`
+below), still served at `classic.html` until it is removed.
+
+- `web/` — the page's source: React 19, TypeScript, Motion (`package.json`
+  pins them; `npm install`, `npx tsc --noEmit`, `npx vite build`). Vite
+  builds it into `static/index.html`, `static/ui.js` and `static/ui.css`
+  (fixed names directly in `static/`, no inline script or style, so the
+  content policy stays `'self'`), which are committed: installing LangSlice
+  needs no Node. `src/run.ts` is the polled store (the job list every 2 s,
+  the shown job's snapshot every 300 ms, the strip when the sections change;
+  `useRun(select)`; the run's `log` for the journal; `sendComment`);
+  `src/nav.ts` keeps the tab and the view in the address
+  (`#tab=viewer|prompt|settings&view=simple|extended&job=n`);
+  `src/pictures.ts` loads the sections' quiet pictures (`?style=calm`) at
+  most three at once, lowest rank first, decoded and kept by address, with
+  each section's newest picture as a stand-in (`newestOf`), sizes snapped
+  to `EDGES`, and `warm` for the finished run's grid while nothing else
+  loads; `src/motion.ts` is the motion family (the same values as
+  `tokens.css`'s `--ease-*` and `--dur-*`). `src/Viewer.tsx`: Simple or
+  Extended, following the agent until a section is picked (`f` follows
+  again, `v` switches, `r` reviews). `src/simple/`: `Speaker` (the mark,
+  the agent's figure with one gesture per state, its name and state, the
+  fixed-height bubble whose old and new lines share one cell, the call in
+  plain words), `Stage` (`geometry` places every tile; `useDirector` holds a
+  focus `DWELL_MS`, a grid `DECK_DWELL_MS`, and shows the next once its
+  pictures are ready, at most `READY_WAIT_MS`; Motion layout animations move
+  a section still shown), `Picture` (canvas layers crossfading on a
+  redraw), `FrontToBack`. `src/extended/`: `ExtendedView` (meters, four
+  sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
+  one section, arrow keys, wheel zoom, a dragged box and its comment.
+  `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
+  Prompt generator (its message from `static/generator-logic.js`, the same
+  file the tests run under node), Settings and the Export menu, as the
+  endpoints below describe.
 - `__init__.py` — `serve(folders, port=, window=, tab=)`: the job list
   (the recent jobs file, `job.recent.recent_file()`), the server, the window
   on `window.start_address` (`langslice gui --tab viewer|prompt`); runs until Ctrl-C or until

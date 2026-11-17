@@ -15,7 +15,9 @@ import { Journal } from './Journal';
 
 const PAGE = 4;
 
-export function ExtendedView({ focus, review, onPictures }: { focus: Focus; review: ReactNode; onPictures: (numbers: number[], start: number) => void }) {
+export function ExtendedView({ focus, review, ring, onPictures }: {
+  focus: Focus; review: ReactNode; ring: string | null; onPictures: (numbers: number[], start: number) => void;
+}) {
   const run = useRun();
   const [stageRef, box] = useBox<HTMLDivElement>();
   const [mode, setMode] = useState<'pictures' | 'table'>('pictures');
@@ -23,13 +25,13 @@ export function ExtendedView({ focus, review, onPictures }: { focus: Focus; revi
   const pages = Math.max(1, Math.ceil(focus.ids.length / PAGE));
   const onPage = focus.ids.slice(Math.min(page, pages - 1) * PAGE, Math.min(page, pages - 1) * PAGE + PAGE);
   const shown = useDirector(run.job, onPage, run.rows, box);
+  const done = run.status === 'Submitted';
   const running = [...run.calls].reverse().find(c => c.running);
   const call = running ?? run.calls.at(-1) ?? null;
-  const done = run.status === 'Submitted';
   return (
     <main className="extended">
       <div className="extended-head">
-        <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={focus.ids.length} />
+        <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
         <Meters rows={run.rows} />
       </div>
       <div className="extended-body">
@@ -40,7 +42,7 @@ export function ExtendedView({ focus, review, onPictures }: { focus: Focus; revi
               <button className={mode === 'table' ? 'on' : ''} aria-pressed={mode === 'table'} onClick={() => setMode('table')}>Table</button>
             </div>
             <span className="extended-count">
-              {focus.following ? 'The agent is working on ' : 'You are looking at '}
+              {!focus.following ? 'You are looking at ' : done ? 'Registered: ' : 'The agent is working on '}
               <b>{focus.ids.length === run.rows.length ? `all ${run.rows.length} sections` : `${focus.ids.length} of ${run.rows.length} sections`}</b>
               {pages > 1 && `, page ${Math.min(page, pages - 1) + 1} of ${pages}`}
             </span>
@@ -56,7 +58,7 @@ export function ExtendedView({ focus, review, onPictures }: { focus: Focus; revi
               ? run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} detailed />
               : <SectionsTable rows={run.rows} focus={focus} />)}
           </div>
-          <FrontToBack rows={run.rows} axis={run.axis} focus={focus.ids} shown={shown} done={done} onPick={focus.pick} />
+          <FrontToBack rows={run.rows} axis={run.axis} focus={ring ? [ring] : focus.ids} shown={ring ? [ring] : shown} done={done} onPick={focus.pick} />
         </section>
         <Journal onPictures={onPictures} onSection={focus.pick} />
       </div>

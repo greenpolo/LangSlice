@@ -17,7 +17,7 @@ a { color: inherit; text-decoration: none; }
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--line);
 }
-.lockup { height: 26px; }
+.lockup { height: 28px; }
 .tabs { display: flex; gap: var(--space-4); height: 100%; }
 .tab { position: relative; display: flex; align-items: center; height: 100%; padding: 0; background: none; border: 0; border-radius: 0; font: inherit; cursor: pointer; color: var(--muted); font-size: var(--size-md); transition: color var(--dur-press) ease; }
 @media (hover: hover) and (pointer: fine) { .tab:hover { color: var(--name); } }
@@ -25,13 +25,18 @@ a { color: inherit; text-decoration: none; }
 .tab-line { position: absolute; left: 0; right: 0; bottom: -1px; height: var(--rule); background: var(--lavender); border-radius: 1px; }
 .bar-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); height: 100%; }
 .job { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; font-size: var(--size-sm); padding: 3px 6px; }
-.foot { flex-shrink: 0; height: 20px; padding: 0 var(--space-4); color: var(--faint); font-size: var(--size-xs); }
+.foot { flex-shrink: 0; height: 22px; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4); color: var(--faint); font-size: var(--size-xs); }
+.bar-quiet { height: 24px; padding: 0 9px; background: none; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); font: inherit; font-size: var(--size-sm); cursor: pointer; transition: color var(--dur-quick) ease, scale var(--dur-press) var(--ease-out); }
+.bar-quiet:active { scale: 0.97; }
+@media (hover: hover) and (pointer: fine) { .bar-quiet:hover { color: var(--name); } }
+.job-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-family: var(--mono); font-size: var(--size-sm); }
 
 /* The viewer. */
 .viewer { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* Simple. */
-.simple { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.simple { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 30px; }
+.simple .speaker { padding-top: var(--space-2); }
 .views-switch { display: flex; font-size: var(--size-xs); }
 .views-switch > * { padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; cursor: pointer; }
 .views-switch > :first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
@@ -83,13 +88,14 @@ a { color: inherit; text-decoration: none; }
 @keyframes bob { to { translate: 0 -2px; } }
 
 /* The speech bubble: a fixed height, its tail towards the figure. */
-.said { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.speaker-said { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .bubble {
   position: relative;
-  height: calc(3 * 1.4 * var(--size-voice-lg) + 36px);
-  display: flex;
+  height: calc(3 * 1.4 * var(--size-voice) + 28px);
+  display: grid;
   align-items: center;
-  padding: 18px 28px;
+  align-content: center;
+  padding: 14px 28px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -109,7 +115,8 @@ a { color: inherit; text-decoration: none; }
 .words {
   margin: 0;
   font-family: var(--serif);
-  font-size: var(--size-voice-lg);
+  grid-area: 1 / 1;
+  font-size: var(--size-voice);
   line-height: 1.4;
   color: var(--name);
   display: -webkit-box;
@@ -122,7 +129,8 @@ a { color: inherit; text-decoration: none; }
 .thinking .words { color: var(--text); }
 .word { display: inline-block; animation: say var(--dur-enter) var(--ease-out) both; }
 @keyframes say { from { opacity: 0; translate: 0 0.25em; filter: blur(2px); } }
-.doing { margin: 0; padding-left: 29px; min-height: 1.5em; font-size: var(--size-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doing-cell { display: grid; }
+.doing { grid-area: 1 / 1; margin: 0; padding-left: 29px; min-height: 1.5em; font-size: var(--size-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .doing-lead { color: var(--text); }
 .doing-what { color: var(--text); }
 .doing.running .doing-lead { color: var(--lavender); }
@@ -140,7 +148,8 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* The stage: the sections, centred, rows wrapping where the layout chose. */
-.stage { position: relative; flex: 1; min-height: 0; margin: var(--space-2) var(--space-6) 0; }
+.stage { position: relative; flex: 1; min-height: 0; margin: var(--space-2) var(--space-6) 0; border-radius: var(--radius); }
+:root[data-theme="light"] .stage { background: var(--stage); }
 .stage-grid { position: absolute; inset: 0; }
 .tile { position: absolute; margin: 0; cursor: default; }
 .tile-picture { position: relative; border-radius: var(--radius); overflow: hidden; }
@@ -182,7 +191,7 @@ a { color: inherit; text-decoration: none; }
 }
 .ftb-dot.unplaced { background: var(--tract); scale: 0.75; }
 .ftb-dot.target { background: var(--lavender); scale: 1.3; }
-.ftb-dot.shown { background: var(--lavender); scale: 1.75; box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px var(--lavender); }
+.ftb-dot.shown { background: var(--lavender); scale: 1.35; box-shadow: 0 0 0 1.5px var(--ground), 0 0 0 2.5px var(--lavender); }
 @media (hover: hover) and (pointer: fine) { .ftb-dot:hover { background: var(--name); scale: 1.5; } }
 .ftb-ghost { position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; border: 1px solid var(--lavender); pointer-events: none; animation: ghost 1400ms var(--ease-out) forwards; }
 @keyframes ghost { to { opacity: 0; scale: 0.6; } }

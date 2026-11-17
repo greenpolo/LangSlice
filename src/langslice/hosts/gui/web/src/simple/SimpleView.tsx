@@ -9,7 +9,7 @@ import { FrontToBack } from './FrontToBack';
 import { Speaker } from './Speaker';
 import { geometry, Stage, useBox, useDirector } from './Stage';
 
-export function SimpleView({ focus, review }: { focus: Focus; review: ReactNode }) {
+export function SimpleView({ focus, review, ring }: { focus: Focus; review: ReactNode; ring: string | null }) {
   const run = useRun();
   const [stageRef, box] = useBox<HTMLDivElement>();
   const done = run.status === 'Submitted';
@@ -27,12 +27,12 @@ export function SimpleView({ focus, review }: { focus: Focus; review: ReactNode 
   }, [job, rowKeys, box]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <main className="simple">
-      <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={focus.ids.length} />
+      <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
       <div className="stage" ref={stageRef}>
         {review ?? (run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} />)}
         {run.jobs && !run.jobs.length && <p className="empty">No jobs yet: open a job folder with <code>langslice gui FOLDER</code>.</p>}
       </div>
-      <FrontToBack rows={run.rows} axis={run.axis} focus={shown} shown={shown.length <= 3 ? shown : []} done={done} onPick={focus.pick} />
+      <FrontToBack rows={run.rows} axis={run.axis} focus={ring ? [ring] : shown} shown={ring ? [ring] : shown.length <= 3 ? shown : []} done={done} onPick={focus.pick} />
     </main>
   );
 }

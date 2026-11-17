@@ -19,6 +19,14 @@ export function App() {
   const connected = useRun(s => s.connected);
   const done = useRun(s => s.status === 'Submitted');
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set([nav.tab]));
+  const [theme, setTheme] = useState(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
+  const flipTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('langslice.theme', next); } catch { /* not kept */ }
+    setTheme(next);
+  };
+  const shownJob = jobs?.find(j => j.index === job);
   useEffect(() => { start(); landOnSettingsIfUnset(); }, []);
   useEffect(() => { document.documentElement.classList.toggle('run-done', done); }, [done]);
   useEffect(() => { setVisited(v => (v.has(nav.tab) ? v : new Set([...v, nav.tab]))); }, [nav.tab]);
@@ -26,17 +34,20 @@ export function App() {
     <MotionConfig reducedMotion="user">
       <div className="window">
         <header className="bar">
-          <img className="lockup" src={document.documentElement.dataset.theme === 'light' ? 'lockup-light.svg' : 'lockup.svg'} alt="LangSlice" />
+          <img className="lockup" src={theme === 'light' ? 'lockup-light.svg' : 'lockup.svg'} alt="LangSlice" />
           <nav className="tabs" aria-label="Tabs">
             <TabButton tab="viewer" current={nav.tab}>Agent viewer</TabButton>
             <TabButton tab="prompt" current={nav.tab}>Prompt generator</TabButton>
           </nav>
           <div className="bar-end">
-            {jobs && jobs.length > 1 && (
+            <button type="button" className="bar-quiet" onClick={flipTheme} title="Switch between the dark and the light look">
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </button>
+            {jobs && jobs.length > 1 ? (
               <select className="job" value={job ?? ''} onChange={e => chooseJob(Number(e.target.value))} aria-label="Job">
                 {jobs.map(j => <option key={j.index} value={j.index}>{j.name}</option>)}
               </select>
-            )}
+            ) : shownJob && <span className="job-name" title={shownJob.path}>{shownJob.name}</span>}
             <Export />
             <TabButton tab="settings" current={nav.tab}>Settings</TabButton>
           </div>
@@ -44,7 +55,10 @@ export function App() {
         {nav.tab === 'viewer' && <Viewer />}
         {visited.has('prompt') && <div className="pane" hidden={nav.tab !== 'prompt'}><Prompt /></div>}
         {visited.has('settings') && <div className="pane" hidden={nav.tab !== 'settings'}><Settings shown={nav.tab === 'settings'} /></div>}
-        <footer className="foot">{connected ? '' : 'Waiting for LangSlice…'}</footer>
+        <footer className="foot">
+          <span>{connected ? 'Connected locally' : 'Waiting for LangSlice…'}</span>
+          <span>Closing this window does not stop the run.</span>
+        </footer>
       </div>
     </MotionConfig>
   );

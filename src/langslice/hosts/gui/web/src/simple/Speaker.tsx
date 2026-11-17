@@ -28,33 +28,35 @@ export function Speaker({ model, status, words, call, focusCount }: {
         <p className="who-name">{model || 'The agent'}</p>
         <p className="who-state"><span className={'dot ' + status} />{state}</p>
       </div>
-      <div className="said">
+      <div className="speaker-said">
+        {/* The old line and the new share one cell: the old fades over as the new is said. */}
         <div className="bubble">
-          <AnimatePresence mode="popLayout" initial={false}>
+          <AnimatePresence initial={false}>
             {words ? (
               <motion.p
                 key={words.n}
                 className="words"
                 title={words.text}
-                exit={{ opacity: 0, y: -4, transition: { duration: 0.16, ease: EASE_OUT } }}
+                exit={{ opacity: 0, y: -4, transition: { duration: DUR.quick, ease: EASE_OUT } }}
               >
                 {spoken(words.text)}
               </motion.p>
             ) : (
-              <motion.p key="waiting" className="words waiting" exit={{ opacity: 0, transition: { duration: 0.16 } }}>
+              <motion.p key="waiting" className="words waiting" exit={{ opacity: 0, transition: { duration: DUR.quick } }}>
                 {done ? 'The run is finished.' : call ? 'The agent is at work; its words will show here.' : 'Waiting for the agent to begin…'}
               </motion.p>
             )}
           </AnimatePresence>
         </div>
-        <AnimatePresence mode="wait" initial={false}>
+        <div className="doing-cell">
+        <AnimatePresence initial={false}>
           <motion.p
-            key={call?.key ?? 'none'}
+            key={(call?.title ?? 'none') + (working ? ':now' : ':last')}
             className={'doing' + (working ? ' running' : '')}
             initial={{ opacity: 0, y: 3 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-            transition={{ duration: DUR.enter, ease: EASE_OUT }}
+            exit={{ opacity: 0, transition: { duration: DUR.quick, ease: EASE_OUT } }}
+            transition={{ duration: DUR.quick, ease: EASE_OUT }}
           >
             {call && (
               <>
@@ -65,6 +67,7 @@ export function Speaker({ model, status, words, call, focusCount }: {
             )}
           </motion.p>
         </AnimatePresence>
+        </div>
       </div>
     </header>
   );

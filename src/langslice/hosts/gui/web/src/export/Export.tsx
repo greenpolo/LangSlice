@@ -190,7 +190,7 @@ export function Export() {
             {note.state === 'done' && (
               <>
                 <p className="note-title">{name} written</p>
-                <p className="note-path">{shown(note.path || '')}</p>
+                <p className="note-path">{breakable(shown(note.path || ''))}</p>
                 <p className="note-message">
                   {note.message}{note.skipped ? `; ${note.skipped} left out (abba_export.json says why)` : ''}, in {note.seconds} s.
                 </p>
@@ -222,4 +222,9 @@ export function Export() {
       )}
     </div>
   );
+}
+
+// A path that may break only after a separator, never inside a name.
+function breakable(path: string) {
+  return path.split(/(?<=[\\/])/).map((part, i) => <span key={i}>{part}<wbr /></span>);
 }

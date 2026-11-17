@@ -27,6 +27,7 @@ export function Viewer() {
   const [picked, setPicked] = useState<string | null>(null);
   const [review, setReview] = useState<string | null | false>(false);
   const [pictures, setPictures] = useState<{ numbers: number[]; start: number } | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const agentIds = rows.length
     ? done || !agentFocus?.length
       ? rows.map(r => r.id)
@@ -73,9 +74,9 @@ export function Viewer() {
         </div>
       </div>
       {nav.view === 'simple'
-        ? <SimpleView focus={focus} review={review === false ? null : <Review start={review} onClose={() => setReview(false)} />} />
-        : <ExtendedView focus={focus} onPictures={(numbers, start) => setPictures({ numbers, start })}
-            review={review === false ? null : <Review start={review} onClose={() => setReview(false)} />} />}
+        ? <SimpleView focus={focus} ring={review === false ? null : reviewing} review={review === false ? null : <Review start={review} onShow={setReviewing} onClose={() => setReview(false)} />} />
+        : <ExtendedView focus={focus} ring={review === false ? null : reviewing} onPictures={(numbers, start) => setPictures({ numbers, start })}
+            review={review === false ? null : <Review start={review} onShow={setReviewing} onClose={() => setReview(false)} />} />}
       <AnimatePresence>
         {pictures && <Lightbox numbers={pictures.numbers} start={pictures.start} onClose={() => setPictures(null)} />}
       </AnimatePresence>

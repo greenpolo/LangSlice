@@ -331,6 +331,11 @@ The choices are saved in `~/.langslice/settings.json`
 
 ## How it works
 
+The page is built from `src/langslice/hosts/gui/web/` (React, TypeScript,
+Motion) by `npx vite build` into `static/index.html`, `ui.js` and `ui.css`,
+which are committed, so installing LangSlice needs no Node. The previous page
+is still served at `classic.html`.
+
 The window is a page served by `langslice gui` on `127.0.0.1` under a random
 address, reachable only from this computer. The agent viewer watches the job folder's files
 (`logs/events.jsonl`, `views.jsonl`, `trace/`, `state.json`,

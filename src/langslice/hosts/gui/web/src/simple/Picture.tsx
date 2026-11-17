@@ -4,10 +4,11 @@
 // are drawn on canvases, contained and centred, again whenever the box changes size.
 import { motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { DUR, EASE_IN_OUT } from '../motion';
 import { cached, newestOf, picture } from '../pictures';
 
-// A redraw is a slow crossfade, symmetric, so the settling is seen.
-const REDRAW = { duration: 0.6, ease: [0.45, 0, 0.55, 1] } as const;
+// A redraw is a symmetric crossfade, so the settling is seen.
+const REDRAW = { duration: DUR.morph, ease: EASE_IN_OUT } as const;
 
 type Layer = { url: string; img: HTMLImageElement; n: number };
 

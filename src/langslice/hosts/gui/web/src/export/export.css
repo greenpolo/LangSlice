@@ -79,7 +79,7 @@
 .note-title { color: var(--name); font-weight: var(--weight-strong); }
 .note.running .note-title { color: var(--lavender); }
 .note.failed .note-title { color: var(--pink); }
-.note-path { font-family: var(--mono); font-size: var(--size-xs); color: var(--violet); overflow-wrap: anywhere; }
+.note-path { font-family: var(--mono); font-size: var(--size-xs); color: var(--violet); overflow-wrap: break-word; }
 .note-message { color: var(--muted); }
 .note-actions { display: flex; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-2); }
 .note-actions .button { padding: 4px 12px; font-size: var(--size-sm); }

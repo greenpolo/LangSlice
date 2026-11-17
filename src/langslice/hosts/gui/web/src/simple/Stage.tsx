@@ -10,7 +10,7 @@
 // most READY_WAIT_MS), so a burst of quick calls reads as steps. `geometry` decides where.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { DUR, EASE_OUT, LAYOUT_SPRING } from '../motion';
+import { DUR, EASE_IN_OUT, EASE_OUT, LAYOUT_SPRING } from '../motion';
 import { overlayUrl, picture, snapEdge } from '../pictures';
 import type { Row } from '../run';
 import { Picture } from './Picture';
@@ -80,15 +80,15 @@ export function Stage({ job, shown, rows, box, onPick, detailed = false }: {
               className={'tile' + (onPick ? ' pickable' : '')}
               style={{ left: at.x, top: at.y, width: g.width }}
               onClick={onPick && shown.length > 1 ? () => onPick(id) : undefined}
-              initial={many ? { opacity: 0, scale: 0.96 } : { opacity: 0, scale: 0.97, filter: 'blur(6px)' }}
+              initial={many ? { opacity: 0, scale: 0.96 } : { opacity: 0, scale: 0.97, filter: 'blur(2px)' }}
               animate={many ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, transition: { duration: DUR.quick, ease: EASE_OUT } }}
+              exit={{ opacity: 0, transition: { duration: DUR.enter, ease: EASE_IN_OUT } }}
               transition={{
                 layout: LAYOUT_SPRING,
                 default: {
                   duration: many ? 0.32 : DUR.enter,
                   ease: EASE_OUT,
-                  delay: Math.min(0.24, 0.24 * Math.sqrt(i / Math.max(1, shown.length))),
+                  delay: many ? Math.min(0.24, 0.24 * Math.sqrt(i / shown.length)) : Math.min(0.06, 0.03 * i),
                 },
               }}
             >
@@ -96,11 +96,11 @@ export function Stage({ job, shown, rows, box, onPick, detailed = false }: {
                 <Picture id={id} url={overlayUrl(job, id, g.edge, row?.render_key)} rank={i} label={'The section ' + short(id)} />
               </div>
               {g.named && (
-                <motion.figcaption layout="position" className="tile-name">
+                <figcaption className="tile-name">
                   {short(id)}
                   {typeof row?.position_mm === 'number' && <span className="tile-where">{row.position_mm.toFixed(2)} mm</span>}
                   {detailed && row && <Tags row={row} />}
-                </motion.figcaption>
+                </figcaption>
               )}
             </motion.figure>
           );

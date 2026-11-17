@@ -16,7 +16,7 @@ type View = { s: number; x: number; y: number };
 type Rect = { left: number; top: number; width: number; height: number };
 const MAX_ZOOM = 24;
 
-export function Review({ start, onClose }: { start: string | null; onClose: () => void }) {
+export function Review({ start, onClose, onShow }: { start: string | null; onClose: () => void; onShow?: (id: string) => void }) {
   const rows = useRun(s => s.rows);
   const job = useRun(s => s.job);
   const comments = useRun(s => s.comments);
@@ -33,6 +33,7 @@ export function Review({ start, onClose }: { start: string | null; onClose: () =
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [flip, onClose]);
+  useEffect(() => { if (row) onShow?.(row.id); }, [row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!row || job === null) return null;
   const mine = comments.filter(c => c.section === row.id);
   return (
