@@ -1,8 +1,7 @@
 """Where a job's files live: the job folder beside the images, and its names.
 
 One stack, one job folder: ``<images>/langslice/``. Every host puts it next
-to the images it hands LangSlice (the CLI's folder, the snapshots ABBA
-exports), so a job travels with its images and is found
+to the images it hands LangSlice, so a job travels with its images and is found
 without an id. Inside::
 
     job.lock             the write lock (:mod:`langslice.job.lock`)

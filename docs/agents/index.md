@@ -20,7 +20,6 @@ same registration verbs:
 | MCP | An agent in an MCP host, or a coding agent's `register` and `register-scripting` roles | `langslice mcp` |
 | Built-in agent | LangSlice's agent session | `langslice linear run FOLDER` |
 | Python | A script: a `register-scripting` agent's own, or a coding agent's workflow | [Python library](../developers/library.md) |
-| ABBA | A job prepared from the sections selected in ABBA, continued from the LangSlice window's message; every write appears in ABBA | [ABBA](../abba.md) |
 
 Rules for a main session that sets up a registration (the connectors'
 `register-brain` skill holds them in full):

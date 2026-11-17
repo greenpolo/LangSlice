@@ -1,6 +1,6 @@
 """The job spec: one filled form per ``langslice linear`` run.
 
-A host (CLI, ABBA connector, engine service) fills a :class:`JobSpec` and hands
+A host (the commands, MCP, the library) fills a :class:`JobSpec` and hands
 it to :func:`langslice.doors.agent.engine.run`. Every checkbox a user sees maps
 to a field here; nothing else is user-facing. ``tasks`` switches whole
 capabilities on and off — a task that is OFF takes its answer from ``inputs``

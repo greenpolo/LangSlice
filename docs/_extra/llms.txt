@@ -8,7 +8,7 @@ Rules for an agent setting up a registration: never register sections yourself; 
 
 - [Register a brain](https://langslice.readthedocs.io/en/latest/register.html): what the user prepares, what to tell the agent, checking, the result files
 - [Tools](https://langslice.readthedocs.io/en/latest/tools.html): every registration tool in one line
-- [ABBA](https://langslice.readthedocs.io/en/latest/abba.html): the Fiji connector
+- [ABBA](https://langslice.readthedocs.io/en/latest/abba.html): opening a registration in ABBA
 - [Troubleshooting](https://langslice.readthedocs.io/en/latest/troubleshooting.html)
 
 ## Reference (in the repository)

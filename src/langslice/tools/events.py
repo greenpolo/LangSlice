@@ -3,7 +3,7 @@
 Every call through the tool pipeline sends two events to the toolbox's
 observers, inside its lock: ``tool_start`` before the tool runs and
 ``tool_end`` after it, crash or not. An observer is a host's live display
-(the LangSlice window, ABBA) or the job folder's ``logs/events.jsonl``
+(the LangSlice window) or the job folder's ``logs/events.jsonl``
 (:class:`EventLog`), so a viewer in another process follows any run on any
 door. An event holds what the call was asked and answered, made plain
 (:func:`plain`): never picture bytes, provider signatures or encrypted

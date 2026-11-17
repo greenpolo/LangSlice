@@ -193,24 +193,6 @@ def test_frozen_transforms_count_at_submit(tmp_path: Path):
     assert refusal is not None and refusal.code == "MISSING_TRANSFORMS"
 
 
-def test_the_worker_never_emits_geometry_for_frozen_properties():
-    from langslice.doors.abba.checkpoints import _host_updates
-
-    def row(transform, flip=False, position=4.0):
-        return {"id": "a.tif", "position_mm": position, "index_corrected": 0,
-                "flip": flip, "rotation_deg": 0, "transform": transform}
-
-    before = {"slices": [row(None)]}
-    after = {"slices": [row({"params": [1, 0, .1, 0, 1, 0]}, flip=True, position=4.5)]}
-    args = ({"a.tif": (80, 40)}, 25.0)
-    assert set(_host_updates(after, before, *args)[0]) == {
-        "id", "position_mm", "flip", "rotation_deg", "affine_mm"}
-    frozen = _host_updates(after, before, *args, lambda _name: frozenset(ALIGNED))
-    assert frozen == [{"id": "a.tif", "position_mm": 4.5}]
-    nothing = _host_updates(after, before, *args, lambda _name: frozenset({"position", *ALIGNED}))
-    assert nothing == []
-
-
 # --- a frozen deformation ---------------------------------------------------------
 
 

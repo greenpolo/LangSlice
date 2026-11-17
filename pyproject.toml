@@ -266,11 +266,9 @@ type_names = { Workspace = "workspace", "langslice.job.job.Job" = "job", JobSpec
 # formats, where a TypedDict or a dict of results may stand.
 json_boundary_modules = [
     "langslice.core.fits.deformable.record",
-    "langslice.doors.abba.contract",
     "langslice.doors.agent.trace",
     "langslice.doors.agent_cli.envelope",
     "langslice.doors.call_log",
-    "langslice.hosts.service",
     "langslice.job.history",
     "langslice.job.imports.matching",
     "langslice.job.imports.placements",

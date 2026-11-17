@@ -248,11 +248,7 @@ async def run(
     atlas_loader: Callable[[str], Any] | None = None,
     on_event: LiveCallback | None = None,
 ) -> Stack:
-    """Run one linear job and return the final stack state.
-
-    A job the ABBA connector prepared runs with its saved settings as
-    *spec*'s defaults (:meth:`langslice.job.job.Job.open`).
-    """
+    """Run one linear job and return the final stack state."""
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     spec = ctx.spec = job.spec

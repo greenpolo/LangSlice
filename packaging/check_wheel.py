@@ -18,8 +18,8 @@ def check(path: str) -> None:
                    for part in parts):
                 raise ValueError(f"Private or generated file in wheel: {name}")
         required = {
-            "langslice/hosts/service.py", "langslice/doors/credentials.py",
-            "langslice/doors/abba/follow.py", "langslice/hosts/gui/static/index.html",
+            "langslice/doors/credentials.py", "langslice/tools/abba_export.py",
+            "langslice/hosts/gui/static/index.html",
             "langslice/hosts/gui/static/app.css", "langslice/hosts/gui/static/app.js",
             # the vendored engines' licences ship with their code
             "langslice/engines/deepslice/LICENSE", "langslice/engines/brainways/LICENSE",

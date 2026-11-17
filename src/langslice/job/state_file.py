@@ -293,24 +293,6 @@ def _items(data: JsonObject, key: str) -> Sequence[Json]:
     return list_at(data, key)
 
 
-def serialized_mixed_angles(data: JsonObject) -> bool:
-    """Return whether a state's JSON form has sections of differing angles.
-
-    Parameters
-    ----------
-    data
-        A form :func:`stack_to_json` writes (a checkpoint's fields at
-        format 3 or 4).
-
-    Returns
-    -------
-    bool
-        True when the stack's ``cutting_angles_deg`` is written null, as
-        it is exactly then.
-    """
-    return ANGLES_KEY in data and data[ANGLES_KEY] is None
-
-
 def write_checkpoint(state: Stack, path: str) -> None:
     """Write *state* to *path* atomically, versioned."""
     write_json_atomic(path, {FORMAT_KEY: STATE_FORMAT_VERSION, **stack_to_json(state)})

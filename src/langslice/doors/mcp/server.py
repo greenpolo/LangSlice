@@ -53,7 +53,6 @@ from langslice.doors.mcp.pages import (
 from langslice.doors.reference_card import write_card
 from langslice.doors.stdio import protocol_input
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.host_inputs import opening_spec
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
@@ -141,13 +140,10 @@ def open_job(
     job folder next to the images (``<images>/langslice``), or *folder*, a
     saved job's (the same place, as its index names it). The nonlinear
     task's image-model tool is offered only when that model is connected
-    (:func:`langslice.doors.jobs.image_model_off`). A job the ABBA
-    connector prepared opens with its saved settings as *spec*'s defaults
-    (``opening_spec``)."""
+    (:func:`langslice.doors.jobs.image_model_off`)."""
     ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
     assert ctx.job_folder is not None  # build_context sets it
     job_folder = Path(ctx.job_folder)
-    spec = opening_spec(job_folder, spec, frozen_given=False)
     off = image_model_off(spec, provider_connected(spec))
     reason = refusal(spec, image_model=not off)
     if reason is not None:

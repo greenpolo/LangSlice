@@ -17,7 +17,7 @@ from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
 - `schema.py`: one row per setting (`SETTINGS`, 46 rows of `Setting`): its
   name (`atlas`, a section's `position.thickness_um`, a supplied answer's
   `inputs.positions`), its type and the job's default, the doors that may
-  set it (`run`, `init`, `mcp`, `library`, `abba`), its `job.json` key, the
+  set it (`run`, `init`, `mcp`, `library`), its `job.json` key, the
   library's keyword, its command-line flags in the commands' order, the
   values it takes when they are a fixed list, and a door's own default where
   it is not the job's (`door_defaults`, in that door's terms). It also holds
@@ -136,7 +136,6 @@ LangSlice, so a job travels with its images:
 |---|---|---|
 | `langslice linear run FOLDER` | `FOLDER` | `FOLDER/langslice/` |
 | `langslice mcp`, `start_job(image_folder=...)` | that folder (or the named job folder's) | `<folder>/langslice/`, or the named job folder |
-| ABBA's `Register › LangSlice…` (Fiji connector, `abba.prepare`) | the ABBA project's snapshots, `~/.langslice/abba/<project key>/` | `~/.langslice/abba/<project key>/langslice/`, prepared (below) |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
 `Job.open` and `engine.build_context`):
@@ -165,9 +164,7 @@ Inside (`layout.py`, names as constants):
 job.lock             the write lock (lock.py), held while a writer syncs and commits
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; the user's "notes" (every door
-                     gives them to the agent); the agent CLI's "viewer"; under
-                     "host" a prepared ABBA job's facts (format 3, kind
-                     "abba", "abba": the session)
+                     gives them to the agent); the agent CLI's "viewer"
 state.json           the checkpoint (Stack, state format 5): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 review.json          the review comments the LangSlice window keeps (review.py):
@@ -260,23 +257,6 @@ anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--no-resume`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
 agent CLI's `init` answers `INPUTS_CHANGED` (exit 3).
-
-**A job the ABBA connector prepared.** `abba.prepare`
-(`doors/abba/prepare.py`) writes `job.json` (the settings with ABBA's
-inputs, the user's ABBA registrations frozen, and `host` with `kind`
-`abba`, `host_inputs.PREPARED_HOST_KIND`) and no checkpoint. Every open of
-such a folder, before its first checkpoint and after, goes through
-`host_inputs.opening_spec` inside `Job.open`: `prepared_spec(saved,
-given_spec, frozen_given=)` takes each setting of the table from the
-opening where it differs from the job's default, else from the saved
-settings; `inputs` and `host_preprocessing` are always the saved ones (an
-input the opening adds, a damage note, kept beside them); `frozen` is the
-opening's only when it gave one explicitly (`frozen_given`: the agent CLI's
-`init --frozen`, even `'{}'`); the image folder, `job_dir` and `resume` are
-the opening's. `Job.open` gives the workspace the settings it opened with
-(`Workspace.settings`), and the doors go on with `job.spec`. So `init`,
-`linear run`, MCP and `create_job` all open a prepared job with ABBA's
-inputs, and a start over (`--no-resume`) keeps them.
 
 **Opening a job without writing.** `Job.open` writes `job.json` and a
 first checkpoint. `Job.load(spec, workspace, folder=)` opens an

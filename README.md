@@ -46,7 +46,7 @@ folder with `environment.yml`, and run `conda env create -f environment.yml`.
 On Windows, run the commands in Miniforge Prompt. Python 3.11 is required.
 Atlases are downloaded by BrainGlobe on first use into the user's
 `.brainglobe` folder. The environment includes the deformable engine
-(FireANTs on torch), the MCP server and the worker the ABBA connector starts.
+(FireANTs on torch) and the MCP server.
 
 ## Use LangSlice
 
@@ -56,8 +56,8 @@ Atlases are downloaded by BrainGlobe on first use into the user's
 - **[Agents, CLI and MCP](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/index.md):** Claude Code, Antigravity or Codex
   through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
-- **[ABBA](https://github.com/greenpolo/LangSlice/blob/main/docs/abba.md):** start a job from the sections selected in ABBA;
-  the agent's changes appear in ABBA as it saves them.
+- **[ABBA](https://github.com/greenpolo/LangSlice/blob/main/docs/abba.md):** export a registration as an ABBA project
+  and open it with ABBA's Load State.
 - **[Python](https://github.com/greenpolo/LangSlice/blob/main/docs/developers/library.md):** coding agents can open a job and write their
   own workflows using the same tools.
 

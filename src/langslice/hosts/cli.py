@@ -1,9 +1,8 @@
-"""The commands that drive a host: ``gui`` (the LangSlice window: the agent
-viewer and the prompt generator on job folders) and ``serve`` (the engine
-service the Fiji connector starts).
+"""The command that drives a host: ``gui`` (the LangSlice window: the agent
+viewer and the prompt generator on job folders).
 
 The ``langslice`` command (:mod:`langslice.doors.commands.parser`) registers
-them by module path and loads this module only when it builds its parser
+it by module path and loads this module only when it builds its parser
 (``HOST_COMMANDS``), so the doors never import a host.
 """
 
@@ -55,24 +54,3 @@ def run_gui(args: argparse.Namespace) -> None:
         folders.append(folder)
     tab = cast("str", args.tab)
     serve(folders, port=args.port, window=not args.no_window, tab=tab)
-
-
-def add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser(
-        "serve",
-        help="Run LangSlice engine service",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument(
-        "--stdio",
-        action="store_true",
-        help="Run newline-delimited JSON service over stdin/stdout",
-    )
-
-
-def run_serve(args: argparse.Namespace) -> None:
-    if not args.stdio:
-        raise SystemExit("serve currently requires --stdio")
-    from langslice.hosts.service import run_stdio
-
-    raise SystemExit(run_stdio())

@@ -11,7 +11,7 @@ table's order.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -349,7 +349,6 @@ def add_flags(
     group: FlagGroup,
     *,
     choices: Mapping[str, Sequence[str]] | None = None,
-    suppress: Collection[str] = (),
 ) -> None:
     """Add one group's flags to a command's parser, in the table's order.
 
@@ -362,19 +361,13 @@ def add_flags(
     choices
         The values of a flag that the command knows and the table does not,
         by spelling (``--viewer``'s viewers belong to the pictures).
-    suppress
-        The spellings whose value is absent from the parsed arguments when
-        the flag is not given, so the command can tell an explicit value
-        (``--frozen '{}'``) from none; their help is kept.
     """
     known = choices or {}
     for spelling, flag, row in group_flags(group):
         values = _values(known.get(spelling), flag, row)
         dest = flag.dest or spelling.removeprefix("--").replace("-", "_")
         default = row.default if flag.table_default else None
-        action = _add(parser, spelling, flag, dest, default, values)
-        if spelling in suppress:
-            action.default = argparse.SUPPRESS
+        _add(parser, spelling, flag, dest, default, values)
         if spelling == row.flags[0]:
             for alias in row.aliases:  # read, never listed, never a default
                 _add(parser, alias, flag, dest, argparse.SUPPRESS, values)

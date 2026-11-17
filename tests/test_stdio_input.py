@@ -51,24 +51,6 @@ door.build_server = build_server
 door.serve(lambda folder: None)
 """
 
-SERVICE = f"""
-import importlib, sys
-from langslice.hosts import service
-
-assert {MODULE!r} not in sys.modules
-
-def follow(request, emit, stop):
-    # abba.follow runs while a thread waits on the rest of the input
-    import time
-    time.sleep(1)
-    importlib.import_module({MODULE!r})
-
-service.follow = follow
-service.AbbaFollowRequest.model_validate = staticmethod(lambda params: params)
-service.run_stdio()
-"""
-
-
 def _start(script: str) -> tuple[subprocess.Popen[bytes], queue.Queue[bytes]]:
     """Start *script* with its stdin an open pipe; its stdout lines on a queue."""
     process = subprocess.Popen(
@@ -113,16 +95,6 @@ def test_mcp_tool_imports_while_the_host_pipe_waits():
         reply = _reply(lines, process)
         assert reply["id"] == 2
         assert "loaded" in json.dumps(reply["result"])
-    finally:
-        process.kill()
-        process.wait()
-
-
-def test_service_follow_imports_while_the_host_pipe_waits():
-    process, lines = _start(SERVICE)
-    try:
-        _send(process, {"id": "follow", "method": "abba.follow", "params": {}})
-        assert _reply(lines, process) == {"id": "follow", "type": "result", "result": {}}
     finally:
         process.kill()
         process.wait()

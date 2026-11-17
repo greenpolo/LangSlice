@@ -38,7 +38,6 @@ def test_save_both_keys_preserves_them_and_never_returns_secrets(isolated_home: 
     status = setup.connections()
     assert status["providers"]["openai-api"]["configured"]
     assert "test-private" not in json.dumps(status)
-    assert "test-private" not in json.dumps(setup.setup_status())
     assert list(path.parent.glob(".provider_credentials-*")) == []
 
 

@@ -1,7 +1,7 @@
 """Every program LangSlice starts is told what its stdin is.
 
 A child inherits its parent's stdin unless told otherwise. Under the MCP
-server and the Fiji connector's service that stdin is the host's pipe, which
+server that stdin is the host's pipe, which
 a thread reads; on Windows, Git for Windows (and other MSYS programs) block at
 start-up querying a pipe with a read pending, so `git rev-parse` in the
 registration's provenance hung the server. Each call passes

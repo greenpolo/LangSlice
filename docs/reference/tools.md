@@ -379,7 +379,7 @@ pixels gets a new file (`<name>.2.png`), so undo finds the old one.
 **Switch off:** `make_image`. The raw channels and `preprocessed` stay.
 Without `look:section`, `view` goes.
 
-**Details.** For an ABBA job that sends preprocessing settings,
+**Details.** For a job whose host sends preprocessing settings,
 `preprocessed` is the host's channel blend. It is made once on the working
 copy and saved as its file; from then on every reader (the fits, the image
 model, `look`, zooms, masks) reads that file, resized to the size it works

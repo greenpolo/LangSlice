@@ -1,19 +1,15 @@
 ---
 name: abba
-description: Work with ABBA (Aligning Big Brains and Atlases, in Fiji) from a coding agent: drive a running ABBA through its MCP server (abba-mcp), import section images, save and load state, export registrations and regions, continue a LangSlice job started from ABBA, and bring an ABBA registration into LangSlice. Use when the user mentions ABBA, Fiji or QuPath projects.
+description: Work with ABBA (Aligning Big Brains and Atlases, in Fiji) from a coding agent: drive a running ABBA through its MCP server (abba-mcp), import section images, save and load state, export registrations and regions, open a LangSlice registration in ABBA, and bring an ABBA registration into LangSlice. Use when the user mentions ABBA, Fiji or QuPath projects.
 ---
 
 # ABBA from a coding agent
 
-For the main session. A job started from ABBA (the user chose **Register ›
-LangSlice…** in ABBA) is an ordinary LangSlice job in
-`~/.langslice/abba/<project>/` whose images are ABBA's snapshots: the user
-pastes the LangSlice window's message, and `langslice-job FOLDER init`
-continues the prepared job (ABBA's positions, cutting angles, pixel size and
-protected registrations are already in it; do not pass them again). While
-ABBA is open, every write to that job appears in ABBA as one ABBA Undo step;
-nothing else is needed to "send results to ABBA". Registration itself is the
-subagent's work (`register-brain` skill).
+For the main session. LangSlice and ABBA meet through files: a LangSlice
+registration is exported as an ABBA project that ABBA loads, and an ABBA
+registration is exported from ABBA and given to a LangSlice job (the last
+section here). Registration itself is the subagent's work (`register-brain`
+skill).
 
 ## Reaching a running ABBA: abba-mcp
 
@@ -36,8 +32,6 @@ In another client: server `abba`, command `uvx`, argument `abba-mcp`.
   Fiji, its MCP server started from **Help › Assistants › Manage Fiji MCP
   Server…**), abba-mcp drives that one instead. A Fiji there running another
   ABBA version is refused, with a message to close it.
-- Only the user's own Fiji has the LangSlice connector installed (ABBA's
-  **Register › LangSlice…**); the Fiji abba-mcp downloads does not.
 - Before the first command, read abba-mcp's guide with `abba_docs_read`
   (`guides/abba.md`: the workflow and its traps; `abba_docs_search` searches
   its docs). Commands run by title with `fiji_module_run`;
@@ -70,18 +64,31 @@ acts on that ABBA session.
 Names and parameters were read from the ABBA source at tag
 `ImageToAtlasRegister-0.25.0`; other ABBA versions may differ.
 
-## With a LangSlice job that did not start from ABBA
+## With a LangSlice job
 
 - Into LangSlice: export from ABBA (QuickNII dataset, or the registration
   file) and start the job from it: `langslice-job FOLDER init --registration
   FILE`.
-- Out of LangSlice: there is no correct way to put such a job's results into
-  ABBA. Never import its `quicknii.json` with `ABBA - Import QuickNII
-  Project`: ABBA reads the JSON's width and height (the original image's) as
-  the size of the PNG copy, so large images shrink toward a corner, and it
-  takes one median cutting angle along each image's own axes, so the
-  sections land millimetres off and out of order. To use ABBA, start the job
-  from ABBA. For other programs, see step 5 of the `register-brain` skill.
+- Out of LangSlice: write the job as an ABBA project and load it in ABBA.
+  Save this as `scripts/export_abba.py` in the job folder:
+
+  ```python
+  import sys
+
+  import langslice
+
+  if __name__ == "__main__":
+      print(langslice.open_job(sys.argv[1]).export_abba())
+  ```
+
+  and run it with `langslice-job FOLDER python scripts/export_abba.py
+  FOLDER`. It writes `exports/<image folder>.abba`, which ABBA opens with
+  `ABBA - Load State` on the Allen Brain Adult Mouse Brain CCF 2017 atlas,
+  coronal; `exports/abba_export.json` names any section left out and why.
+  The user can also choose **Export ‣ ABBA project (.abba)** in the
+  LangSlice window. Never import the job's `quicknii.json` with `ABBA -
+  Import QuickNII Project`: ABBA misreads its image sizes and cutting
+  angles, and the sections land millimetres off and out of order.
 - ABBA's coordinates differ from BrainGlobe's by a measured offset of about
   0.985 mm. Never hardcode it or convert positions by hand.
 - Save State before any bulk change.

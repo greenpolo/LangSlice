@@ -9,21 +9,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from langslice import __version__
 from langslice.doors import user_settings
 
 logger = logging.getLogger(__name__)
 
-#: The Fiji connector's protocol with ``langslice serve --stdio``
-#: (:mod:`langslice.doors.abba.contract`); a connector speaking another
-#: refuses to run.
-PROTOCOL_VERSION = 3
 _KEY_ENV = {
     "openai-api": ("OPENAI_API_KEY",),
     "gemini-api": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -107,23 +101,6 @@ def _oauth_status() -> dict[str, object]:
     except (OSError, ValueError, AttributeError):
         pass
     return {"configured": False, "source": None, "validated": False}
-
-
-def setup_status() -> dict[str, str | int]:
-    """Return the installation the Fiji connector talks to, offline.
-
-    Returns
-    -------
-    dict
-        ``version``, ``protocol_version`` (:data:`PROTOCOL_VERSION`),
-        ``python_executable`` and ``environment_prefix``.
-    """
-    return {
-        "version": __version__,
-        "protocol_version": PROTOCOL_VERSION,
-        "python_executable": sys.executable,
-        "environment_prefix": sys.prefix,
-    }
 
 
 def image_model_connected(provider: str) -> bool:

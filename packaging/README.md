@@ -1,7 +1,4 @@
-# Worker distribution
-
-The Fiji connector starts the separately installed LangSlice Python worker.
-The worker does not require Java or Maven.
+# Distribution
 
 ## Install from source
 
@@ -32,8 +29,7 @@ langslice version
 ```
 
 The package workflow builds and audits the wheel, installs it in an isolated
-Python environment on Linux, Windows, and macOS, and runs the worker handshake
-outside the repository. It uploads the wheel as a CI artifact; it never publishes
-to a package index. The audit checks package boundaries, required worker modules
-and browser assets, and the console entry point. It does not substitute for a
-real Fiji registration and save/reload acceptance run.
+Python environment on Linux, Windows, and macOS, and runs the installed
+commands outside the repository. It uploads the wheel as a CI artifact; it never
+publishes to a package index. The audit checks package boundaries, required
+modules and browser assets, and the console entry point.

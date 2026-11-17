@@ -836,7 +836,7 @@ def init_parser() -> argparse.ArgumentParser:
     from langslice.doors.commands.flags import add_flags
 
     parser = _Parser(prog="langslice-job FOLDER init", add_help=False)
-    add_flags(parser, "job", suppress=("--frozen",))
+    add_flags(parser, "job")
     add_flags(parser, "resume")
     add_flags(parser, "init", choices={"--viewer": sorted(VIEWER_LIMITS)})
     return parser
@@ -849,10 +849,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     supplied placement (``doors.jobs.with_registration``): the result's
     ``registration`` says what was placed and what was not, and its
     warnings are the envelope's (``BAD_REGISTRATION`` when it cannot be
-    read, matched one to one, or places no section). A job the ABBA
-    connector prepared takes the flags given over its saved settings
-    (``job.host_inputs.opening_spec``); ``--frozen`` given, even ``'{}'``,
-    replaces its saved freeze."""
+    read, matched one to one, or places no section)."""
     from langslice.core.sections.discovery import discover_slices
     from langslice.doors.commands.linear import spec_from_args
     from langslice.doors.jobs import (
@@ -862,10 +859,9 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         read_spec,
         with_registration,
     )
-    from langslice.job.host_inputs import InputsChanged, opening_spec
+    from langslice.job.host_inputs import InputsChanged
 
     args = init_parser().parse_args(rest)
-    frozen_given = hasattr(args, "frozen")
     images = Path(folder).expanduser().resolve()
     if not images.is_dir() or not discover_slices(str(images)):
         return Envelope.failure(RefusalCode.NO_IMAGES,
@@ -889,8 +885,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         except NoJob:
             existing, saved = None, None
         if existing is not None and saved is not None:
-            opening = opening_spec(existing, spec, frozen_given=frozen_given)
-            asked = opening.to_dict()
+            asked = spec.to_dict()
             changed = sorted(key for key in set(asked) | set(saved)
                              if key not in ("resume", "inputs", "image_folder")
                              and asked.get(key) != saved.get(key))
@@ -901,8 +896,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
                     fix="Give init the job flags it was made with (job.json, spec) to continue "
                     "it, or --no-resume to start it over (its work is discarded).", job=str(images))
     try:
-        opened = create(spec, atlas_loader=atlas_loader, emit=progress, door="cli",
-                        frozen_given=frozen_given)
+        opened = create(spec, atlas_loader=atlas_loader, emit=progress, door="cli")
     except InputsChanged as exc:
         return Envelope.failure(RefusalCode.INPUTS_CHANGED,
                                 str(exc), job=str(images))
