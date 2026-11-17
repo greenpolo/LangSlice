@@ -302,7 +302,8 @@ def create(
 ) -> Opened:
     """A job for *spec*'s image folder, as every host makes one
     (``Job.open``: the job folder beside the images or ``spec.job_dir``,
-    ingest, host inputs, first checkpoint; a resume when ``spec.resume``), with its reference card.
+    ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
+    with its reference card.
     *image_model* and *door* as in :func:`open_folder`."""
     folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
                                           emit=emit or log_progress)
