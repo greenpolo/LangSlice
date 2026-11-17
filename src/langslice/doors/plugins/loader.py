@@ -81,7 +81,7 @@ def build(ref: str, factory: Callable[..., Any], *, module_name: str,
     check its tools and make the :class:`LoadedPlugin` (not yet registered)."""
     try:
         made = factory(config) if config is not None else factory()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise PluginError(f"plugin {ref}: the factory failed: {type(exc).__name__}: {exc}"
                           ) from exc
     if isinstance(made, ToolSpec):
@@ -130,7 +130,7 @@ def load(ref: str, config: dict[str, Any] | None = None) -> LoadedPlugin:
     module_name, factory_name = _split(ref)
     try:
         module = importlib.import_module(module_name)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise PluginError(f"plugin {ref}: cannot import {module_name!r}: "
                           f"{type(exc).__name__}: {exc}") from exc
     factory: Any = module

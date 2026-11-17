@@ -27,6 +27,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.atlas.images import resolve_image
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.core.fits import affine as core_affine
 from langslice.core.fits.affine import FittedAffine
 from langslice.core.fits.deformable.engines import (
@@ -348,7 +349,7 @@ def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
                 edges=call.edges,
                 section_weights=weights,
             )
-    except Exception as exc:  # noqa: BLE001
+    except ENGINE_FAILURES as exc:
         logger.warning("elastix_affine failed for %s: %s", section.id, exc)
         failure = _fit_failure(job, section.id, exc)
         return _SectionFit(AffineRow(section.id, refusal=failure))
@@ -487,7 +488,7 @@ def elastix_fit(
         if not told:
             raise
         raise reworded(refusal, told) from refusal
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise Refused(
             RefusalCode.FIT_FAILED,
             message=f"{record.id}: "

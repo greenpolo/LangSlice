@@ -56,6 +56,8 @@ NOT_FOLDERS = frozenset({"ops", "schema", "-h", "--help"})
 INLINE_DATA_CHARS = 4096
 _BASE64 = re.compile(r"[A-Za-z0-9+/=\s]+")
 
+HOOK_FAILURES = (AttributeError, LookupError, OSError, TypeError, ValueError)
+
 
 def add_parser(subparsers: Any) -> None:
     p = subparsers.add_parser(
@@ -71,7 +73,7 @@ def run(args: Any) -> None:
         hook = json.loads(sys.stdin.read() or "{}")
         for folder in session_end(hook, args.harness):
             print(f"langslice: transcript copied to {folder}", file=sys.stderr)
-    except Exception as exc:  # noqa: BLE001
+    except HOOK_FAILURES as exc:
         print(f"langslice session-end: {type(exc).__name__}: {exc}", file=sys.stderr)
     print("{}")
 
@@ -360,6 +362,6 @@ def write_launch_check(layout: Any, text: str, target: Path) -> None:
     try:
         target.write_text(json.dumps(launch_check(layout, text), indent=1) + "\n",
                           encoding="utf-8", newline="\n")
-    except Exception as exc:  # noqa: BLE001
+    except HOOK_FAILURES as exc:
         print(f"langslice session-end: launch check: {type(exc).__name__}: {exc}",
               file=sys.stderr)

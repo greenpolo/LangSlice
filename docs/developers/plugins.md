@@ -224,7 +224,8 @@ A write returns a `WriteResult`: `ok` is false when the call was refused whole
 (`error`, `message`); otherwise `rows` has one row per section asked
 (`status` `ok` or `error` with the code: `FROZEN`, `STALE_INPUT`,
 `UNKNOWN_SLICE_IDS`, ...) and `written` the ids written. `result.reply()` is
-those as reply fields. A read tool that writes, or a write outside `writes`, is
+those as reply fields; `result.refusal(id)` is the `ToolError` that says why
+one section was not written. A read tool that writes, or a write outside `writes`, is
 refused (`READ_TOOL_WRITES`, `WRITE_NOT_DECLARED`). The door adds `registration`
 `{section: number}` to the tool's reply for each section whose registration the
 call changed (the number `restore_registration` takes; see

@@ -155,7 +155,7 @@ class SectionFrame:
         """3x3 on ``[x, y, 1]``: a resize of the file to *size* -> file pixels."""
         if size is None or tuple(size) == tuple(self.file_size):
             return np.eye(3)
-        return pixel_center_map(tuple(size), self.file_size)  # type: ignore[arg-type]
+        return pixel_center_map(size, self.file_size)
 
     def grid_to_native(self, size: tuple[int, int] | None = None) -> np.ndarray:
         """3x3 on ``[x, y, 1]``: grid pixel centres -> native plane pixel centres."""
@@ -227,7 +227,7 @@ def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any
     settings = workspace.settings
     return (
         record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
-        float(record.position_mm),  # type: ignore[arg-type]
+        record.held_position(),
         state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
         stored_params(record),
         json.dumps(settings.supplied_pixel_size, default=str),
@@ -329,7 +329,7 @@ def _section_frame(state: Stack, workspace: Workspace, record: Section) -> Secti
                    else unturned_render)
     file_to_render = orient @ pixel_center_map(file_size, unturned_render)
     plane = state.plane
-    position = float(record.position_mm)  # type: ignore[arg-type]
+    position = record.held_position()
     atlas = workspace.atlas
     atlas_to_render, geometry = linear_placement_matrix(
         render_size, render_um, atlas, position, plane, record.pitch_deg, record.yaw_deg,

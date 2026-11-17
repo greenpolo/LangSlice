@@ -29,6 +29,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.borders import annotation_slice, atlas_um_per_px
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.core.fits.inputs import InputsBlock
 from langslice.core.geometry.affine import (
     IDENTITY_PARAMS,
@@ -287,7 +288,7 @@ def fit_elastix(
                              section_weights=section_weights)
     except Refused as refusal:
         return Refused(refusal.code, id=section.id, message=refusal.message)
-    except Exception as exc:
+    except ENGINE_FAILURES as exc:
         logger.warning("elastix_affine failed for %s: %s", section.id, exc)
         return Refused(
             RefusalCode.FIT_FAILED,

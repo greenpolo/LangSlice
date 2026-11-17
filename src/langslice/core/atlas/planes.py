@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.load import get_reference_slice, get_root_mask
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.geometry.affine import resize_long_edge
 from langslice.core.geometry.pixel_frames import cropped_geometry
 from langslice.core.pictures.sizes import opening_edge
@@ -82,7 +83,7 @@ def atlas_section(
     if frame:
         try:
             mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
-        except Exception as exc:
+        except IMAGE_FAILURES as exc:
             logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)",
                            position_mm, exc)
         else:

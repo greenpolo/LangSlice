@@ -734,7 +734,7 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     how = {"device": config["device"], "dtype": config["dtype"]}
     try:
         out = engine.run(arrays, {**params, **how})
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
         raise ToolError(RefusalCode.FIT_FAILED,
                         f"emlddmm failed: {failure}") from exc

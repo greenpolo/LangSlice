@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, cast
 from PIL import Image
 
 from langslice.core.atlas.levels import OVERLAY_DEPTH
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.pictures import look as looks
 from langslice.core.pictures import sheet as sheets
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
@@ -577,7 +578,7 @@ def show_result(
                                         positions_mm=tuple(float(v) for v in positions_mm))
             try:
                 drawn = looks.look(workspace, state, request, store=job.deformations)
-            except Exception as exc:  # noqa: BLE001
+            except IMAGE_FAILURES as exc:
                 code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
                 failed.append({"error": code, "message": str(exc)})
         else:
@@ -590,7 +591,7 @@ def show_result(
                                             images=tuple(str(v) for v in images))
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
-                except Exception as exc:  # noqa: BLE001
+                except IMAGE_FAILURES as exc:
                     code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
                     failed.append({"id": section, "error": code,
                                    "message": str(exc)})

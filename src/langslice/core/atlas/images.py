@@ -41,7 +41,7 @@ def _coordinate_space(atlas: Any) -> str | None:
 def _takes_borrowed_nissl(atlas: Any) -> bool:
     try:
         context = atlas_space_context(atlas)
-    except Exception:  # noqa: BLE001
+    except (AttributeError, LookupError, TypeError, ValueError):
         return False
     space = _coordinate_space(atlas)
     if space is not None and space not in CCFV3_SPACES:

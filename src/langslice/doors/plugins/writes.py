@@ -60,6 +60,29 @@ class WriteResult:
                    details={key: value for key, value in refusal.facts.items()
                             if key != "message"})
 
+    def refusal(self, section: str) -> ToolError:
+        """Return why *section* was not written, as the error to raise.
+
+        Parameters
+        ----------
+        section
+            The filename of a section the write was asked for.
+
+        Returns
+        -------
+        ToolError
+            The code and words of that section's row, or of the whole
+            call when it was refused whole; ``NOT_WRITTEN`` when neither
+            names a reason.
+        """
+        code: object = self.error or RefusalCode.NOT_WRITTEN
+        words: object = self.message
+        rows = cast("list[dict[str, object]]", self.rows)
+        for row in rows:
+            if row.get("id") == section and "error" in row:
+                code, words = row["error"], row.get("message", "")
+        return ToolError(str(code), str(words))
+
     def reply(self) -> dict[str, Any]:
         """The result as reply fields: ``written`` and ``rows``, or the refusal."""
         if not self.ok:

@@ -38,6 +38,13 @@ from langslice.job.settings.tool_table import (
 
 TASKS: tuple[str, ...] = tuple(freeze.TASK_PROPERTIES)
 ANGLES = "angles"
+SIGNATURE_FAILURES = (
+    AttributeError,
+    NameError,
+    SyntaxError,
+    TypeError,
+    ValueError,
+)
 
 
 def check_tool(
@@ -87,7 +94,7 @@ def check_tool(
         return f"{where}: the stub has no docstring (it is the tool's description)"
     try:
         inspect.signature(tool.stub, eval_str=True)
-    except Exception as exc:  # noqa: BLE001
+    except SIGNATURE_FAILURES as exc:
         return f"{where}: the stub's signature cannot be read ({exc})"
     unknown = [item for item in tool.writes if item not in freeze.PROPERTIES]
     if unknown:

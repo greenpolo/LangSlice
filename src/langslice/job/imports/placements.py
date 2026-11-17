@@ -291,7 +291,11 @@ def import_placements(
     if known and all(value is not None for value, _source in known.values()):
         sources = {source for _value, source in known.values()}
         stack_source = sources.pop() if len(sources) == 1 else "file"
-        values = {float(value) for value, _source in known.values()}  # type: ignore[arg-type]
+        values = {
+            float(value)
+            for value, _source in known.values()
+            if value is not None
+        }
         stack_size = values.pop() if len(values) == 1 else None
 
     placements: list[ImportedPlacement] = []

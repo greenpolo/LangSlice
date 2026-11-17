@@ -274,7 +274,7 @@ class FolderMigration:
             image = write_file(
                 self.layout, section_id, name, array, source, extra=extra
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning(
                 "section image %s of %s could not be made from its recipe",
                 name,

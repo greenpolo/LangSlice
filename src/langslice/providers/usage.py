@@ -63,12 +63,19 @@ def request_descriptor(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _left(total: int | None, parts: list[int | None]) -> int | None:
+    """*total* less *parts*; None when any of them is not known."""
+    known = [part for part in parts if part is not None]
+    if total is None or len(known) != len(parts):
+        return None
+    return total - sum(known)
+
+
 def _residual(
     total: dict[str, int | None], rows: list[dict[str, int | None]],
 ) -> dict[str, int | None]:
     return {
-        key: total[key] - sum(row[key] for row in rows)  # type: ignore[misc]
-        if total[key] is not None and all(row[key] is not None for row in rows) else None
+        key: _left(total[key], [row[key] for row in rows])
         for key in COUNTERS
     }
 

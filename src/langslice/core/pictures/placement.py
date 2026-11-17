@@ -255,7 +255,7 @@ def _file_detail(
             wx = (ux + 0.5) * source.size[0] / float(width) - 0.5
             wy = (uy + 0.5) * source.size[1] / float(height) - 0.5
             found = native.section_pixels(ws, record, look, wx, wy)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("zoom of %s: the image file could not be read; drawn from its "
                            "working copy", record.id, exc_info=True)
             return None
