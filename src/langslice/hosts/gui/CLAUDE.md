@@ -81,6 +81,50 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 
 ## Files
 
+The page is a React app (`web/`, below); `static/classic.html` is the window's
+previous page (vanilla scripts `app.js`, `viewer*.js`, `generator.js`,
+`settings.js`, `export.js` and their stylesheets, described under `static/`
+below), still served at `classic.html` until it is removed.
+
+- `web/` — the page's source: React 19, TypeScript, Motion (`package.json`
+  pins them; `npm install`, `npx tsc --noEmit`, `npx vite build`). Vite
+  builds it into `static/index.html`, `static/ui.js` and `static/ui.css`
+  (fixed names directly in `static/`, no inline script or style, so the
+  content policy stays `'self'`), which are committed: installing LangSlice
+  needs no Node. `src/run.ts` is the polled store (the job list every 2 s,
+  the shown job's snapshot every 300 ms, the strip when the sections change;
+  `useRun(select)`; the run's `log` for the journal; `sendComment`);
+  `src/nav.ts` keeps the tab and the view in the address
+  (`#tab=viewer|prompt|settings&view=simple|extended&job=n`);
+  `src/pictures.ts` loads the sections' quiet pictures (`?style=calm`) at
+  most three at once, lowest rank first, decoded and kept by address, with
+  each section's newest picture as a stand-in (`newestOf`), sizes snapped
+  to `EDGES`, and `warm` for the finished run's grid while nothing else
+  loads; `src/motion.ts` is the motion family (the same values as
+  `tokens.css`'s `--ease-*` and `--dur-*`). `src/Viewer.tsx`: Simple or
+  Extended, following the agent until a section is picked (`f` follows
+  again, `v` switches, `r` reviews). `src/simple/`: `Speaker` (the mark,
+  the agent's figure with one gesture per state, its name and state, the
+  fixed-height bubble whose old and new lines share one cell, the call in
+  plain words), `Stage` (`geometry` places every tile; `useDirector` holds a
+  focus `DWELL_MS`, a grid `DECK_DWELL_MS`, and shows the next once its
+  pictures are ready, at most `READY_WAIT_MS`; Motion layout animations move
+  a section still shown), `Picture` (canvas layers crossfading on a
+  redraw), `CuttingAxis` (under the pictures in both views: a millimetre
+  ruler over the placed sections' span plus a margin, the atlas's pictures
+  above it in Extended only, every placed section's thumbnail in one row in
+  the order of its position, joined to its key on the ruler by a line, two
+  half-offset rows when one row would make them narrower than
+  `ONE_ROW_MIN_W`; a thumbnail glides to its new place when the agent moves
+  it; wheel zoom, drag pan, double-click for the whole span, hover names,
+  click picks). `src/extended/`: `ExtendedView` (the progress box:
+  one meter per step the job's `tasks` ask for, counted over its sections;
+  four sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
+  one section, arrow keys, wheel zoom, a dragged box and its comment.
+  `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
+  Prompt generator (its message from `static/generator-logic.js`, the same
+  file the tests run under node), Settings and the Export menu, as the
+  endpoints below describe.
 - `__init__.py` — `serve(folders, port=, window=, tab=)`: the job list
   (the recent jobs file, `job.recent.recent_file()`), the server, the window
   on `window.start_address` (`langslice gui --tab viewer|prompt`); runs until Ctrl-C or until
@@ -188,6 +232,14 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   since, `job.review.revised`), `CommentWatch(folder).rows(state, version)`
   (read again only when `review.json`'s stamp or the watcher's
   `state_version` moved).
+- `calm.py` — the Simple view's pictures (`render/overlay|thumb/...?style=calm`,
+  `JobRenderer.overlay(..., calm=True)`, cached under their own kind):
+  `main_channel` (a channel named for a nuclear or Nissl stain, else
+  `blue`, else the first), `draw_calm_overlay` (two `look` calls on that
+  channel, with and without the borders; their difference is the border
+  layer, so `look`'s scale bar goes), `draw_calm_thumb`, `calm` (the tissue
+  `tissue_mask`ed off the tile floor, `scale_bar` cleared, a soft knee, a
+  cool tint on `STAGE`, the borders at `LINE_STRENGTH`, fainter when small).
 - `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
   `visualign`); `run_export(folder, kind)` -> `Written` writes one through
   the library (`langslice.open_job`: `export_abba`, or `export_stack` for
@@ -197,10 +249,14 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (`start`, `ExportError` for an unknown format or one already running);
   `reveal(folder)` opens the job's `exports/` in the system's file browser.
   Served as `GET jobs/<n>/export` (the state), `POST jobs/<n>/export`
-  (`{"format"}`) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
+  (`{"format", "landmarks"}`: an ABBA project's most landmark pairs per
+  warp, `MIN_LANDMARKS` (100) to 1089, `ExportError` outside; `abba_linear`
+  writes no warp steps) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
   checks (`server.GuiServer.post`). `static/export.js` / `export.css` (one
   delimited block in `index.html`, `app.js` naming the shown job with
-  `Exporter.setJob`): the top bar's Export button, its menu, and a note that
+  `Exporter.setJob`): the top bar's Export button, its menu (ABBA, warps
+  of 1089 landmarks; ABBA editable, 100; ABBA linear only; QuickNII; VisuAlign; a row for an
+  ABBA project with a count of the person's own, 100 to 1089), and a note that
   says the export is running, then its path with Open folder and Copy path,
   or why it failed.
 - `focus.py` — the agent's focus, as ABBA's follower followed it: `Focus`
@@ -312,8 +368,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (the first folder given) when folders were given; without folders the
   viewer's address as it is (the page then opens Settings while no
   connection is chosen) and the prompt generator's with `#tab=prompt`.
-- `static/generator.js`, `static/generator.css` — the prompt generator tab
-  (loaded by one delimited block in `index.html`). `Generator`, pure
+- `static/generator-logic.js`, `static/generator.js`, `static/generator.css` — the
+  prompt generator tab of the older page (loaded by one delimited block in
+  `index.html`; the React window's `web/src/prompt/` imports the same
+  `generator-logic.js`, typed by `generator-logic.d.ts`). `Generator`
+  (`generator-logic.js`), pure
   functions on the payload and a plain form object (`folder`, `atlas`,
   `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `on`, `ordered`,
   `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`,
@@ -432,6 +491,19 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
     picture's own transform: an accent box with its words above it, faded
     and `revised` once the section changed; `×` removes one in Review. The
     button counts the open comments (`#review-count`).
+  - `viewer-axis.js` — `Axis`, the Simple view's front-to-back line under
+    the pictures: a dot per section in a slot moved by a transform
+    (unplaced: dim, in stack order; placed: at its position over the placed
+    sections' span plus 0.5 mm), mm ticks, a fading ghost where one of up
+    to three moved sections was, a front-to-back wave for a reshuffle, the
+    focus in the accent and the shown sections ringed; hover names, click
+    picks. In Simple, `viewer.js` holds each new focus at least `DWELL_MS`
+    (a deck `DECK_DWELL_MS`), fetches and decodes its pictures first
+    (`prefetch`, at most `READY_WAIT_MS`; Simple draws at `SIMPLE_EDGE` per
+    count so the fetched picture is the one asked for), fades a copy of the
+    old stage over the new (`fadeStage`), and shows 1 to 3 panels or, from
+    `DECK_FROM`, the deck (`deckGeometry`). Motion tokens are in
+    `tokens.css` (`--ease-out`, `--ease-in-out`, `--dur-*`).
   - `viewer-strip.js` — the brain strip, one inline SVG under the pictures:
     atlas thumbnails over a millimetre ruler, the placed sections in at most three
     stair rows (each in the first row where it clears its neighbour) with a

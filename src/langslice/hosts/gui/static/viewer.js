@@ -19,7 +19,23 @@
 // `review_comments` tool reads it. Every panel shows its section's comments: a box and the
 // words, faded once the section has changed since (`revised`: the agent worked on it).
 const Viewer = (() => {
-  const PAGE_SIZES = { simple: 2, extended: 4 };
+  const PAGE_SIZES = { simple: 3, extended: 4 };
+  // Simple shows more sections than a page holds as a deck of small pictures.
+  const DECK_FROM = 4;
+  // In Simple, a new focus waits until the last one has been shown this long, so a burst of
+  // quick calls reads as steps rather than a flicker.
+  const DWELL_MS = 2400;
+  // A deck stays up a little longer: it is many pictures to take in.
+  const DECK_DWELL_MS = 4000;
+  // The deck keeps at most this many sections' pictures for when they come back.
+  const DECK_KEPT = 160;
+  // A new focus is shown once its pictures are ready, or after this long at most (the
+  // window draws one picture at a time, about half a second each).
+  const READY_WAIT_MS = 4000;
+  // Simple's pictures are drawn at one size per count of them, so a picture fetched ahead
+  // of its focus is the very one the panel asks for.
+  const SIMPLE_EDGE = { 1: 1280, 2: 1024, 3: 768 };
+  const READY_KEPT = 64;
   // How a section got its in-plane transform, in a panel's words.
   const HOW = { elastix: 'aligned automatically', interactive: 'aligned by hand' };
   const $ = id => document.getElementById(id);
@@ -43,6 +59,16 @@ const Viewer = (() => {
   let review = false;          // one section at a time, every section, boxes and comments
   let comments = [];           // the job's review comments, from the snapshot
   let commentsSeen = '';
+  let status = '';             // the run's status word (Submitted: the deck of every section)
+  let deckTiles = new Map();   // the deck's pictures, by section
+  let deckIds = [];
+  let shownAt = 0;             // when the focus shown was applied (Simple's dwell)
+  let dwellTimer = null;
+  let pending = null;          // a focus waiting for the dwell
+  let decked = false;          // the deck is what is shown
+  let shownCount = 0;          // how many panels are shown
+  let applying = 0;            // the latest focus being made ready
+  const ready = new Map();     // url -> a decoded picture fetched ahead of its focus
   const pageSize = () => (review ? 1 : simple ? PAGE_SIZES.simple : PAGE_SIZES.extended);
 
   // --- the header, the switch, Follow and paging -------------------------------------------
@@ -61,6 +87,8 @@ const Viewer = (() => {
       resizeTimer = setTimeout(() => { for (const p of panels) if (p.id) request(p); }, 250);
     }).observe($('view-focus'));
     Strip.init({ pick });
+    Axis.init({ pick });
+    new ResizeObserver(() => { if (deckIds.length) layoutDeck(); }).observe($('view-deck').parentElement);
     columns();
     stripSize();
   }
@@ -68,6 +96,7 @@ const Viewer = (() => {
     job = index;
     rows = []; byId = new Map(); loaded = false;
     agent = null; agentSeen = ''; follow = true; manual = []; page = 0;
+    pending = null; shownAt = 0; clearTimeout(dwellTimer); dwellTimer = null;
     tasks = null; tasksSeen = '';
     review = false; comments = []; commentsSeen = '';
     $('review').setAttribute('aria-pressed', 'false');
@@ -76,6 +105,11 @@ const Viewer = (() => {
     progress();
     for (const p of panels) clearPanel(p);
     Strip.setJob(index);
+    Axis.setJob();
+    status = '';
+    for (const t of deckTiles.values()) t.release?.();
+    deckTiles = new Map(); deckIds = [];
+    $('view-deck').replaceChildren();
     renderSections();
     renderSteps({});
     refresh();
@@ -115,6 +149,7 @@ const Viewer = (() => {
       rows = Array.isArray(tables.sections) ? tables.sections : [];
       byId = new Map(rows.map(r => [r.id, r]));
       Strip.setRows(rows);
+      Axis.setRows(rows);
       renderSections(tables.sections_note || '');
       renderSteps(tables);
       progress();
@@ -123,12 +158,83 @@ const Viewer = (() => {
     const seen = JSON.stringify(focus ? [focus.call ?? null, focus.sections || []] : null);
     if (seen !== agentSeen) {
       agentSeen = seen;
-      agent = focus;
-      if (follow) { page = 0; changed = true; }
+      if (simple && follow && !review) { pending = focus; dwell(); }
+      else {
+        agent = focus;
+        if (follow) { page = 0; changed = true; }
+      }
     }
     if (changed) refresh();
   }
+  function dwell() {
+    const wait = shownAt + (decked ? DECK_DWELL_MS : DWELL_MS) - Date.now();
+    if (wait > 0) { if (!dwellTimer) dwellTimer = setTimeout(() => { dwellTimer = null; dwell(); }, wait); return; }
+    // The pictures of the new focus are fetched and decoded first, so the change is one
+    // step, never a flash of empty panels; a newer focus meanwhile replaces this one.
+    const focus = pending, token = ++applying;
+    const ids = focusIds(focus);
+    const apply = () => {
+      if (token !== applying) return;
+      fadeStage();
+      agent = focus;
+      shownAt = Date.now();
+      page = 0;
+      refresh();
+    };
+    if (!ids.length) { apply(); return; }
+    const deck = ids.length >= DECK_FROM;
+    const edge = deck ? deckGeometry(ids.length).edge : simpleEdge(ids.length);
+    Promise.race([
+      Promise.all(ids.map((id, i) => prefetch(renderUrl(id, edge), i))),
+      new Promise(done => setTimeout(done, READY_WAIT_MS)),
+    ]).then(apply);
+  }
+  // The stage shown leaves as one picture: a copy of it lies over the new one and fades,
+  // so the stage is never empty between two focuses.
+  function fadeStage() {
+    const views = $('view-deck').parentElement;
+    const shown = decked ? $('view-deck') : $('view-focus');
+    if (!simple || review || shown.hidden || !shown.querySelector('img')) return;
+    views.querySelector('.stage-ghost')?.remove();
+    const ghost = shown.cloneNode(true);
+    ghost.removeAttribute('id');
+    ghost.classList.add('stage-ghost');
+    ghost.classList.remove('stage-in');
+    ghost.setAttribute('aria-hidden', 'true');
+    for (const node of ghost.querySelectorAll('[id]')) node.removeAttribute('id');
+    views.append(ghost);
+    requestAnimationFrame(() => requestAnimationFrame(() => ghost.classList.add('gone')));
+    setTimeout(() => ghost.remove(), 320);
+  }
+  function focusIds(focus) {
+    if (simple && status === 'Submitted') return rows.map(r => r.id);
+    const ids = (focus?.sections || []).filter(id => byId.has(id));
+    return ids.length ? [...new Set(ids)] : rows.map(r => r.id);
+  }
+  function simpleEdge(count) {
+    const base = SIMPLE_EDGE[Math.min(3, Math.max(1, count))];
+    return Math.min(2048, Math.ceil((base * Math.min(2, window.devicePixelRatio || 1)) / 128) * 128);
+  }
+  function prefetch(url, rank) {
+    if (ready.has(url)) return Promise.resolve();
+    return new Promise(done => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.draggable = false;
+      let release = null;
+      const end = () => { release?.(); done(); };
+      img.onload = () => img.decode().catch(() => {}).then(() => {
+        ready.set(url, img);
+        while (ready.size > READY_KEPT) ready.delete(ready.keys().next().value);
+        end();
+      });
+      img.onerror = end;
+      release = Ui.loads.add(() => rank / 10, () => { img.src = url; });
+    });
+  }
   function agentTargets() {
+    // A finished run, in Simple: every section, dealt out as a deck.
+    if (simple && status === 'Submitted') return rows.map(r => r.id);
     const ids = (agent?.sections || []).filter(id => byId.has(id));
     return ids.length ? [...new Set(ids)] : rows.map(r => r.id);
   }
@@ -167,6 +273,11 @@ const Viewer = (() => {
     for (const p of panels) drawMarks(p);
   }
   function reviewing() { return review; }
+  function setStatus(word) {
+    if (word === status) return;
+    status = word;
+    if (follow) refresh();
+  }
   // The snapshot's comments: every panel showing a commented section draws them again.
   function setComments(list) {
     const seen = JSON.stringify(list || []);
@@ -181,6 +292,7 @@ const Viewer = (() => {
   // Simple shows the pictures only, and follows the agent.
   function setSimple(on) {
     simple = on;
+    if (pending) agent = pending;
     if (on && !review) { follow = true; page = 0; if (mode !== 'focus') { showView('focus'); return; } }
     refresh();
   }
@@ -210,19 +322,33 @@ const Viewer = (() => {
     const pages = Math.max(1, Math.ceil(all.length / size));
     page = Math.min(page, pages - 1);
     const onPage = all.slice(page * size, page * size + size);
-    $('focus-name').textContent = review ? 'Reviewing' : follow ? 'The agent is working on' : 'You are looking at';
+    const deck = simple && !review && mode === 'focus' && all.length >= DECK_FROM;
+    const done = simple && follow && status === 'Submitted';
+    $('focus-name').textContent = review ? 'Reviewing' : done ? 'Registered' : follow ? 'The agent is working on' : 'You are looking at';
     if (review) {
       $('focus-count').textContent = !loaded || !rows.length ? '' : `section ${page + 1} of ${rows.length}`;
       $('focus-hint').textContent = rows.length ? '← → to flip · drag a box to comment' : '';
     } else {
       $('focus-count').textContent = !loaded || !rows.length ? ''
         : (all.length === rows.length ? `all ${rows.length} sections` : `${all.length} of ${rows.length} sections`)
-          + (pages > 1 ? `, page ${page + 1} of ${pages}` : '');
+          + (pages > 1 && !deck ? `, page ${page + 1} of ${pages}` : '');
       $('focus-hint').textContent = '';
     }
     $('follow-agent').setAttribute('aria-pressed', String(follow && !review));
-    $('pager').hidden = pages < 2;
+    $('tab-viewer').classList.toggle('following', follow && !review);
+    $('pager').hidden = pages < 2 || deck;
     Strip.setTargets(all, onPage);
+    Axis.setTargets(all, deck ? [] : onPage);
+    $('view-deck').hidden = !deck;
+    $('view-focus').classList.toggle('decked', deck);
+    // Between the pictures and the deck the stage fades over rather than cutting.
+    if (deck !== decked) {
+      decked = deck;
+      const shown = deck ? $('view-deck') : $('view-focus');
+      shown.classList.remove('stage-in');
+      void shown.offsetWidth;
+      shown.classList.add('stage-in');
+    }
     for (const tr of document.querySelectorAll('#sections tbody tr')) tr.classList.toggle('target', all.includes(tr.dataset.id));
     const empty = $('focus-empty');
     empty.hidden = true;
@@ -232,7 +358,15 @@ const Viewer = (() => {
       empty.textContent = !loaded ? 'Loading the job…' : !rows.length ? 'This job has no sections yet.' : 'Nothing in focus.';
       empty.hidden = false;
     }
+    if (deck) {
+      // The panels wait, hidden, with their pictures, for the next few sections.
+      for (const p of panels) if (p.pending) { drop(p.pending); p.pending = null; p.url = ''; }
+      showDeck(all);
+      return;
+    }
+    if (deckIds.length) showDeck([]);
     const grid = $('view-focus');
+    shownCount = onPage.length;
     grid.className = 'panels n' + Math.max(1, onPage.length);
     // 1 fills the area, 2 sit side by side, 3 as one tall panel beside two, 4 in a 2 x 2 grid.
     const children = panels.slice(0, onPage.length).map(p => p.root);
@@ -301,6 +435,8 @@ const Viewer = (() => {
       p.message.hidden = true;
       cancelDraft(p);
       if (p.img) { p.stale = true; p.img.classList.add('stale'); transform(p, p.img); }
+      // The name waits with the picture, so a name never sits under another section.
+      p.root.classList.add('waiting');
       drawMarks(p);
     }
     p.name.textContent = Ui.short(id);
@@ -341,15 +477,17 @@ const Viewer = (() => {
   }
   function renderUrl(id, edge) {
     const key = String(byId.get(id)?.render_key ?? '');
-    return `jobs/${job}/render/overlay/${encodeURIComponent(id)}?edge=${edge}&key=${encodeURIComponent(key)}`;
+    const style = simple ? '&style=calm' : '';
+    return `jobs/${job}/render/overlay/${encodeURIComponent(id)}?edge=${edge}&key=${encodeURIComponent(key)}${style}`;
   }
   function request(p) {
     if (!p.id || job === null) return;
-    const edge = neededEdge(p);
+    const edge = simple && !review ? simpleEdge(shownCount) : neededEdge(p);
     if (!edge) return;
     const key = String(byId.get(p.id)?.render_key ?? '');
     // The same state at a size already drawn large enough needs nothing new.
-    if (p.url && key === p.key && edge <= p.edge) return;
+    if (p.url && key === p.key && (simple && !review ? edge === p.edge : edge <= p.edge) && simple === p.calm) return;
+    p.calm = simple;
     p.key = key;
     p.edge = edge;
     const url = renderUrl(p.id, edge);
@@ -364,29 +502,45 @@ const Viewer = (() => {
   // drawing it (503), a short wait and another try.
   function load(p, url) {
     if (p.pending) drop(p.pending);
-    const img = new Image();
+    // A picture fetched ahead of its focus is shown at once.
+    const early = ready.get(url);
+    if (early) ready.delete(url);
+    const img = early || new Image();
     img.alt = 'The section ' + p.id + ' under its current registration, with the atlas borders';
     img.decoding = 'async';
     img.draggable = false;
     p.pending = img;
     p.updating.hidden = !p.img || p.stale;
     if (!p.img) { p.message.textContent = 'Drawing the section…'; p.message.hidden = false; }
-    img.onload = () => {
+    p.message.classList.toggle('drawing', !p.img);
+    img.onload = async () => {
       img.release();
+      if (p.pending !== img) return;
+      // Shown once decoded, so its entrance is seen rather than spent before it paints.
+      await img.decode().catch(() => {});
       if (p.pending !== img) return;
       p.pending = null;
       p.updating.hidden = p.message.hidden = true;
+      p.root.classList.remove('waiting');
       if (p.problem) { p.problem = ''; shareProblem(); }
-      img.className = 'entering';
-      transform(p, img);
+      // The same section drawn again (the agent moved it) morphs from the old picture; a
+      // new section's picture arrives while the old one leaves.
       const old = p.img;
+      const morph = Boolean(old) && !p.stale;
+      img.className = morph ? 'morphing' : 'entering';
+      img.dataset.how = morph ? 'morph' : 'enter';
+      transform(p, img);
       p.stale = false;
       p.img = img;
-      p.box.prepend(img);
+      p.box.append(img);
+      p.box.append(p.marks, p.updating, p.message);
       p.open.disabled = false;
       drawMarks(p);
-      requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('entering')));
-      if (old) setTimeout(() => old.remove(), 200);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        img.classList.remove('entering', 'morphing');
+        if (!morph) old?.classList.add('leaving');
+      }));
+      if (old) setTimeout(() => old.remove(), morph ? 500 : 260);
     };
     img.onerror = async () => {
       if (p.pending !== img) { img.release(); return; }
@@ -402,6 +556,8 @@ const Viewer = (() => {
         return;
       }
       p.updating.hidden = true;
+      p.root.classList.remove('waiting');
+      p.message.classList.remove('drawing');
       p.img?.remove();
       p.img = null; p.stale = false;
       p.open.disabled = true;
@@ -411,6 +567,7 @@ const Viewer = (() => {
       p.message.hidden = false;
       shareProblem();
     };
+    if (early) { img.release = () => {}; img.onload(); return; }
     img.release = Ui.loads.add(() => p.slot / 10, () => { img.src = url; });
   }
   // The same reason on every panel shown (a job whose images moved, say) is said once, over
@@ -473,6 +630,106 @@ const Viewer = (() => {
     const v = p.view;
     img.style.transform = v.s === 1 ? '' : `translate(${v.x}px, ${v.y}px) scale(${v.s})`;
     if (img === p.img) p.marks.style.transform = img.style.transform;
+  }
+
+  // --- the deck: every section in focus as a small picture (Simple) ---------------------------
+  // More sections than a page holds (a call on many, or the finished run) are dealt out as a
+  // grid sized to fill the area; each picture is drawn small and again when its section
+  // changes, the old one kept until the new one has loaded. A click shows the section.
+  function showDeck(ids) {
+    const deck = $('view-deck');
+    deckIds = ids;
+    // A section no longer in the deck keeps its picture for later; its load waiting stops.
+    for (const [id, t] of deckTiles) {
+      if (ids.includes(id)) continue;
+      if (t.release) { t.release(); t.release = null; t.url = t.loaded; }
+    }
+    for (const id of [...deckTiles.keys()].slice(0, Math.max(0, deckTiles.size - DECK_KEPT))) {
+      if (!ids.includes(id)) deckTiles.delete(id);
+    }
+    const nodes = ids.map(deckTile);
+    if (deck.children.length !== nodes.length || nodes.some((n, i) => deck.children[i] !== n)) {
+      // A deck dealt anew: its pictures arrive in reading order, quickly at first, the
+      // later ones together, all within half a second.
+      nodes.forEach((n, i) => n.style.setProperty('--deal', `${Math.round(240 * Math.sqrt(i / Math.max(1, nodes.length)))}ms`));
+      deck.replaceChildren(...nodes);
+      deck.classList.remove('dealing');
+      void deck.offsetWidth;
+      deck.classList.add('dealing');
+    }
+    if (ids.length) layoutDeck();
+  }
+  // The columns that make the pictures largest, at a brain's width to height.
+  // The deck's size for n pictures: the columns that make them largest in the stage (the
+  // views' box less the deck's margins), and the edge they are drawn at.
+  function deckGeometry(n) {
+    const box = $('view-deck').parentElement.getBoundingClientRect();
+    const side = Math.max(32, (box.width - 1240) / 2);
+    const width = box.width - 2 * side, height = box.height - 20;
+    const gap = 10, aspect = 1.35;
+    let best = { cols: 1, width: 0 };
+    for (let cols = 1; cols <= n; cols++) {
+      const lines = Math.ceil(n / cols);
+      const w = Math.min((width - gap * (cols - 1)) / cols, ((height - gap * (lines - 1)) / lines) * aspect);
+      if (w > best.width) best = { cols, width: w };
+    }
+    const tile = Math.max(40, Math.floor(best.width));
+    const edge = Math.min(512, Math.max(128, Math.ceil((tile * Math.min(2, window.devicePixelRatio || 1)) / 128) * 128));
+    return { cols: best.cols, width: tile, edge };
+  }
+  function layoutDeck() {
+    const deck = $('view-deck'), n = deckIds.length;
+    if (!n) return;
+    const g = deckGeometry(n);
+    deck.style.setProperty('--deck-width', `${g.width}px`);
+    deck.style.setProperty('--deck-cols', String(g.cols));
+    // Pictures large enough for a name under them carry it.
+    deck.classList.toggle('named', g.width >= 240);
+    deckIds.forEach((id, i) => deckLoad(deckTiles.get(id), g.edge, i));
+  }
+  function deckTile(id) {
+    let t = deckTiles.get(id);
+    if (t) return t.root;
+    const root = el('button', 'deck-tile');
+    root.type = 'button';
+    root.title = Ui.short(id);
+    root.append(el('span', 'deck-name', Ui.short(id)));
+    root.addEventListener('click', () => pick(id));
+    t = { id, root, img: null, url: '', loaded: '', release: null };
+    deckTiles.set(id, t);
+    return root;
+  }
+  function deckLoad(t, edge, rank) {
+    if (!t) return;
+    const url = renderUrl(t.id, edge);
+    if (url === t.url) return;
+    t.url = url;
+    t.release?.();
+    const early = ready.get(url);
+    if (early) ready.delete(url);
+    const img = early || new Image();
+    img.alt = 'The section ' + t.id;
+    img.decoding = 'async';
+    img.draggable = false;
+    img.onload = async () => {
+      t.release?.(); t.release = null;
+      if (t.url !== url) return;
+      await img.decode().catch(() => {});
+      if (t.url !== url) return;
+      t.loaded = url;
+      const old = t.img;
+      img.className = old ? 'morphing' : 'entering';
+      img.dataset.how = old ? 'morph' : 'enter';
+      t.img = img;
+      t.root.append(img);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        img.classList.remove('entering', 'morphing');
+      }));
+      if (old) setTimeout(() => old.remove(), 500);
+    };
+    img.onerror = () => { t.release?.(); t.release = null; if (t.url === url) t.url = t.loaded; };
+    if (early) { t.release = () => {}; img.onload(); return; }
+    t.release = Ui.loads.add(() => 0.5 + rank / 1000, () => { img.src = url; });
   }
 
   // --- review boxes ---------------------------------------------------------------------------
@@ -727,5 +984,5 @@ const Viewer = (() => {
     });
   }
 
-  return { init, setJob, setHeader, update, pick, toggleFollow, toggleReview, reviewing, setComments, pageBy, showView, shown, setSimple };
+  return { init, setJob, setHeader, update, pick, toggleFollow, toggleReview, reviewing, setComments, pageBy, showView, shown, setSimple, setStatus };
 })();

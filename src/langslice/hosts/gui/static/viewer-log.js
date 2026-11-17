@@ -35,6 +35,7 @@ const AgentLog = (() => {
   let spoken = null;          // the timer that ends the figure's talking
   let following = true;       // the journal keeps its end in view
   let latest = null;          // the newest of the agent's own entries
+  let shownDoing = '';        // the doing line as last shown
 
   function init() {
     const scroll = $('log-scroll');
@@ -72,6 +73,7 @@ const AgentLog = (() => {
     words = false; activity = false; tail = null;
     lastCall = null; started = null; latest = null; following = true;
     $('now-words').textContent = '';
+    shownDoing = '';
     $('log-items').replaceChildren();
     $('log-jump').hidden = true;
     $('log-empty').hidden = true;
@@ -88,14 +90,31 @@ const AgentLog = (() => {
   function renderDoing() {
     const running = [...calls.values()].filter(c => c.root.classList.contains('running')).pop();
     const last = running || lastCall;
-    const what = last ? last.title + sectionWords(last.sections) : '';
-    let text;
-    if (running) text = 'Now: ' + what;
-    else if (status.word === 'Running' && last) text = 'Last step: ' + what;
-    else text = status.sentence.replace(/\s*Last: .*$/, '') || (last ? 'Last step: ' + what : '');
-    $('sentence').textContent = text;
-    $('sentence').title = status.sentence;
+    const plain = status.sentence.replace(/\s*Last: .*$/, '');
+    const line = $('sentence');
+    // A call: what it does in plain words, on which sections, and the tool's own name.
+    const lead = running ? 'Now' : last && (status.word === 'Running' || !plain) ? 'Last step' : '';
+    if (lead) {
+      line.replaceChildren(
+        el('span', 'doing-word', lead + ':'), document.createTextNode(' '),
+        el('span', 'doing-what', last.title), el('span', 'doing-on', sectionWords(last.sections)),
+        el('span', 'doing-tool', last.name));
+    } else line.textContent = plain;
+    line.classList.toggle('running', Boolean(running));
+    line.title = status.sentence;
+    $('statusline').classList.toggle('working', Boolean(running));
+    // A new call: the line is swapped in, not just rewritten.
+    const said = line.textContent;
+    if (said !== shownDoing) {
+      shownDoing = said;
+      line.classList.remove('swap');
+      void line.offsetWidth;
+      line.classList.add('swap');
+    }
     $('statusline').classList.toggle('wordless', !$('now-words').textContent);
+    // Before the agent's first words, the bubble says what the window is waiting for.
+    $('now-words').parentElement.dataset.waiting = status.word === 'Submitted' ? 'The run is finished.'
+      : lastCall ? 'The agent is at work; its words will show here.' : 'Waiting for the agent to begin…';
   }
   const sectionWords = ids => (!ids?.length ? '' : ids.length === 1 ? ', on ' + Ui.short(ids[0]) : `, on ${ids.length} sections`);
   // Minutes into the run, from the agent session's first record.
@@ -160,26 +179,43 @@ const AgentLog = (() => {
     latest?.classList.remove('latest');
     latest = root;
     root.classList.add('latest');
-    narrate(body);
+    narrate(body, item.kind);
   }
   // The narration band says the agent's latest words: the entry's first paragraph (the
   // whole entry on hover, and in the journal).
   // The words come in one after another, as said, and the agent's figure talks meanwhile.
-  function narrate(body) {
+  // The words come in one after another, as said, and the agent's figure talks meanwhile.
+  // The words shown leave first, quickly; a summary of the agent's reasoning is marked as
+  // its thinking, a message as what it says.
+  let leaving = null;
+  function narrate(body, kind = 'agent') {
     const now = $('now-words');
     const text = body.firstElementChild?.textContent || '';
-    now.replaceChildren();
-    text.split(/(\s+)/).forEach((part, i) => {
-      if (!part.trim()) { now.append(document.createTextNode(part)); return; }
-      const word = el('span', 'word-in', part);
-      word.style.animationDelay = `${Math.min(i * 22, 2600)}ms`;
-      now.append(word);
-    });
-    now.title = body.textContent || '';
-    const band = $('statusline');
-    band.classList.add('speaking');
-    clearTimeout(spoken);
-    spoken = setTimeout(() => band.classList.remove('speaking'), Math.min(4200, 1200 + text.length * 14));
+    clearTimeout(leaving);
+    const say = () => {
+      now.classList.remove('leaving');
+      now.replaceChildren();
+      let at = 0;
+      text.split(/(\s+)/).forEach(part => {
+        if (!part.trim()) { now.append(document.createTextNode(part)); return; }
+        const word = el('span', 'word-in', part);
+        word.style.animationDelay = `${Math.round(at)}ms`;
+        // A word's delay follows its length, as speech does, and the pace quickens a
+        // little as the sentence goes on so a long one is never waited for.
+        at += Math.min(70, 18 + part.length * 4) * Math.max(0.45, 1 - at / 3200);
+        now.append(word);
+      });
+      now.title = body.textContent || '';
+      $('statusline').classList.toggle('thinking', kind === 'reasoning');
+      Ui.thinking?.(kind === 'reasoning');
+      const band = $('statusline');
+      band.classList.add('speaking');
+      clearTimeout(spoken);
+      spoken = setTimeout(() => band.classList.remove('speaking'), Math.min(4200, 600 + at));
+    };
+    if (!now.textContent) { say(); return; }
+    now.classList.add('leaving');
+    leaving = setTimeout(say, 90);
   }
   function inline(parent, text) {
     for (const part of text.split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {

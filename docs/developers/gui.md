@@ -42,12 +42,25 @@ The agent viewer has two views, chosen by **Simple | Extended** at the
 viewer's own top right corner, under the top bar (or `v`); the window remembers the choice.
 
 **Simple**, the view it starts in, shows three things: the agent speaking,
-the sections it is working on, and where they sit in the brain. The agent's
-latest words are in a speech bubble beside the LangSlice mark and a small
-figure for the agent's model, named under it; the words come in one after
-another and the figure talks while they do. Under the bubble is the tool
-running now, in plain words. The sections are shown two at a time, with
-their name and position only.
+the sections it is working on, and where they sit from front to back. The
+agent's latest words are in a speech bubble of a fixed height beside the
+LangSlice mark and a small figure for the agent's model, with the model's
+name and its state (Working, Thinking, Done) under them; a summary of the
+agent's reasoning is its thinking, a message what it says. The words come
+in one after another; the figure walks while a tool runs, looks up while it
+thinks and talks while its words come in. Under the bubble is the call
+running now, in plain words. Up to three sections are shown large with
+their name and position; more are dealt out as a grid of small pictures,
+and the finished run shows every section. These pictures are drawn quiet
+(`calm.py`): the main stain alone (a channel named for DAPI, Hoechst or
+Nissl, else an RGB file's blue), the tissue cut out of the scanner's tile
+floor and the atlas borders a soft light layer. A new focus is shown once
+its pictures are ready (at most 4 s), and the stage that was fades over
+the new one. Under the pictures, a front-to-back line holds a dot per
+section: dim in stack order until placed, then at its position; a dot
+glides when the agent moves its section (one moved alone leaves a fading
+mark, a reshuffle of many moves front to back as a wave). Hovering a dot
+names its section; clicking shows it.
 
 **Extended** answers three questions, top to bottom: what is the agent
 doing, what does the registration look like, and how did it get here. It
@@ -162,14 +175,26 @@ comments, to their own file, and the Export menu's files.
 another program, under the job's `exports/` folder:
 
 - **ABBA project (.abba)**: `exports/<image folder>.abba`, which ABBA 0.25
-  opens with **File ‣ Load State** on its Allen CCFv3 atlas, started coronal.
-  Each section opens from its own image file at its position and the stack's
-  cutting angles, with its in-plane placement as an affine registration and
-  its warp, when it has one, as a BigWarp landmark registration you can edit
-  with **Edit last registration**. A warp takes up to a minute per section to
-  convert; several convert at once. `exports/abba_export.json` lists the
-  sections left out and why, and how far each warp's landmarks are from
-  LangSlice's deformation.
+  opens with **File ‣ Load State** on its Allen CCFv3 atlas, started
+  coronal. Each section opens from its own image file at its position and
+  the stack's cutting angles, with its in-plane placement as an affine
+  registration and its warp, when it has one, as a BigWarp landmark
+  registration of up to 1,089 landmarks, about 2.5 µm from LangSlice's warp
+  at the median: for viewing and analysis, too dense to edit by hand. Each
+  warp takes 1 to 15 s to convert, one per processor core at once.
+  `exports/abba_export.json` lists the sections left out and why, the
+  landmark count, and how far each warp's landmarks are from LangSlice's
+  deformation; the finished note gives the median.
+- **ABBA project, editable (.abba)**: the same project with each warp as
+  100 landmarks, which you can move in BigWarp (ABBA's own splines hold
+  about 30 points: a grid of 6 to 14 control points across, those on the
+  tissue), about 45 µm from LangSlice's warp at the median.
+- **ABBA project, linear only (.abba)**: the same project without the warp
+  steps, for placing your own control points in ABBA. A warp cannot be
+  written in so few: on 331CTX the warps move tissue about 95 µm at the
+  median, and 100 landmarks miss them by about 45 µm, 50 by 83 µm, 16 to
+  36 by 120 to 140 µm (worse than no warp). The menu's last row writes the
+  warps with a count of your own from 100 to 1,089 (400: about 9 µm).
 - **QuickNII (.json)** and **VisuAlign (.json)**: `exports/quicknii.json`
   and `exports/visualign.json` with the section images they name, the files
   `submit` writes (both are written together).
@@ -317,6 +342,11 @@ The choices are saved in `~/.langslice/settings.json`
 `off` for none.
 
 ## How it works
+
+The page is built from `src/langslice/hosts/gui/web/` (React, TypeScript,
+Motion) by `npx vite build` into `static/index.html`, `ui.js` and `ui.css`,
+which are committed, so installing LangSlice needs no Node. The previous page
+is still served at `classic.html`.
 
 The window is a page served by `langslice gui` on `127.0.0.1` under a random
 address, reachable only from this computer. The agent viewer watches the job folder's files

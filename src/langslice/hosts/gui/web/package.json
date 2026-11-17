@@ -1,0 +1,24 @@
+{
+  "name": "langslice-window",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The LangSlice window's page, built into ../static (ui.html, ui.js, ui.css).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "motion": "14.14.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}

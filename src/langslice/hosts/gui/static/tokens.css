@@ -92,7 +92,7 @@
   --size-md: 13.5px;        /* the window's body text */
   --size-lg: 15px;
   --size-xl: 17px;
-  --size-voice-lg: 27px;    /* the same in the Simple view's speech bubble */
+  --size-voice-lg: 23px;    /* the same in the Simple view's speech bubble */
   --size-voice: 21px;       /* the agent's latest words, in the narration */
   --weight-strong: 600;
   --leading: 1.5;
@@ -111,6 +111,17 @@
   --rule: 2px;             /* the left edge of a note or a tool row, a tab's underline */
   --bar-height: 44px;
   --footer-height: 26px;
+
+  /* Motion. Strong curves (the built-in ones are too weak): ease-out for what enters or
+     leaves, ease-in-out for what moves on screen. The viewer is watched rather than
+     operated, so a scene change may take longer than a control's feedback. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --dur-press: 140ms;       /* a control's feedback */
+  --dur-quick: 200ms;       /* a line of text swapped, something leaving */
+  --dur-enter: 420ms;       /* a picture or the agent's words arriving */
+  --dur-morph: 480ms;       /* a section's picture changing as the agent registers it */
+  --dur-glide: 820ms;       /* a section's dot moving along the front-to-back line */
 }
 
 /* The light look (`<html data-theme="light">`, the Light | Dark button): paper grounds
@@ -131,7 +142,7 @@
   --violet: #62589f;
   --pink: #bd3f5a;
   --green: #2b8457;
-  --stage: #0e0e0f;
+  --stage: #121213;
   --stage-text: #9a9a9e;
   --stage-line: #4a4a50;
   --stage-focus: #a4addf;
