@@ -34,6 +34,7 @@ from scipy import ndimage as ndi
 from langslice.core.atlas.brain_size import brain_scale
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.sides import split_side
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.core.fits.deformable.engines import (
     FIT_THREADS,
     INVERSE_ITERATIONS,
@@ -646,7 +647,7 @@ def run_or_fail(
     """
     try:
         return run_prepared(prepared)
-    except Exception as exc:  # noqa: BLE001
+    except ENGINE_FAILURES as exc:
         failure = f"{type(exc).__name__}: {exc}"
         return CandidateFailure(_engine_args(prepared)[1], failure)
 
@@ -681,7 +682,7 @@ def fit_prepared(
         for item, future in zip(prepared, futures, strict=True):
             try:
                 results.append(finish_fit(item, future.result()))
-            except Exception as exc:  # noqa: BLE001
+            except ENGINE_FAILURES as exc:
                 results.append(CandidateFailure(_engine_args(item)[1],
                                                 f"{type(exc).__name__}: {exc}"))
     return results

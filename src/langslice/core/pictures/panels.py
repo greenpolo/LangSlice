@@ -16,6 +16,7 @@ from langslice.core.atlas.borders import (
 )
 from langslice.core.atlas.images import TEMPLATE
 from langslice.core.atlas.load import get_reference_slice
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.pictures.canvas import (
     REGION_CONTEXT_ALPHA,
     _draw_polys,
@@ -214,7 +215,7 @@ def framed_atlas(
         picture = picture.resize(native, Image.Resampling.BILINEAR)
     try:
         mask = atlas_mask(ctx, state, position_mm, picture.size, angles=(pitch, yaw)) > 0
-    except Exception as exc:
+    except IMAGE_FAILURES as exc:
         logger.warning("atlas at %.3f mm: framed by its labels, no root mask (%s)",
                        position_mm, exc)
         mask = labels > 0

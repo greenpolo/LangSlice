@@ -139,11 +139,12 @@ def export_maps(
         state = copy.deepcopy(job.state)
     records = state.in_order()
     if ids:
-        unknown = [str(ref) for ref in ids if state.resolve(ref) is None]
+        named = {str(ref): state.resolve(ref) for ref in ids}
+        unknown = [ref for ref, record in named.items() if record is None]
         if unknown:
             raise unknown_sections(state, unknown)
-        wanted = {state.resolve(ref).id for ref in ids}  # type: ignore[union-attr]
-        targets = [record for record in records if record.id in wanted]
+        chosen = {record.id for record in named.values() if record is not None}
+        targets = [record for record in records if record.id in chosen]
     else:
         targets = records
     layout = job.layout

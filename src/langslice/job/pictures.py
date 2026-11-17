@@ -426,7 +426,7 @@ class ViewStore:
             return None
         try:
             found = self.registration_source(tuple(note.sections))
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("Could not number the registrations of a picture", exc_info=True)
             return None
         return dict(found) or None

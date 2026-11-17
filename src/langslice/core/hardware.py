@@ -134,7 +134,7 @@ def _first_gpu() -> tuple[str | None, float]:
             return None, 0.0
         name = torch.cuda.get_device_name(0)
         _free, total = torch.cuda.mem_get_info(0)
-    except Exception:  # noqa: BLE001
+    except (AssertionError, ImportError, OSError, RuntimeError):
         return None, 0.0
     return name, total / GIB
 

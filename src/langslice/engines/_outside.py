@@ -27,3 +27,17 @@ def untyped(module: str, name: str) -> object:
     """
     members: dict[str, object] = vars(importlib.import_module(module))
     return members[name]
+
+
+ENGINE_FAILURES: tuple[type[Exception], ...] = (
+    ArithmeticError,
+    AssertionError,
+    AttributeError,
+    ImportError,
+    LookupError,
+    MemoryError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)

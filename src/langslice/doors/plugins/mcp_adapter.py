@@ -58,7 +58,7 @@ import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from PIL import Image
@@ -73,6 +73,9 @@ from langslice.core.plugins import (
 )
 from langslice.core.refusal import RefusalCode
 
+if TYPE_CHECKING:
+    from mcp.types import CallToolResult
+
 logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_S = 60.0
@@ -84,6 +87,24 @@ _UNSAFE = re.compile(r"[^A-Za-z0-9_]")
 
 
 
+def _hand_over(
+    call: asyncio.Future[CallToolResult],
+    future: concurrent.futures.Future[CallToolResult],
+) -> None:
+    """Give *future* what the finished *call* ended with.
+
+    That is its answer, its failure or its cancellation.
+    """
+    if call.cancelled():
+        future.set_exception(asyncio.CancelledError())
+        return
+    failure = call.exception()
+    if failure is not None:
+        future.set_exception(failure)
+        return
+    future.set_result(call.result())
+
+
 class Connection:
     """One MCP server session kept open on its own thread and event loop
     (the client's transport must be opened and closed by one task)."""
@@ -92,12 +113,21 @@ class Connection:
         self.options = dict(options)
         self.tools: list[Any] = []
         self._loop = asyncio.new_event_loop()
-        self._queue: asyncio.Queue[Any] | None = None
+        self._queue: asyncio.Queue[
+            tuple[
+                str,
+                dict[str, object],
+                float,
+                concurrent.futures.Future[CallToolResult],
+            ]
+            | None
+        ] | None = None
         self._ready: concurrent.futures.Future[None] = concurrent.futures.Future()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True,
                                         name=f"mcp-{options.get('server', 'server')}")
         self._thread.start()
         self._done = asyncio.run_coroutine_threadsafe(self._main(), self._loop)
+        self._done.add_done_callback(self._ended)
         try:
             self._ready.result(timeout=CONNECT_TIMEOUT_S)
         except BaseException:
@@ -118,6 +148,23 @@ class Connection:
             command=command[0], args=command[1:],
             env={str(k): str(v) for k, v in (options.get("env") or {}).items()} or None,
             cwd=options.get("cwd")))
+
+    def _ended(self, done: concurrent.futures.Future[None]) -> None:
+        """Hand the session's failure to the caller waiting for it to open.
+
+        A session that had opened has its failure logged.
+        """
+        if done.cancelled():
+            failure: BaseException | None = concurrent.futures.CancelledError()
+        else:
+            failure = done.exception()
+        if failure is None:
+            return
+        if not self._ready.done():
+            self._ready.set_exception(failure)
+        else:
+            logger.warning("MCP server %s ended: %s",
+                           self.options.get("server"), failure)
 
     async def _main(self) -> None:
         from mcp import ClientSession
@@ -140,16 +187,10 @@ class Connection:
                         if item is None:
                             break
                         name, arguments, timeout, future = item
-                        try:
-                            future.set_result(await asyncio.wait_for(
-                                session.call_tool(name, arguments), timeout))
-                        except BaseException as exc:  # noqa: BLE001
-                            future.set_exception(exc)
-        except BaseException as exc:  # noqa: BLE001
-            if not self._ready.done():
-                self._ready.set_exception(exc)
-            else:
-                logger.warning("MCP server %s ended: %s", self.options.get("server"), exc)
+                        call = asyncio.ensure_future(asyncio.wait_for(
+                            session.call_tool(name, arguments), timeout))
+                        await asyncio.wait([call])
+                        _hand_over(call, future)
         finally:
             self._queue = None
 
@@ -174,10 +215,7 @@ class Connection:
         queue = self._queue
         if queue is not None:
             self._loop.call_soon_threadsafe(queue.put_nowait, None)
-        try:
-            self._done.result(timeout=10)
-        except BaseException:  # noqa: BLE001
-            pass
+        concurrent.futures.wait([self._done], timeout=10)
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout=5)
 
@@ -362,7 +400,7 @@ def _answer(result: Any) -> tuple[str, Any, list[Image.Image]]:
         elif kind == "image":
             try:
                 images.append(Image.open(io.BytesIO(base64.b64decode(block.data))).copy())
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning("an MCP image block could not be decoded", exc_info=True)
     text = "\n".join(texts)
     data = result.structuredContent
@@ -502,7 +540,7 @@ def tools(config: Mapping[str, Any] | None = None) -> list[ToolSpec]:
     for server in _servers(config):
         try:
             held = connection(server)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise PluginError(f"MCP server {server['server']} could not be started: "
                               f"{type(exc).__name__}: {exc}") from exc
         by_name = {tool.name: tool for tool in held.tools}

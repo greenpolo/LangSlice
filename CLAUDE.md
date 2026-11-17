@@ -114,7 +114,9 @@ and `environment.yml` hold the source installation.
   a constant is and the docstring says why; no `#` line, no end-of-line
   note, no `#:` line. A `# noqa`, `# type: ignore`, `# pyright: ignore` or
   `# pragma` is never added: the code is changed until the tool has nothing
-  to report, and a handler names the exceptions it expects. The tests carry
+  to report, and a handler names the exceptions it expects
+  (`core/failures.py` lists what image work and a fit engine raise; anything
+  else reaches the one guard around a tool call, `tools/pipeline.py`). The tests carry
   no comments either (`tests/test_test_comments.py`). A library that
   publishes no types is described once: wholly in a stub under `typings/`
   (`typings/itk/`), or name by name through `core/outside.py` (`untyped`,

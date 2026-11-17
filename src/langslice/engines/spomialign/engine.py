@@ -32,7 +32,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from langslice.engines._outside import untyped
+from langslice.engines._outside import ENGINE_FAILURES, untyped
 from langslice.engines.spomialign.matching import (
     GPU_DEVICE,
     H,
@@ -197,7 +197,7 @@ def _fit_one(
     )
     try:
         answer, retries = _retried(device, fit)
-    except Exception as error:  # noqa: BLE001
+    except ENGINE_FAILURES as error:
         return EngineAnswer(error=f"{type(error).__name__}: {error}")
     return dataclasses.replace(answer, oom_retries=retries)
 

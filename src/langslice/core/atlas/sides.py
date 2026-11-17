@@ -108,7 +108,9 @@ def ml_halves(
                       "region cannot be limited to one side.")
     context = atlas_space_context(atlas)
     axis = context.ml_axis_index
-    coords = plane_index_coordinates(atlas, position_mm, plane, pitch_deg, yaw_deg)  # type: ignore[arg-type]
+    coords = plane_index_coordinates(
+        atlas, position_mm, plane, pitch_deg, yaw_deg
+    )
     ml = np.asarray(coords[axis], dtype=np.float64)
     if ml.shape[0] < 2 or ml.shape[1] < 2:
         raise Refused(RefusalCode.NO_SIDES,

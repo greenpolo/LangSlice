@@ -283,7 +283,8 @@ def placement_from_pixel_map(
         _mirrored, _turn, rotation, flip = min(scored)
         chosen = (rotation, flip)
     placed, render_size, _geometry = candidate(*chosen)
-    params = tuple(float(v) for v in normalized_affine(placed[:2], render_size))
+    a, b, tx, c, d, ty = normalized_affine(placed[:2], render_size)
+    params = (a, b, tx, c, d, ty)
 
     atlas_to_render, _ = linear_placement_matrix(render_size, render_um, atlas, position,
                                                  plane, pitch, yaw, params)
@@ -294,7 +295,7 @@ def placement_from_pixel_map(
     return RecoveredPlacement(
         position_mm=float(position), pitch_deg=float(pitch), yaw_deg=float(yaw),
         rotation_deg=int(chosen[0]), flip=bool(chosen[1]),
-        params=params,  # type: ignore[arg-type]
+        params=params,
         file_um_per_px=float(file_um_per_px), render_um_per_px=render_um,
         out_of_plane_um=out_of_plane, in_plane_error_px=in_plane_error * native_px_in_file,
         in_plane=decompose_affine(list(params), render_size),

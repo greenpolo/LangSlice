@@ -18,6 +18,7 @@ from langslice.core.atlas.images import (
     BORROWED_NISSL,
     NISSL,
 )
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.fits.deformation import engine_available
 from langslice.core.pictures.options import BORDERS
 from langslice.core.pictures.sizes import MIN_RESOLUTION
@@ -416,5 +417,5 @@ def section_channels(workspace: Workspace, state: Stack) -> Channels | None:
 def _channel_names(workspace: Workspace, section_id: str) -> list[str] | None:
     try:
         return list(workspace.section_channels(section_id)[0])
-    except Exception:  # noqa: BLE001
+    except IMAGE_FAILURES:
         return None

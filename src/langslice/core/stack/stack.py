@@ -21,7 +21,13 @@ from typing import Any
 
 from langslice.core.jsonable import JsonObject, empty_object
 from langslice.core.space import Plane
-from langslice.core.stack.section import FLAT, Angles, MixedAngles, Section
+from langslice.core.stack.section import (
+    FLAT,
+    Angles,
+    MixedAngles,
+    Placed,
+    Section,
+)
 
 
 def plane_angles(state: Stack, angles: Angles | None) -> Angles:
@@ -93,6 +99,20 @@ class Stack:
         list of Section
         """
         return sorted(self.slices, key=lambda section: section.index_corrected)
+
+    def placed(self) -> list[Placed]:
+        """Return the sections that have a position, in corrected order.
+
+        Returns
+        -------
+        list of Placed
+            Each with its position as a number.
+        """
+        return [
+            Placed(section, float(section.position_mm))
+            for section in self.in_order()
+            if section.position_mm is not None
+        ]
 
     def by_id(self, section_id: str) -> Section | None:
         """Return the section with filename *section_id*.
@@ -247,12 +267,10 @@ def normalize_to_atlas_order(state: Stack) -> bool:
     the new order (``n - i``). Returns True when the stack was reversed.
     """
     ordered = state.in_order()
-    placed = [s for s in ordered if s.position_mm is not None]
+    placed = state.placed()
     if len(placed) < 2:
         return False
-    first = float(placed[0].position_mm)  # type: ignore[arg-type]
-    last = float(placed[-1].position_mm)  # type: ignore[arg-type]
-    if last >= first:
+    if placed[-1].position_mm >= placed[0].position_mm:
         return False
     n = len(ordered)
     for section in ordered:

@@ -394,7 +394,7 @@ class ContextReads:
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
-            file_size=tuple(render_sizes(workspace, record.id).file_size),  # type: ignore[arg-type]
+            file_size=render_sizes(workspace, record.id).file_size,
             rotation_deg=int(record.rotation_deg), flip=bool(record.flip))
 
     def layers(self, section: object) -> list[LayerRef]:

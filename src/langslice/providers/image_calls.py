@@ -167,7 +167,7 @@ def _generate_google_segmentation(request: BorderTraceRequest) -> GeneratedSegme
     )
     try:
         image = _extract_last_inline_image(response)
-    except Exception:  # noqa: BLE001
+    except RuntimeError:
         response = client.models.generate_content(
             model=model, contents=contents, config=config
         )

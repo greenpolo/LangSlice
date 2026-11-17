@@ -32,6 +32,22 @@ class MixedAngles(ValueError):
     """
 
 
+@dataclass(frozen=True)
+class Placed:
+    """Hold a section together with the position it has.
+
+    Parameters
+    ----------
+    section
+        The section that has a position.
+    position_mm
+        Its atlas position in millimetres.
+    """
+
+    section: Section
+    position_mm: float
+
+
 @dataclass
 class Section:
     """Hold everything the run knows or proposes about one section image.
@@ -103,6 +119,23 @@ class Section:
     images: dict[str, ImageRef] = field(default_factory=dict[str, ImageRef])
     caveats: list[str] = field(default_factory=list[str])
     angles: Angles = FLAT
+
+    def held_position(self) -> float:
+        """Return the section's position, which the caller needs it to have.
+
+        Returns
+        -------
+        float
+            Its atlas position in millimetres.
+
+        Raises
+        ------
+        ValueError
+            When the section has no position yet.
+        """
+        if self.position_mm is None:
+            raise ValueError(f"{self.id} has no position")
+        return float(self.position_mm)
 
     @property
     def damaged(self) -> bool:

@@ -37,6 +37,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.sections.images import Look
 from langslice.core.sections.reading import IntensityRange, read_pages
 from langslice.core.stack.section import Section
@@ -135,7 +136,7 @@ def read_region(path: str | Path, box: tuple[int, int, int, int], step: int = 1)
     if Path(path).suffix.lower() in (".tif", ".tiff"):
         try:
             found = _read_tiff_region(path, box, step)
-        except Exception as exc:  # noqa: BLE001
+        except IMAGE_FAILURES as exc:
             logger.debug("windowed read of %s failed (%s); decoding it whole", path, exc)
             found = None
         if found is not None:

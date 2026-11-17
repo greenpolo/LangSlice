@@ -53,15 +53,15 @@ def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
     interval = float(state.interval_mm or 0.0)
     if interval <= 0:
         return None
-    placed = [s for s in state.in_order() if s.position_mm is not None]
+    placed = state.placed()
     tolerance = interval * STRICT_INTERVAL_TOLERANCE
     failures: list[dict[str, Any]] = []
     for before, after in zip(placed, placed[1:], strict=False):
-        spacing = abs(float(after.position_mm) - float(before.position_mm))  # type: ignore[arg-type]
+        spacing = abs(after.position_mm - before.position_mm)
         if abs(spacing - interval) > tolerance:
             failures.append(
                 {
-                    "between": [before.id, after.id],
+                    "between": [before.section.id, after.section.id],
                     "spacing_mm": round(spacing, 3),
                 }
             )

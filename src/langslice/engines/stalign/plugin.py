@@ -39,7 +39,7 @@ import json
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import cv2
 import numpy as np
@@ -48,6 +48,7 @@ from PIL import Image, ImageDraw
 from langslice.engines import _blocks
 from langslice.engines.stalign import engine
 from langslice.plugin_api import (
+    FitFrame,
     RefusalCode,
     ToolContext,
     ToolError,
@@ -356,27 +357,43 @@ def _sorting_params(sorting: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
-            params: dict[str, Any]) -> dict[str, Any]:
+@dataclass(frozen=True)
+class _How:
+    """Where STalign runs: the plugin's ``device`` and ``threads`` options."""
+
+    device: str
+    threads: int
+
+    @classmethod
+    def chosen(cls, options: dict[str, str | int]) -> _How:
+        """Read the plugin's *options* (:data:`DEFAULTS` under the job's)."""
+        return cls(str(options["device"]), int(options["threads"]))
+
+
+def _engine(
+    how: _How,
+    folder: Path,
+    arrays: dict[str, Any],
+    params: dict[str, Any],
+) -> dict[str, Any]:
     """Run STalign on *arrays* in this process (``engine.run``).
 
     *folder* holds the call's files.
     """
     folder.mkdir(parents=True, exist_ok=True)
-    threads = int(config["threads"])  # pyright: ignore[reportAny]
-    how = {"device": config["device"], "threads": threads}
+    where = {"device": how.device, "threads": how.threads}
     try:
-        return engine.run(arrays, {**params, **how})
-    except Exception as exc:  # noqa: BLE001
+        return engine.run(arrays, {**params, **where})
+    except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
         raise ToolError(RefusalCode.FIT_FAILED,
                         f"STalign failed: {failure}") from exc
 
 
 def _frame(ctx: ToolContext, name: str, atlas_image: str, section_image: str,
-           ) -> tuple[Any, np.ndarray, str]:
+           ) -> tuple[FitFrame, np.ndarray, str]:
     """The section's fit frame, the atlas image asked for on it and the name that resolved to."""
-    frame = _blocks.frame_for(ctx, name, atlas_image, section_image)
+    frame: FitFrame = _blocks.frame_for(ctx, name, atlas_image, section_image)
     plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
     return frame, plane_image, resolved
 
@@ -421,7 +438,7 @@ def _loss_picture(energy: np.ndarray, path: Path) -> None:
 
 
 
-def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], section_image: str,
+def _lddmm(ctx: ToolContext, chosen: _How, sections: list[str], section_image: str,
            atlas_image: str, mask: str, kernel_um: float, fit: str,
            displacement_um: float, sorting: dict[str, Any], iterations: int,
            view: bool) -> ToolResult:
@@ -441,7 +458,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                 "kernel_um": kernel_um, "fit": fit,
                 "displacement_um": displacement_um,
                 "sorting": sorting or {"method": "classic"}, "iterations": iterations,
-                "device": config["device"]}
+                "device": chosen.device}
     folder = _blocks.call_folder(ctx, "lddmm")
     rows = []
     for name in sections:
@@ -476,7 +493,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                  src: dict = src, arrays: dict = arrays, here: Path = here, start: str = start,
                  digest: str = digest, gw: int = gw, gh: int = gh, resolved: str = resolved,
                  inputs: dict = inputs) -> ToolResult:
-            out = _engine(config, here, arrays, params)
+            out = _engine(chosen, here, arrays, params)
             native = _native_map(out["source_um"], src, gw, gh, tgt["s_um"])
             what = ("affine and bend" if affine else "bend") + f" on {start}"
             note = f"STalign {what}, atlas {resolved}"
@@ -521,20 +538,14 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                                                           note=note)
                     done = lctx.set_transforms([proposal.row()], expect={sid: digest})
                     if sid not in done.written:
-                        row = done.rows[0]
-                        raise ToolError(
-                            row.get("error", RefusalCode.NOT_WRITTEN),  # pyright: ignore[reportAny]
-                            row.get("message", ""))  # pyright: ignore[reportAny]
+                        raise done.refusal(sid)
                 if warp is None:
                     warp = lctx.deformation_from_map(sid, native, note=note, meta=meta,
                                                      weights=weights, **written_as)
                 done = lctx.set_deformations([warp.row()],
                                              expect=None if affine else {sid: digest})
                 if sid not in done.written:
-                    row = done.rows[0]
-                    raise ToolError(
-                        row.get("error", RefusalCode.NOT_WRITTEN),  # pyright: ignore[reportAny]
-                        row.get("message", ""))  # pyright: ignore[reportAny]
+                    raise done.refusal(sid)
             summary = warp.summary
             relative = _blocks.job_path(lctx, here)
             flags = flag_words(summary)
@@ -599,8 +610,7 @@ class _PlaneCall:
     """One ``stalign_plane_search`` call, as every section searches."""
 
     ctx: ToolContext
-    device: str
-    threads: int
+    how: _How
     folder: Path
     atlas_name: str
     section_image: str
@@ -613,7 +623,7 @@ def _search_section(call: _PlaneCall, name: str) -> ToolResult:
     ctx = call.ctx
     view_of = ctx.section(name)
     sid = view_of.id
-    frame, _plane_image, resolved = _frame(  # pyright: ignore[reportAny]
+    frame, _plane_image, resolved = _frame(
         ctx, sid, call.atlas_image, call.section_image
     )
     inputs = _blocks.inputs_block(
@@ -626,8 +636,8 @@ def _search_section(call: _PlaneCall, name: str) -> ToolResult:
         brightness="slide 0, tissue 1",
     )
     J, tgt = _target(frame)
-    gw, gh = (int(v) for v in tgt["grid"])  # pyright: ignore[reportAny]
-    s_um = float(tgt["s_um"])  # pyright: ignore[reportAny]
+    gw, gh = cast("tuple[int, int]", tgt["grid"])
+    s_um = cast("float", tgt["s_um"])
     B0 = _target_to_atlas(frame, s_um)
     arrays = {
         "mode": np.array("plane"),
@@ -638,14 +648,16 @@ def _search_section(call: _PlaneCall, name: str) -> ToolResult:
         "xJ1": tgt["x1"],
         "A0": np.linalg.inv(B0),
     }
-    how = {"device": call.device, "threads": call.threads}
-    out = _engine(how, call.folder / sid, arrays, PLANE_PARAMS)
+    out = _engine(call.how, call.folder / sid, arrays, PLANE_PARAMS)
     B = np.linalg.inv(np.asarray(out["A"], np.float64))
     middle = [(gh - 1) / 2 * s_um, (gw - 1) / 2 * s_um]
     centre = B @ np.array([0.0, *middle, 1.0])
     normal = np.cross(B[:3, 2], B[:3, 1])
-    plane = ctx.angles_from_plane(normal.tolist(), centre[:3].tolist())  # pyright: ignore[reportAny]
-    prefit: dict[str, Any] = json.loads(str(out["prefit"]))  # pyright: ignore[reportAny]
+    across = cast("list[float]", normal.tolist())
+    through = cast("list[float]", centre[:3].tolist())
+    plane = ctx.angles_from_plane(across, through)
+    prefit_text = cast("str", out["prefit"])
+    prefit = cast("dict[str, object]", json.loads(prefit_text))
     saved = {"found": plane, "prefit": prefit, "device": str(out["device"])}
     (call.folder / sid / "plane.json").write_text(
         json.dumps(saved, indent=1, default=float),
@@ -659,8 +671,8 @@ def _search_section(call: _PlaneCall, name: str) -> ToolResult:
         "yaw_deg": round(plane["yaw_deg"] - yaw0, 2),
         "position_mm": round(plane["position_mm"] - position0, 3),
     }
-    starts: list[list[float]] = prefit.get("starts") or []
-    best: int | None = prefit.get("best")
+    starts = cast("list[list[float]]", prefit.get("starts") or [])
+    best = cast("int | None", prefit.get("best"))
     edge = _at_search_edge(starts, best)
     row = {
         "id": sid,
@@ -712,17 +724,15 @@ def _at_search_edge(starts: list[list[float]], best: int | None) -> bool:
     return tilted or abs(abs(shift) - SEARCH_SHIFT_UM) < 1e-6
 
 
-def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
+def _plane_search(ctx: ToolContext, how: _How, sections: list[str],
                   section_image: str, atlas_image: str, view: bool) -> ToolResult:
     if not sections:
         raise ToolError(RefusalCode.BAD_ARGS, "name one to eight sections")
-    threads = int(config["threads"])  # pyright: ignore[reportAny]
-    device = str(config["device"])  # pyright: ignore[reportAny]
-    call = _PlaneCall(ctx, device, threads,
+    call = _PlaneCall(ctx, how,
                       _blocks.call_folder(ctx, "plane"), ctx.atlas().name,
                       section_image, atlas_image, view)
     done = map_sections(partial(_search_section, call), list(sections),
-                        threads)
+                        how.threads)
     rows = [one.reply for one in done]
     pictures: list[Any] = []
     for one in done:
@@ -734,8 +744,8 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
     summary = {"sections_by_yaw_sign": groups,
                "middle_pitch_deg": round(float(np.median([r["pitch_deg"] for r in ok])), 2)
                if ok else None,
-               "middle_yaw_magnitude_deg": round(float(np.median([abs(r["yaw_deg"])  # pyright: ignore[reportAny]
-                                                                 for r in ok])), 2) if ok else None}
+               "middle_yaw_magnitude_deg": round(float(np.median(np.abs(
+                   [r["yaw_deg"] for r in ok]))), 2) if ok else None}
     return ToolResult({"rows": rows, "stack": summary,
                        "settings": {"section_image": section_image, "atlas_image": atlas_image}},
                       pictures)
@@ -743,7 +753,7 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
 
 
 def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
-    options = {**DEFAULTS, **(config or {})}
+    options = _How.chosen({**DEFAULTS, **(config or {})})
     meta = {"method": "STalign 2.0.0", "paper": "Clifton et al. 2023, Nat Commun",
             "commit": "8a84bf1f", "engine": "langslice.engines.stalign"}
 

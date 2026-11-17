@@ -482,7 +482,7 @@ def _spec_of(folder: str) -> Any:
 
     try:
         return read_spec(find(folder))
-    except Exception:  # noqa: BLE001
+    except (LookupError, OSError, TypeError, ValueError):
         return None
 
 

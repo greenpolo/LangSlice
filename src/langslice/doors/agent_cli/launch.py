@@ -186,7 +186,7 @@ def write_tools(folder: Path, box: Any) -> Path | None:
         content = tools_text(str(folder), list(box.names), box.variant, box.job.spec)
         with path.open("w", encoding="utf-8", newline="\n") as output:
             output.write(content)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logging.getLogger(__name__).warning("Could not write %s", path, exc_info=True)
         return None
     return path

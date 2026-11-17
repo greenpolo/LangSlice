@@ -37,12 +37,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.core.fits.deformable import (
     CandidateFailure,
     DeformableRecord,
@@ -488,7 +489,7 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
     for flag in sorted(record.diagnostics.get("flags", []),
                        key=lambda item: item.get("code") not in SECTION_FLAGS):
         if flag.get("code") == FitFlag.FOLDS:
-            fold = float(flag["fold_fraction"])  # pyright: ignore[reportAny]
+            fold = cast("float", flag["fold_fraction"])
             flags.append({"code": FitFlag.FOLDS, "fold_fraction": round(fold, 5)})
             continue
         if flag.get("code") == FitFlag.DISPLACEMENT_OUTSIZED:
@@ -614,7 +615,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
                 previous=job.previous, section_weights=job.section_weights,
             ))
             waiting.append(job)
-        except Exception as exc:  # noqa: BLE001
+        except ENGINE_FAILURES as exc:
             job.result = CandidateFailure(job.settings, f"{type(exc).__name__}: {exc}")
     if not prepared:
         return

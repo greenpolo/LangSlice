@@ -66,5 +66,5 @@ def record(job: Job, held: list[dict[str, Any]]) -> None:
         job.layout.log_event("plugins", plugins=[
             {"ref": item["ref"], "sources": item.get("sources"),
              "tools": [tool["name"] for tool in item["tools"]]} for item in held])
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("Could not record the plugins' provenance", exc_info=True)

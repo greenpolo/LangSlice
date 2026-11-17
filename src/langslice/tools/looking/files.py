@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
+from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.pictures.look import RENDERER as LOOK_RENDERER
 from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.refusal import RefusalCode, Refused
@@ -293,7 +294,7 @@ def _dimensions(real: Path) -> str:
     try:
         with Image.open(real) as image:
             return f"{image.width} x {image.height} pixels"
-    except Exception:  # noqa: BLE001
+    except IMAGE_FAILURES:
         return "an image"
 
 

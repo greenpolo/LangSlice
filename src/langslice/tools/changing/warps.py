@@ -147,7 +147,7 @@ def fit_record(
         )
         with engine_output(job.engine_log, f"FireANTs fit of {record.id}"):
             outcome = run_prepared(prepared)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise Refused(
             RefusalCode.FIT_FAILED,
             message=f"{record.id}: "
