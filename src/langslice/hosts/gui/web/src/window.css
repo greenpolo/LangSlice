@@ -1,0 +1,197 @@
+/* The window: a calm dark room around the pictures (tokens.css holds every colour, face,
+   size and motion value). The Simple view is three things on one ground: who is speaking
+   and what it says, the sections it works on, and where they sit front to back. */
+
+html, body, #root { height: 100%; }
+body { margin: 0; overflow: hidden; }
+.window { height: 100%; display: flex; flex-direction: column; }
+a { color: inherit; text-decoration: none; }
+
+/* The top bar: the lockup, the tabs, and at the end the job and Settings. */
+.bar {
+  flex-shrink: 0;
+  height: var(--bar-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+.lockup { height: 26px; }
+.tabs { display: flex; gap: var(--space-4); height: 100%; }
+.tab { display: flex; align-items: center; color: var(--muted); font-size: var(--size-md); border-bottom: var(--rule) solid transparent; transition: color var(--dur-quick) ease; }
+@media (hover: hover) and (pointer: fine) { a.tab:hover { color: var(--name); } }
+.tab.active { color: var(--name); border-bottom-color: var(--lavender); }
+.bar-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); height: 100%; }
+.job { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; font-size: var(--size-sm); padding: 3px 6px; }
+.foot { flex-shrink: 0; height: 20px; padding: 0 var(--space-4); color: var(--faint); font-size: var(--size-xs); }
+
+/* Simple. */
+.simple { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.views-switch { position: absolute; top: var(--space-2); right: var(--space-4); z-index: 3; display: flex; font-size: var(--size-xs); }
+.views-switch > * { padding: 3px 9px; border: 1px solid var(--line); color: var(--muted); }
+.views-switch > :first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.views-switch > :last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
+.views-switch .on { color: var(--name); background: var(--selected); }
+@media (hover: hover) and (pointer: fine) { .views-switch a:hover { color: var(--name); background: var(--wash); } }
+
+/* Who is speaking. */
+.speaker {
+  flex-shrink: 0;
+  width: min(1240px, calc(100% - 2 * var(--space-6)));
+  margin: 0 auto;
+  padding: var(--space-5) 0 var(--space-2);
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: var(--space-5);
+}
+.who { display: grid; grid-template-columns: auto auto; justify-content: center; align-content: start; align-items: center; gap: var(--space-3); padding-top: 14px; }
+.mark { width: 52px; height: 52px; }
+.figure { width: 52px; height: 52px; overflow: visible; }
+.figure.clawd { width: 76px; }
+.who-name, .who-state { grid-column: 1 / 3; margin: 0; text-align: center; }
+.who-name { margin-top: var(--space-1); color: var(--name); font-size: var(--size-md); font-weight: var(--weight-strong); }
+.who-state { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: -8px; color: var(--muted); font-size: var(--size-sm); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tract); }
+.dot.Running { background: var(--running); animation: pulse 2.4s ease-in-out infinite; }
+.dot.Submitted { background: var(--submitted); animation: done-dot 900ms var(--ease-out); }
+.dot.Failed { background: var(--failed); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@keyframes done-dot { 30% { scale: 1.8; } }
+
+/* Clawd: walking legs while a tool runs, eyes up while thinking, eyes narrowing in turn
+   while its words come in, a hop when the run is done. */
+.clawd-body { fill: var(--clawd); }
+.clawd .eye { fill: var(--ground); transform-box: fill-box; transform-origin: center; transition: translate var(--dur-quick) var(--ease-out); animation: blink 5.6s infinite; }
+.legs-a, .legs-b { transform-box: fill-box; }
+.working .legs-a { animation: step 480ms steps(1, end) infinite; }
+.working .legs-b { animation: step 480ms steps(1, end) -240ms infinite; }
+.thinking .clawd .eye { translate: 0 -1px; }
+.speaking .clawd .eye { animation: squint 240ms ease-in-out infinite alternate; }
+.done .clawd { animation: hop 480ms cubic-bezier(0.34, 1.4, 0.64, 1) 1; }
+.plain .face { fill: var(--wash); stroke: var(--name); stroke-width: 1.6; }
+.plain .eye { fill: var(--name); transform-box: fill-box; transform-origin: center; animation: blink 5.6s infinite; }
+.working .plain { animation: bob 720ms ease-in-out infinite alternate; }
+@keyframes step { 50% { translate: 0 -1px; } }
+@keyframes blink { 0%, 95%, 100% { scale: 1 1; } 97.5% { scale: 1 0.1; } }
+@keyframes squint { to { scale: 1 0.5; } }
+@keyframes hop { 40% { translate: 0 -8px; } 75% { translate: 0 1px; } }
+@keyframes bob { to { translate: 0 -2px; } }
+
+/* The speech bubble: a fixed height, its tail towards the figure. */
+.said { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.bubble {
+  position: relative;
+  height: calc(3 * 1.4 * var(--size-voice-lg) + 36px);
+  display: flex;
+  align-items: center;
+  padding: 18px 28px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+.bubble::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 40px;
+  width: 14px;
+  height: 14px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.words {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--size-voice-lg);
+  line-height: 1.4;
+  color: var(--name);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  text-wrap: pretty;
+}
+.words.waiting { color: var(--faint); }
+.thinking .words { color: var(--text); }
+.word { display: inline-block; animation: say var(--dur-enter) var(--ease-out) both; }
+@keyframes say { from { opacity: 0; translate: 0 0.25em; filter: blur(2px); } }
+.doing { margin: 0; padding-left: 29px; min-height: 1.5em; font-size: var(--size-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doing-lead { color: var(--text); }
+.doing-what { color: var(--text); }
+.doing.running .doing-lead { color: var(--lavender); }
+.doing.running .doing-what { color: var(--name); }
+.doing.running::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: var(--lavender);
+  vertical-align: 2px;
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+/* The stage: the sections, centred, rows wrapping where the layout chose. */
+.stage { position: relative; flex: 1; min-height: 0; margin: var(--space-2) var(--space-6) 0; }
+.stage-grid { position: absolute; inset: 0; }
+.tile { position: absolute; margin: 0; cursor: default; }
+.tile-picture { position: relative; border-radius: var(--radius); overflow: hidden; }
+.picture { position: absolute; inset: 0; }
+.picture-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tile-name { height: 26px; display: flex; align-items: center; justify-content: center; gap: var(--space-2); color: var(--text); font-size: var(--size-sm); }
+.tile-where { color: var(--muted); font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); }
+
+/* Front to back. */
+.ftb {
+  flex-shrink: 0;
+  width: min(1240px, calc(100% - 2 * var(--space-6)));
+  margin: 0 auto;
+  padding: var(--space-3) 0 var(--space-3);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+}
+.ftb-end { color: var(--muted); font-size: var(--size-sm); }
+.ftb-line { position: relative; height: 22px; }
+.ftb-line::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--tract); }
+.ftb-tick { position: absolute; top: calc(50% + 4px); width: 1px; height: 4px; background: var(--line); }
+.ftb-slot { position: absolute; inset: 0; pointer-events: none; transition: transform var(--dur-glide) var(--ease-in-out); }
+.ftb-line.wave .ftb-slot { transition-delay: calc(var(--x, 0) * 2.4ms); }
+.ftb-dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: var(--muted);
+  pointer-events: auto;
+  cursor: default;
+  transition: scale var(--dur-quick) var(--ease-out), background-color var(--dur-quick) ease;
+}
+.ftb-dot.unplaced { background: var(--tract); scale: 0.75; }
+.ftb-dot.target { background: var(--lavender); scale: 1.3; }
+.ftb-dot.shown { background: var(--lavender); scale: 1.75; box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px var(--lavender); }
+@media (hover: hover) and (pointer: fine) { .ftb-dot:hover { background: var(--name); scale: 1.5; } }
+.ftb-ghost { position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; border: 1px solid var(--lavender); pointer-events: none; animation: ghost 1400ms var(--ease-out) forwards; }
+@keyframes ghost { to { opacity: 0; scale: 0.6; } }
+.ftb-line.done .ftb-dot { animation: sweep 700ms var(--ease-out) calc(var(--x, 0) * 9ms) both; }
+@keyframes sweep { 40% { background: var(--name); scale: 1.6; } }
+.ftb-tip { position: absolute; bottom: calc(100% + 2px); translate: -50% 0; z-index: 5; pointer-events: none; padding: 2px var(--space-2); background: var(--panel); border: 1px solid var(--tract); border-radius: var(--radius-sm); font-size: var(--size-xs); white-space: nowrap; color: var(--muted); }
+.ftb-tip b { color: var(--name); font-weight: var(--weight-strong); }
+.ftb-waiting { grid-column: 1 / 4; justify-self: end; min-height: 1em; color: var(--faint); font-size: var(--size-xs); }
+
+@media (prefers-reduced-motion: reduce) {
+  .word, .working .legs-a, .working .legs-b, .speaking .clawd .eye, .done .clawd, .working .plain,
+  .ftb-line.done .ftb-dot, .ftb-ghost, .dot.Running, .dot.Submitted, .doing.running::before { animation: none; }
+  .word { animation: fade var(--dur-quick) ease both; }
+  .ftb-slot { transition: none; }
+}
+@keyframes fade { from { opacity: 0; } }
