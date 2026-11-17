@@ -2,7 +2,8 @@
 
 The geometry behind the job folder's public files: ``registration.json`` and,
 per section, ``coords.tif``, ``labels.tif`` and ``residual.tif`` (written by
-:mod:`langslice.job.public_files`). One path from the stored parameters to the
+:mod:`langslice.job.exports.public_files`). One path from the stored parameters
+to the
 atlas, the one every picture and fit uses: the six stored numbers are placed by
 :func:`langslice.core.fits.frame.linear_placement_matrix` on the section's
 :data:`~langslice.core.sections.renders.PREVIEW_LONG_EDGE` working frame (the
@@ -134,7 +135,7 @@ class SectionFrame:
     file_um_per_px: float
     calibration_source: str
     position_mm: float
-    plane: str
+    plane: Plane
     pitch_deg: float
     yaw_deg: float
     rotation_deg: int
@@ -327,7 +328,7 @@ def _section_frame(state: Stack, workspace: Workspace, record: Section) -> Secti
     render_size = ((unturned_render[1], unturned_render[0]) if rotation % 180 == 90
                    else unturned_render)
     file_to_render = orient @ pixel_center_map(file_size, unturned_render)
-    plane = cast(Plane, state.plane)
+    plane = state.plane
     position = float(record.position_mm)  # type: ignore[arg-type]
     atlas = workspace.atlas
     atlas_to_render, geometry = linear_placement_matrix(

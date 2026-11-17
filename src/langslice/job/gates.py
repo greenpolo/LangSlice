@@ -90,7 +90,7 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
         return None
     ordered = state.in_order()
     deltas = [
-        abs(float(b.position_mm) - float(a.position_mm))  # type: ignore[arg-type]
+        abs(float(b.position_mm) - float(a.position_mm))
         for a, b in zip(ordered, ordered[1:], strict=False)
         if a.position_mm is not None and b.position_mm is not None
     ]

@@ -121,7 +121,6 @@ def test_comprehension_clauses_flags_two_fors_or_two_ifs() -> None:
 
 
 def test_walrus_in_comprehension_is_flagged() -> None:
-    # the game: dodge the nested comprehension with an assignment
     source = """
     def matches(paths):
         found = [m for path in paths if (m := PATTERN.match(path))]

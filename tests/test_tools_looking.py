@@ -77,25 +77,20 @@ def _numbers(result: dict[str, Any]) -> list[int]:
     return [entry["id"] for entry in result["pictures"]]
 
 
-# --- look -------------------------------------------------------------------------
-
 
 def test_look_numbers_each_picture_and_saves_it_once(tmp_path: Path, atlas):
     state, _, box = _synthetic(tmp_path, atlas, n=5)
     before = stack_to_json(state)
     result = _tool(box, "look")("section")
     assert result["status"] == "ok"
-    # Four pictures at most; the rest is named.
     assert _numbers(result) == [1, 2, 3, 4]
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 4
     assert [entry["caption"].split(" section")[0] for entry in result["pictures"]] == [
         "s0.png", "s1.png", "s2.png", "s3.png"]
     (rest,) = result["not_shown"]
     assert rest["sections"] == ["s4.png"]
-    # Saved by its operation, not again by the door.
     records = box.job.views.records()
     assert [(r.seq, r.tool) for r in records] == [(i, "look") for i in (1, 2, 3, 4)]
-    # A look writes nothing.
     assert stack_to_json(state) == before and box.job.undo_stack == []
 
 
@@ -165,10 +160,10 @@ def test_a_sheet_tiles_the_pictures_and_zoom_reads_a_tile(tmp_path: Path, atlas)
     assert sheet["caption"].startswith("sheet of 4 overlay pictures")
     assert f"picture {tiled[0]['id']}: s0.png overlay" in sheet["caption"]
     (image,) = result[TOOL_MEDIA_PARTS_KEY]
-    assert max(image.size) <= box.max_view_edge + 40  # its caption band below it
+    assert max(image.size) <= box.max_view_edge + 40
     saved = box.job.views.lookup(sheet["id"])
     assert saved is not None and saved.mode == "sheet" and saved.recipe["renderer"] == "sheet"
-    for entry in tiled:  # each tile is a picture of its own
+    for entry in tiled:
         held = box.job.views.lookup(entry["id"])
         assert held is not None and held.mode == "overlay"
     x0, y0, x1, y1 = sheet["tiles"][1]["box"]
@@ -183,8 +178,6 @@ def test_a_sheet_tiles_the_pictures_and_zoom_reads_a_tile(tmp_path: Path, atlas)
     assert region["error"] == "BAD_REGION_PICTURE"
 
 
-# --- zoom -------------------------------------------------------------------------
-
 
 def test_zoom_redraws_the_newest_picture_or_the_one_named(tmp_path: Path, atlas):
     _, _, box = _synthetic(tmp_path, atlas)
@@ -194,13 +187,10 @@ def test_zoom_redraws_the_newest_picture_or_the_one_named(tmp_path: Path, atlas)
     first = zoom([0, 0, 50, 50])
     assert first["status"] == "ok" and first["picture"] == 1 and first["redrawn"] is True
     assert _numbers(first) == [2] and len(first[TOOL_MEDIA_PARTS_KEY]) == 1
-    # 0 is the newest picture that is not itself a zoom.
     assert zoom([0, 0, 50, 50], 0)["picture"] == 1
-    # A zoom can be zoomed by its number.
     assert zoom([0, 0, 20, 20], 2)["picture"] == 2
     assert zoom([0, 0, 50, 50], 99)["error"] == "UNKNOWN_PICTURE"
     assert [r.tool for r in box.job.views.records()] == ["look", "zoom", "zoom", "zoom"]
-    # One region on the latest overlay.
     _tool(box, "look")("overlay", sections=["s0.png"])
     region = zoom(region="STR")
     assert region["status"] == "ok" and region["redrawn"]
@@ -214,8 +204,6 @@ def test_zoom_after_a_change_draws_the_picture_as_it_was(tmp_path: Path, atlas):
     result = _tool(box, "zoom")([0, 0, 60, 60], shown["id"])
     assert result["status"] == "ok" and result["stale"] is True
 
-
-# --- status -------------------------------------------------------------------------------
 
 
 def test_status_is_the_table_and_what_the_run_lets_change(tmp_path: Path, atlas):

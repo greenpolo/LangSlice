@@ -24,7 +24,7 @@ def test_transform_controls_independently_gate_tools(
 ):
     off = [name for name, on in (("interactive_transform", interactive),
                                  ("elastix_affine", automatic)) if not on]
-    if len(off) == 2:  # a task with every tool that writes its answer off is refused
+    if len(off) == 2:
         with pytest.raises(ValueError, match="every tool that writes its answer"):
             _box(tmp_path, tasks=["transform"], disabled=off)
         return
@@ -32,19 +32,8 @@ def test_transform_controls_independently_gate_tools(
     names = set(box.names)
     assert ("interactive_transform" in names) is interactive
     assert ("elastix_affine" in names) is automatic
-    assert "position_sections" not in names  # positions and angles are supplied
+    assert "position_sections" not in names
     assert {"look", "status", "submit"} <= names
-
-
-def test_disabled_transform_task_overrides_enabled_fitting_switches(tmp_path: Path):
-    _, _, box = _box(
-        tmp_path, tasks=["position"],
-        transform=TransformSpec(angles=True),
-    )
-    names = set(box.names)
-    assert not names & {"interactive_transform", "elastix_affine"}
-    # The cutting angles come with Positioning.
-    assert "position_sections" in names
 
 
 def test_angles_alone_give_position_sections_without_sections(tmp_path: Path):

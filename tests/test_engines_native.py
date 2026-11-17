@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import langslice.plugin_api  # noqa: F401 - registers the loader
+import langslice.plugin_api  # noqa: F401
 from langslice.job import plugins
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import (
@@ -57,7 +57,7 @@ def test_enabled_switches_a_tool_on_where_it_fits(tmp_path: Path) -> None:
     mouse = JobSpec(image_folder=folder, tasks=ALL_TASKS,
                     enabled=["deepslice_place", "brainways_ap"])
     assert "deepslice_place" in enabled(mouse)
-    assert "brainways_ap" not in enabled(mouse)  # a rat atlas's tool
+    assert "brainways_ap" not in enabled(mouse)
     assert mouse.off("brainways_ap") and not mouse.off("deepslice_place")
     rat = JobSpec(image_folder=folder, tasks=ALL_TASKS, atlas="whs_sd_rat_39um",
                   enabled=["deepslice_place", "brainways_ap"])
@@ -71,7 +71,6 @@ def test_disabled_takes_an_engine_tool_off_like_any_other(tmp_path: Path) -> Non
     names = enabled(spec)
     assert "spomialign" not in names and "emlddmm_plane" not in names
     assert {"stalign_lddmm", "emlddmm_stack"} <= set(names)
-    # an engine none of whose tools is on is not loaded for the run
     off = JobSpec(image_folder=str(tmp_path), tasks=ALL_TASKS,
                   disabled=["stalign_lddmm", "stalign_plane_search"])
     assert [engine.ref for engine in plugins.engines(off)] == [
@@ -121,7 +120,6 @@ def test_trace_borders_is_switched_on_by_name_or_by_naming_a_model(
         return spec_from_args(init_parser().parse_args(
             ["--tasks", "nonlinear", *flags]), folder)
 
-    # switched on by name: the connection saved on this computer
     monkeypatch.setattr(credentials, "saved_image_provider", lambda: "openai-api")
     spec = init("--enabled", "trace_borders")
     assert spec.nonlinear.provider == "openai-api" and "trace_borders" in enabled(spec)
@@ -145,7 +143,7 @@ def test_the_saved_connection_is_the_chosen_one_then_openai(
     monkeypatch.setattr(user_settings, "read", lambda: {"connection": "gemini-api"})
     assert credentials.saved_image_provider() == "gemini-api"
     monkeypatch.setattr(user_settings, "read", lambda: {"connection": "anthropic-api"})
-    assert credentials.saved_image_provider() == "openai-api"  # no image model of its own
+    assert credentials.saved_image_provider() == "openai-api"
     present.clear()
     assert credentials.saved_image_provider() is None
 

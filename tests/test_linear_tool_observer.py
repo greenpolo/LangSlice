@@ -16,7 +16,7 @@ from langslice.tools.pipeline import ToolCall, run_call
 
 def _box(folder: Path, state: Stack, on_event=None):
     """A toolbox over *state* with no tasks, its workspace a stand-in."""
-    from langslice.job.layout import JobLayout, job_folder_for
+    from langslice.job.folder.layout import JobLayout, job_folder_for
     from langslice.job.settings.spec import JobSpec
 
     folder.mkdir(exist_ok=True)
@@ -60,12 +60,11 @@ def test_execution_events_run_inside_lock_and_name_their_targets(tmp_path):
     assert [event.get("kind", "body") for event in events] == [
         "tool_start", "body", "tool_end", "tool_start", "body", "tool_end",
     ]
-    # A section is named by its filename, whatever the tool does to the order.
     assert events[0]["target_ids"] == events[2]["target_ids"] == ["a"]
     assert events[3]["target_ids"] == events[5]["target_ids"] == ["a"]
     assert events[0]["execution_id"] == events[2]["execution_id"]
     assert events[0]["execution_id"] != events[3]["execution_id"]
-    assert events[2]["views"] == []  # no picture was saved
+    assert events[2]["views"] == []
 
 
 def test_observer_sanitizes_metadata_without_mutating_result(tmp_path):

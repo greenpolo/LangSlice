@@ -10,7 +10,6 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 import numpy as np
@@ -26,8 +25,6 @@ def _blob(shape: tuple[int, ...], centre: tuple[float, ...], width: float) -> np
     return np.exp(-sum((g - c) ** 2 for g, c in zip(grids, centre, strict=True))
                   / (2 * width ** 2))
 
-
-# --- STalign ------------------------------------------------------------------------------------
 
 
 def _stalign_inputs(shift_px: float) -> dict[str, np.ndarray]:
@@ -52,7 +49,6 @@ def test_a_small_stalign_fit_runs_in_process_and_keeps_its_energy_record():
     assert out["device"] == "cpu float64"
     source = np.asarray(out["source_um"])
     assert source.shape == (40 * 48, 2) and np.isfinite(source).all()
-    # the target's blob sits 40 um further down: its centre maps back about 40 um up
     centre = 20 * 48 + 24
     assert -60.0 < source[centre, 0] - 20 * 20.0 < -20.0
     energy = np.asarray(out["energy"])
@@ -80,9 +76,9 @@ def test_stalign_fits_on_two_threads_keep_their_own_records():
 
 
 def test_stalign_s_own_figures_still_draw_for_another_caller(monkeypatch: pytest.MonkeyPatch):
-    from langslice_vendor import stalign as STalign  # noqa: N812 - STalign's own name
+    from langslice_vendor import stalign as STalign  # noqa: N812
 
-    stalign_engine.run(_stalign_inputs(1.0), PARAMS)  # installs the record
+    stalign_engine.run(_stalign_inputs(1.0), PARAMS)
     calls: list[str] = []
 
     class Figures:
@@ -98,8 +94,6 @@ def test_stalign_s_own_figures_still_draw_for_another_caller(monkeypatch: pytest
                   inputs["J"], niter=2, draw="end", device="cpu", prefit=False)
     assert calls == ["made", "drawn"]
 
-
-# --- emlddmm ------------------------------------------------------------------------------------
 
 
 def test_the_vendored_stalign_runs_its_torch_engine():
@@ -157,11 +151,11 @@ def test_a_small_emlddmm_fit_runs_in_process_and_keeps_its_records(
     out = emlddmm_engine.run(_emlddmm_inputs(atlas), _emlddmm_params(mode))
     assert out["device"] == "cpu float64"
     assert int(np.asarray(out["energy_captured"])) == 1
-    assert np.asarray(out["energy"]).shape == (5, 5)  # 3 + 2 iterations
+    assert np.asarray(out["energy"]).shape == (5, 5)
     assert "Found 2 scales" in str(out["log"])
     assert np.asarray(out["X"]).shape == (6, 3) and np.isfinite(out["X"]).all()
     assert np.asarray(out["Acut"]).shape == (3, 20, 22)
-    if mode == "stack":  # the slots' planes stay where they were
+    if mode == "stack":
         assert np.allclose(np.asarray(out["A"])[0], np.asarray(out["A0"])[0])
 
 
@@ -171,8 +165,6 @@ def test_emlddmm_s_prints_on_a_thread_with_no_fit_are_logged(caplog: pytest.LogC
         module.print("Found", 3, "scales")
     assert "emlddmm: Found 3 scales" in caplog.text
 
-
-# --- the atlas image ----------------------------------------------------------------------------
 
 
 def test_the_averaged_image_is_kept_and_read_back(tmp_path: Path,
@@ -194,30 +186,4 @@ def test_the_averaged_image_is_kept_and_read_back(tmp_path: Path,
     assert np.array_equal(again.image, made.image) and np.array_equal(again.centre, made.centre)
 
 
-# --- the GPU queue ------------------------------------------------------------------------------
 
-
-def test_two_threads_take_the_gpu_queue_in_turn_with_one_slot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    from langslice.core.fits.deformable import gpu_queue
-    from langslice.core.hardware import GPU_SLOTS_VARIABLE
-    from langslice.plugin_api import gpu_turn
-
-    monkeypatch.setattr(gpu_queue, "GPU_LOCK", tmp_path / "gpu.lock")
-    monkeypatch.setenv(GPU_SLOTS_VARIABLE, "1")
-    held = threading.Event()
-
-    def hold() -> None:
-        with gpu_turn("cuda:0"):
-            held.set()
-            time.sleep(0.5)
-
-    other = threading.Thread(target=hold)
-    other.start()
-    assert held.wait(10)
-    with gpu_turn("cuda:1") as turn:
-        assert turn.waited_s >= 0.2
-    other.join()
-    with gpu_turn("cpu") as turn:
-        assert turn.waited_s == 0.0

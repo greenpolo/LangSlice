@@ -65,7 +65,7 @@ dependencies = [
     "torch>=2.3",
     "SimpleITK>=2.2.1",
     "fireants==1.5.0",
-    # The job folder's cross-process write lock (langslice.job.lock).
+    # The job folder's cross-process write lock (langslice.job.folder.lock).
     "filelock>=3.12",
 ]
 
@@ -269,15 +269,15 @@ json_boundary_modules = [
     "langslice.doors.agent.trace",
     "langslice.doors.agent_cli.envelope",
     "langslice.doors.call_log",
-    "langslice.job.history",
+    "langslice.job.steps.history",
     "langslice.job.imports.matching",
     "langslice.job.imports.placements",
     "langslice.job.imports.readers",
-    "langslice.job.index",
+    "langslice.job.folder.index",
     "langslice.job.pictures",
     "langslice.job.plugin_store",
-    "langslice.job.public_files",
-    "langslice.job.recent",
+    "langslice.job.exports.public_files",
+    "langslice.job.folder.recent",
     "langslice.job.state_file",
     "langslice.tools.arguments",
     "langslice.tools.descriptions.fixes",

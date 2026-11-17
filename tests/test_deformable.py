@@ -47,7 +47,6 @@ from tests.deformable_synthetic import (
     render_section,
 )
 
-#: The deformable engine is FireANTs SyN; a fit test skips without it.
 HAVE_ENGINE = importlib.util.find_spec("fireants") is not None
 needs_engine = pytest.mark.skipif(not HAVE_ENGINE, reason="FireANTs missing")
 
@@ -56,11 +55,6 @@ def _settings(**options) -> FitSettings:
     return FitSettings(**{"engine": "fireants", **options})
 
 
-#: The synthetic sections are flat-intensity regions with no texture, where
-#: local correlation has little to work with (synthetic warp error 0.39 of the
-#: warp vs 0.12 for mutual information at standard detail). Tests of the fit's
-#: mechanics (direction, exclusion, steps, the pool) use the default
-#: mutual-information stain metric without the edge channel.
 MI = {"stain_edges": False}
 
 
@@ -89,10 +83,8 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped)
     record = fit_section(image, atlas, placement(),
                          FitSettings(engine="fireants", detail="coarse", **MI))
     error, flipped, magnitude = _errors(record, field, truth)
-    # atlas point = section point + field: the recovered field matches u, not -u.
     assert error < 0.4 * magnitude
     assert flipped > 1.5 * magnitude
-    # The inverse maps placed-atlas points back: v(p + u(p)) = -u(p).
     assert record.inverse_field_mm is not None
     assert record.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
     from langslice.core.fits.deformable.geometry import sample_native
@@ -132,7 +124,6 @@ def test_smoothness_sets_the_update_and_total_sigmas_in_um(atlas, warped):
 
 def test_excluded_region_does_not_drive_the_fit(atlas):
     engine = "fireants"
-    # Only the thalamus is displaced; everywhere else the placement is right.
     field = bump_field([(226, 132, 16, 0.12, 0.0)])
     image, _ = render_section(atlas, field)
     th = np.zeros((260, 340), dtype=bool)
@@ -156,7 +147,6 @@ def test_exclusion_blanks_intensity_images_and_includes_descendants(atlas, warpe
     prepared = prepare_fit(image, atlas, placement(),
                            _settings(detail="coarse", exclude=("STR",)))
     grid_to_native = np.linalg.inv(prepared.grid.section_to_working @ placement().atlas_to_section)
-    # Working pixels well inside the placed striatum are blank and outside the mask.
     centre = (prepared.grid.section_to_working @ placement().atlas_to_section) @ [52, 58, 1]
     cx, cy = int(round(centre[0])), int(round(centre[1]))
     assert prepared.inputs.moving[cy - 3:cy + 4, cx - 3:cx + 4].max() == 0
@@ -171,7 +161,7 @@ def test_synthetic_compression_is_reported_not_flagged():
     placed[(xx - 60) ** 2 + (yy - 100) ** 2 < 30 ** 2] = CTX
     placed[(xx - 140) ** 2 + (yy - 100) ** 2 < 30 ** 2] = VL
     mm = 0.02
-    k = 1.8  # atlas point = c + k (p - c): the section shows each region 1/k^2 as large
+    k = 1.8
     field = np.stack([(k - 1) * (xx - 100), (k - 1) * (yy - 100)], axis=-1) * mm
     native_x = xx + field[..., 0] / mm
     native_y = yy + field[..., 1] / mm
@@ -183,7 +173,6 @@ def test_synthetic_compression_is_reported_not_flagged():
     ratios = {r["id"]: r["area_ratio"] for r in report["regions"]}
     assert ratios[CTX] == pytest.approx(1 / k ** 2, rel=0.1)
     assert ratios[VL] == pytest.approx(1 / k ** 2, rel=0.1)
-    # Area ratios are reported, never flagged: a 1/k^2 region raises no region flag.
     assert not [f for f in report["flags"] if "id" in f]
     assert {r["id"]: r["ventricle"] for r in report["regions"]} == {CTX: False, VL: True}
     assert report["fold_fraction"] == 0
@@ -191,7 +180,7 @@ def test_synthetic_compression_is_reported_not_flagged():
 
 def test_folds_are_reported():
     field = np.zeros((60, 60, 2))
-    field[:, 30:, 0] = -0.5  # a step: points right of x=30 map behind their neighbours
+    field[:, 30:, 0] = -0.5
     jacobian = jacobian_determinant(field, 0.02)
     assert (jacobian <= 0).any()
     labels = np.ones((60, 60), np.int32)
@@ -206,8 +195,6 @@ def test_lines_against_borders_and_model_regions(atlas):
     image, truth = render_section(atlas, field)
     merged = labels_at(truth, atlas, MODEL_DEPTH)
     lines = region_boundaries(merged)[0]
-    # Lines only constrain the field at boundaries; interiors follow the
-    # regularization, so the tolerance is looser than for the stain image.
     borders = fit_section(image, atlas, placement(), _settings(
         section_image="lines", atlas_image="borders_merged"), lines=lines)
     error, flipped, magnitude = _errors(borders, field, truth)
@@ -215,8 +202,6 @@ def test_lines_against_borders_and_model_regions(atlas):
     labelled = fit_section(image, atlas, placement(), _settings(
         section_image="lines", atlas_image="borders_merged", labels="model"), lines=lines)
     error, flipped, magnitude = _errors(labelled, field, truth)
-    # 0.61 of the warp since the regions are named inside the model's outline
-    # (0.60 before); the outline's own test is the one below.
     assert error < 0.65 * magnitude and flipped > 1.5 * magnitude
     assert set(labelled.engine["step_details"]["label_channels"]) >= {str(STR), str(TH)}
 
@@ -226,15 +211,14 @@ def test_named_regions_drop_a_bubble_loop():
     placed[10:110, 10:110] = CTX
     placed[30:70, 30:70] = STR
     lines = np.zeros_like(placed, dtype=bool)
-    lines[34, 34:76] = lines[76, 34:76] = True  # the model's striatum, shifted
+    lines[34, 34:76] = lines[76, 34:76] = True
     lines[34:77, 34] = lines[34:77, 76] = True
     yy, xx = np.indices(placed.shape)
-    ring = np.abs(np.hypot(xx - 92, yy - 92) - 4) < 0.7  # a loop around a bubble in CTX
+    ring = np.abs(np.hypot(xx - 92, yy - 92) - 4) < 0.7
     lines |= ring
     tissue = placed > 0
     labels, unnamed, report = named_regions(lines, placed, tissue, mm_per_px=0.02)
     assert labels[55, 55] == STR and labels[20, 20] == CTX
-    # The bubble's interior is not a region of its own: it is left unnamed.
     assert labels[92, 92] == 0 and unnamed[92, 92]
     assert any("small_loop_inside_one_region" in r["dropped"] for r in report)
     assert not unnamed[55, 55]
@@ -243,11 +227,11 @@ def test_named_regions_drop_a_bubble_loop():
 def test_model_extent_fills_a_closed_outline_and_refuses_an_open_one():
     lines = np.zeros((100, 100), dtype=bool)
     lines[20, 20:80] = lines[79, 20:80] = lines[20:80, 20] = lines[20:80, 79] = True
-    lines[50, 20:80] = True  # an inner border does not change the extent
+    lines[50, 20:80] = True
     extent, ratio = model_extent(lines, placed_area_px=3600, mm_per_px=0.02)
     assert extent is not None and extent[50, 50] and not extent[10, 10]
     assert ratio == pytest.approx(1.0, abs=0.01)
-    lines[20:80, 79] = False  # an open outline encloses nothing: fall back
+    lines[20:80, 79] = False
     extent, ratio = model_extent(lines, placed_area_px=3600, mm_per_px=0.02)
     assert extent is None and ratio < 0.5
 
@@ -260,7 +244,7 @@ def test_model_regions_pull_the_atlas_in_to_the_model_outline(atlas):
     h, w = merged.shape
     yy, xx = np.indices(merged.shape)
     cy, cx = np.argwhere(merged > 0).mean(axis=0)
-    scale = 0.88  # the section is 12 % smaller than the placed atlas, about its centre
+    scale = 0.88
     shrunk = merged[np.clip(np.round(cy + (yy - cy) / scale).astype(int), 0, h - 1),
                     np.clip(np.round(cx + (xx - cx) / scale).astype(int), 0, w - 1)]
     lines = region_boundaries(shrunk)[0]
@@ -278,7 +262,6 @@ def test_fit_settings_validation():
         FitSettings(engine="elastix", labels="model")
     with pytest.raises(ValueError, match="borders"):
         _settings(section_image="lines", atlas_image="template")
-    # A stain against atlas borders: borders are for the image model's lines.
     for kind in ("borders", "borders_merged"):
         with pytest.raises(ValueError, match="traced lines only"):
             FitSettings(section_image="stain", atlas_image=kind)
@@ -291,13 +274,11 @@ def test_fit_settings_validation():
         FitSettings(detail="finest")  # type: ignore[arg-type]
     assert FitSettings(detail="fine").detail == "fine"
     assert DETAIL["fine"].working_um == 10.0 and DETAIL["fine"].iterations == (100, 70, 50, 25, 10)
-    # A record saved with a stiffness level reads it as the smoothness it meant.
     legacy = {**FitSettings().to_dict(), "stiffness": "firm"}
     del legacy["smoothness_um"]
     assert FitSettings.from_dict(legacy).smoothness_um == 120.0
     assert FitSettings.from_dict(FitSettings().to_dict()) == FitSettings()
     assert FitSettings().metric == "mutual_information" and FitSettings().stain_edges
-    # Elastix has no local correlation: its stand-in.
     assert FitSettings(engine="elastix").metric == "mutual_information"
     assert FitSettings(stain_metric="local_correlation").metric == "local_correlation"
     lines = FitSettings(section_image="lines", atlas_image="borders_merged")
@@ -319,7 +300,6 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     assert second.step == 1 and second.parent is first
     assert second.engine["step_details"]["structures"] == [STR]
     assert second.engine["step_details"]["taper_um"] == [250.0, 250.0 + 1000 * RESTRICTED_TAPER_MM]
-    # Beyond the taper the step moves nothing; inside its neighbourhood it moves tissue.
     mm = second.placement.section_mm_per_px
     distance = ndi.distance_transform_edt(first.labels != STR) * mm
     change = np.linalg.norm(second.field_mm - first.field_mm, axis=-1)
@@ -329,22 +309,18 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     assert change[near].max() > 1e-3
     assert second.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
     assert second.diagnostics["fold_fraction"] == 0.0 or second.diagnostics["fold_fraction"] < 1e-3
-    # Far from the striatum the second step leaves the first one's field alone.
     far = np.zeros(truth.shape, dtype=bool)
     far[150:220, 240:300] = True
     assert np.abs(second.field_mm - first.field_mm)[far].max() < 0.01
-    # The refinement may cost the striatum a few µm, never more: its mean error is
-    # 8.0-8.7 µm after the second step against 5.6 µm after the first, depending
-    # on the hardware (GPU, this CPU, CI's).
     striatum = truth == STR
     assert (np.linalg.norm(second.field_mm - field, axis=-1)[striatum].mean()
             <= np.linalg.norm(first.field_mm - field, axis=-1)[striatum].mean() + 0.005)
-    first.save(tmp_path / "first")  # a record names its parent, saved beside it
+    first.save(tmp_path / "first")
     second.save(tmp_path / "rec")
     loaded = DeformableRecord.load(tmp_path / "rec")
     assert loaded.step == 1 and loaded.parent is not None and loaded.parent.step == 0
     assert np.array_equal(loaded.labels, second.labels)
-    assert np.array_equal(loaded.field_mm, second.field_mm)  # saving rounded it
+    assert np.array_equal(loaded.field_mm, second.field_mm)
     assert np.allclose(loaded.placement.atlas_to_section, second.placement.atlas_to_section)
     meta = json.loads((tmp_path / "rec" / "record.json").read_text(
         encoding="utf-8"))
@@ -366,8 +342,8 @@ def test_taper_weight_holds_the_neighbourhood_and_fades_beyond():
 
     region = np.zeros((100, 200), dtype=bool)
     region[40:60, 20:40] = True
-    spacing = 0.01  # mm per working pixel
-    weight = _taper_weight(region, spacing, 0.1, (400, 200))  # section grid twice the size
+    spacing = 0.01
+    weight = _taper_weight(region, spacing, 0.1, (400, 200))
     assert weight.shape == (200, 400)
     distance = ndi.distance_transform_edt(~region) * spacing
     distance = np.kron(distance, np.ones((2, 2)))
@@ -384,7 +360,6 @@ def test_inverted_step_undoes_the_tapered_step():
     bump = np.exp(-((xx - 80) ** 2 + (yy - 60) ** 2) / (2 * 20.0 ** 2))
     step = np.stack([6.0 * bump, -4.0 * bump], axis=-1).astype(np.float32)
     inverse = _invert_step(step, np.zeros_like(step))
-    # q -> q + v(q) -> + w(q + v(q)) returns to q.
     mx, my = xx + inverse[..., 0], yy + inverse[..., 1]
     import cv2
 
@@ -435,7 +410,7 @@ class _TwoImageAtlas:
 
 
 def test_atlas_images_are_the_atlas_own(atlas):
-    assert atlas_images(atlas) == ("template", "nissl")  # nissl: the accepted alias
+    assert atlas_images(atlas) == ("template", "nissl")
     two = _TwoImageAtlas(atlas)
     assert atlas_images(two) == ("template", "second", "nissl")
     assert np.array_equal(atlas_volume(two, "template"), np.asarray(atlas.template))
@@ -454,7 +429,7 @@ class _Ccfv3At50um:
 
     def __init__(self) -> None:
         self.annotation = np.ones((264, 160, 228), dtype=np.uint8)
-        self.annotation[:, :10] = 0  # the top rows are outside the brain
+        self.annotation[:, :10] = 0
 
 
 def test_a_ccfv3_atlas_borrows_the_augmented_nissl_at_the_offset(atlas, monkeypatch):
@@ -467,11 +442,9 @@ def test_a_ccfv3_atlas_borrows_the_augmented_nissl_at_the_offset(atlas, monkeypa
     try:
         ccf = _Ccfv3At50um()
         assert atlas_images(ccf) == ("template", images.BORROWED_NISSL, "nissl")
-        assert atlas_images(atlas) == ("template", "nissl")  # not the CCFv3 extent
+        assert atlas_images(atlas) == ("template", "nissl")
         volume = atlas_volume(ccf, images.BORROWED_NISSL)
         assert volume.shape == ccf.annotation.shape
-        # 50 um voxel i is centred (i + 0.5) * 0.05 mm into the CCFv3, 0.35 mm more
-        # into the augmented atlas: index ((i + 0.5) * 0.05 + 0.35) / 0.025 - 0.5.
         expected = (np.arange(264) + 0.5) * 2 + 14 - 0.5
         assert np.allclose(volume[:, 80, 100], np.rint(expected), atol=1)
         assert not volume[:, :10].any()

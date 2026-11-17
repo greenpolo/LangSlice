@@ -17,7 +17,6 @@ from langslice.providers.oauth import login as oauth_login
 from langslice.providers.oauth import transport as chatgpt
 
 
-# --- helpers -----------------------------------------------------------------
 def _fake_jwt(claims: dict[str, Any]) -> str:
     def part(payload: dict[str, Any]) -> str:
         return base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
@@ -56,7 +55,6 @@ def _sse(events: list[dict[str, Any]]) -> list[str]:
     return [f"data: {json.dumps(event)}" for event in events] + ["data: [DONE]"]
 
 
-# --- credentials -------------------------------------------------------------
 def test_credentials_and_headers():
     assert oauth_login.account_id_from_id_token(_id_token("acct_123", "pro")) == "acct_123"
     assert oauth_login.account_id_from_id_token(None) is None
@@ -65,7 +63,7 @@ def test_credentials_and_headers():
     nested = {"tokens": {"access_token": "A", "refresh_token": "R", "id_token": _id_token()}}
     creds = oauth_login.creds_from_doc(nested, "test")
     assert (creds.access_token, creds.refresh_token) == ("A", "R")
-    assert creds.account_id == "acct_9"  # derived from id_token
+    assert creds.account_id == "acct_9"
     flat = {"access_token": "A2", "account_id": "acct_explicit"}
     assert oauth_login.creds_from_doc(flat, "test").account_id == "acct_explicit"
     with pytest.raises(ValueError):
@@ -100,7 +98,7 @@ def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
     codex = oauth_login.Creds("OLD", "R", None, "acct_1", source="/home/x/.codex/auth.json")
     refreshed = oauth_login.refresh(codex)
     assert refreshed.access_token == "NEW"
-    assert not creds_path.exists()  # never rewrite the Codex CLI's file
+    assert not creds_path.exists()
     assert posted["url"] == oauth_login.TOKEN_URL
     assert posted["json"]["grant_type"] == "refresh_token"
     assert posted["json"]["client_id"] == oauth_login.CLIENT_ID
@@ -132,7 +130,6 @@ def test_load_credentials_without_any_source_is_actionable(tmp_path, monkeypatch
         oauth_login.load_credentials()
 
 
-# --- wire shaping ------------------------------------------------------------
 def test_iter_sse_decodes_bytes_lines_and_stops_at_done():
     lines = _sse(
         [
@@ -141,7 +138,7 @@ def test_iter_sse_decodes_bytes_lines_and_stops_at_done():
             {"type": "response.completed"},
         ]
     )
-    lines.insert(1, "")  # blank keepalive line
+    lines.insert(1, "")
     lines.append("data: " + json.dumps({"type": "never.read"}))
     events = list(chatgpt.iter_sse(_FakeResponse(lines)))
     assert [event["type"] for event in events] == [
@@ -151,7 +148,6 @@ def test_iter_sse_decodes_bytes_lines_and_stops_at_done():
     ]
 
 
-# --- ADK request conversion --------------------------------------------------
 def _png_bytes() -> bytes:
     import io
 
@@ -223,8 +219,6 @@ def test_function_response_images_are_forwarded_and_labelled():
         ],
     )
     items = chatgpt.content_to_input_items(response)
-    # ONE item: the images ride inside the tool result. A separate user
-    # message would open a new turn and lose the replayed reasoning.
     assert len(items) == 1
     item = items[0]
     assert item["type"] == "function_call_output"
@@ -236,7 +230,6 @@ def test_function_response_images_are_forwarded_and_labelled():
     assert content[2]["detail"] == "high"
     assert content[2]["image_url"].startswith("data:image/png;base64,")
 
-    # N images from one tool arrive interleaved with "image k of N" text.
     blob = response.parts[0].function_response.parts[0]
     response.parts[0].function_response.parts = [blob, blob, blob]
     content = chatgpt.content_to_input_items(response)[0]["output"]
@@ -247,7 +240,7 @@ def test_function_response_images_are_forwarded_and_labelled():
 
 def test_request_body_and_tool_wire_shape():
     llm = chatgpt.OpenAIOAuthLlm(model="openai-oauth/gpt-5.6-luna")
-    assert llm.model == "gpt-5.6-luna"  # prefix stripped
+    assert llm.model == "gpt-5.6-luna"
     request = LlmRequest(
         contents=[types.Content(role="user", parts=[types.Part.from_text(text="hi")])],
         config=types.GenerateContentConfig(system_instruction="be terse"),
@@ -279,7 +272,6 @@ def test_request_body_and_tool_wire_shape():
     assert wire["parameters"]["required"] == ["position_mm"]
 
 
-# --- streaming ---------------------------------------------------------------
 def _run_turn(monkeypatch, events: list[dict[str, Any]], *, stream: bool):
     captured: dict[str, Any] = {}
 
@@ -363,7 +355,6 @@ def test_summary_part_and_item_boundaries_match_final_text_and_keep_replay(monke
         delta("rs_1", 0, "First "), delta("rs_1", 0, "heading"),
         delta("rs_1", 1, ""), delta("rs_1", 1, "Second heading"),
         {"type": "response.output_item.done", "item": first},
-        # A new reasoning item resets summary_index, but is still a new paragraph.
         delta("rs_2", 0, "Third "), delta("rs_2", 0, "heading"),
         {"type": "response.output_item.done", "item": second},
         {"type": "response.completed"},
@@ -473,11 +464,11 @@ def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
     assert generated.provider == "openai-oauth"
     assert generated.route == "openai_oauth_images_edit"
     assert generated.model == "gpt-image-2.5-sunburst"
-    assert captured["prompt"] == "warp it"  # delivered verbatim
+    assert captured["prompt"] == "warp it"
     assert len(captured["references"]) == 3
     assert all(uri.startswith("data:image/png;base64,") for uri in captured["references"])
     assert captured["quality"] == "high"
-    assert "size" not in captured  # the backend ignores it; we don't send it
+    assert "size" not in captured
 
 
 def test_user_content_preserves_text_image_interleaving():

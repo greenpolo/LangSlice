@@ -87,8 +87,6 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     )
     assert result["status"] == "ok" and len(calls) == 1
     request = calls[0]
-    # OpenAI providers get the GPT twin: Image 1 the clean photograph (edit target),
-    # Image 2 the smooth placed borders.
     base = border_correction_tool_prompt(provider="openai-oauth")
     assert request.prompt == base.replace(
         "Output one image.", "The left piece has shifted. Output one image.",
@@ -108,7 +106,6 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     assert not np.array_equal(np.asarray(expected), np.asarray(original))
     paths = result["artifact_paths"]
     np.testing.assert_array_equal(Image.open(paths["raw_reply"]), raw)
-    # The pictures sent are not kept, only their PNG digests, in the order sent.
     folder = Path(result["artifact_dir"])
     for name in ("input_slice.png", "rough_border_overlay.png", "lines_on_original.png"):
         assert not (folder / name).exists()
@@ -139,7 +136,6 @@ def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_pat
     assert calls[0].prompt == border_correction_tool_prompt(provider="openai-oauth")
     assert repeated["cached"] is True and repeated["prompt_edited"] is False
     assert repeated["artifact_dir"] == first["artifact_dir"]
-    # A changed linear alignment is a new input, not a veto of the first reply.
     record.position_mm = 4.5
     changed = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert len(calls) == 2
@@ -193,7 +189,7 @@ def test_a_running_call_refuses_another_and_an_interrupted_one_is_made_again(
                                           image_model=model)
     assert none is None and refused["error"] == "IMAGE_CALL_IN_PROGRESS"
     assert refused["artifact_dir"] == str(Path(submitted["artifact_dir"]).parent)
-    del job  # the process ends mid-call: its claim goes with it, no reply saved
+    del job
     again = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert again["status"] == "ok" and again["attempt"] == 2 and len(calls) == 1
     assert Path(submitted["artifact_dir"]).name == "attempt-01"
@@ -216,7 +212,6 @@ def test_result_files_hold_paths_relative_to_the_call(case, tmp_path):
         assert stored["artifact_paths"]["raw_reply"] == "attempt-01/raw_reply.png"
     assert b"\r\n" not in (attempt / "prompt_diff.txt").read_bytes()
 
-    # the folder moved: the cached reply names the files where they are now
     moved = tmp_path / "moved"
     (tmp_path / "out").rename(moved)
     cached = _correct(state, ctx, record.id, out=moved, image_model=model)
@@ -224,7 +219,6 @@ def test_result_files_hold_paths_relative_to_the_call(case, tmp_path):
     assert cached["cached"] and cached["artifact_dir"] == str(new_attempt)
     assert cached["artifact_paths"]["raw_reply"] == str(new_attempt / "raw_reply.png")
 
-    # an older file's absolute paths, written on another computer
     result_path = moved / call.parent.name / call.name / "result.json"
     old = json.loads(result_path.read_text(encoding="utf-8"))
     old["artifact_dir"] = "C:\\Users\\someone\\out\\x\\" + call.name + "\\attempt-01"

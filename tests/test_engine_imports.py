@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-#: The engine libraries, by their top-level module names.
 ENGINES = ("torch", "fireants", "SimpleITK", "itk")
 CALLS = """
 import contextlib, io, json, sys
@@ -49,7 +48,6 @@ print(json.dumps({"codes": codes, "loaded": sorted(
 
 def test_calls_without_a_fit_import_no_engine(tmp_path):
     home = str(tmp_path / "home")
-    # Windows' Python needs SYSTEMROOT to start, and finds the home in USERPROFILE.
     system = {name: os.environ[name] for name in ("SYSTEMROOT",) if name in os.environ}
     done = subprocess.run(
         [sys.executable, "-c", CALLS, str(tmp_path / "stack"), *ENGINES],

@@ -5,6 +5,34 @@ from brainglobe_space import AnatomicalSpace
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
 
+PLANES: tuple[Plane, ...] = ("coronal", "sagittal", "horizontal")
+
+
+def as_plane(text: str) -> Plane:
+    """Return *text* as a cutting plane, checked once where it comes in.
+
+    Parameters
+    ----------
+    text
+        The plane as a job file or a caller wrote it.
+
+    Returns
+    -------
+    Plane
+        The same word, now one of :data:`PLANES`.
+
+    Raises
+    ------
+    ValueError
+        When *text* is not a cutting plane; the message names the three.
+    """
+    for plane in PLANES:
+        if text == plane:
+            return plane
+    raise ValueError(
+        f"Unsupported plane {text!r}; expected one of {PLANES}"
+    )
+
 
 @dataclass(frozen=True)
 class AtlasSpaceContext:

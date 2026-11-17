@@ -18,8 +18,6 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     for name in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "GEMINI_API_KEY", "GOOGLE_API_KEY",
                  "LANGSLICE_OPENAI_AUTH"):
-        # set then delete, so the variable is restored (or removed) after the test
-        # even when the code under test writes it to os.environ
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
     return tmp_path
@@ -47,7 +45,6 @@ def test_apply_respects_existing_credentials(
     setup.save_api_key("openai-api", "saved-openai")
     setup.save_api_key("gemini-api", "saved-gemini")
     monkeypatch.setenv("GOOGLE_API_KEY", "existing-google")
-    # Register this environment change with monkeypatch before the helper writes it.
     monkeypatch.setenv("OPENAI_API_KEY", "")
     setup.apply_saved_credentials()
     assert os.environ["OPENAI_API_KEY"] == "saved-openai"
@@ -74,7 +71,7 @@ def test_unknown_or_unreadable_saved_entries_are_skipped(
         encoding="utf-8")) == {"future-api": "f", "gemini-api": "saved-gemini",
                                             "openai-api": "new"}
     path.write_text("not json", encoding="utf-8")
-    setup.apply_saved_credentials()  # warns, raises nothing
+    setup.apply_saved_credentials()
     setup.load_credentials()
 
 
@@ -135,7 +132,7 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     from langslice.job.settings.spec import NonlinearSpec
     from tests.synthetic_stack import atlas_loader, full_spec, write_sections
 
-    monkeypatch.setattr(setup, "load_dotenv", lambda: None)  # no developer .env here
+    monkeypatch.setattr(setup, "load_dotenv", lambda: None)
     setup.save_api_key("gemini-api", "saved-gemini")
     setup.save_api_key("openai-api", "saved-openai")
     monkeypatch.setenv("OPENAI_API_KEY", "from-the-environment")

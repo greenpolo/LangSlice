@@ -123,7 +123,6 @@ def test_session_does_not_enable_optional_diagnostics_when_untraced(monkeypatch)
     monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
     model = openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test")
     agent = LlmAgent(name="test", model=model)
-    # Already done: test session setup without invoking any provider.
     asyncio.run(run_agent_session(
         agent=agent, run_label="usage_test", done=lambda: True,
         nudge_no_tool="continue", nudge_continue="continue",
@@ -152,7 +151,7 @@ def test_diagnostics_survive_the_adk_session_to_trace(tmp_path, monkeypatch):
         nudge_no_tool="continue", nudge_continue="continue",
         seed_message=types.Content(role="user", parts=[types.Part.from_text(text="test")]),
     ))
-    assert llm.capture_usage_details is True  # traced sessions enable the diagnostics
+    assert llm.capture_usage_details is True
     path, = tmp_path.glob("*.jsonl")
     rows = [json.loads(line) for line in path.read_text(
         encoding="utf-8").splitlines()]

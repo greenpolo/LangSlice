@@ -20,6 +20,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -27,6 +28,8 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 from PIL import Image
+
+from langslice.engines._outside import untyped
 
 if TYPE_CHECKING:
     import torch
@@ -150,6 +153,24 @@ def resolve_device(device_name: str) -> torch.device:
     return device
 
 
+def _fourier(name: str) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Return one of ``torch.fft``'s transforms of a whole tensor.
+
+    Parameters
+    ----------
+    name
+        The transform: ``fft2``, ``ifft2``, ``fftshift`` or ``ifftshift``.
+
+    Returns
+    -------
+    Callable
+        The transform, from a tensor to a tensor.
+    """
+    return cast(
+        "Callable[[torch.Tensor], torch.Tensor]", untyped("torch.fft", name)
+    )
+
+
 def load_matcher(device: torch.device) -> Matcher:
     """Build RoMa outdoor as SPOmiAlign builds it, its weights loaded.
 
@@ -165,16 +186,17 @@ def load_matcher(device: torch.device) -> Matcher:
         grid, with RoMa's plain torch local correlation. The weights come
         from torch's hub cache, downloaded there on first use.
     """
-    romatch = importlib.import_module("romatch")
+    roma_outdoor = cast(
+        "Callable[..., Matcher]", untyped("romatch", "roma_outdoor")
+    )
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=LOCAL_CORR_WARNING)
-        model = romatch.roma_outdoor(  # pyright: ignore[reportAny]
+        return roma_outdoor(
             device=device,
             coarse_res=COARSE_RES,
             upsample_res=(H, W),
             use_custom_corr=False,
         )
-    return cast(Matcher, model)
 
 
 def ranked_matches(
@@ -265,16 +287,8 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
     rgb = (torch.tensor(resized) / 255.0).permute(2, 0, 1).unsqueeze(0)
     rgb = rgb.to(device)
     grey = 0.299 * rgb[:, 0] + 0.587 * rgb[:, 1] + 0.114 * rgb[:, 2]
-    fft = torch.fft
     column = grey.unsqueeze(1)
-    transformed = cast(
-        "torch.Tensor",
-        fft.fft2(column),  # pyright: ignore[reportUnknownMemberType]
-    )
-    spectrum = cast(
-        "torch.Tensor",
-        fft.fftshift(transformed),  # pyright: ignore[reportUnknownMemberType]
-    )
+    spectrum = _fourier("fftshift")(_fourier("fft2")(column))
 
     y = torch.arange(H, device=device) - H // 2
     x = torch.arange(W, device=device) - W // 2
@@ -287,15 +301,7 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
         -torch.sqrt(distance_sq) / (EDGE_DECAY * short + 1e-6)
     )
     band = high_pass * low_pass
-    unshifted = cast(
-        "torch.Tensor",
-        fft.ifftshift(spectrum * band),  # pyright: ignore[reportUnknownMemberType]
-    )
-    inverse = cast(
-        "torch.Tensor",
-        fft.ifft2(unshifted),  # pyright: ignore[reportUnknownMemberType]
-    )
-    filtered = inverse.real
+    filtered = _fourier("ifft2")(_fourier("ifftshift")(spectrum * band)).real
 
     edges = torch.abs(filtered.squeeze())
     edges = (edges - edges.min()) / (edges.max() - edges.min() + 1e-8)
@@ -305,7 +311,11 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
     _, binary = cv2.threshold(
         levels, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
-    edge_map = torch.from_numpy(binary)  # pyright: ignore[reportUnknownMemberType]
+    from_numpy = cast(
+        "Callable[[np.ndarray], torch.Tensor]",
+        untyped("torch", "from_numpy"),
+    )
+    edge_map = from_numpy(binary)
     return edge_map.float().to(device) / 255.0
 
 

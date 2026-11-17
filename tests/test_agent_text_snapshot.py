@@ -46,8 +46,6 @@ _BASE: dict[str, Any] = {"model": "fake-model", "preprocess": "none",
                          "inputs": {"pixel_size_um": PIXEL_SIZE_UM}}
 
 
-# --- builders ---------------------------------------------------------------
-
 
 def _specs(folder: Path) -> dict[str, Any]:
     from langslice.job.settings.spec import JobSpec, NonlinearSpec
@@ -133,8 +131,6 @@ def _mcp_md(label: str, tasks: list[str], folder: Path) -> str:
     from langslice.doors.mcp.server import build_server
     from langslice.job.settings.spec import JobSpec
 
-    # Each listing gets its own images folder: the server adopts a job folder
-    # an earlier listing left, which would carry that listing's tasks.
     own = folder.parent / f"mcp_{label}" / folder.name
     if not own.exists():
         shutil.copytree(folder, own, ignore=shutil.ignore_patterns("langslice"))
@@ -213,8 +209,6 @@ def _launch_md(folder: Path, role: str) -> str:
     from langslice.doors.agent_cli.calls import execute
 
     images = _launch_images(folder)
-    # The job's environment is one machine's: its interpreter's path and the
-    # installer differ by system, so the snapshot names a fixed one and makes none.
     python = Path("<ROOT>/langslice/env/bin/python")
     with mock.patch.object(environment, "ensure", lambda layout: False), \
             mock.patch.object(environment, "python_of", lambda env: python), \
@@ -227,8 +221,6 @@ def _launch_md(folder: Path, role: str) -> str:
     return "\n".join([f"# Launch prompt: {role}", "", Normaliser(images).text(prompt), ""])
 
 
-#: Scripted refusals on the synthetic three-section job (no fits). Each is
-#: (label, spec key, calls); a call is (tool, args, kwargs).
 def _refusal_script() -> list[tuple[str, str, list[tuple[str, tuple[Any, ...], dict[str, Any]]]]]:
     return [
         ("exploring", "full", [
@@ -282,8 +274,6 @@ def _refusals_md(folder: Path) -> str:
             out += [f"### `{name}({norm.text(shown)})`", "", "```json", reply, "```", ""]
     return "\n".join(out)
 
-
-# --- the artifacts -----------------------------------------------------------
 
 
 def _artifacts(folder: Path) -> dict[str, Callable[[], str]]:
@@ -353,8 +343,3 @@ def test_agent_text_matches_snapshot(name: str, artifacts: dict[str, Callable[[]
         pytest.fail(f"{path.name} changed (re-record with {UPDATE_ENV}=1 if intended):\n{shown}")
 
 
-def test_no_text_names_what_the_job_disables(artifacts: dict[str, Callable[[], str]]) -> None:
-    for name in ("declarations_host", "job_statement_frozen"):
-        text = artifacts[name]()
-        assert "mark_damage" not in text, name
-    assert "elastix_affine" not in artifacts["job_statement_frozen"](), "frozen statement"

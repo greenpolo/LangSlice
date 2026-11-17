@@ -44,6 +44,7 @@ from typing import Any
 import numpy as np
 
 from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.space import Plane
 
 SIDES: tuple[str, ...] = ("left", "right", "top", "bottom")
 UNSIDED_PLANE = "sagittal"
@@ -90,7 +91,7 @@ def has_sides(entries: Any) -> bool:
 
 
 def ml_halves(
-    atlas: Any, position_mm: float, plane: str, pitch_deg: float = 0.0, yaw_deg: float = 0.0,
+    atlas: Any, position_mm: float, plane: Plane, pitch_deg: float = 0.0, yaw_deg: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``(high, gradient)`` on the native plane grid.
 
@@ -135,7 +136,7 @@ def ml_halves(
 def native_left(
     atlas: Any,
     position_mm: float,
-    plane: str,
+    plane: Plane,
     pitch_deg: float,
     yaw_deg: float,
     native_to_display: np.ndarray,

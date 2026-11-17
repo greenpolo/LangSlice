@@ -30,16 +30,11 @@ def _names(spec: Any, *, scripting: bool = False, image_model: bool = True) -> l
                        image_model_connected=image_model).names
 
 
-#: The verbs a model is offered (the agent tools, MCP); the scripting verbs
-#: are the CLI's and the library's only.
 MODEL_VERBS = [name for name, verb in VERBS.items() if not verb.scripting]
 
-#: The in-tree engines' tools a mouse coronal job has unless it disables them
-#: (``deepslice_place`` and ``brainways_ap`` start off).
 ENGINE_TOOLS = ["stalign_lddmm", "stalign_plane_search", "spomialign", "emlddmm_stack",
                 "emlddmm_plane"]
 
-#: The tools of every run, whatever its tasks.
 EVERY_RUN = ["look", "zoom", "make_image",
              "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
              "read_file", "review_comments", "note", "undo", "redo", "submit"]
@@ -68,7 +63,6 @@ def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, mon
     monkeypatch.setenv("HOME", str(folder / "home"))
     names = _names(full_spec(folder))
     assert names == MODEL_VERBS + ENGINE_TOOLS
-    # The scripting door (the CLI, the library) adds the scripting verb.
     assert _names(full_spec(folder), scripting=True) == list(VERBS) + ENGINE_TOOLS
     assert [name for name, verb in VERBS.items() if verb.scripting] == ["export_maps"]
 
@@ -86,34 +80,28 @@ def test_the_gating_table(folder: Path):
     for tasks in (["position"], ["transform"], ["nonlinear"], ["position", "transform"], []):
         names = enabled(_spec(folder, tasks=tasks))
         assert set(EVERY_RUN) <= set(names) <= set(VERBS) | set(ENGINE_TOOLS)
-    # Positioning, or the cutting angles left to the agent.
     assert "position_sections" in has(tasks=["position"])
     assert "position_sections" in has(tasks=["transform"],
                                       transform=TransformSpec(angles=True))
     assert "position_sections" not in has(tasks=["transform"],
                                           transform=TransformSpec(angles=False))
-    # Manual and automatic alignment are the transform task's, each switchable.
     assert {"interactive_transform", "elastix_affine"} <= has(tasks=["transform"])
     assert "interactive_transform" not in has(
         tasks=["transform"], disabled=["interactive_transform"])
     assert "elastix_affine" not in has(tasks=["transform"], disabled=["elastix_affine"])
     assert not {"interactive_transform", "elastix_affine"} & has(tasks=["position"])
-    # Nonlinear: fireants_syn; trace_borders only with an image model.
     assert {"fireants_syn", "trace_borders"} <= has(tasks=["nonlinear"])
     assert "trace_borders" not in has(tasks=["nonlinear"],
                                       nonlinear=NonlinearSpec(provider="none"))
     assert "trace_borders" not in set(enabled(_spec(folder, tasks=["nonlinear"]),
                                               image_model=False))
     assert not {"fireants_syn", "trace_borders"} & has(tasks=["position", "transform"])
-    # Masks are for the fits: where there is a linear or a nonlinear task.
     assert "make_mask" in has(tasks=["transform"]) and "make_mask" in has(tasks=["nonlinear"])
     assert "make_mask" not in has(tasks=["position"])
     assert "make_mask" not in has(tasks=["transform"], disabled=["make_mask"])
-    # A section's earlier registration goes back where a task writes one.
     assert "restore_registration" in has(tasks=["transform"])
     assert "restore_registration" in has(tasks=["nonlinear"])
     assert "restore_registration" not in has(tasks=["position"])
-    # Damage marking is a host switch.
     assert "mark_damage" in has(tasks=["position"])
     assert "mark_damage" not in has(tasks=["position"], disabled=["mark_damage"])
 

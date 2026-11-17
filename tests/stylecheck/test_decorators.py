@@ -95,7 +95,6 @@ def test_decorator_composition_flags_one_argument_wrappers() -> None:
 
 
 def test_decorator_composition_accepts_a_loop_and_data_calls() -> None:
-    # the intended fix: one explicit list of steps applied in a loop
     source = """
     from langslice.doors.wrappers import announces, saves_views
 

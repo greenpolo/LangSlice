@@ -52,43 +52,41 @@ CORE_MODULES = (
     "langslice.core.maps.section_maps",
     "langslice.core.maps.imported",
     "langslice.job",
-    "langslice.job.layout",
-    "langslice.job.history",
-    "langslice.job.index",
+    "langslice.job.folder.layout",
+    "langslice.job.steps.history",
+    "langslice.job.folder.index",
     "langslice.job.pictures",
-    "langslice.job.public_files",
+    "langslice.job.exports.public_files",
     "langslice.job.imports.readers",
     "langslice.tools",
     "langslice.tools.refusal",
-    "langslice.tools.positions",
-    "langslice.tools.damage",
-    "langslice.tools.images",
-    "langslice.tools.masks",
-    "langslice.tools.notes",
-    "langslice.tools.transforms",
-    "langslice.tools.affine_fit",
-    "langslice.tools.fit_regions",
-    "langslice.tools.deformable",
-    "langslice.tools.warps",
-    "langslice.tools.fit_pictures",
-    "langslice.tools.landmarks",
-    "langslice.tools.landmark_warp",
-    "langslice.tools.submit",
-    "langslice.tools.history",
-    "langslice.tools.status",
-    "langslice.tools.traces",
-    "langslice.tools.atlas",
+    "langslice.tools.changing.positions",
+    "langslice.tools.changing.damage",
+    "langslice.tools.changing.images",
+    "langslice.tools.changing.masks",
+    "langslice.tools.bookkeeping.notes",
+    "langslice.tools.changing.transforms",
+    "langslice.tools.fitting.affine_fit",
+    "langslice.tools.fitting.fit_regions",
+    "langslice.tools.fitting.deformable",
+    "langslice.tools.changing.warps",
+    "langslice.tools.looking.fit_pictures",
+    "langslice.tools.landmarking.landmarks",
+    "langslice.tools.landmarking.landmark_warp",
+    "langslice.tools.bookkeeping.submit",
+    "langslice.tools.bookkeeping.history",
+    "langslice.tools.looking.status",
+    "langslice.tools.fitting.traces",
+    "langslice.tools.looking.atlas",
     "langslice.tools.catalog",
-    "langslice.tools.exports",
-    "langslice.tools.look",
-    "langslice.tools.files",
+    "langslice.tools.bookkeeping.exports",
+    "langslice.tools.looking.look",
+    "langslice.tools.looking.files",
     "langslice.tools.stale",
 )
 
 FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 
-#: Doors that return plain pictures and data (the ADK driver and the MCP
-#: server package them): they load no agent framework or model client either.
 PLAIN_DOORS = (
     "langslice.doors.tools.toolbox",
     "langslice.tools.pipeline",
@@ -104,8 +102,6 @@ PLAIN_DOORS = (
     "langslice.doors.agent_cli.calls",
 )
 
-#: The child interpreters import this tree's sources (not whichever checkout
-#: the environment's editable install points at).
 _SOURCES = {**os.environ, "PYTHONPATH": os.pathsep.join(
     [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"),
      os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)}

@@ -53,7 +53,7 @@ from langslice.hosts.gui.calm import draw_calm_overlay, draw_calm_thumb
 from langslice.hosts.gui.drawing import draw_atlas as _atlas_picture
 from langslice.hosts.gui.drawing import draw_overlay as _overlay_picture
 from langslice.hosts.gui.drawing import draw_thumb as _thumb_picture
-from langslice.job.layout import JOB_FILE
+from langslice.job.folder.layout import JOB_FILE
 
 logger = logging.getLogger(__name__)
 

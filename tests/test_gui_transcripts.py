@@ -86,7 +86,6 @@ def test_the_transcript_is_found_by_its_start_job_and_tailed(tmp_path: Path) -> 
     assert records[1]["thought"] == "The pitch looks tilted."
     assert records[2]["text"] == "Placing the sections."
     assert words.read(folder, None, NOW) == []
-    # A line being written is taken when it is whole.
     half = _line(_turn({"type": "text", "text": "Fitting."}))
     _write(ours, {"type": "user"}, end="\n" + half[:30])
     assert words.read(folder, None, NOW) == []
@@ -105,7 +104,6 @@ def test_an_old_transcript_is_not_searched_and_off_reads_nothing(
     stale = NOW - 10 * 24 * 3600
     os.utime(old, (stale, stale))
     assert _words(root).read(folder, None, NOW) == []
-    # A job with no tool call yet is not looked for.
     os.utime(old, (NOW, NOW))
     assert _words(root).read(tmp_path / "none" / "langslice", None, NOW) == []
     assert _words(None).read(folder, None, NOW) == []

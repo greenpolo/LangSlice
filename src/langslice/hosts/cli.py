@@ -42,7 +42,7 @@ def run_gui(args: argparse.Namespace) -> None:
     from pathlib import Path
 
     from langslice.hosts.gui import serve
-    from langslice.job.layout import JOB_DIRNAME, JOB_FILE
+    from langslice.job.folder.layout import JOB_DIRNAME, JOB_FILE
 
     folders = []
     for given in args.folders:

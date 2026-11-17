@@ -63,7 +63,7 @@ def test_a_plugin_tool_error_answers_as_a_refusal() -> None:
     assert isinstance(error, Refused) and isinstance(error, ValueError)
     assert error.payload() == {"status": "error", "error": "BAD_ARGS",
                                "message": "rows is 2 or more.", "rows": 2}
-    bare = ToolError(RefusalCode.BAD_ARGS, rows=2)  # as a Refused with none
+    bare = ToolError(RefusalCode.BAD_ARGS, rows=2)
     assert bare.payload() == Refused(RefusalCode.BAD_ARGS, rows=2).payload()
 
 

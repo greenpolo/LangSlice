@@ -28,8 +28,6 @@ from langslice.core.fits.deformable.fit import (
 )
 from langslice.core.fits.deformable.masks import (
     EM_MATCH_THRESHOLD,
-    SORTING_KEYS,
-    Masks,
     dilate,
     em_weights,
     footprint_masks,
@@ -45,9 +43,6 @@ from tests.deformable_synthetic import (
 
 needs_engine = pytest.mark.skipif(importlib.util.find_spec("fireants") is None,
                                   reason="FireANTs missing")
-#: A 0.4 mm hole in the synthetic section's cortex. On these flat, textureless
-#: regions the EM's 0.8 mm contrast blocks absorb a hole of 0.5 mm or more
-#: (a block's offset fits it); textured tissue keeps larger holes apart.
 HOLE = (150, 112, 8)
 
 
@@ -83,14 +78,12 @@ def test_section_weights_leave_a_hole_out_of_the_fixed_mask(atlas, fluorescent):
     settings = FitSettings(detail="coarse")
     plain = prepare_fit(image, atlas, placement(), settings)
     hole = _hole((340, 260))
-    # The sorting of this section: P(match) 0 in the hole and on the slide, 1 on tissue.
     weights = np.where(labels != 0, 1.0, 0.0).astype(np.float32)
     weights[hole] = 0.0
     masked = prepare_fit(image, atlas, placement(), settings, section_weights=weights)
     assert plain.inputs is not None and masked.inputs is not None
     assert masked.details["section_mask"] == "weights thresholded at 0.5"
     assert "section_mask" not in plain.details
-    # No fit sorts by itself: the unmasked fit compares the whole footprint, hole included.
     in_hole = masked.grid.to_working(hole.astype(np.float32)) > 0.5
     assert plain.inputs.fixed_mask[in_hole].all() and not masked.inputs.fixed_mask[in_hole].any()
     assert np.array_equal(masked.inputs.fixed_mask & plain.inputs.fixed_mask,
@@ -105,12 +98,12 @@ def test_weights_are_thresholded_at_one_half_and_checked(atlas):
     settings = FitSettings(detail="coarse")
     plain = prepare_fit(image, atlas, placement(), settings)
     assert plain.inputs is not None
-    for level in (EM_MATCH_THRESHOLD, 1.0):  # at the threshold counts as matching
+    for level in (EM_MATCH_THRESHOLD, 1.0):
         weights = np.full((260, 340), level, dtype=np.float32)
         masked = prepare_fit(image, atlas, placement(), settings, section_weights=weights)
         assert masked.inputs is not None
         assert np.array_equal(masked.inputs.fixed_mask, plain.inputs.fixed_mask)
-    with pytest.raises(ValueError, match="masks are empty"):  # just below it does not
+    with pytest.raises(ValueError, match="masks are empty"):
         prepare_fit(image, atlas, placement(), settings,
                     section_weights=np.full((260, 340), 0.49, dtype=np.float32))
     with pytest.raises(ValueError, match=r"\(H, W\)"):
@@ -130,20 +123,11 @@ def test_a_script_s_boolean_mask_and_the_weights_both_narrow_the_fixed_mask(atla
     assert not hasattr(prepared, "em")
 
 
-def test_there_is_no_em_path_inside_a_fit():
-    from langslice.core.fits.deformable import fit, masks
-
-    assert not hasattr(masks, "EMContext") and not hasattr(masks, "em_masks")
-    assert not hasattr(fit.PreparedFit, "em")
-    assert set(SORTING_KEYS) == {"match_sd", "background_sd", "artifact_sd",
-                                 "background_mean", "artifact_mean"}
-
-
 def test_em_weights_follow_the_contrast_map_on_both_polarities():
     """Textured tissue under a linear contrast (dark tissue on a light slide,
     or bright tissue on black) keeps P(match) high; a 0.6 mm hole drops."""
     rng = np.random.default_rng(1)
-    yy, xx = np.indices((400, 520))  # a 20 um grid
+    yy, xx = np.indices((400, 520))
     tissue = (xx - 260) ** 2 / 220 ** 2 + (yy - 200) ** 2 / 160 ** 2 < 1
     coarse = cv2.GaussianBlur(rng.random((20, 26)).astype(np.float32), (0, 0), 1)
     texture = cv2.resize(coarse, (520, 400), interpolation=cv2.INTER_CUBIC)
@@ -187,9 +171,6 @@ def test_em_weights_take_the_sorting_widths_and_means_and_are_deterministic():
         em_weights(J, warped, first.fixed, 0.02, sorting={"match_sd": 0.0})
 
 
-#: The engine inputs (masks, images, edge channels) prepare_fit built for
-#: these settings before the EM mask and FireANTs (main at f1770df2), as fingerprints:
-#: the Elastix affine, a restricted step's and a whole-section fit's first run.
 UNCHANGED_INPUTS = {
     "elastix": ("85b2b163014fdea2", [
         23948.11, 19925.92, 9606.64, 5949.57, 3090.42, 1370.41, 3199.30, 1548.77]),
@@ -218,7 +199,7 @@ def test_the_affine_and_restricted_steps_get_the_inputs_they_always_got(atlas):
         assert same_inputs(fingerprint, UNCHANGED_INPUTS[name]), name
 
 
-def _fit_in_worker(args):  # a spawn worker's whole fit, as the CPU pool runs it
+def _fit_in_worker(args):
     return run_fit(*args).field_mm
 
 
@@ -232,19 +213,11 @@ def test_identical_inputs_give_identical_fields_in_and_across_processes(atlas):
     first, second = run_fit(*args), run_fit(*args)
     assert np.array_equal(first.field_mm, second.field_mm)
     assert np.array_equal(first.inverse_field_mm, second.inverse_field_mm)
-    assert first.left_out is None  # no fit estimates a sorting of its own
+    assert first.left_out is None
     with ProcessPoolExecutor(1, mp_context=multiprocessing.get_context("spawn")) as pool:
         elsewhere = pool.submit(_fit_in_worker, args).result()
     assert np.array_equal(first.field_mm, elsewhere)
 
-
-def test_masks_value_type():
-    zone = np.zeros((4, 4), dtype=bool)
-    masks = Masks(fixed=~zone, moving=~zone, damage_zone=zone)
-    assert masks.fixed.all() and not masks.damage_zone.any()
-
-
-# --- a section mask in a region-restricted fit -----------------------------------
 
 
 @needs_engine

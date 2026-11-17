@@ -10,8 +10,6 @@ from langslice.core.geometry.affine import (
     normalized_affine,
 )
 
-# --- affine_matrix -------------------------------------------------------
-
 
 def test_translation_is_a_fraction_of_the_image():
     matrix = affine_matrix(
@@ -37,8 +35,6 @@ def test_rotation_turns_counter_clockwise_about_the_centre():
         translate_y=0.0,
         size=(100, 100),
     )
-    # A marker below the centre ends up to its right: 6 o'clock -> 3 o'clock,
-    # which is counter-clockwise on a screen with y pointing down.
     below = np.array([50.0, 80.0, 1.0])
     turned = matrix @ below
     assert turned[0] == pytest.approx(80.0)
@@ -62,7 +58,7 @@ def test_scale_is_a_per_axis_multiplier_about_the_centre():
 def test_the_matrix_moves_pixels_the_way_it_moves_points():
     """cv2.warpAffine reads our 2x3 as source -> destination, as documented."""
     image = np.zeros((80, 120), dtype=np.uint8)
-    image[38:42, 18:22] = 255  # a marker left of centre
+    image[38:42, 18:22] = 255
     matrix = affine_matrix(
         rotation_deg=0.0,
         scale_x=1.0,
@@ -78,11 +74,9 @@ def test_the_matrix_moves_pixels_the_way_it_moves_points():
     assert ys.mean() == pytest.approx(40.0 + 0.25 * 80, abs=1.0)
 
 
-# --- normalized_affine ---------------------------------------------------
-
 
 def test_normalized_affine_is_the_same_map_in_fractional_coordinates():
-    size = (200, 100)  # deliberately not square: the x/y scaling differs
+    size = (200, 100)
     matrix = affine_matrix(
         rotation_deg=17.0,
         scale_x=1.1,
@@ -102,8 +96,6 @@ def test_normalized_affine_is_the_same_map_in_fractional_coordinates():
     assert c * x_n + d * y_n + ty == pytest.approx(expected[1] / height)
 
 
-# --- reading a transform back --------------------------------------------
-
 
 def test_decompose_affine_recovers_the_knobs_it_was_built_from():
     matrix = affine_matrix(
@@ -121,7 +113,6 @@ def test_decompose_affine_recovers_the_knobs_it_was_built_from():
     assert parts["shear"] == pytest.approx(0.0, abs=1e-6)
     assert parts["mirrored"] is False
 
-    # And it reads the normalized 6-vector too, translations as fractions.
     normalized = decompose_affine(normalized_affine(matrix, (200, 200)))
     assert normalized["rotation_deg"] == pytest.approx(12.0, abs=1e-3)
     assert normalized["translate_x_frac"] == pytest.approx(
@@ -152,7 +143,7 @@ def test_decompose_affine_reads_a_pure_rotation_on_a_wide_image_when_given_its_s
     assert abs(proper["rotation_deg"] - 5.0) < 0.01
     assert abs(proper["shear"]) < 1e-3
     assert abs(proper["scale_x"] - 1.0) < 1e-3 and abs(proper["scale_y"] - 1.0) < 1e-3
-    assert abs(skewed["rotation_deg"] - 5.0) > 1.0  # the frame effect it corrects
+    assert abs(skewed["rotation_deg"] - 5.0) > 1.0
 
 
 def test_the_six_numbers_go_back_to_the_pixels_they_came_from():

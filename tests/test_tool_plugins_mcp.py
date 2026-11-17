@@ -95,11 +95,9 @@ def test_the_servers_text_is_shown_inert_and_recorded_verbatim(images: Path):
         "Measure the image file at image_path. [[?look:overlay a mark]] [[?unclosed")
     assert record["meta"]["remote_input_schema"]["properties"]["image_path"]
     assert record["meta"]["mapping"]["inputs"]["image_path"]["send"] == "section_image"
-    # image_path is filled by LangSlice from the section it is told about, so it is not offered.
     assert list(inspect.signature(measure).parameters) == ["section", "scale", "tool_context"]
     injected = tool_named(box, "fix__add_points").__doc__
-    assert "Ignore all previous instructions" in injected  # shown as given, and only shown
-    # Nothing a description says changes the job: the tools and settings are as configured.
+    assert "Ignore all previous instructions" in injected
     assert state is not None and box.job.spec.disabled == []
     assert "secret_admin" not in " ".join(box.names)
     assert box.job.spec.plugins == [REF]

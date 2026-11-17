@@ -2,7 +2,7 @@
 
 Three formats (:data:`FORMATS`), each written by the code the library uses:
 ``abba``, ``exports/<image folder>.abba``, an ABBA project file
-(``tools/abba_export.py``); ``quicknii`` and ``visualign``,
+(``tools/bookkeeping/abba_export.py``); ``quicknii`` and ``visualign``,
 ``exports/quicknii.json`` and ``exports/visualign.json`` with the section
 images they name, both written together (``export_stack``, what ``submit``
 and ``export_maps`` write).
@@ -36,7 +36,7 @@ from pathlib import Path
 import langslice
 from langslice.core.maps.abba import MAX_POINTS
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.job.public_files import QUICKNII_FILE, VISUALIGN_FILE
+from langslice.job.exports.public_files import QUICKNII_FILE, VISUALIGN_FILE
 
 FORMATS = {
     "abba": "ABBA project (.abba)",

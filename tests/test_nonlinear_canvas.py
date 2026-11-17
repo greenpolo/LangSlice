@@ -18,7 +18,6 @@ _BUDGET = 1024 * 1536
 
 
 def test_codex_frame_is_the_fixed_budget_at_the_canvas_aspect() -> None:
-    # Measured: 2197x1686 in -> 1431x1099 out.
     assert native_output_size(None, "openai-oauth", (2197, 1686)) == (1431, 1099)
     w, h = native_output_size(None, "openai-oauth", (1000, 3000)) or (0, 0)
     assert abs(w * h - _BUDGET) < 2000 and abs(w / h - 1 / 3) < 0.01
@@ -29,7 +28,6 @@ def test_api_frame_sits_on_the_16px_grid_and_is_requested_verbatim() -> None:
     assert w % 16 == 0 and h % 16 == 0
     assert abs(w * h - _BUDGET) < _BUDGET * 0.03
     assert _api_edit_size(Image.new("RGB", (w, h))) == f"{w}x{h}"
-    # A non-native canvas still gets the budget size at its aspect.
     assert _api_edit_size(Image.new("RGB", (2197, 1686))) == "1424x1104"
 
 
@@ -62,10 +60,7 @@ def test_unknown_lane_keeps_the_long_edge_rule() -> None:
 def test_native_canvas_is_exactly_the_output_frame_and_keeps_the_slide_box() -> None:
     image = Image.new("RGB", (3137, 2353), (20, 20, 20))
     canvas, render_to_canvas = prepare_canvas(image, provider="openai-oauth")
-    # The frame of the long-edge layout (2048 x 1537), padded out to exactly.
     assert canvas.size == native_output_size(None, "openai-oauth", (2048, 1537))
-    # The slide box scales with the canvas: its aspect is the slide's, and it
-    # stays inside the frame, centred.
     box = _render_box(render_to_canvas, image.size)
     (x0, y0), (x1, y1) = box.min(axis=0), box.max(axis=0)
     assert math.isclose((x1 - x0) / (y1 - y0), 3137 / 2353, rel_tol=1e-9)
@@ -87,12 +82,10 @@ def test_gemini_canvas_is_padded_to_the_fixed_frame_never_cropped() -> None:
 
 def test_the_canvas_is_cropped_to_the_atlas_footprint_plus_margin_clamped_to_the_image() -> None:
     image = Image.new("RGB", (1000, 800), (20, 20, 20))
-    # A 200 x 100 footprint inside the image: kept with 30 px (15% of 200) on every side.
-    inside = np.array([[400.0, 300.0], [600.0, 400.0]]) - 0.5  # pixel-centre numbers of edges
+    inside = np.array([[400.0, 300.0], [600.0, 400.0]]) - 0.5
     canvas, render_to_canvas = prepare_canvas(image, provider="none", footprint=inside)
     assert canvas.size == (260, 160)
     np.testing.assert_allclose(render_to_canvas @ [399.5, 299.5, 1], [29.5, 29.5, 1])
-    # Near the left edge, the margin is clamped to the image (nothing past it is kept).
     edge = np.array([[10.0, 300.0], [210.0, 400.0]]) - 0.5
     canvas, render_to_canvas = prepare_canvas(image, provider="none", footprint=edge)
     assert canvas.size == (240, 160)

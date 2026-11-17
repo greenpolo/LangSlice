@@ -19,8 +19,6 @@ def test_prepare_image_for_vlm_downsamples_keeping_the_aspect() -> None:
     assert prepare_image_for_vlm(small) is small
 
 
-# --- framing -------------------------------------------------------------
-
 
 def test_read_working_image_takes_the_smallest_pyramid_level_large_enough(tmp_path) -> None:
     import tifffile
@@ -31,8 +29,8 @@ def test_read_working_image_takes_the_smallest_pyramid_level_large_enough(tmp_pa
     base = np.random.default_rng(0).integers(0, 255, (4000, 6000, 3), dtype=np.uint8)
     with tifffile.TiffWriter(path) as tif:
         tif.write(base, subifds=2, tile=(256, 256))
-        tif.write(base[::2, ::2], subfiletype=1, tile=(256, 256))  # 3000 px
-        tif.write(base[::4, ::4], subfiletype=1, tile=(256, 256))  # 1500 px
+        tif.write(base[::2, ::2], subfiletype=1, tile=(256, 256))
+        tif.write(base[::4, ::4], subfiletype=1, tile=(256, 256))
     image, file_px_per_px = read_working_image(path, min_edge=1536)
     assert image.mode == "RGB" and image.size == (3000, 2000)
     assert file_px_per_px == 2.0

@@ -47,8 +47,6 @@ from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec
 from tests.test_linear_physical import TwoRegionAtlas
 
-#: A 6 x 4.5 mm field at 2.5 um/px (2400 x 1800 px) with 4 x 3 mm of tissue:
-#: large enough that every level's sizes are reached without upsampling.
 _UM_PER_PX = 2.5
 
 
@@ -71,7 +69,6 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
          count: int = 2, um_per_px: float = _UM_PER_PX,
          tasks: tuple[str, ...] = ("position", "transform"),
          ) -> tuple[Any, Any, Tools, JobSpec]:
-    # Every test builds a stack of its own: tools write to it.
     folder.mkdir()
     for index in range(count):
         _section(size).rotate(7 * index, fillcolor=(0, 0, 0)).save(
@@ -90,14 +87,11 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
 
 
 def _images(result: dict[str, Any]) -> list[Image.Image]:
-    # What the ADK agent receives: the door's JPEG parts.
     return [Image.open(io.BytesIO(part.inline_data.data))
             for part in package_result(result)[TOOL_MEDIA_PARTS_KEY] if part.inline_data]
 
 
 def _widths(result: dict[str, Any]) -> list[int]:
-    # Widths: a caption adds a band below every picture; the tissue here is
-    # wider than tall, so a picture's width is its long edge.
     return [image.width for image in _images(result)]
 
 
@@ -115,8 +109,6 @@ def _seed_sections(state: Any, ctx: Any) -> list[Image.Image]:
     return [section_tile(ctx, state, record, tile) for record in state.in_order()]
 
 
-# --- each level's two sizes ------------------------------------------------
-
 
 @pytest.mark.parametrize("level", ["low", "medium", "high", "auto"])
 def test_each_level_opens_at_one_size_and_shows_later_pictures_at_another(
@@ -125,12 +117,9 @@ def test_each_level_opens_at_one_size_and_shows_later_pictures_at_another(
     opening, later = PICTURE_EDGES[level]
     state, ctx, tools, _spec = _run(tmp_path / level, level)
 
-    # Each tile is the opening size, shrunk by at most a few pixels to fill the strip.
     assert all(opening - 8 <= image.width <= opening for image in _seed_sections(state, ctx))
     assert _widths(tools["look"]("section", sections=["s0.tif"])) == [later]
     assert _widths(tools["look"]("overlay", sections=["s0.tif"])) == [later]
-    # A change tool's picture of what it wrote is the later size too (elastix
-    # finds nothing to fit on this flat synthetic tissue, so the hand tool draws).
     assert _widths(tools["interactive_transform"]([_entry()])) == [later]
 
 
@@ -146,8 +135,6 @@ def test_a_small_snapshot_is_never_upsampled(tmp_path: Path):
     assert overlay.width < PICTURE_EDGES["high"][1]
 
 
-# --- auto -------------------------------------------------------------------
-
 
 def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     state, ctx, tools, spec = _run(tmp_path / "auto", "auto")
@@ -158,8 +145,6 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     assert _widths(plain) == [default] and "resolution_note" not in plain
     chosen = look("section", sections=["s0.tif"], resolution=1200)
     assert _widths(chosen) == [1200] and "resolution_note" not in chosen
-    # The cap is the driver model's largest image: the
-    # OpenAI lanes' 2048 px here, the run's model being no other lane.
     big = look("overlay", sections=["s0.tif"], resolution=5000)
     assert _widths(big) == [2048]
     assert "2048" in big["resolution_note"]
@@ -167,9 +152,7 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     assert _widths(small) == [MIN_RESOLUTION] and str(MIN_RESOLUTION) in small["resolution_note"]
     refused = look("section", sections=["s0.tif"], resolution="large")
     assert refused["error"] == "BAD_ARGS"
-    # A change tool's picture is the level's later size: it takes no resolution.
     assert _widths(tools["interactive_transform"]([_entry()])) == [default]
-    # The cap is the driver model's own: Claude's for the MCP host.
     claude = build_tools(state, ctx, spec, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
     assert claude.max_view_edge == CLAUDE_MAX_VIEW_EDGE == 2000
     tool = next(tool for tool in claude.tools if tool.__name__ == "look")
@@ -177,11 +160,7 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     assert _widths(big) == [2000] and "2000" in big["resolution_note"]
 
 
-# --- what is computed does not move ------------------------------------------
 
-
-#: A hand transform about the canvas centre on this stack (re-pinned when the
-#: per-entry pivot was deleted): the stored numbers are the same at every level.
 _PINNED_S1_ADJUST = [1.0973204552858067, 0.04970148754268928, -0.05351097141424801,
                      -0.10230949482471711, 0.947685847746833, 0.06620071242783103]
 
@@ -212,7 +191,7 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
 
 @pytest.mark.parametrize("level", ["low", "auto"])
 def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
-    from langslice.tools import transforms
+    from langslice.tools.changing import transforms
 
     state, ctx, job = _fixed_stack(tmp_path / level, level)
     transforms.interactive_transform(job, ctx, [{
@@ -258,7 +237,7 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     entry = _entry(rotation_deg=12.0)
     low["interactive_transform"]([entry])
     big["interactive_transform"]([entry])
-    assert len(drawn) == 2  # each call's picture of what it wrote
+    assert len(drawn) == 2
 
     def tissue(body: np.ndarray) -> tuple[float, float, float]:
         ys, xs = np.nonzero(body > 60)
@@ -268,8 +247,6 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     assert drawn[1].shape[1] / drawn[0].shape[1] == pytest.approx(2.0, rel=0.02)
     assert small == pytest.approx(large, abs=0.005)
 
-
-# --- captions ------------------------------------------------------------------
 
 
 def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
@@ -281,12 +258,9 @@ def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
     lines = wrapped.split("\n")
     assert len(lines) > 2
     assert all(font.getlength(line) <= picture.width - 6 for line in lines)
-    # Nothing is dropped: the words come back in order.
     assert " ".join(wrapped.split()) == " ".join(text.split())
-    # The band grows to hold every line; the picture keeps its width.
     assert labelled.width == picture.width
     assert labelled.height - picture.height >= len(lines) * CAPTION_PX
-    # A word wider than the picture breaks between characters.
     assert all(font.getlength(line) <= 30 for line in
                wrap_caption("section_08_overlay.tif", font, 30).split("\n"))
 

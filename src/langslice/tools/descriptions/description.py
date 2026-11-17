@@ -29,11 +29,10 @@ import inspect
 from collections.abc import Mapping
 from dataclasses import KW_ONLY, dataclass, field
 from enum import Enum, auto
-from typing import cast
 
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
 from langslice.core.fits.trace.trace import PLANE_PLACEHOLDER
-from langslice.core.space import Plane
+from langslice.core.space import as_plane
 from langslice.job.plugins import LoadedPlugin, of_spec
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import tools_for
@@ -143,7 +142,7 @@ def _job_prompt(spec: JobSpec) -> str:
     own = spec.nonlinear.image_prompt
     if own is not None:
         return own.replace(PLANE_PLACEHOLDER, spec.plane)
-    plane = cast("Plane", spec.plane)
+    plane = as_plane(spec.plane)
     return border_correction_tool_prompt(
         plane, provider=spec.nonlinear.provider
     )

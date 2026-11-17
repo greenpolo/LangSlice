@@ -71,7 +71,7 @@ from langslice.doors.agent.live import _model_name
 from langslice.doors.agent.models import env_value
 from langslice.doors.call_log import TRACE_DIR_ENV as _TRACE_DIR_ENV
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.job.layout import TRACE_DIR
+from langslice.job.folder.layout import TRACE_DIR
 
 logger = logging.getLogger(__name__)
 

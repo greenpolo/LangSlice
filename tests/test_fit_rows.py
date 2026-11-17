@@ -5,8 +5,8 @@ order each kind of row had when the rows were dicts (``tools.deformable_rows``,
 from __future__ import annotations
 
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.tools.affine_fit import AffineRow, affine_row_to_json
-from langslice.tools.deformable_rows import (
+from langslice.tools.fitting.affine_fit import AffineRow, affine_row_to_json
+from langslice.tools.fitting.deformable_rows import (
     AppliedFit,
     DeformableRow,
     deformable_row_to_json,

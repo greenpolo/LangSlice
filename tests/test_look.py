@@ -28,7 +28,7 @@ from tests.look_synthetic import SECTIONS, record, stack
 
 def _recipe_ok(picture, mode: str) -> dict:
     recipe = json.loads(json.dumps(picture.recipe))
-    assert recipe == picture.recipe  # JSON as it is
+    assert recipe == picture.recipe
     assert recipe["renderer"] == "look" and recipe["args"]["mode"] == mode
     assert recipe["args"]["zoom"] == []
     assert recipe["shown"] == recipe["base"]
@@ -76,7 +76,7 @@ def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
     with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("atlas"))
     assert caught.value.code == "BAD_ARGS"
-    for layers in (("opal",), ("fur",)):  # the synthetic atlas has only its template
+    for layers in (("opal",), ("fur",)):
         with pytest.raises(Refused) as caught:
             look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=layers))
         assert caught.value.code == "UNKNOWN_LAYER"
@@ -88,7 +88,6 @@ def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
         assert recipe["args"]["positions_mm"] == [picture.extra["position_mm"]]
         assert recipe["state"]["sections"] == {} and "view_angles" in recipe["state"]
         assert "layers template + borders" in picture.caption
-    # The old name of the template is still read.
     assert look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=("template",)))
 
 
@@ -99,7 +98,7 @@ def test_overlay_keeps_the_placement_frame_for_the_layers(tmp_path: Path):
     _recipe_ok(picture, "overlay")
     held = note_for(picture.image, notes)
     assert held is not None
-    assert held.frame is not None and held.panel is not None  # layers still saved
+    assert held.frame is not None and held.panel is not None
     assert held.recipe == picture.recipe and held.caption == picture.caption
     assert "identity transform" in picture.caption and "atlas borders" in picture.caption
     record(state, "s2.png").position_mm = None
@@ -122,12 +121,10 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     back = restored(state, held)
     assert record(back, "s1.png").position_mm == pytest.approx(0.15)
     assert record(back, "s1.png").transform is None
-    assert moved.position_mm == 0.2  # the live state is untouched
-    # A change to another section does not touch this picture.
+    assert moved.position_mm == 0.2
     moved.position_mm, moved.transform = 0.15, None
     record(state, "s0.png").position_mm = 0.22
     assert not changed_since(state, held)
-    # A section gone.
     state.slices = [s for s in state.slices if s.id != "s1.png"]
     assert changed_since(state, held)
     with pytest.raises(Refused) as caught:

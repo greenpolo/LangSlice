@@ -33,11 +33,8 @@ from tests.deformable_synthetic import (
     render_section,
 )
 
-#: The brain ellipse: 140 x 104 voxels at 50 um.
 BRAIN_UM = (7000.0, 5200.0)
-#: The fraction of the section's width that survives on the damaged one.
 KEPT = 0.68
-#: Pixel tolerance of a measured width (edges, resampling).
 TOLERANCE_PX = 4
 
 
@@ -69,7 +66,7 @@ def _job(tmp_path: Path, pixel_size_um: float = 25.0) -> tuple[Any, Any]:
 def _stain_box(picture: Image.Image) -> tuple[int, int]:
     """``(width, height)`` in pixels of the stained tissue on a brightfield panel."""
     gray = np.asarray(picture.convert("L"), dtype=np.float32)
-    mask = (gray > 40) & (gray < 205)  # the slide is ~236, a caption band black
+    mask = (gray > 40) & (gray < 205)
     return _box(mask)
 
 
@@ -95,8 +92,6 @@ def _assert_true_size(section: Image.Image, atlas: Image.Image, *, kept: float =
         tissue_w, brain_w)
 
 
-# --- the opening strips -----------------------------------------------------
-
 
 @pytest.mark.parametrize("name, kept", [("whole.png", 1.0), ("damaged.png", KEPT)])
 def test_opening_tiles_draw_a_section_and_its_atlas_at_one_scale(
@@ -106,7 +101,6 @@ def test_opening_tiles_draw_a_section_and_its_atlas_at_one_scale(
     section, atlas = pair_tiles(ctx, state, state.by_id(name), 0.1, 256)
     assert max(*section.size, *atlas.size) <= 256
     _assert_true_size(section, atlas, kept=kept)
-    # The larger panel (the whole section image here) fills the tile.
     assert max(section.size) >= 254
 
 
@@ -116,7 +110,7 @@ def test_a_wrong_pixel_size_shows_as_a_wrong_size(tmp_path: Path):
     state, ctx = _job(tmp_path, pixel_size_um=50.0)
     section, atlas = pair_tiles(ctx, state, state.by_id("whole.png"), 0.1, 256)
     _assert_true_size(section, atlas, ratio=2.0)
-    assert max(section.size) >= 254  # now the section is the larger panel
+    assert max(section.size) >= 254
 
 
 def test_a_stored_transform_scale_is_drawn_as_the_overlay_draws_it(tmp_path: Path):

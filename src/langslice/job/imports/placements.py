@@ -16,7 +16,7 @@ from langslice.core.maps.imported import (
     placement_from_pixel_map,
 )
 from langslice.core.maps.section_maps import SWAP, orientation_matrix
-from langslice.job.quint import (
+from langslice.job.exports.quint import (
     anchoring_from_pixel_map,
     from_target_grid,
     quicknii_points_to_atlas_um,

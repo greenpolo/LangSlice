@@ -33,7 +33,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv(store.SETTINGS_ENV, raising=False)
     for name in ("OPENAI_API_KEY", "OPENAI_IMAGE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
                  "ANTHROPIC_API_KEY", "LANGSLICE_OPENAI_AUTH"):
-        monkeypatch.setenv(name, "")  # restored after the test even if the code sets it
+        monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
     return tmp_path
 
@@ -88,8 +88,6 @@ def _get(gui: GuiServer) -> dict[str, Any]:
     return json.loads(body)
 
 
-# --- the file ---------------------------------------------------------------
-
 
 def test_the_file_round_trips_in_the_home_and_cleans_what_it_reads(home: Path) -> None:
     assert store.settings_file() == home / ".langslice" / "settings.json"
@@ -129,8 +127,6 @@ def test_the_test_suite_never_reads_the_real_home() -> None:
     assert os.environ.get(store.SETTINGS_ENV) == "off"
 
 
-# --- the harness --------------------------------------------------------------
-
 
 def _args(**given: Any) -> argparse.Namespace:
     return argparse.Namespace(**{"model": None, "reasoning": None, **given})
@@ -142,7 +138,6 @@ def test_linear_run_keeps_its_default_without_the_file(home: Path) -> None:
     args = _args()
     assert apply_saved_agent_choice(args) is False
     assert (args.model, args.reasoning) == (None, None)
-    # A connection chosen with no model saved changes nothing either.
     store.write({"connection": "gemini-api"})
     assert apply_saved_agent_choice(args) is False and args.model is None
 
@@ -174,8 +169,6 @@ def test_linear_run_reads_the_chosen_model_only_without_flags(home: Path) -> Non
     assert apply_saved_agent_choice(args) is False
     assert (args.model, args.reasoning) == ("openai-oauth/gpt-6.1-sol", None)
 
-
-# --- the server ---------------------------------------------------------------
 
 
 def test_posts_need_the_token_host_and_this_origin(server: GuiServer, home: Path) -> None:
@@ -254,7 +247,7 @@ def test_run_location_waits_for_a_working_connection(server: GuiServer) -> None:
     assert state["connection"] is None
     assert state["runs_in"] == {"saved": None, "enabled": False, "value": None}
     _, answer = _request(server, "settings", {"connection": "gemini-api"})
-    assert json.loads(answer)["runs_in"]["enabled"] is False  # chosen, no key
+    assert json.loads(answer)["runs_in"]["enabled"] is False
     _request(server, "settings/key", {"provider": "gemini-api", "key": SECRET})
     state = _get(server)
     assert state["runs_in"] == {"saved": None, "enabled": True, "value": "langslice"}
@@ -271,7 +264,6 @@ def test_models_default_to_langslices_and_save_per_connection(server: GuiServer)
     oauth = json.loads(answer)["agent"]["openai-oauth"]
     assert oauth["model"] == oauth["default"] == store.model_name(
         "openai-oauth", registry.OPENAI_OAUTH_DEFAULT_AGENT_MODEL)
-    # Choosing the ChatGPT account saves LangSlice's own default: linear run is unchanged.
     assert store.agent_choice() == (registry.OPENAI_OAUTH_DEFAULT_AGENT_MODEL, None)
     _request(server, "settings", {"model": "gpt-6-luna", "reasoning": "high"})
     assert store.agent_choice() == ("openai-oauth/gpt-6-luna", "high")

@@ -51,7 +51,6 @@ def test_streaming_final_text_and_calls_are_not_duplicated():
     assert 'secret' not in str(records)
     live.event(event([types.Part.from_text(text='Next response')]))
     assert records[-1] == {'kind': 'text', 'text': 'Next response'}
-    # A final answer that differs from the streamed one is shown as a revision.
     records = []
     live = LiveEvents(records.append)
     live.event(event([
@@ -158,7 +157,6 @@ def test_session_closes_runner_in_original_context_before_debrief(monkeypatch):
                 if index == 1:
                     raise AssertionError('submit must stop before another model turn')
             finally:
-                # Like OpenTelemetry: reset must happen in the creator context.
                 context.reset(token)
                 closed.append(index)
 

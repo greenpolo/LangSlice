@@ -24,11 +24,9 @@ from tests.deformable_synthetic import (
     render_section,
 )
 
-#: Section ids in stack order (file order), and their positions (mm).
 SECTIONS = ("s0.png", "s1.png", "s2.png")
 POSITIONS = (0.05, 0.15, 0.10)
 MARKED = "marked.png"
-#: The marked section: a slab of this size with a square at this box (x0, y0, x1, y1).
 MARKED_SIZE = (320, 240)
 SQUARE = (60, 50, 100, 90)
 

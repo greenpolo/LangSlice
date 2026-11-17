@@ -36,7 +36,7 @@ from langslice.tools.refusal import (
 from langslice.tools.stale import section_inputs, stale_refusal
 
 if TYPE_CHECKING:
-    from langslice.tools.warps import WarpApplied
+    from langslice.tools.changing.warps import WarpApplied
 
 
 @dataclass
@@ -83,7 +83,7 @@ class ContextWrites(ContextProposals):
         ``look`` can then read it by name. Returns its entry (``source``,
         ``file``, ``digest``). ``ToolError`` ``BAD_ARGS`` for a raw channel's
         name, another shape or values."""
-        from langslice.tools import images as ops_images
+        from langslice.tools.changing import images as ops_images
 
         self._require()
         record = self._record(section)
@@ -158,7 +158,7 @@ class ContextWrites(ContextProposals):
         *cutting_angles* (``{"pitch_deg", "yaw_deg"}``), the stack's angles.
         The stack then runs in the order of the positions. Needs ``position``
         (and ``angles``) in the tool's ``writes``."""
-        from langslice.tools import positions
+        from langslice.tools.changing import positions
 
         self._require("position", *(["angles"] if cutting_angles is not None else []))
         job, workspace = self._run.job, self._run.workspace
@@ -220,7 +220,7 @@ class ContextWrites(ContextProposals):
         a transform that would turn over a section whose orientation is
         frozen, comes back as that section's row (``FROZEN``); the others are
         written as one undo step. Needs ``affine`` in the tool's ``writes``."""
-        from langslice.tools import transforms
+        from langslice.tools.changing import transforms
 
         self._require("affine")
         job = self._run.job
@@ -284,7 +284,7 @@ class ContextWrites(ContextProposals):
         job's write lock is taken, so a long tool holds it only to write.
         The ok rows carry the numbers ``DeformationProposal.summary`` has.
         Needs ``deformation`` in the tool's ``writes``."""
-        from langslice.tools import warps
+        from langslice.tools.changing import warps
 
         self._require("deformation")
         job = self._run.job
@@ -334,7 +334,7 @@ class ContextWrites(ContextProposals):
                     expect: Mapping[str, str] | None = None) -> WriteResult:
         """Mark atlas regions a section has lost (``rows``: ``{"id", "regions",
         "note"?}``; empty regions clear the marks), as ``mark_damage`` does."""
-        from langslice.tools import damage
+        from langslice.tools.changing import damage
 
         self._require()
         job, workspace = self._run.job, self._run.workspace

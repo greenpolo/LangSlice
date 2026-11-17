@@ -18,7 +18,7 @@ def check(path: str) -> None:
                    for part in parts):
                 raise ValueError(f"Private or generated file in wheel: {name}")
         required = {
-            "langslice/doors/credentials.py", "langslice/tools/abba_export.py",
+            "langslice/doors/credentials.py", "langslice/tools/bookkeeping/abba_export.py",
             "langslice/hosts/gui/static/index.html",
             "langslice/hosts/gui/static/app.css", "langslice/hosts/gui/static/app.js",
             # the vendored engines' licences ship with their code

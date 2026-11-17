@@ -61,7 +61,7 @@ def test_each_plane_slices_along_its_own_axis(orientation: str) -> None:
 
 
 def test_position_range_follows_the_plane_axis() -> None:
-    atlas = _FakeAtlas("asr")  # shape (4, 5, 6) at 0.1 mm: AP, DV, ML
+    atlas = _FakeAtlas("asr")
     assert get_position_range_mm(atlas, plane="sagittal")[1] == pytest.approx(0.5)
     assert get_position_range_mm(atlas, plane="horizontal")[1] == pytest.approx(0.4)
 
@@ -93,10 +93,10 @@ def test_real_allen_axes_ranges_and_round_trip() -> None:
     assert slice_axis_index(ctx, "coronal") == ctx.ap_axis_index
     lo, hi = get_position_range_mm(atlas)
     assert lo == 0.0
-    assert hi > 10.0  # a mouse brain is ~13 mm AP
+    assert hi > 10.0
     assert 9.0 < get_position_range_mm(atlas, plane="sagittal")[1] < 13.0
     for mm in [0.0, 2.5, 5.0, 7.5]:
         back = index_to_position_mm(atlas, position_mm_to_index(atlas, mm))
-        assert abs(back - mm) < 0.025  # within one voxel
+        assert abs(back - mm) < 0.025
     coronal = get_reference_slice(atlas, 5.0)
     assert coronal.size != get_reference_slice(atlas, 5.0, plane="sagittal").size

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from tools.stylecheck.testing import check_source, flagged_lines
 
-#: Two parameters described by their own names, two described well and one
-#: left without a description.
 DESCRIPTIONS = '''
 def fit(mode, section_mode, metric, plane, settings):
     """Fit something.

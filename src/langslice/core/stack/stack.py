@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langslice.core.jsonable import JsonObject, empty_object
+from langslice.core.space import Plane
 from langslice.core.stack.section import FLAT, Angles, MixedAngles, Section
 
 
@@ -74,7 +75,7 @@ class Stack:
 
     image_folder: str = ""
     atlas: str = ""
-    plane: str = "coronal"
+    plane: Plane = "coronal"
     interval_mm: float | None = None
     thickness_mm: float | None = None
     spec: JsonObject = field(default_factory=empty_object)

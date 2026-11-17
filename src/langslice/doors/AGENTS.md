@@ -535,7 +535,7 @@ Each CLI call and each `open_job` opens the job as it stands (`Job.load`),
 and every tool call runs `Job.sync` first, so an agent run and CLI calls on
 one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job
-folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
+folder's lock (`job/folder/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
 `elastix_affine`, `fireants_syn`, `trace_borders`,
 `export_maps`), which compute outside it and take it to apply, refusing a

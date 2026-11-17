@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
 CHILD_COMMAND: list[str] = [
@@ -93,7 +93,7 @@ _ERROR_ACCESS_DENIED = 5
 def _kernel32() -> Any:
     import ctypes
 
-    return ctypes.WinDLL("kernel32", use_last_error=False)  # type: ignore[attr-defined]
+    return ctypes.WinDLL("kernel32", use_last_error=False)
 
 
 def _alive_windows(pid: int) -> bool:
@@ -101,7 +101,7 @@ def _alive_windows(pid: int) -> bool:
     ``OpenProcess`` + ``GetExitCodeProcess`` (a process that exists but is
     not ours to open, access denied, counts as running)."""
     try:
-        import psutil  # pyright: ignore[reportMissingModuleSource]
+        import psutil
     except ImportError:
         psutil = None
     if psutil is not None:

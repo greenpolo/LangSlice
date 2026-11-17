@@ -18,7 +18,6 @@ def test_each_id_takes_its_ancestor_at_the_depth():
     labels = np.array([[0, 4, 3], [2, 5, 99]], dtype=np.uint32)
     atlas = _atlas()
     at_depth = labels_at(labels, atlas, 1)
-    # 4 and 3 sit under 2; 2 and 5 are at depth 1; an unlisted id and 0 stay.
     assert at_depth.tolist() == [[0, 2, 2], [2, 5, 99]]
     assert at_depth.dtype == labels.dtype
     assert labels_at(labels, atlas, 2).tolist() == [[0, 3, 3], [2, 5, 99]]

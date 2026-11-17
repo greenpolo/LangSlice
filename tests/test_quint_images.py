@@ -5,12 +5,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.job.imports.matching import match_sections
-from langslice.job.quint_images import (
+from langslice.job.exports.quint_images import (
     copy_filename,
     section_numbers,
     write_copies,
 )
+from langslice.job.imports.matching import match_sections
 
 
 def test_section_numbers_come_from_the_filenames_when_they_all_carry_one():
@@ -22,11 +22,9 @@ def test_section_numbers_come_from_the_filenames_when_they_all_carry_one():
 
 
 def test_section_numbers_fall_back_to_the_stack_order():
-    # one name without a number, two sharing one, a name with two
     assert section_numbers(["a_s012.tif", "b.tif"]) == [1, 2]
     assert section_numbers(["a_s012.tif", "b_s012.tif"]) == [1, 2]
     assert section_numbers(["a_s01_s02.tif", "b_s03.tif"]) == [1, 2]
-    # microscope export names carry numbers, but not as _sNNN: the order counts
     assert section_numbers(
         ["M03_A_07_Overlay.png", "M03_B_07_Overlay.png"]
     ) == [1, 2]
@@ -56,7 +54,7 @@ def test_an_import_finds_the_section_of_a_copy():
 def test_copies_are_written_and_the_old_ones_removed(tmp_path: Path):
     old = tmp_path / "a_s002.png"
     Image.new("L", (4, 3)).save(old)
-    mine = tmp_path / "mine.png"  # a file no export named: kept
+    mine = tmp_path / "mine.png"
     Image.new("L", (4, 3)).save(mine)
     pixels = np.arange(12, dtype=np.uint8).reshape(3, 4)
     written = write_copies(

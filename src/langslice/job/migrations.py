@@ -24,7 +24,7 @@ A section's ``registrations.jsonl`` (its registrations, before the section
 history) is read as the lines of its ``history.jsonl`` by
 ``lines_from_registration_list``, so the numbers an agent saw stay valid;
 the section's next write writes ``history.jsonl`` from them and removes it
-(:mod:`langslice.job.history`). An older LangSlice's undo steps
+(:mod:`langslice.job.steps.history`). An older LangSlice's undo steps
 (``history/index.json`` and ``step-*.json``) are not read: the folder opens
 with one warning (once per process) and undo starts with its session.
 
@@ -91,7 +91,7 @@ from langslice.core.stack.json_reads import (
 )
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import (
     STATE_FORMAT_VERSION,
     current_state,

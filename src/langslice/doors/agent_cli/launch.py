@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from langslice.doors.agent_cli import environment
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.tools.descriptions.door_text import (
     SCRIPTING,
     image_model_state,

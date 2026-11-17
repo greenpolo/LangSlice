@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import cast
 
 from langslice.core.jsonable import JsonObject, empty_object
-from langslice.job.layout import (
+from langslice.job.folder.layout import (
     EVENTS_FILE,
     JOB_DIRNAME,
     LOGS_DIR,

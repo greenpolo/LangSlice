@@ -59,7 +59,7 @@ from langslice.doors.agent_cli.envelope import (
     stdout_to_stderr,
 )
 from langslice.doors.jobs import Opened
-from langslice.job.lock import JobBusy
+from langslice.job.folder.lock import JobBusy
 from langslice.tools.descriptions.door_text import NOTES_KEY, image_model_state
 from langslice.tools.descriptions.render import Declaration, declaration
 
@@ -197,7 +197,7 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
     if name == "env":
         from langslice.doors.agent_cli import environment as jobenv
         from langslice.doors.jobs import NoJob, find
-        from langslice.job.layout import JobLayout
+        from langslice.job.folder.layout import JobLayout
 
         try:
             layout = JobLayout(find(folder))
@@ -231,7 +231,7 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
         save_reply,
     )
     from langslice.doors.jobs import NoJob, find
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     try:
         layout = JobLayout(find(folder))
@@ -265,7 +265,7 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
 
 def _finish_run(folder: str, run_id: str, envelope: Envelope) -> None:
     from langslice.doors.jobs import find
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     try:
         background.finish(JobLayout(find(folder)), run_id, envelope.to_dict(), envelope.exit)
@@ -524,7 +524,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         offered = opened.listed_verbs()
         if verb not in tools:
             spec = opened.spec
-            tasks = spec.tasks  # pyright: ignore[reportAny]
+            tasks = spec.tasks
             raise _Refusal(Envelope.failure(
                 RefusalCode.VERB_OFF, f"This job's settings (tasks {tasks}"
                 + (f", disabled {spec.disabled}" if spec.disabled else "")
@@ -781,7 +781,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     try:
         from langslice.doors.agent_cli import launch as launches
         from langslice.doors.jobs import VIEWER_KEY, job_viewer
-        from langslice.job.layout import write_job_file
+        from langslice.job.folder.layout import write_job_file
 
         layout = opened.job.layout
         state = opened.job.state
@@ -824,7 +824,7 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
     (:mod:`langslice.doors.agent_cli.launch`)."""
     from langslice.doors.agent_cli import launch as launches
     from langslice.doors.jobs import NoJob, find
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     parser = _Parser(prog="launch", add_help=False)
     parser.add_argument("--role", required=True, choices=launches.ROLES)
@@ -864,7 +864,7 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
 def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any]) -> Envelope:
     """``runs [ID]`` (every run, or one) and ``wait [ID]`` (the latest without ID)."""
     from langslice.doors.jobs import NoJob, find
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     try:
         layout = JobLayout(find(folder))

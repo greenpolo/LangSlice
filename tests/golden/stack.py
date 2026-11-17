@@ -12,34 +12,21 @@ import hashlib
 import numpy as np
 from PIL import Image
 
-#: The three sections: real coronal fluorescence sections (DAPI blue, two
-#: tracer channels) from an unpublished series, cut to 768 px wide; kept out
-#: of the repository (``tests/test_golden_outputs.py``).
 FRONT = "M01_001_005.png"
 MIDDLE = "M01_002_005.png"
 BACK = "M01_002_009.png"
 SECTIONS = (FRONT, MIDDLE, BACK)
 
-#: A coarse real atlas the machine already holds (its Nissl is borrowed from
-#: ccfv3augmented_mouse_25um, also cached).
 ATLAS = "allen_mouse_50um"
-#: Every task on, so every door offers every tool.
 TASKS = ("position", "transform", "nonlinear")
-#: Source pixel size given outright, so nothing is inferred: the 4096 px
-#: scans are about 2.4 um/px, cut by 5.33.
 PIXEL_SIZE_UM = 12.8
-#: Positions near the hand registration of these sections, in atlas mm.
 POSITIONS_MM = {FRONT: 3.5, MIDDLE: 5.62, BACK: 6.29}
-#: A small oblique plane, so the angled-plane code runs.
 CUTTING_ANGLES = {"pitch_deg": 1.5, "yaw_deg": -1.0}
-#: Hand transforms written before the automatic affine refines them.
 HAND_TRANSFORMS = [
     {"id": FRONT, "rotation_deg": 2.0, "scale_x": 1.05, "translate_x_mm": 0.1},
     {"id": MIDDLE, "scale_y": 0.97, "shear": 0.02},
 ]
-#: The zoom box drawn after every write, in overlay-picture pixels.
 ZOOM_BOX = [120, 80, 380, 260]
-#: A filename no section has, for the refusals.
 MISSING = "missing.png"
 
 

@@ -45,8 +45,6 @@ def _ctx(spec: JobSpec, atlas=_ATLAS):
     return build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
 
 
-# --- ingest --------------------------------------------------------------
-
 
 def test_ingest_discovers_the_folder_in_natural_order(tmp_path: Path):
     names = _make_stack(tmp_path, n=5)
@@ -81,8 +79,6 @@ def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
 
 
 def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
-    # A host's own alignment (ABBA) carries a flip inside its affine: a
-    # negative determinant. The harness keeps it as supplied.
     from langslice.job.gates import submit_errors
 
     names = _make_stack(tmp_path, n=2)
@@ -101,7 +97,7 @@ def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
 
     record = state.by_id(names[0])
     assert affine_to_json(record.transform) == mirrored
-    assert record.flip is False  # the mirror stays inside the transform
+    assert record.flip is False
     assert submit_errors(state, spec, []) is None
 
 
@@ -120,8 +116,6 @@ def test_ingest_and_host_inputs_refuse_an_empty_folder_and_an_unknown_filename(
     with pytest.raises(ValueError, match="ghost.png"):
         apply_host_inputs(state, spec)
 
-
-# --- end to end ----------------------------------------------------------
 
 
 def test_run_places_the_stack_and_writes_results(tmp_path: Path, monkeypatch):
@@ -181,8 +175,6 @@ def test_run_resumes_from_the_checkpoint(tmp_path: Path, monkeypatch):
     spec = _spec(tmp_path, tasks=["position"])
     asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
 
-    # A second run resumes: the fake never re-writes positions (the stack is
-    # already placed) and still submits.
     install_fake_adk_model_stack(monkeypatch, positions=None)
     state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
     assert state.submitted is True
@@ -193,7 +185,7 @@ def test_a_session_that_fails_before_submitting_keeps_its_writes_and_its_spend(
     tmp_path: Path, monkeypatch
 ):
     names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: submit is refused every turn
+    positions = {names[0]: 4.0}
     install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000,
                                  fail_after_calls=3)
 
@@ -203,7 +195,7 @@ def test_a_session_that_fails_before_submitting_keeps_its_writes_and_its_spend(
 
     exports = tmp_path / "langslice" / "exports"
     spend = json.loads((exports / "spend.json").read_text(encoding="utf-8"))
-    assert spend["tokens"]["input_uncached"] == 3000  # the three calls that were answered
+    assert spend["tokens"]["input_uncached"] == 3000
     saved = load_checkpoint(tmp_path / "langslice" / "state.json")
     assert saved.by_id(names[0]).position_mm == 4.0
 
@@ -300,7 +292,7 @@ def test_a_trace_sent_elsewhere_is_also_written_in_the_job_folder_as_it_goes(
     live: list[tuple[int, int]] = []
 
     def on_event(event: dict) -> None:
-        if event["kind"] == "usage":  # after the call is counted
+        if event["kind"] == "usage":
             spend = json.loads((job_folder / "exports" / "spend.json").read_text(
                 encoding="utf-8"))
             mirrored = list((job_folder / "trace").glob("*.jsonl"))
@@ -318,7 +310,6 @@ def test_a_trace_sent_elsewhere_is_also_written_in_the_job_folder_as_it_goes(
     kinds = [json.loads(line)["kind"] for line in second[0].read_text(
         encoding="utf-8").splitlines()]
     assert kinds[0] == "session" and kinds[-1] == "summary"
-    # The account after each call, before the run ended; the mirror already there.
     assert len(live) >= 2
     assert [tokens for tokens, _ in live] == [1000 * n for n in range(1, len(live) + 1)]
     assert all(count == 1 for _, count in live)
@@ -361,8 +352,6 @@ def test_an_api_key_lane_is_told_its_dollar_estimate_through_the_whole_session(
     assert spend["usd_estimate"] == 15.0 and spend["quota_used_percent"] is None
 
 
-# --- background work between turns ------------------------------------------
-
 
 def _job(tmp_path: Path):
     from langslice.job.job import Job
@@ -390,7 +379,7 @@ def test_background_message_waits_for_running_work_and_hands_it_out_once(tmp_pat
     work = job.background.start("trace_borders", ["slice_1.png"], land,
                                 wait_for_images=False)
     threading.Timer(0.02, release.set).start()
-    assert job.background.running()  # still running when the turn ends
+    assert job.background.running()
 
     items = background_message(job)
     assert items is not None and not job.background.running()
@@ -400,6 +389,5 @@ def test_background_message_waits_for_running_work_and_hands_it_out_once(tmp_pat
     assert items[1] == f"picture {work.pictures[0]} ({work.id})"
     assert isinstance(items[2], Image.Image) and items[2].size == picture.size
     assert len(items) == 3
-    # Each finished piece is handed out once.
     assert background_message(job) is None
     job.background.close()

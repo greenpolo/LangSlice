@@ -44,7 +44,7 @@ def test_positioning_zoom_redraws_larger_at_more_detail(tmp_path: Path):
     assert zoomed.redrawn and zoomed.mode == "positioning"
     assert (zoomed.um_per_px or 0.0) < first.um_per_px
     assert zoomed.recipe["args"]["zoom"] == pytest.approx([0.0, 0.5, 0.5, 1.0])
-    assert max(zoomed.recipe["shown"]) > 0.5 * width  # redrawn larger, not cropped
+    assert max(zoomed.recipe["shown"]) > 0.5 * width
     assert "zoomed" in zoomed.caption
 
 
@@ -71,12 +71,10 @@ def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_pa
     assert window[2] - window[0] < 0.6
     assert window[3] - window[1] < 0.6
     assert zoomed.um_per_px < first.um_per_px
-    # An explicit box on this result keeps the selected-only borders.
     width, height = zoomed.recipe["shown"]
     again = redraw(zoomed.recipe, [0, 0, width / 2, height], ws, state=state)
     assert again.recipe["args"]["region_only"]
     assert again.recipe["args"]["highlight"] == ["STR"]
-    # Moving the live section does not move a zoom of the saved overlay.
     record(state, "s1.png").position_mm = 0.22
     stale = redraw(first.recipe, [], ws, state=state, region="STR")
     assert stale.stale and "at 0.15 mm" in stale.caption

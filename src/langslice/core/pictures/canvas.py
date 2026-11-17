@@ -289,8 +289,8 @@ REGION_CONTEXT_ALPHA = 0.35
 
 
 def regions_left(
-    atlas: Any, regions: Any, position_mm: float, plane: str, pitch_deg: float,
-    yaw_deg: float, native_to_display: np.ndarray,
+    atlas: Any, regions: Any, position_mm: float, plane: Plane,
+    pitch_deg: float, yaw_deg: float, native_to_display: np.ndarray,
 ) -> np.ndarray | None:
     """Native pixels on the picture's left when a region names a side, else None.
 

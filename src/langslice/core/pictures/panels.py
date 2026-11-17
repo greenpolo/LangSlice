@@ -30,7 +30,6 @@ from langslice.core.sections.channels import channel_colors
 from langslice.core.sections.images import Look
 from langslice.core.sections.reading import mask_box
 from langslice.core.sections.renders import render_slice
-from langslice.core.space import Plane
 from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack, plane_angles
 from langslice.core.workspace import Workspace
@@ -48,7 +47,7 @@ def _image_plane(
     from langslice.core.geometry.oblique import sample_oblique_plane
 
     values = np.asarray(sample_oblique_plane(
-        ctx.atlas, position_mm, cast(Plane, state.plane), *angles, volume=kind, order=1,
+        ctx.atlas, position_mm, state.plane, *angles, volume=kind, order=1,
     ), dtype=np.float32)
     if values.shape != labels.shape:
         values = np.asarray(Image.fromarray(values, mode="F").resize(
@@ -78,7 +77,7 @@ def atlas_image_picture(
     images = tuple(kind for kind in kinds if kind != BORDERS)
     if images == (TEMPLATE,):
         return None
-    plane = cast(Plane, state.plane)
+    plane = state.plane
     pitch, yaw = plane_angles(state, angles)
     labels = np.asarray(annotation_slice(
         ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
@@ -118,7 +117,7 @@ def regions_in_plane(
         return []
     pitch, yaw = plane_angles(state, angles)
     labels = np.asarray(annotation_slice(
-        ctx.atlas, position_mm, plane=cast(Plane, state.plane),
+        ctx.atlas, position_mm, plane=state.plane,
         pitch_deg=pitch, yaw_deg=yaw,
     ))
     left = regions_left(ctx.atlas, options.regions, position_mm, state.plane, pitch, yaw,
@@ -199,7 +198,7 @@ def framed_atlas(
 
         whole = atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw))
         return cropped_geometry(sized(whole), whole)
-    plane = cast(Plane, state.plane)
+    plane = state.plane
     labels = np.asarray(annotation_slice(
         ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
     ))

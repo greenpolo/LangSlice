@@ -22,10 +22,11 @@ from langslice.doors import jobs
 from langslice.job.gates import submit_errors
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.settings.tool_table import TOOLS
-from langslice.tools import affine_fit, positions, transforms
-from langslice.tools import deformable as ops_deformable
 from langslice.tools.catalog import enabled
-from langslice.tools.deformable_rows import deformable_row_to_json
+from langslice.tools.changing import positions, transforms
+from langslice.tools.fitting import affine_fit
+from langslice.tools.fitting import deformable as ops_deformable
+from langslice.tools.fitting.deformable_rows import deformable_row_to_json
 from tests.linear_tool_helpers import SLAB, tool_named
 from tests.test_disabled_tools import (
     _base_specs,
@@ -44,15 +45,13 @@ def _spec(**fields: Any) -> JobSpec:
     return JobSpec(image_folder="/stack", **fields)
 
 
-# --- the setting ----------------------------------------------------------------------
-
 
 def test_a_freeze_is_cleaned_to_properties_in_order_and_round_trips():
     spec = _spec(frozen={"a.tif": ["affine", "orientation", "affine"], "*": ["angles"],
                          "b.tif": []}, inputs={})
     assert spec.frozen == {"a.tif": ["orientation", "affine"], "*": ["angles"]}
     assert JobSpec.from_dict(spec.to_dict()) == spec
-    assert "frozen" not in _spec().to_dict()  # the default stays out of saved specs
+    assert "frozen" not in _spec().to_dict()
 
 
 @pytest.mark.parametrize("bad, message", [
@@ -69,7 +68,6 @@ def test_a_bad_freeze_is_refused_when_the_spec_is_made(bad: Any, message: str):
 
 
 def test_a_frozen_position_must_have_been_supplied(tmp_path: Path):
-    # By name, at once; for "*" when the sections are known (at ingest).
     assert _spec(frozen={"a.tif": ["position"]}, inputs={"positions": {"a.tif": 1.0}})
     with pytest.raises(ValueError, match="a position has no default"):
         _stack(tmp_path, n=2, placed=False, frozen={"*": ["position"]})
@@ -87,7 +85,6 @@ def test_the_none_values_are_what_a_section_starts_with(tmp_path: Path):
     assert (record.flip, record.rotation_deg, angles_to_json(record.angles)) == (
         False, 0, {"pitch": 0.0, "yaw": 0.0})
     assert record.deformation is None and record.transform is None
-    # A frozen affine with none supplied is the host's identity.
     state, _spec_made, _tools = _stack(tmp_path, n=2, placed=False, frozen={"s1.png": ["affine"]})
     assert affine_to_json(state.by_id("s1.png").transform)["kind"] == "host"
     assert state.by_id("s0.png").transform is None
@@ -108,8 +105,6 @@ def test_a_freeze_naming_no_section_is_refused_at_ingest(tmp_path: Path):
         _stack(tmp_path, n=2, frozen={"nope.png": ["affine"]})
 
 
-# --- the refusals ---------------------------------------------------------------------
-
 
 def test_position_sections_refuses_a_frozen_position_or_angles_whole(tmp_path: Path):
     job, ctx = _open(tmp_path, n=3, frozen={"s1.png": ["position"]},
@@ -121,9 +116,8 @@ def test_position_sections_refuses_a_frozen_position_or_angles_whole(tmp_path: P
     assert refused.value.facts["ids"] == ["s1.png"]
     assert refused.value.facts["properties"] == ["position"]
     assert "s1.png" in refused.value.facts["message"]
-    assert job.undo_stack == []  # nothing written, the unfrozen section included
+    assert job.undo_stack == []
     assert positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0}]).written
-    # The angles are one plane for the stack: one section with them frozen refuses all.
     (tmp_path / "angles").mkdir()
     job, ctx = _open(tmp_path / "angles", n=2, frozen={"s0.png": ["angles"]})
     with pytest.raises(Refused) as angles:
@@ -134,10 +128,10 @@ def test_position_sections_refuses_a_frozen_position_or_angles_whole(tmp_path: P
 def test_interactive_transform_refuses_per_entry_what_is_frozen(tmp_path: Path):
     job, ctx = _open(tmp_path, n=4, frozen={"s0.png": ["orientation"], "s1.png": ["affine"]})
     done = transforms.interactive_transform(job, ctx, [
-        {"id": "s0.png", "flip": True},              # orientation frozen
-        {"id": "s0.png", "rotation_deg": 2.0},       # the affine is free there
-        {"id": "s1.png", "rotation_deg": 2.0},       # affine frozen
-        {"id": "s1.png", "rotate_quarter": 90},      # orientation is free, no transform yet
+        {"id": "s0.png", "flip": True},
+        {"id": "s0.png", "rotation_deg": 2.0},
+        {"id": "s1.png", "rotation_deg": 2.0},
+        {"id": "s1.png", "rotate_quarter": 90},
         {"id": "s2.png", "flip": True, "rotation_deg": 1.0},
     ])
     errors = [entry.refusal and entry.refusal.code for entry in done.entries]
@@ -148,7 +142,7 @@ def test_interactive_transform_refuses_per_entry_what_is_frozen(tmp_path: Path):
     assert job.state.by_id("s0.png").flip is False
     assert job.state.by_id("s1.png").rotation_deg == 90
     assert affine_to_json(
-        job.state.by_id("s1.png").transform)["kind"] == "host"  # the frozen numbers stand
+        job.state.by_id("s1.png").transform)["kind"] == "host"
 
 
 def test_a_frozen_affine_can_still_be_looked_at_with_its_own_numbers(tmp_path: Path):
@@ -183,16 +177,12 @@ def test_the_deformation_tools_refuse_a_frozen_deformation(
     fit = ops_deformable.fireants_syn(job, ctx, ["s0.png"])
     row = deformable_row_to_json(fit.rows[0])
     assert row["error"] == "FROZEN" and row["properties"] == ["deformation"]
-    # Even where the host requires a deformation on every section, the gate
-    # asks only for the section whose deformation is free.
     required = JobSpec.from_dict({**job.spec.to_dict(), "nonlinear": {
         **job.spec.to_dict()["nonlinear"], "require_deformation": True}})
     refusal = submit_errors(job.state, required, [])
     assert refusal is not None
     assert [row["id"] for row in refusal.facts["sections"]] == ["s1.png"]
 
-
-# --- the partial freezes ---------------------------------------------------------------
 
 
 def _ok_fit(determinant: float) -> FittedAffine:
@@ -214,7 +204,7 @@ def test_a_fit_under_a_frozen_orientation_keeps_the_handedness(
     done = affine_fit.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     rows = [affine_fit.affine_row_to_json(row) for row in done.rows]
     free = rows[1]
-    assert free["status"] == "ok"  # s1's orientation is free: a mirroring fit is its to make
+    assert free["status"] == "ok"
     row = rows[0]
     if kept:
         assert row["status"] == "ok" and "s0.png" in done.fitted
@@ -229,8 +219,6 @@ def test_handedness_is_the_one_the_supplied_transform_carries(tmp_path: Path):
     mirrored = {"kind": "imported", "params": [-1.0, 0.0, 1.0, 0.0, 1.0, 0.0]}
     job, ctx = _open(tmp_path, n=2, frozen={"s0.png": ["orientation"]},
                      inputs={"transforms": {"s0.png": mirrored}})
-    # The host's transform already mirrors: a fit that mirrors the same way is kept,
-    # one that turns it back is the orientation changing.
     assert transforms.set_transforms(
         job, {"s0.png": affine_from_json({**mirrored, "params": [-1, 0, 2, 0, 1, 0]})})
     with pytest.raises(Refused) as refused:
@@ -257,14 +245,11 @@ def test_a_frozen_affine_leaves_the_deformation_free_and_a_deformation_fit_write
     assert refusal is not None and refusal.code == "FROZEN"
     held = affine_to_json(job.state.by_id("s0.png").transform)
     assert held["kind"] == "host"
-    # the deformation tools are on, and they only ever write the deformation
     names = set(enabled(job.spec))
     assert {"fireants_syn", "elastix_affine", "interactive_transform"} <= names
     assert TOOLS["fireants_syn"].writes == ("deformation",)
     assert affine_to_json(job.state.by_id("s0.png").transform) == held
 
-
-# --- the Carey configuration ------------------------------------------------------------
 
 
 CAREY = {"*": ["position", "angles", "orientation"]}
@@ -289,9 +274,6 @@ def test_the_carey_configuration_end_to_end(tmp_path: Path, monkeypatch: pytest.
     folder.mkdir()
     make_stack(folder, n=3)
     spec = _carey(folder)
-    # position and angles and orientation are frozen everywhere; the affine and the
-    # deformation are the agent's, so Linear and Nonlinear stay on and the tools that
-    # write only what is frozen are gone.
     assert spec.has("transform") and spec.has("nonlinear") and not spec.has("position")
     assert set(enabled(spec)) >= {"interactive_transform", "elastix_affine", "fireants_syn"}
     assert "position_sections" not in enabled(spec)
@@ -306,8 +288,6 @@ def test_the_carey_configuration_end_to_end(tmp_path: Path, monkeypatch: pytest.
             (1.0, True, 0, (1.5, -2.0)), (2.0, False, 90, (1.5, -2.0)),
             (3.0, False, 0, (1.5, -2.0))]
         assert not hasattr(job, "position_sections")
-        # the agent may not turn a section over, and may fit its affine
-        # the mirror and the quarter turn are not even offered: the sections take neither
         for key, value in (("rotate_quarter", 90), ("flip", False)):
             assert job.interactive_transform(
                 sections=[{"id": "s0.png", key: value}], view=False)["status"] == "error"
@@ -318,8 +298,6 @@ def test_the_carey_configuration_end_to_end(tmp_path: Path, monkeypatch: pytest.
         assert rows["s0.png"]["frozen"] == ["position", "angles", "orientation"]
         assert job.job.spec.to_dict()["frozen"] == CAREY
 
-
-# --- tools and tasks ----------------------------------------------------------------------
 
 
 def test_a_tool_is_off_when_everything_it_writes_is_frozen_everywhere():
@@ -338,13 +316,10 @@ def test_a_tool_is_off_when_everything_it_writes_is_frozen_everywhere():
                      frozen={"*": list(held)}, inputs={})
         built = set(enabled(spec, scripting=True))
         gone = {name for name in TOOLS if TOOLS[name].writes and name not in built}
-        # (the two engine tools that start off are never built here)
         assert gone - {"deepslice_place", "brainways_ap"} == off, held
-    # The flip goes with a frozen orientation; the tool with its other property stays.
     spec = _spec(tasks=["transform"], frozen={"*": ["orientation"]})
     assert spec.off("interactive_transform:flip") and not spec.off("interactive_transform")
     assert "interactive_transform" in enabled(spec)
-    # Positioning stays while only its position is frozen; it goes with the angles too.
     only_position = _spec(tasks=["position"], frozen={"*": ["position"]}, inputs={})
     assert only_position.has("position") and "position_sections" in enabled(only_position)
 
@@ -354,13 +329,11 @@ def test_a_task_with_all_its_properties_frozen_everywhere_is_off():
                  frozen={"*": ["position", "angles", "deformation"]}, inputs={})
     assert spec.active_tasks == ["transform"]
     assert not spec.has("position") and not spec.has("nonlinear") and spec.has("transform")
-    assert spec.tasks == ["position", "transform", "nonlinear"]  # what the user switched on
-    # A task off supplies its properties: they are frozen on every section.
+    assert spec.tasks == ["position", "transform", "nonlinear"]
     off = _spec(tasks=["transform"])
     assert off.frozen_for("a.tif") == {"position", "angles", "deformation"}
     assert _spec(tasks=["transform"], transform=TransformSpec(angles=True)).frozen_for(
         "a.tif") == {"position", "deformation"}
-    # With nothing frozen the tasks are as they were.
     plain = _spec(tasks=["position", "transform"])
     assert plain.active_tasks == ["position", "transform"] and plain.frozen_for("a") == {
         "deformation"}
@@ -369,7 +342,6 @@ def test_a_task_with_all_its_properties_frozen_everywhere_is_off():
 def test_a_disabled_list_cannot_empty_a_task_the_freeze_leaves_on():
     with pytest.raises(ValueError, match="transform task is on and every tool that writes"):
         _spec(tasks=["transform"], frozen={"*": ["affine"]}, disabled=["interactive_transform"])
-    # the freeze took the task off: nothing is left to refuse
     assert _spec(tasks=["transform"], frozen={"*": ["orientation", "affine"]},
                  disabled=["interactive_transform"]).active_tasks == []
 
@@ -385,8 +357,6 @@ def test_submit_does_not_ask_a_frozen_section_for_a_deformation(tmp_path: Path):
     assert refusal is not None
     assert [row["id"] for row in refusal.facts["sections"]] == ["s1.png"]
 
-
-# --- the text -----------------------------------------------------------------------------
 
 
 FROZEN_CONFIGS: list[dict[str, list[str]]] = [
