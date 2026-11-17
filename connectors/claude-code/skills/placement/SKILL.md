@@ -41,6 +41,31 @@ correct a wrong plane.
   If no landmark shows in the stain, keep the position: a guess from a faint
   section moved good positions away in tests.
 
+## DeepSlice
+
+On whole coronal mouse sections, `deepslice_place` (when the job has it) can
+give a quick estimate of the whole placement: positions, the stack's cutting
+angles and a rough in-plane transform. Many people start a registration with
+it; whether it helps here is yours to judge, since it reads each section on
+its own, without the atlas, and can be noisy.
+
+What it can be used for:
+
+- **Spotting order problems.** Run without `order`, each section keeps the
+  position DeepSlice predicts, so a section that falls out of the filename
+  order stands out. With `order`, it keeps that order and spaces the sections
+  evenly instead.
+- **A first cutting angle.** It votes one pitch and yaw for the whole stack.
+  It cannot see a mirrored section, but the reply lists each section's own
+  angles, so one with the opposite yaw sign shows.
+- **A first transform** on intact sections; it is poor on damaged ones.
+
+Damaged or mangled sections, and those beyond the atlas's ends (the tip of
+the bulbs, the caudal medulla), throw its estimates off; `bad_sections`
+leaves them out of its vote and spacing (sections with marked damage are left
+out by default). `write` chooses which parts land: an empty list only shows
+the proposal, and writing just `angles` or `transform` keeps the positions.
+
 ## Cutting angles
 
 A left-right difference that an in-plane fit cannot remove (the borders fit
@@ -75,8 +100,8 @@ its own gives it the stack's yaw with the sign reversed. Example:
   should now read the stack's sign.
 - When the yaws scatter around zero, the sign says nothing. Decide from
   asymmetric anatomy instead: a notch or a marker cut, an asymmetric tear, a
-  structure present on one side only. Never flip sections because they are
-  "the smaller group".
+  structure present on one side only. Flipping "the smaller group" made
+  near-symmetric stacks worse than flipping nothing in tests.
 
 ## Drawing the comparisons
 
