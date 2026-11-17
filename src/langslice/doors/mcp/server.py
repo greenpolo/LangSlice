@@ -279,7 +279,7 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
     metadata = registered.fn_metadata
     base = type(metadata)
 
-    class Strict(base):  # type: ignore[valid-type, misc]
+    class Strict(base):
         async def call_fn_with_arg_validation(
             self, fn: Callable[..., Any], fn_is_async: bool,
             arguments_to_validate: dict[str, Any],

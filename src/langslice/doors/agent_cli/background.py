@@ -93,7 +93,7 @@ _ERROR_ACCESS_DENIED = 5
 def _kernel32() -> Any:
     import ctypes
 
-    return ctypes.WinDLL("kernel32", use_last_error=False)  # type: ignore[attr-defined]
+    return ctypes.WinDLL("kernel32", use_last_error=False)
 
 
 def _alive_windows(pid: int) -> bool:
@@ -101,7 +101,7 @@ def _alive_windows(pid: int) -> bool:
     ``OpenProcess`` + ``GetExitCodeProcess`` (a process that exists but is
     not ours to open, access denied, counts as running)."""
     try:
-        import psutil  # pyright: ignore[reportMissingModuleSource]
+        import psutil
     except ImportError:
         psutil = None
     if psutil is not None:

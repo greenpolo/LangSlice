@@ -152,8 +152,8 @@ def elastix_settings(
     from langslice.core.fits.deformable.settings import neighbourhood_um_for
 
     return FitSettings(
-        engine="elastix", detail=ELASTIX_DETAIL,  # type: ignore[arg-type]
-        atlas_image=atlas_image,  # type: ignore[arg-type]
+        engine="elastix", detail=ELASTIX_DETAIL,
+        atlas_image=atlas_image,
         section_image="stain", stain_metric="mutual_information", stain_edges=bool(edges),
         exclude=tuple(exclude), structures=tuple(include),
         neighbourhood_um=neighbourhood_um_for(brain_scale),

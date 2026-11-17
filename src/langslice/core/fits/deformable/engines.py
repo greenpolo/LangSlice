@@ -33,10 +33,10 @@ import threading
 import time
 import types
 import warnings
-from collections.abc import Generator, Iterator
+from collections.abc import Callable, Generator, Iterator
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -63,6 +63,7 @@ from langslice.core.hardware import (
     global_threads,
     kept_process_pool,
 )
+from langslice.core.outside import untyped
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,10 @@ def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
 _TORCH_LOCK = threading.Lock()
 
 
+def _no_lock(*_args: object) -> None:
+    """Take no lock: what the stand-in ``fcntl`` gives for ``flock``."""
+
+
 @contextlib.contextmanager
 def _windows_fcntl() -> Iterator[None]:
     """On Windows, a stand-in ``fcntl`` for the length of FireANTs' import:
@@ -140,8 +145,7 @@ def _windows_fcntl() -> Iterator[None]:
         yield
         return
     stand_in = types.ModuleType("fcntl")
-    stand_in.LOCK_EX, stand_in.LOCK_UN = 2, 8  # type: ignore[attr-defined]
-    stand_in.flock = lambda *_args: None  # type: ignore[attr-defined]
+    vars(stand_in).update(LOCK_EX=2, LOCK_UN=8, flock=_no_lock)
     sys.modules["fcntl"] = stand_in
     try:
         yield
@@ -229,7 +233,10 @@ def _deterministic(device: str) -> Generator[None, None, None]:
             torch.backends.cudnn.benchmark = False
             if device == "cpu":
                 torch.set_num_threads(FIT_THREADS)
-            torch.manual_seed(RANDOM_SEED)  # pyright: ignore[reportUnknownMemberType]
+            seed = cast(
+                "Callable[[int], object]", untyped("torch", "manual_seed")
+            )
+            seed(RANDOM_SEED)
         settings.running += 1
     try:
         with warnings.catch_warnings():

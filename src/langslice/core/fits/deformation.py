@@ -309,7 +309,7 @@ class Choice:
         traced = self.fit_section == TRACED_BORDERS
         return FitSettings(
             smoothness_um=self.smoothness_um,
-            detail=DETAIL_LEVEL,  # type: ignore[arg-type]
+            detail=DETAIL_LEVEL,
             atlas_image="borders_merged" if self.fit_atlas == FIT_BORDERS else self.fit_atlas,
             section_image="lines" if traced else "stain",
             labels="model" if traced else "none",

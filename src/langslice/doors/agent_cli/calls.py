@@ -524,7 +524,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         offered = opened.listed_verbs()
         if verb not in tools:
             spec = opened.spec
-            tasks = spec.tasks  # pyright: ignore[reportAny]
+            tasks = spec.tasks
             raise _Refusal(Envelope.failure(
                 RefusalCode.VERB_OFF, f"This job's settings (tasks {tasks}"
                 + (f", disabled {spec.disabled}" if spec.disabled else "")

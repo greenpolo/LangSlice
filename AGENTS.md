@@ -115,7 +115,11 @@ and `environment.yml` hold the source installation.
   note, no `#:` line. A `# noqa`, `# type: ignore`, `# pyright: ignore` or
   `# pragma` is never added: the code is changed until the tool has nothing
   to report, and a handler names the exceptions it expects. The tests carry
-  no comments either (`tests/test_test_comments.py`). Vendored code
+  no comments either (`tests/test_test_comments.py`). A library that
+  publishes no types is described once: wholly in a stub under `typings/`
+  (`typings/itk/`), or name by name through `core/outside.py` (`untyped`,
+  cast to its shape where it is fetched; `engines/_outside.py` for the
+  engines). Vendored code
   (`src/langslice_vendor/`) stays as published.
 - No Markdown file is written unless the owner asked for that file: no
   notes, plans, summaries or reports in the repository. The kinds that

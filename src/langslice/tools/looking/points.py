@@ -71,7 +71,7 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
     try:
         warp = applied_record(job, job.state, record)
     except ValueError as exc:
-        name = record.id  # pyright: ignore[reportAny]
+        name = record.id
         raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
                       message=f"{name}: {exc}") from exc
     return record, frame, warp
