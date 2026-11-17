@@ -62,7 +62,6 @@ class Found:
 
     matches: tuple[str, ...]
     hidden: int
-    files_searched: int
     text: str
 
 
@@ -213,7 +212,7 @@ def search_folder(job: Job, query: str, path: str = ".", glob: str = "") -> Foun
     if hidden:
         rows.append(f"... {hidden} more match(es) not shown (narrow the path or the glob, "
                     "or make the query more specific)")
-    return Found(tuple(lines), hidden, files, "\n".join(rows))
+    return Found(tuple(lines), hidden, "\n".join(rows))
 
 
 def _picture_record(job: Job, real: Path) -> PictureRecord | None:

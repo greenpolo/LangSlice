@@ -16,7 +16,6 @@ class AtlasSpaceContext:
     ap_axis_index: int
     dv_axis_index: int
     ml_axis_index: int
-    ap_resolution_mm: float
 
 
 def _shape3d(volume: object) -> tuple[int, int, int]:
@@ -60,7 +59,6 @@ def atlas_space_context(atlas: object) -> AtlasSpaceContext:
         ap_axis_index=ap_axis_index,
         dv_axis_index=dv_axis_index,
         ml_axis_index=ml_axis_index,
-        ap_resolution_mm=resolution_um[ap_axis_index] / 1000.0,
     )
 
 
@@ -73,13 +71,6 @@ def slice_axis_index(context: AtlasSpaceContext, plane: Plane) -> int:
     if plane == "horizontal":
         return context.dv_axis_index
     raise ValueError(f"Unknown plane: {plane!r}")
-
-
-#: Anatomical direction pair for a brainglobe origin letter (the letter names
-#: where the axis STARTS): 'a' means the axis runs anterior -> posterior.
-_AXIS_PAIR = {"a": "ap", "p": "pa", "s": "si", "i": "is", "l": "lr", "r": "rl"}
-#: Direction pair -> the anatomical axis it lives on.
-_AXIS_KIND = {"ap": "ap", "pa": "ap", "si": "si", "is": "si", "lr": "lr", "rl": "lr"}
 
 
 #: Anatomical name of each end of an axis, keyed by the letter naming where
@@ -103,19 +94,3 @@ def slice_axis_ends(context: AtlasSpaceContext, plane: Plane) -> tuple[str, str]
     "posterior") — :func:`atlas_space_context` refuses any other AP order.
     """
     return _AXIS_ENDS[context.space.origin[slice_axis_index(context, plane)]]
-
-
-def native_slice_axes(context: AtlasSpaceContext, plane: Plane) -> tuple[str, str]:
-    """(rows, cols) anatomical directions of a rendered slice.
-
-    Directions are 2-letter pairs read start->end: a sagittal render of an
-    'asr' atlas returns ("si", "ap") — rows run superior->inferior, columns
-    anterior->posterior. Accounts for the in-plane axis swap
-    ``orient_slice_for_display`` applies to sagittal and horizontal slices.
-    """
-    normal = slice_axis_index(context, plane)
-    in_plane = [i for i in range(3) if i != normal]
-    pairs = [_AXIS_PAIR[context.space.origin[i]] for i in in_plane]
-    if plane in ("sagittal", "horizontal"):
-        pairs.reverse()
-    return pairs[0], pairs[1]

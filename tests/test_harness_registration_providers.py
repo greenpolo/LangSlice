@@ -105,7 +105,6 @@ def test_openai_images_route_sends_the_edited_image_first(monkeypatch):
     assert result.provider == "openai-api"
     assert result.model == "gpt-image-2.5-sunburst"
     assert result.route == "openai_images"
-    assert result.revised_prompt is None
     assert result.metadata["provider"] == "openai-api"
     assert result.metadata["request"]["prompt"] == "warp it"
     assert _decode_image(result.image) == (9, 7, (12, 34, 56))

@@ -115,13 +115,6 @@ def build_agent(
 CACHED_TOKEN_WEIGHT = 0.13
 
 
-def _int_or_none(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 class TokenTally:
     """Summed token usage over one session, one line per model call.
 

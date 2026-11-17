@@ -43,7 +43,6 @@ class GeneratedSegmentation:
     provider: str
     model: str
     route: str
-    revised_prompt: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

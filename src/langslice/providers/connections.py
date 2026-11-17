@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 #: Agent models a host may offer on the ``openai-oauth`` lane (host dialogs
 #: list these; any other ``openai-oauth/*`` string still works). Defined here,
-#: not in ``openai_oauth.py``, so an offline status check can read them
+#: not in ``oauth/transport.py``, so an offline status check can read them
 #: without importing the ADK transport.
 OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
     f"openai-oauth/{name}"

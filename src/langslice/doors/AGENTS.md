@@ -490,10 +490,10 @@ bodies, and turned into an answer once per door:
     plugin verbs are known only with it); a job
     that cannot be read answers `JOB_UNREADABLE`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
-    `init`'s read off `job.init_parser` by `flags_table`, `launch`'s `--role`). Both return the
+    `init`'s read off `calls.init_parser` by `flags_table`, `launch`'s `--role`). Both return the
     envelope. `describe(name, folder)`: what `FOLDER NAME --help` answers,
     `schema NAME` declared for FOLDER's job when it has one.
-  - `job.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every
+  - `calls.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every
     call logged by `record` (its line in `calls.jsonl` with an error's code
     and message and `reply`, the envelope kept by `call_log.save_reply`) and,
     with `LANGSLICE_TRACE_DIR`, traced; `FOLDER ops` answers `catalog.ops`
@@ -534,10 +534,10 @@ bodies, and turned into an answer once per door:
     `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or
     while it runs `ok` with its state, `waited_s`, a message and the command
-    that waits again (exit 0), or `RUN_LOST`), and `env` (`jobenv.command`). `CHECKED_ONLY`:
+    that waits again (exit 0), or `RUN_LOST`), and `env` (`environment.command`). `CHECKED_ONLY`:
     `trace_borders`, `elastix_affine` and `fireants_syn`
     are checked, not run, by `--dry-run`, and so is every plugin tool (a verb not in `VERBS`).
-  - `jobenv.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
+  - `environment.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
     the job's own Python environment `env/` (uv's or `venv`'s), a `.pth`
     (`PARENT_PTH`) adding the site-packages of the environment LangSlice runs
     in, so its python imports LangSlice; `install` (uv pip, else pip) and

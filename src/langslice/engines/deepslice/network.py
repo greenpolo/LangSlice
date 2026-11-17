@@ -66,8 +66,6 @@ DOWNLOAD_TIMEOUT_S = 600
 SIDE_PX = 299
 #: scikit-image's ``rgb2gray`` weights of red, green and blue.
 GREY_WEIGHTS = (0.2125, 0.7154, 0.0721)
-#: The suffixes DeepSlice reads an image by.
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
 
 
 @dataclass(frozen=True)

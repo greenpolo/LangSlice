@@ -13,8 +13,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image
-
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -28,11 +26,6 @@ if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.doors.agent.engine import EngineContext
     from langslice.tools.look import Looked
     from langslice.tools.pipeline import ToolBox
-
-#: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a
-#: picture (captioned PIL image) or a line of text, in reading order.
-Media = Image.Image | str
-
 
 @dataclass
 class Run:
@@ -145,4 +138,4 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
-__all__ = ["Media", "Run", "as_list", "drawn_image", "pictured", "spread"]
+__all__ = ["Run", "as_list", "drawn_image", "pictured", "spread"]

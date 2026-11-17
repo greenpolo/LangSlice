@@ -257,27 +257,6 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
 # --- launch: the job statement and the opening, as LangSlice's own agent gets them ------
 
 
-def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any]:
-    """The ADK agent's statement and opening picture bytes for the job in *images*."""
-    from langslice.doors.agent.media import opening_parts
-    from langslice.doors.jobs import open_folder
-    from langslice.doors.tools.toolbox import build_tools
-    from langslice.tools.descriptions.statement import (
-        StatementFacts,
-        build_job_statement,
-    )
-
-    opened = open_folder(images, atlas_loader=atlas_loader(), persist=False)
-    job, ctx = opened.job, opened.ctx
-    box = build_tools(job.state, ctx, job.spec, job=job, max_view_edge=limit[0])
-    statement = build_job_statement(StatementFacts.from_run(
-        job.spec, job.state, ctx, tool_names=box.names, max_resolution=limit[0],
-        auto=True))
-    parts = opening_parts(job.state, ctx, limit=limit)
-    pictures = [part.inline_data.data for part in parts if part.inline_data is not None]
-    return statement, pictures, opened
-
-
 def test_launch_register_scripting_is_the_mcp_statement_with_the_scripts(capsys, images):
     """The scripting agent's message is the MCP agent's with a paragraph on
     scripts after the opening's: the job's own Python (made by the launch),

@@ -195,9 +195,6 @@ class ElastixFit:
     start_params: list[float]
     report: dict[str, Any]
     placement: Any
-    start_placement: Any
-    grid_image: Image.Image
-    fit_image: Image.Image
     engine: dict[str, Any]
     #: What the fit read, named; set by the operation that ran it
     #: (``tools.affine_fit.elastix_fit``).
@@ -269,8 +266,7 @@ def elastix_affine(
     }
     return ElastixFit(
         params=params, start_params=start,
-        report=report, placement=fitted, start_placement=grid.placement,
-        grid_image=grid.image, fit_image=image,
+        report=report, placement=fitted,
         engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
                 "section_image": look, "native_parameters": result.native_parameters},
     )

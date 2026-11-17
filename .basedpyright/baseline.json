@@ -16150,14 +16150,6 @@
                     "endColumn": 42,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportUnknownMemberType",
-                "range": {
-                    "startColumn": 24,
-                    "endColumn": 44,
-                    "lineCount": 1
-                }
             }
         ],
         "./src/langslice/core/stack/stack.py": [
@@ -17588,30 +17580,6 @@
                 "range": {
                     "startColumn": 62,
                     "endColumn": 75,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportUnusedFunction",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 16,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 17,
-                    "endColumn": 22,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 19,
-                    "endColumn": 24,
                     "lineCount": 1
                 }
             },
