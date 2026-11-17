@@ -59,7 +59,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
               : <SectionsTable rows={run.rows} focus={focus} />)}
           </div>
           <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : focus.ids}
-            shown={ring ? [ring] : shown} done={done} onPick={focus.pick} stairRows={3} />
+            shown={ring ? [ring] : shown} done={done} onPick={focus.pick} atlas />
         </section>
         <Journal onPictures={onPictures} onSection={focus.pick} />
       </div>

@@ -110,11 +110,14 @@ below), still served at `classic.html` until it is removed.
   focus `DWELL_MS`, a grid `DECK_DWELL_MS`, and shows the next once its
   pictures are ready, at most `READY_WAIT_MS`; Motion layout animations move
   a section still shown), `Picture` (canvas layers crossfading on a
-  redraw), `CuttingAxis` (under the pictures in both views: the atlas's
-  pictures over a millimetre ruler, every placed section's thumbnail in stair
-  rows, two in Simple and three in Extended, gliding to its new place when
-  the agent moves it; wheel zoom, drag pan, double-click for the whole axis,
-  hover names, click picks). `src/extended/`: `ExtendedView` (the progress box:
+  redraw), `CuttingAxis` (under the pictures in both views: a millimetre
+  ruler over the placed sections' span plus a margin, the atlas's pictures
+  above it in Extended only, every placed section's thumbnail in one row in
+  the order of its position, joined to its key on the ruler by a line, two
+  half-offset rows when one row would make them narrower than
+  `ONE_ROW_MIN_W`; a thumbnail glides to its new place when the agent moves
+  it; wheel zoom, drag pan, double-click for the whole span, hover names,
+  click picks). `src/extended/`: `ExtendedView` (the progress box:
   one meter per step the job's `tasks` ask for, counted over its sections;
   four sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.

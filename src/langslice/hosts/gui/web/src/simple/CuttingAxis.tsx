@@ -1,32 +1,37 @@
-// The cutting axis, under the pictures: where every section sits in the brain. Along the
-// top, the atlas's own picture at regular places of the axis; under it a millimetre
-// ruler with its two ends named; below, every placed section as its thumbnail in stair
-// rows (each in the first row where it clears its neighbour), with a key on the ruler at
-// its position. When the agent moves a section its thumbnail glides to its new place, so
-// a reshuffle is seen as it happens. The sections the agent is working on are in the
-// accent, the ones on the stage ringed, with a leader to their place. The wheel zooms
-// about the pointer, dragging pans, a double-click shows the whole axis; hovering names a
-// section and clicking shows it. Sections not placed yet are counted at the right.
+// The cutting axis, under the pictures: the order the agent has put the sections in,
+// front to back. A millimetre ruler over the part of the axis the placed sections span
+// (with a little margin), its two ends named; in Extended, the atlas's own pictures along
+// the top. Under the ruler every placed section's thumbnail stands in one row, in the
+// order of its position, each joined to its key on the ruler by a thin line; when they
+// do not fit one row at full size they alternate between two half-offset rows, so
+// left to right is still the order. When the agent moves a section its thumbnail glides
+// to its new place in the row, so a reshuffle is seen as it happens. The sections the
+// agent is working on are in the accent, the ones on the stage ringed. The wheel zooms
+// about the pointer, dragging pans, a double-click shows the whole span; hovering names
+// a section and clicking shows it. Sections not placed yet are counted at the right.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { DUR, EASE_OUT } from '../motion';
+import { DUR, EASE_IN_OUT, EASE_OUT } from '../motion';
 import { picture } from '../pictures';
 import type { Axis, Row, Strip } from '../run';
 import { short } from './Stage';
 
-const PAD = 14;               // side margins, px
-const ATLAS_H = 44;           // the atlas row's pictures
-const RULER_H = 22;           // the ruler band under the atlas row
-const ROW_H = 40;             // a stair row's thumbnails
-const ROW_STEP = 0.9;         // stair rows overlap a little
+const PAD = 72;               // side margins, px: the ends' names sit in them
+const ATLAS_H = 40;           // the atlas row's pictures (Extended)
+const TOP = 16;               // room for the millimetre labels above the ruler
+const RULER_H = 22;           // the ruler band
+const FAN = 20;               // the lines from the ruler down to the row
 const ASPECT = 1.4;           // a coronal section's width to height
+const MAX_W = 58;             // a thumbnail's widest
+const ONE_ROW_MIN_W = 26;     // narrower than this, two half-offset rows
+const GAP = 3;
 const MAX_ZOOM = 30;
 
 type Domain = { lo: number; hi: number };
 
-export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick, stairRows = 2 }: {
+export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick, atlas = false }: {
   job: number | null; rows: Row[]; axis: Axis | null; strip: Strip | null;
-  focus: string[]; shown: string[]; done: boolean; onPick?: (id: string) => void; stairRows?: number;
+  focus: string[]; shown: string[]; done: boolean; onPick?: (id: string) => void; atlas?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -38,61 +43,67 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
     o.observe(el);
     return () => o.disconnect();
   }, []);
-  const whole: Domain | null = axis ? { lo: axis.min_mm, hi: axis.max_mm } : null;
-  const [domain, setDomain] = useState<Domain | null>(null);
-  const view = domain ?? whole;
-  const toX = (mm: number) => (view && width ? PAD + ((mm - view.lo) / (view.hi - view.lo)) * (width - 2 * PAD) : 0);
 
-  // Each placed section's place: x on the ruler, its stair row.
-  const thumbW = ROW_H * ASPECT;
-  const placed = useMemo(() => {
-    const out = rows
-      .filter(r => typeof r.position_mm === 'number')
-      .map(r => ({ id: r.id, mm: r.position_mm as number, x: toX(r.position_mm as number), row: 0 }))
-      .sort((a, b) => a.x - b.x);
-    const ends = Array(stairRows).fill(-Infinity);
-    for (const p of out) {
-      let row = ends.findIndex(end => p.x - thumbW / 2 >= end + 2);
-      if (row < 0) row = ends.indexOf(Math.min(...ends));
-      p.row = row;
-      ends[row] = p.x + thumbW / 2;
-    }
-    return out;
-  }, [rows, width, view?.lo, view?.hi, stairRows]); // eslint-disable-line react-hooks/exhaustive-deps
-  const waiting = rows.length - placed.length;
+  const placedRows = rows.filter(r => typeof r.position_mm === 'number');
+  const whole = span(axis, placedRows.map(r => r.position_mm as number));
+  const [domain, setDomain] = useState<Domain | null>(null);
+  // A zoom made over another span is dropped when the span moves.
+  const wholeKey = whole ? `${whole.lo.toFixed(3)}:${whole.hi.toFixed(3)}` : '';
+  useEffect(() => setDomain(null), [wholeKey]);
+  const view = domain ?? whole;
+  const inner = Math.max(1, width - 2 * PAD);
+  const toX = (mm: number) => (view ? PAD + ((mm - view.lo) / (view.hi - view.lo)) * inner : 0);
+
+  // The row: each placed section in view, in the order of its position, at its own place
+  // where there is room and pushed aside just enough where there is not.
+  const layout = useMemo(() => {
+    const inView = placedRows
+      .map(r => ({ id: r.id, mm: r.position_mm as number, order: r.order ?? 0 }))
+      .filter(p => !view || (p.mm >= view.lo - 1e-9 && p.mm <= view.hi + 1e-9))
+      .sort((a, b) => a.mm - b.mm || a.order - b.order);
+    const n = inView.length;
+    const oneRowW = Math.min(MAX_W, n ? inner / n - GAP : MAX_W);
+    const two = oneRowW < ONE_ROW_MIN_W;
+    const w = Math.max(16, two ? Math.min(MAX_W, (2 * inner) / Math.max(1, n) - GAP) : oneRowW);
+    const step = two ? (w + GAP) / 2 : w + GAP;
+    const xs = spread(inView.map(p => toX(p.mm)), step, 16 + w / 2, width - 16 - w / 2);
+    return { w, h: w / ASPECT, two, items: inView.map((p, i) => ({ ...p, key: toX(p.mm), x: xs[i], row: two ? i % 2 : 0 })) };
+  }, [rows, width, view?.lo, view?.hi]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const waiting = rows.length - placedRows.length;
   const thumbKey = new Map((strip?.sections ?? []).map(s => [s.id, s.thumb_key]));
   const some = focus.length < rows.length;
-  const axisY = ATLAS_H + RULER_H / 2;
-  const stairTop = ATLAS_H + RULER_H + 6;
-  const height = stairTop + ROW_H * (1 + ROW_STEP * (stairRows - 1)) + 4;
+  const axisY = (atlas ? ATLAS_H + TOP : TOP) + RULER_H / 2 - 6;
+  const rowTop = axisY + RULER_H / 2 + FAN;
+  const rowStep = layout.h * 0.55;
+  const height = rowTop + layout.h + (layout.two ? rowStep : 0) + 18;
 
-  // Wheel zoom about the pointer, drag to pan, double-click for the whole axis.
+  // Wheel zoom about the pointer, drag to pan, double-click for the whole span.
   const drag = useRef<{ x: number; dom: Domain } | null>(null);
   const onWheel = (e: React.WheelEvent) => {
     if (!view || !whole || !width) return;
-    const at = view.lo + ((e.clientX - ref.current!.getBoundingClientRect().left - PAD) / (width - 2 * PAD)) * (view.hi - view.lo);
-    const span = Math.min(whole.hi - whole.lo, Math.max((whole.hi - whole.lo) / MAX_ZOOM, (view.hi - view.lo) * Math.exp(e.deltaY * 0.0015)));
+    const at = view.lo + ((e.clientX - ref.current!.getBoundingClientRect().left - PAD) / inner) * (view.hi - view.lo);
+    const size = Math.min(whole.hi - whole.lo, Math.max((whole.hi - whole.lo) / MAX_ZOOM, (view.hi - view.lo) * Math.exp(e.deltaY * 0.0015)));
     const f = (at - view.lo) / (view.hi - view.lo);
-    let lo = at - f * span;
-    lo = Math.min(whole.hi - span, Math.max(whole.lo, lo));
-    setDomain(span >= whole.hi - whole.lo - 1e-6 ? null : { lo, hi: lo + span });
+    const lo = Math.min(whole.hi - size, Math.max(whole.lo, at - f * size));
+    setDomain(size >= whole.hi - whole.lo - 1e-6 ? null : { lo, hi: lo + size });
   };
   const onDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 || !view || !domain) return;
+    if (e.button !== 0 || !domain) return;
     drag.current = { x: e.clientX, dom: domain };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
-    if (!d || !whole || !width) return;
-    const span = d.dom.hi - d.dom.lo;
-    let lo = d.dom.lo - ((e.clientX - d.x) / (width - 2 * PAD)) * span;
-    lo = Math.min(whole.hi - span, Math.max(whole.lo, lo));
-    setDomain({ lo, hi: lo + span });
+    if (!d || !whole) return;
+    const size = d.dom.hi - d.dom.lo;
+    const lo = Math.min(whole.hi - size, Math.max(whole.lo, d.dom.lo - ((e.clientX - d.x) / inner) * size));
+    setDomain({ lo, hi: lo + size });
   };
 
   const [tip, setTip] = useState<{ id: string; x: number } | null>(null);
-  const ticks = view ? tickMarks(view, width) : [];
+  const ticks = view ? tickMarks(view, inner) : [];
+  const glide = { duration: DUR.glide, ease: EASE_IN_OUT };
   return (
     <div
       ref={ref}
@@ -103,57 +114,64 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
       onPointerMove={onMove}
       onPointerUp={() => { drag.current = null; }}
       onDoubleClick={() => setDomain(null)}
-      aria-label="Where the sections sit in the brain"
+      aria-label="The order of the sections, front to back"
     >
-      {view && job !== null && strip?.atlas.map(a => {
+      {atlas && view && job !== null && strip?.atlas.map(a => {
         const x = toX(a.position_mm);
         const w = Math.max(16, Math.min(ATLAS_H * ASPECT, (toX(a.position_mm + strip.step_mm) - x) - 3));
-        if (x < -w || x > width + w) return null;
+        if (x < PAD - w / 2 || x > width - PAD + w / 2) return null;
         return (
           <div key={a.k} className="cut-atlas" style={{ transform: `translateX(${x - w / 2}px)`, width: w, height: ATLAS_H }}>
             <Thumb url={`jobs/${job}/render/atlas/${a.k}?edge=128`} rank={900} />
           </div>
         );
       })}
-      <div className="cut-ruler" style={{ top: axisY }} />
+      <div className="cut-ruler" style={{ top: axisY, left: PAD, right: PAD }} />
       {ticks.map(t => (
         <span key={t.mm} className={'cut-tick' + (t.label ? ' major' : '')} style={{ transform: `translateX(${toX(t.mm)}px)`, top: axisY }}>
-          {t.label && <span className="cut-tick-label">{t.mm}</span>}
+          {t.label && <span className="cut-tick-label">{fmt(t.mm)}</span>}
         </span>
       ))}
       <span className="cut-end low" style={{ top: axisY }}>{axis?.low || 'anterior'}</span>
       <span className="cut-end high" style={{ top: axisY }}>{axis?.high || 'posterior'}</span>
-      {placed.map(p => {
-        const isTarget = some && focus.includes(p.id), isShown = shown.includes(p.id);
-        const y = stairTop + p.row * ROW_H * ROW_STEP;
-        return (
-          <div key={'k' + p.id}>
-            <span
-              className={'cut-key' + (isTarget ? ' target' : '') + (isShown ? ' shown' : '')}
-              style={{ transform: `translate(${p.x}px, ${axisY}px)` }}
+      <svg className="cut-fan" width={width} height={height} aria-hidden="true">
+        {layout.items.map(p => {
+          const isTarget = some && focus.includes(p.id), isShown = shown.includes(p.id);
+          return (
+            <motion.line
+              key={p.id}
+              className={'cut-link' + (isTarget ? ' target' : '') + (isShown ? ' shown' : '')}
+              initial={false}
+              animate={{ x1: p.key, y1: axisY + 3, x2: p.x, y2: rowTop + p.row * rowStep }}
+              transition={glide}
             />
-            {(isShown || isTarget) && (
-              <span className={'cut-leader' + (isShown ? ' shown' : '')}
-                style={{ transform: `translate(${p.x}px, ${axisY}px)`, height: y - axisY }} />
-            )}
-          </div>
+          );
+        })}
+      </svg>
+      {layout.items.map(p => {
+        const isTarget = some && focus.includes(p.id), isShown = shown.includes(p.id);
+        return (
+          <span
+            key={'k' + p.id}
+            className={'cut-key' + (isTarget ? ' target' : '') + (isShown ? ' shown' : '')}
+            style={{ transform: `translate(${p.key}px, ${axisY}px)` }}
+          />
         );
       })}
       <AnimatePresence initial={false}>
-        {job !== null && placed.map(p => {
+        {job !== null && layout.items.map(p => {
           const isTarget = some && focus.includes(p.id), isShown = shown.includes(p.id);
-          const y = stairTop + p.row * ROW_H * ROW_STEP;
-          if (p.x < -thumbW || p.x > width + thumbW) return null;
+          const y = rowTop + p.row * rowStep;
           return (
             <motion.button
               type="button"
               key={p.id}
               className={'cut-thumb' + (isTarget ? ' target' : '') + (isShown ? ' shown' : '')}
-              style={{ width: thumbW, height: ROW_H, zIndex: isShown ? 3 : isTarget ? 2 : 1 }}
-              initial={{ opacity: 0, x: p.x - thumbW / 2, y: y - 8 }}
-              animate={{ opacity: 1, x: p.x - thumbW / 2, y }}
+              style={{ zIndex: isShown ? 3 : isTarget ? 2 : 1 }}
+              initial={{ opacity: 0, x: p.x - layout.w / 2, y: y + 6, width: layout.w, height: layout.h }}
+              animate={{ opacity: 1, x: p.x - layout.w / 2, y, width: layout.w, height: layout.h }}
               exit={{ opacity: 0, transition: { duration: DUR.quick } }}
-              transition={{ x: { duration: DUR.glide, ease: [0.77, 0, 0.175, 1] }, y: { duration: DUR.glide, ease: [0.77, 0, 0.175, 1] }, opacity: { duration: DUR.enter, ease: EASE_OUT } }}
+              transition={{ x: glide, y: glide, width: glide, height: glide, opacity: { duration: DUR.enter, ease: EASE_OUT } }}
               onClick={() => onPick?.(p.id)}
               onPointerEnter={() => setTip({ id: p.id, x: p.x })}
               onPointerLeave={() => setTip(t => (t?.id === p.id ? null : t))}
@@ -165,7 +183,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
         })}
       </AnimatePresence>
       {tip && (
-        <span className="cut-tip" style={{ transform: `translateX(${tip.x}px)` }}>
+        <span className="cut-tip" style={{ transform: `translateX(${tip.x}px)`, top: axisY - RULER_H / 2 - 4 }}>
           <b>{short(tip.id)}</b> {(() => { const r = rows.find(x => x.id === tip.id); return typeof r?.position_mm === 'number' ? `${r.position_mm.toFixed(2)} mm` : ''; })()}
         </span>
       )}
@@ -174,7 +192,37 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
   );
 }
 
-// A small picture drawn on a canvas from the picture queue (lowest priority), contained.
+// The part of the axis to show: the placed sections' span with a margin, within the
+// atlas; the whole atlas while nothing is placed.
+function span(axis: Axis | null, mms: number[]): Domain | null {
+  if (!axis) return null;
+  if (!mms.length) return { lo: axis.min_mm, hi: axis.max_mm };
+  let lo = Math.min(...mms), hi = Math.max(...mms);
+  const margin = Math.max(0.25, (hi - lo) * 0.04);
+  if (hi - lo < 1) { const mid = (lo + hi) / 2; lo = mid - 0.5; hi = mid + 0.5; }
+  lo = Math.max(axis.min_mm, lo - margin);
+  hi = Math.min(axis.max_mm, hi + margin);
+  return hi > lo ? { lo, hi } : { lo: axis.min_mm, hi: axis.max_mm };
+}
+
+// Places sorted ideal centres at least `step` apart within [lo, hi], each as near its
+// ideal as that allows: pushed right past its left neighbour, then back from the right end.
+function spread(ideal: number[], step: number, lo: number, hi: number) {
+  const n = ideal.length;
+  if (!n) return [];
+  const room = hi - lo;
+  if ((n - 1) * step > room) step = n > 1 ? room / (n - 1) : step;
+  const xs = ideal.map(x => Math.min(hi, Math.max(lo, x)));
+  for (let i = 1; i < n; i++) xs[i] = Math.max(xs[i], xs[i - 1] + step);
+  xs[n - 1] = Math.min(xs[n - 1], hi);
+  for (let i = n - 2; i >= 0; i--) xs[i] = Math.min(xs[i], xs[i + 1] - step);
+  xs[0] = Math.max(xs[0], lo);
+  for (let i = 1; i < n; i++) xs[i] = Math.max(xs[i], xs[i - 1] + step);
+  return xs;
+}
+
+// A small picture drawn on a canvas from the picture queue, contained, redrawn when its
+// box changes size.
 function Thumb({ url, rank }: { url: string; rank: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -186,26 +234,34 @@ function Thumb({ url, rank }: { url: string; rank: number }) {
   useLayoutEffect(() => {
     const c = ref.current;
     if (!c || !img) return;
-    const box = c.parentElement!.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    c.width = Math.max(1, Math.round(box.width * dpr)); c.height = Math.max(1, Math.round(box.height * dpr));
-    const s = Math.min(c.width / img.naturalWidth, c.height / img.naturalHeight);
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(img, (c.width - img.naturalWidth * s) / 2, (c.height - img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+    const draw = () => {
+      const box = c.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.round(box.width * dpr)), h = Math.max(1, Math.round(box.height * dpr));
+      if (c.width === w && c.height === h && c.dataset.src === img.src) return;
+      c.width = w; c.height = h; c.dataset.src = img.src;
+      const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+      c.getContext('2d')!.drawImage(img, (w - img.naturalWidth * s) / 2, (h - img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+    };
+    draw();
+    const o = new ResizeObserver(draw);
+    o.observe(c);
+    return () => o.disconnect();
   }, [img]);
   return <canvas ref={ref} className={'cut-canvas' + (img ? ' ready' : '')} />;
 }
 
-// Millimetre ticks: every mm, finer when zoomed in; a label every few.
-function tickMarks(view: Domain, width: number) {
-  const span = view.hi - view.lo;
-  const pxPerMm = (width - 2 * PAD) / span;
-  const step = pxPerMm > 120 ? 0.25 : pxPerMm > 50 ? 0.5 : 1;
-  const every = pxPerMm > 50 ? 1 : pxPerMm > 22 ? 2 : 5;
+// Millimetre ticks: finer when the span is short or zoomed in; a label every few.
+function tickMarks(view: Domain, inner: number) {
+  const pxPerMm = inner / (view.hi - view.lo);
+  const step = pxPerMm > 240 ? 0.1 : pxPerMm > 120 ? 0.25 : pxPerMm > 50 ? 0.5 : 1;
+  const every = pxPerMm > 240 ? 0.5 : pxPerMm > 50 ? 1 : pxPerMm > 22 ? 2 : 5;
   const out: { mm: number; label: boolean }[] = [];
-  for (let mm = Math.ceil(view.lo / step) * step; mm <= view.hi + 1e-9; mm += step) {
+  for (let mm = Math.ceil(view.lo / step - 1e-9) * step; mm <= view.hi + 1e-9; mm += step) {
     const r = Math.round(mm * 100) / 100;
     out.push({ mm: r, label: Math.abs(r / every - Math.round(r / every)) < 1e-6 });
   }
   return out;
 }
+
+const fmt = (mm: number) => (Number.isInteger(mm) ? String(mm) : mm.toFixed(1));

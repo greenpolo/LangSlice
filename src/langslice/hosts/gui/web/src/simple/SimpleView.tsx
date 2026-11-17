@@ -33,7 +33,7 @@ export function SimpleView({ focus, review, ring }: { focus: Focus; review: Reac
         {run.jobs && !run.jobs.length && <p className="empty">No jobs yet: open a job folder with <code>langslice gui FOLDER</code>.</p>}
       </div>
       <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : shown}
-        shown={ring ? [ring] : shown.length <= 3 ? shown : []} done={done} onPick={focus.pick} stairRows={2} />
+        shown={ring ? [ring] : shown.length <= 3 ? shown : []} done={done} onPick={focus.pick} />
     </main>
   );
 }
