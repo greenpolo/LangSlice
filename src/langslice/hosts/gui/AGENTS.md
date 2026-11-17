@@ -320,8 +320,11 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
   (the first folder given) when folders were given; without folders the
   viewer's address as it is (the page then opens Settings while no
   connection is chosen) and the prompt generator's with `#tab=prompt`.
-- `static/generator.js`, `static/generator.css` — the prompt generator tab
-  (loaded by one delimited block in `index.html`). `Generator`, pure
+- `static/generator-logic.js`, `static/generator.js`, `static/generator.css` — the
+  prompt generator tab of the older page (loaded by one delimited block in
+  `index.html`; the React window's `web/src/prompt/` imports the same
+  `generator-logic.js`, typed by `generator-logic.d.ts`). `Generator`
+  (`generator-logic.js`), pure
   functions on the payload and a plain form object (`folder`, `atlas`,
   `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `on`, `ordered`,
   `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`,

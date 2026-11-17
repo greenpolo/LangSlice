@@ -1,0 +1,231 @@
+/* The window's form controls and the pages that hold them (the Prompt generator,
+   Settings). tokens.css's names only. One accent: lavender marks what is chosen, on, or
+   has the focus; edges are 1 px and quiet until hovered; nothing glows or casts a shadow.
+   Motion: a control answers in 140-200 ms on the strong ease-out; a press scales down a
+   little; hover changes colour only, and only where a pointer can hover. */
+
+/* A tab's page: its own scroller, as tall as the window leaves it. */
+.pane { flex: 1; min-height: 0; overflow-y: auto; container-type: size; animation: pane-in var(--dur-quick) var(--ease-out); }
+.pane[hidden] { display: none; }
+@keyframes pane-in { from { opacity: 0; translate: 0 4px; } }
+.pane *, .pane *::before, .pane *::after { box-sizing: border-box; }
+.pane [hidden] { display: none !important; }
+
+.page { margin: 0 auto; padding: var(--space-6) var(--space-6) calc(2 * var(--space-6)); }
+.page-head { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-5); }
+.page-title { margin: 0; color: var(--name); font-size: var(--size-xl); font-weight: var(--weight-strong); line-height: 1.3; }
+.lead { margin: 0; max-width: 64ch; color: var(--text); text-wrap: pretty; }
+.help { margin: 0; color: var(--muted); font-size: var(--size-sm); line-height: var(--leading); text-wrap: pretty; }
+.muted { color: var(--muted); }
+.path { color: var(--violet); font-family: var(--mono); font-size: var(--size-sm); overflow-wrap: anywhere; }
+.literal { font-family: var(--mono); font-size: 0.92em; color: var(--violet); white-space: nowrap; }
+
+/* A label over its control, a note under it. */
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.label { margin: 0; color: var(--text); font-size: var(--size-md); }
+
+/* Text fields and selects: a step above the page, a 1 px edge that the focus turns lavender. */
+.input, .select > select, .unit {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--name);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--dur-press) ease;
+}
+.input, .select > select { padding: 7px 10px; line-height: 1.4; }
+.input::placeholder, .unit-input::placeholder { color: var(--faint); opacity: 1; }
+.input.path { font-family: var(--mono); font-size: var(--size-sm); color: var(--violet); }
+textarea.input { display: block; resize: vertical; min-height: 4.8em; }
+.input:focus, .select > select:focus, .unit:focus-within { outline: 1px solid var(--lavender); outline-offset: -1px; border-color: var(--lavender); }
+.input:disabled, .select > select:disabled, .unit[data-disabled] { color: var(--muted); border-style: dashed; cursor: not-allowed; }
+@media (hover: hover) and (pointer: fine) {
+  .input:hover:not(:disabled):not(:focus), .select > select:hover:not(:disabled):not(:focus), .unit:hover:not([data-disabled]):not(:focus-within) { border-color: var(--tract); }
+}
+
+/* A select: the native one, its arrow drawn as a small chevron. */
+.select { position: relative; display: block; min-width: 0; }
+.select > select { appearance: none; padding-right: 30px; cursor: pointer; }
+.select > select:disabled { cursor: not-allowed; }
+.select > select option { color: var(--text); background: var(--panel); }
+.select > select optgroup { color: var(--muted); font-style: normal; font-weight: var(--weight-strong); }
+.select::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -4px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  rotate: 45deg;
+  pointer-events: none;
+}
+.select[data-disabled]::after { border-color: var(--faint); }
+
+/* A number with its unit in the same box. */
+.unit { display: flex; align-items: stretch; cursor: text; }
+.unit-input { flex: 1; min-width: 0; padding: 7px 10px; font: inherit; line-height: 1.4; color: inherit; background: none; border: 0; outline: none; font-variant-numeric: tabular-nums; }
+.unit-input:disabled { cursor: not-allowed; }
+.unit-name { display: flex; align-items: center; padding: 0 10px; white-space: nowrap; color: var(--muted); font-size: var(--size-sm); border-left: 1px solid var(--line); }
+
+/* The native inputs stay, out of sight, for the keyboard and screen readers. */
+.native { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+
+/* A tick box: a small rounded square; its tick is traced in when it is ticked. */
+.tick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--tract);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  transition: background-color var(--dur-press) ease, border-color var(--dur-press) ease, scale var(--dur-press) var(--ease-out);
+}
+.tick svg { width: 12px; height: 12px; fill: none; stroke: var(--ground); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 11; stroke-dashoffset: 11; transition: stroke-dashoffset var(--dur-quick) var(--ease-out); }
+.native:checked + .tick, .native:checked + .task-head .tick { background: var(--lavender); border-color: var(--lavender); }
+.native:checked + .tick svg, .native:checked + .task-head .tick svg { stroke-dashoffset: 0; }
+.native:disabled + .tick { border-color: var(--line); background: transparent; }
+.native:disabled:checked + .tick { background: var(--faint); border-color: var(--faint); }
+.native:focus-visible + .tick, .native:focus-visible + .switch, .native:focus-visible + .radio { outline: 2px solid var(--lavender); outline-offset: 2px; }
+
+.check { position: relative; display: flex; align-items: flex-start; gap: var(--space-3); cursor: pointer; }
+.check .tick { margin-top: 2px; }
+.check:active:not([data-disabled]) .tick { scale: 0.9; }
+.check-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.check-text { color: var(--text); }
+.check[data-disabled] { cursor: not-allowed; }
+.check[data-disabled] .check-text { color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  .check:hover .native:not(:disabled):not(:checked) + .tick { border-color: var(--lavender); }
+}
+.checks { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* A switch: a small track whose thumb slides; on, the thumb is lavender. */
+.switch {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border: 1px solid var(--tract);
+  border-radius: 8px;
+  background: var(--panel);
+  transition: border-color var(--dur-press) ease, background-color var(--dur-press) ease;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition: translate var(--dur-quick) var(--ease-out), background-color var(--dur-press) ease;
+}
+.native:checked + .switch { border-color: var(--lavender); background: var(--selected); }
+.native:checked + .switch::after { translate: 12px 0; background: var(--lavender); }
+.native:disabled + .switch { border-color: var(--line); background: transparent; }
+.native:disabled + .switch::after { background: var(--line); }
+.native:disabled:checked + .switch::after { background: var(--faint); }
+
+/* A radio: a ring, and a dot that grows in when it is chosen. */
+.radio { position: relative; flex: none; width: 16px; height: 16px; border: 1px solid var(--tract); border-radius: 50%; background: var(--panel); transition: border-color var(--dur-press) ease; }
+.radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--lavender); opacity: 0; scale: 0.4; transition: opacity var(--dur-press) ease, scale var(--dur-quick) var(--ease-out); }
+.native:checked + .radio { border-color: var(--lavender); }
+.native:checked + .radio::after { opacity: 1; scale: 1; }
+.native:disabled + .radio { border-color: var(--line); border-style: dashed; }
+
+/* Buttons. Quiet by default; the one that finishes the page's work is lavender. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 6px 14px;
+  font: inherit;
+  white-space: nowrap;
+  color: var(--name);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-press) ease, border-color var(--dur-press) ease, color var(--dur-press) ease, scale var(--dur-press) var(--ease-out);
+}
+.button:active:not(:disabled) { scale: 0.97; background: var(--selected); }
+.button:disabled { color: var(--faint); cursor: default; }
+.button.quiet { color: var(--muted); background: transparent; border-color: transparent; }
+.button.primary { color: var(--ground); background: var(--lavender); border-color: var(--lavender); font-weight: var(--weight-strong); }
+.button.primary:active:not(:disabled) { background: var(--lavender); }
+.button.primary:disabled { color: var(--faint); background: transparent; border-color: var(--line); }
+@media (hover: hover) and (pointer: fine) {
+  .button:hover:not(:disabled) { background: var(--wash); border-color: var(--tract); }
+  .button.quiet:hover:not(:disabled) { color: var(--name); background: var(--wash); border-color: transparent; }
+  .button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--lavender) 88%, var(--name)); border-color: color-mix(in srgb, var(--lavender) 88%, var(--name)); }
+}
+
+/* Two labels in one place (Copy | Copied): the new one comes up as the old one leaves,
+   a little blur hiding the crossing. The button keeps the wider label's width. */
+.swap { display: inline-grid; justify-items: center; }
+.swap > * { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 6px; transition: opacity var(--dur-quick) var(--ease-out), translate var(--dur-quick) var(--ease-out), filter var(--dur-quick) var(--ease-out); }
+.swap > :last-child { opacity: 0; translate: 0 6px; filter: blur(2px); }
+.swap[data-on] > :first-child { opacity: 0; translate: 0 -6px; filter: blur(2px); }
+.swap[data-on] > :last-child { opacity: 1; translate: 0 0; filter: none; }
+
+/* Text buttons and links. */
+.link {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--size-sm);
+  color: var(--lavender);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--lavender) 40%, transparent);
+  text-underline-offset: 0.25em;
+  transition: color var(--dur-press) ease, text-decoration-color var(--dur-press) ease;
+}
+@media (hover: hover) and (pointer: fine) { .link:hover { color: var(--name); text-decoration-color: var(--name); } }
+
+/* A part that opens: its summary in lavender after a chevron that turns down. */
+.disclosure-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--size-sm);
+  color: var(--lavender);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+@media (hover: hover) and (pointer: fine) { .disclosure-summary:hover { color: var(--name); } }
+.chevron { flex: none; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; transition: rotate var(--dur-quick) var(--ease-out); }
+.disclosure.open > .disclosure-summary .chevron { rotate: 45deg; }
+.disclosure-body { overflow: hidden; }
+.disclosure-inner { padding-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* A line that says what a change did: a lavender edge, a pink one for a refusal. */
+.said { margin: 0; padding: 1px 0 1px var(--space-3); border-left: var(--rule) solid var(--lavender); color: var(--text); font-size: var(--size-sm); }
+.said.bad { border-left-color: var(--pink); color: var(--pink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pane { animation-name: fade; }
+  .switch::after, .chevron, .radio::after, .tick, .button { transition-property: background-color, border-color, color, opacity; }
+  .swap > * { transition-property: opacity; translate: none !important; filter: none !important; }
+  .tick svg { transition: none; }
+}
+@keyframes fade { from { opacity: 0; } }

@@ -36,6 +36,7 @@ export type Entry =
 export type RunState = {
   connected: boolean;
   jobs: Job[] | null;
+  home: string;              // the home folder, which the window writes ~ in paths
   job: number | null;
   status: string;            // Running, Submitted, Waiting, Idle, Failed
   sentence: string;
@@ -63,7 +64,7 @@ type Item = {
 };
 
 let state: RunState = {
-  connected: false, jobs: null, job: null, status: '', sentence: '', model: '',
+  connected: false, jobs: null, home: '', job: null, status: '', sentence: '', model: '',
   rows: [], loaded: false, focus: null, focusCall: null, calls: [], words: null, axis: null, comments: [],
   log: [], header: {},
 };
@@ -128,7 +129,8 @@ async function pollJobs() {
     if (r.ok) {
       const answer = await r.json();
       const jobs: Job[] = answer.jobs || [];
-      set({ jobs });
+      const home = String(answer.home || '');
+      set(home === state.home ? { jobs } : { jobs, home });
       pickJob(jobs);
     }
   } catch { /* the snapshot poll reports the connection */ }

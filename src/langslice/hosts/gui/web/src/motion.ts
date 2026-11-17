@@ -9,6 +9,9 @@ export const DUR = {
   morph: 0.48,  // a section's picture redrawn after the agent moved it
   layout: 0.56, // the stage rearranging its pictures
   glide: 0.82,  // a dot moving along the front-to-back line
+  // The controls' own, under 300 ms: they answer a person, so they are quick.
+  indicator: 0.24, // a tab's underline or a chosen segment sliding to its new place
+  disclose: 0.26, // a section opening to its height
 };
 // The stage's rearrangement: a spring that settles without a bounce, so pictures read as
 // moved rather than thrown.

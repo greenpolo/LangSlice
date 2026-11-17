@@ -19,9 +19,10 @@ a { color: inherit; text-decoration: none; }
 }
 .lockup { height: 26px; }
 .tabs { display: flex; gap: var(--space-4); height: 100%; }
-.tab { display: flex; align-items: center; padding: 0; background: none; border: 0; border-radius: 0; font: inherit; cursor: pointer; color: var(--muted); font-size: var(--size-md); border-bottom: var(--rule) solid transparent; transition: color var(--dur-quick) ease; }
+.tab { position: relative; display: flex; align-items: center; height: 100%; padding: 0; background: none; border: 0; border-radius: 0; font: inherit; cursor: pointer; color: var(--muted); font-size: var(--size-md); transition: color var(--dur-press) ease; }
 @media (hover: hover) and (pointer: fine) { .tab:hover { color: var(--name); } }
-.tab.active { color: var(--name); border-bottom-color: var(--lavender); }
+.tab.active { color: var(--name); }
+.tab-line { position: absolute; left: 0; right: 0; bottom: -1px; height: var(--rule); background: var(--lavender); border-radius: 1px; }
 .bar-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); height: 100%; }
 .job { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; font-size: var(--size-sm); padding: 3px 6px; }
 .foot { flex-shrink: 0; height: 20px; padding: 0 var(--space-4); color: var(--faint); font-size: var(--size-xs); }
