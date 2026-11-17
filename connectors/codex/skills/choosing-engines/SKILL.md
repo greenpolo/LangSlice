@@ -60,17 +60,17 @@ fit that pushes the outline off the tissue into the background is wrong too.
 partial section, or one in displaced pieces, that affine can shrink and shear
 the atlas off the tissue. Example: `examples/spomialign_partial.jpg`.
 
-- Fit the transform rigid first (`fit="transform"`, `rigid=true`), check the
-  overlay, then fit `"warp"`.
-- A rigid fit keeps the size of the placement it starts from. Check the size
-  against an intact edge first; if it is off, set the size with
-  `elastix_affine` or `interactive_transform`, then fit rigid or warp.
+- When that happens, a rigid transform first (`fit="transform"`,
+  `rigid=true`), then `"warp"`, tends to hold.
+- A rigid fit keeps the size of the placement it starts from, so the size
+  needs to be right first; `elastix_affine` or `interactive_transform` can
+  set it.
 
 ## emlddmm on a dense stack
 
 `emlddmm_stack` fits one smooth 3-D warp to the whole stack at once, so
 neighbouring sections inform each other. It suits dense, evenly spaced series
 and gives every section a good start. It cannot bend a single section on its
-own, and sections almost always need local bending beyond it: follow it with
-a per-section warp (`fireants_syn`, `stalign_lddmm` or `spomialign` fit
-`"warp"`), and look at each. Example: `examples/emlddmm_then_local.jpg`.
+own, and sections usually need local bending beyond it, so a per-section
+warp after it (`fireants_syn`, `stalign_lddmm` or `spomialign` fit `"warp"`)
+is the norm. Look at each section after it. Example: `examples/emlddmm_then_local.jpg`.

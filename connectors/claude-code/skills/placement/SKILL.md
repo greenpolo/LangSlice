@@ -41,35 +41,30 @@ correct a wrong plane.
   If no landmark shows in the stain, keep the position: a guess from a faint
   section moved good positions away in tests.
 
-## A first pass with DeepSlice
+## DeepSlice
 
-On whole coronal mouse sections, `deepslice_place` (when the job has it) is a
-quick first estimate of the whole placement. It reads each section on its
-own, without the atlas, so treat its answer as a starting point to check, not
-a result.
+On whole coronal mouse sections, `deepslice_place` (when the job has it) can
+give a quick estimate of the whole placement: positions, the stack's cutting
+angles and a rough in-plane transform. Many people start a registration with
+it; whether it helps here is yours to judge, since it reads each section on
+its own, without the atlas, and can be noisy.
 
-- **Leave out the bad sections** (`bad_sections`): damaged, hemisected or
-  mangled sections, and those beyond the atlas's ends (the tip of the bulbs,
-  the caudal medulla). DeepSlice fails on them, and they pull its angle vote
-  and spacing off. Sections with marked damage are left out unless you name
-  the list.
-- **Without `order`,** each section keeps the position DeepSlice predicts. On
-  the good sections, compare those positions with the filename order: a
-  section that falls out of order is worth a second look.
-- **With `order`,** DeepSlice keeps that order and spaces the sections evenly,
-  by the job's interval, else by its own estimate. Give it only an order you
-  have established.
-- **Angles:** it votes one pitch and yaw for the whole stack. It cannot see
-  a mirrored section, but the reply lists each section's own angles, so a
-  section with the opposite yaw sign shows (see Mirrored sections).
-- **Transform:** its in-plane transform is often a decent start on intact
-  sections and poor on damaged ones.
-- **Choose what to write** (`write`): an empty list only shows the proposal.
-  Write just `angles`, or `angles` and `transform`, to keep positions you
-  already trust.
+What it can be used for:
 
-Check DeepSlice's positions against the file-number line below, and its
-angles with the plane search.
+- **Spotting order problems.** Run without `order`, each section keeps the
+  position DeepSlice predicts, so a section that falls out of the filename
+  order stands out. With `order`, it keeps that order and spaces the sections
+  evenly instead.
+- **A first cutting angle.** It votes one pitch and yaw for the whole stack.
+  It cannot see a mirrored section, but the reply lists each section's own
+  angles, so one with the opposite yaw sign shows.
+- **A first transform** on intact sections; it is poor on damaged ones.
+
+Damaged or mangled sections, and those beyond the atlas's ends (the tip of
+the bulbs, the caudal medulla), throw its estimates off; `bad_sections`
+leaves them out of its vote and spacing (sections with marked damage are left
+out by default). `write` chooses which parts land: an empty list only shows
+the proposal, and writing just `angles` or `transform` keeps the positions.
 
 ## Cutting angles
 
@@ -105,8 +100,8 @@ its own gives it the stack's yaw with the sign reversed. Example:
   should now read the stack's sign.
 - When the yaws scatter around zero, the sign says nothing. Decide from
   asymmetric anatomy instead: a notch or a marker cut, an asymmetric tear, a
-  structure present on one side only. Never flip sections because they are
-  "the smaller group".
+  structure present on one side only. Flipping "the smaller group" made
+  near-symmetric stacks worse than flipping nothing in tests.
 
 ## Drawing the comparisons
 

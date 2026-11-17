@@ -11,7 +11,7 @@ about it. The other skills go deeper on one topic each (list at the end).
 Open the example pictures named here with your file-reading tool: each shows
 what the advice looks like on a real or staged section.
 
-## The order of the stages
+## The usual order of the stages
 
 1. **Place.** Give every section its position along the slicing axis, the
    stack's cutting angles, and the right handedness (a section mounted
@@ -19,18 +19,19 @@ what the advice looks like on a real or staged section.
 2. **Mark what is missing.** On a section that has lost a large part (most of
    a cortex, the frontal cortex over the bulbs, one hemisphere), mark the lost
    regions with `mark_damage` before the first fit. See `damage-and-masks`.
-3. **In-plane affine.** Fit or set each section's in-plane transform. An
-   affine always comes before a warp, damaged sections included.
-4. **Warp.** Fit a deformation only on a section whose affine is right. Keep it
-   only where its overlay is better than the affine's. See `choosing-engines`
+3. **In-plane affine.** Fit or set each section's in-plane transform. A warp
+   only bends locally, so it needs the section roughly in place first. Some
+   engines fit the transform and the warp in one call (`choosing-engines`).
+4. **Warp.** Fit a deformation once the section's alignment is about right,
+   and keep it where its overlay is better. See `choosing-engines`
    for which engine, and `landmarks` for pieces that moved and small
    structures a warp left off.
 5. **Final review**, then `submit` (below).
 
 A fit refines a placement that is already close. When a fit lands badly, the
-cause is usually the stage before it: a wrong position, wrong angles, a
-mirrored section, or a large loss left unmarked. Go back and fix that stage
-rather than retrying the fit with other settings.
+cause is often the stage before it: a wrong position, wrong angles, a
+mirrored section, or a large loss left unmarked. Fixing that stage usually
+does more than retrying the fit with other settings.
 
 ## Look after every change
 
@@ -56,22 +57,23 @@ Make the two images the fit compares look alike.
 - **Section image:** process the section with `make_image` so it looks like
   the atlas image the engine compares (one channel, contrast, polarity).
   elastix and FireANTs gave the same fit on a stain and on its inverse.
-  SPOmiAlign draws the atlas dark on white: fit fluorescence inverted, and a
-  brightfield stain (already dark on light) as delivered (`choosing-engines`).
+  SPOmiAlign draws the atlas dark on white, so fluorescence tends to match
+  better inverted, and a brightfield stain (already dark on light) as
+  delivered (`choosing-engines`).
 
 ## Sections an automatic fit cannot place
 
 Some sections are so torn, folded or mangled that no set of damage marks
-describes what is left, and an automatic affine never lands. Do not retry it
-with other settings. Set the transform by hand with `interactive_transform`,
-or fit with an engine that has a missing-data term (`choosing-engines`).
+describes what is left, and an automatic affine may never land however its
+settings change. Setting the transform by hand with `interactive_transform`,
+or an engine with a missing-data term (`choosing-engines`), can get further.
 
 ## Final review
 
 Before `submit`, draw every section's final overlay, look at them as a
 stack, then zoom on the regions the study cares about. Fix anything that
-looks off, then submit. A section you have not looked at since its last
-change is not finished.
+looks off, then submit. A section's last change is only known to be good
+once its overlay has been looked at.
 
 ## The other skills
 

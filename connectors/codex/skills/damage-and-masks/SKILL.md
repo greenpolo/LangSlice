@@ -56,9 +56,9 @@ help a FireANTs warp (below).
 ## A section too mangled to mark
 
 When so much is torn or folded that no set of marks describes what is left,
-an automatic affine may never land. Set the transform by hand with
-`interactive_transform`, or fit with an engine that sorts out missing tissue
-itself (`choosing-engines`).
+an automatic affine may never land. Setting the transform by hand with
+`interactive_transform`, or an engine that sorts out missing tissue itself
+(`choosing-engines`), can get further.
 
 ## What is not damage
 
