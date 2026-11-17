@@ -28,7 +28,7 @@ export type Shell = {
 };
 
 const FOV = 30;
-const LIFT = 0.62;
+const LIFT = 0.48;
 const OMEGA = 4.6;
 const BATCH_S = 1.6;
 const INFLATE_MM = 0.08;
@@ -451,7 +451,9 @@ export class Space {
   private fit() {
     const centre = this.bounds.getCenter(new THREE.Vector3());
     const extent = this.bounds.getSize(new THREE.Vector3());
-    const r = 0.5 * Math.hypot(extent.x, extent.y * 1.25, extent.z) * 0.8;
+    const lift = extent.y * LIFT;
+    centre.y += lift / 2;
+    const r = 0.5 * Math.hypot(extent.x, extent.y + lift, extent.z) * 0.8;
     const half = THREE.MathUtils.degToRad(FOV / 2);
     const fit = Math.min(half, Math.atan(Math.tan(half) * this.camera.aspect));
     const dist = r / Math.sin(fit);
