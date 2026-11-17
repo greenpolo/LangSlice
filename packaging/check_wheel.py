@@ -20,7 +20,7 @@ def check(path: str) -> None:
         required = {
             "langslice/doors/credentials.py", "langslice/tools/abba_export.py",
             "langslice/hosts/gui/static/index.html",
-            "langslice/hosts/gui/static/app.css", "langslice/hosts/gui/static/app.js",
+            "langslice/hosts/gui/static/ui.css", "langslice/hosts/gui/static/ui.js",
             # the vendored engines' licences ship with their code
             "langslice/engines/deepslice/LICENSE", "langslice/engines/brainways/LICENSE",
             "langslice_vendor/stalign/LICENSE", "langslice_vendor/emlddmm/LICENSE",

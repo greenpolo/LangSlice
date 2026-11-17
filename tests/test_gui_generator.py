@@ -25,7 +25,7 @@ from langslice.job.settings import tool_table
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "langslice" / "hosts" / "gui" / "static"
 SCRIPT = STATIC / "generator-logic.js"  # the message's pure functions
-FORM = STATIC / "generator.js"  # the older page's form
+PROMPT = STATIC.parent / "web" / "src" / "prompt"
 SNAPSHOTS = ROOT / "tests" / "snapshots" / "agent_text"
 NODE = shutil.which("node")
 
@@ -109,15 +109,17 @@ def test_the_payload_lists_atlases_tasks_and_what_a_kept_property_switches_off()
 
 
 def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
-    """generator.css names only tokens.css's custom properties and writes no
-    colour of its own; generator.js puts every text in as text, never HTML."""
+    """prompt.css names only tokens.css's custom properties and writes no
+    colour of its own; the form puts every text in as text, never HTML."""
     tokens = set(re.findall(r"(--[a-z0-9-]+)\s*:",
                             (STATIC / "tokens.css").read_text(encoding="utf-8")))
-    css = (STATIC / "generator.css").read_text(encoding="utf-8")
+    css = (PROMPT / "prompt.css").read_text(encoding="utf-8")
     assert set(re.findall(r"var\((--[a-z0-9-]+)", css)) <= tokens
     assert re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(", css) == []
-    script = SCRIPT.read_text(encoding="utf-8") + FORM.read_text(encoding="utf-8")
-    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|setAttribute\('style'", script) == []
+    script = "".join(path.read_text(encoding="utf-8")
+                     for path in (SCRIPT, PROMPT / "Prompt.tsx", PROMPT / "Message.tsx"))
+    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|dangerouslySetInnerHTML",
+                      script) == []
 
 
 def test_the_server_answers_the_generator_data(tmp_path: Path) -> None:
@@ -130,7 +132,7 @@ def test_the_server_answers_the_generator_data(tmp_path: Path) -> None:
         answer = gui.answer(f"/{gui.token}/generator", host)
         assert not isinstance(answer, int)
         assert json.loads(answer[0])["default_atlas"] == "allen_mouse_25um"
-        for name in ("generator-logic.js", "generator.js", "generator.css"):
+        for name in ("generator-logic.js", "ui.js", "ui.css"):
             assert not isinstance(gui.answer(f"/{gui.token}/{name}", host), int)
     finally:
         gui.http.server_close()

@@ -12,7 +12,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT } from '../motion';
-import { picture } from '../pictures';
+import { cached, newestOf, picture } from '../pictures';
 import type { Axis, Row, Strip } from '../run';
 import { short } from './Stage';
 
@@ -177,7 +177,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
               onPointerLeave={() => setTip(t => (t?.id === p.id ? null : t))}
               aria-label={short(p.id)}
             >
-              <Thumb url={`jobs/${job}/render/thumb/${encodeURIComponent(p.id)}?edge=128&key=${encodeURIComponent(thumbKey.get(p.id) ?? '')}&style=calm`} rank={600} />
+              <Thumb url={`jobs/${job}/render/thumb/${encodeURIComponent(p.id)}?edge=128&key=${encodeURIComponent(thumbKey.get(p.id) ?? '')}&style=calm`} rank={600} id={p.id} />
             </motion.button>
           );
         })}
@@ -222,16 +222,19 @@ function spread(ideal: number[], step: number, lo: number, hi: number) {
 }
 
 // A small picture drawn on a canvas from the picture queue, contained, redrawn when its
-// box changes size. A `cutout` (the atlas's pictures) loses its black ground: each pixel
-// takes the canvas's text colour, its brightness as its opacity.
-function Thumb({ url, rank, cutout = false }: { url: string; rank: number; cutout?: boolean }) {
+// box changes size. Until its own picture comes it shows one it already has: the
+// thumbnail kept, else the section's newest large picture (`id`), so a section that
+// arrives at speed is never an empty box. A `cutout` (the atlas's pictures) loses its
+// black ground: each pixel takes the canvas's text colour, its brightness as its opacity.
+function Thumb({ url, rank, id, cutout = false }: { url: string; rank: number; id?: string; cutout?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const [img, setImg] = useState<HTMLImageElement | null>(() => cached(url) ?? (id ? newestOf(id) : null));
   useEffect(() => {
     let alive = true;
+    if (!img && id) { const any = newestOf(id); if (any) setImg(any); }
     picture(url, rank).then(i => { if (alive && i) setImg(i); });
     return () => { alive = false; };
-  }, [url, rank]);
+  }, [url, rank]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const c = ref.current;
     if (!c || !img) return;

@@ -8,8 +8,8 @@
 // `useDirector` decides what is shown and when: it holds each focus at least DWELL_MS (a
 // grid DECK_DWELL_MS) and shows the next once its pictures are fetched and decoded (at
 // most READY_WAIT_MS), so a burst of quick calls reads as steps. `geometry` decides where.
-import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, useIsPresent } from 'motion/react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT, LAYOUT_SPRING } from '../motion';
 import { overlayUrl, picture, snapEdge } from '../pictures';
 import type { Row } from '../run';
@@ -96,17 +96,34 @@ export function Stage({ job, shown, rows, box, onPick, detailed = false }: {
                 <Picture id={id} url={overlayUrl(job, id, g.edge, row?.render_key)} rank={i} label={'The section ' + short(id)} />
               </div>
               {g.named && (
-                <figcaption className="tile-name">
+                <Caption>
                   {short(id)}
                   {typeof row?.position_mm === 'number' && <span className="tile-where">{row.position_mm.toFixed(2)} mm</span>}
                   {detailed && row && <Tags row={row} />}
-                </figcaption>
+                </Caption>
               )}
             </motion.figure>
           );
         })}
       </AnimatePresence>
     </div>
+  );
+}
+
+// A tile's name. While its tile leaves, the name goes at once, and a new tile's name
+// comes only after that, so two names in the same place never cross: a picture can
+// crossfade into another, words cannot.
+function Caption({ children }: { children: ReactNode }) {
+  const present = useIsPresent();
+  return (
+    <motion.figcaption
+      className="tile-name"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: present ? 1 : 0 }}
+      transition={present ? { duration: DUR.quick, ease: EASE_OUT, delay: DUR.quick } : { duration: DUR.quick / 2 }}
+    >
+      {children}
+    </motion.figcaption>
   );
 }
 

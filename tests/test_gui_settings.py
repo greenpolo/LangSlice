@@ -24,6 +24,7 @@ from langslice.hosts.gui.watch import JobList
 
 SECRET = "sk-test-NEVER-ECHO-0123456789"
 STATIC = Path(__file__).resolve().parents[1] / "src" / "langslice" / "hosts" / "gui" / "static"
+TAB = STATIC.parent / "web" / "src" / "settings"
 
 
 @pytest.fixture
@@ -199,18 +200,19 @@ def test_posts_need_the_token_host_and_this_origin(server: GuiServer, home: Path
 
 def test_the_tab_draws_with_the_window_tokens_and_no_html() -> None:
     """settings.css names only tokens.css's custom properties and writes no
-    colour of its own; settings.js puts every text in as text, never HTML."""
+    colour of its own; Settings.tsx puts every text in as text, never HTML."""
     tokens = set(re.findall(r"(--[a-z0-9-]+)\s*:",
                             (STATIC / "tokens.css").read_text(encoding="utf-8")))
-    css = (STATIC / "settings.css").read_text(encoding="utf-8")
+    css = (TAB / "settings.css").read_text(encoding="utf-8")
     assert set(re.findall(r"var\((--[a-z0-9-]+)", css)) <= tokens
     assert re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(", css) == []
-    script = (STATIC / "settings.js").read_text(encoding="utf-8")
-    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|setAttribute\('style'", script) == []
+    script = (TAB / "Settings.tsx").read_text(encoding="utf-8")
+    assert re.findall(r"innerHTML|outerHTML|insertAdjacentHTML|dangerouslySetInnerHTML",
+                      script) == []
 
 
 def test_viewer_endpoints_stay_get_only(server: GuiServer) -> None:
-    for resource in ("", "jobs", "jobs/0/snapshot", "app.js", "settings.js", "settings/other"):
+    for resource in ("", "jobs", "jobs/0/snapshot", "ui.js", "settings/other"):
         assert _request(server, resource, {})[0] == 405
 
 

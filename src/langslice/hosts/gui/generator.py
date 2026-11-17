@@ -1,6 +1,6 @@
 """The prompt generator's data: what the form offers, read from the code.
 
-The prompt generator tab (``static/generator.js``) is a form that runs in the
+The prompt generator tab (``web/src/prompt/``) is a form that runs in the
 page: it turns a person's choices into one message to paste into their agent
 app, a short request and the job's ``langslice-job FOLDER init`` command,
 which the main agent's ``register-brain`` skill runs. This module gives the

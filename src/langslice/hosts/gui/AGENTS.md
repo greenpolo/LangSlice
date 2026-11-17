@@ -6,21 +6,16 @@ to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
 generator and Settings (top right). The agent viewer has two views (Simple |
-Extended at the viewer tab's own top right corner, `v`, kept in `localStorage` as `detail`; `.viewer.simple`
-on `#tab-viewer`). Simple, the start, shows three things: the agent speaking (its
-latest words in a speech bubble beside the LangSlice mark and the agent's
-figure, `#guy`, inline SVGs of which one shows by the model's maker
-(`maker` in `app.js`, class `maker-claude|openai|gemini|plain`: Clawd drawn
-from the pixel map Claude Code carries, in `--clawd`; OpenAI's and Gemini's
-marks, their paths from Simple Icons; a plain face), moving while the words
-come in), the sections it is working on, two to a page with name and position only,
-and the brain strip. Extended is made for a person who wants the whole run,
-read top to bottom: the narration band (the agent's latest words,
-large, what it is doing now and how far the registration is), up to four
-panels showing the sections the agent works on under their current
-registration with the brain strip under them, and on the right the journal (the
-run so far as a timeline of the agent's words, its tool calls quiet lines
-between them) over the pictures the agent looked at. The window is neutral
+Extended, `v`, kept in `localStorage` as `langslice.detail`). Simple, the
+start, shows three things: the agent speaking (the LangSlice mark, the
+model's name and its state beside a speech bubble with its latest words and
+the call it is making in plain words), the sections it is working on, and the
+cutting axis under them. Extended is made for a person who wants the whole
+run, read top to bottom: the same speaker with the progress meters, up to
+four panels showing the sections the agent works on under their current
+registration with the cutting axis and the atlas's pictures under them, and
+on the right the journal (the run so far as a timeline of the agent's words,
+its tool calls quiet lines between them). The window is neutral
 graphite around greyscale pictures with one accent colour; the agent's words
 are in a serif face, the window's in a sans-serif face
 (`static/tokens.css`).
@@ -81,10 +76,7 @@ Gemini keys list the models `doors.agent.spend.PRICES` prices, with no default).
 
 ## Files
 
-The page is a React app (`web/`, below); `static/classic.html` is the window's
-previous page (vanilla scripts `app.js`, `viewer*.js`, `generator.js`,
-`settings.js`, `export.js` and their stylesheets, described under `static/`
-below), still served at `classic.html` until it is removed.
+The page is a React app (`web/`, below), built into `static/`.
 
 - `web/` — the page's source: React 19, TypeScript, Motion (`package.json`
   pins them; `npm install`, `npx tsc --noEmit`, `npx vite build`). Vite
@@ -119,7 +111,7 @@ below), still served at `classic.html` until it is removed.
   it; wheel zoom, drag pan, double-click for the whole span, hover names,
   click picks). `src/extended/`: `ExtendedView` (the progress box:
   one meter per step the job's `tasks` ask for, counted over its sections;
-  four sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
+  four sections a page), `Journal`, `Lightbox`. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
   Prompt generator (its message from `static/generator-logic.js`, the same
@@ -252,9 +244,7 @@ below), still served at `classic.html` until it is removed.
   (`{"format", "landmarks"}`: an ABBA project's most landmark pairs per
   warp, `MIN_LANDMARKS` (100) to 1089, `ExportError` outside; `abba_linear`
   writes no warp steps) and `POST jobs/<n>/export/reveal`, with the Settings POSTs'
-  checks (`server.GuiServer.post`). `static/export.js` / `export.css` (one
-  delimited block in `index.html`, `app.js` naming the shown job with
-  `Exporter.setJob`): the top bar's Export button, its menu (ABBA, warps
+  checks (`server.GuiServer.post`). `web/src/export/`: the top bar's Export button, its menu (ABBA, warps
   of 1089 landmarks; ABBA editable, 100; ABBA linear only; QuickNII; VisuAlign; a row for an
   ABBA project with a count of the person's own, 100 to 1089), and a note that
   says the export is running, then its path with Open folder and Copy path,
@@ -368,11 +358,8 @@ below), still served at `classic.html` until it is removed.
   (the first folder given) when folders were given; without folders the
   viewer's address as it is (the page then opens Settings while no
   connection is chosen) and the prompt generator's with `#tab=prompt`.
-- `static/generator-logic.js`, `static/generator.js`, `static/generator.css` — the
-  prompt generator tab of the older page (loaded by one delimited block in
-  `index.html`; the React window's `web/src/prompt/` imports the same
-  `generator-logic.js`, typed by `generator-logic.d.ts`). `Generator`
-  (`generator-logic.js`), pure
+- `static/generator-logic.js` — the prompt generator's message, imported by
+  `web/src/prompt/` (typed by `generator-logic.d.ts`). `Generator`, pure
   functions on the payload and a plain form object (`folder`, `atlas`,
   `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `on`, `ordered`,
   `damaged`, `keep`, `notes`, `imageProvider`, `imageModel`,
@@ -405,10 +392,10 @@ below), still served at `classic.html` until it is removed.
   `--notes`). `problems` (no message while one stands) mirror
   `tool_table.refusal` on the form: the folder, whole micrometres, `look`
   keeps a mode, each chosen task keeps a writer, each tool on keeps what it
-  needs (one sentence per needed group). The form's DOM is built in the
-  file (the From ABBA block: fixed facts, the keep-registrations box, the
-  file -> slice table; the Image model fieldset after the warp's tools);
-  every text goes in by `textContent`. It loads `generator?job=<n>` when
+  needs (one sentence per needed group). The form (`web/src/prompt/`: the
+  From ABBA block: fixed facts, the keep-registrations box, the
+  file -> slice table; the Image model fieldset after the warp's tools)
+  loads `generator?job=<n>` when
   the address carries `#…&job=<n>`. The layout: numbered cards (1 Images, 2
   Atlas, 3 Sections, 4 What to do, 5 What you already know, 6 Notes for the
   agent, 7 Where you'll use the results (a box per payload integration,
@@ -417,12 +404,11 @@ below), still served at `classic.html` until it is removed.
   beside a sticky **Your message** panel (the whole message, the command in
   violet, Copy, problems in pink, warnings muted), one column below 1080 px;
   the plane as three buttons and *Let the agent decide*; the Advanced tools
-  as a table of switches, each greyed row saying why. The tab is a CSS size
-  container, so `#tab-prompt` must keep the window's height.
-- `static/` — the page, vanilla scripts and styles, no build step. The CSP
-  allows no inline script or style, no `style` attribute and no `data:` or
-  `blob:` image (scripts set `element.style` instead); every text goes in by
-  `textContent`.
+  as a table of switches, each greyed row saying why.
+- `static/` — what the server serves: the built page (`index.html`,
+  `ui.js`, `ui.css`), `generator-logic.js`, the fonts, the icon and the logos.
+  The CSP allows no inline script or style, no `style` attribute and no
+  `data:` or `blob:` image.
   - `tokens.css` — the window's look, the only place a colour, the font, a
     size or a spacing is written: three faces, the system's sans-serif UI
     face for the window's own words (`--sans`), a system serif face for the
@@ -438,111 +424,9 @@ below), still served at `classic.html` until it is removed.
     grey-violet literal text, pink problems, green Submitted; `--clawd`
     is the mascot's own). `:root[data-theme="light"]` is the light look:
     paper grounds and dark words, pictures still on black, and the brain
-    strip on a dark ground of its own (`--stage*`). `theme.js` (loaded
-    before the page is drawn) keeps the choice in `localStorage` and swaps
+    strip on a dark ground of its own (`--stage*`). The page keeps the choice in `localStorage` and swaps
     the lockup. `lockup.svg` and `logomark.svg` are `assets/logo/`'s dark
     ones, `lockup-light.svg` the light one.
-  - `index.html` — the top bar (the lockup, the tabs, the job picker,
-    Settings), the viewer tab (the narration band `#statusline` with the
-    progress meters, the sections area with the strip under it, the journal
-    and the tray), the delimited prompt generator and Settings blocks, the
-    footer and the lightbox.
-  - `app.css`, `app.js` — the element defaults every tab uses (controls a step
-    above the page with a 1 px edge and small rounded corners; `.mono` for
-    literal text) and the shell: the tabs (the first one
-    `#tab=` names, `startTab`, which `settings.js` reads); the address names
-    what is shown (`#tab=…&job=n`) once a job was named; the job picker
-    (keyboard-navigable, newest first by `changed_at`); the polls (jobs every
-    2 s, the snapshot every 300 ms, the strip when the tables change, at most
-    every 1.5 s); Light | Dark (`Theme.toggle`); Simple | Extended (`showDetail`, `Viewer.setSimple`); the narration band's status word, the agent's figure and the run
-    in one sentence (`runWords`: the model, the plane, the atlas); the keys
-    `[`, `]`, `f`, `v`, `r` (Review) and, in Review, the arrow keys and `Esc`. `Ui.short` is a section's name as the window shows it
-    (the file name without its extension). `Ui.loads` is
-    one queue for every picture the server draws: at most three in flight, so
-    the polls keep their connections, lowest rank first (the lightbox, the
-    focus panels, the focus's thumbnails, the atlas row, the other
-    thumbnails).
-  - `viewer.js`, `viewer.css` — the sections area: its header (whose choice
-    the sections are, how many), Pictures | Table | Steps,
-    Follow the agent (the snapshot's `focus` replaces the targets and returns to
-    page 1; a section clicked in the strip, the table or the journal becomes the
-    focus and stops following), four sections to a page (two in Simple, `PAGE_SIZES`, which also shows the pictures only and follows; one fills the area, two side by
-    side, three as one tall panel beside two, four in a 2 x 2 grid; the page
-    arrows only when there is more than one page). A panel asks for `render/overlay` at its size times
-    `devicePixelRatio` (rounded up to 128) and again only when its row's
-    `render_key` changes or the panel grows; the old picture stays, tagged
-    `updating`, until the new one fades in (another section's picture stays dimmed, `stale`, until this section's has loaded); a 409 shows its message (the same message on every panel shown is
-    said once, over the panels), a 503 is asked again; zoom, pan and reset happen in the page; `Enlarge` shows the
-    render in the lightbox. A panel's title: its number (the one on its
-    section in the strip), the section, its position, the angles, and tags in
-    plain words (`HOW`: how it was aligned; `warped`; `damaged`; the stored
-    values on hover). `progress`: the band's three meters (sections with a
-    position, a transform, a deformation; a task off in the header's `tasks`
-    has none). The Table (a damaged row's pink left
-    edge; a click puts the section in focus), Steps (undo, redo, notes,
-    spend). The dividers are remembered in `localStorage`; below 1100 px the
-    journal goes under the sections area. Review (`#review`, `r`): one
-    section to a page, every section in stack order, the arrow keys page,
-    Follow off, drag draws a box instead of panning (`drawable`: fractions of
-    the picture's contained content rectangle through the panel's zoom,
-    `contentRect`, `fractionAt`), a composer under the box (Enter POSTs it,
-    Esc drops it). Every panel draws its section's comments from the
-    snapshot (`setComments`, `drawMarks`) in `.panel-marks`, a layer with the
-    picture's own transform: an accent box with its words above it, faded
-    and `revised` once the section changed; `×` removes one in Review. The
-    button counts the open comments (`#review-count`).
-  - `viewer-axis.js` — `Axis`, the Simple view's front-to-back line under
-    the pictures: a dot per section in a slot moved by a transform
-    (unplaced: dim, in stack order; placed: at its position over the placed
-    sections' span plus 0.5 mm), mm ticks, a fading ghost where one of up
-    to three moved sections was, a front-to-back wave for a reshuffle, the
-    focus in the accent and the shown sections ringed; hover names, click
-    picks. In Simple, `viewer.js` holds each new focus at least `DWELL_MS`
-    (a deck `DECK_DWELL_MS`), fetches and decodes its pictures first
-    (`prefetch`, at most `READY_WAIT_MS`; Simple draws at `SIMPLE_EDGE` per
-    count so the fetched picture is the one asked for), fades a copy of the
-    old stage over the new (`fadeStage`), and shows 1 to 3 panels or, from
-    `DECK_FROM`, the deck (`deckGeometry`). Motion tokens are in
-    `tokens.css` (`--ease-out`, `--ease-in-out`, `--dur-*`).
-  - `viewer-strip.js` — the brain strip, one inline SVG under the pictures:
-    atlas thumbnails over a millimetre ruler, the placed sections in at most three
-    stair rows (each in the first row where it clears its neighbour) with a
-    key on the axis; the focus's sections in the accent with a leader, the
-    shown ones outlined with their panel's number on a handle, a bar spanning
-    them; the sections not placed grouped at the right. Thumbnails are asked
-    for only in view (128 px; 256 drawn large) and again on a new thumb key.
-    Hover, click to focus, wheel zoom, drag pan, double-click for the whole
-    axis; without the strip route, the handles from the snapshot rows.
-  - `viewer-log.js` — the journal and the narration: agent messages and
-    reasoning summaries as timeline entries in the serif face (paragraphs,
-    lists and `code` kept, by `textContent`; each at its minute of the run,
-    `elapsed`, from the trace's first record; the newest marked `latest`),
-    whose first paragraph `narrate` puts in the band (`#now-words`, one
-    `word-in` span per word, each a little later than the last; the band is
-    `speaking` meanwhile, which makes the figure talk);
-    `renderDoing` writes the band's last line (`Now:` the running call's
-    title and sections, else `Last step:`, else the server's sentence; the
-    band is `wordless` for a run without the agent's words); tool lines
-    (`<details>` named by the tool's plain-language `title`, its name beside
-    it in the monospace face, one section named and focusable or their count, `now`
-    or `failed`, the inputs at most 240 px tall, step, status and door; calls of
-    one tool in a row fold into one run line, `title ×n`, that opens to show
-    each, with the run's `N pictures` while closed),
-    `N pictures`, the pictures read at the start as one line at the top
-    (`GROUP_TITLES`), notes, the line saying the agent's own words were not
-    found when the snapshot holds none, following the end until the
-    person scrolls away (`Latest activity`); the tray "The agent looked at" (four pictures per
-    page, the calls with pictures paged, Newest, resizable, about half the
-    column); the lightbox (a picture with its caption; the
-    arrow keys through every picture of the job).
-  - `settings.js`, `settings.css` — the Settings tab: built once, updated
-    from each answer, so a key being typed survives a refresh; refreshed
-    when the tab is opened, every second while a sign-in runs; on the first
-    load with no connection chosen it opens the tab, unless the address named
-    a tab. Three cards: Connection (one card per connection, chosen by a
-    click, with its status tag, its sign-in or key field and its own message
-    line), Agent model (hidden until a connection is chosen), Registration
-    runs in (greyed until the chosen connection works).
 
 ## Tests
 
