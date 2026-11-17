@@ -13,15 +13,16 @@ the call it is making in plain words), the sections it is working on, and the
 cutting axis under them. Extended is made for a person who wants the whole
 run, read top to bottom: the same speaker with the progress meters, up to
 four panels showing the sections the agent works on under their current
-registration with the cutting axis and the atlas's pictures under them (or,
-with **Pictures | 3D** on 3D, kept in `localStorage` as
-`langslice.extended.stage`, those sections in a narrow column beside the
-atlas brain in three dimensions with every section placed in it), and
+registration with the cutting axis and the atlas's pictures under them, and
 on the right the journal (the run so far as a timeline of the agent's words,
 its tool calls quiet lines between them). The window is neutral
 graphite around greyscale pictures with one accent colour; the agent's words
 are in a serif face, the window's in a sans-serif face
-(`static/tokens.css`).
+(`static/tokens.css`). Both views have **2D | 3D** beside Simple |
+Extended (one setting, kept in `localStorage` as `langslice.stage`): 3D
+takes the cutting axis's place, showing the sections in focus in a narrow
+column at the left and the atlas brain in three dimensions, with every
+placed section in it, filling the rest (`src/space/`).
 
 ## The rule
 
@@ -114,8 +115,11 @@ The page is a React app (`web/`, below), built into `static/`.
   it; wheel zoom, drag pan, double-click for the whole span, hover names,
   click picks). `src/extended/`: `ExtendedView` (the progress box:
   one meter per step the job's `tasks` ask for, counted over its sections;
-  four sections a page; Pictures | 3D), `Journal`, `Lightbox`. `src/space/`:
-  the 3D view (three.js). `scene.ts` (`Space`) maps atlas micrometres to
+  four sections a page; in 3D no cutting axis), `Journal`, `Lightbox`. `src/space/`:
+  the 3D view (three.js). `mode.ts` keeps 2D | 3D (`useStageMode`,
+  `setStageMode`; the switch is in `Viewer.tsx`); `SpaceStage.tsx` is both
+  views' 3D stage (the focus Stage in a column, the Volume beside it, no
+  panel or border around it). `scene.ts` (`Space`) maps atlas micrometres to
   scene millimetres by the orientation letters (anterior +z, superior +y,
   the animal's right -x, centred on the atlas), draws BrainGlobe's root mesh
   as brainrender shows it (matte, see-through, lit over the viewer's

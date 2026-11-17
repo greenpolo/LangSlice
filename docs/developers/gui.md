@@ -60,7 +60,9 @@ over the placed sections' span, and under it every placed section's
 thumbnail in the order of its position, joined to its mark on the ruler; a
 thumbnail glides when the agent moves its section. Pointing at one names its
 section; clicking shows it. The wheel zooms, dragging pans and a
-double-click shows the whole span.
+double-click shows the whole span. With **3D** on (the **2D | 3D** switch beside
+**Simple | Extended**), the atlas brain in three dimensions takes the
+cutting axis's place, as in Extended (below).
 
 **Extended** answers three questions: what is the agent doing, what does
 the registration look like, and how did it get here.
@@ -84,9 +86,9 @@ the registration look like, and how did it get here.
   **Follow the agent** (on to start with; `f`) keeps the pictures on the
   agent's latest call. Clicking a section on the cutting axis, a picture or
   a name in the journal shows it and stops following.
-- **3D.** **Pictures | 3D** above the pictures (remembered) swaps them for
-  the atlas brain in three dimensions: the sections in focus in a narrow
-  column on the left, and on the right the atlas's own brain surface (its
+- **3D.** **2D | 3D** at the top right (in both views, remembered) swaps
+  the cutting axis for the atlas brain in three dimensions: the sections in
+  focus in a narrow column on the left, and filling the rest the atlas's own brain surface (its
   BrainGlobe root mesh, as brainrender draws it) with every placed section
   where its current linear placement puts it, as a slab carrying its
   picture, as thick as the job's sections (10 µm when the job does not say,

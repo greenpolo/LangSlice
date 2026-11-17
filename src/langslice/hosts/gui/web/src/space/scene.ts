@@ -28,7 +28,7 @@ export type Shell = {
 };
 
 const FOV = 30;
-const LIFT = 0.42;
+const LIFT = 0.62;
 const OMEGA = 4.6;
 const BATCH_S = 1.6;
 const INFLATE_MM = 0.08;
@@ -66,12 +66,14 @@ const VERTEX = /* glsl */ `
 
 // The picture as it is: the tissue opaque, the ground around it (the calm pictures' floor,
 // `floor` its luminance, read from the picture's corners) left out; a thin frame in the
-// accent for a section in focus, in grey under the pointer; `see` greys and darkens a
+// accent around the tissue's box for a section in focus (brightened a little), in grey under
+// the pointer; `see` greys and darkens a
 // section a little while others are in focus (it stays opaque).
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
   uniform float floor;
+  uniform vec4 tissueBox;
   uniform float focus;
   uniform float hover;
   uniform float shown;
@@ -85,17 +87,18 @@ const FRAGMENT = /* glsl */ `
     vec3 c = hasMap > 0.5 ? texture2D(map, vUv).rgb : vec3(0.0);
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
     float tissue = hasMap > 0.5 ? smoothstep(floor + 0.012, floor + 0.045, lum) : 0.0;
-    vec2 d = min(vUv, 1.0 - vUv) / max(fwidth(vUv), vec2(1e-5));
-    float line = 1.0 - smoothstep(0.5, 1.5, min(d.x, d.y));
-    float frame = line * max(focus, 0.6 * hover);
-    float placeholder = hasMap > 0.5 ? 0.0 : line * 0.35;
+    vec2 px = max(fwidth(vUv), vec2(1e-5));
+    vec2 inner = min(vUv - tissueBox.xy, tissueBox.zw - vUv) / px;
+    float inside = step(-1.5, min(inner.x, inner.y));
+    float ring = (1.0 - smoothstep(0.6, 1.8, abs(min(inner.x, inner.y)))) * inside;
+    float frame = ring * max(focus, 0.6 * hover);
     vec3 grey = vec3(lum) * 0.62;
-    vec3 tissueColor = mix(c, grey, 0.7 * see);
+    vec3 tissueColor = mix(c * (1.0 + 0.18 * focus), grey, 0.7 * see);
     vec3 col = mix(tissueColor, mix(edgeColor, accent, focus), frame);
     float body = tissue;
-    float a = max(max(body, frame), placeholder) * shown;
+    float a = max(body, frame * hasMap) * shown;
     if (a < 0.02) discard;
-    gl_FragColor = vec4(mix(col, edgeColor, placeholder * (1.0 - tissue)), a);
+    gl_FragColor = vec4(col, a);
   }
 `;
 
@@ -164,22 +167,37 @@ function token(name: string, fallback: string): THREE.Vector3 {
   return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
-// The luminance of a picture's ground: the darkest of its four corners' 4x4 means.
-function ground(img: HTMLImageElement): number {
+// A picture's ground (the darkest of its four corners' 4x4 mean luminances) and the box
+// around its tissue (what is brighter than the ground), in uv, a little padded.
+function ground(img: HTMLImageElement): { floor: number; box: THREE.Vector4 } {
   const w = img.naturalWidth, h = img.naturalHeight;
+  const whole = { floor: 0, box: new THREE.Vector4(0, 0, 1, 1) };
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx || !w || !h) return 0;
+  if (!ctx || !w || !h) return whole;
   ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const lum = (x: number, y: number) => {
+    const i = 4 * (y * w + x);
+    return (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+  };
   let low = 1;
-  for (const [x, y] of [[0, 0], [w - 4, 0], [0, h - 4], [w - 4, h - 4]]) {
-    const d = ctx.getImageData(x, y, 4, 4).data;
+  for (const [x0, y0] of [[0, 0], [w - 4, 0], [0, h - 4], [w - 4, h - 4]]) {
     let sum = 0;
-    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    low = Math.min(low, sum / (d.length / 4) / 255);
+    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 4; x++) sum += lum(x, y);
+    low = Math.min(low, sum / 16);
   }
-  return low;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+    if (lum(x, y) > low + 0.03) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  }
+  if (x1 < x0) return { floor: low, box: whole.box };
+  const pad = 0.015;
+  return {
+    floor: low,
+    box: new THREE.Vector4(Math.max(0, x0 / w - pad), Math.max(0, y0 / h - pad), Math.min(1, (x1 + 1) / w + pad), Math.min(1, (y1 + 1) / h + pad)),
+  };
 }
 
 // Faces wound so their normals point away from the mesh's centre, on the whole.
@@ -376,7 +394,9 @@ export class Space {
     this.textures.set(id, tex);
     s.mesh.material.uniforms.map.value = tex;
     s.mesh.material.uniforms.hasMap.value = 1;
-    s.mesh.material.uniforms.floor.value = ground(img);
+    const { floor, box } = ground(img);
+    s.mesh.material.uniforms.floor.value = floor;
+    s.mesh.material.uniforms.tissueBox.value = box;
   }
 
   setFocus(ids: string[]) {
@@ -387,7 +407,7 @@ export class Space {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: true, depthWrite: true, side: THREE.DoubleSide,
       uniforms: {
-        map: { value: null }, hasMap: { value: 0 }, floor: { value: 0 }, focus: { value: 0 }, hover: { value: 0 }, shown: { value: 0 }, see: { value: 0 },
+        map: { value: null }, hasMap: { value: 0 }, floor: { value: 0 }, tissueBox: { value: new THREE.Vector4(0, 0, 1, 1) }, focus: { value: 0 }, hover: { value: 0 }, shown: { value: 0 }, see: { value: 0 },
         accent: { value: this.accent }, edgeColor: { value: this.edgeColor },
       },
     });

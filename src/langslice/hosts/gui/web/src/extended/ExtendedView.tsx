@@ -1,8 +1,8 @@
 // The Extended view, for a person who wants the whole run: the speaker band with how far
 // the registration is (placed, aligned, warped); the sections in focus, four to a page,
-// each with its name, position and how it stands, or (3D) the same sections in a column
-// beside the atlas brain with every section where it is placed; the front-to-back line
-// under them; and on the right the journal. Pictures or 3D is kept in `localStorage`.
+// each with its name, position and how it stands, and the front-to-back line under them
+// (2D), or the same sections in a column beside the atlas brain with every section where
+// it is placed (3D, which takes the line's place); and on the right the journal.
 import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -11,17 +11,12 @@ import { useRun, type Row } from '../run';
 import { CuttingAxis } from '../simple/CuttingAxis';
 import { Speaker } from '../simple/Speaker';
 import { Stage, useBox, useDirector } from '../simple/Stage';
-import { Volume } from '../space/Volume';
+import { useStageMode } from '../space/mode';
+import { SpaceStage } from '../space/SpaceStage';
 import type { Focus } from '../Viewer';
 import { Journal } from './Journal';
 
 const PAGE = 4;
-const MODE_KEY = 'langslice.extended.stage';
-type Mode = 'pictures' | 'space';
-
-function savedMode(): Mode {
-  try { return localStorage.getItem(MODE_KEY) === 'space' ? 'space' : 'pictures'; } catch { return 'pictures'; }
-}
 
 export function ExtendedView({ focus, review, ring, onPictures }: {
   focus: Focus; review: ReactNode; ring: string | null; onPictures: (numbers: number[], start: number) => void;
@@ -29,11 +24,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
   const run = useRun();
   const [stageRef, box] = useBox<HTMLDivElement>();
   const [page, setPage] = useState(0);
-  const [mode, setModeState] = useState<Mode>(savedMode);
-  const setMode = (m: Mode) => {
-    setModeState(m);
-    try { localStorage.setItem(MODE_KEY, m); } catch { /* the choice lasts this window only */ }
-  };
+  const space = useStageMode() === '3d' && !review && run.job !== null;
   const pages = Math.max(1, Math.ceil(focus.ids.length / PAGE));
   const onPage = focus.ids.slice(Math.min(page, pages - 1) * PAGE, Math.min(page, pages - 1) * PAGE + PAGE);
   const shown = useDirector(run.job, onPage, run.rows, box);
@@ -41,7 +32,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
   const running = [...run.calls].reverse().find(c => c.running);
   const call = running ?? run.calls.at(-1) ?? null;
   return (
-    <main className={'extended' + (mode === 'space' && !review ? ' space' : '')}>
+    <main className={'extended' + (space ? ' space' : '')}>
       <div className="extended-head">
         <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
         <Progress rows={run.rows} tasks={run.header.tasks} done={done} />
@@ -49,10 +40,6 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
       <div className="extended-body">
         <section className="extended-main">
           <div className="extended-tools">
-            <div className="views-switch" role="group" aria-label="What the stage shows">
-              <button className={mode === 'pictures' ? 'on' : ''} aria-pressed={mode === 'pictures'} onClick={() => setMode('pictures')}>Pictures</button>
-              <button className={mode === 'space' ? 'on' : ''} aria-pressed={mode === 'space'} onClick={() => setMode('space')}>3D</button>
-            </div>
             <span className="extended-count">
               {!focus.following ? 'You are looking at ' : done ? 'Registered: ' : 'The agent is working on '}
               <b>{focus.ids.length === run.rows.length ? `all ${run.rows.length} sections` : `${focus.ids.length} of ${run.rows.length} sections`}</b>
@@ -65,21 +52,18 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
               </span>
             )}
           </div>
-          {review || mode === 'pictures' || run.job === null ? (
+          {space && run.job !== null ? (
+            <SpaceStage job={run.job} rows={run.rows} strip={run.strip} shown={shown} box={box} sideRef={stageRef}
+              onPick={focus.pick} focus={ring ? [ring] : focus.ids.length === run.rows.length ? [] : shown} />
+          ) : (
             <div className="stage" ref={stageRef}>
               {review ?? (run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} detailed />)}
             </div>
-          ) : (
-            <div className="stage space-split">
-              <div className="space-side" ref={stageRef}>
-                <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} />
-              </div>
-              <Volume job={run.job} rows={run.rows} strip={run.strip} onPick={focus.pick}
-                focus={ring ? [ring] : focus.ids.length === run.rows.length ? [] : shown} />
-            </div>
           )}
-          <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : focus.ids}
-            shown={ring ? [ring] : shown} done={done} onPick={focus.pick} atlas />
+          {!space && (
+            <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : focus.ids}
+              shown={ring ? [ring] : shown} done={done} onPick={focus.pick} atlas />
+          )}
         </section>
         <Journal onPictures={onPictures} onSection={focus.pick} />
       </div>
