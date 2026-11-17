@@ -23,6 +23,13 @@ export type Call = {
 };
 export type Words = { kind: 'agent' | 'reasoning'; text: string; at: string; n: number };
 export type Axis = { low: string; high: string; min_mm: number; max_mm: number };
+// The strip: the atlas thumbnails' places along the axis and each section's thumbnail key.
+export type Strip = {
+  step_mm: number;
+  atlas: { k: number; position_mm: number }[];
+  angles: string;
+  sections: { id: string; order: number; position_mm: number | null; thumb_key: string }[];
+};
 export type Job = { index: number; name: string; path: string; changed_at?: number; status?: string };
 // A review comment: its box as [x0, y0, x1, y1] fractions of the section's picture as
 // the window draws it (the overlay's content, oriented as the section is kept).
@@ -48,6 +55,7 @@ export type RunState = {
   calls: Call[];             // in order
   words: Words | null;       // the agent's latest words
   axis: Axis | null;
+  strip: Strip | null;
   comments: Comment[];
   log: Entry[];              // the run so far, in order (at most LOG_MAX entries)
   header: Record<string, unknown>;
@@ -65,7 +73,7 @@ type Item = {
 
 let state: RunState = {
   connected: false, jobs: null, home: '', job: null, status: '', sentence: '', model: '',
-  rows: [], loaded: false, focus: null, focusCall: null, calls: [], words: null, axis: null, comments: [],
+  rows: [], loaded: false, focus: null, focusCall: null, calls: [], words: null, axis: null, strip: null, comments: [],
   log: [], header: {},
 };
 const listeners = new Set<() => void>();
@@ -103,7 +111,7 @@ function select(index: number) {
   claims = new Map(); loose = new Map();
   set({
     job: index, status: '', sentence: '', model: '', rows: [], loaded: false, focus: null,
-    focusCall: null, calls: [], words: null, axis: null, comments: [], log: [], header: {},
+    focusCall: null, calls: [], words: null, axis: null, strip: null, comments: [], log: [], header: {},
   });
   const params = new URLSearchParams(location.hash.slice(1));
   params.set('job', String(index));
@@ -258,7 +266,13 @@ async function fetchStrip() {
     if (r.ok && job === state.job) {
       const info = await r.json();
       const a = info?.axis;
-      if (a && JSON.stringify(a) !== JSON.stringify(state.axis)) set({ axis: a });
+      const patch: Partial<RunState> = {};
+      if (a && JSON.stringify(a) !== JSON.stringify(state.axis)) patch.axis = a;
+      if (info && Array.isArray(info.atlas)) {
+        const strip: Strip = { step_mm: info.step_mm, atlas: info.atlas, angles: info.angles || '', sections: info.sections || [] };
+        if (JSON.stringify(strip) !== JSON.stringify(state.strip)) patch.strip = strip;
+      }
+      if (Object.keys(patch).length) set(patch);
     }
   } catch { /* asked again when the sections change */ }
   finally { stripBusy = false; }

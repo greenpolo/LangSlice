@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { EASE_OUT } from '../motion';
 import { useRun, type Row } from '../run';
-import { FrontToBack } from '../simple/FrontToBack';
+import { CuttingAxis } from '../simple/CuttingAxis';
 import { Speaker } from '../simple/Speaker';
 import { short, Stage, useBox, useDirector } from '../simple/Stage';
 import type { Focus } from '../Viewer';
@@ -58,7 +58,8 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
               ? run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} detailed />
               : <SectionsTable rows={run.rows} focus={focus} />)}
           </div>
-          <FrontToBack rows={run.rows} axis={run.axis} focus={ring ? [ring] : focus.ids} shown={ring ? [ring] : shown} done={done} onPick={focus.pick} />
+          <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : focus.ids}
+            shown={ring ? [ring] : shown} done={done} onPick={focus.pick} stairRows={3} />
         </section>
         <Journal onPictures={onPictures} onSection={focus.pick} />
       </div>

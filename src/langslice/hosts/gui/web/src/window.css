@@ -157,47 +157,7 @@ a { color: inherit; text-decoration: none; }
 .tile-where { color: var(--muted); font-variant-numeric: tabular-nums; }
 .empty { color: var(--muted); }
 
-/* Front to back. */
-.ftb {
-  flex-shrink: 0;
-  width: min(1240px, calc(100% - 2 * var(--space-6)));
-  margin: 0 auto;
-  padding: var(--space-3) 0 var(--space-3);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-4);
-}
-.ftb-end { color: var(--muted); font-size: var(--size-sm); }
-.ftb-line { position: relative; height: 22px; }
-.ftb-line::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--tract); }
-.ftb-tick { position: absolute; top: calc(50% + 4px); width: 1px; height: 4px; background: var(--line); }
-.ftb-slot { position: absolute; inset: 0; pointer-events: none; transition: transform var(--dur-glide) var(--ease-in-out); }
-.ftb-line.wave .ftb-slot { transition-delay: calc(var(--x, 0) * 2.4ms); }
-.ftb-dot {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
-  border-radius: 50%;
-  background: var(--muted);
-  pointer-events: auto;
-  cursor: default;
-  transition: scale var(--dur-quick) var(--ease-out), background-color var(--dur-quick) ease;
-}
-.ftb-dot.unplaced { background: var(--tract); scale: 0.75; }
-.ftb-dot.target { background: var(--lavender); scale: 1.3; }
-.ftb-dot.shown { background: var(--lavender); scale: 1.35; box-shadow: 0 0 0 1.5px var(--ground), 0 0 0 2.5px var(--lavender); }
-@media (hover: hover) and (pointer: fine) { .ftb-dot:hover { background: var(--name); scale: 1.5; } }
-.ftb-ghost { position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; border: 1px solid var(--lavender); pointer-events: none; animation: ghost 1400ms var(--ease-out) forwards; }
-@keyframes ghost { to { opacity: 0; scale: 0.6; } }
-.ftb-line.done .ftb-dot { animation: sweep 700ms var(--ease-out) calc(var(--x, 0) * 9ms) both; }
 @keyframes sweep { 40% { background: var(--name); scale: 1.6; } }
-.ftb-tip { position: absolute; bottom: calc(100% + 2px); translate: -50% 0; z-index: 5; pointer-events: none; padding: 2px var(--space-2); background: var(--panel); border: 1px solid var(--tract); border-radius: var(--radius-sm); font-size: var(--size-xs); white-space: nowrap; color: var(--muted); }
-.ftb-tip b { color: var(--name); font-weight: var(--weight-strong); }
-.ftb-waiting { grid-column: 1 / 4; justify-self: end; min-height: 1em; color: var(--faint); font-size: var(--size-xs); }
 
 /* The viewer's controls, at its top right: Follow the agent, Review, Simple | Extended. */
 .viewer-controls { position: absolute; top: var(--space-2); right: var(--space-4); z-index: 6; display: flex; align-items: center; gap: var(--space-2); }
@@ -266,7 +226,6 @@ a { color: inherit; text-decoration: none; }
 .segmented button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
 .segmented button.on { color: var(--name); background: var(--selected); }
 .extended .stage { margin: var(--space-2) var(--space-5) 0; }
-.extended .ftb { width: auto; margin: 0 var(--space-5); }
 .meters { margin: 0; display: flex; flex-direction: column; gap: 10px; padding-bottom: var(--space-3); }
 .meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-2); font-size: var(--size-sm); }
 .meter dt { color: var(--text); }
@@ -339,11 +298,40 @@ a { color: inherit; text-decoration: none; }
 .lightbox-image { min-height: 0; max-width: 100%; max-height: calc(100vh - 220px); object-fit: contain; background: var(--picture); border-radius: var(--radius-sm); }
 .lightbox-caption { max-width: 900px; color: var(--muted); font-size: var(--size-xs); white-space: pre-wrap; }
 
+/* The cutting axis: the atlas row, the ruler, the sections in stair rows. */
+.cut { position: relative; flex-shrink: 0; margin: var(--space-2) var(--space-6) var(--space-2); overflow: hidden; user-select: none; touch-action: none; cursor: default; }
+.cut.zoomed { cursor: grab; }
+.cut.zoomed:active { cursor: grabbing; }
+.extended .cut { margin: var(--space-2) var(--space-5) var(--space-2); }
+.cut-atlas { position: absolute; top: 0; left: 0; opacity: 0.4; }
+.cut-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity var(--dur-enter) var(--ease-out); }
+.cut-canvas.ready { opacity: 1; }
+.cut-ruler { position: absolute; left: 0; right: 0; height: 1px; background: var(--tract); }
+.cut-tick { position: absolute; left: 0; width: 1px; height: 4px; background: var(--line); }
+.cut-tick.major { height: 6px; background: var(--tract); }
+.cut-tick-label { position: absolute; top: 7px; left: 0; translate: -50% 0; color: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+.cut-end { position: absolute; translate: 0 -150%; color: var(--muted); font-size: var(--size-xs); background: var(--ground); padding: 0 4px; }
+.cut-end.low { left: 0; }
+.cut-end.high { right: 0; }
+.cut-key { position: absolute; left: 0; top: 0; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 1px; background: var(--muted); transition: transform var(--dur-glide) var(--ease-in-out), background-color var(--dur-quick) ease, scale var(--dur-quick) var(--ease-out); }
+.cut-key.target { background: var(--lavender); scale: 1.3; }
+.cut-key.shown { background: var(--lavender); scale: 1.6; }
+.cut-leader { position: absolute; left: 0; top: 0; width: 1px; background: color-mix(in srgb, var(--lavender) 55%, transparent); transform-origin: top; transition: transform var(--dur-glide) var(--ease-in-out); }
+.cut-thumb { position: absolute; left: 0; top: 0; padding: 0; border: 1px solid transparent; border-radius: 3px; background: var(--stage); opacity: 0.75; cursor: pointer; transition: border-color var(--dur-quick) ease; }
+.cut-thumb.target { border-color: color-mix(in srgb, var(--lavender) 60%, transparent); }
+.cut-thumb.shown { border-color: var(--lavender); box-shadow: 0 0 0 1px var(--ground); }
+@media (hover: hover) and (pointer: fine) { .cut-thumb:hover { border-color: var(--name); } }
+.cut.done .cut-key { animation: sweep 700ms var(--ease-out) both; }
+.cut-tip { position: absolute; left: 0; bottom: 2px; translate: -50% 0; z-index: 5; pointer-events: none; padding: 2px var(--space-2); background: var(--panel); border: 1px solid var(--tract); border-radius: var(--radius-sm); font-size: var(--size-xs); white-space: nowrap; color: var(--muted); }
+.cut-tip b { color: var(--name); font-weight: var(--weight-strong); }
+.cut-waiting { position: absolute; right: 0; bottom: 0; color: var(--faint); font-size: var(--size-xs); }
+
 @media (prefers-reduced-motion: reduce) {
   .word,
-  .ftb-line.done .ftb-dot, .ftb-ghost, .dot.Running, .dot.Submitted, .doing.running::before,
+  .cut.done .cut-key, .dot.Running, .dot.Submitted, .doing.running::before,
   .state-glyph i, .state-done svg { animation: none; }
   .word { animation: fade var(--dur-quick) ease both; }
-  .ftb-slot { transition: none; }
+  .cut-key, .cut-leader { transition: none; }
+  .cut.done .cut-key { animation: none; }
 }
 @keyframes fade { from { opacity: 0; } }

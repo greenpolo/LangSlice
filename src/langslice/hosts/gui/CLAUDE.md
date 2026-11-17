@@ -110,7 +110,11 @@ below), still served at `classic.html` until it is removed.
   focus `DWELL_MS`, a grid `DECK_DWELL_MS`, and shows the next once its
   pictures are ready, at most `READY_WAIT_MS`; Motion layout animations move
   a section still shown), `Picture` (canvas layers crossfading on a
-  redraw), `FrontToBack`. `src/extended/`: `ExtendedView` (meters, four
+  redraw), `CuttingAxis` (under the pictures in both views: the atlas's
+  pictures over a millimetre ruler, every placed section's thumbnail in stair
+  rows, two in Simple and three in Extended, gliding to its new place when
+  the agent moves it; wheel zoom, drag pan, double-click for the whole axis,
+  hover names, click picks). `src/extended/`: `ExtendedView` (meters, four
   sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the

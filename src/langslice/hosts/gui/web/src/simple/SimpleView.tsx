@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { overlayUrl, warm } from '../pictures';
 import { useRun } from '../run';
 import type { Focus } from '../Viewer';
-import { FrontToBack } from './FrontToBack';
+import { CuttingAxis } from './CuttingAxis';
 import { Speaker } from './Speaker';
 import { geometry, Stage, useBox, useDirector } from './Stage';
 
@@ -32,7 +32,8 @@ export function SimpleView({ focus, review, ring }: { focus: Focus; review: Reac
         {review ?? (run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} />)}
         {run.jobs && !run.jobs.length && <p className="empty">No jobs yet: open a job folder with <code>langslice gui FOLDER</code>.</p>}
       </div>
-      <FrontToBack rows={run.rows} axis={run.axis} focus={ring ? [ring] : shown} shown={ring ? [ring] : shown.length <= 3 ? shown : []} done={done} onPick={focus.pick} />
+      <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : shown}
+        shown={ring ? [ring] : shown.length <= 3 ? shown : []} done={done} onPick={focus.pick} stairRows={2} />
     </main>
   );
 }
