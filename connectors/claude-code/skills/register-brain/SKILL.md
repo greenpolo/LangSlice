@@ -162,11 +162,28 @@ put it elsewhere.
   placement only: when `warps_left_out` names sections, tell the user that
   their warps are left out of this export and that PyNutil on
   `exports/visualign.json` keeps them.
-- **ABBA.** Write the job as an ABBA project, `exports/<image folder>.abba`,
-  which ABBA opens with **File ‣ Load State**: the `abba` skill has the
-  script. Never import `quicknii.json` into ABBA: ABBA misreads its image
-  sizes and cutting angles, and the sections land millimetres off and out
-  of order.
+- **ABBA.** Write the job as an ABBA project. Save this script as
+  `scripts/export_abba.py` in the job folder:
+
+  ```python
+  import sys
+
+  import langslice
+
+  if __name__ == "__main__":
+      print(langslice.open_job(sys.argv[1]).export_abba())
+  ```
+
+  and run it with `langslice-job FOLDER python scripts/export_abba.py
+  FOLDER`. It writes `exports/<image folder>.abba`, which ABBA opens with
+  **File ‣ Load State** on the Allen Brain Adult Mouse Brain CCF 2017 atlas,
+  coronal; `exports/abba_export.json` names any section left out and why.
+  The user can also choose **Export ‣ ABBA project (.abba)** in the
+  LangSlice window. Never import `quicknii.json` into ABBA: ABBA misreads
+  its image sizes and cutting angles, and the sections land millimetres off
+  and out of order. To start a job from an ABBA registration, export it from
+  ABBA (QuickNII dataset, or the registration file) and pass it to `init
+  --registration FILE` (step 1).
 
 The LangSlice documentation (https://langslice.readthedocs.io) has a page
 for each: QUINT, VERSO, DMC-BrainMap and ABBA. Point the user to the one

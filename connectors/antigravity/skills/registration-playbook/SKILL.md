@@ -36,26 +36,35 @@ rather than retrying the fit with other settings.
 
 - After every fit or manual change, look at the section's overlay, and zoom
   where the borders matter. Keep the change only if the overlay is better.
-- Judge the inner borders: ventricle walls, the hippocampus and dentate gyrus,
-  cortical layers, fibre tracts, cerebellar folia. How tightly the outer
-  outline hugs the tissue edge is a poor guide: a fit can pull the outline onto
-  the edge while the inner borders move away from their tissue.
+- Judge the inner borders of distinct regions: the hippocampus and dentate
+  gyrus, the anterior commissure, the corpus callosum and other fibre tracts,
+  the ventricle walls, cerebellar folia. People judge a registration at a
+  glance by those. The outer outline is the easy part: a fit can pull it onto
+  the tissue edge while the inner borders move away from their tissue.
 - To compare two registrations of a section, draw them side by side with
   `look(registrations={...})` and keep the better with `restore_registration`.
 
 ## Section and atlas images
 
-- **Atlas image:** fit against `nissl` (the fits' default) for every stain.
-  Against human registrations the `template` image made affine fits worse for
-  DAPI, DAB and Nissl sections, and failed more often from a rough start.
-- **Inverting:** a brightfield stain (dark tissue on a light slide) runs
-  opposite to the atlas pictures. Invert it with `make_image` to look at it
-  if that helps you read it, but fit on the image as delivered. elastix and
-  FireANTs give the same fit either way, and SPOmiAlign's warp ended further
-  from human registrations on inverted ISH, DAB and Nissl.
-  Example: `examples/invert.jpg`.
-- Example of choosing the atlas image by what the section shows:
+Make the two images the fit compares look alike.
+
+- **Atlas image:** pick the atlas image that looks most like the section:
+  `nissl` (the fits' default) where the atlas has one. Against human
+  registrations the `template` image made elastix fits worse for DAPI, DAB
+  and Nissl sections, and failed more often from a rough start. Example:
   `examples/atlas_image_choice.jpg`.
+- **Section image:** process the section with `make_image` so it looks like
+  the atlas image the engine compares (one channel, contrast, polarity).
+  elastix and FireANTs gave the same fit on a stain and on its inverse.
+  SPOmiAlign draws the atlas dark on white: fit fluorescence inverted, and a
+  brightfield stain (already dark on light) as delivered (`choosing-engines`).
+
+## Sections an automatic fit cannot place
+
+Some sections are so torn, folded or mangled that no set of damage marks
+describes what is left, and an automatic affine never lands. Do not retry it
+with other settings. Set the transform by hand with `interactive_transform`,
+or fit with an engine that has a missing-data term (`choosing-engines`).
 
 ## Final review
 

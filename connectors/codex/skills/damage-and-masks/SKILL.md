@@ -42,6 +42,24 @@ surviving regions with `restrict_to` instead: those regions fit, and the rest
 of the section stays where the rough start put it. Example:
 `examples/exclude_vs_include.jpg`.
 
+## Masks
+
+A mark names atlas regions; a mask (`make_mask`) names section pixels.
+`elastix_affine` and `fireants_syn` leave its pixels under one half out of
+the comparison, `emlddmm_stack` weights each pixel by it, and `spomialign`
+drops the matches that end where it is under one half. `stalign_lddmm` takes
+no mask. STalign (`sorting` `"em"`) and emlddmm also sort
+every pixel into tissue, background and artifact on their own, so holes and
+debris drop out without a mask. In tests a mask over a tear or hole did not
+help a FireANTs warp (below).
+
+## A section too mangled to mark
+
+When so much is torn or folded that no set of marks describes what is left,
+an automatic affine may never land. Set the transform by hand with
+`interactive_transform`, or fit with an engine that sorts out missing tissue
+itself (`choosing-engines`).
+
 ## What is not damage
 
 Example of all three cases: `examples/not_damage.jpg`.
