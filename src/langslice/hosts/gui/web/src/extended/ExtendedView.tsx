@@ -11,7 +11,7 @@ import { useRun, type Row } from '../run';
 import { CuttingAxis } from '../simple/CuttingAxis';
 import { Speaker } from '../simple/Speaker';
 import { Stage, useBox, useDirector } from '../simple/Stage';
-import { useStageMode } from '../space/mode';
+import { justSwitched, STAGE_IN, STAGE_SHOWN, useStageMode } from '../space/mode';
 import { SpaceStage } from '../space/SpaceStage';
 import type { Focus } from '../Viewer';
 import { Journal } from './Journal';
@@ -56,9 +56,10 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
             <SpaceStage job={run.job} rows={run.rows} strip={run.strip} shown={shown} box={box} sideRef={stageRef}
               onPick={focus.pick} focus={ring ? [ring] : focus.ids.length === run.rows.length ? [] : shown} />
           ) : (
-            <div className="stage" ref={stageRef}>
+            <motion.div className="stage" ref={stageRef} initial={justSwitched() ? STAGE_IN : false} animate={STAGE_SHOWN}
+          transition={{ duration: 0.24, ease: EASE_OUT }}>
               {review ?? (run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} detailed />)}
-            </div>
+            </motion.div>
           )}
           {!space && (
             <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : focus.ids}

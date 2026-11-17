@@ -1,11 +1,13 @@
 // The Simple view: who is speaking and what it says, the sections it works on (or Review),
 // and where they sit: front to back (2D), or in the atlas brain beside them (3D).
+import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
+import { EASE_OUT } from '../motion';
 import { overlayUrl, warm } from '../pictures';
 import { useRun } from '../run';
 import type { Focus } from '../Viewer';
-import { useStageMode } from '../space/mode';
+import { justSwitched, STAGE_IN, STAGE_SHOWN, useStageMode } from '../space/mode';
 import { SpaceStage } from '../space/SpaceStage';
 import { CuttingAxis } from './CuttingAxis';
 import { Speaker } from './Speaker';
@@ -35,10 +37,11 @@ export function SimpleView({ focus, review, ring }: { focus: Focus; review: Reac
         <SpaceStage job={run.job} rows={run.rows} strip={run.strip} shown={shown} box={box} sideRef={stageRef}
           onPick={focus.pick} focus={ring ? [ring] : focus.ids.length === run.rows.length ? [] : shown} />
       ) : (
-        <div className="stage" ref={stageRef}>
+        <motion.div className="stage" ref={stageRef} initial={justSwitched() ? STAGE_IN : false} animate={STAGE_SHOWN}
+          transition={{ duration: 0.24, ease: EASE_OUT }}>
           {review ?? (run.job !== null && <Stage job={run.job} shown={shown} rows={run.rows} box={box} onPick={focus.pick} />)}
           {run.jobs && !run.jobs.length && <p className="empty">No jobs yet: open a job folder with <code>langslice gui FOLDER</code>.</p>}
-        </div>
+        </motion.div>
       )}
       {!space && (
         <CuttingAxis job={run.job} rows={run.rows} axis={run.axis} strip={run.strip} focus={ring ? [ring] : shown}

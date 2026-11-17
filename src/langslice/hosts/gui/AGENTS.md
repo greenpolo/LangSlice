@@ -117,7 +117,9 @@ The page is a React app (`web/`, below), built into `static/`.
   one meter per step the job's `tasks` ask for, counted over its sections;
   four sections a page; in 3D no cutting axis), `Journal`, `Lightbox`. `src/space/`:
   the 3D view (three.js). `mode.ts` keeps 2D | 3D (`useStageMode`,
-  `setStageMode`; the switch is in `Viewer.tsx`); `SpaceStage.tsx` is both
+  `setStageMode`; the switch is in `Viewer.tsx`, its buttons pressed to 0.97; the
+  stage switched to comes in with a 240 ms ease-out crossfade and a little blur,
+  `justSwitched`, never when the window opens); `SpaceStage.tsx` is both
   views' 3D stage (the focus Stage in a column, the Volume beside it, no
   panel or border around it). `scene.ts` (`Space`) maps atlas micrometres to
   scene millimetres by the orientation letters (anterior +z, superior +y,

@@ -38,11 +38,12 @@ a { color: inherit; text-decoration: none; }
 .simple { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 30px; }
 .simple .speaker { padding-top: var(--space-2); }
 .views-switch { display: flex; font-size: var(--size-xs); }
-.views-switch > * { padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.views-switch > * { padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; cursor: pointer; transition: scale var(--dur-press) var(--ease-out), color var(--dur-quick) ease, background-color var(--dur-quick) ease; }
+.views-switch > :active { scale: 0.97; }
 .views-switch > :first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .views-switch > :last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
 .views-switch .on { color: var(--name); background: var(--selected); }
-@media (hover: hover) and (pointer: fine) { .views-switch a:hover { color: var(--name); background: var(--wash); } }
+@media (hover: hover) and (pointer: fine) { .views-switch > :not(.on):hover { color: var(--name); background: var(--wash); } }
 
 /* Who is speaking. */
 .speaker {
