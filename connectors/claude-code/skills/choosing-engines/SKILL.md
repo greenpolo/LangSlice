@@ -46,7 +46,7 @@ What the design means in practice:
 
 Blind reviewers compared the engines on a few sections of each kind, each
 engine fitting its own transform and warp from the positions alone. The
-sample was small (four sections per kind, two DAPI brains), so take it as a
+sample was small (four sections per kind, all DAPI fluorescence), so take it as a
 hint of where to start, not a rule:
 
 - **Intact forebrain and the frontal end:** elastix then FireANTs looked best
