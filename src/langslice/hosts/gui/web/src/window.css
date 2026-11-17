@@ -210,7 +210,7 @@ a { color: inherit; text-decoration: none; }
 
 /* Extended. */
 .extended { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.extended-head { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: var(--space-5); padding: var(--space-6) var(--space-5) 0 0; }
+.extended-head { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: var(--space-5); padding: calc(var(--space-6) + var(--space-4)) var(--space-5) 0 0; }
 .extended .speaker { width: auto; margin: 0; padding-left: var(--space-5); padding-top: 0; grid-template-columns: 150px minmax(0, 1fr); gap: var(--space-4); }
 .extended .bubble { height: calc(3 * 1.4 * 18px + 24px); padding: 12px 22px; }
 .extended .words { font-size: 18px; }
