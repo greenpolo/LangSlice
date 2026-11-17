@@ -65,7 +65,8 @@ const VERTEX = /* glsl */ `
 `;
 
 // The picture as it is: the tissue opaque, the ground around it (the calm pictures' floor,
-// `floor` its luminance, read from the picture's corners) left out; a thin frame in the
+// `floor` its luminance, read from the picture's corners) left out, judged on the mean of
+// a pixel and its four neighbours so the JPEG's noise in the ground does not speckle; a thin frame in the
 // accent around the tissue's box for a section in focus (brightened a little), in grey under
 // the pointer; `see` greys and darkens a
 // section a little while others are in focus (it stays opaque).
@@ -74,6 +75,7 @@ const FRAGMENT = /* glsl */ `
   uniform float hasMap;
   uniform float floor;
   uniform vec4 tissueBox;
+  uniform vec2 texel;
   uniform float focus;
   uniform float hover;
   uniform float shown;
@@ -86,7 +88,11 @@ const FRAGMENT = /* glsl */ `
     if (vEdge > 0.5) discard;
     vec3 c = hasMap > 0.5 ? texture2D(map, vUv).rgb : vec3(0.0);
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
-    float tissue = hasMap > 0.5 ? smoothstep(floor + 0.008, floor + 0.022, lum) : 0.0;
+    vec2 t = 1.5 * texel;
+    vec3 w = vec3(0.299, 0.587, 0.114);
+    float near = (lum + dot(texture2D(map, vUv + vec2(t.x, 0.0)).rgb, w) + dot(texture2D(map, vUv - vec2(t.x, 0.0)).rgb, w)
+      + dot(texture2D(map, vUv + vec2(0.0, t.y)).rgb, w) + dot(texture2D(map, vUv - vec2(0.0, t.y)).rgb, w)) / 5.0;
+    float tissue = hasMap > 0.5 ? smoothstep(floor + 0.006, floor + 0.02, near) : 0.0;
     vec2 px = max(fwidth(vUv), vec2(1e-5));
     vec2 inner = min(vUv - tissueBox.xy, tissueBox.zw - vUv) / px;
     float inside = step(-1.5, min(inner.x, inner.y));
@@ -397,6 +403,7 @@ export class Space {
     const { floor, box } = ground(img);
     s.mesh.material.uniforms.floor.value = floor;
     s.mesh.material.uniforms.tissueBox.value = box;
+    s.mesh.material.uniforms.texel.value.set(1 / Math.max(1, img.naturalWidth), 1 / Math.max(1, img.naturalHeight));
   }
 
   setFocus(ids: string[]) {
@@ -407,7 +414,7 @@ export class Space {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: true, depthWrite: true, side: THREE.DoubleSide,
       uniforms: {
-        map: { value: null }, hasMap: { value: 0 }, floor: { value: 0 }, tissueBox: { value: new THREE.Vector4(0, 0, 1, 1) }, focus: { value: 0 }, hover: { value: 0 }, shown: { value: 0 }, see: { value: 0 },
+        map: { value: null }, hasMap: { value: 0 }, floor: { value: 0 }, tissueBox: { value: new THREE.Vector4(0, 0, 1, 1) }, texel: { value: new THREE.Vector2(1 / 256, 1 / 256) }, focus: { value: 0 }, hover: { value: 0 }, shown: { value: 0 }, see: { value: 0 },
         accent: { value: this.accent }, edgeColor: { value: this.edgeColor },
       },
     });
