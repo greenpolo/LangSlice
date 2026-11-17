@@ -20704,14 +20704,6 @@
         ],
         "./src/langslice/doors/library/replies.py": [
             {
-                "code": "reportUnknownMemberType",
-                "range": {
-                    "startColumn": 8,
-                    "endColumn": 24,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportAny",
                 "range": {
                     "startColumn": 29,
@@ -29572,22 +29564,6 @@
                 }
             },
             {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 8,
-                    "endColumn": 13,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 11,
-                    "endColumn": 40,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportUnknownMemberType",
                 "range": {
                     "startColumn": 12,
@@ -37654,14 +37630,6 @@
                 "range": {
                     "startColumn": 15,
                     "endColumn": 24,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAny",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 14,
                     "lineCount": 1
                 }
             },

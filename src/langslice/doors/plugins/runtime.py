@@ -16,7 +16,7 @@ import inspect
 import logging
 import uuid
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
@@ -68,7 +68,7 @@ def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     ``limits["pictures"]`` of them (the rest counted in ``pictures_not_shown``);
     ``PLUGIN_FAILED`` when it is no :class:`ToolResult`."""
     if not isinstance(result, ToolResult):
-        kind = type(result).__name__  # pyright: ignore[reportAny]
+        kind = type(cast("object", result)).__name__
         raise Refused(RefusalCode.PLUGIN_FAILED, tool=tool.name,
                       message=f"{tool.name}'s handler returned {kind}, not a ToolResult")
     reply = to_jsonable(dict(result.reply))

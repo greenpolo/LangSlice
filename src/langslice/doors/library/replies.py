@@ -8,7 +8,7 @@ from typing import Any, cast
 from langslice.core.jsonable import Json, to_jsonable
 
 
-class Reply(dict):  # type: ignore[type-arg]
+class Reply(dict[str, Any]):
     """A verb's reply: a plain dict of JSON values (``json.dumps(reply)``
     works), its pictures' files under ``artifacts``; the pictures
     themselves, as PIL images in the order a model receives them, on

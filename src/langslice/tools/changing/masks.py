@@ -31,7 +31,11 @@ from langslice.core.fits.deformable.masks import SORTING_KEYS
 from langslice.core.jsonable import to_jsonable
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.sections.images import PREPROCESSED
-from langslice.core.sections.masks import NAME_PATTERN, RESERVED_NAMES
+from langslice.core.sections.masks import (
+    NAME_PATTERN,
+    RESERVED_NAMES,
+    write_mask,
+)
 from langslice.core.stack.codec import Written
 from langslice.core.stack.images import MaskRef
 from langslice.job.settings.needs import render
@@ -240,7 +244,6 @@ def _from_fit(job: Job, section: Section, name: str) -> MaskRef:
         fit_weights,
         grid_digest,
         registration_digest,
-        write_mask,
     )
 
     if job.deformations.current(job.state, section) is None:
@@ -285,7 +288,7 @@ def _from_fit(job: Job, section: Section, name: str) -> MaskRef:
         file="",
         left_out=left_out,
     )
-    return _write(job, section, name, weights, facts, write_mask)
+    return _write(job, section, name, weights, facts)
 
 
 def _from_em(
@@ -302,7 +305,6 @@ def _from_em(
         em_sorting,
         grid_digest,
         registration_digest,
-        write_mask,
     )
 
     try:
@@ -352,7 +354,7 @@ def _from_em(
         file="",
         left_out=cast("float", facts.get("left_out", 0.0)),
     )
-    return _write(job, section, name, weights, made, write_mask)
+    return _write(job, section, name, weights, made)
 
 
 def _write(
@@ -361,10 +363,9 @@ def _write(
     name: str,
     weights: np.ndarray,
     facts: MaskRef,
-    write_mask: Any,
 ) -> MaskRef:
     try:
-        return write_mask(job.layout, section, name, weights, facts)  # type: ignore[no-any-return]
+        return write_mask(job.layout, section, name, weights, facts)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
 

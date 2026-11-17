@@ -155,7 +155,7 @@ class SectionFrame:
         """3x3 on ``[x, y, 1]``: a resize of the file to *size* -> file pixels."""
         if size is None or tuple(size) == tuple(self.file_size):
             return np.eye(3)
-        return pixel_center_map(tuple(size), self.file_size)  # type: ignore[arg-type]
+        return pixel_center_map(size, self.file_size)
 
     def grid_to_native(self, size: tuple[int, int] | None = None) -> np.ndarray:
         """3x3 on ``[x, y, 1]``: grid pixel centres -> native plane pixel centres."""

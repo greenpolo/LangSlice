@@ -184,8 +184,8 @@ def _step_count(steps: object) -> int:
     whole number from 1.
     """
     try:
-        count = int(steps)  # pyright: ignore[reportArgumentType]
-    except (TypeError, ValueError):
+        count = int(steps) if isinstance(steps, (int, float)) else 0
+    except (OverflowError, ValueError):
         count = 0
     if count < 1 or count != steps:
         raise Refused(
