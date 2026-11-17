@@ -40,8 +40,6 @@ def test_model_turns_are_recorded_with_a_step_counter(tmp_path: Path):
     trace = SessionTrace(tmp_path, "linear_stack", agent=_Agent())
     trace.event(_model_event("placing the stack"), turn=1)
     trace.nudge("debrief question", turn=2)
-    # The debrief answer is one more model turn in the same session, after
-    # submit: it has to land as a `model` record like any other.
     trace.event(_model_event("Debrief: I wanted labelled images."), turn=2)
 
     records = _records(trace)

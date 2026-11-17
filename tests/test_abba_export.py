@@ -1,5 +1,5 @@
-"""The ABBA project export (``core/maps/abba_world.py``, ``job/abba_project.py``,
-``tools/abba_export.py``) and the window's Export menu (``hosts/gui/export.py``).
+"""The ABBA project export (``core/maps/abba_world.py``, ``job/exports/abba_project.py``,
+``tools/bookkeeping/abba_export.py``) and the window's Export menu (``hosts/gui/export.py``).
 
 ABBA is not run here: its chain from a slice's pixels to the atlas is
 replicated from what ABBA 0.25 writes into a QuPath project (SliceBench
@@ -41,25 +41,20 @@ from tests.test_gui_render import LOADER, synthetic_job
 SYNTHETIC = "synthetic_ellipses_50um"
 
 
-# --- ABBA's world frame -------------------------------------------------------
-
 
 @pytest.mark.parametrize(("pitch", "yaw"), [(0.0, 0.0), (-12.0, 3.5), (8.0, -6.0)])
 def test_the_world_frame_is_abba_s(pitch: float, yaw: float) -> None:
     rx, ry = rotations(pitch, yaw)
     assert (rx, ry) == (-math.radians(pitch), -math.radians(yaw))
     to_world = atlas_um_to_world(rx, ry)
-    point = np.array([2500.0, 4000.0, 5690.0])  # asr: AP, DV, ML
+    point = np.array([2500.0, 4000.0, 5690.0])
     world = to_world[:, :3] @ point + to_world[:, 3]
-    # ABBA's centre maps to the world origin in x, y; z is AP plus the offset
     assert world[:2] == pytest.approx([0.0, 0.0], abs=1e-12)
     assert world[2] == pytest.approx(2.5 + AXIS_OFFSET_MM)
     atlas_mm = np.array([point[2], point[1], point[0]]) / 1000.0
     expected = reslice_matrix(rx, ry) @ (atlas_mm - [*CENTRE_MM, 0.0]) + [0, 0, AXIS_OFFSET_MM]
     assert world == pytest.approx(expected)
 
-
-# --- the export, read back through ABBA's chain ---------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +66,6 @@ def made(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def job_folder(made: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     shutil.copytree(made.parent, tmp_path / "stack")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    # the job's settings name the Allen atlas; the loader gives the synthetic one
     names = frozenset({SYNTHETIC, "allen_mouse_25um"})
     monkeypatch.setattr(abba_world, "ABBA_ATLASES", names)
     return tmp_path / "stack" / "langslice"
@@ -105,10 +99,9 @@ def _chain(state: dict[str, Any], slice_entry: dict[str, Any], size: tuple[int, 
             "wrappedTransform"]
         atlas_side = np.array(spline["srcPts"]).T
         section_side = np.array(spline["tgtPts"]).T
-        # ABBA draws a section point where the pull-back (atlas -> section) lands on it
         pull = ThinPlateKernel(atlas_side, section_side, max_points=len(atlas_side))
         guess = world.copy()
-        for _ in range(30):  # Newton on the pull-back
+        for _ in range(30):
             value = pull.forward(guess)
             step = np.linalg.solve(pull.jacobian(guess), (value - world)[..., None])
             guess = guess - step[..., 0]
@@ -127,7 +120,7 @@ def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], ET.Element]
 
 def test_the_export_reproduces_langslice_s_maps(job_folder: Path) -> None:
     from langslice.core.maps.section_maps import native_points, section_frame
-    from langslice.tools.exports import applied_record
+    from langslice.tools.bookkeeping.exports import applied_record
 
     with _open(job_folder) as job:
         done = job.export_abba()
@@ -146,7 +139,6 @@ def test_the_export_reproduces_langslice_s_maps(job_folder: Path) -> None:
     state, sources, dataset = _read(path)
     assert state["version"] == "0.25.0"
     assert len(state["slices_state_list"]) == 2
-    # one source per channel of each file, opened by Bio-Formats
     assert sum(len(entry["actions"][0]["original_sources"]["source_indexes"])
                for entry in state["slices_state_list"]) == len(sources)
     openers = json.loads(dataset.findtext(".//openers") or "[]")
@@ -165,14 +157,14 @@ def test_the_export_reproduces_langslice_s_maps(job_folder: Path) -> None:
         linear = _chain(state, by_file[sid], (width, height), voxel, grid, warp=False)
         rows = np.column_stack([grid[:, 1], grid[:, 0], np.ones(len(grid))])
         expected = rows @ np.asarray(frame.pixel_to_atlas_um()).T
-        assert np.abs(linear - expected).max() < 1e-6  # um
+        assert np.abs(linear - expected).max() < 1e-6
         if warps[sid] is None:
             continue
         nx, ny = native_points(frame, warps[sid], grid[:, 0], grid[:, 1])
         native = np.column_stack([np.ravel(ny), np.ravel(nx), np.ones(len(grid))])
         warped_expected = native @ np.asarray(frame.native_to_um).T
         warped = _chain(state, by_file[sid], (width, height), voxel, grid, warp=True)
-        assert np.linalg.norm(warped - warped_expected, axis=1).max() < 12.0  # um
+        assert np.linalg.norm(warped - warped_expected, axis=1).max() < 12.0
         registration = by_file[sid]["actions"][-1]["registration"]
         assert registration["type"] == "BigWarpSource2DRegistration"
         assert registration["parameters"]["langslice_points"] == str(
@@ -214,7 +206,7 @@ def test_mixed_cutting_angles_are_refused(job_folder: Path) -> None:
     from langslice.core.refusal import RefusalCode, Refused
 
     with _open(job_folder) as job:
-        job.context  # noqa: B018 - the job is open
+        job.context  # noqa: B018
         held = job._opened.job  # noqa: SLF001
         with held.writing():
             before = held.snapshot()
@@ -225,8 +217,6 @@ def test_mixed_cutting_angles_are_refused(job_folder: Path) -> None:
         assert refused.value.code == RefusalCode.BAD_ARGS
         assert "one pair of cutting angles" in str(refused.value)
 
-
-# --- the window's Export menu ---------------------------------------------------
 
 
 def _request(gui: GuiServer, resource: str, body: Any = None, *, method: str = "POST",
@@ -296,7 +286,6 @@ def test_the_export_menu_starts_polls_and_refuses(tmp_path: Path) -> None:
         assert _request(gui, "jobs/0/export", {"format": "abba"}, origin=None)[0] == 403
         assert _request(gui, "jobs/0/export", {"format": "abba"},
                         origin="http://evil.example")[0] == 403
-        # nothing exported yet: the folder cannot be shown
         assert _request(gui, "jobs/0/export/reveal", {})[0] == 400
         assert _request(gui, "jobs/0/snapshot", {})[0] == 405
     finally:

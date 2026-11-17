@@ -15,7 +15,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The Markdown files the repository holds, as patterns of their paths.
 ALLOWED = (
     r"README\.md",
     r"CONTRIBUTING\.md",

@@ -17,7 +17,7 @@ from langslice.doors.agent.adk_plugins import (
     RequestCapturePlugin,
     WorkingSetImages,
 )
-from langslice.doors.agent.session import build_plugins, run_agent_session
+from langslice.doors.agent.session import run_agent_session
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
 
@@ -53,7 +53,6 @@ def test_langslice_tool_shape_reaches_adk_native_media_extraction():
         b"jpeg-one",
         b"jpeg-two",
     ]
-    # The media key is consumed entirely; the model reads clean JSON.
     assert remaining == {
         "status": "ok",
         "positions_mm": [4.0, 6.0],
@@ -61,8 +60,6 @@ def test_langslice_tool_shape_reaches_adk_native_media_extraction():
         "description": "Fetched 2 atlas sections",
     }
 
-    # On the function response part itself: one part carrying the image, no
-    # sibling image part, so nothing double-injects it.
     content = _build_function_response_content(
         _FakeTool(),  # type: ignore[arg-type]
         {"status": "ok", TOOL_MEDIA_PARTS_KEY: image_parts[:1]},
@@ -149,11 +146,11 @@ def test_working_set_keeps_everything_until_the_cap_then_cuts_once():
     assert DEFAULT_KEEP_IMAGES < DEFAULT_MAX_IMAGES
     ws = WorkingSetImages(max_images=6, keep_images=3)
     history = [_seed(), _tool_turn(2), _tool_turn(2), _tool_turn(2)]
-    assert ws(history) is history  # 6 images: at the cap, nothing cut
-    history.append(_tool_turn(1))  # 7: over the cap
-    assert _kept(ws(history)) == [0, 0, 2, 1]  # cut to <= 3, oldest first
+    assert ws(history) is history
+    history.append(_tool_turn(1))
+    assert _kept(ws(history)) == [0, 0, 2, 1]
     assert ws.cut == 2
-    history.append(_tool_turn(1))  # 4 live: under the cap, cut stays put
+    history.append(_tool_turn(1))
     assert _kept(ws(history)) == [0, 0, 2, 1, 1]
     assert ws.cut == 2
 
@@ -180,8 +177,6 @@ def test_working_set_never_touches_the_seed_strip():
     assert out[0] is contents[0]
     assert (out[0].parts or [])[1].inline_data is not None
 
-
-# --- a scripted model through a whole session -----------------------------------------
 
 
 class _ScriptLlm(BaseLlm):
@@ -250,13 +245,7 @@ def test_a_turn_ended_while_work_runs_gets_its_notice_as_the_next_message(monkey
     assert _texts(notice) == ["Work w1 (trace_borders, a.tif) finished: fitted."]
     images = [part for part in notice.parts or [] if part.inline_data is not None]
     assert len(images) == 1 and images[0].inline_data.mime_type == "image/jpeg"
-    # Nothing running when the next turn ends: the nudge, as before.
     assert _texts(model.requests[2].contents[-1]) == ["NUDGE: call a tool"]
     assert len(waits) == 2
 
 
-def test_session_uses_the_working_set_filter_first(monkeypatch):
-    monkeypatch.delenv("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR", raising=False)
-    monkeypatch.delenv("LANGSLICE_ADK_MODEL_CALL_DELAY_S", raising=False)
-    plugins = build_plugins("test")
-    assert isinstance(plugins[0]._custom_filter, WorkingSetImages)

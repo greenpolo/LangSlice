@@ -18,7 +18,6 @@ from langslice.hosts.gui import generator
 from langslice.job.settings import schema
 from langslice.job.settings.spec import INPUT_KEYS, JobSpec
 
-#: Flags of the commands that set no job setting.
 NOT_SETTINGS = {"--trace-dir", "--gui", "--job", "-h", "--help"}
 
 
@@ -71,8 +70,6 @@ def _flags(parser: argparse.ArgumentParser) -> list[str]:
             and action.help != argparse.SUPPRESS]
 
 
-#: The settings given by flags the rule does not make: the stack's cutting
-#: angles as two numbers, or each section's.
 NAMED_OTHERWISE = {"inputs.angles": ("--pitch", "--yaw", "--section-angles")}
 
 
@@ -84,7 +81,7 @@ def test_every_spelling_follows_the_settings_name() -> None:
             continue
         flag = "--" + row.name.removeprefix(schema.ANSWER_PREFIX).replace(".", "-").replace(
             "_", "-")
-        if row.default is True:  # a switch turns it off
+        if row.default is True:
             flag = "--no-" + flag.removeprefix("--")
         assert row.flags == NAMED_OTHERWISE.get(row.name, (flag,)), row.name
         section, dot, _key = row.name.partition(".")

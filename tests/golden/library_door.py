@@ -38,16 +38,11 @@ from stack import (
 
 import langslice
 
-#: Landmark pairs on one overlay picture of FRONT: an atlas point and the
-#: section point a few pixels away that it should land on; the third holds
-#: its spot (both endpoints one point), as triangulation needs three.
 LANDMARK_POINTS = [
     ((200, 150), (208, 155)),
     ((330, 200), (325, 206)),
     ((260, 110), (260, 110)),
 ]
-#: Points of an overlay picture whose atlas region ``grep_atlas`` names: one
-#: inside the brain, one in the corner outside it.
 REGION_POINTS = [(260, 150), (3, 3)]
 
 
@@ -154,7 +149,6 @@ def register(recorder: Recorder) -> int:
     recorder.call("look", mode="positioning")
     recorder.call("look", mode="section")
 
-    # linear: place, set by hand, refine with Elastix
     recorder.call(
         "position_sections",
         sections=placements(),
@@ -166,7 +160,6 @@ def register(recorder: Recorder) -> int:
     recorder.call("elastix_affine", sections=every)
     recorder.look_around(every)
 
-    # inputs of the deformable fit: a mask and a damage mark
     recorder.call("make_mask", name="tissue", sections=[MIDDLE, BACK])
     recorder.look_around([MIDDLE, BACK])
     recorder.call(
@@ -177,7 +170,6 @@ def register(recorder: Recorder) -> int:
     )
     recorder.look_around([BACK])
 
-    # nonlinear: FireANTs on two sections, landmarks on the third
     recorder.call(
         "fireants_syn",
         sections=[MIDDLE, BACK],
@@ -201,7 +193,6 @@ def register(recorder: Recorder) -> int:
     recorder.call("landmark_triangulation", section=FRONT)
     recorder.look_around([FRONT])
 
-    # history and the derived files
     recorder.call("undo")
     recorder.call("redo")
     recorder.call("restore_registration", section=FRONT)
@@ -306,8 +297,6 @@ def read_atlas_and_files(recorder: Recorder, picture: int) -> None:
         "grep_atlas_view", regions=["CA1", "CTX:left"], positions_mm=[3.5, 6.0]
     )
 
-    # folders and files whose listing holds no size of a file that names
-    # the run's own folder (job.json's size changes with its path)
     recorder.call("list_files", path="views")
     recorder.call("list_files", path="sections", glob="*.png")
     recorder.call("search_files", query="CA1", path="state.json")

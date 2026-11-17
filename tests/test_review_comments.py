@@ -19,7 +19,7 @@ import langslice
 from langslice.hosts.gui.render import RenderPool
 from langslice.hosts.gui.server import GuiServer
 from langslice.hosts.gui.watch import JobList
-from langslice.job.layout import REVIEW_FILE, JobLayout
+from langslice.job.folder.layout import REVIEW_FILE, JobLayout
 from langslice.job.review import read_comments
 from langslice.tools.descriptions.door_text import review_lines
 from tests.synthetic_stack import ID0, ID1, ID2
@@ -59,7 +59,7 @@ def _post(gui: GuiServer, body: object, *, origin: bool = True) -> tuple[int, di
     connection.close()
     try:
         return response.status, json.loads(out or b"{}")
-    except ValueError:  # an error page
+    except ValueError:
         return response.status, {}
 
 
@@ -135,7 +135,6 @@ def test_the_agent_reads_the_open_comments_with_their_boxes(
                 if a["kind"] == "view" and str(row["picture"]).zfill(6) in a["path"]))
             x0, y0, x1, y1 = row["box_px"]
             assert 0 <= x0 < x1 < picture.width and 0 <= y0 < y1 < picture.height
-            # the outline is drawn in the box colour
             red, green, blue = picture.convert("RGB").getpixel((x0 + 1, (y0 + y1) // 2))
             assert red > 190 and green > 160 and red - blue > 80
 
@@ -150,7 +149,6 @@ def test_the_agent_reads_the_open_comments_with_their_boxes(
                             [*spec.switched_off, "review_comments"]) == []
     finally:
         handle.close()
-    # the window reads the job again at most every POLL_S
     deadline = time.monotonic() + 5
     while True:
         revised = {c["section"]: c["revised"] for c in _snapshot(gui)["comments"]}

@@ -33,7 +33,6 @@ from langslice.core.refusal import Refused
 from langslice.job.state_file import stack_to_json
 from tests.look_synthetic import SECTIONS, stack
 
-#: A coronal-ish section and atlas plane, micrometres.
 SECTION_UM = (9000.0, 6500.0)
 ATLAS_UM = (10000.0, 7000.0)
 RANGE = (0.0, 13.2)
@@ -65,8 +64,6 @@ def _segments_cross(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
     return d1 * d2 < 0 and d3 * d4 < 0
 
 
-# --- order, parts and rulers -------------------------------------------------------
-
 
 def test_position_order_keeps_stack_order_for_ties_and_puts_unplaced_last():
     entries = _entries([5.0, None, 2.0, 5.0, 1.0, None, 2.0])
@@ -84,10 +81,8 @@ def test_split_cuts_even_consecutive_runs():
 
 def test_split_gives_each_atlas_position_to_the_run_around_it():
     positions = [1.0, 2.0, 3.0, 7.0, 8.0, 9.0]
-    # Runs [1, 2, 3] and [7, 8, 9]: the boundary is halfway, at 5 mm.
     pieces = split(positions, [0.5, 2.5, 4.9, 5.1, 12.0], per_picture=3)
     assert pieces == [([0, 1, 2], [0, 1, 2]), ([3, 4, 5], [3, 4])]
-    # Unplaced sections go last, and no atlas position follows them there.
     pieces = split([1.0, 2.0, None, None], [9.0], per_picture=2)
     assert pieces == [([0, 1], [0]), ([2, 3], [])]
 
@@ -98,8 +93,6 @@ def test_split_splits_a_run_holding_too_many_atlas_positions():
     assert [k for _s, a in pieces for k in a] == [0, 1, 2, 3, 4]
     assert [k for s, _a in pieces for k in s] == [0]
 
-
-# --- the layout ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("positions", [
@@ -123,7 +116,6 @@ def test_one_scale_for_sections_and_atlas():
     section, atlas = layout.sections[0], layout.atlas[0]
     assert section.width / atlas.width == pytest.approx(SECTION_UM[0] / ATLAS_UM[0], rel=1e-6)
     assert atlas.width * layout.um_per_px == pytest.approx(ATLAS_UM[0])
-    # The largest item fills the tile.
     assert max(atlas.width, atlas.height) == pytest.approx(layout.tile)
 
 
@@ -135,16 +127,13 @@ def test_tile_grows_as_the_item_count_falls_and_a_long_stack_is_split_not_shrunk
     assert len(many) == 7
     floor = (POSITIONING_MAX_WIDTH - 2 * MARGIN - (PER_PICTURE - 1) * GAP) // PER_PICTURE
     assert six.tile == floor
-    for layout in many:  # every picture at one scale, the six-section tile
+    for layout in many:
         assert layout.tile == floor and layout.um_per_px == pytest.approx(six.um_per_px)
         assert len(layout.sections) <= PER_PICTURE
         assert layout.width <= POSITIONING_MAX_WIDTH
     assert one.width <= POSITIONING_MAX_WIDTH
-    # A small request stops at the picture size, not the width.
     assert _one([6.1], atlas_mm=(6.0,), tile_edge=300).tile == 300
 
-
-# --- a stack's pictures (synthetic atlas) ---------------------------------------------
 
 
 def test_positioning_split_into_parts_each_redrawn_by_its_recipe(
@@ -173,7 +162,7 @@ def test_positioning_split_into_parts_each_redrawn_by_its_recipe(
 
 def test_positioning_sections_ordered_by_position_not_index(tmp_path: Path):
     ws, state = stack(tmp_path)
-    for record in state.slices:  # corrected order reversed: the order is the positions'
+    for record in state.slices:
         record.index_corrected = len(state.slices) - 1 - record.index_original
     picture = look(ws, state, LookRequest("positioning", sections=("s1.png", "s0.png")))[0]
     assert picture.sections == ("s0.png", "s1.png")

@@ -76,7 +76,7 @@ def test_only_get(server: GuiServer) -> None:
         assert _get(server, prefix + "jobs", method=method)[0] == 405
         assert _get(server, prefix + "generator?job=0", method=method)[0] == 405
     status, body, _ = _get(server, prefix + "generator?job=0")
-    assert status == 200 and json.loads(body)["prefill"] is None  # no job.json
+    assert status == 200 and json.loads(body)["prefill"] is None
 
 
 def test_jobs_snapshot_and_pictures(server: GuiServer) -> None:
@@ -149,7 +149,6 @@ def test_the_strip_and_the_pictures_of_a_job(served: tuple[GuiServer, Path]) -> 
                                          "?edge=300&key=whatever")
             assert (status, headers["Content-Type"]) == (200, "image/jpeg")
             assert max(_jpeg(body).size) <= 320
-    # The name is URL-decoded, never read as a path.
     assert _get(gui, prefix + "render/thumb/%73%30.png?edge=64")[0] == 200
     status, body, _ = _get(gui, prefix + "render/atlas/1?edge=100")
     assert status == 200 and max(_jpeg(body).size) <= 128

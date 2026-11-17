@@ -26,7 +26,7 @@ def serve(folders: list[Path], *, port: int = 0, window: bool = True,
     from langslice.hosts.gui.server import GuiServer, port_in_use
     from langslice.hosts.gui.watch import JobList
     from langslice.hosts.gui.window import Opened, open_window, start_address
-    from langslice.job.recent import recent_file
+    from langslice.job.folder.recent import recent_file
 
     jobs = JobList(folders, recent=recent_file())
     try:

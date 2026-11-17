@@ -25,14 +25,14 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
-from scipy import ndimage as ndi  # pyright: ignore[reportMissingTypeStubs]
 
 from langslice.core.fits.deformable.geometry import WorkingGrid
 from langslice.core.geometry.triangulation import PiecewiseAffine
+from langslice.core.outside import untyped
 
 _map_coordinates = cast(
     "Callable[..., np.ndarray]",
-    ndi.map_coordinates,  # pyright: ignore[reportUnknownMemberType]
+    untyped("scipy.ndimage", "map_coordinates"),
 )
 
 

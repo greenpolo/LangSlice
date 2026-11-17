@@ -41,10 +41,7 @@ from stack import (
     placements,
 )
 
-#: The MCP server as installed: the ``langslice`` console script of this
-#: environment.
 COMMAND = Path(sys.executable).with_name("langslice")
-#: ``langslice mcp`` with the job flags of a folder that holds no job yet.
 SERVER_ARGUMENTS = [
     "mcp",
     "--atlas",
@@ -181,7 +178,6 @@ async def converse(
         The session's records: the server's greeting, the tool lists and
         every call.
     """
-    # the whole environment: the library's default passes only a few names
     server = StdioServerParameters(
         command=str(COMMAND),
         args=SERVER_ARGUMENTS,
@@ -206,7 +202,6 @@ async def converse(
             records.append(result_entry("start_job", opened, result))
             records.append(await tool_list(session))
 
-            # every opening page, then one past the last for its refusal
             page = 1
             while True:
                 arguments = {"page": page}

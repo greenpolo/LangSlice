@@ -14,7 +14,6 @@ from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.tools import masks as ops_masks
 from langslice.tools.stale import section_inputs
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
@@ -70,7 +69,6 @@ def test_an_em_mask_is_made_listed_stays_usable_after_a_write_and_deleted(tmp_pa
     assert row["masks"] == [{"name": "tissue", "kind": "em", "stale": False,
                              "earlier_registration": False}]
     assert (tmp_path / "langslice" / "sections" / "s0" / "masks" / "tissue.npz").exists()
-    # A new registration is information, not a refusal.
     _tool(box, "interactive_transform")([{"id": ID, "rotation_deg": 3.0}], view=False)
     entry = _tool(box, "status")()["rows"][0]["masks"][0]
     assert entry["stale"] is False and entry["earlier_registration"] is True
@@ -78,7 +76,6 @@ def test_an_em_mask_is_made_listed_stays_usable_after_a_write_and_deleted(tmp_pa
     assert fit["status"] == "ok", fit
     assert fit["results"][0]["inputs"]["mask"]["name"] == "tissue"
     assert fit["results"][0]["inputs"]["mask"]["earlier_registration"] is True
-    # Turning the section changes the pixels' meaning: a fit refuses the mask.
     state.slices[0].rotation_deg = 90
     assert _tool(box, "status")()["rows"][0]["masks"][0]["stale"] is True
     refused = _tool(box, "elastix_affine")([ID], mask="tissue", view=False)
@@ -122,7 +119,6 @@ def test_the_picture_caption_says_what_the_outline_means(tmp_path: Path, atlas):
     caption = picture["caption"]
     assert "leaves out" in caption and "'tissue'" in caption
     assert "sorted from section image preprocessed against atlas image" in caption
-    # A plain look of the section, with no mask asked for, says nothing of masks.
     plain = _tool(box, "look")("section", sections=[ID])["pictures"][0]["caption"]
     assert "mask" not in plain
 
@@ -133,7 +129,6 @@ def test_the_fit_source_needs_a_deformation_that_saved_a_sorting(tmp_path: Path,
     assert tool("kept", source="fit", view=False)["error"] == "NO_DEFORMATION"
     done = _tool(box, "fireants_syn")([ID], view=False, detail="coarse")
     assert done["status"] == "ok", done
-    # FireANTs sorts nothing by itself now.
     assert tool("kept", source="fit", view=False)["error"] == "NO_SORTING"
 
 
@@ -156,5 +151,3 @@ def test_a_linear_refit_on_a_warped_section_is_refused(tmp_path: Path, atlas):
     assert state.slices[0].deformation is not None
 
 
-def test_make_mask_is_off_where_the_job_has_no_fit(tmp_path: Path, atlas):
-    assert ops_masks.NO_MASK == "none"

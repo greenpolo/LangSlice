@@ -31,10 +31,8 @@ from typing import TYPE_CHECKING, TypeVar, cast
 import cv2
 import numpy as np
 import numpy.typing as npt
-from scipy.ndimage import (  # pyright: ignore[reportMissingTypeStubs]
-    map_coordinates,  # pyright: ignore[reportUnknownVariableType]
-)
 
+from langslice.engines._outside import untyped
 from langslice.engines.spomialign.matching import (
     GPU_DEVICE,
     H,
@@ -640,15 +638,16 @@ def _read_field(
         & (grid[:, 1] <= H - 0.5)
     )
     moved = grid.copy()
+    map_coordinates = cast(
+        "Callable[..., npt.NDArray[np.float64]]",
+        untyped("scipy.ndimage", "map_coordinates"),
+    )
     for c in range(2):
-        sampled = cast(
-            "npt.NDArray[np.float64]",
-            map_coordinates(
-                displacement[..., c],
-                [grid[:, 1], grid[:, 0]],
-                order=1,
-                mode="nearest",
-            ),
+        sampled = map_coordinates(
+            displacement[..., c],
+            [grid[:, 1], grid[:, 0]],
+            order=1,
+            mode="nearest",
         )
         moved[:, c] += np.where(inside, sampled, 0.0)
     return moved @ from_grid[:2, :2].T + from_grid[:2, 2]

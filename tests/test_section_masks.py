@@ -19,8 +19,8 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.folder.layout import JobLayout
 from langslice.job.job import ingest
-from langslice.job.layout import JobLayout
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
 from tests.deformable_synthetic import (
@@ -63,8 +63,6 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *, hole: bool):
     box = build_tools(state, ctx, spec)
     return state, ctx, record, box.job, np.asarray(image.convert("L"))
 
-
-# --- the EM sorting ----------------------------------------------------------------
 
 
 def test_the_sorting_leaves_a_hole_out_and_keeps_the_tissue(tmp_path: Path, atlas):
@@ -109,8 +107,6 @@ def test_sorting_widths_and_means_can_be_given(tmp_path: Path, atlas):
                                  atlas_image="gfp", params={})
 
 
-# --- files and entries ---------------------------------------------------------------
-
 
 def _meta(state: Stack, record: Section, **over: Any) -> MaskRef:
     return mask_from_json({
@@ -139,7 +135,6 @@ def test_a_mask_writes_a_float16_npz_and_reads_back(tmp_path: Path):
     assert view.kind == "em" and view.params == {"match_sd": 0.1} and view.left_out == 0.04
     assert section_masks.section_weights(view) is view.weights
     assert section_masks.section_weights(None) is None
-    # The state entry round-trips through JSON.
     assert stack_from_json(json.loads(json.dumps(stack_to_json(state)))) == state
 
 
@@ -187,9 +182,9 @@ def test_a_new_registration_marks_a_mask_earlier_but_a_turn_makes_it_stale(tmp_p
     assert not view.stale and view.earlier_registration
     record.position_mm = 1.0
     assert not section_masks.read_mask(layout, state, record, "m").earlier_registration
-    record.damaged_regions = ["TH"]  # the damage marks are part of the registration
+    record.damaged_regions = ["TH"]
     assert section_masks.read_mask(layout, state, record, "m").earlier_registration
-    record.flip = True  # the pixels' meaning changes
+    record.flip = True
     view = section_masks.read_mask(layout, state, record, "m")
     assert view.stale
     assert section_masks.mask_rows(state, record)[0]["stale"] is True
@@ -211,7 +206,7 @@ def test_the_status_rows_list_a_sections_masks(tmp_path: Path):
 
 def test_the_fit_weights_are_the_applied_records_saved_sorting(tmp_path: Path, atlas):
     state, ctx, record, job, _gray = _setup(tmp_path, atlas, hole=False)
-    assert section_masks.fit_weights(job.deformations, state, record) is None  # no deformation
+    assert section_masks.fit_weights(job.deformations, state, record) is None
 
     class _Store:
         def __init__(self, held: DeformableRecord | None) -> None:

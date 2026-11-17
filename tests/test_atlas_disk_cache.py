@@ -45,7 +45,7 @@ def test_values_identical_with_and_without_the_disk_cache(cache_dir, monkeypatch
     names = sorted(p.name for p in cache_dir.rglob("*.npy"))
     assert names == ["annotation_ids.npy", "annotation_index.npy", "template_spline3.npy"]
 
-    _clear_memory()  # a new process: everything read back from disk
+    _clear_memory()
     read = oblique.sample_oblique_plane(*args, volume="template", order=3)
     assert isinstance(oblique._filtered_cache[next(iter(oblique._filtered_cache))], np.memmap)
     assert np.array_equal(read, built)
@@ -96,5 +96,5 @@ def test_unwritable_or_corrupt_cache_falls_back_to_building(tmp_path, monkeypatc
     (folder / "x.npy").write_bytes(b"truncated")
     rebuilt = disk_cache.cached_volume(atlas, "x", lambda: np.arange(4))
     assert np.array_equal(rebuilt, np.arange(4))
-    assert np.array_equal(np.load(folder / "x.npy"), np.arange(4))  # repaired
+    assert np.array_equal(np.load(folder / "x.npy"), np.arange(4))
     assert not list(folder.glob("*.part"))

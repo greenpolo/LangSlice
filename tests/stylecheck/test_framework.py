@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from tools.stylecheck import core, external, pyright_levels, run
-from tools.stylecheck import rules as rules  # registers every check
+from tools.stylecheck import rules as rules
 from tools.stylecheck.__main__ import main
 from tools.stylecheck.baseline import (
     Baseline,
@@ -46,7 +46,6 @@ from tools.stylecheck.settings import (
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
-#: A record of one check and no settings, for the file-format tests.
 RECORD = Record(("rule-a",), {})
 
 PYPROJECT = """\
@@ -66,8 +65,6 @@ def _violation(
 ) -> Violation:
     return Violation(rule, path, symbol, line, "Message.", severity)
 
-
-# --- scope ---------------------------------------------------------------
 
 
 def test_scope_selects_rules_codes_and_tools() -> None:
@@ -92,8 +89,6 @@ def test_scope_selects_files_and_folders_not_prefixes() -> None:
     assert Scope().is_whole
     assert not scope.is_whole
 
-
-# --- counting and comparing ----------------------------------------------
 
 
 def test_count_errors_leaves_out_warnings() -> None:
@@ -170,8 +165,6 @@ def test_prune_keeps_entries_outside_the_scope() -> None:
     assert pruned == {("rule-b", "pkg/a.py", "f"): 2}
 
 
-# --- the file ------------------------------------------------------------
-
 
 def test_baseline_text_is_sorted_one_item_per_line_and_round_trips() -> None:
     counts = {
@@ -239,8 +232,6 @@ def test_a_malformed_baseline_is_refused(text: str) -> None:
         parse_baseline(text, "test")
 
 
-# --- the record of checks and settings -------------------------------------
-
 
 def test_every_config_field_has_a_direction() -> None:
     fields = {field.name for field in dataclasses.fields(core.Config)}
@@ -296,23 +287,18 @@ def test_a_setting_may_change_only_in_its_direction(
     assert [change.name for change in changes] == ([name] if looser else [])
 
 
-#: The fake rule sets of basedpyright's checking modes in the tests below.
 LEVELS = {"strict": {"reportA": "error", "reportB": "none"}}
 
 
 @pytest.mark.parametrize(
     ("before", "after", "looser"),
     [
-        # a new key at least as strict as the mode's default for it
         ({}, {"basedpyright.reportB": "warning"}, False),
         ({}, {"basedpyright.reportA": "error"}, False),
         ({}, {"basedpyright.reportA": True}, False),
-        # a new key below the mode's default
         ({}, {"basedpyright.reportA": "warning"}, True),
-        # a rule the mode does not list: only the highest level is safe
         ({}, {"basedpyright.reportC": "error"}, False),
         ({}, {"basedpyright.reportC": "warning"}, True),
-        # a key removed: its rule falls back to the mode's default
         ({"basedpyright.reportB": "warning"}, {}, True),
         ({"basedpyright.reportA": "warning"}, {}, False),
     ],
@@ -352,7 +338,6 @@ function other() {
         "strict": {"reportAny": "none", "reportUnusedImport": "error"},
         "all": {"reportAny": "error"},
     }
-    # the installed basedpyright lists the strict mode the project uses
     if pyright_levels.mode_levels():
         assert "reportAny" in pyright_levels.mode_levels()["strict"]
 
@@ -409,8 +394,6 @@ def test_a_record_gives_the_config_it_was_written_with() -> None:
     assert config.layers == (("pkg.top",), ("pkg.core",))
     assert config.max_body_lines == core.Config().max_body_lines
 
-
-# --- basedpyright's baseline -------------------------------------------------
 
 
 def _pyright_text(entries: dict[str, list[tuple[str, int]]]) -> str:
@@ -505,12 +488,10 @@ def test_pyright_growth_follows_a_moved_file_only_when_declared() -> None:
 
     assert growth(moved, from_old) == 0
     assert growth(copied, from_old) == 1
-    # a gone file without a declared move takes its entries with it
     assert growth(moved, _no_sources) == 1
 
 
 def test_pyright_growth_follows_a_declared_move_by_rule_once() -> None:
-    # old.py stays; one entry left it for new.py at another span
     before = _pyright_entries(
         {"./old.py": [("reportAny", 4), ("reportAny", 20)]}
     )
@@ -550,8 +531,6 @@ def test_pyright_growth_follows_a_declared_move_by_rule_once() -> None:
     )
     assert len(unmapped) == 1
 
-
-# --- a file at a git commit ---------------------------------------------------
 
 
 def _git(root: Path, *arguments: str) -> str:
@@ -645,8 +624,6 @@ def test_reference_refuses_a_ref_that_names_no_commit(repo: Path) -> None:
         reference(repo, "no-such-branch", "file")
 
 
-# --- the command line ----------------------------------------------------
-
 
 def _todo_check(
     module: Module, project: Project, config: core.Config
@@ -733,7 +710,7 @@ def test_cli_fails_without_a_baseline_and_groups_by_file(
     assert "      2  fixture-todo  f: A TODO is left." in out
     assert "      6  fixture-todo  g: A TODO is left." in out
     assert "2 errors not covered by the baseline, in 1 files." in out
-    assert "fixture-todo 1" in out  # the warning count
+    assert "fixture-todo 1" in out
     assert "A NOTE is left." not in out
 
 
@@ -860,7 +837,6 @@ def test_cli_against_a_commit(
     assert "new since" in capsys.readouterr().out
     created = _commit(project_root, "baseline")
 
-    # a hand-edited baseline that lists a new error is refused
     counts = _baseline_counts(project_root)
     counts[("fixture-todo", "pkg/c.py", "<module>")] = 1
     _write_counts(project_root, counts)
@@ -932,7 +908,6 @@ def test_cli_against_adopts_a_new_check_but_not_a_check_without_hits(
     assert _main(project_root, "--against", committed) == 0
     assert "1 errors entered with a new rule" in capsys.readouterr().out
 
-    # fixture-long ran at the reference with no hits: its entries are new
     (project_root / "pkg" / "c.py").write_text("x = 1\n" * 900,
         encoding="utf-8")
     _rewrite(project_root)
@@ -952,12 +927,11 @@ def test_cli_against_adopts_what_a_stricter_limit_reveals_only(
     reference_commit = _git(project_root, "rev-parse", "HEAD")
 
     _set_pyproject(project_root, "max_module_lines = 5\n")
-    assert _main(project_root) == 1  # pkg/c.py and pkg/a.py are now long
+    assert _main(project_root) == 1
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 0
     assert "2 errors entered" in capsys.readouterr().out
 
-    # a long file added with the tightening is long under the old limit too
     (project_root / "pkg" / "d.py").write_text("x = 1\n" * 900,
         encoding="utf-8")
     _rewrite(project_root)
@@ -969,7 +943,6 @@ def test_cli_against_refuses_a_looser_setting_unless_allowed(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _set_pyproject(project_root, "max_module_lines = 900\n")
-    # the file still records the old limit
     assert _main(project_root, "--against", committed) == 1
     out = capsys.readouterr().out
     assert "records other checks or settings" in out
@@ -1019,7 +992,6 @@ def test_cli_against_follows_a_moved_file_only_through_the_map(
     assert _main(project_root, "--against", committed) == 0
     assert "2 errors moved with their files" in capsys.readouterr().out
 
-    # a copy: the old file keeps its errors, so none of them moved
     (package / "a.py").write_text(original, encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", committed) == 1
@@ -1029,7 +1001,6 @@ def test_cli_against_follows_a_moved_file_only_through_the_map(
 def test_cli_against_lends_a_deleted_files_errors_to_no_other_file(
     project_root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # a module-level error in a file that goes cannot pay for a new one
     (project_root / "pkg" / "c.py").write_text("y = 2  # TODO\n",
         encoding="utf-8")
     _init_repository(project_root)
@@ -1057,7 +1028,6 @@ def test_cli_against_holds_the_pyright_baseline_to_only_shrinks(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_pyright(project_root, {"./pkg/a.py": [("reportAny", 4)]})
-    # created after the reference and not committed: the creation
     assert _main(project_root, "--against", committed) == 0
     created = _commit(project_root, "pyright baseline")
 
@@ -1070,14 +1040,11 @@ def test_cli_against_holds_the_pyright_baseline_to_only_shrinks(
     assert "basedpyright's baseline grew" in out
     assert "./pkg/b.py  reportAny: 1 (the reference allows 0)" in out
 
-    # a rule whose report level changed since the reference is adopted;
-    # a new key at the highest level tightens whatever the mode's default
     _set_pyproject(
         project_root, '\n[tool.basedpyright]\nreportAny = "error"\n'
     )
     _main(project_root, "--prune")
     assert _main(project_root, "--against", created) == 0
-    # without a mode, a lower level may be below the unknown default
     _set_pyproject(
         project_root, '\n[tool.basedpyright]\nreportAny = "warning"\n'
     )
@@ -1121,7 +1088,6 @@ def _write_moves(root: Path, *moves: tuple[str, str, str, str]) -> None:
 def test_cli_against_follows_a_declared_move_once(
     project_root: Path, committed: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # g leaves pkg/a.py, which stays, for pkg/c.py under a new name
     package = project_root / "pkg"
     (package / "a.py").write_text("def f():\n    pass  # TODO\n",
         encoding="utf-8")
@@ -1135,7 +1101,6 @@ def test_cli_against_follows_a_declared_move_once(
     assert _main(project_root, "--against", committed) == 0
     assert "1 errors moved with their files" in capsys.readouterr().out
 
-    # at most the old count, and only once the old entry is gone
     (package / "c.py").write_text("def h():\n    pass  # TODO\n    # TODO\n",
         encoding="utf-8")
     _rewrite(project_root)
@@ -1199,7 +1164,6 @@ def test_a_package_in_a_setting_stands_for_every_module_moved_out() -> None:
         "pkg.y.run",
         "pkg.z",
     ]
-    # while a module inside the package is kept, the package stays named
     kept = Moves(rows, frozenset({"pkg.cli.run"}))
     assert kept.translate(before, after).settings[
         "stylecheck.cli_modules"
@@ -1218,7 +1182,6 @@ def test_a_module_split_into_parts_shares_its_module_level(
     _rewrite(project_root)
     reference_commit = _commit(project_root, "a module-level error")
 
-    # a.py splits into c.py and d.py; only c.py keeps the module-level line
     (package / "a.py").unlink()
     (package / "c.py").write_text(
         module_level + "def f():\n    pass  # TODO\n", encoding="utf-8"
@@ -1236,7 +1199,6 @@ def test_a_module_split_into_parts_shares_its_module_level(
     assert _main(project_root, "--against", reference_commit) == 0
     capsys.readouterr()
 
-    # both parts copy it: together they may have the old count, not each
     (package / "d.py").write_text(
         module_level + "def g():\n    pass  # TODO\n", encoding="utf-8"
     )
@@ -1265,7 +1227,6 @@ def test_a_per_file_rule_is_inherited_by_each_piece_of_a_split(
     assert ("format", "pkg/a.py", "<module>") in _baseline_counts(project_root)
     reference_commit = _commit(project_root, "an unformatted file")
 
-    # a.py splits into three pieces, each the same unformatted code
     (package / "a.py").unlink()
     parts = ("pkg/c.py", "pkg/d.py", "pkg/e.py")
     for part in parts:
@@ -1275,7 +1236,6 @@ def test_a_per_file_rule_is_inherited_by_each_piece_of_a_split(
     assert _main(project_root, "--against", reference_commit) == 0
     capsys.readouterr()
 
-    # an unformatted file that no row leads to is new
     (package / "f.py").write_text(unformatted, encoding="utf-8")
     _rewrite(project_root)
     assert _main(project_root, "--against", reference_commit) == 1
@@ -1332,14 +1292,12 @@ def test_cli_against_follows_no_row_that_does_not_hold(
         encoding="utf-8")
     _rewrite(project_root)
 
-    # the old definition was not at the reference: the row is inert
     _write_moves(project_root, ("pkg/a.py", "nope", "pkg/c.py", "h"))
     assert _main(project_root, "--against", committed) == 1
     out = capsys.readouterr().out
     assert "pkg/c.py  fixture-todo  h" in out
     assert "not followed" not in out
 
-    # the new definition is not in the code
     _write_moves(project_root, ("pkg/a.py", "g", "pkg/c.py", "nope"))
     assert _main(project_root, "--against", committed) == 1
     assert "  pkg/a.py g -> pkg/c.py nope" in capsys.readouterr().out
@@ -1360,19 +1318,17 @@ def test_cli_prune_against_drops_the_rows_inert_at_the_reference(
         ("pkg/b.py", "never", "pkg/moved.py", "f"),
     ]
     _write_moves(project_root, *live, *inert)
-    # a row whose old definition is not at the reference is not reported
     assert _main(project_root, "--against", committed) == 0
     assert "not followed" not in capsys.readouterr().out
 
     assert _main(project_root, "--prune") == 0
-    assert len(read_moves(project_root).rows) == 4  # no reference given
+    assert len(read_moves(project_root).rows) == 4
     assert _main(project_root, "--prune", "--against", committed) == 0
     assert "Dropped 2 move rows" in capsys.readouterr().out
     assert [row.old + row.new for row in read_moves(project_root).rows] == [
         row[:2] + row[2:] for row in live
     ]
 
-    # once the move has landed, its rows are inert too
     _commit(project_root, "the move")
     assert _main(project_root, "--prune", "--against", "HEAD") == 0
     assert read_moves(project_root).rows == ()
@@ -1392,8 +1348,6 @@ def test_cli_against_fails_while_the_baseline_holds_a_fixed_error(
     _main(project_root, "--prune")
     assert _main(project_root, "--against", committed) == 0
 
-
-# --- every check carries its documentation ---------------------------------
 
 
 def test_every_registered_check_is_kebab_case_and_names_a_guide_rule() -> None:

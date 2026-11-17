@@ -43,7 +43,6 @@ def test_the_installed_command_makes_an_environment_that_imports_langslice(
     job = Path(json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["job_folder"])
 
     env = dict(os.environ)
-    # The command runs the langslice under test.
     source = str(Path(langslice.__file__).resolve().parents[1])
     env["PYTHONPATH"] = os.pathsep.join([source, *filter(None, [env.get("PYTHONPATH")])])
     done = subprocess.run([command, str(job), "env"], capture_output=True, text=True,
@@ -54,7 +53,6 @@ def test_the_installed_command_makes_an_environment_that_imports_langslice(
     python = Path(envelope["result"]["python"])
     assert python == job / "env" / "Scripts" / "python.exe" and python.is_file()
 
-    # Without PYTHONPATH, only the environment's .pth file can make it import LangSlice.
     env.pop("PYTHONPATH")
     probe = subprocess.run(
         [str(python), "-c", "import sys, langslice, numpy; print(sys.prefix)"],

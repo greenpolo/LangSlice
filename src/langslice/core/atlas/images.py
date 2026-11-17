@@ -11,10 +11,12 @@ CCFv3 atlas also gets :data:`BORROWED_NISSL` (below).
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, cast
 
 import numpy as np
 
+from langslice.core.outside import untyped
 from langslice.core.space import atlas_space_context
 
 TEMPLATE = "template"
@@ -51,7 +53,10 @@ def _takes_borrowed_nissl(atlas: Any) -> bool:
 
 def _borrowed_nissl(atlas: Any) -> np.ndarray:
     """The augmented atlas's template on *atlas*'s grid, zero outside its brain."""
-    from scipy.ndimage import affine_transform
+    affine_transform = cast(
+        "Callable[..., np.ndarray]",
+        untyped("scipy.ndimage", "affine_transform"),
+    )
 
     from langslice.core.atlas.load import load_atlas
 
@@ -61,7 +66,7 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
         source = np.asarray(load_atlas(AUGMENTED_ATLAS).template)
         step = np.asarray(atlas_space_context(atlas).resolution_um) / 1000.0 / AUGMENTED_VOXEL_MM
         offset = 0.5 * step - 0.5 + np.array([AUGMENTED_AP_OFFSET_MM / AUGMENTED_VOXEL_MM, 0, 0])
-        volume = affine_transform(source, np.diag(step), offset=offset,  # pyright: ignore[reportArgumentType]
+        volume = affine_transform(source, np.diag(step), offset=offset,
                                   output_shape=annotation.shape, order=1, output=source.dtype)
         volume[annotation == 0] = 0
         _borrowed.clear()
@@ -130,4 +135,5 @@ def atlas_volume(atlas: Any, name: str) -> np.ndarray:
     if name == BORROWED_NISSL:
         return _borrowed_nissl(atlas)
     extra = getattr(atlas, "additional_references", None)
-    return np.asarray(extra[name])  # pyright: ignore[reportOptionalSubscript]
+    references: Mapping[str, object] = extra or {}
+    return np.asarray(references[name])

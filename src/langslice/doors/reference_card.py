@@ -22,7 +22,7 @@ from typing import Any, cast
 
 import langslice
 from langslice.core.jsonable import JsonObject
-from langslice.job.layout import JobLayout, read_job_file
+from langslice.job.folder.layout import JobLayout, read_job_file
 from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec

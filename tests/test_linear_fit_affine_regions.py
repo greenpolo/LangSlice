@@ -19,8 +19,6 @@ from langslice.job.settings.spec import JobSpec
 LEFT, RIGHT, CORE = 2, 3, 4
 
 
-# HalvesAtlas and _left_half_section are used by tests/test_damage_regions.py,
-# tests/test_ops_interactive_transform.py and tests/test_tool_plugins.py
 class HalvesAtlas:
     """One ellipse of brain split into a left and a right half, 100 um voxels.
 
@@ -109,7 +107,6 @@ def test_tiny_region_is_refused_before_elastix_and_does_not_write(tmp_path: Path
     from langslice.core.fits.deformable import engines
 
     atlas = HalvesAtlas()
-    # Three atlas pixels across: the case that can crash the native engine.
     atlas.annotation[atlas.annotation == CORE] = LEFT
     atlas.annotation[:, 47:50, 39:42] = CORE
     state, box = _box(tmp_path, atlas, _left_half_section(),
@@ -134,7 +131,7 @@ def test_a_script_fit_answers_as_the_tool_row_does(tmp_path: Path, monkeypatch):
     region too small is ``REGION_TOO_SMALL`` with its text written for the job."""
     from langslice.core.fits.deformable import engines
     from langslice.core.refusal import Refused
-    from langslice.tools.affine_fit import elastix_fit
+    from langslice.tools.fitting.affine_fit import elastix_fit
 
     state, box = _box(tmp_path, HalvesAtlas(), _tall_section(), pixel_size_um=50.0,
                       position_mm=1.0)
@@ -165,7 +162,7 @@ def test_a_fit_refusal_without_a_message_is_passed_on_without_one(
 ):
     from langslice.core.fits import affine
     from langslice.core.refusal import Refused
-    from langslice.tools import affine_fit
+    from langslice.tools.fitting import affine_fit
 
     state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(),
                       pixel_size_um=50.0, position_mm=0.5)

@@ -74,8 +74,6 @@ def _gray(image: Image.Image) -> np.ndarray:
     return np.asarray(image.convert("L"), dtype=np.int16)
 
 
-# --- recipes -------------------------------------------------------------------------------
-
 
 def test_a_recipe_is_validated_and_its_defaults_are_the_opening_recipe():
     assert images.validate_recipe() == images.OPENING_RECIPE
@@ -93,8 +91,6 @@ def test_a_recipe_is_validated_and_its_defaults_are_the_opening_recipe():
     assert "CLAHE 2 on 8x8 tiles" in images.recipe_words(recipe)
     assert "inverted" in images.recipe_words(recipe)
 
-
-# --- the opening image ---------------------------------------------------------------------
 
 
 def test_the_opening_image_is_one_file_every_reader_reads(tmp_path: Path, atlas):
@@ -136,8 +132,6 @@ def test_a_job_that_preprocesses_nothing_opens_on_the_file_in_gray(tmp_path: Pat
     assert np.array_equal(_gray(drawn), np.asarray(expected, dtype=np.int16))
 
 
-# --- made images ------------------------------------------------------------------------
-
 
 def test_a_made_image_is_a_file_read_back_and_a_chain_composes(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
@@ -153,7 +147,6 @@ def test_a_made_image_is_a_file_read_back_and_a_chain_composes(tmp_path: Path, a
     view = images.read_image(ctx, record, "greens")
     assert view.payload() == {"name": "greens", "kind": "made", "file": entry.file,
                               "digest": entry.digest}
-    # The same pixels again reuse the file; other pixels never overwrite it.
     again = images.write_file(job.layout, record.id, "greens", array, {"recipe": recipe})
     assert again.file == entry.file
     inverted = images.validate_recipe(weights={"greens": 1}, clahe_clip=0, invert=True)
@@ -180,7 +173,6 @@ def test_a_made_image_is_held_unoriented_and_turned_where_it_is_drawn(tmp_path: 
     record.rotation_deg, record.flip = 90, True
     turned = _gray(render_slice(ctx, record, look={"image": "reds"}))
     assert np.array_equal(turned, np.rot90(upright)[:, ::-1])
-    # The entry does not change: the file is the file's orientation.
     assert images.image_plane(ctx, record, "reds").shape == array.shape
 
 
@@ -218,8 +210,6 @@ def test_the_status_summary_names_each_image_and_where_it_differs(tmp_path: Path
     held = images.summary(job.state, ctx.settings)["hema"]
     assert held == {"script": "colour deconvolution", "except": ["s0.png"]}
 
-
-# --- migration ----------------------------------------------------------------------------
 
 
 OLD_RECIPE = {"weights": {"green": 1.0}, "clahe_clip": 2.0, "clahe_tiles": 8, "n4": False,
@@ -263,11 +253,9 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
     for record in (s0, s1):
         for entry in record.images.values():
             assert (folder / entry.file).is_file()
-    # Display properties are gone and the state is the current format on disk.
     saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 5 and "appearance" not in saved
-    assert loaded.undo_stack  # the undo steps survived the migration
-    # The opening image comes back with the same pixels it had.
+    assert loaded.undo_stack
     drawn = render_slice(fresh, s0, long_edge=160)
     source, _ = fresh.working_source("s0.png")
     old_render = adaptive_preprocess(prepare_image_for_vlm(source, max_long_edge=160))
@@ -289,7 +277,7 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     job.close()
 
     other_ctx = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
-    other = Job.load(job.spec, other_ctx, folder=folder)  # migrates and writes format 4
+    other = Job.load(job.spec, other_ctx, folder=folder)
     with other.writing():
         before = other.snapshot()
         record = other.state.by_id("s0.png")
@@ -300,7 +288,7 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     real = job_module.read_checkpoint
     calls: list[int] = []
 
-    def stale(path: str, upgrade: Any = None) -> Any:  # the first read saw format 3
+    def stale(path: str, upgrade: Any = None) -> Any:
         calls.append(1)
         if len(calls) == 1:
             return upgrade(3, {key: value for key, value in old.items()})
@@ -309,7 +297,7 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     monkeypatch.setattr(job_module, "read_checkpoint", stale)
     late_ctx = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     late = Job.load(job.spec, late_ctx, folder=folder)
-    assert len(calls) >= 2  # read again under the lock
+    assert len(calls) >= 2
     held = late.state.by_id("s0.png")
     assert held is not None and held.position_mm == 0.2
     saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))

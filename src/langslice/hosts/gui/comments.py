@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from langslice.job.layout import REVIEW_FILE, JobLayout
+from langslice.job.folder.layout import REVIEW_FILE, JobLayout
 from langslice.job.review import read_comments, revised
 
 if TYPE_CHECKING:

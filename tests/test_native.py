@@ -80,7 +80,7 @@ def test_read_region_reads_a_coarser_pyramid_level(tmp_path: Path):
         writer.write(rgb, tile=(256, 256), subifds=1)
         writer.write(rgb[::2, ::2], tile=(256, 256), subfiletype=1)
     coarse = read_region(tmp_path / "pyramid.tif", (100, 200, 400, 360), step=2)
-    assert coarse.downsample == 2.0  # the pyramid level, not a stride over the file
+    assert coarse.downsample == 2.0
     assert np.array_equal(coarse.pages[0], rgb[::2, ::2][100:180, 50:200])
     rx, ry = coarse.to_read(np.array([100.5]), np.array([200.5]))
     assert (float(rx[0]), float(ry[0])) == (0.0, 0.0)
@@ -96,13 +96,9 @@ def test_fit_look_carries_a_map_of_the_channels_exactly():
     assert np.abs(carried - target).max() < 1e-4
 
 
-# --- the zoom pictures --------------------------------------------------------------------
 
-
-#: A section file larger than any working copy, with detail the working copy
-#: cannot hold (1-px stripes) and a red marker.
 FILE_SIZE = (4800, 3600)
-MARKER = (1300, 1000, 1450, 1150)  # x0, y0, x1, y1 in file pixels
+MARKER = (1300, 1000, 1450, 1150)
 
 
 def _big_section(folder: Path) -> None:
@@ -169,11 +165,9 @@ def test_a_section_zoom_reads_the_file_at_its_own_resolution(big: Path, rotation
     pixels = _content(zoomed)
     assert max(pixels.shape[:2]) == 512
     assert "from the image file" in zoomed.caption
-    # The marker is in the middle of the zoom, as large as the file has it.
     zy, zx = np.nonzero(_red(pixels))
     assert abs(zx.mean() / pixels.shape[1] - 0.5) < 0.06
     assert abs(zy.mean() / pixels.shape[0] - 0.5) < 0.06
-    # The file's 1-px stripes, which the working copy cannot hold, are there.
     across = np.rot90(pixels) if rotation % 180 else pixels
     assert _stripes(across) > 8.0
 
@@ -197,13 +191,11 @@ def test_a_file_that_cannot_be_read_leaves_the_working_copy(big: Path, tmp_path:
                                            images=("red", "green", "blue")))
     window = (0.4, 0.4, 0.46, 0.46)
     read = _content(redraw(whole.recipe, window, ws, state))
-    (folder / "big.tif").unlink()  # the working copy is held; the file is gone
+    (folder / "big.tif").unlink()
     zoomed = redraw(whole.recipe, window, ws, state)
     assert "from the image file" not in zoomed.caption
     held = _content(zoomed)
     assert max(held.shape[:2]) <= 512
-    # The stripes' period, as the file shows it, is (nearly) absent from the
-    # working copy's zoom: it holds at most its moire.
     file_row = np.abs(np.fft.rfft(read[3, :, 1] - read[3, :, 1].mean()))[1:]
     peak = int(np.argmax(file_row))
     held_row = np.abs(np.fft.rfft(np.asarray(Image.fromarray(held).resize(

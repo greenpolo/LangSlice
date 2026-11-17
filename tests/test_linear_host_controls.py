@@ -21,8 +21,8 @@ from langslice.job.gates import submit_errors
 from langslice.job.host_inputs import HOST_TRANSFORM_KIND, apply_host_inputs
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.tools import affine_fit as ops_transforms
-from langslice.tools.affine_fit import AffineFit, AffineRow
+from langslice.tools.fitting import affine_fit as ops_transforms
+from langslice.tools.fitting.affine_fit import AffineFit, AffineRow
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.fakes import SlabAtlas
 
@@ -56,8 +56,6 @@ def _entry(slice_id: str) -> dict[str, Any]:
             "translate_x_mm": 0.1, "translate_y_mm": 0.0}
 
 
-# --- the spec --------------------------------------------------------------
-
 
 def test_new_fields_round_trip_through_from_dict(tmp_path: Path):
     rebuilt = JobSpec.from_dict({
@@ -86,8 +84,6 @@ def test_bad_values_are_refused(tmp_path: Path, data: dict[str, Any], message: s
     with pytest.raises(ValueError, match=message):
         JobSpec.from_dict({"image_folder": str(tmp_path), **data})
 
-
-# --- max parallel ----------------------------------------------------------
 
 
 def _no_fit(monkeypatch) -> list[list[str]]:
@@ -125,8 +121,6 @@ def test_over_cap_transform_calls_are_refused_naming_the_cap(
     assert asked == [names[:cap]]
 
 
-# --- damage ----------------------------------------------------------------
-
 
 def test_a_host_damage_note_is_a_note_not_damage(tmp_path: Path):
     state, _spec, tools = _stack(tmp_path, n=3, atlas=SyntheticAtlas(),
@@ -135,13 +129,10 @@ def test_a_host_damage_note_is_a_note_not_damage(tmp_path: Path):
     assert record.damage_note == "torn" and record.damaged is False
     marked = tools["mark_damage"]("s1.png", ["TH"], "fold")
     assert marked["damaged"] is True and marked["note"] == "torn; fold"
-    # Clearing the regions leaves the user's note.
     cleared = tools["mark_damage"]("s1.png", [], "")
     assert cleared["damaged"] is False and cleared["note"] == "torn"
     assert state.by_id("s1.png").damage_note == "torn"
 
-
-# --- frozen ----------------------------------------------------------------
 
 
 ALIGNED = ["orientation", "affine"]
@@ -171,7 +162,6 @@ def test_frozen_geometry_is_refused_per_section_and_positions_still_move(tmp_pat
     assert state.by_id("s1.png").flip is False
     assert state.by_id("s2.png").rotation_deg == 90
 
-    # Elastix leaves it out: by name it is refused, and it is no default target.
     fitted = tools["elastix_affine"](["s1.png"])
     assert fitted["status"] == "error"
     assert [(row["id"], row["error"], row["properties"]) for row in fitted["results"]] == [
@@ -192,8 +182,6 @@ def test_frozen_transforms_count_at_submit(tmp_path: Path):
     refusal = submit_errors(unlocked_state, unlocked, [])
     assert refusal is not None and refusal.code == "MISSING_TRANSFORMS"
 
-
-# --- a frozen deformation ---------------------------------------------------------
 
 
 class _NeverCalled:
@@ -230,8 +218,6 @@ def test_sections_with_a_frozen_deformation_are_refused(tmp_path: Path):
     assert state.by_id("s0.png").deformation is None
     assert state.by_id("s0.png").border_trace is None
 
-
-# --- forced pictures and the picture size --------------------------------------------
 
 
 def test_tool_signatures_follow_the_spec(tmp_path: Path):

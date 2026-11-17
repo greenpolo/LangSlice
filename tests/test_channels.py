@@ -58,8 +58,6 @@ def _remake(job: Job, ctx: Any, record: Section) -> None:
     images.write_image(job.layout, record, images.PREPROCESSED, array, {"recipe": RECIPE})
 
 
-# --- raw channels ------------------------------------------------------------------
-
 
 def test_one_raw_channel_is_drawn_as_the_file_holds_it_and_several_in_colours(
         tmp_path: Path, atlas):
@@ -96,7 +94,6 @@ def test_a_page_is_read_from_its_own_intensities(tmp_path: Path, atlas):
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     names, planes = ctx.section_channels("s0.tif")
     assert names == ("ch1", "ch2")
-    # Each working plane is its page stretched from its own minimum to maximum.
     held = channels.intensity_ranges(ctx, "s0.tif")["ch1"]
     np.testing.assert_allclose(held.to_file(planes[0]), ramp, atol=(40000 / 255.0) + 1)
 
@@ -114,7 +111,7 @@ def test_automatic_limits_read_the_background_and_the_tissue():
     rng = np.random.default_rng(1)
     plane = rng.normal(12.0, 2.0, (200, 300)).astype(np.float32)
     plane[50:150, 60:240] = rng.uniform(30.0, 90.0, (100, 180))
-    plane[:20, :40] = 0.0  # an unscanned tile
+    plane[:20, :40] = 0.0
     ((low, high),) = channels.auto_limits([plane])
     assert 10.0 < low < 14.0
     assert high == pytest.approx(np.percentile(plane[50:150, 60:240], 95), abs=1.0)
@@ -122,8 +119,6 @@ def test_automatic_limits_read_the_background_and_the_tissue():
     ((low, high),) = channels.auto_limits([bright])
     assert (low, high) == pytest.approx(tuple(np.percentile(bright, (1.0, 99.5))))
 
-
-# --- what the algorithms read ------------------------------------------------------
 
 
 class _Stop(Exception):
@@ -148,7 +143,7 @@ def test_the_elastix_affine_reads_the_section_image_named(tmp_path: Path, atlas,
     with pytest.raises(_Stop):
         tr.elastix_affine(state, ctx, record, start)
     grid = deformation.fit_grid(state, ctx, record, params=start)
-    assert np.array_equal(seen[0], np.asarray(grid.image))  # the opening preprocessed
+    assert np.array_equal(seen[0], np.asarray(grid.image))
     _remake(job, ctx, record)
     with pytest.raises(_Stop):
         tr.elastix_affine(state, ctx, record, start)
@@ -165,7 +160,7 @@ def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, mon
     """What FireANTs SyN is handed is the section image on the fit grid, and its
     cache key changes when the image is made again."""
     from langslice.core.fits import deformation
-    from langslice.tools import deformable as ops_deformable
+    from langslice.tools.fitting import deformable as ops_deformable
 
     job, ctx = _open(tmp_path, atlas)
     state = job.state
@@ -221,7 +216,6 @@ def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatc
                        lambda request: SimpleNamespace(image=original, route="test"))
     calls = tmp_path / "calls"
     tool.start_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
-    # preprocessed made again: a new call key
     metadata["section_image"] = {"name": "preprocessed", "digest": "ab12cd34"}
     tool.start_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
     assert len([path for path in calls.iterdir() if path.is_dir()]) == 2

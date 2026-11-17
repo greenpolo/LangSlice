@@ -440,7 +440,7 @@ def _pages_working_size(
                     chosen = level
             height, width = (int(v) for v in chosen.shape[-2:])
             return (width, height), full_width / float(width)
-        shape = tuple(int(v) for v in handle.pages[0].shape)  # type: ignore[union-attr]
+        shape = tuple(int(v) for v in handle.pages[0].shape)
     if len(shape) == 3 and shape[-1] not in (1, 3, 4):
         raise ValueError(f"Unsupported page shape {shape}")
     height, width = shape[0], shape[1]

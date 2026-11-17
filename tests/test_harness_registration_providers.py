@@ -35,7 +35,7 @@ class _FakeOpenAIImagesClient:
         self.calls: list[dict[str, object]] = []
         self.images = SimpleNamespace(edit=self.edit)
 
-    def edit(self, **kwargs):  # noqa: ANN003 - SDK-shaped fake
+    def edit(self, **kwargs):  # noqa: ANN003
         self.calls.append(kwargs)
         image = Image.new("RGB", (9, 7), color=(12, 34, 56))
         buf = io.BytesIO()
@@ -69,7 +69,7 @@ class _FakeGeminiModels:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    def generate_content(self, **kwargs):  # noqa: ANN003 - SDK-shaped fake
+    def generate_content(self, **kwargs):  # noqa: ANN003
         self.calls.append(kwargs)
         return _FakeGeminiResponse(
             [
@@ -115,7 +115,6 @@ def test_openai_images_route_sends_the_edited_image_first(monkeypatch):
     assert call["prompt"] == "warp it"
     image_files = cast(list[io.BytesIO], call["image"])
     assert len(image_files) == 3
-    # Image 1 is the image being edited; the references follow in prompt order.
     assert [img.name for img in image_files] == [
         "slice_image.png",
         "atlas_reference_1.png",
@@ -138,7 +137,6 @@ def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
 
     result = providers.generate_warped_segmentation_image(request)
 
-    # No model named: the lane's image model, never a text model.
     assert result.provider == "gemini-api"
     assert result.model == "gemini-3.1-flash-image"
     assert result.route == "google_genai"

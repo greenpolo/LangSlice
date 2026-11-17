@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.fits.trace.request import ImageModel
 from langslice.core.fits.trace.trace import profile_prompt
@@ -23,39 +23,27 @@ from langslice.core.pictures.sizes import (
     MAX_IMAGES_PER_CALL,
     resolution_level,
 )
-from langslice.core.space import Plane
 from langslice.core.stack.stack import Stack
 from langslice.doors.plugins import provenance, runtime
 from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import resolve_image_model
-from langslice.tools import (
-    affine_fit,
-    atlas,
+from langslice.tools.bookkeeping import exports, history, notes, submit
+from langslice.tools.catalog import enabled, verbs_for
+from langslice.tools.changing import (
     damage,
-    deformable,
-    exports,
-    files,
-    history,
     images,
-    landmark_warp,
-    landmarks,
-    look,
     masks,
-    notes,
     positions,
     registrations,
-    review,
-    status,
-    submit,
-    traces,
     transforms,
-    zoom,
 )
-from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.events import EventLog, LiveCallback
+from langslice.tools.fitting import affine_fit, deformable, traces
+from langslice.tools.landmarking import landmark_warp, landmarks
+from langslice.tools.looking import atlas, files, look, review, status, zoom
 from langslice.tools.pipeline import ToolBox, declared_tool
 from langslice.tools.run import Run
 
@@ -173,7 +161,7 @@ def build_tools(
         image_model = with_job_prompt(spec, image_model)
     prompt: str | None = None
     if traces_on and image_model is not None:
-        prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
+        prompt = profile_prompt(image_model, state.plane)[0]
     variant = DescriptionFacts.from_spec(
         spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
         door=door, prompt=prompt, uncapped=scripting,

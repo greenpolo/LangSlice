@@ -28,6 +28,7 @@ from typing import Any, cast
 
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
 from langslice.core.shared_files import replace_file
+from langslice.core.space import as_plane
 from langslice.core.stack.json_reads import (
     flag_at,
     integer_at,
@@ -247,7 +248,7 @@ def stack_from_json(data: JsonObject) -> Stack:
     return Stack(
         image_folder=_text_or(data, "image_folder", defaults.image_folder),
         atlas=_text_or(data, "atlas", defaults.atlas),
-        plane=_text_or(data, "plane", defaults.plane),
+        plane=as_plane(_text_or(data, "plane", defaults.plane)),
         interval_mm=_optional_number(data, "interval_mm"),
         thickness_mm=_optional_number(data, "thickness_mm"),
         spec=spec,

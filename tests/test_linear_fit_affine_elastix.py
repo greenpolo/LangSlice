@@ -110,20 +110,17 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
     assert row["status"] == "ok"
     error = _error_vs(truth, affine_to_json(state.slices[0].transform)["params"])
     assert error["rotation"] < 0.3 and error["scale"] < 0.01 and error["corner_px"] < 1.5, error
-    # The same reply and record shape as a silhouette fit.
     assert set(row["transform"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
                                     "translate_x_mm", "translate_y_mm", "pivot"}
     assert row["transform"]["translate_x_mm"] == pytest.approx(0.15, abs=0.01)
     assert row["transform"]["translate_y_mm"] == pytest.approx(-0.10, abs=0.01)
     assert row["mirrored"] is False
     assert row["calibration"] == {"section_um_per_px": UM, "source": "host"}
-    assert "params" not in row  # the six raw numbers stay host-side
-    # The section under its new transform, saved with a number.
+    assert "params" not in row
     assert len(result["pictures"]) == 1 and len(result[TOOL_MEDIA_PARTS_KEY]) == 1
     stored = affine_to_json(state.slices[0].transform)
     assert stored["kind"] == "elastix" and len(stored["params"]) == 6
     assert "regions" not in stored and "regions" not in row
-    # One undo step back to no transform; the checkpoint holds the fit.
     assert json.loads(Path(_ctx.checkpoint_path).read_text(
         encoding="utf-8"))["slices"][0]["transform"][
         "kind"] == "elastix"
@@ -163,13 +160,13 @@ def test_marked_damage_and_restrict_to_are_honoured(tmp_path: Path, atlas):
     assert with_exclusion["corner_px"] < 2.5, with_exclusion
 
     _tool(box, "undo")()
-    _tool(box, "undo")()  # the mark too
+    _tool(box, "undo")()
     assert state.slices[0].damaged_regions == [] and state.slices[0].transform is None
     included = _tool(box, "elastix_affine")([ID], restrict_to=["STR"], view=False)
     row = included["results"][0]
     assert row["status"] == "ok", row
     assert row["regions"]["include"] == ["STR"]
-    assert len(row["restrict_box"]) == 4  # where a picture zooms on the regions
+    assert len(row["restrict_box"]) == 4
     near_striatum = _error_vs(truth, affine_to_json(state.slices[0].transform)["params"])
     assert near_striatum["rotation"] < 1.5 and near_striatum["corner_px"] < 6.0, near_striatum
 
@@ -224,7 +221,6 @@ def test_a_manual_tweak_keeps_the_fits_shear(tmp_path: Path, atlas):
         assert result["status"] == "ok", result
         return result["results"][0]["transform"]
 
-    # The fit's knobs given back (shear included) redraw the fit's own map.
     assert tweak(**knobs)["shear"] == knobs["shear"]
     kept = _error_vs(_px(fitted), list(affine_to_json(state.slices[0].transform)["params"]))
     assert kept["corner_px"] < 0.2, kept
@@ -232,7 +228,6 @@ def test_a_manual_tweak_keeps_the_fits_shear(tmp_path: Path, atlas):
     dropped = _error_vs(_px(fitted), list(affine_to_json(state.slices[0].transform)["params"]))
     assert dropped["corner_px"] > 2.0, dropped
 
-    # Only the five knobs changed: the fit's shear stays.
     state.slices[0].transform = affine_from_json(fit)
     five = {key: knobs[key] for key in ("rotation_deg", "scale_x", "scale_y",
                                         "translate_x_mm", "translate_y_mm")}

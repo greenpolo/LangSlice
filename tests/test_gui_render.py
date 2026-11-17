@@ -126,7 +126,7 @@ def _look_content(job: Path, request: LookRequest) -> Image.Image:
     store = RecordStore(root=layout.sections_dir, folder_of=layout.deformable_dir)
     picture = look(workspace, _stack(job), request, store=store)[0]
     width, height = picture.recipe["shown"]
-    assert picture.image.height > height  # the caption band, below the content
+    assert picture.image.height > height
     return picture.image.crop((0, 0, width, height))
 
 
@@ -156,10 +156,9 @@ def test_an_overlay_is_looks_overlay_with_the_deformation_and_without_its_captio
     drawn = _look_content(job, LookRequest(mode="overlay", sections=(ID0,), long_edge=512))
     linear = _look_content(job, LookRequest(mode="overlay", sections=(ID0,), long_edge=512,
                                             warp="none"))
-    assert _difference(warped, drawn) < 3.0  # the same picture, through JPEG
-    assert _difference(drawn, linear) > 0.05  # the ripple is drawn
+    assert _difference(warped, drawn) < 3.0
+    assert _difference(drawn, linear) > 0.05
     assert _difference(warped, drawn) < _difference(warped, linear)
-    # A section with no position is drawn alone, oriented.
     alone = _image(renderer.overlay(ID2, 512))
     section = _look_content(job, LookRequest(mode="section", sections=(ID2,), long_edge=512))
     assert _difference(alone, section) < 3.0
@@ -201,11 +200,9 @@ def _snapshot(job: Path) -> dict:
 def test_strip_spacing_and_edges() -> None:
     assert [edge_px(n) for n in (0, 1, 64, 65, 300, 2048, 9999)] == [
         64, 64, 64, 128, 320, 2048, 2048]
-    # The adult mouse brain's axes (Allen 25 um): ABBA's 0.5 mm.
-    assert strip_step(0.0, 13.175, 1.0) == 0.5  # coronal, 26 thumbnails
-    assert strip_step(0.0, 7.975, 1.0) == 0.5  # horizontal, 15
+    assert strip_step(0.0, 13.175, 1.0) == 0.5
+    assert strip_step(0.0, 7.975, 1.0) == 0.5
     assert atlas_positions(0.0, 7.975, 0.5) == tuple(0.5 * k for k in range(1, 16))
-    # A rat brain spaces them wider; a tiny volume as finely as allowed.
     assert strip_step(0.0, 39.9, 1.7) == 1.0
     assert strip_step(0.0, 0.25, 1.0) == 0.1
 
@@ -232,9 +229,9 @@ def test_a_picture_is_drawn_once_for_concurrent_requests_and_then_kept(
     for thread in threads:
         thread.join(10)
     assert drawn == [128] and len(answers) == 4 and len(set(answers)) == 1
-    assert renderer.overlay(ID0, 128) == answers[0] and drawn == [128]  # kept
+    assert renderer.overlay(ID0, 128) == answers[0] and drawn == [128]
     renderer.overlay(ID0, 192)
-    assert drawn == [128, 192]  # another edge is another picture
+    assert drawn == [128, 192]
 
 
 def test_a_slow_picture_is_busy_after_the_wait_and_kept_when_drawn(
@@ -268,7 +265,6 @@ def test_what_cannot_be_drawn_says_why(job: Path, pool: ThreadPoolExecutor) -> N
         renderer.overlay("../job.json", 128)
     with pytest.raises(UnknownSection):
         renderer.atlas_thumb(len(renderer.strip().atlas), 128)
-    # A section's file gone: the job is read, the picture refused.
     shutil.move(job.parent / ID0, job.parent.parent / ID0)
     moved = job.parent.parent / "elsewhere"
     shutil.copytree(job, moved / "langslice")
@@ -277,16 +273,13 @@ def test_what_cannot_be_drawn_says_why(job: Path, pool: ThreadPoolExecutor) -> N
     record["image_folder"] = str(job.parent.parent / "gone")
     (moved / "langslice" / "job.json").write_text(json.dumps(record),
         encoding="utf-8")
-    # The images moved away: every render says what NoJob says.
     away = _renderer(moved / "langslice", pool)
     for call in (away.strip, lambda: away.overlay(ID1, 128), lambda: away.thumb(ID1, 128)):
         with pytest.raises(RenderError, match="are not in .* any more"):
             call()
-    # A section whose file is gone is refused with the reason, the others drawn.
     with pytest.raises(RenderError, match="could not be drawn"):
         renderer.thumb(ID0, 96)
     assert _image(renderer.thumb(ID1, 96)).size[0] > 0
-    # No state yet: nothing to draw.
     (job / "state.json").unlink()
     with pytest.raises(RenderError, match="no state"):
         _renderer(job, pool).overlay(ID1, 128)
@@ -319,9 +312,9 @@ def test_jobs_not_viewed_lately_let_go_of_their_workspace(
         picture = viewed.thumb(ID1, 64)
         assert viewed._opened is not None
         jobs.renderer(second / "langslice", JobWatcher(second / "langslice").current_stack)
-        assert viewed._opened is None  # released
+        assert viewed._opened is None
         again = jobs.renderer(first / "langslice", JobWatcher(first / "langslice").current_stack)
-        assert again is viewed and again.thumb(ID1, 64) == picture  # read again
+        assert again is viewed and again.thumb(ID1, 64) == picture
     finally:
         jobs.close()
 

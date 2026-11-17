@@ -25,7 +25,7 @@ from langslice.core.plugins import Layer
 from langslice.core.stack.codec import layer_from_json, layer_to_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
 MANIFEST_FILE = "layers.json"

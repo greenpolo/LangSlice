@@ -195,7 +195,7 @@ The page is a React app (`web/`, below), built into `static/`.
   the folder above it, `M01/images`, an images folder's own name often being a
   generic one; a job folder made elsewhere, its own name and the one above),
   `path`, `folder`, `atlas`, `changed_at`, `status`, `given`. The recent jobs file is the job layer's
-  (`job/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
+  (`job/folder/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
   `LANGSLICE_RECENT_JOBS`, another file or `off`).
 - `transcripts.py` — a coding agent's words. `TranscriptWords(root)`
   (`projects_root()`: `~/.claude/projects`, or `LANGSLICE_CLAUDE_TRANSCRIPTS`,
@@ -472,7 +472,7 @@ The page is a React app (`web/`, below), built into `static/`.
 whole, a trace appearing mid-run, time order, missing files, the raw-state
 fallback, undo labels, a path outside the folder, the job list,
 a truncated file, the focus, Idle, the rows' render keys and positions, job
-names; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
+names),
 `tests/test_gui_transcripts.py` (the transcript found by its `start_job`
 call among others and tailed, a half-written line, an old transcript and a
 job with no call left alone, `off`, the watcher showing the words),

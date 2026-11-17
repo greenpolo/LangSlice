@@ -33,8 +33,7 @@ from langslice.core.stack.status import stack_angles_entry, status_rows
 from langslice.hosts.gui.focus import Focus, started_focus
 from langslice.hosts.gui.render import render_key
 from langslice.hosts.gui.transcripts import TranscriptWords, projects_root
-from langslice.job.history import SectionHistories
-from langslice.job.layout import (
+from langslice.job.folder.layout import (
     EVENTS_FILE,
     EXPORTS_DIR,
     HISTORY_DIR,
@@ -52,6 +51,7 @@ from langslice.job.layout import (
 from langslice.job.migrations import viewer_stack
 from langslice.job.settings.labels import label as tool_title
 from langslice.job.settings.tool_table import TOOLS
+from langslice.job.steps.history import SectionHistories
 
 POLL_S = 0.25
 RECENT_S = 30.0

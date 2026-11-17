@@ -29,18 +29,15 @@ from langslice.tools.descriptions.fixes import FIXES
 from langslice.tools.descriptions.render import arguments_schema, declaration
 from tests.linear_tool_helpers import SLAB, tool_named
 
-# --- the names ------------------------------------------------------------------------
-
 
 def _spec(folder: str = "/stack", **fields: Any) -> JobSpec:
     return JobSpec(image_folder=folder, **fields)
 
 
 def test_the_valid_names_come_from_the_registry():
-    verbs = verbs_for()  # the engines' tools after the others
+    verbs = verbs_for()
     assert set(TOOLS) == set(verbs)
     names = valid_names()
-    # a tool that can be switched off, then its options, in registry order
     assert names[:4] == [f"look:{mode}" for mode in TOOLS["look"].options]
     for name, verb in verbs.items():
         assert (name in names) is (not verb.tool.essential), name
@@ -58,7 +55,7 @@ def test_the_valid_names_come_from_the_registry():
     (["submit"], "submit cannot be disabled"),
     (["look"], "look cannot be disabled"),
     (["undo"], "undo cannot be disabled"),
-    (["view_slices"], "unknown name"),  # a retired name is no tool
+    (["view_slices"], "unknown name"),
     ("zoom", "list of tool and option names"),
     ([3], "list of tool and option names"),
 ])
@@ -71,10 +68,9 @@ def test_names_are_deduplicated_in_order_and_round_trip():
     spec = _spec(disabled=["zoom", " look:positioning", "zoom"])
     assert spec.disabled == ["zoom", "look:positioning"]
     assert JobSpec.from_dict(spec.to_dict()) == spec
-    assert "disabled" not in _spec().to_dict()  # the default stays out of saved specs
-    # what can work is accepted: a task keeps one writer; a tool that is not on needs nothing
+    assert "disabled" not in _spec().to_dict()
     _spec(tasks=["transform"], disabled=["elastix_affine"])
-    _spec(tasks=["position"], disabled=["look:positioning"])  # overlays stand in
+    _spec(tasks=["position"], disabled=["look:positioning"])
     _spec(tasks=["position"], disabled=["look:overlay"])
     _spec(tasks=["nonlinear"], disabled=["fireants_syn"])
 
@@ -84,8 +80,6 @@ def test_a_tool_disables_its_options():
     assert spec.off("interactive_transform:flip") and not spec.off("elastix_affine")
     assert is_off(["look:overlay"], "look:overlay") and not is_off(["look:overlay"], "look")
 
-
-# --- what cannot work -------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("fields, message", [
@@ -125,8 +119,6 @@ def test_a_list_that_cannot_work_is_refused_with_one_line(fields: dict[str, Any]
     assert "\n" not in str(refused.value)
 
 
-# --- the tools and options a job gets ----------------------------------------------------
-
 
 def test_the_look_schema_offers_only_the_modes_on():
     spec = _spec(tasks=["position"], disabled=["look:positioning"])
@@ -147,7 +139,6 @@ def test_flip_is_not_in_the_sections_schema_when_it_is_off():
 
     assert "flip" in keys(_spec(tasks=["transform"]))
     assert "flip" not in keys(_spec(tasks=["transform"], disabled=["interactive_transform:flip"]))
-    # the quarter turn is an option of its own; a frozen orientation takes both
     assert "rotate_quarter" in keys(_spec(tasks=["transform"]))
     only = keys(_spec(tasks=["transform"], disabled=["interactive_transform:rotate"]))
     assert "rotate_quarter" not in only and "flip" in only
@@ -169,14 +160,12 @@ def test_a_call_of_a_disabled_mode_is_refused_by_the_operation(tmp_path: Path):
     assert "positioning" not in inspect.signature(look).parameters["mode"].annotation.__args__
 
 
-# --- model-facing text ------------------------------------------------------------------------
-
 
 def _pattern(name: str) -> re.Pattern[str]:
     """What a text says when it names the tool or option *name*."""
     tool, _, option = name.partition(":")
     if not option:
-        if tool == "note":  # the word is prose; the tool is named in quotes or called
+        if tool == "note":
             return re.compile(r"`note`|\bnote\(")
         return re.compile(rf"(?<![A-Za-z0-9_]){re.escape(tool)}(?![A-Za-z0-9_])")
     if tool == "look":
@@ -184,18 +173,17 @@ def _pattern(name: str) -> re.Pattern[str]:
                           rf"|\b{option} mode"
                           + (r"|\boverlays?\b" if option == "overlay" else "")
                           + (r"|\bpositioning\b" if option == "positioning" else ""))
-    if name == "interactive_transform:flip":  # a key of the sections, or the mirror itself
+    if name == "interactive_transform:flip":
         return re.compile(r"\"flip\"|\{id, flip|[Mm]irroring|mirrored or turned|mirrors the")
-    if name == "interactive_transform:rotate":  # a key of the sections, or the turn itself
+    if name == "interactive_transform:rotate":
         return re.compile(r"rotate_quarter|quarter turn is applied")
-    if name == "fireants_syn:metric":  # the argument, or one of its two values
-        # ("metric mapping" is LDDMM's own name, in STalign's description)
+    if name == "fireants_syn:metric":
         return re.compile(r"\bmetric\b(?! mapping)|mutual_information|local_correlation")
-    if name == "fireants_syn:edges":  # the argument
+    if name == "fireants_syn:edges":
         return re.compile(r"\bedges:|\"edges\"|edges \(the gradient")
-    if name == "fireants_syn:detail":  # the argument, or a value of it
+    if name == "fireants_syn:detail":
         return re.compile(r"\bdetail:|\"detail\"|\"coarse\"")
-    if name == "grep_atlas:points":  # the argument, or what the tool says of its points
+    if name == "grep_atlas:points":
         return re.compile(r"\"points\"|region is drawn at|only points are given"
                           r"|look the region up at|its region and containing")
     raise AssertionError(f"no pattern for {name}")
@@ -329,9 +317,9 @@ def test_no_text_names_what_the_job_disables(stack_folder: Path, disabled: list[
             for name in disabled:
                 if (where.startswith("schema ") and name.startswith("look:")
                         and not where.startswith("schema look ")):
-                    continue  # a schema's quoted keys are not the look's modes
+                    continue
                 if (name.startswith("fireants_syn:") and "elastix_affine" in where):
-                    continue  # elastix_affine has an edges argument of its own
+                    continue
                 for hit in _pattern(name).finditer(text):
                     around = text[max(0, hit.start() - 60):hit.end() + 40].replace("\n", " ")
                     problems.append(
@@ -370,8 +358,6 @@ def test_with_nothing_disabled_the_text_is_what_it_was(stack_folder: Path):
             assert not any(opener in text for opener in ("[[?", "[[#", "[[%"))
 
 
-# --- the marks ------------------------------------------------------------------------------
-
 
 @pytest.mark.parametrize("text, off, shown", [
     ("a[[?zoom  and zoom]] b", [], "a and zoom b"),
@@ -401,11 +387,7 @@ def test_broken_marks_are_errors_and_plain_text_is_left_alone():
     assert render(plain, ["zoom"]) == plain
 
 
-# --- refusals ------------------------------------------------------------------------------
-
-#: The modules whose refusals may name a tool unmarked: that tool's own
-#: refusals, which no job that disables it can reach.
-_OWN_REFUSALS = {"tools/history.py": "redo"}
+_OWN_REFUSALS = {"tools/bookkeeping/history.py": "redo"}
 
 
 def _literal(node: ast.expr) -> str | None:
@@ -449,8 +431,6 @@ def test_no_refusal_names_a_tool_without_what_it_needs():
     assert problems == []
 
 
-# --- the landmark tools --------------------------------------------------------------------
-
 
 def test_the_landmark_tools_go_off_together_and_leave_no_mention(tmp_path: Path):
     folder = _stack_folder(tmp_path)
@@ -482,6 +462,5 @@ def test_a_frozen_deformation_refuses_the_triangulation_and_hides_the_tools(tmp_
                               frozen={"s0.png": ["deformation"]})
     refused = tool_named(toolbox, "landmark_triangulation")(section="s0.png", view=False)
     assert refused["error"] == "FROZEN" and refused["properties"] == ["deformation"]
-    # a section that is not frozen is not refused for that reason
     other = tool_named(toolbox, "landmark_triangulation")(section="s1.png", view=False)
     assert other["error"] == "INSUFFICIENT_LANDMARKS"

@@ -60,7 +60,7 @@ from langslice.hosts.gui.space import (
     atlas_shell,
     job_space,
 )
-from langslice.job.layout import JOB_FILE
+from langslice.job.folder.layout import JOB_FILE
 
 logger = logging.getLogger(__name__)
 

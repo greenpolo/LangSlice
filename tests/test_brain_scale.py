@@ -65,10 +65,6 @@ def _digest(prepared) -> tuple[str, list[float]]:
     return input_fingerprint(arrays, numbers)
 
 
-#: What prepare_fit built for these fits (the stain and restricted hashes since the EM left
-#: prepare_fit; their arrays are unchanged) at standard detail before distances
-#: followed the brain's size (main at 8ac2c91b), hashed: the adult mouse brain
-#: (scale 1) must keep getting exactly these.
 BEFORE_SCALING = {
     "stain": ("89e7d2c23e6af7b2", [
         61225.60, 50625.84, 24728.41, 15330.64, 7092.25, 3009.99, 7696.39, 3688.30]),
@@ -119,8 +115,6 @@ def test_a_larger_brain_is_fitted_as_the_mouse_drawn_smaller(atlas, scaled):
     prepared = prepare_fit(image, atlas, placement(), settings)
     assert prepared.brain_scale == 2.0
     assert prepared.inputs.brain_scale == 2.0
-    # Standard detail's 20 um is finer than this section's 25 um pixels, so
-    # the mouse works at 25 um; twice 20 um is 40 um.
     assert reference.grid.spacing_mm == (0.025, 0.025)
     assert np.allclose(prepared.grid.spacing_mm, 0.040, rtol=0.01)
     assert prepared.details["edge_channel"]["sigma_um"] == 60.0
@@ -128,7 +122,7 @@ def test_a_larger_brain_is_fitted_as_the_mouse_drawn_smaller(atlas, scaled):
     assert taper[1] - taper[0] == pytest.approx(600.0)
     params = em_parameters(2.0)
     assert params["block_px"] == 32 and params["background_distance_um"] == 1000.0
-    assert params["grid_um"] == 50.0  # the slide's holes and debris keep their size
+    assert params["grid_um"] == 50.0
     field = np.zeros((40, 40, 2), dtype=np.float32)
     field[..., 0] = 0.9
     labels = np.ones((40, 40), dtype=np.int32)
@@ -136,7 +130,7 @@ def test_a_larger_brain_is_fitted_as_the_mouse_drawn_smaller(atlas, scaled):
                       excluded=frozenset(), acronyms={}, brain_scale=2.0)
     assert report["thresholds"]["outsized_median_mm"] == 1.2
     assert report["thresholds"]["min_flag_area_mm2"] == pytest.approx(0.08)
-    assert not report["flags"]  # 0.9 mm is a mouse's 0.45 mm: within the limit
+    assert not report["flags"]
 
 
 def test_the_factor_is_the_cube_root_of_the_volume_ratio_rounded():
@@ -147,7 +141,7 @@ def test_the_factor_is_the_cube_root_of_the_volume_ratio_rounded():
     with pytest.raises(ValueError):
         size.scale_for_volume(0.0)
     annotation = np.zeros((40, 40, 40), dtype=np.int32)
-    annotation[:20, :20, :20] = 7  # 20 voxels of 25 um: a 0.5 mm cube
+    annotation[:20, :20, :20] = 7
     assert size.annotated_volume_mm3(annotation, (25.0, 25.0, 25.0)) == pytest.approx(0.125)
 
 

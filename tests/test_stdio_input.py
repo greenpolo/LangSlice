@@ -23,9 +23,7 @@ import threading
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-#: Loaded by scipy.stats on emlddmm's import: the module that hung.
 MODULE = "scipy.integrate"
-#: Seconds the import may take; a hang never ends.
 TIMEOUT_S = 60
 
 MCP_SERVER = f"""

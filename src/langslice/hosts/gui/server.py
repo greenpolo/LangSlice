@@ -76,7 +76,7 @@ from langslice.hosts.gui.render import (
 )
 from langslice.hosts.gui.settings import POSTS, Settings, SettingsError
 from langslice.hosts.gui.watch import JobList, JobWatcher
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.review import ReviewError, add_comment, remove_comment
 
 STATIC = Path(__file__).with_name("static")

@@ -30,7 +30,7 @@ from langslice.job.state_file import write_json_atomic
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
 __all__ = [
     "MAX_TEXT",

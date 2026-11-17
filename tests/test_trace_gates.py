@@ -29,7 +29,7 @@ from tests.linear_tool_helpers import tool_named as _tool
 
 def _placed(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, n=1, placed=True, tasks=["nonlinear"])
-    spec.nonlinear = NonlinearSpec(provider="openai-oauth")  # trace_borders is opt-in
+    spec.nonlinear = NonlinearSpec(provider="openai-oauth")
     spec.enabled = ["trace_borders"]
     state.slices[0].transform = affine_from_json({
         "kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
@@ -43,9 +43,9 @@ def test_image_tool_is_opt_in(tmp_path: Path):
     assert spec.tasks == list(DEFAULT_TASKS)
     assert "trace_borders" not in build_tools(state, ctx, spec).names
     spec.tasks = ["nonlinear"]
-    assert "trace_borders" not in build_tools(state, ctx, spec).names  # no image model named
+    assert "trace_borders" not in build_tools(state, ctx, spec).names
     spec.nonlinear = NonlinearSpec(provider="openai-oauth")
-    assert "trace_borders" not in build_tools(state, ctx, spec).names  # not switched on
+    assert "trace_borders" not in build_tools(state, ctx, spec).names
     spec.enabled = ["trace_borders"]
     box = build_tools(state, ctx, spec)
     assert "trace_borders" in box.names
@@ -83,7 +83,6 @@ def test_border_trace_runs_in_background_and_submit_waits(tmp_path: Path, monkey
     box = build_tools(state, ctx, spec)
     result = _tool(box, "trace_borders")(state.slices[0].id, "Edited prompt.")
     assert result["status"] == "started" and result["work"] == "w1", result
-    # The door resolved the spec's provider and model once; the operation got it.
     model = calls[0][1].pop("image_model")
     assert (model.provider, model.model) == ("openai-api", "test-model")
     assert calls == [("s0.png", {
@@ -91,9 +90,8 @@ def test_border_trace_runs_in_background_and_submit_waits(tmp_path: Path, monkey
         "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "border_trace",
         "include": (), "exclude": (),
     })]
-    # The tool returns while the image call is still running, with no images.
     assert result["trace"]["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
-    again = _tool(box, "trace_borders")("s0")  # the filename without its extension
+    again = _tool(box, "trace_borders")("s0")
     assert again["status"] == "running" and again["work"] == "w1"
     assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
@@ -106,7 +104,6 @@ def test_border_trace_runs_in_background_and_submit_waits(tmp_path: Path, monkey
     _tool(box, "redo")()
     assert trace_to_json(state.slices[0].border_trace)["status"] == "running"
     release.set()
-    # submit waits for the work; the stand-in's trace has no lines to fit.
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert box.job.background.running() == []
     assert trace_to_json(state.slices[0].border_trace)["status"] == "ok"

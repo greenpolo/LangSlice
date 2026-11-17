@@ -64,8 +64,11 @@ from langslice.doors.jobs import Opened, open_folder
 from langslice.doors.library.replies import Reply, library_reply
 from langslice.doors.library.script_context import ScriptContext
 from langslice.job.settings.spec import JobSpec
-from langslice.tools.abba_export import AbbaExported, export_abba
-from langslice.tools.dmc_export import DmcExported, export_dmc_brainmap
+from langslice.tools.bookkeeping.abba_export import AbbaExported, export_abba
+from langslice.tools.bookkeeping.dmc_export import (
+    DmcExported,
+    export_dmc_brainmap,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +218,7 @@ class JobHandle:
         placement, or whose deformation record or file cannot be read, raises
         ``ValueError``; an unknown name, ``UNKNOWN_SLICE_IDS``
         (:class:`langslice.core.refusal.Refused`, a ``ValueError``)."""
-        from langslice.tools.exports import section_maps
+        from langslice.tools.bookkeeping.exports import section_maps
 
         return section_maps(self._opened.job, self._opened.ctx, section,
                             full_resolution=full_resolution)
@@ -225,7 +228,7 @@ class JobHandle:
         stack's exports, ``registration.json`` and each completed trace reply
         (``tools.exports.export_stack``), never the per-section maps. Returns
         the files written."""
-        from langslice.tools.exports import export_stack
+        from langslice.tools.bookkeeping.exports import export_stack
 
         return [path for path, _kind in export_stack(self._opened.job, self._opened.ctx).files]
 
@@ -377,7 +380,7 @@ def open_job(
     no ``trace_borders``, so a reopen never traces with another prompt than
     the one the job was made with. *atlas_loader* replaces BrainGlobe's
     (tests, offline hosts)."""
-    from langslice.job.layout import read_job_file
+    from langslice.job.folder.layout import read_job_file
 
     model = as_image_model(image_model)
     opened = open_folder(folder, atlas_loader=atlas_loader, emit=emit, image_model=model)
@@ -503,7 +506,7 @@ def create_job(
         create,
         with_registration,
     )
-    from langslice.job.layout import write_job_file
+    from langslice.job.folder.layout import write_job_file
 
     if "fresh" in settings:
         if resume is not None:

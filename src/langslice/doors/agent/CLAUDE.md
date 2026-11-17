@@ -41,7 +41,7 @@ tool per registration method (`position_sections`,
 borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
 (zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
 previews; everything is undoable. Each registration a section holds is
-numbered (`job/history.py`): `look` draws a section under an earlier
+numbered (`job/steps/history.py`): `look` draws a section under an earlier
 one without writing it, which is how two fits of a section are compared, and
 `restore_registration` puts earlier ones back on the sections named, whatever
 was written since; undo takes back only the job's last write.

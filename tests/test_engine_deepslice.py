@@ -64,8 +64,6 @@ def _call(tmp_path: Path, n: int = 3, **arguments):
     return tool(**arguments)
 
 
-# --- where the tool is, and what it declares ---------------------------------------------------
-
 
 @pytest.mark.parametrize(
     ("atlas", "plane", "offered"),
@@ -117,7 +115,7 @@ def test_the_declaration_keeps_its_arguments_defaults_and_words(
     assert doc.startswith(
         "Place sections with DeepSlice, a network trained on mouse brain sections.\n"
     )
-    assert "~" not in doc  # the source's line joins are gone
+    assert "~" not in doc
     assert (
         "Turn and flip every section the right way before the call, because the "
         "stack's angle is a vote of every section's own angle."
@@ -155,8 +153,6 @@ def test_loading_the_plugin_imports_nothing_of_tensorflow_or_deepslice():
     )
     assert done.returncode == 0, done.stdout + done.stderr
 
-
-# --- refusals before DeepSlice runs ---------------------------------------------------------------
 
 
 def test_a_call_without_the_extra_is_refused_engine_missing(
@@ -204,7 +200,7 @@ def test_the_weights_are_fetched_once_and_checked(tmp_path: Path, monkeypatch):
     assert weights.primary.read_bytes() == data
     assert fetched == [f"{network.BUCKET}/{name}" for name in names]
     network.fetch_weights(tmp_path / "cache")
-    assert len(fetched) == 3  # kept: not fetched again
+    assert len(fetched) == 3
 
     monkeypatch.setattr(network, "SECONDARY", (names[2], "0" * 64))
     with pytest.raises(ToolError, match="could not be fetched") as refused:
@@ -259,8 +255,6 @@ def test_bad_arguments_are_refused_before_deepslice_runs(
     assert words in reply_["message"], reply_
 
 
-# --- the pieces of a run --------------------------------------------------------------------------
-
 
 def _coronal(depth: float, tilt: float = 0.0) -> np.ndarray:
     """A coronal anchoring at ``depth`` voxels, tilted dorsoventrally."""
@@ -285,8 +279,8 @@ def test_the_vote_turns_every_section_to_the_good_sections_angles():
     first_dv = alignment._angle(planes[0], alignment.DORSOVENTRAL)
     assert votes[0][0] == pytest.approx(
         first_dv, abs=1e-9
-    )  # the bad one left out
-    for row in turned:  # the bad section turned too
+    )
+    for row in turned:
         assert alignment._angle(row, alignment.DORSOVENTRAL) == pytest.approx(
             votes[-1][0], abs=1e-6
         )
@@ -347,8 +341,6 @@ def test_the_stack_angles_are_the_median_of_the_placed_rows():
     assert voted_angles(rows) == (-3.0, 0.3)
     assert voted_angles([row("d", 0.0, 0.0, placed=False)]) is None
 
-
-# --- the real model ----------------------------------------------------------------------------
 
 
 @pytest.mark.slow

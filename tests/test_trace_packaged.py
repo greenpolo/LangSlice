@@ -31,8 +31,8 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.providers.connections import resolve_image_model
-from langslice.tools import deformable as ops_deformable
-from langslice.tools import traces
+from langslice.tools.fitting import deformable as ops_deformable
+from langslice.tools.fitting import traces
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -103,9 +103,8 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
                                    prompt="Move each yellow line onto its edge.")
     assert started.work == "w1" and started.started
     assert started.record["status"] == "running"
-    assert len(job.undo_stack) == depth + 1  # the running trace's record
+    assert len(job.undo_stack) == depth + 1
     assert [work.id for work in job.background.running()] == ["w1"]
-    # Asked again while it runs: the same work, nothing started.
     again = traces.trace_borders(job, ctx, ID, image_model=stub.model)
     assert again.running and again.work == "w1"
     stub.gate.set()
@@ -123,13 +122,12 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     assert held is not None and len(held["steps"]) == 1
     assert held["steps"][0]["fit_section"] == deformation.TRACED_BORDERS
     assert held["steps"][0]["smoothness_um"] == 80.0
-    assert len(job.undo_stack) == depth + 2  # the landing is its own step
+    assert len(job.undo_stack) == depth + 2
     assert job.undo()
     record = job.state.by_id(ID)
     assert record is not None and record.deformation is None
-    assert trace_to_json(record.border_trace)["status"] == "ok"  # the trace stays
+    assert trace_to_json(record.border_trace)["status"] == "ok"
 
-    # The prompt sent is saved with the attempt in the job folder.
     folder = Path(job.folder) / str(trace_to_json(record.border_trace)["artifact_dir"])
     assert (folder / "prompt.txt").read_text(
         encoding="utf-8") == "Move each yellow line onto its edge."
@@ -145,7 +143,6 @@ def _landed_job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubMode
     assert work.status == "done", work.notice
     record = job.state.by_id(ID)
     assert record is not None and record.deformation is not None
-    # The traced step records the trace it fitted.
     assert [step.get("trace") for step in deformation_to_json(record.deformation)["steps"]] == [
         trace_to_json(record.border_trace)["artifact_dir"]]
     return job, ctx, stub
@@ -162,7 +159,7 @@ def test_a_landed_trace_asked_again_fits_nothing_and_takes_no_undo_step(tmp_path
     again = traces.trace_borders(job, ctx, ID, image_model=stub.model,
                                  prompt="A different prompt.")
     assert again.landed and again.work is None and not again.started and not again.running
-    assert len(stub.calls) == 1  # the saved reply, no second image call
+    assert len(stub.calls) == 1
     assert len(job.background.all()) == works
     job.background.wait_all()
     assert job.background.notices() == []
@@ -187,7 +184,6 @@ def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_pa
     assert "on top of its previous deformation" in work.notice
     held = json_of(job.state.slices[0].deformation)
     assert held is not None and len(held["steps"]) == 2
-    # The fit and the trace, saved among the job's pictures.
     assert len(work.pictures) == 2 and len(work.images) == 2
     saved = [job.views.lookup(seq) for seq in work.pictures]
     assert all(entry is not None and entry.tool == "trace_borders" for entry in saved)
@@ -212,7 +208,7 @@ def test_a_section_changed_while_the_model_draws_gets_nothing(tmp_path, atlas):
     job, ctx, stub = _job(tmp_path, atlas)
     stub.gate.clear()
     traces.trace_borders(job, ctx, ID, image_model=stub.model)
-    with job.writing():  # the agent moves the section meanwhile
+    with job.writing():
         before = job.snapshot()
         job.state.slices[0].position_mm = 0.15
         job.commit(before)
@@ -270,7 +266,7 @@ def test_a_restrict_to_that_leaves_no_region_keeps_its_own_code(tmp_path, atlas)
     """A refusal of the trace's own (regions that leave nothing on the plane)
     is answered with its code, not as a bad linear placement."""
     job, ctx, stub = _job(tmp_path, atlas)
-    with pytest.raises(Refused) as caught:  # STR lies on one side of the midline only
+    with pytest.raises(Refused) as caught:
         for side in ("left", "right"):
             traces.trace_borders(job, ctx, ID, image_model=stub.model,
                                  restrict_to=[f"STR:{side}"])

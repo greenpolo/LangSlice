@@ -47,14 +47,10 @@ def _views(value: int = 120, **kwargs) -> list[np.ndarray]:
         0.0,
         0.0,
         _IDENTITY,
-        # Canvas pixels, one to one: these tests pin what each view draws.
-        # The model-facing screen size is the pixel-size rule's business
-        # (test_the_model_screen_is_sized_by_the_atlas_resolution).
         long_edge=None,
         panel_frames=panels,
         **kwargs,
     )
-    # The picture content, above its caption band.
     return [np.asarray(image.convert("RGB"))[:panel.content_box[3]]
             for image, panel in zip(images, panels, strict=True)]
 
@@ -77,7 +73,6 @@ def test_the_screen_is_the_long_edge_and_a_whole_canvas_is_never_upsampled():
         _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
         long_edge=4 * canvas_long, zoom=[0.45, 0.3, 0.55, 0.7], panel_frames=panels)
     (panel,) = panels
-    # A tall, narrow region: the caption band is laid out at the long edge.
     assert picture.width == 4 * canvas_long > panel.content_box[2]
 
 
@@ -92,8 +87,6 @@ def _bar_length(rgb: np.ndarray) -> int:
     return int(bright.sum(axis=1).max())
 
 
-# --- zoom ----------------------------------------------------------------
-
 
 def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
     geometry = _geometry()
@@ -101,13 +94,11 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
     (whole,) = _views()
     (zoomed,) = _views(zoom=box)
 
-    # Canvas pixels one to one: the zoom is the crop, at its own size.
     assert zoomed.shape[1] == round(0.7 * geometry.size[0]) - round(0.3 * geometry.size[0])
     tissue = lambda rgb: float(((rgb >= 100) & (rgb <= 140)).all(axis=2).mean())  # noqa: E731
     assert tissue(zoomed) > 2.0 * tissue(whole), "the crop did not magnify the tissue"
-    assert np.array_equal(whole, _views(zoom=[])[0])  # an empty zoom is the whole canvas
+    assert np.array_equal(whole, _views(zoom=[])[0])
 
-    # The bar is drawn after the crop, at the magnified micrometres per pixel.
     crop_width = round(0.7 * geometry.size[0]) - round(0.3 * geometry.size[0])
     for image, width in ((whole, geometry.size[0]), (zoomed, crop_width)):
         factor = image.shape[1] / float(width)
@@ -116,13 +107,8 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
         )
 
 
-# --- the modes -----------------------------------------------------------
-
 
 def test_the_atlas_opacity_is_a_dial_not_a_switch():
-    # Inside the anatomy, outside the tissue: the atlas square is 1 mm (100 px)
-    # and the tissue 80 px, both centred on the canvas, so the 10 px band just
-    # inside the anatomy's left edge is template-only.
     geometry = _geometry()
     cx, cy = geometry.size[0] // 2, geometry.size[1] // 2
     box = (slice(cy - 30, cy + 30), slice(cx - 49, cx - 42))
@@ -131,8 +117,6 @@ def test_the_atlas_opacity_is_a_dial_not_a_switch():
     (full,) = _views(atlas_opacity=1.0)
     assert none[box].mean() < half[box].mean() < full[box].mean()
 
-
-# --- the outline layers --------------------------------------------------
 
 
 def _line_pixels(rgb: np.ndarray, bare: np.ndarray) -> int:
@@ -149,14 +133,10 @@ def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
 
     assert np.array_equal(bare, _views(mode="section")[0]), "outlines='none' still drew lines"
     assert _line_pixels(every, bare) > 300, "the region lines are missing"
-    # Lines can cover tissue, never uncover it, so the bare view shows at
-    # least as much of the section; cased hairlines at canvas scale cover little.
     tissue = lambda rgb: int(((rgb >= 110) & (rgb <= 130)).all(axis=2).sum())  # noqa: E731
     assert tissue(bare) >= tissue(every) > 0
     assert tissue(bare) - tissue(every) < 0.3 * tissue(bare)
 
-
-# --- the tools, in the main toolbox --------------------------------------
 
 
 def _tools(tmp_path: Path):
@@ -164,7 +144,7 @@ def _tools(tmp_path: Path):
     from langslice.doors.tools.toolbox import build_tools
 
     _section(200, (512, 512)).save(tmp_path / "s.tif",
-        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
     record.position_mm = 0.2
@@ -183,10 +163,8 @@ def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
     assert "at 0.20 mm" in current["pictures"][0]["caption"]
     assert len(current[TOOL_MEDIA_PARTS_KEY]) == 1
 
-    # Candidate positions: the atlas at each, the section joined to its own.
     stepped = look("positioning", sections=["s.tif"], positions_mm=[0.1, 0.2, 0.3])
     assert stepped["status"] == "ok" and len(stepped[TOOL_MEDIA_PARTS_KEY]) == 1
-    # A look, not a write.
     assert state.slices[0].position_mm == 0.2
 
     assert look("flicker", sections=["s.tif"])["error"] == "UNKNOWN_MODE"
@@ -194,8 +172,6 @@ def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
     state.slices[0].position_mm = None
     assert look("overlay", sections=["s.tif"])["error"] == "NO_POSITION"
 
-
-# --- the pivot -----------------------------------------------------------
 
 
 def _bodies(**kwargs) -> list[np.ndarray]:
@@ -217,7 +193,6 @@ def test_clean_section_and_template_views_carry_no_outlines():
     (overlaid,) = _bodies(mode="overlay")
 
     assert _line_pixels(overlaid, section_only) > 300
-    # The template alone carries no lines unless asked for them.
     assert template_only.shape == template_lined.shape
     assert _line_pixels(template_lined, template_only) > 300
 
@@ -239,8 +214,6 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
     widths = {}
     for thickness in (1, 4):
         widths[thickness] = []
-        # Equivalent crops/scales change the square's on-screen size, but
-        # the straight vertical edge should keep the requested pixel width.
         for factor, origin in ((1.0, (0, 0)), (0.5, (0, 0)), (2.0, (10, 10))):
             screen = np.zeros((200, 200, 3), dtype=np.uint8)
             _draw_polys(screen, [square], "white", factor=factor,

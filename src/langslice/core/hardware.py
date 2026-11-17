@@ -99,10 +99,12 @@ class _MemoryStatus(ctypes.Structure):
 
 
 def _windows_memory() -> float:
+    if sys.platform != "win32":
+        return 0.0
     status = _MemoryStatus()
     status.length = ctypes.sizeof(_MemoryStatus)
-    kernel = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]
-    if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):  # pyright: ignore[reportUnknownMemberType]
+    kernel = ctypes.windll.kernel32
+    if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):
         return 0.0
     return int(status.total_physical) / GIB
 

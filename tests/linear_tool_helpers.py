@@ -17,7 +17,6 @@ from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import stack_from_json
 from tests.fakes import SlabAtlas
 
-#: The atlas of :func:`stack`: 20 slices, 1 mm each (positions 0-19 mm).
 SLAB = SlabAtlas()
 
 

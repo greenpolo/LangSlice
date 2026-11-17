@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, cast
 
 from langslice.core.atlas.sides import UNSIDED_PLANE, split_side
-from langslice.core.space import Plane
+from langslice.core.space import as_plane
 from langslice.core.workspace import ImageSettings
 from langslice.job.settings import frozen as freeze
 from langslice.job.settings import tool_table
@@ -447,7 +447,7 @@ class JobSpec:
         nonlinear = cast("dict[str, object]", form["nonlinear"])
         return ImageSettings(
             atlas=self.atlas,
-            plane=cast(Plane, self.plane),
+            plane=as_plane(self.plane),
             preprocess=self.preprocess,
             host_preprocessing=self.host_preprocessing,
             supplied_pixel_size=supplied,

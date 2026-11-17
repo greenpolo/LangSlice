@@ -18,7 +18,6 @@ def resolve_sections(job, sections):
 
 
 def test_duplicate_body_flags_a_copy_with_renamed_variables() -> None:
-    # the game: rename the variables of a copied helper
     copy = """
     def _records(job, refs):
         current = job.state

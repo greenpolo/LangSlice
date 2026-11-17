@@ -10,9 +10,9 @@ from langslice.core.sections.reading import enhance_plane
 def _tissue(seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:96, 0:128]
-    ramp = 0.5 + xx / 128.0  # uneven illumination, left to right
+    ramp = 0.5 + xx / 128.0
     plane = 80.0 * ramp + rng.normal(0, 6, size=(96, 128))
-    plane[:8] = 0  # background: left alone
+    plane[:8] = 0
     return np.clip(plane, 0, 255).astype(np.uint8)
 
 
@@ -28,7 +28,7 @@ def test_n4_flattens_the_illumination_ramp_and_keeps_the_background() -> None:
     before = plane[16:, -32:].mean() / plane[16:, :32].mean()
     assert right / left < before
     assert (out[:8] == 0).all()
-    assert abs(out[16:].mean() - plane[16:].mean()) < 3  # the channel keeps its brightness
+    assert abs(out[16:].mean() - plane[16:].mean()) < 3
 
 
 def test_a_constant_plane_is_returned_unchanged() -> None:

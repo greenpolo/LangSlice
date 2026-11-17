@@ -68,7 +68,7 @@ MCP adapter. The native tables are unchanged, and a job without plugins has
 none of this in any declaration, reply or picture.
 
 `state.json` is the checkpoint; every write appends a line to the history of
-each section it changed (`sections/<name>/history.jsonl`, `job/history.py`),
+each section it changed (`sections/<name>/history.jsonl`, `job/steps/history.py`),
 records one undo step in `history/undo.json` (the line each section held
 before it), and rewrites the derived `registration.json` once, as the write's
 hold of the job folder's lock ends. Undo, redo and `restore_registration` put

@@ -12,6 +12,18 @@ registry of loaded tool plugins (`plugins.py`), where its files live and how
 they are named, indexed and filled with pictures, the public files rendered
 from the state, and the QUINT (QuickNII/VisuAlign) reading and writing.
 
+## Folders
+
+The modules named here by file name sit at the package's top or in one of
+its folders: `folder/` (where the job's files live: `layout.py`, `lock.py`,
+`index.py`, `recent.py`, `browse.py`), `steps/` (`history.py`, `undo.py`,
+`undo_steps.py`), `exports/` (the files written for others:
+`public_files.py`, `quint.py`, `quint_images.py`, `abba_project.py`,
+`dmc_brainmap.py`), `imports/` and `settings/`. The top holds the job
+itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`,
+`gates.py`, `host_inputs.py`, `background.py`, `border_traces.py`,
+`pictures.py`, `review.py`, `plugins.py`, `plugin_store.py`.
+
 ## The job's settings (`settings/`)
 
 - `schema.py`: one row per setting (`SETTINGS`, 46 rows of `Setting`): its
@@ -203,9 +215,9 @@ exports/             linear_results.json (the run's result; spec.out overrides
                      on its maps' grid, with the maps),
                      plugins/<tool>/ (copies of the layers plugins left),
                      dmc_brainmap/<animal>/ (a DMC-BrainMap animal folder,
-                     only on request: tools/dmc_export.py),
+                     only on request: tools/bookkeeping/dmc_export.py),
                      <image folder>.abba and abba_export.json (an ABBA
-                     project, only on request: tools/abba_export.py)
+                     project, only on request: tools/bookkeeping/abba_export.py)
 plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/);
                      the only place a plugin tool writes
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read), per
@@ -566,7 +578,7 @@ longer exist be taken over by the images it is opened with.
   flip, quarter turn, six numbers, pixel size and its source, the imported
   map on the job's file, VisuAlign markers rescaled to the file and raw;
   `transform()` the stored-transform dict, kind `imported`; `unmatched`,
-  `missing`, `refused`). Geometry through `job/quint.py`'s inverses and
+  `missing`, `refused`). Geometry through `job/exports/quint.py`'s inverses and
   `core/maps/imported.py`; `docs/reference/file_formats.md` ("Importing a
   registration made elsewhere"). `registration_inputs(source,
   workspace)` -> `RegistrationInputs`: the result as `JobSpec.inputs`
@@ -641,7 +653,7 @@ longer exist be taken over by the images it is opened with.
   and last call numbers, under its own file lock `views.seq.lock`;
   `ViewStore._numbering`), so two stores that queue pictures before either
   writes never share one.
-- `browse.py` — read-only browsing of the job folder for `tools/files.py`: `resolve`
+- `browse.py` — read-only browsing of the job folder for `tools/looking/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
   pointing out are refused, `Refused` `BAD_PATH`; one that does not exist,
   `NOT_FOUND` with `nearest`, the nearest folder above it that exists, and
