@@ -19,7 +19,8 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.host_inputs import apply_host_inputs
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.tools import damage, deformable, traces, transforms
+from langslice.tools.changing import damage, transforms
+from langslice.tools.fitting import deformable, traces
 from tests.shapes import json_of
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,

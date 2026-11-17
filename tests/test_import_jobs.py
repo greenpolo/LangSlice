@@ -26,7 +26,7 @@ import pytest
 
 from langslice.core.pictures.layers import atlas_facts
 from langslice.doors.agent_cli.main import main
-from langslice.job.quint import job_export
+from langslice.job.exports.quint import job_export
 from langslice.job.settings.spec import NonlinearSpec
 from tests.cli_child import install
 from tests.synthetic_stack import (

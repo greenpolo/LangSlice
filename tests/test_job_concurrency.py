@@ -99,7 +99,7 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
 
 
 def _needs_engine() -> None:
-    from langslice.tools.deformable import engine_ready
+    from langslice.tools.fitting.deformable import engine_ready
 
     if not engine_ready():
         pytest.skip("fireants_syn needs FireANTs")
@@ -315,7 +315,7 @@ def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch:
     from PIL import Image
 
     from langslice.job import pictures as views
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
     layout.ensure()

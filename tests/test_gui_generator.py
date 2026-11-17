@@ -301,7 +301,11 @@ def _prepared_abba_job(root: Path, *, thickness_um: int = 40, interval_um: int =
     """A job folder as ``abba.prepare`` writes it (protocol v3): ``job.json``
     with ABBA's inputs, the registered snapshot frozen, ``transform.angles``
     on and the ``host.abba`` block; no checkpoint. Returns the job folder."""
-    from langslice.job.layout import JobLayout, job_folder_for, write_job_file
+    from langslice.job.folder.layout import (
+        JobLayout,
+        job_folder_for,
+        write_job_file,
+    )
     from langslice.job.settings.spec import JobSpec
 
     images = root / "abba" / "3f9c2a1b7d0e"
@@ -361,7 +365,11 @@ def test_the_prefill_of_a_job_prepared_in_abba(tmp_path: Path) -> None:
 
 
 def test_the_prefill_of_an_opened_job_and_of_a_folder_without_one(tmp_path: Path) -> None:
-    from langslice.job.layout import JobLayout, job_folder_for, write_job_file
+    from langslice.job.folder.layout import (
+        JobLayout,
+        job_folder_for,
+        write_job_file,
+    )
     from langslice.job.settings.spec import JobSpec
 
     images = tmp_path / "brain1"

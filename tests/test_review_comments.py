@@ -19,7 +19,7 @@ import langslice
 from langslice.hosts.gui.render import RenderPool
 from langslice.hosts.gui.server import GuiServer
 from langslice.hosts.gui.watch import JobList
-from langslice.job.layout import REVIEW_FILE, JobLayout
+from langslice.job.folder.layout import REVIEW_FILE, JobLayout
 from langslice.job.review import read_comments
 from langslice.tools.descriptions.door_text import review_lines
 from tests.synthetic_stack import ID0, ID1, ID2

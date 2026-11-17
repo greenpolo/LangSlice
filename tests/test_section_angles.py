@@ -183,7 +183,7 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
     """``registration.json`` and ``quicknii.json``: each section on its own
     plane, as a single-angle job at that angle would place it."""
     from langslice.core.pictures.layers import atlas_facts
-    from langslice.job.quint import (
+    from langslice.job.exports.quint import (
         anchoring_from_pixel_map,
         perpendicular_anchoring,
         to_target_grid,

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from langslice.core.fits.engine_log import engine_output
-from langslice.tools.deformable import gpu_rows
+from langslice.tools.fitting.deformable import gpu_rows
 
 
 def test_engine_output_sends_descriptor_2_to_the_log_and_back(tmp_path: Path):

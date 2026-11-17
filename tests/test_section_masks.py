@@ -19,8 +19,8 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.folder.layout import JobLayout
 from langslice.job.job import ingest
-from langslice.job.layout import JobLayout
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
 from tests.deformable_synthetic import (

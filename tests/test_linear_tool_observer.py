@@ -16,7 +16,7 @@ from langslice.tools.pipeline import ToolCall, run_call
 
 def _box(folder: Path, state: Stack, on_event=None):
     """A toolbox over *state* with no tasks, its workspace a stand-in."""
-    from langslice.job.layout import JobLayout, job_folder_for
+    from langslice.job.folder.layout import JobLayout, job_folder_for
     from langslice.job.settings.spec import JobSpec
 
     folder.mkdir(exist_ok=True)

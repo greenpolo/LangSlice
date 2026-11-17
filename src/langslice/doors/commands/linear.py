@@ -337,7 +337,7 @@ def open_gui(spec: Any) -> None:
     import subprocess
     import sys
 
-    from langslice.job.layout import locate_job_folder
+    from langslice.job.folder.layout import locate_job_folder
 
     folder, _ = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
     command = [sys.executable, "-c", "from langslice.cli import main; main()", "gui",
@@ -389,7 +389,7 @@ def run_linear(args: argparse.Namespace) -> None:
         raise SystemExit(f"langslice linear run: {exc}") from exc
     if not os.environ.get(TRACE_DIR_ENV):
         from langslice.doors.agent.trace import job_trace_dir
-        from langslice.job.layout import job_folder_for
+        from langslice.job.folder.layout import job_folder_for
 
         folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
         os.environ[TRACE_DIR_ENV] = str(job_trace_dir(folder))

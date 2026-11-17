@@ -1,4 +1,4 @@
-"""The DMC-BrainMap export (``job/dmc_brainmap.py``, ``tools/dmc_export.py``).
+"""The DMC-BrainMap export (``job/exports/dmc_brainmap.py``, ``tools/bookkeeping/dmc_export.py``).
 
 DMC-BrainMap itself is not imported: its reader is replicated here from its
 source (napari-dmc-brainmap 0.2.0b2: ``results_creator._scale_positions``,
@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from langslice.job.dmc_brainmap import (
+from langslice.job.exports.dmc_brainmap import (
     DmcFrame,
     DmcPlacement,
     dmc_decimals,

@@ -18,14 +18,14 @@ from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.layers import coordinate_map
 from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.job import Job
-from langslice.job.layout import (
+from langslice.job.folder.layout import (
     JOB_FORMAT_VERSION,
     JobLayout,
     job_folder_for,
     section_dirname,
     section_dirnames,
 )
+from langslice.job.job import Job
 from langslice.job.pictures import flush_all
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import STATE_FORMAT_VERSION, read_checkpoint
@@ -522,7 +522,7 @@ def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
 
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root writes into read-only folders")
-    from langslice.job import index, layout
+    from langslice.job.folder import index, layout
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr(index, "default_root", lambda: tmp_path / "home" / ".langslice" / "jobs")
@@ -539,7 +539,7 @@ def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
 def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     tmp_path: Path, read_only: Path,
 ):
-    from langslice.job import index
+    from langslice.job.folder import index
 
     messages: list[str] = []
     spec = JobSpec(image_folder=str(read_only), model="fake-model", preprocess="none")

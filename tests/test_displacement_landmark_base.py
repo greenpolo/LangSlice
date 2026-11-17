@@ -10,7 +10,7 @@ from langslice.core.fits.deformable.engines import EngineResult
 from langslice.core.fits.deformable.fit import WorkingGrid
 from langslice.core.stack.codec import deformation_from_json
 from langslice.core.stack.landmarks_json import landmarks_from_json
-from langslice.tools import landmark_warp, landmarks
+from langslice.tools.landmarking import landmark_warp, landmarks
 from tests.test_landmarks import saved_pairs, setup
 
 

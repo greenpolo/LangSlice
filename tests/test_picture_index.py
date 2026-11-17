@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from langslice.core.pictures.drawn import PictureNote
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.pictures import DiscardedViews, ViewStore, captured
 
 RECIPE = {"renderer": "section_picture", "args": {"id": "s0.png", "long_edge": 512}}

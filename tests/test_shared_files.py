@@ -17,8 +17,8 @@ from langslice.core import shared_files
 from langslice.core.fits.deformable import gpu_queue
 from langslice.core.hardware import GPU_SLOTS_VARIABLE
 from langslice.doors.agent_cli import background
-from langslice.job import index, lock, recent
-from langslice.job.layout import JobLayout
+from langslice.job.folder import index, lock, recent
+from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
 
@@ -171,7 +171,7 @@ _RUN = """
 import sys, time
 from pathlib import Path
 from langslice.doors.agent_cli import background
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 folder = Path(sys.argv[1])
 background.begin(JobLayout(folder), sys.argv[2])
 try:

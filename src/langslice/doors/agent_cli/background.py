@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
 CHILD_COMMAND: list[str] = [

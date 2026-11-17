@@ -5,7 +5,7 @@ import numpy as np
 
 from langslice.core.geometry.triangulation import visualign_mesh
 from langslice.core.maps.section_maps import MARKER_MARGIN_PX, marker_grid
-from langslice.job.quint import (
+from langslice.job.exports.quint import (
     AnchoringVector,
     anchoring_from_pixel_map,
     job_export,

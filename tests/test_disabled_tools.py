@@ -387,7 +387,7 @@ def test_broken_marks_are_errors_and_plain_text_is_left_alone():
     assert render(plain, ["zoom"]) == plain
 
 
-_OWN_REFUSALS = {"tools/history.py": "redo"}
+_OWN_REFUSALS = {"tools/bookkeeping/history.py": "redo"}
 
 
 def _literal(node: ast.expr) -> str | None:

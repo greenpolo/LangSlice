@@ -16,7 +16,7 @@ from collections.abc import Collection
 
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import status_text
-from langslice.job.layout import JobLayout, read_job_file
+from langslice.job.folder.layout import JobLayout, read_job_file
 from langslice.job.review import read_comments, revised
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec

@@ -19,9 +19,9 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.pictures import PICTURE_FILE, PictureRecord
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import atlas as ops_atlas
-from langslice.tools import look as ops_look
-from langslice.tools import zoom as tools_zoom
+from langslice.tools.looking import atlas as ops_atlas
+from langslice.tools.looking import look as ops_look
+from langslice.tools.looking import zoom as tools_zoom
 from tests.deformable_synthetic import SyntheticAtlas
 from tests.look_synthetic import MARKED, POSITIONS, SECTIONS, stack
 

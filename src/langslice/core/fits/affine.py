@@ -4,7 +4,8 @@ Two routes to the same field. :func:`fit_elastix` (``elastix_affine``) refines
 the section's current placement with an Elastix intensity affine on the
 deformable package's prepared stain and atlas images. The interactive route is
 the agent's own hand (``interactive_transform``,
-:mod:`langslice.tools.transforms`), whose arithmetic (calibration and the
+:mod:`langslice.tools.changing.transforms`), whose arithmetic (calibration and
+the
 decomposition it reports) lives here.
 
 The fit returns numbers, never pictures. Parameters are ABBA's — rotation

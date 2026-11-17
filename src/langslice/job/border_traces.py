@@ -17,7 +17,7 @@ from langslice.core.refusal import Refused
 from langslice.core.stack.codec import trace_from_json
 from langslice.core.stack.stack import Stack
 from langslice.job.background import BackgroundWork, in_worker
-from langslice.job.undo import JobUndo
+from langslice.job.steps.undo import JobUndo
 
 
 def _job_result(

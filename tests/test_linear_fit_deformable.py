@@ -32,9 +32,9 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.state_file import stack_from_json, stack_to_json
-from langslice.tools import deformable as ops_deformable
-from langslice.tools.deformable_rows import deformable_row_to_json
-from langslice.tools.fit_pictures import draw_fits
+from langslice.tools.fitting import deformable as ops_deformable
+from langslice.tools.fitting.deformable_rows import deformable_row_to_json
+from langslice.tools.looking.fit_pictures import draw_fits
 from tests.deformable_synthetic import (
     HY,
     SMOOTH_FIELD,

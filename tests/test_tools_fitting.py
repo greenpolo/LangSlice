@@ -146,7 +146,10 @@ def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
     swells, or that shears it, carries flags, worded in the row's warning."""
     from langslice.core.fits.affine import FittedAffine
     from langslice.core.stack.affine import Calibration, PhysicalAffine
-    from langslice.tools.affine_fit import affine_flag_text, plausibility_flags
+    from langslice.tools.fitting.affine_fit import (
+        affine_flag_text,
+        plausibility_flags,
+    )
 
     def knobs(**physical: float) -> dict[str, float]:
         return {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0, "shear": 0.0,

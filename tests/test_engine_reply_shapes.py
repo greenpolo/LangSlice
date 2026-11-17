@@ -10,7 +10,7 @@ from PIL import Image
 
 from langslice.core.atlas.images import AUGMENTED_ATLAS, nissl_note
 from langslice.engines import _blocks
-from langslice.tools.deformable import nothing_fitted
+from langslice.tools.fitting.deformable import nothing_fitted
 
 
 def test_a_fit_that_fitted_nothing_leads_with_the_reason_every_section_shares():

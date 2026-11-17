@@ -278,7 +278,7 @@ def test_a_long_tool_computes_outside_the_lock_and_a_moved_section_is_refused(ma
     ref = make("slow_plugin", LONG)
     state, ctx, box = box_of(images, ref)
     module = sys.modules["slow_plugin"]
-    from langslice.tools import positions
+    from langslice.tools.changing import positions
 
     module.HOOK = lambda: positions.position_sections(
         box.job, ctx, [{"id": "s1.png", "position_mm": 6.0}])
@@ -373,7 +373,7 @@ def test_a_long_calls_writes_are_one_undo_step_unless_another_write_came_between
     assert {record.id: record.position_mm for record in state.slices} == start
     assert not state.by_id("s0.png").damage_note
 
-    from langslice.tools import positions
+    from langslice.tools.changing import positions
 
     module.HOOK = lambda: positions.position_sections(
         box.job, ctx, [{"id": "s2.png", "position_mm": 9.0}])
@@ -637,7 +637,7 @@ def test_export_maps_copies_the_layers_with_their_manifest(make, images: Path):
                                 tasks=["position", "transform"])
     box = build_tools(state, ctx, jobspec, scripting=True)
     call(box, "mark", sections=["s0.png"])
-    from langslice.tools import exports
+    from langslice.tools.bookkeeping import exports
 
     exported = exports.export_maps(box.job, ctx, ids=["s0.png"])
     target = box.job.layout.exports_dir / "plugins" / "mark"
@@ -667,7 +667,7 @@ def warp_box(images: Path, *plugins: str, transforms: tuple[str, ...] = ("s0.png
 
 def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(images: Path):
     from langslice.core.maps.section_maps import native_points, section_frame
-    from langslice.tools.exports import export_maps
+    from langslice.tools.bookkeeping.exports import export_maps
     from tests.fixtures.example_plugin import ripple_map
 
     state, ctx, box = warp_box(images)
@@ -821,7 +821,7 @@ def test_a_tool_that_does_not_declare_deformation_cannot_write_one(make, images:
 def test_a_long_tool_writes_its_proposals_and_a_moved_section_is_stale(make, images: Path):
     ref = make("fields_plugin", FIELDS)
     state, ctx, box = warp_box(images, ref)
-    from langslice.tools import positions
+    from langslice.tools.changing import positions
 
     sys.modules["fields_plugin"].HOOK = lambda: positions.position_sections(
         box.job, ctx, [{"id": "s1.png", "position_mm": 2.6}])
@@ -1101,7 +1101,7 @@ def test_job_json_carries_the_plugins_provenance_and_a_changed_file_is_a_new_dig
         make, images: Path):
     import hashlib
 
-    from langslice.job.layout import read_job_file
+    from langslice.job.folder.layout import read_job_file
 
     _s, _c, box = box_of(images, EXAMPLE)
     held = read_job_file(box.job.layout)["plugins"]
@@ -1125,7 +1125,7 @@ def test_job_json_carries_the_plugins_provenance_and_a_changed_file_is_a_new_dig
 
 
 def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
-    from langslice.job.layout import read_job_file
+    from langslice.job.folder.layout import read_job_file
 
     state, ctx, spec = stack(images, 2, placed=True)
     box = build_tools(state, ctx, spec)

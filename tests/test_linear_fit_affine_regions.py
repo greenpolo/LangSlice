@@ -131,7 +131,7 @@ def test_a_script_fit_answers_as_the_tool_row_does(tmp_path: Path, monkeypatch):
     region too small is ``REGION_TOO_SMALL`` with its text written for the job."""
     from langslice.core.fits.deformable import engines
     from langslice.core.refusal import Refused
-    from langslice.tools.affine_fit import elastix_fit
+    from langslice.tools.fitting.affine_fit import elastix_fit
 
     state, box = _box(tmp_path, HalvesAtlas(), _tall_section(), pixel_size_um=50.0,
                       position_mm=1.0)
@@ -162,7 +162,7 @@ def test_a_fit_refusal_without_a_message_is_passed_on_without_one(
 ):
     from langslice.core.fits import affine
     from langslice.core.refusal import Refused
-    from langslice.tools import affine_fit
+    from langslice.tools.fitting import affine_fit
 
     state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(),
                       pixel_size_um=50.0, position_mm=0.5)

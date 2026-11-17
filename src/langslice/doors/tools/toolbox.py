@@ -30,32 +30,21 @@ from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.providers.connections import resolve_image_model
-from langslice.tools import (
-    affine_fit,
-    atlas,
+from langslice.tools.bookkeeping import exports, history, notes, submit
+from langslice.tools.catalog import enabled, verbs_for
+from langslice.tools.changing import (
     damage,
-    deformable,
-    exports,
-    files,
-    history,
     images,
-    landmark_warp,
-    landmarks,
-    look,
     masks,
-    notes,
     positions,
     registrations,
-    review,
-    status,
-    submit,
-    traces,
     transforms,
-    zoom,
 )
-from langslice.tools.catalog import enabled, verbs_for
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.events import EventLog, LiveCallback
+from langslice.tools.fitting import affine_fit, deformable, traces
+from langslice.tools.landmarking import landmark_warp, landmarks
+from langslice.tools.looking import atlas, files, look, review, status, zoom
 from langslice.tools.pipeline import ToolBox, declared_tool
 from langslice.tools.run import Run
 

@@ -4,7 +4,8 @@
 holds the stack, the spec and the job folder, writes the checkpoint (the
 state, then ``registration.json`` and the landmark files as the lock's
 outermost hold ends), tells the observers, and holds the section histories
-and undo steps (:mod:`langslice.job.history`) that ``undo.py`` writes. Every
+and undo steps (:mod:`langslice.job.steps.history`) that ``undo.py`` writes.
+Every
 path the state stores (a deformation's ``record``, a border trace's
 artifacts) is relative to the job folder.
 """
@@ -24,11 +25,10 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.fits import deformation
 from langslice.core.jsonable import JsonObject
 from langslice.core.stack.stack import Stack
-from langslice.job import public_files as formats
-from langslice.job.history import SCRIPT, SectionHistories
+from langslice.job.exports import public_files as formats
+from langslice.job.folder.layout import JobLayout
+from langslice.job.folder.lock import FolderLock
 from langslice.job.host_inputs import host_damaged_ids
-from langslice.job.layout import JobLayout
-from langslice.job.lock import FolderLock
 from langslice.job.pictures import ViewStore
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import (
@@ -38,7 +38,8 @@ from langslice.job.state_file import (
     state_paths,
     write_checkpoint,
 )
-from langslice.job.undo_steps import UndoFile, UndoStep
+from langslice.job.steps.history import SCRIPT, SectionHistories
+from langslice.job.steps.undo_steps import UndoFile, UndoStep
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -170,7 +171,8 @@ class JobCheckpoint:
         """The workspace the job's sections and atlas are read through (set by
         :meth:`open`, :meth:`load` and the tool door): every checkpoint rewrites
         ``registration.json`` through it
-        (:func:`langslice.job.public_files.write_registration`), and its made
+        (:func:`langslice.job.exports.public_files.write_registration`), and
+        its made
         section images are read from this job's folder."""
         return self._workspace
 
@@ -218,7 +220,8 @@ class JobCheckpoint:
         """Write the state (atomically, versioned), then tell every observer.
 
         Its public rendering, ``registration.json``
-        (:func:`langslice.job.public_files.write_registration`; a failure there
+        (:func:`langslice.job.exports.public_files.write_registration`; a
+        failure there
         is logged, never raised), and the landmark files follow once, as the
         outermost hold of the job folder's lock ends: a write that checkpoints
         several times in one hold (the write, then the deformations it made

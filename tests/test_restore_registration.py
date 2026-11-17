@@ -1,7 +1,7 @@
 """Every registration a section holds is numbered, and sections go back to one.
 
 A section's registration is its orientation, transform and deformation
-(``langslice.job.history``). Each write that leaves a new one numbers it
+(``langslice.job.steps.history``). Each write that leaves a new one numbers it
 with the next number (replies and status rows name it); the list names each
 one's transform, deformation method and settings and the pictures its write
 saved; ``look`` draws an earlier one without writing it; ``restore_registration``
@@ -77,7 +77,7 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 
 
 def _needs_engine() -> None:
-    from langslice.tools.deformable import engine_ready
+    from langslice.tools.fitting.deformable import engine_ready
 
     if not engine_ready():
         pytest.skip("fireants_syn needs FireANTs")
@@ -188,7 +188,7 @@ def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, image
                                                                  monkeypatch):
     """Not a refusal but an error on the second section: the first section put
     back is put back again as it was, in memory too, and nothing is written."""
-    from langslice.tools import registrations as ops_registrations
+    from langslice.tools.changing import registrations as ops_registrations
 
     job = langslice.open_job(images)
     job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1},

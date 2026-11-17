@@ -302,7 +302,7 @@ class ContextReads:
         ``params`` and ``left_out``. ``ToolError`` ``UNKNOWN_MASK`` for a name the
         section does not hold, ``STALE_MASK`` when the section changed since
         the mask was made."""
-        from langslice.tools import masks as ops_masks
+        from langslice.tools.changing import masks as ops_masks
 
         record = self._record(section)
         try:

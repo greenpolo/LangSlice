@@ -160,7 +160,7 @@ def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, mon
     """What FireANTs SyN is handed is the section image on the fit grid, and its
     cache key changes when the image is made again."""
     from langslice.core.fits import deformation
-    from langslice.tools import deformable as ops_deformable
+    from langslice.tools.fitting import deformable as ops_deformable
 
     job, ctx = _open(tmp_path, atlas)
     state = job.state

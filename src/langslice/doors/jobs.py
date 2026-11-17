@@ -23,14 +23,14 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.workspace import Workspace, log_progress
 from langslice.doors import plugins as _plugins  # noqa: F401
 from langslice.doors.reference_card import write_card
-from langslice.job.job import Job
-from langslice.job.layout import (
+from langslice.job.folder.layout import (
     JobLayout,
     held_image_folder,
     job_folder_for,
     locate_job_folder,
     read_job_file,
 )
+from langslice.job.job import Job
 from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.spec import JobSpec
 
@@ -152,7 +152,8 @@ def read_spec(job_folder: Path) -> JobSpec:
     """The job's spec as its ``job.json`` holds it, opened as a resume.
 
     The image folder is resolved from the job folder
-    (:func:`~langslice.job.layout.held_image_folder`: the default job folder's
+    (:func:`~langslice.job.folder.layout.held_image_folder`: the default job
+    folder's
     images are its parent, wherever it moved). ``NoJob``, with how to
     reattach the job, when its images are not where it says."""
     record = read_job_file(JobLayout(job_folder)) or {}

@@ -36,7 +36,7 @@ from typing import Any
 from langslice.core.refusal import RefusalCode
 from langslice.core.shared_files import remove_tree
 from langslice.doors.agent_cli.envelope import Envelope
-from langslice.job.layout import ENV_DIR, JobLayout
+from langslice.job.folder.layout import ENV_DIR, JobLayout
 
 REQUIREMENTS = Path("scripts") / "requirements.txt"
 PARENT_PTH = "_langslice_parent.pth"

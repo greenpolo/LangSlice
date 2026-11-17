@@ -128,7 +128,7 @@ def test_every_mcp_tool_call_is_an_event_in_the_job_folder(tmp_path: Path):
 def test_a_tool_that_crashes_is_answered_with_its_exceptions_name(tmp_path: Path, monkeypatch):
     """The pipeline answers an MCP tool's crash (the box answers crashes); the
     event log's ``tool_end`` carries the same reply."""
-    from langslice.tools import status
+    from langslice.tools.looking import status
 
     def broken(*_args: Any, **_kwargs: Any) -> Any:
         raise OSError("disk gone")

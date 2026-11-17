@@ -541,7 +541,7 @@ the angles in a caption (empty for the flat plane).
   deformation-fit picture's), the on-demand coordinate map, and the
   per-call picture notes (below).
 - `maps/section_maps.py` — section pixels to atlas
-  micrometres for the job folder's public files (`job/public_files.py`,
+  micrometres for the job folder's public files (`job/exports/public_files.py`,
   `docs/reference/file_formats.md`). `SectionFrame` / `section_frame(state,
   workspace, record)`: one placed section's linear map from its image FILE
   (`[x, y]` pixel centres; rotation and flip are part of the map,
@@ -625,7 +625,7 @@ the angles in a caption (empty for the flat plane).
 - `pictures/jpeg.py` — the doors' one JPEG encoding (below).
 - `pictures/review_boxes.py` — `draw_boxes(image, content, boxes)`: review
   boxes (fractions of the content) outlined in place in `BOX_COLOUR` with a
-  label chip each; returns the boxes in pixels (`tools/review.py`).
+  label chip each; returns the boxes in pixels (`tools/looking/review.py`).
 - `fits/frame.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
   long_edge=, transform=)` (the oriented section render, its
@@ -760,7 +760,7 @@ sources and zero-area source triangles are `DegenerateMesh` (with the vertex
 indices); folds (a target triangle winding the other way) are accepted:
 `folded` marks them, the forward map is the source Delaunay's, and the inverse
 tries unfolded triangles before folded ones, each in simplex order.
-`tools/landmarks.py` passes it the pairs alone, as VisuAlign meshes them.
+`tools/landmarking/landmarks.py` passes it the pairs alone, as VisuAlign meshes them.
 `pictures/landmarks.py` draws each edited pair as a contextual template/preprocessed
 section crop (the atlas panel with the region borders), retains a 60% anatomical window and panel geometry, and labels
 the selected pair. Crop zooms preserve exact panel mappings and refuse gutters.

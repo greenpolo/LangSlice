@@ -2,7 +2,7 @@
 
 A :class:`Job` owns the :class:`~langslice.core.stack.stack.Stack` and the
 :class:`~langslice.job.settings.spec.JobSpec`, its job folder
-(:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
+(:class:`langslice.job.folder.layout.JobLayout`: ``<images>/langslice/``), the
 sections' frozen properties and the host's damage notes, undo/redo (persisted
 in the job folder), the checkpoint and its observers (:meth:`Job.observe`), the
 submit gates, the stale-deformation rule, the deformation record store, the
@@ -44,9 +44,17 @@ from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.job import recent
 from langslice.job.border_traces import JobBorderTraces
 from langslice.job.checkpoint import file_stamp, state_from_file
+from langslice.job.folder import recent
+from langslice.job.folder.layout import (
+    JobLayout,
+    check_owner,
+    locate_job_folder,
+    read_job_file,
+    write_job_file,
+)
+from langslice.job.folder.lock import FolderLock
 from langslice.job.gates import submit_errors
 from langslice.job.host_inputs import (
     apply_host_inputs,
@@ -54,14 +62,6 @@ from langslice.job.host_inputs import (
     check_damaged_regions,
     inputs_changed,
 )
-from langslice.job.layout import (
-    JobLayout,
-    check_owner,
-    locate_job_folder,
-    read_job_file,
-    write_job_file,
-)
-from langslice.job.lock import FolderLock
 from langslice.job.migrations import (
     FolderMigration,
     warn_removed_settings,
@@ -75,7 +75,7 @@ from langslice.job.state_file import (
     stack_to_json,
     write_json_atomic,
 )
-from langslice.job.undo_steps import UndoFile
+from langslice.job.steps.undo_steps import UndoFile
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -195,7 +195,8 @@ class Job(JobBorderTraces):
         results_path: str | None = None,
     ) -> Job:
         """Open the job folder (*folder*; default
-        :func:`~langslice.job.layout.locate_job_folder`: ``spec.job_dir``, else
+        :func:`~langslice.job.folder.layout.locate_job_folder`:
+        ``spec.job_dir``, else
         ``<images>/langslice``, else, when that cannot be written,
         ``~/.langslice/jobs/<id>/``).
 
@@ -203,10 +204,12 @@ class Job(JobBorderTraces):
         (``ValueError``). ``job.json`` gets this spec, then the checkpoint
         is resumed (``spec.resume``) or the folder ingested, and the first
         checkpoint written; the open is a line of ``logs/events.jsonl`` and
-        of the recent jobs list (:mod:`langslice.job.recent`). A resumed job
+        of the recent jobs list (:mod:`langslice.job.folder.recent`). A resumed
+        job
         keeps its undo steps; a fresh one starts without any (the steps an
         earlier job here left are emptied) and writes each section's opening
-        history line (:mod:`langslice.job.history`). A job folder or checkpoint
+        history line (:mod:`langslice.job.steps.history`). A job folder or
+        checkpoint
         of another format (a newer LangSlice's, or an older pre-release's) is
         refused (``ValueError``). A resume whose
         spec supplies other ``inputs`` than the checkpoint was made from is

@@ -123,7 +123,7 @@ class ContextPictures(ContextProposals):
         written here; the pictures are the handler's to return. Refused
         (``POSITIONING_OFF``) where the job disables ``look:positioning``."""
         from langslice.core.pictures import look as looks
-        from langslice.tools.positions import distinct_positions
+        from langslice.tools.changing.positions import distinct_positions
 
         if self._run.spec.off("look:positioning"):
             raise ToolError(RefusalCode.POSITIONING_OFF,

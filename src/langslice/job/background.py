@@ -24,7 +24,7 @@ no operation and no provider.
 **Giving way.** ``submit`` runs under the job's write lock and waits for the
 work, whose landing needs that lock. While a thread that holds the lock
 waits here, a work thread that would have to wait for the lock gives up
-instead (:class:`langslice.job.lock.LockYielded`, before it wrote
+instead (:class:`langslice.job.folder.lock.LockYielded`, before it wrote
 anything), and the waiting thread runs that work's landing itself.
 """
 
@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.pictures.drawn import collecting, note_for
-from langslice.job.lock import LockYielded
+from langslice.job.folder.lock import LockYielded
 
 if TYPE_CHECKING:
     from PIL import Image

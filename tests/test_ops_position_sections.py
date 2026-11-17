@@ -15,7 +15,7 @@ from langslice.core.stack.status import stack_angles_entry
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec, TransformSpec
-from langslice.tools import positions
+from langslice.tools.changing import positions
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

@@ -19,7 +19,7 @@ import pytest
 from langslice.doors.agent_cli import environment as jobenv
 from langslice.doors.agent_cli.main import main
 from langslice.doors.commands import transcripts
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 from tests.cli_child import install
 from tests.synthetic_stack import PIXEL_SIZE_UM, atlas_loader, write_sections
 

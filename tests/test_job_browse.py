@@ -12,10 +12,10 @@ from PIL import Image
 
 from langslice.core.refusal import Refused
 from langslice.doors.agent.engine import build_context
-from langslice.job import browse
+from langslice.job.folder import browse
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import files
+from langslice.tools.looking import files
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

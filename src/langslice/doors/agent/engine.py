@@ -29,8 +29,8 @@ from langslice.doors.agent.spend import SpendMonitor
 from langslice.doors.jobs import JobContext, close_job
 from langslice.doors.reference_card import write_card
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.folder.layout import JobLayout, locate_job_folder
 from langslice.job.job import Job
-from langslice.job.layout import JobLayout, locate_job_folder
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import write_json_atomic
 from langslice.tools.descriptions.description import AGENT_DOOR
@@ -91,7 +91,8 @@ def build_context(
     """Assemble an :class:`EngineContext` from a job spec.
 
     The job folder is *job_folder* when given (a saved job's), else
-    :func:`~langslice.job.layout.locate_job_folder` (``spec.job_dir``, next
+    :func:`~langslice.job.folder.layout.locate_job_folder` (``spec.job_dir``,
+    next
     to the images, or ``~/.langslice/jobs/<id>/`` for a read-only folder).
     """
     from langslice.providers.oauth.transport import DEFAULT_REVIEW_MODEL

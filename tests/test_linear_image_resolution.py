@@ -191,7 +191,7 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
 
 @pytest.mark.parametrize("level", ["low", "auto"])
 def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
-    from langslice.tools import transforms
+    from langslice.tools.changing import transforms
 
     state, ctx, job = _fixed_stack(tmp_path / level, level)
     transforms.interactive_transform(job, ctx, [{

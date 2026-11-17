@@ -1,5 +1,5 @@
-"""The ABBA project export (``core/maps/abba_world.py``, ``job/abba_project.py``,
-``tools/abba_export.py``) and the window's Export menu (``hosts/gui/export.py``).
+"""The ABBA project export (``core/maps/abba_world.py``, ``job/exports/abba_project.py``,
+``tools/bookkeeping/abba_export.py``) and the window's Export menu (``hosts/gui/export.py``).
 
 ABBA is not run here: its chain from a slice's pixels to the atlas is
 replicated from what ABBA 0.25 writes into a QuPath project (SliceBench
@@ -120,7 +120,7 @@ def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], ET.Element]
 
 def test_the_export_reproduces_langslice_s_maps(job_folder: Path) -> None:
     from langslice.core.maps.section_maps import native_points, section_frame
-    from langslice.tools.exports import applied_record
+    from langslice.tools.bookkeeping.exports import applied_record
 
     with _open(job_folder) as job:
         done = job.export_abba()

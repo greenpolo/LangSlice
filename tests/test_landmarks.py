@@ -34,8 +34,10 @@ from langslice.job.job import Job
 from langslice.job.pictures import DiscardedViews
 from langslice.job.settings.spec import NonlinearSpec
 from langslice.job.state_file import stack_from_json
-from langslice.tools import atlas, damage, landmark_warp, landmarks, look
-from langslice.tools import zoom as tools_zoom
+from langslice.tools.changing import damage
+from langslice.tools.landmarking import landmark_warp, landmarks
+from langslice.tools.looking import atlas, look
+from langslice.tools.looking import zoom as tools_zoom
 from tests.shapes import json_of
 from tests.test_ops_look import _job
 
@@ -347,8 +349,8 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
 
 def test_doors_have_typed_landmarks_and_apply_through_normal_tools(tmp_path):
     from langslice.doors.tools.toolbox import build_tools
+    from langslice.tools.bookkeeping.exports import export_maps
     from langslice.tools.descriptions.render import arguments_schema
-    from langslice.tools.exports import export_maps
 
     job, ws, record = setup(tmp_path)
     try:

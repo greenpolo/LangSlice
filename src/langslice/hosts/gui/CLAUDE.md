@@ -179,7 +179,7 @@ below), still served at `classic.html` until it is removed.
   the folder above it, `M01/images`, an images folder's own name often being a
   generic one; a job folder made elsewhere, its own name and the one above),
   `path`, `folder`, `atlas`, `changed_at`, `status`, `given`. The recent jobs file is the job layer's
-  (`job/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
+  (`job/folder/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
   `LANGSLICE_RECENT_JOBS`, another file or `off`).
 - `transcripts.py` — a coding agent's words. `TranscriptWords(root)`
   (`projects_root()`: `~/.claude/projects`, or `LANGSLICE_CLAUDE_TRANSCRIPTS`,

@@ -221,7 +221,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     agents = (job / "AGENTS.md").read_text(encoding="utf-8")
     assert agents == (job / "CLAUDE.md").read_text(encoding="utf-8")
     from langslice.tools.catalog import VERBS
-    from langslice.tools.deformable import MAX_FIREANTS_SYN_SECTIONS
+    from langslice.tools.fitting.deformable import MAX_FIREANTS_SYN_SECTIONS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " launch --role register`", "STALE_INPUT",
@@ -258,7 +258,7 @@ def test_launch_register_scripting_is_the_mcp_statement_with_the_scripts(capsys,
     how to add a package, the library, where its files go."""
     pytest.importorskip("mcp")
     from langslice.doors.agent_cli import environment
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     job = init(capsys, images, "--notes", "Section 2 is torn.")
     code, plain = cli(capsys, str(images), "launch", "--role", "register")
@@ -640,7 +640,7 @@ def test_wait_answers_still_running_within_its_default_wait(capsys, images, monk
     import time
 
     from langslice.doors.agent_cli import background
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     job = init(capsys, images)
     layout = JobLayout(job)
@@ -691,7 +691,7 @@ def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, m
     when it lands in time, else with its run id and state running (the run
     goes on, and `wait` collects it)."""
     from langslice.doors.agent_cli import background
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     init(capsys, images)
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO / "src"), str(REPO))))
@@ -794,7 +794,7 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
 
 def _dead_run(tmp_path: Path) -> tuple[Any, str]:
     from langslice.doors.agent_cli import background
-    from langslice.job.layout import JobLayout
+    from langslice.job.folder.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
     background._write(layout, {"id": "run-1", "verb": "fireants_syn", "state": "running",

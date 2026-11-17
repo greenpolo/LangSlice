@@ -5,12 +5,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.job.imports.matching import match_sections
-from langslice.job.quint_images import (
+from langslice.job.exports.quint_images import (
     copy_filename,
     section_numbers,
     write_copies,
 )
+from langslice.job.imports.matching import match_sections
 
 
 def test_section_numbers_come_from_the_filenames_when_they_all_carry_one():

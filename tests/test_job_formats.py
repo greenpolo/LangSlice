@@ -42,8 +42,8 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
     landing draws them: ``trace_borders``."""
     from langslice.core.fits import deformation
     from langslice.core.pictures.options import default_options
-    from langslice.tools.deformable import fit_deformable
-    from langslice.tools.fit_pictures import draw_fits
+    from langslice.tools.fitting.deformable import fit_deformable
+    from langslice.tools.looking.fit_pictures import draw_fits
 
     choice = deformation.Choice(fit_section="preprocessed", fit_atlas="template",
                                 smoothness_um=80.0)
@@ -274,7 +274,7 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
     from langslice.core.maps.section_maps import native_points, section_frame
     from langslice.core.pictures.layers import atlas_facts
     from langslice.core.sections.images import PREPROCESSED, image_plane
-    from langslice.job.quint import quicknii_points_to_atlas_um
+    from langslice.job.exports.quint import quicknii_points_to_atlas_um
 
     job, root, _exported = placed
     facts = atlas_facts(job.workspace.atlas)
@@ -329,7 +329,7 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
 
 def test_quicknii_axes_reverse_brainglobe_asr():
     """BrainGlobe asr voxel centre 0 is QuickNII's far edge minus half a voxel."""
-    from langslice.job.quint import atlas_um_to_quicknii_points
+    from langslice.job.exports.quint import atlas_um_to_quicknii_points
 
     atlas = {"orientation": "asr", "shape": [528, 320, 456], "resolution_um": [25.0] * 3}
     point = atlas_um_to_quicknii_points([[0.0, 0.0, 0.0]], atlas)[0]
@@ -541,7 +541,7 @@ def _two_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: Any) -> t
 def test_export_maps_syncs_before_it_writes(placed, tmp_path, monkeypatch):
     """The operation itself (not only the doors around it) reloads what
     another writer saved before it writes registration.json and the maps."""
-    from langslice.tools.exports import export_maps
+    from langslice.tools.bookkeeping.exports import export_maps
 
     first, second = _two_jobs(tmp_path, monkeypatch, placed)
     first.status()
@@ -565,8 +565,8 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
     gets it meanwhile); a section that writer changed is not written
     (``STALE_INPUT``), the others are."""
     from langslice.core.maps import section_maps as core_maps
-    from langslice.job.lock import FolderLock
-    from langslice.tools.exports import export_maps
+    from langslice.job.folder.lock import FolderLock
+    from langslice.tools.bookkeeping.exports import export_maps
 
     first, second = _two_jobs(tmp_path, monkeypatch, placed)
     real = core_maps.section_maps

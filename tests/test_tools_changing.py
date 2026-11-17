@@ -214,7 +214,7 @@ def test_interactive_transform_refuses_bad_calls_without_writing(tmp_path: Path)
 
 
 def test_a_picture_that_fails_leaves_the_write_standing(tmp_path: Path, monkeypatch):
-    import langslice.tools.look as ops_look
+    import langslice.tools.looking.look as ops_look
 
     state, ctx, box = _box(tmp_path, placed=True)
 

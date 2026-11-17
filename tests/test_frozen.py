@@ -22,10 +22,11 @@ from langslice.doors import jobs
 from langslice.job.gates import submit_errors
 from langslice.job.settings.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.job.settings.tool_table import TOOLS
-from langslice.tools import affine_fit, positions, transforms
-from langslice.tools import deformable as ops_deformable
 from langslice.tools.catalog import enabled
-from langslice.tools.deformable_rows import deformable_row_to_json
+from langslice.tools.changing import positions, transforms
+from langslice.tools.fitting import affine_fit
+from langslice.tools.fitting import deformable as ops_deformable
+from langslice.tools.fitting.deformable_rows import deformable_row_to_json
 from tests.linear_tool_helpers import SLAB, tool_named
 from tests.test_disabled_tools import (
     _base_specs,

@@ -14,8 +14,8 @@ from langslice.core.stack.codec import affine_from_json, deformation_to_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec, NonlinearSpec
-from langslice.tools import deformable as ops_deformable
-from langslice.tools.deformable_rows import deformable_row_to_json
+from langslice.tools.fitting import deformable as ops_deformable
+from langslice.tools.fitting.deformable_rows import deformable_row_to_json
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,

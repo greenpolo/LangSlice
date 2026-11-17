@@ -58,7 +58,7 @@ def record(job: Job, held: list[dict[str, Any]]) -> None:
     if not held or not job.persist:
         return
     try:
-        from langslice.job.layout import read_job_file, write_job_file
+        from langslice.job.folder.layout import read_job_file, write_job_file
 
         if (read_job_file(job.layout) or {}).get(KEY) == held:
             return

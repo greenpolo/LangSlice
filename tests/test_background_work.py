@@ -17,9 +17,9 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
-from langslice.tools import submit as ops_submit
+from langslice.tools.bookkeeping import submit as ops_submit
+from langslice.tools.fitting.traces import land_trace
 from langslice.tools.stale import section_inputs
-from langslice.tools.traces import land_trace
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

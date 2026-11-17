@@ -65,7 +65,7 @@ from langslice.core.pictures.drawn import PictureNote, collecting, note_for
 from langslice.core.pictures.jpeg import encode_jpeg
 from langslice.core.pictures.layers import picture_layers, warp_layers
 from langslice.core.shared_files import retried
-from langslice.job.layout import JobLayout
+from langslice.job.folder.layout import JobLayout
 
 VIEWS_COUNTER = "views.seq"
 NUMBERING_TIMEOUT_S = 30.0

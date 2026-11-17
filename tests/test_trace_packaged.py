@@ -31,8 +31,8 @@ from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.providers.connections import resolve_image_model
-from langslice.tools import deformable as ops_deformable
-from langslice.tools import traces
+from langslice.tools.fitting import deformable as ops_deformable
+from langslice.tools.fitting import traces
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,

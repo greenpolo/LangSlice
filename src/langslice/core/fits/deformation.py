@@ -1,7 +1,8 @@
 """The deformable fit as the tools use it: inputs, cache, records, pictures.
 
 ``fireants_syn`` and ``trace_borders``' landing (through
-:func:`langslice.tools.deformable.fit_deformable`) are thin verbs over this
+:func:`langslice.tools.fitting.deformable.fit_deformable`) are thin verbs over
+this
 module and the engine package :mod:`langslice.core.fits.deformable`. What lives
 here:
 

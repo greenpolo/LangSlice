@@ -322,7 +322,7 @@ class ContextFrames(ContextReads):
         fit grid, :attr:`FitFrame.image`, with ``fit``) in atlas micrometres,
         ``(N, 3)`` in the atlas's axis order, through the section's current
         registration, its deformation included; NaN outside the atlas volume."""
-        from langslice.tools.points import atlas_points
+        from langslice.tools.looking.points import atlas_points
 
         record = self._record(section)
         return self._points(atlas_points, record.id, xy, frame).um
@@ -335,7 +335,7 @@ class ContextFrames(ContextReads):
         and carried back through its current registration, its deformation's
         inverse included. :meth:`plane_distance_um` says how far off the
         plane each point lies."""
-        from langslice.tools.points import section_points
+        from langslice.tools.looking.points import section_points
 
         record = self._record(section)
         return self._points(section_points, record.id, xyz_um, frame).xy
@@ -343,7 +343,7 @@ class ContextFrames(ContextReads):
     def plane_distance_um(self, section: object, xyz_um: Any) -> np.ndarray:
         """How far each atlas point *xyz_um* lies off the section's atlas
         plane, in micrometres, ``(N,)``."""
-        from langslice.tools.points import section_points
+        from langslice.tools.looking.points import section_points
 
         record = self._record(section)
         return self._points(section_points, record.id, xyz_um, "file").off_plane_um
@@ -353,7 +353,7 @@ class ContextFrames(ContextReads):
         """The atlas region under each section point *xy* (*frame* as
         :meth:`to_atlas_um`) through the section's current registration:
         ``{"id", "acronym", "name"}`` per point, None outside the atlas."""
-        from langslice.tools.points import atlas_points
+        from langslice.tools.looking.points import atlas_points
 
         record = self._record(section)
         found = self._points(atlas_points, record.id, xy, frame)
