@@ -35,25 +35,14 @@ from typing import Any
 from langslice.job.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
-#: How a background run starts the CLI again (tests start a helper instead).
 CHILD_COMMAND: list[str] = [
     sys.executable,
     "-m",
     "langslice.doors.agent_cli.main",
 ]
-#: A run whose process has not reported its id after this long is lost.
 START_GRACE_S = 120.0
-#: How often ``wait`` looks.
 POLL_S = 0.25
-#: How long ``wait`` (and a long verb's call that runs detached) waits
-#: without ``--timeout`` before it answers with the run still running: a
-#: harness ends a command it finds too long, so a wait answers well within
-#: that and the agent waits again.
 WAIT_S = 30.0
-#: ``0`` runs a long verb called without ``--background`` in the calling
-#: process, ``1`` detached; unset, detached except under Claude Code
-#: (``CLAUDECODE`` set), whose sandbox ends the processes a command leaves
-#: running when it returns.
 DETACH_ENV = "LANGSLICE_DETACH"
 
 
@@ -95,10 +84,7 @@ def _read(layout: JobLayout, run_id: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-#: Whether this is Windows, where a process is probed by handle, not signal.
 WINDOWS = os.name == "nt"
-#: Windows: ``OpenProcess`` access right and ``GetExitCodeProcess``'s
-#: answer for a running process.
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _STILL_ACTIVE = 259
 _ERROR_ACCESS_DENIED = 5
@@ -129,7 +115,7 @@ def _alive_windows(pid: int) -> bool:
     try:
         code = ctypes.c_ulong(0)
         if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
-            return True  # cannot tell: trust the record
+            return True
         return code.value == _STILL_ACTIVE
     finally:
         kernel.CloseHandle(handle)
@@ -149,9 +135,6 @@ def _alive(pid: Any) -> bool:
     return True
 
 
-#: Windows: a process group of its own (``CREATE_NEW_PROCESS_GROUP``) and a
-#: console of its own with no window (``CREATE_NO_WINDOW``), so neither the
-#: process nor the console programs it starts flash a window.
 _DETACHED_FLAGS = 0x00000200 | 0x08000000
 
 
@@ -169,7 +152,6 @@ class Detached:
 
 
 _CREATION_FLAGS = _DETACHED_FLAGS if WINDOWS else 0
-#: How this system starts a process on its own (:class:`Detached`).
 DETACHED = Detached(
     creationflags=_CREATION_FLAGS, start_new_session=not WINDOWS
 )
@@ -263,7 +245,6 @@ def _interrupt_on_request(path: Path) -> None:
     while not path.exists():
         time.sleep(POLL_S)
     path.unlink(missing_ok=True)
-    # a raised SIGINT, unlike interrupt_main, also wakes a sleep
     signal.raise_signal(signal.SIGINT)
 
 
@@ -295,7 +276,6 @@ def read(layout: JobLayout, run_id: str) -> dict[str, Any] | None:
             return {**record, "state": "lost"}
         return record
     if not _alive(pid):
-        # Look once more: it may have finished between the two reads.
         again = _read(layout, run_id) or record
         return (
             again
@@ -329,8 +309,6 @@ def latest(layout: JobLayout) -> str | None:
     return str(runs[0]["id"]) if runs else None
 
 
-#: Windows: how long a cancelled run has to end through its own cleanup
-#: before its process tree is ended, in seconds.
 CANCEL_GRACE_S = 10.0
 
 

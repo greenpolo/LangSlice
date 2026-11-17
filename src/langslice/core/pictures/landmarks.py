@@ -47,8 +47,6 @@ def pair_picture(
         )
         width, height = whole.recipe["shown"]
         centre = point / np.array([width, height])
-        # Keep a 60% window even at an image edge: shift it instead of
-        # trimming away the anatomy on the far side of the landmark.
         lower = np.clip(centre - 0.3, 0, 0.4)
         upper = lower + 0.6
         pictures.append(

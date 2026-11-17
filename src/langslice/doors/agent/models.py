@@ -20,8 +20,6 @@ _DEFAULT_PROXY_BASE = "http://127.0.0.1:4000/v1"
 _DEFAULT_PROXY_KEY = "sk-langslice-local"
 _DEFAULT_OLLAMA_BASE = "http://localhost:11434"
 _ENV_OLLAMA_THINK = "LANGSLICE_OLLAMA_THINK"
-# When set, every model string goes to the OpenAI-compatible server at this
-# base URL (LM Studio, vLLM, ...), whatever its prefix.
 _ENV_ENDPOINT = "LANGSLICE_ENDPOINT"
 _ENV_ENDPOINT_KEY = "LANGSLICE_ENDPOINT_KEY"
 
@@ -89,9 +87,7 @@ def default_http_options() -> types.HttpOptions:
     (e.g. OpenAIOAuthLlm) are unaffected.
     """
     return types.HttpOptions(
-        # ``timeout`` is milliseconds; generous ceiling for image-heavy calls.
         timeout=300_000,
-        # ``attempts`` includes the original request.
         retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5),
     )
 
@@ -121,16 +117,12 @@ def resolve_adk_model(model: str | object) -> str | object:
 
     lowered = stripped.lower()
 
-    # `gemini-api/<model>` is the canonical spelling in
-    # providers/connections.py; ADK takes the bare Gemini model id.
     if lowered.startswith("gemini-api/"):
         stripped = stripped[len("gemini-api/"):].strip()
         lowered = stripped.lower()
         if not stripped:
             raise ValueError("gemini-api model strings require a model id after '/'")
 
-    # OpenAI subscription-OAuth backend (Codex Responses). No API key: the
-    # token comes from `langslice login`.
     if lowered.startswith(_OAUTH_PREFIX):
         model_id = stripped[len(_OAUTH_PREFIX):].strip()
         if not model_id:
@@ -139,7 +131,6 @@ def resolve_adk_model(model: str | object) -> str | object:
 
         return OpenAIOAuthLlm(model=model_id)
 
-    # Claude through the Anthropic API with an API key (providers/anthropic_api.py).
     if lowered.startswith(_ANTHROPIC_PREFIX):
         model_id = stripped[len(_ANTHROPIC_PREFIX):].strip()
         if not model_id:

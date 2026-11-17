@@ -223,11 +223,6 @@ def _call(name: str, **args) -> types.Part:
     return types.Part.from_function_call(name=name, args=args)
 
 
-def _responses(request: LlmRequest) -> list[types.FunctionResponse]:
-    return [part.function_response for content in request.contents or []
-            for part in content.parts or [] if part.function_response is not None]
-
-
 def _texts(content: types.Content) -> list[str]:
     return [part.text for part in content.parts or [] if part.text]
 

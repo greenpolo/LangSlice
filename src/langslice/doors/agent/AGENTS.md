@@ -87,8 +87,7 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   (`BackgroundWork.wait_any`) and the finished work's notices and pictures
   are the next message), and
   `run(spec, emit=, atlas_loader=, on_event=)`:
-  `Job.open` (a job the ABBA connector prepared opens with its saved
-  settings as the spec's defaults; the run goes on with `job.spec`), the job
+  `Job.open` (the run goes on with `job.spec`), the job
   folder's card, the toolbox, the session, `close_job` (image corrections
   settled, pictures written) even without a submit, `Job.emit_results`. No
   post pass: the session is the whole run.

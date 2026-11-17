@@ -112,8 +112,6 @@ def fit_transform(
     )
 
 
-#: A fit that turns a section further than this from its previous transform
-#: reports the turn in its row (``turn_deg``).
 LARGE_TURN_DEG = 45.0
 
 
@@ -124,11 +122,7 @@ def _turn_deg(previous: StoredAffine | None, fit: FittedAffine) -> float:
     return abs((after - before + 180.0) % 360.0 - 180.0)
 
 
-#: An affine fit whose scale along either axis changes by more than this
-#: ratio either way from the previous transform is flagged ``SCALE_CHANGED``
-#: (a section shrinks or swells in processing by much less than that).
 SCALE_CHANGE_LIMITS = (0.8, 1.25)
-#: An affine fit that changes the shear by more than this is flagged ``SHEAR``.
 SHEAR_CHANGE_LIMIT = 0.15
 
 
@@ -171,9 +165,6 @@ def plausibility_flags(
     return flags
 
 
-# --- elastix_affine ----------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class AffineRow:
     """One section's answer from :func:`elastix_affine`: its fit, or why not.
@@ -182,20 +173,11 @@ class AffineRow:
     """
 
     id: str
-    #: Why the section was not fitted or not written (``FROZEN``,
-    #: ``HAS_DEFORMATION``, the fitter's code, ``STALE_INPUT``); None for a
-    #: fit written.
     refusal: Refused | None = None
     fitted: FittedAffine | None = None
-    #: What the fit read.
     inputs: InputsBlock | None = None
-    #: How far the fit turns the section, when more than
-    #: :data:`LARGE_TURN_DEG`.
     turn_deg: float | None = None
-    #: The fit's implausible changes (:func:`plausibility_flags`).
     flags: tuple[JsonObject, ...] = ()
-    #: The regions' box on the section's canvas, for a restricted fit
-    #: (:func:`langslice.tools.fit_regions.region_box`).
     restrict_box: tuple[float, ...] | None = None
 
 
@@ -280,8 +262,6 @@ def _fit_elastix(
         mask,
         edges,
     )
-    # Several sections fit at once when Elastix runs in worker processes
-    # (ITK holds Python's lock in this one), each on FIT_THREADS threads.
     threads = FIT_THREADS if elastix_in_workers() else cpu_cores()
     done = map_sections(partial(_fit_section, call), list(records), threads)
     rows = [one.row for one in done]
@@ -307,7 +287,7 @@ def _fit_elastix(
                 record.id
             ) and reverses_orientation(now, made):
                 frozen = section_refusal(job, record.id, "orientation")
-                assert frozen is not None  # the orientation is frozen
+                assert frozen is not None
                 told = reworded(frozen, mirror_message(record.id))
                 rows[index] = AffineRow(record.id, refusal=told)
                 continue
@@ -330,7 +310,6 @@ class _ElastixCall:
     edges: bool
 
 
-#: What a section's fit gives the write.
 _Fitted = tuple["Section", FittedAffine, tuple[str, ...], tuple[str, ...]]
 
 
@@ -339,7 +318,6 @@ class _SectionFit:
     """A section's row and, when it fitted, what the write takes."""
 
     row: AffineRow
-    #: The section, the fit, and the regions kept and left out.
     fitted: _Fitted | None = None
 
 
@@ -370,7 +348,7 @@ def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
                 edges=call.edges,
                 section_weights=weights,
             )
-    except Exception as exc:  # noqa: BLE001 - nothing is written for it
+    except Exception as exc:  # noqa: BLE001
         logger.warning("elastix_affine failed for %s: %s", section.id, exc)
         failure = _fit_failure(job, section.id, exc)
         return _SectionFit(AffineRow(section.id, refusal=failure))
@@ -412,7 +390,7 @@ def _told(job: Job, section_id: str, refusal: Refused) -> Refused:
                 f"the Elastix affine of {section_id} failed",
             ),
         )
-    if marked(refusal.message):  # the message names another tool
+    if marked(refusal.message):
         return reworded(
             refusal, render(refusal.message, job.spec.switched_off)
         )
@@ -503,12 +481,12 @@ def elastix_fit(
                 edges=edges,
                 section_weights=weights,
             )
-    except Refused as refusal:  # its own code, as the tool's row carries it
+    except Refused as refusal:
         told = render(refusal.message, job.spec.switched_off)
         if not told:
             raise
         raise reworded(refusal, told) from refusal
-    except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
+    except Exception as exc:  # noqa: BLE001
         raise Refused(
             RefusalCode.FIT_FAILED,
             message=f"{record.id}: "
@@ -530,9 +508,6 @@ def elastix_fit(
         resolved=resolved,
     )
     return replace(fit, inputs=block)
-
-
-# --- the tool's operation ----------------------------------------------------
 
 
 def elastix_affine(
@@ -613,9 +588,6 @@ def elastix_affine(
         else:
             rows.append(replace(row, restrict_box=tuple(box)))
     return replace(result, rows=rows)
-
-
-# --- the tool ----------------------------------------------------------------
 
 
 def affine_flag_text(flag: Mapping[str, Any]) -> str:
@@ -714,7 +686,6 @@ def elastix_affine_tool(
     if not fits or not run.shows(view):
         return result
 
-    # A deformation this fit made stale goes before the picture is drawn.
     cleared = job.clear_stale_deformations()
     if cleared:
         result["deformation_cleared"] = cleared
@@ -757,7 +728,7 @@ def affine_row_to_json(row: AffineRow) -> Written:
     """
     fitted = row.fitted
     if row.refusal is not None or fitted is None:
-        assert row.refusal is not None  # a row holds a fit or a refusal
+        assert row.refusal is not None
         return refused_row(row.id, row.refusal)
     out: Written = {
         "status": "ok",

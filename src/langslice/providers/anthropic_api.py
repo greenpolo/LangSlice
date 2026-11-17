@@ -27,12 +27,8 @@ from typing import Any
 
 from google.adk.models.anthropic_llm import AnthropicLlm
 
-#: Where the key is kept when ANTHROPIC_API_KEY is not set.
 KEY_FILE = Path.home() / ".langslice" / "anthropic_api_key"
-#: Claude's effort levels; LangSlice's --reasoning values map onto them as named.
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-#: Output cap per call. Thinking counts against it; the SDK refuses a
-#: non-streaming call whose cap implies more than ten minutes, so stay below that.
 MAX_TOKENS = 16000
 _EPHEMERAL = {"type": "ephemeral"}
 
@@ -72,8 +68,6 @@ class AnthropicApiLlm(AnthropicLlm):
     """ADK ``AnthropicLlm`` with LangSlice's key lookup, effort and prompt caching."""
 
     max_tokens: int = MAX_TOKENS
-    #: Set by ``doors.agent.session._with_reasoning`` from ``--reasoning``;
-    #: None keeps the API default.
     reasoning_effort: str | None = None
 
     def _build_anthropic_kwargs(  # type: ignore[override]
@@ -89,7 +83,7 @@ class AnthropicApiLlm(AnthropicLlm):
             kwargs["output_config"] = {"effort": effort}
             if not isinstance(kwargs.get("thinking"), dict):
                 kwargs["thinking"] = {"type": "adaptive"}
-            for name in ("temperature", "top_p", "top_k"):  # not accepted with effort set
+            for name in ("temperature", "top_p", "top_k"):
                 kwargs.pop(name, None)
         thinking_param = kwargs.get("thinking")
         if (isinstance(thinking_param, dict) and thinking_param.get("type") == "adaptive"
@@ -103,12 +97,9 @@ class AnthropicApiLlm(AnthropicLlm):
 
     @cached_property
     def _anthropic_client(self):  # type: ignore[override]
-        import httpx2 as httpx  # the HTTP library the anthropic SDK (>=1.13) is built on
+        import httpx2 as httpx
         from anthropic import AsyncAnthropic
 
-        # A plain client, not the SDK's default wrapper: that wrapper turns every
-        # NO_PROXY entry into a URL pattern and fails on a bracketed IPv6 one
-        # ("[::1]", set on the lab machine). An explicit proxy is still honoured.
         proxy = next((os.environ[n]
                       for n in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
                       if os.environ.get(n)), None)

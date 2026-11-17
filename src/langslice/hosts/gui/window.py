@@ -27,15 +27,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-#: The window's size in pixels.
 WINDOW_SIZE = (1440, 960)
-#: Browser commands looked up on the PATH, in order.
 PATH_NAMES = (
     "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
     "microsoft-edge", "microsoft-edge-stable", "brave-browser", "brave",
     "chrome.exe", "msedge.exe", "brave.exe",
 )
-#: Under PROGRAMFILES, PROGRAMFILES(X86) and LOCALAPPDATA on Windows.
 WINDOWS_PATHS = (
     "Google/Chrome/Application/chrome.exe",
     "Microsoft/Edge/Application/msedge.exe",
@@ -43,19 +40,14 @@ WINDOWS_PATHS = (
     "Chromium/Application/chrome.exe",
 )
 WINDOWS_ROOTS = ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")
-#: Under /Applications and ~/Applications on macOS.
 MAC_APPS = (
     "Google Chrome.app/Contents/MacOS/Google Chrome",
     "Chromium.app/Contents/MacOS/Chromium",
     "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "Brave Browser.app/Contents/MacOS/Brave Browser",
 )
-#: How long LangSlice's own window has to fail in (a web view that cannot
-#: start ends its process within this); after it the window is taken as open.
 OWN_WINDOW_START_S = 2.0
-#: The module that shows LangSlice's own window.
 OWN_WINDOW_MODULE = "langslice.hosts.gui.app"
-#: The tabs the window can open on (``langslice gui --tab``).
 TABS = ("viewer", "prompt")
 
 
@@ -217,7 +209,7 @@ def open_window(url: str, *, browser: str | None = None,
     try:
         if open_tab(url):
             return Opened("tab")
-    except Exception:  # webbrowser raises its own errors on a broken setup
+    except Exception:
         pass
     say(f"Open this address in a browser: {url}")
     return Opened("none")

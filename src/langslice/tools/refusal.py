@@ -121,7 +121,6 @@ def reworded(refusal: Refused, message: str) -> Refused:
     return Refused(refusal.code, **facts)
 
 
-#: The tools the job's own ``transform.max_parallel`` also caps.
 TRANSFORM_TOOLS = ("interactive_transform", "elastix_affine")
 
 

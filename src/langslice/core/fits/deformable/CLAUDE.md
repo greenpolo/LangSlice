@@ -7,7 +7,7 @@ engine behind the deformable fits (`fireants_syn` and the packaged
 `trace_borders`' fit, through `core/fits/deformation.py`, task `nonlinear`) and
 behind `elastix_affine` (`core/transform.elastix_affine`: `prepare_fit`
 builds its images and masks, `engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
-markers read an applied record (`core/maps/section_maps.py`); the ABBA connector receives
+markers read an applied record (`core/maps/section_maps.py`); the ABBA export writes
 it as landmark pairs (`core/maps/abba.py`). `engines.py` is LangSlice's one
 itk-elastix registration wrapper; torch, FireANTs, SimpleITK and ITK are
 imported inside the functions that use them, so a verb that runs no fit loads none of them. On Windows, `import_fireants` gives

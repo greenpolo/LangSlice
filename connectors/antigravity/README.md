@@ -56,7 +56,7 @@ arguments tests the connection.
 | --- | --- | --- |
 | skill `register-brain` | main session | prepares the job from the user's choices, starts one registration agent with `invoke_subagent`, then checks the job and handles export; it never registers itself |
 | skill `setup` | main session | once per computer: puts `langslice`'s folder on PATH and adds LangSlice's permission rules (below) to `settings.json` |
-| skill `abba` | main session | jobs started from ABBA's Register › LangSlice…, ABBA 0.25's own commands, reaching a running ABBA through abba-mcp, an ABBA registration into a job |
+| skill `abba` | main session | ABBA 0.25's own commands, reaching a running ABBA through abba-mcp, an ABBA registration into a job, a job out as an ABBA project |
 | MCP server `langslice_mcp` | `register` | `langslice mcp`: `start_job`, `show_stack` and the job's tools, whose replies carry the pictures |
 | agent `register` | registers one brain | the LangSlice MCP tools and `view_file`; no shell, no file writes |
 | agent `register-scripting` | registers one brain | the LangSlice MCP tools, and `run_command`, `view_file`, `write_to_file`, `replace_file_content` and the web for scripts of its own with the LangSlice Python library, run with the job's own Python (`env/` in the job folder), into which it may install packages |

@@ -75,19 +75,13 @@ from langslice.core.refusal import RefusalCode
 
 logger = logging.getLogger(__name__)
 
-#: Seconds to start a server and list its tools.
 CONNECT_TIMEOUT_S = 60.0
-#: Seconds one call may take unless the options say.
 DEFAULT_TIMEOUT_S = 120.0
-#: Characters of a server's text answer kept in a reply.
 MAX_TEXT = 8000
-#: Most points / vertices one mapped layer takes.
 MAX_LAYER_POINTS = 200_000
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_]")
 
-
-# --- the connection --------------------------------------------------------------------
 
 
 class Connection:
@@ -149,7 +143,7 @@ class Connection:
                         try:
                             future.set_result(await asyncio.wait_for(
                                 session.call_tool(name, arguments), timeout))
-                        except BaseException as exc:  # noqa: BLE001 - handed to the caller
+                        except BaseException as exc:  # noqa: BLE001
                             future.set_exception(exc)
         except BaseException as exc:  # noqa: BLE001
             if not self._ready.done():
@@ -182,7 +176,7 @@ class Connection:
             self._loop.call_soon_threadsafe(queue.put_nowait, None)
         try:
             self._done.result(timeout=10)
-        except BaseException:  # noqa: BLE001 - closing never raises
+        except BaseException:  # noqa: BLE001
             pass
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout=5)
@@ -198,7 +192,7 @@ def connection(options: Mapping[str, Any]) -> Connection:
         {k: options.get(k) for k in ("command", "url", "env", "cwd")}, sort_keys=True,
         default=str).encode()).hexdigest()
     held = _CONNECTIONS.get(key)
-    if held is None or held._queue is None:  # noqa: SLF001 - a dead one is replaced
+    if held is None or held._queue is None:  # noqa: SLF001
         held = _CONNECTIONS[key] = Connection(options)
     return held
 
@@ -212,8 +206,6 @@ def close_all() -> None:
 
 atexit.register(close_all)
 
-
-# --- the options ----------------------------------------------------------------------
 
 
 def _servers(config: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -342,8 +334,6 @@ def _empty(annotation: Any) -> Any:
     return ""
 
 
-# --- the call ---------------------------------------------------------------------------
-
 
 def _pick(data: Any, path: str) -> Any:
     """The value at the dotted *path* of nested mappings and lists (``a.b.0``)."""
@@ -372,7 +362,7 @@ def _answer(result: Any) -> tuple[str, Any, list[Image.Image]]:
         elif kind == "image":
             try:
                 images.append(Image.open(io.BytesIO(base64.b64decode(block.data))).copy())
-            except Exception:  # noqa: BLE001 - an undecodable image is left out
+            except Exception:  # noqa: BLE001
                 logger.warning("an MCP image block could not be decoded", exc_info=True)
     text = "\n".join(texts)
     data = result.structuredContent
@@ -437,7 +427,7 @@ def _layer(rule: Mapping[str, Any], value: Any, default_name: str) -> Layer:
                 raise ToolError(RefusalCode.BAD_LAYER, "too many vertices")
             return Layer.lines(value, closed=bool(rule.get("closed", False)), frame=frame,
                                name=name)
-    except ToolError:  # the layer's own check: its own words
+    except ToolError:
         raise
     except (TypeError, ValueError) as exc:
         raise ToolError(RefusalCode.BAD_LAYER,
@@ -512,7 +502,7 @@ def tools(config: Mapping[str, Any] | None = None) -> list[ToolSpec]:
     for server in _servers(config):
         try:
             held = connection(server)
-        except Exception as exc:  # noqa: BLE001 - a server that does not start
+        except Exception as exc:  # noqa: BLE001
             raise PluginError(f"MCP server {server['server']} could not be started: "
                               f"{type(exc).__name__}: {exc}") from exc
         by_name = {tool.name: tool for tool in held.tools}

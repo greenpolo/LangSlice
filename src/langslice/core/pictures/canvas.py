@@ -34,13 +34,8 @@ from langslice.core.geometry.affine import (
 from langslice.core.pictures.captions import _draw_scale_bar, caption
 from langslice.core.space import Plane
 
-#: Black working space on each side of the larger of section and atlas, as a
-#: fraction of that extent. Room for x/y moves, like ABBA's viewer.
 WORKING_MARGIN = 0.12
 
-#: A zoom's source of section pixels (:func:`physical_views`' *detail*):
-#: points of the section image (x and y arrays) -> ``(rgb, inside,
-#: enlarged)``, or None.
 SectionDetail = Callable[[np.ndarray, np.ndarray],
                          "tuple[np.ndarray, np.ndarray, float] | None"]
 
@@ -57,11 +52,8 @@ class CanvasGeometry:
 
     size: tuple[int, int]
     um_per_px: float
-    #: Canvas coordinates of the section's top-left corner.
     section_offset: tuple[int, int]
-    #: Atlas pixels -> canvas pixels.
     atlas_scale: float
-    #: Canvas coordinates of the atlas frame's (0, 0).
     atlas_offset: tuple[float, float]
     annotation: np.ndarray
 
@@ -125,9 +117,6 @@ def canvas_geometry(
     )
 
 
-#: How the ONE alignment screen may be composed: the section under its
-#: placement with the atlas over it (``overlay``, the default), the placed
-#: section alone (``section``) or the atlas image alone (``template``).
 VIEW_MODES = ("overlay", "section", "template")
 
 def _background_color(section: Image.Image) -> tuple[int, int, int]:
@@ -145,21 +134,11 @@ def _shift(offset: tuple[float, float]) -> np.ndarray:
 def _as_3x3(matrix: np.ndarray) -> np.ndarray:
     return np.vstack([np.asarray(matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
 
-#: ``border_color`` default: the core colour is chosen per picture by
-#: :func:`resolve_border_color`.
 AUTO_BORDER_COLOR = "auto"
 
-#: Atlas borders are CASED lines (the cartographic technique): a core line in
-#: black or white, edged on both sides by a thin outline in the other, so the
-#: line reads on any background, dark and pale tissue in one picture alike.
-#: ``border_color`` names the core ("black" or "white"; "auto" picks one).
 BORDER_CORES = ("black", "white")
 _CORE_RGB = {"black": (0, 0, 0), "white": (255, 255, 255)}
-#: Width of the outline beyond the core on EACH side, in output pixels. The
-#: casing line is the core's width plus twice this.
 CASING_PX = 1.0
-#: Mean CIELAB lightness under the lines at or above which the core is black
-#: (white casing); below it the core is white (black casing).
 CORE_LIGHTNESS_SPLIT = 50.0
 
 
@@ -290,8 +269,6 @@ def line_coverage(
     """
     ox, oy = float(origin[0]), float(origin[1])
     rows, cols = int(shape[0]), int(shape[1])
-    # Supersample all stroke widths consistently, keeping tissue at its
-    # original resolution and compositing each border pixel only once.
     supersample = 8
     target = np.zeros((rows * supersample, cols * supersample), dtype=np.uint8)
     for poly in polys:
@@ -308,7 +285,6 @@ def line_coverage(
     ).astype(np.float32) / 255.0
 
 
-#: Strength of the context outlines drawn under highlighted regions.
 REGION_CONTEXT_ALPHA = 0.35
 
 
@@ -504,8 +480,6 @@ def placement_matrices(
         section_matrix = physical_affine_matrix(
             size=section_size,
             um_per_px=um_per_px,
-            # The pivot arrives on the canvas; the matrix is built on the
-            # section's frame and conjugated onto the canvas below.
             pivot=pivot_in_section if pivot_in_section is not None
             else None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
             **params,
@@ -542,8 +516,6 @@ class PanelFrame:
     line_width: float
     mode: str
     from_file: float | None = None
-    #: The core colour any drawn line used, ``black`` or ``white``
-    #: (``resolve_border_color``'s choice); None when nothing was drawn.
     border_color: str | None = None
 
 
@@ -669,8 +641,6 @@ def physical_views(
     highlighted: list[np.ndarray] = []
     sides_note = ""
     if regions:
-        # A side is the SECTION's: carry the native plane onto the section
-        # frame (native -> canvas is the atlas scale; section -> canvas the matrix).
         linear = _as_3x3(section_matrix)[:2, :2]
         sides = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
                              np.linalg.inv(linear) * geometry.atlas_scale)
@@ -687,18 +657,16 @@ def physical_views(
         )
         return plate
 
-    lines = True  # atlas outlines drawn over the section...
+    lines = True
     if mode not in VIEW_MODES:
         raise ValueError(f"mode must be one of {VIEW_MODES}; got {mode!r}")
     box = zoom_box(zoom, geometry.size)
     zoomed = box != (0, 0, geometry.size[0], geometry.size[1])
-    # The section alone on the canvas, before an atlas image is blended under
-    # it: what the file's pixels replace in a zoom.
     bare = warped.copy() if detail is not None and zoomed and mode != "template" else None
     opacity = float(np.clip(atlas_opacity, 0.0, 1.0))
     if mode == "section":
         panels = [(warped, label or "section")]
-        lines = False  # ...except the clean views, which show one source alone
+        lines = False
     elif mode == "template":
         panels = [(_template_canvas(), atlas_head)]
         lines = template_lines
@@ -717,9 +685,6 @@ def physical_views(
             )
         panels = [(warped, label or "section")]
 
-    # One colour for the whole picture: resolved once, against the one
-    # background panel this call draws (never per zoom crop or per line
-    # layer), before anything is drawn on it.
     drawn_polys = (list(atlas_lines) if lines else []) + list(highlighted)
     coverage = (
         line_coverage(
@@ -734,12 +699,6 @@ def physical_views(
 
     knobs = matrix_label if isinstance(params, np.ndarray) else knob_words(params)
 
-    # The crop happens first, then the screen is sized: *long_edge*, or, for
-    # the whole canvas, its own pixels when fewer (never upsampled). A zoom
-    # is always drawn at *long_edge*: a small region comes out at the size of
-    # any other picture, enlarged past the canvas's pixels when it has fewer
-    # (said in the caption). No *long_edge* means canvas pixels one to one
-    # (host-side use, never a model's screen).
     edge = None
     if long_edge is not None:
         edge = (max(1, int(long_edge)) if zoomed else
@@ -768,14 +727,11 @@ def physical_views(
                 origin=box[:2], factor=factor,
             )
         _draw_scale_bar(screen, geometry.um_per_px / factor, dark)
-        # Two lines by meaning; `caption` wraps any line wider than the panel.
         text = (
             f"{head} @ {position_mm:.3f} mm  pitch {pitch_deg:.2f} yaw {yaw_deg:.2f}\n"
             f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
         ).strip()
         if mode != "overlay" or zoomed or abs(float(factor) - 1.0) > 0.02:
-            # `view` is the picture's own pixel; `canvas` the canvas's (they differ
-            # whenever the picture is drawn at other than canvas pixels).
             where = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
                      if zoom_pixels else "")
             text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"
@@ -789,9 +745,6 @@ def physical_views(
         labelled = caption(Image.fromarray(screen, mode="RGB"), text,
                            min_width=edge if zoomed and edge is not None else 0)
         if drawn_polys:
-            # Carried on the image itself (as `pixel_to_native` etc. already
-            # are), so any caller building a caption after this call can
-            # name the colour without re-threading it through every layer.
             labelled.info["border_word"] = border_words(line_color)
         if panel_frames is not None:
             panel_frames.append(PanelFrame(

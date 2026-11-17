@@ -2,7 +2,7 @@
 
 A job's settings are given through several doors (the flags of ``langslice
 linear run``, of the agent CLI's ``init`` and of ``langslice mcp``, the
-library's job creation, the Fiji worker's request) and kept in the job
+library's job creation) and kept in the job
 folder's ``job.json``. :data:`SETTINGS` lists each setting once
 (:class:`Setting`): its name, its type and the job's default, its
 command-line flags, the library's keyword for it, its ``job.json`` key and
@@ -30,63 +30,33 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
-#: The tasks a job runs without being told, in the order every list gives.
 DEFAULT_TASKS: tuple[str, ...] = ("position", "transform")
-#: Every task, in the order they are listed everywhere else.
 ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
 
-#: The section planes.
 PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
-#: How large the pictures the agent is shown are drawn: a long edge for the
-#: opening images and one for every later picture per level
-#: (:data:`langslice.core.pictures.sizes.PICTURE_EDGES`); "auto" lets the
-#: agent pass ``resolution`` per call. Nothing a fit computes or a transform
-#: stores depends on it, and the image model's inputs do not change.
 IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")
 
-#: How each section's ``preprocessed`` image is made, the one the agent sees
-#: first, the image model is shown and every fit reads by default: the
-#: adaptive preprocess, or the file as is.
 PREPROCESSING: tuple[str, ...] = ("auto", "none")
 
-#: The reasoning efforts a model may be run at.
 REASONING: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 
-#: Most sections one transform-tool call may take
-#: (``TransformSpec.max_parallel``).
 MAX_PARALLEL_TRANSFORMS = 4
 
-#: The atlas a job uses without being told.
 DEFAULT_ATLAS = "allen_mouse_25um"
 
-#: The tasks a command that opens a stack runs without ``--tasks``.
 CLI_TASKS = ",".join(DEFAULT_TASKS)
-#: ... and with ``--registration``: only the nonlinear step, on top of the
-#: imported linear registration.
 REGISTRATION_TASKS = "nonlinear"
 
-#: The start of a supplied answer's name (``inputs.positions``).
 ANSWER_PREFIX = "inputs."
 
-#: A way a setting is given: ``run`` (``langslice linear run``), ``init``
-#: (``langslice-job FOLDER init``), ``mcp`` (``langslice mcp``), ``library``
-#: (``create_job``), ``abba`` (the Fiji worker's request).
-Door = Literal["run", "init", "mcp", "library", "abba"]
+Door = Literal["run", "init", "mcp", "library"]
 
-#: The commands that take the job flags.
 COMMANDS: tuple[Door, ...] = ("run", "init", "mcp")
-#: The doors that take the job flags' settings, and the library and the
-#: Fiji worker beside them.
-EVERY_DOOR: tuple[Door, ...] = (*COMMANDS, "library", "abba")
-#: The doors of a script or a coding agent: the commands and the library.
-CODE_DOORS: tuple[Door, ...] = (*COMMANDS, "library")
-#: The built-in agent's run and the doors that build one from code.
-RUN_DOORS: tuple[Door, ...] = ("run", "library", "abba")
-#: The doors of a host: the library and the Fiji worker.
-HOST_DOORS: tuple[Door, ...] = ("library", "abba")
+EVERY_DOOR: tuple[Door, ...] = (*COMMANDS, "library")
+RUN_DOORS: tuple[Door, ...] = ("run", "library")
+HOST_DOORS: tuple[Door, ...] = ("library",)
 
-#: How each of the commands words its default of the tasks.
 _CLI_TASKS_DEFAULT = f"{CLI_TASKS} ({REGISTRATION_TASKS} with --registration)"
 
 
@@ -94,37 +64,18 @@ _CLI_TASKS_DEFAULT = f"{CLI_TASKS} ({REGISTRATION_TASKS} with --registration)"
 class Setting:
     """One setting of a job, and how each door spells it."""
 
-    #: The setting's name: its ``JobSpec`` field (``atlas``), a section's
-    #: key (``position.thickness_um``) or a supplied answer
-    #: (``inputs.positions``).
     name: str
-    #: Its type, as ``JobSpec`` declares it or the supplied answer takes it.
     type: str
-    #: The job's own default: what a job made without the setting holds
-    #: (None for the image folder, which every job is given).
     default: object
-    #: The doors that may set it.
     doors: tuple[Door, ...]
-    #: Its key in ``job.json``, dotted through the objects; None: the job
-    #: keeps it nowhere.
     json_key: str | None
-    #: ``create_job``'s keyword for it; a section's key is given in that
-    #: section's mapping (``position={"thickness_um": 40}``), a supplied
-    #: answer without a keyword of its own in ``inputs``.
     keyword: str | None = None
-    #: Its command-line flags, in the order the commands list them.
     flags: tuple[str, ...] = ()
-    #: The flags it was spelled with before, read as its first flag and
-    #: listed in no help.
     aliases: tuple[str, ...] = ()
-    #: The values it takes, when they are a fixed list.
     choices: tuple[str, ...] | None = None
-    #: A door's default where it is not :attr:`default`, in that door's
-    #: terms.
     door_defaults: Mapping[Door, str] = field(default_factory=dict[Door, str])
 
 
-#: Every setting, in the order the commands list their flags.
 SETTINGS: tuple[Setting, ...] = (
     Setting(
         name="tasks",
@@ -141,7 +92,6 @@ SETTINGS: tuple[Setting, ...] = (
             "mcp": _CLI_TASKS_DEFAULT,
             "library": "nonlinear, plus transform unless every section has a "
             "supplied transform (nonlinear alone with registration=)",
-            "abba": "the host's choice, at least one",
         },
     ),
     Setting(
@@ -152,7 +102,6 @@ SETTINGS: tuple[Setting, ...] = (
         json_key="spec.atlas",
         keyword="atlas",
         flags=("--atlas",),
-        door_defaults={"abba": f"{DEFAULT_ATLAS}, the one atlas it takes"},
     ),
     Setting(
         name="plane",
@@ -163,7 +112,6 @@ SETTINGS: tuple[Setting, ...] = (
         keyword="plane",
         flags=("--plane",),
         choices=PLANES,
-        door_defaults={"abba": "coronal, the one plane it takes"},
     ),
     Setting(
         name="nonlinear.provider",
@@ -195,7 +143,7 @@ SETTINGS: tuple[Setting, ...] = (
         name="nonlinear.image_prompt",
         type="str | None",
         default=None,
-        doors=CODE_DOORS,
+        doors=EVERY_DOOR,
         json_key="spec.nonlinear.image_prompt",
         keyword="nonlinear",
         flags=("--nonlinear-image-prompt",),
@@ -209,7 +157,6 @@ SETTINGS: tuple[Setting, ...] = (
         json_key="spec.inputs.pixel_size_um",
         keyword="pixel_size_um",
         flags=("--pixel-size-um",),
-        door_defaults={"abba": "required: the snapshots' pixel size"},
     ),
     Setting(
         name="preprocess",
@@ -300,7 +247,6 @@ SETTINGS: tuple[Setting, ...] = (
         keyword="transform",
         flags=("--transform-angles",),
         aliases=("--angles",),
-        door_defaults={"abba": "True: the stack's angles are ABBA's to set"},
     ),
     Setting(
         name="inputs.angles",
@@ -310,7 +256,6 @@ SETTINGS: tuple[Setting, ...] = (
         json_key="spec.inputs.angles",
         keyword="angles",
         flags=("--pitch", "--yaw", "--section-angles"),
-        door_defaults={"abba": "required: ABBA's angles for the stack"},
     ),
     Setting(
         name="facts",
@@ -330,13 +275,12 @@ SETTINGS: tuple[Setting, ...] = (
         json_key="spec.inputs.positions",
         keyword="positions",
         flags=("--positions",),
-        door_defaults={"abba": "required: ABBA's positions"},
     ),
     Setting(
         name="registration",
         type="path | None",
         default=None,
-        doors=CODE_DOORS,
+        doors=EVERY_DOOR,
         json_key=None,
         keyword="registration",
         flags=("--registration",),
@@ -349,13 +293,12 @@ SETTINGS: tuple[Setting, ...] = (
         json_key="spec.inputs.order",
         keyword="inputs",
         flags=("--order",),
-        door_defaults={"abba": "the order of the positions"},
     ),
     Setting(
         name="inputs.transforms",
         type="dict[str, transform] | None",
         default=None,
-        doors=CODE_DOORS,
+        doors=EVERY_DOOR,
         json_key="spec.inputs.transforms",
         keyword="transforms",
         flags=("--transforms",),
@@ -364,7 +307,7 @@ SETTINGS: tuple[Setting, ...] = (
         name="inputs.orientation",
         type="dict[str, {flip, rotation_deg}] | None",
         default=None,
-        doors=CODE_DOORS,
+        doors=EVERY_DOOR,
         json_key="spec.inputs.orientation",
         keyword="orientation",
         flags=("--orientation",),
@@ -391,7 +334,7 @@ SETTINGS: tuple[Setting, ...] = (
         name="inputs.damaged_regions",
         type="dict[str, list[str]] | None",
         default=None,
-        doors=CODE_DOORS,
+        doors=EVERY_DOOR,
         json_key="spec.inputs.damaged_regions",
         keyword="inputs",
         flags=("--damaged-regions",),
@@ -534,7 +477,6 @@ SETTINGS: tuple[Setting, ...] = (
         aliases=("--fresh",),
         door_defaults={
             "mcp": "True: a folder's own job keeps its saved settings",
-            "abba": "False: each request is a new run",
         },
     ),
     Setting(
@@ -574,7 +516,6 @@ SETTINGS: tuple[Setting, ...] = (
         doors=HOST_DOORS,
         json_key="spec.host_preprocessing",
         keyword="host_preprocessing",
-        door_defaults={"abba": "auto for snapshots sent one page per channel"},
     ),
     Setting(
         name="transform.max_parallel",

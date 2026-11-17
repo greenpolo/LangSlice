@@ -29,12 +29,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: Directory for traces. Unset means no tracing at all.
 TRACE_DIR_ENV = "LANGSLICE_TRACE_DIR"
 
-#: The agent CLI's call log in the job folder.
 CALLS_FILE = "calls.jsonl"
-#: The folder of ``logs/`` that keeps each call's envelope (:func:`save_reply`).
 REPLIES_DIR = "calls"
 
 

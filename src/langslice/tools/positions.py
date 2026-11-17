@@ -58,25 +58,16 @@ def _write_angles(
     workspace.render_cache.clear()
 
 
-# --- position_sections -------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class SectionsPositioned:
     """What :func:`position_sections` wrote."""
 
-    #: ``(section id, position mm)`` as written (clamped), in the order asked.
     written: list[tuple[str, float]] = field(default_factory=list)
-    #: ``(section id, requested mm, written mm)`` for each value moved into range.
     clamped: list[tuple[str, float, float]] = field(default_factory=list)
-    #: References that name no section.
     unknown: list[str] = field(default_factory=list)
     position_range: tuple[float, float] = (0.0, 0.0)
-    #: The stack-wide angles written (``{"pitch", "yaw"}``), None when not asked.
     cutting_angles: dict[str, float] | None = None
-    #: The stack's order after the write: ids, anterior first.
     order: list[str] = field(default_factory=list)
-    #: The ids whose place in that order changed.
     reordered: list[str] = field(default_factory=list)
 
     @property
@@ -218,9 +209,6 @@ def position_sections(
     )
 
 
-# --- the tool ----------------------------------------------------------------
-
-#: Positions closer than this (mm) are one atlas picture in a positioning picture.
 SAME_POSITION_MM = 0.02
 
 
@@ -278,7 +266,7 @@ def position_sections_tool(
         and not done.written
         and done.cutting_angles is None
     ):
-        raise unknown  # every name
+        raise unknown
 
     result = _positioned_reply(done, unknown)
     result.update(run.answered(*done.touched))

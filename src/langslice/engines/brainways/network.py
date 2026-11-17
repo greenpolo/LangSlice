@@ -62,29 +62,17 @@ class Device(enum.StrEnum):
     CPU = "cpu"
 
 
-#: Brainways' model repository, read at the revision that holds the model
-#: its ``model_ids.json`` names for ``whs_sd_rat_39um``, so every run reads
-#: the same weights.
 REPOSITORY = "brainways/siamese"
 REVISION = "a0f3b1957b59b2ca2c02f7d094725c6dcb77783d"
 MODEL_ID = "5redxpw6"
-#: The checkpoint's SHA-256 at that revision (its LFS object).
 WEIGHTS_SHA256 = (
     "a3835674e54dac85b4a89533405a8ad7a90ca6f862599423c58747871689f0fd"
 )
-#: Where the checkpoint is kept when the caller names no folder.
 DEFAULT_CACHE = Path("~/.cache/langslice/brainways")
-#: How long a download may stall, seconds.
 DOWNLOAD_TIMEOUT_S = 120
-#: The atlas planes the search runs over (``load_model``'s ``ap_limits``).
 AP_LIMITS = {"whs_sd_rat_39um": (122, 800)}
-#: TensorFlow's batch-norm epsilon, which timm's ``tf_`` models keep.
 BN_EPS = 1e-3
-#: The batch-norm momentum timm sets; unused in inference, passed as is.
 BN_MOMENTUM = 0.1
-#: EfficientNetV2-S, timm's ``arch_def`` for it: block kind (``cn`` conv,
-#: ``er`` fused MBConv, ``ir`` MBConv with squeeze-and-excitation),
-#: repeats, the first block's stride, output channels.
 STAGES = (
     ("cn", 2, 1, 24),
     ("er", 4, 2, 48),
@@ -93,11 +81,8 @@ STAGES = (
     ("ir", 9, 1, 160),
     ("ir", 15, 2, 256),
 )
-#: The stem's output channels.
 STEM_CHANNELS = 24
-#: The prefix of the backbone's tensors in Brainways' checkpoint.
 BACKBONE = "_backbone._model."
-#: The batch-norm tensors, in the order batch_norm takes them after the input.
 BN_PARTS = ("running_mean", "running_var", "weight", "bias")
 
 
@@ -165,7 +150,7 @@ class ReferenceVolume:
         array, shape (DV, LR), float32
             The plane divided by the volume's largest value.
         """
-        plane = cast("npt.NDArray[np.generic]", self.voxels[ap])  # 2-D
+        plane = cast("npt.NDArray[np.generic]", self.voxels[ap])
         divided = plane.astype(np.float32) / self.scale
         return np.asarray(divided, dtype=np.float32)
 
@@ -183,7 +168,7 @@ def resolve_device(option: Device) -> Device:
     Device
         ``cuda`` or ``cpu``.
     """
-    import torch  # local: slow to import, needed only for the network
+    import torch
 
     if option != Device.AUTO:
         return option
@@ -200,7 +185,7 @@ def cuda_available() -> bool:
     bool
         True when torch can run on CUDA here.
     """
-    import torch  # local: slow to import, needed only for the network
+    import torch
 
     return torch.cuda.is_available()
 
@@ -218,7 +203,7 @@ def gpu_name(device: Device) -> str | None:
     str or None
         The first GPU's name for ``cuda``; None for ``cpu``.
     """
-    import torch  # local: slow to import, needed only for the network
+    import torch
 
     if device != Device.CUDA:
         return None
@@ -233,7 +218,7 @@ def torch_version() -> str:
     str
         ``torch.__version__``.
     """
-    import torch  # local: slow to import, needed only for the network
+    import torch
 
     return str(torch.__version__)
 
@@ -268,7 +253,7 @@ def fetch_weights(cache_folder: Path) -> Path:
     logger.info("Fetching Brainways' weights from %s", url)
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_suffix(".part")
-    opened = cast(  # urlopen is untyped: a binary stream
+    opened = cast(
         "IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S)
     )
     with opened as response, partial.open("wb") as out:
@@ -318,11 +303,11 @@ def load_network(device: Device, *, cache_folder: str = "") -> Network:
     ValueError
         When the checkpoint does not hold the tensors this network reads.
     """
-    import torch  # local: slow to import, needed only for the network
+    import torch
 
     path = fetch_weights(Path(cache_folder or DEFAULT_CACHE))
     state = cast(
-        "dict[str, torch.Tensor]",  # weights_only: tensors by name
+        "dict[str, torch.Tensor]",
         torch.load(path, map_location="cpu", weights_only=True),
     )
     names = tensor_names()
@@ -472,8 +457,8 @@ def embed(network: Network, image: npt.NDArray[np.float32]) -> torch.Tensor:
     torch.Tensor, shape (1, 256)
         The backbone's last stage averaged over the plane.
     """
-    import torch  # local: slow to import, needed only for the network
-    from torch.nn import functional  # local: slow to import, as torch
+    import torch
+    from torch.nn import functional
 
     batch = torch.as_tensor(image)[np.newaxis].to(network.device)
     with torch.no_grad():
@@ -501,8 +486,8 @@ def relative_position(
         ``tanh`` of the head's output: negative when the section lies
         before the plane (a lower index), zero or positive otherwise.
     """
-    import torch  # local: slow to import, needed only for the network
-    from torch.nn import functional  # local: slow to import, as torch
+    import torch
+    from torch.nn import functional
 
     weights = network.weights
     with torch.no_grad():
@@ -522,7 +507,6 @@ def _backbone(
     weights: dict[str, torch.Tensor],
     x: torch.Tensor,
 ) -> torch.Tensor:
-    # the stem, then the blocks stage by stage; the last stage's output
     x = _bn_act(
         weights,
         BACKBONE + "bn1",
@@ -547,9 +531,7 @@ def _conv(
     bias: torch.Tensor | None = None,
     groups: int = 1,
 ) -> torch.Tensor:
-    # timm's create_conv2d with padding "same": static and symmetric at
-    # stride 1, TensorFlow's dynamic padding (more at the end) otherwise
-    from torch.nn import functional  # local: slow to import, as torch
+    from torch.nn import functional
 
     kernel = weight.shape[-1]
     if stride == 1:
@@ -573,7 +555,7 @@ def _bn(
     prefix: str,
     x: torch.Tensor,
 ) -> torch.Tensor:
-    from torch.nn import functional  # local: slow to import, as torch
+    from torch.nn import functional
 
     mean, var, scale, shift = (
         weights[f"{prefix}.{part}"] for part in BN_PARTS
@@ -588,7 +570,7 @@ def _bn_act(
     prefix: str,
     x: torch.Tensor,
 ) -> torch.Tensor:
-    from torch.nn import functional  # local: slow to import, as torch
+    from torch.nn import functional
 
     return functional.silu(_bn(weights, prefix, x))
 
@@ -600,7 +582,6 @@ def _conv_block(
     stride: int,
     skip: bool,
 ) -> torch.Tensor:
-    # timm's ConvBnAct: conv, batch norm, SiLU
     out = _bn_act(
         weights,
         prefix + "bn1",
@@ -618,8 +599,6 @@ def _fused_block(
     stride: int,
     skip: bool,
 ) -> torch.Tensor:
-    # timm's EdgeResidual (fused MBConv): a full convolution expands, a
-    # pointwise one projects
     out = _bn_act(
         weights,
         prefix + "bn1",
@@ -642,8 +621,6 @@ def _inverted_block(
     stride: int,
     skip: bool,
 ) -> torch.Tensor:
-    # timm's InvertedResidual (MBConv): pointwise expansion, depthwise
-    # convolution, squeeze-and-excitation, pointwise projection
     out = _bn_act(
         weights,
         prefix + "bn1",
@@ -669,8 +646,8 @@ def _inverted_block(
 def _squeeze_excite(
     weights: dict[str, torch.Tensor], prefix: str, x: torch.Tensor
 ) -> torch.Tensor:
-    import torch  # local: slow to import, needed only for the network
-    from torch.nn import functional  # local: slow to import, as torch
+    import torch
+    from torch.nn import functional
 
     pooled = x.mean((2, 3), keepdim=True)
     reduced = functional.silu(
@@ -690,5 +667,4 @@ def _squeeze_excite(
     return x * torch.sigmoid(gate)
 
 
-#: Each block kind's forward pass.
 BLOCKS = {"cn": _conv_block, "er": _fused_block, "ir": _inverted_block}

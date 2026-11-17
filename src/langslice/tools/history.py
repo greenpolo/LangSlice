@@ -21,10 +21,7 @@ if TYPE_CHECKING:
 class HistoryStep:
     """Hold what history steps changed together (:func:`describe_step`)."""
 
-    #: The sections they touched.
     sections: list[str] = field(default_factory=list[str])
-    #: The field groups they changed (``placement``, ``linear``, ``damage``,
-    #: ``landmarks``, ``deformation``, ``images``, ``masks``, ``notes``).
     fields: list[str] = field(default_factory=list[str])
 
 
@@ -32,18 +29,12 @@ class HistoryStep:
 class Stepped:
     """What :func:`undo` or :func:`redo` did."""
 
-    #: False when there was no step to take (nothing changed).
     done: bool
-    #: The steps left on that side afterwards (undo: undo steps; redo: redo).
     depth: int = 0
-    #: What the steps were together.
     step: HistoryStep = field(default_factory=HistoryStep)
-    #: How many steps were taken (fewer than asked when the history held fewer).
     steps: int = 0
 
 
-#: The section fields each tool group writes, in the order they are told
-#: apart: a placement change clears the deformation too, so it comes first.
 _PLACEMENT = ("position_mm", "index_corrected")
 _LINEAR = ("flip", "rotation_deg", "transform")
 _FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -133,9 +124,6 @@ def redo(job: Job, steps: int = 1) -> Stepped:
     )
 
 
-# --- the tools ---------------------------------------------------------------
-
-
 def undo_tool(run: Run, *, steps: int = 1) -> dict[str, Any]:
     """Run the ``undo`` tool: take *steps* steps back.
 
@@ -196,7 +184,7 @@ def _step_count(steps: object) -> int:
     whole number from 1.
     """
     try:
-        count = int(steps)  # pyright: ignore[reportArgumentType]  # a model's value
+        count = int(steps)  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):
         count = 0
     if count < 1 or count != steps:

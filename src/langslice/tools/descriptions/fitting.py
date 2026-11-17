@@ -20,9 +20,7 @@ from langslice.tools.descriptions.description import (
 )
 from langslice.tools.descriptions.landmarks import LANDMARK_MOVE_UM
 
-#: How ``fireants_syn`` compares the two images.
 FitMetric = Literal["mutual_information", "local_correlation"]
-#: The resolution ``fireants_syn`` works at.
 FitDetail = Literal["coarse", "standard", "fine"]
 
 ELASTIX_AFFINE = ToolDescription(

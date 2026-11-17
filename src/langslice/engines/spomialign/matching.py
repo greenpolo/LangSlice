@@ -31,34 +31,21 @@ from PIL import Image
 if TYPE_CHECKING:
     import torch
 
-#: SPOmiAlign's registration grid (``H, W = 864, 1152``; paper: "1152 x 864").
 H, W = 864, 1152
-#: RoMa's coarse resolution as SPOmiAlign builds the matcher.
 COARSE_RES = 560
-#: The edge map's band-pass: the high-pass Gaussian's width, in hundredths
-#: of the grid's short side, and the low-pass decay, in short sides
-#: (SPOmiAlign's ``sigma=2.0, decay=5.0``).
 EDGE_SIGMA = 2.0
 EDGE_DECAY = 5.0
-#: The edge map is raised to this power before Otsu's threshold (SPOmiAlign).
 EDGE_POWER = 1.2
-#: A match off the section's edges keeps this share of its certainty.
 OFF_EDGE_WEIGHT = 0.1
-#: The non-maximum suppression's window, px of the grid.
 NMS_KERNEL = 3
-#: A certainty at or below this is no match after the suppression.
 NMS_FLOOR = 1e-6
-#: The device torch names a GPU by.
 GPU_DEVICE = "cuda"
-#: RoMa's weights, which ``roma_outdoor`` downloads into torch's hub cache
-#: on first use: the matcher's and DINOv2's.
 WEIGHTS = {
     "roma_outdoor.pth": "https://github.com/Parskatt/storage/releases/"
     "download/roma/roma_outdoor.pth",
     "dinov2_vitl14_pretrain.pth": "https://dl.fbaipublicfiles.com/dinov2/"
     "dinov2_vitl14/dinov2_vitl14_pretrain.pth",
 }
-#: The warning RoMa gives off Linux, where its fused kernel never runs.
 LOCAL_CORR_WARNING = "Local correlation is not supported"
 
 
@@ -116,7 +103,7 @@ def weights_missing() -> list[str]:
         ``<hub>/checkpoints``, the hub folder torch's own ``get_dir``
         names (``TORCH_HOME``, else ``~/.cache/torch``).
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     checkpoints = Path(torch.hub.get_dir()) / "checkpoints"
     return [name for name in WEIGHTS if not (checkpoints / name).exists()]
@@ -141,7 +128,7 @@ def resolve_device(device_name: str) -> torch.device:
     RuntimeError
         When the device named is not available.
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     if not device_name:
         if torch.cuda.is_available():
@@ -181,7 +168,6 @@ def load_matcher(device: torch.device) -> Matcher:
     romatch = importlib.import_module("romatch")
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=LOCAL_CORR_WARNING)
-        # romatch ships no types: the matcher is typed by Matcher
         model = romatch.roma_outdoor(  # pyright: ignore[reportAny]
             device=device,
             coarse_res=COARSE_RES,
@@ -219,7 +205,7 @@ def ranked_matches(
     certainty : ndarray, shape (n,)
         Its weighted certainty after the suppression, most confident first.
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     section = Image.fromarray(source).convert("RGB")
     warp, certainty = model.match(
@@ -229,8 +215,6 @@ def ranked_matches(
     if certainty.dim() == 3:
         certainty = certainty.squeeze(0)
 
-    # the matches from the section's half of RoMa's symmetric answer only,
-    # weighted toward the section's edges
     edge_both = torch.cat((torch.zeros_like(edge), edge), dim=1)
     weighted = certainty * (
         edge_both * (1.0 - OFF_EDGE_WEIGHT) + OFF_EDGE_WEIGHT
@@ -251,7 +235,7 @@ def ranked_matches(
 
 def _grid_px(normalized: torch.Tensor) -> torch.Tensor:
     """Take RoMa's normalized coordinates (-1 to 1) to px of the grid."""
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     x = W / 2 * (normalized[..., 0] + 1)
     y = H / 2 * (normalized[..., 1] + 1)
@@ -275,13 +259,12 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
         Fourier domain, normalized to 0-1, raised to :data:`EDGE_POWER`
         and binarised by Otsu's threshold.
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     resized = np.asarray(section.resize((W, H)))
     rgb = (torch.tensor(resized) / 255.0).permute(2, 0, 1).unsqueeze(0)
     rgb = rgb.to(device)
     grey = 0.299 * rgb[:, 0] + 0.587 * rgb[:, 1] + 0.114 * rgb[:, 2]
-    # torch.fft ships no types; its transforms take and give a Tensor
     fft = torch.fft
     column = grey.unsqueeze(1)
     transformed = cast(
@@ -293,7 +276,6 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
         fft.fftshift(transformed),  # pyright: ignore[reportUnknownMemberType]
     )
 
-    # the band-pass: a Gaussian high-pass times an exponential low-pass
     y = torch.arange(H, device=device) - H // 2
     x = torch.arange(W, device=device) - W // 2
     rows, cols = torch.meshgrid(y, x, indexing="ij")
@@ -315,7 +297,6 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
     )
     filtered = inverse.real
 
-    # normalize, then Otsu's threshold on the 8-bit map
     edges = torch.abs(filtered.squeeze())
     edges = (edges - edges.min()) / (edges.max() - edges.min() + 1e-8)
     levels = (torch.pow(edges, EDGE_POWER).cpu().numpy() * 255).astype(
@@ -324,7 +305,6 @@ def edge_weight(section: Image.Image, device: torch.device) -> torch.Tensor:
     _, binary = cv2.threshold(
         levels, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
-    # torch's stubs leave from_numpy's argument unknown
     edge_map = torch.from_numpy(binary)  # pyright: ignore[reportUnknownMemberType]
     return edge_map.float().to(device) / 255.0
 
@@ -343,7 +323,7 @@ def grid_suppression(certainty: torch.Tensor) -> torch.Tensor:
         The certainty where it is its window's maximum and above
         :data:`NMS_FLOOR`, zero elsewhere.
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     batch = certainty.unsqueeze(0).unsqueeze(0)
     window_max = torch.nn.functional.max_pool2d(

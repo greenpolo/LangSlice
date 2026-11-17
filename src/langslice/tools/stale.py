@@ -33,7 +33,7 @@ def section_inputs(
     damage (the marked regions, which every fit leaves out), and with
     *deformation* its applied deformation
     (a fit on top of it), with *trace* its border trace."""
-    if deformation and not trace:  # a section mask stores this one (one source of truth)
+    if deformation and not trace:
         return registration_digest(state, record)
     held: dict[str, Any] = registration_parts(state, record)
     if deformation:

@@ -29,19 +29,15 @@ from tools.stylecheck.core import (
 from tools.stylecheck.rules.enclosing import is_property
 from tools.stylecheck.rules.scopes import FUNCTION_NODES, parameters
 
-#: A Sphinx cross-reference role and its target.
 ROLE_PATTERN = re.compile(
     r":(?:py:)?(?:func|class|meth|mod|attr|data|obj|exc|const)"
     r":`~?([^`]+)`"
 )
 
-#: Text in double backticks.
 LITERAL_PATTERN = re.compile(r"``([^`]+)``")
 
-#: A dotted name, possibly called: ``np.ndarray``, ``Job.save()``.
 DOTTED_PATTERN = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+(?:\(\))?")
 
-#: File suffixes that make a dotted word a file name, not a reference.
 FILE_SUFFIXES = frozenset(
     {
         "py",
@@ -83,7 +79,6 @@ FILE_SUFFIXES = frozenset(
     }
 )
 
-#: Words that carry no meaning of their own in a parameter description.
 FILLER_WORDS = frozenset(
     {
         "a",
@@ -120,13 +115,10 @@ FILLER_WORDS = frozenset(
     }
 )
 
-#: The sections whose entries are parameters.
 PARAMETER_SECTIONS = ("Parameters", "Other Parameters")
 
-#: The one section where references are not counted.
 SEE_ALSO = "See Also"
 
-#: What a word is, for counting the words of a description.
 WORD_PATTERN = re.compile(r"[A-Za-z0-9]+")
 
 DocumentedNode = (

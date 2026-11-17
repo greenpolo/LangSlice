@@ -68,7 +68,6 @@ class PiecewiseAffine:
                 "Collapsed section triangle",
                 [self.simplices[k].tolist() for k in np.flatnonzero(flat)],
             )
-        #: Triangles whose target winds the other way or collapses.
         self.folded = area_a * area_b <= 0
         self._order = np.concatenate([np.flatnonzero(~self.folded), np.flatnonzero(self.folded)])
 
@@ -97,13 +96,12 @@ class PiecewiseAffine:
         points = np.asarray(points, dtype=np.float64)
         flat = points.reshape(-1, 2)
         out = np.full(flat.shape, np.nan)
-        # Bounding boxes spare the barycentric calculation for most points.
         for k in self._order if inverse else range(len(self.simplices)):
             indices = self.simplices[k]
             src, dst = source[indices], target[indices]
             basis = np.stack([src[1] - src[0], src[2] - src[0]], axis=1)
             if abs(np.linalg.det(basis)) < 1e-12:
-                continue  # a collapsed target triangle holds no inverse
+                continue
             eligible = (
                 np.isnan(out[:, 0])
                 & np.all(flat >= src.min(axis=0) - 1e-8, axis=1)

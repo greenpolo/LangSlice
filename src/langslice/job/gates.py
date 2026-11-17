@@ -9,13 +9,8 @@ from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.stack.stack import Stack
 from langslice.job.settings.spec import JobSpec
 
-#: A reported interval break must exceed this multiple of the median spacing.
 INTERVAL_BREAK_MIN_RATIO = 1.5
-#: With ``strict_interval``, every spacing within this fraction of the interval.
 STRICT_INTERVAL_TOLERANCE = 0.10
-
-
-# --- the submit gates ------------------------------------------------------------
 
 
 def _gate(code: RefusalCode, message: str, **facts: object) -> Refused:

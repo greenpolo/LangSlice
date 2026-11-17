@@ -11,9 +11,6 @@ from __future__ import annotations
 
 CANONICAL_PROVIDERS = ("gemini-api", "openai-api", "openai-oauth", "none")
 
-#: A job whose image model the caller hands the library itself (an object or
-#: function of its own, ``langslice.image_model``): accepted in a job spec,
-#: never resolved from a name (nothing to log in to).
 CUSTOM_PROVIDER = "custom"
 
 def canonical_provider(name: str) -> str:

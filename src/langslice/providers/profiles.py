@@ -40,7 +40,6 @@ if TYPE_CHECKING:
         GeneratedSegmentation,
     )
 
-#: The name a custom profile gets when the caller gives none.
 CUSTOM_PROFILE = "custom"
 
 

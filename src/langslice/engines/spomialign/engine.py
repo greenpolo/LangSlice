@@ -31,8 +31,6 @@ from typing import TYPE_CHECKING, TypeVar, cast
 import cv2
 import numpy as np
 import numpy.typing as npt
-
-# scipy ships no types for ndimage
 from scipy.ndimage import (  # pyright: ignore[reportMissingTypeStubs]
     map_coordinates,  # pyright: ignore[reportUnknownVariableType]
 )
@@ -51,18 +49,11 @@ from langslice.plugin_api import gpu_turn, out_of_memory
 if TYPE_CHECKING:
     import torch
 
-#: RoMa's pixel coordinates are corner based (``W / 2 (x + 1)``): a pixel
-#: centre sits half a pixel in.
 CORNER = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
-#: The engine's modes, as the plugin names them.
 MODES = ("rigid", "affine", "warp", "affine_warp")
 RIGID, AFFINE, WARP, AFFINE_WARP = MODES
-#: TELEA inpainting's radius when the field is filled in, px of the grid.
 INPAINT_RADIUS = 3
-#: Random canvas points at which the field is checked against SimpleITK's.
 N_PROBES = 500
-#: A section that still finds the GPU full waits OOM_WAIT_S, twice that,
-#: ... and runs again, OOM_RETRIES times.
 OOM_RETRIES = 4
 OOM_WAIT_S = 5.0
 
@@ -152,7 +143,7 @@ def fit_pairs(
         One answer per pair; a section that failed carries its error and
         leaves the others.
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     device = resolve_device(device_name)
     queue_device = "cpu"
@@ -180,7 +171,7 @@ def _retried(
 
     Returns the call's value and how many times it ran again.
     """
-    import torch  # local: slow to import, needed only when a call runs
+    import torch
 
     for attempt in range(OOM_RETRIES + 1):
         try:
@@ -208,7 +199,7 @@ def _fit_one(
     )
     try:
         answer, retries = _retried(device, fit)
-    except Exception as error:  # noqa: BLE001 - one section must not sink the rest
+    except Exception as error:  # noqa: BLE001
         return EngineAnswer(error=f"{type(error).__name__}: {error}")
     return dataclasses.replace(answer, oom_retries=retries)
 
@@ -264,8 +255,6 @@ def fit_pair(
     if mode in (RIGID, AFFINE):
         return chosen.answer(matrix=matrix)
 
-    # SPOmiAlign moves the section's points by the linear part, then fits
-    # the field from them to their atlas points
     ones = np.ones((len(section_grid), 1))
     moved = (linear_raw @ np.hstack([section_grid, ones]).T).T
     displacement = smoothed_field(moved, atlas_grid, pair.smoothing_px)
@@ -414,7 +403,6 @@ def choose_pairs(
             _rows(section_at, h), _cols(section_at, w)
         ]
 
-    # the ranks scanned to fill top_k, and those passed over among them
     kept = outside_damage & inside_mask
     reach = int(np.searchsorted(np.cumsum(kept), top_k)) + 1
     passed = ~kept[:reach]
@@ -528,8 +516,6 @@ def smoothed_field(
     are filled by TELEA inpainting (radius :data:`INPAINT_RADIUS`) and the
     field blurred by a Gaussian whose kernel spans six sigmas.
     """
-    # each pixel's running mean of its pairs, rounded to float32 at every
-    # step as SPOmiAlign keeps it in a float32 image
     means: dict[tuple[int, int], tuple[float, float, int]] = {}
     moving_rows = cast("list[list[float]]", moving.tolist())
     fixed_rows = cast("list[list[float]]", fixed.tolist())
@@ -557,7 +543,6 @@ def smoothed_field(
     dy[rows, cols] = [mean[1] for mean in means.values()]
     known[rows, cols] = True
 
-    # fill in between the pairs, then smooth
     unknown = (~known).astype(np.uint8) * 255
     size = int(max(3, (smoothing_px * 6) // 2 * 2 + 1))
     channels: list[npt.NDArray[np.float32]] = []
@@ -598,11 +583,10 @@ def field_on_canvas(
         The largest difference at :data:`N_PROBES` random points between
         this reading and SimpleITK's own displacement-field transform.
     """
-    import SimpleITK as sitk  # local: slow to import, needed for a warp
+    import SimpleITK as sitk
 
     w, h = size
     image = sitk.GetImageFromArray(displacement, isVector=True)
-    # SimpleITK's stubs leave a vector's element type unknown
     image.SetSpacing(  # pyright: ignore[reportUnknownMemberType]
         [1.0, 1.0]
     )
@@ -614,7 +598,6 @@ def field_on_canvas(
     )
     grid_points = probe @ affine_raw[:2, :2].T + affine_raw[:2, 2]
     points = cast("list[list[float]]", grid_points.tolist())
-    # SimpleITK's stubs leave a point's element type unknown
     moved = cast(
         "list[tuple[float, float]]",
         [
@@ -658,7 +641,6 @@ def _read_field(
     )
     moved = grid.copy()
     for c in range(2):
-        # scipy's stubs leave the output's type open
         sampled = cast(
             "npt.NDArray[np.float64]",
             map_coordinates(

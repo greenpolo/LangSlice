@@ -150,6 +150,18 @@ def test_the_saved_connection_is_the_chosen_one_then_openai(
     assert credentials.saved_image_provider() is None
 
 
+def test_a_reopened_job_keeps_what_it_enabled(tmp_path: Path) -> None:
+    """``enabled`` was an earlier setting's name too; a saved list is this one's."""
+    from langslice.job.migrations import without_removed_settings
+
+    spec = JobSpec(image_folder=str(tmp_path), tasks=ALL_TASKS, enabled=["deepslice_place"])
+    kept, removed = without_removed_settings(spec.to_dict())
+    assert removed == () and JobSpec.from_dict(kept).enabled == ["deepslice_place"]
+    old = {**spec.to_dict(), "enabled": True}
+    kept, removed = without_removed_settings(old)
+    assert removed == ("enabled",) and JobSpec.from_dict(kept).enabled == []
+
+
 def test_init_and_linear_run_take_enabled(tmp_path: Path) -> None:
     from langslice.doors.agent_cli.calls import init_parser
     from langslice.doors.commands.linear import spec_from_args

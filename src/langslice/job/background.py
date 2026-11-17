@@ -50,13 +50,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RUNNING, DONE, FAILED = "running", "done", "failed"
-#: A piece of work's states.
-STATUSES = (RUNNING, DONE, FAILED)
-#: Work threads one job runs at once: an image-model call each waits on, or a
-#: fit, which runs beside the others (GPU fits as many at once as the GPU
-#: queue's slots, ``core.fits.deformable.gpu_queue``).
 MAX_WORKERS = 32
-#: Prefix of a work id (``w1``, ``w2``, ... in the order the job started them).
 ID_PREFIX = "w"
 
 _WORKER = threading.local()
@@ -71,7 +65,6 @@ class Landed:
     status: str
     text: str
     pictures: list[Image.Image] = field(default_factory=list)
-    #: Plain facts for a door or a script (the fit's row, the trace's record).
     result: dict[str, Any] = field(default_factory=dict)
 
 
@@ -83,22 +76,14 @@ class Work:
     kind: str
     sections: tuple[str, ...]
     status: str = RUNNING
-    #: Wall-clock seconds (``time.time()``) it started and finished.
     started: float = 0.0
     finished: float | None = None
-    #: One paragraph for the agent, set when it finishes (:func:`notice_text`).
     notice: str = ""
-    #: The numbers of the pictures it drew, in the job's picture index.
     pictures: list[int] = field(default_factory=list)
-    #: The pictures themselves, for a door that sends them with the notice.
     images: list[Image.Image] = field(default_factory=list)
-    #: Each picture's index caption (empty when its drawing gave none).
     captions: list[str] = field(default_factory=list)
     result: dict[str, Any] = field(default_factory=dict)
-    #: The registration each section holds after its landing, by section
-    #: (:mod:`langslice.job.history`).
     registrations: dict[str, int] = field(default_factory=dict)
-    #: Whether :meth:`BackgroundWork.notices` handed the notice out.
     delivered: bool = False
 
     def summary(self) -> dict[str, Any]:
@@ -134,8 +119,6 @@ class _Entry:
     land: Callable[[], Landed]
     wait_for: tuple[str, ...]
     future: Future[None] | None = None
-    #: Taken by whichever thread runs the landing (the work thread, or a
-    #: waiting lock holder after the work thread gave way).
     claimed: bool = False
     yielded: bool = False
     finished: threading.Event = field(default_factory=threading.Event)
@@ -150,10 +133,7 @@ class BackgroundWork:
         self._entries: dict[str, _Entry] = {}
         self._count = 0
         self._executor: ThreadPoolExecutor | None = None
-        #: Set while a thread that holds the job's write lock waits here.
         self._draining = threading.Event()
-
-    # --- starting ---------------------------------------------------------------------
 
     def start(
         self, kind: str, sections: Sequence[str], land: Callable[[], Landed], *,
@@ -178,8 +158,6 @@ class BackgroundWork:
                                                     thread_name_prefix="background-work")
             entry.future = self._executor.submit(self._thread, entry)
         return work
-
-    # --- reading ----------------------------------------------------------------------
 
     def get(self, work_id: str) -> Work | None:
         """The work named *work_id*, or None."""
@@ -250,8 +228,6 @@ class BackgroundWork:
                 work.delivered = True
         return ready
 
-    # --- waiting ----------------------------------------------------------------------
-
     def wait_all(self, timeout: float | None = None) -> list[Work]:
         """Wait until every piece of work started so far has finished; return them.
 
@@ -307,8 +283,6 @@ class BackgroundWork:
         """Whether a work thread waiting for the job's lock should give up now."""
         return self._draining.is_set()
 
-    # --- the work thread --------------------------------------------------------------
-
     def _thread(self, entry: _Entry) -> None:
         _WORKER.active = True
         try:
@@ -317,7 +291,7 @@ class BackgroundWork:
             self._land(entry, retry=False)
         except LockYielded:
             entry.yielded = True
-        except Exception as exc:  # the work's own failures are its notice
+        except Exception as exc:
             logger.warning("Background work %s failed", entry.work.id, exc_info=True)
             self._finish(entry, Landed(status=FAILED, text=f"{type(exc).__name__}: {exc}"))
         finally:

@@ -46,9 +46,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#: A file's identity on disk: inode, size and modification time. An atomic
-#: rewrite is a new inode, so even a same-size write within the clock's
-#: resolution shows.
 Stamp = tuple[int, int, int] | None
 
 
@@ -130,61 +127,29 @@ class JobCheckpoint:
         self.spec = spec
         self.layout = layout
         self.results_path = str(results_path or layout.results_file)
-        #: Each section's history (``sections/<name>/history.jsonl``).
         self.histories = SectionHistories(layout)
-        #: The undo and redo steps on disk (``history/undo.json``).
         self.undo_file = UndoFile(layout)
-        #: The pictures the model was shown, saved with their layers.
         self.views: ViewStore = ViewStore(layout)
-        #: ``registration.json`` and the landmark files are owed: the state
-        #: was checkpointed in the lock hold that is still open (:meth:`checkpoint`).
         self._derived_due = False
-        #: The job folder's write lock (:meth:`writing`), across processes.
         self.lock = FolderLock(layout.folder)
-        #: Sections the host gave a damage note (``inputs.damaged``); the note
-        #: stays first in the section's ``damage_note``.
         self.host_damaged = frozenset(host_damaged_ids(spec))
-        #: The undo steps, oldest first; the last one is what ``undo`` takes.
         self.undo_stack: list[UndoStep] = []
         self.redo_stack: list[UndoStep] = []
-        #: The number the job's next write gets (a line's ``step``).
         self.next_step = 1
-        #: Undo steps recorded by this job so far (:meth:`merge_steps`).
         self.pushed: int = 0
-        #: The most pictures one call of a picture verb shows, and the most sections
-        #: one call of ``interactive_transform`` / ``elastix_affine`` names (the
-        #: pictures spend the driving model's context). None: no cap, as at the
-        #: agent CLI and the library; the agent tools and MCP set it
-        #: (``build_tools``). The job's own ``transform.max_parallel`` is separate.
         self.picture_cap: int | None = None
-        #: Called with the state after every checkpoint and every reload.
         self.observers: list[Callable[[Stack], None]] = []
-        #: Image corrections still running, per section id: the geometry they
-        #: were started at and their future. Nothing waits on them but
-        #: ``settle_border_traces`` (submit, the end of a session) and a
-        #: fit that reads a trace (``wait_image_job``).
         self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
         self.image_executor: ThreadPoolExecutor | None = None
         self._deformations: deformation.RecordStore | None = None
-        #: False: nothing this job holds is written (the state, the history,
-        #: the pictures); a dry run's job (the CLI's ``--dry-run``).
         self.persist = True
         self._workspace: Workspace | None = None
-        #: How a state file and history line of an older format are read as
-        #: the current format (the job's migrations, set by :meth:`open` and
-        #: :meth:`load`; None refuses them).
         self.upgrade: Upgrade | None = None
         self._state_stamp, self._undo_stamp = seen or (
             file_stamp(self.checkpoint_path), file_stamp(self.undo_path))
-        #: A read's view of a state another process saved while it held the
-        #: lock (:meth:`reading`): the state this job held before it, put
-        #: back by the next locked :meth:`sync`, and the file's stamp then.
         self._peeked: dict[str, Any] | None = None
         self._peek_stamp: Stamp = None
-        #: The tool whose call this thread runs (:meth:`acting`).
         self._acting = threading.local()
-        #: Each registration a write left, in order: (thread, section, number),
-        #: for the doors to name in that call's reply (:meth:`registered_since`).
         self.registered: list[tuple[int, str, int]] = []
         self.wire_views()
 

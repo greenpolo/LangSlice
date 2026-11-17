@@ -49,7 +49,6 @@ from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.tool_kinds import GROUPS as GROUPS
 from langslice.core.tool_kinds import Group, Kind
 
-#: A tool-and-option name is ``tool:option``.
 OPTION_SEPARATOR = ":"
 
 
@@ -101,42 +100,16 @@ class ToolDef:
     name: str
     kind: Kind
     group: Group
-    #: Whether a run of a spec has this tool (a task's switch, a host
-    #: switch); every tool exists in some run.
     when: Callable[[Any], bool] = _always
-    #: A long verb computes outside the job's write lock and takes it only to
-    #: apply, re-checking each section's inputs (``tools.stale``); every other
-    #: verb runs whole under the lock (the doors hold it).
     long: bool = False
-    #: A scripting verb is offered by the doors a script or a coding agent
-    #: uses (the agent CLI, the library) and never to a model through the
-    #: agent tools or MCP.
     scripting: bool = False
-    #: The verb calls the run's image model: a door that cannot reach one
-    #: leaves it out.
     image_model: bool = False
-    #: The parts of the tool that can be switched off on their own: option
-    #: name -> the argument whose values the option is one of ("" when the
-    #: option is no value of an argument). ``tool:option`` names them.
     options: Mapping[str, str] = field(default_factory=dict)
-    #: The tool cannot be switched off (its options may be).
     essential: bool = False
-    #: What the tool needs while it is on: groups of names, one of each group
-    #: on (a tool, or a ``tool:option``). The reason is the tool's picture.
     needs: tuple[tuple[str, ...], ...] = ()
-    #: The section properties the tool writes
-    #: (:data:`langslice.job.settings.frozen.PROPERTIES`): with every one of
-    #: them frozen on every section the tool can change nothing and is off
-    #: (:func:`off_names`).
     writes: tuple[str, ...] = ()
-    #: An in-tree engine's tool: the reference (``module:factory``) of the
-    #: engine that declares it and runs it. Empty: any other tool.
     engine: str = ""
-    #: The tool is off unless the job's ``enabled`` list names it.
     default_off: bool = False
-    #: Shell-style patterns of the atlas names the tool is offered on, and
-    #: the section planes; empty: every one. A tool the job's atlas or plane
-    #: does not fit counts as switched off (:func:`off_names`).
     atlases: tuple[str, ...] = ()
     planes: tuple[str, ...] = ()
 
@@ -165,8 +138,6 @@ class ToolDef:
         return bool(self.when(spec)) and not is_off(spec.switched_off, self.name)
 
 
-#: What a task needs written for its answer: it is refused, when it is on,
-#: with every one of these off.
 TASK_WRITERS: dict[str, tuple[str, ...]] = {
     "position": ("position_sections",),
     "transform": ("interactive_transform", "elastix_affine"),
@@ -174,8 +145,6 @@ TASK_WRITERS: dict[str, tuple[str, ...]] = {
                   "stalign_lddmm", "spomialign", "emlddmm_stack"),
 }
 
-#: The in-tree engines (:mod:`langslice.engines`), by the reference their
-#: tools are loaded from.
 _ENGINES = "langslice.engines."
 DEEPSLICE = _ENGINES + "deepslice.plugin:tools"
 BRAINWAYS = _ENGINES + "brainways.plugin:tools"
@@ -186,12 +155,9 @@ EMLDDMM = _ENGINES + "emlddmm.plugin:tools"
 _LOOK_OPTIONS = {mode: "mode" for mode in LOOK_MODES}
 _OVERLAY = (("look:overlay",),)
 
-#: Every tool, in the order every door lists them.
 TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
-    # --- looking (every run) -----------------------------------------------------
     ToolDef("look", "read", "Common", options=_LOOK_OPTIONS, essential=True),
     ToolDef("zoom", "read", "Common"),
-    # The made section images the pictures and fits read by name.
     ToolDef("make_image", "write", "Common"),
     ToolDef("grep_atlas", "read", "Common", options={"points": ""}),
     ToolDef("grep_atlas_view", "read", "Common"),
@@ -199,32 +165,22 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("list_files", "read", "Common"),
     ToolDef("search_files", "read", "Common"),
     ToolDef("read_file", "read", "Common"),
-    # The boxes and comments a person left in the LangSlice window.
     ToolDef("review_comments", "read", "Common"),
-    # --- changing -------------------------------------------------------------------
     ToolDef("position_sections", "write", "Positioning", when=positions_on,
             needs=(("look:positioning", "look:overlay"),), writes=("position", "angles")),
     ToolDef("interactive_transform", "write", "Linear", options={"flip": "", "rotate": ""},
             when=_task_on("transform"), needs=_OVERLAY,
             writes=("orientation", "affine")),
     ToolDef("mark_damage", "write", "Common", writes=("damage",)),
-    # The section-side mask the fits take by name (an EM sorting); useless
-    # where no fit exists, and it is drawn in look's section mode.
     ToolDef("make_mask", "write", "Common",
             when=_task_on("transform", "nonlinear"),
             needs=(("look:section",),)),
-    # --- fitting ----------------------------------------------------------------------
     ToolDef("elastix_affine", "write", "Linear", long=True,
             when=_task_on("transform"), needs=_OVERLAY, writes=("affine",)),
     ToolDef("fireants_syn", "write", "Nonlinear", long=True,
             options={"metric": "", "edges": "", "detail": ""},
             when=_task_on("nonlinear"), needs=_OVERLAY,
             writes=("deformation",)),
-    # The landmark pair: set_landmarks only places the pairs (it applies no
-    # deformation); landmark_triangulation applies them. Each is useless
-    # without the other, so each needs the other; set_landmarks lists
-    # ``deformation`` as what it serves, so a deformation frozen on every
-    # section takes both off.
     ToolDef("set_landmarks", "write", "Nonlinear",
             when=_task_on("nonlinear"),
             needs=(("look:atlas", "look:overlay"), ("look:section", "look:overlay"),
@@ -236,23 +192,14 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("trace_borders", "write", "Nonlinear", long=True, image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
             needs=_OVERLAY, writes=("deformation",), default_off=True),
-    # --- bookkeeping (every run) --------------------------------------------------------
     ToolDef("note", "write", "Common"),
     ToolDef("undo", "write", "Common", essential=True),
     ToolDef("redo", "write", "Common"),
-    # One section back to a registration it held before (orientation, transform
-    # and deformation together); it shows the section's overlay.
     ToolDef("restore_registration", "write", "Common",
             when=_task_on("transform", "nonlinear"),
             needs=_OVERLAY, writes=("orientation", "affine", "deformation")),
     ToolDef("submit", "write", "Common", essential=True),
-    # The job folder's derived files on demand (submit writes them too):
-    # changes no state, so a read; for scripts, not for a model.
     ToolDef("export_maps", "read", "Common", scripting=True, long=True),
-    # --- the in-tree engines -----------------------------------------------
-    # Each row repeats what the engine's own declaration says
-    # (tests/test_engines_native.py compares them), so the table answers
-    # without importing an engine.
     ToolDef("deepslice_place", "write", "Positioning", when=positions_on,
             needs=(("look:positioning",),),
             writes=("position", "angles", "affine"),
@@ -279,7 +226,6 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
             engine=EMLDDMM),
 )}
 
-#: The in-tree engines' references, in table order.
 ENGINES: tuple[str, ...] = tuple(dict.fromkeys(
     tool.engine for tool in TOOLS.values() if tool.engine))
 

@@ -60,49 +60,28 @@ from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack, filename_stem
 from langslice.core.workspace import Workspace
 
-#: Widest positioning picture: the largest image every model lane takes in
-#: without shrinking it.
 POSITIONING_MAX_WIDTH = CLAUDE_MAX_IMAGE_EDGE
-#: Most sections, and most atlas thumbnails, in one picture. Six tiles share
-#: :data:`POSITIONING_MAX_WIDTH` at about 240 px each, a coronal mouse
-#: section about 190 px wide; a longer stack is split, never shrunk.
 PER_PICTURE = 6
-#: Narrowest picture: the ruler stays readable with one or two tiles.
 MIN_WIDTH = 720
-#: Space at the left and right ends, and between two tiles of a row.
 MARGIN = 28
 GAP = 10
 PAD = 14
-#: Height of the band between the atlas row and the ruler.
 ATLAS_LINK_PX = 30
-#: Height of the band between the ruler and the section row: the share of
-#: the picture's width, between these bounds.
 SECTION_LINK_SHARE = 0.06
 SECTION_LINK_PX = (56, 96)
-#: A picture's ruler spans the positions it holds plus this share of their span
-#: at each end (at least :data:`RULER_MIN_MARGIN_MM`), and at least
-#: :data:`RULER_MIN_SPAN_MM` in all. Both millimetre lengths are the adult
-#: mouse brain's, times the atlas's brain scale (``core.atlas.brain_size``).
 RULER_MARGIN_SHARE = 0.08
 RULER_MIN_MARGIN_MM = 0.15
 RULER_MIN_SPAN_MM = 1.0
-#: How far a zoom may draw the atlas past its voxels (it holds no finer detail,
-#: but its lines stay sharp and its pixels legible).
 ATLAS_UPSAMPLE = 4.0
 
 BACKGROUND = (0, 0, 0)
 RULER_COLOR = (215, 215, 215)
 TICK_TEXT_COLOR = (185, 185, 185)
 TEXT_COLOR = (235, 235, 235)
-#: A section's line to its position, and its dot on the ruler.
 SECTION_LINE_COLOR = (165, 165, 165)
 SECTION_DOT_COLOR = (240, 240, 240)
-#: An atlas thumbnail's line to its position, and its marker (the atlas
-#: dimmed yellow, a colour of its own).
 ATLAS_LINE_COLOR = (200, 185, 70)
 
-
-# --- order and parts ----------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -110,11 +89,8 @@ class SectionEntry:
     """One section as :func:`plan` takes it."""
 
     id: str
-    #: First-line label candidates, longest first; the first that fits its
-    #: slot is drawn (the last is always drawn).
     labels: tuple[str, ...]
     position_mm: float | None
-    #: ``(width, height)`` of its whole picture, micrometres.
     extent_um: tuple[float, float]
 
 
@@ -192,8 +168,6 @@ def ruler_range(values: Sequence[float], bounds: tuple[float, float],
     return max(lo, floor), min(hi, ceiling)
 
 
-# --- the geometry ------------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class Slot:
@@ -224,28 +198,20 @@ class Layout:
 
     width: int
     height: int
-    #: Micrometres per pixel of every thumbnail (of every picture of the call).
     um_per_px: float
     tile: int
     font_px: int
     small_px: int
     ruler: tuple[float, float, float]
-    #: The millimetres the ruler spans, left to right.
     range_mm: tuple[float, float]
     atlas: tuple[Slot, ...]
-    #: In position order, left to right.
     sections: tuple[Slot, ...]
     label_step_mm: float
     tick_step_mm: float
-    #: Top of the atlas labels' line and of the section labels' first line:
-    #: one line per row, whatever each thumbnail's height.
     atlas_label_y: float = 0.0
     section_label_y: float = 0.0
-    #: This picture's number among the call's (0-based) and their count.
     part: int = 0
     parts: int = 1
-    #: The 1-based ranks, in position order, of this picture's first and last
-    #: section among the call's ``total`` (0, 0 without sections).
     first: int = 0
     last: int = 0
     total: int = 0
@@ -269,7 +235,6 @@ def _first_fitting(candidates: Sequence[str], px: int, width: float) -> str:
     return candidates[-1]
 
 
-#: Ruler label steps (mm), the smallest whose labels stay apart is used.
 _LABEL_STEPS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
 
 
@@ -287,10 +252,10 @@ def _spread(wanted: Sequence[float], widths: Sequence[float], lo: float, hi: flo
     """Centres as near *wanted* (ascending) as boxes of *widths*, *GAP*
     apart and inside ``[lo, hi]``, allow, order kept."""
     xs = [float(x) for x in wanted]
-    for k, width in enumerate(widths):  # pushed right, off the left end and each other
+    for k, width in enumerate(widths):
         floor = lo + width / 2.0 if k == 0 else xs[k - 1] + (widths[k - 1] + width) / 2.0 + GAP
         xs[k] = max(xs[k], floor)
-    for k in range(len(xs) - 1, -1, -1):  # then left, off the right end
+    for k in range(len(xs) - 1, -1, -1):
         ceiling = (hi - widths[k] / 2.0 if k == len(xs) - 1
                    else xs[k + 1] - (widths[k + 1] + widths[k]) / 2.0 - GAP)
         xs[k] = min(xs[k], ceiling)
@@ -369,8 +334,6 @@ def _layout(
     atlas_label_y = y
     atlas_slots: list[Slot] = []
     if atlas:
-        # Each atlas thumbnail above its own millimetre, moved aside only as
-        # far as its neighbours need.
         sizes = [(e[0] / um_per_px, e[1] / um_per_px) for _mm, e in atlas]
         texts = [_first_fitting((f"atlas {mm:.2f} mm", f"{mm:.2f} mm", f"{mm:.1f}"),
                                 font_px, max(float(tile), w)) for (mm, _e), (w, _h)
@@ -428,9 +391,6 @@ def visible(layout: Layout, window: Sequence[float] | None) -> tuple[list[Slot],
     return ([s for s in layout.sections if meets(s)], [s for s in layout.atlas if meets(s)])
 
 
-# --- drawing -------------------------------------------------------------------------
-
-#: Sub-pixel bits for OpenCV's anti-aliased lines.
 _SHIFT = 4
 
 
@@ -459,7 +419,7 @@ def paint(
     cx0, cy0, cx1, cy1 = zoom_box(list(window) if window else [], full)
     out = Image.new("RGB", (cx1 - cx0, cy1 - cy0), BACKGROUND)
 
-    def X(v: float) -> float:  # noqa: N802 - picture x of a layout x
+    def X(v: float) -> float:  # noqa: N802
         return v * s - cx0
 
     def Y(v: float) -> float:  # noqa: N802
@@ -519,8 +479,6 @@ def paint(
     majors = [mm for mm, major in ticks if major]
     for mm in majors:
         number = f"{mm:g}"
-        # The number is centred on its tick; the last one is followed by the
-        # unit, kept inside the picture.
         text = number + (" mm" if mm == majors[-1] else "")
         left = min(X(layout.x_at(mm)) - float(small.getlength(number)) / 2.0,
                    X(layout.width - 6) - float(small.getlength(text)))
@@ -542,8 +500,6 @@ def _centred(draw: ImageDraw.ImageDraw, text: str, x: float, y: float, font: Any
     draw.text((x - float(font.getlength(text)) / 2.0, y), text, fill=color, font=font)
 
 
-# --- a stack's pictures ---------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class Positioned:
@@ -557,7 +513,6 @@ class Positioned:
     scale: float
     window: tuple[float, ...]
     um_per_px: float
-    #: The picture's size above its caption band.
     content: tuple[int, int]
 
 
@@ -648,8 +603,6 @@ def positioning_pictures(
 
     def draw_section(section_id: str, um_per_px: float) -> Image.Image:
         record = by_id[section_id]
-        # Rendered at least as large as it is shown (render_slice stops at
-        # the working copy), then brought to the exact scale.
         edge = max(64, math.ceil(max(entries[section_id].extent_um) / um_per_px) + 2)
         return section_at(ws, record, um_per_px, working_um=working[section_id],
                           long_edge=edge, look=look_of(record))
@@ -725,7 +678,7 @@ def positioning_caption(
                      f"{'s' if len(layout.atlas) != 1 else ''}")
     lo, hi = layout.range_mm
     ruler = f"ruler {lo:.1f}-{hi:.1f} mm from {low} (left) to {high}"
-    if median:  # the atlas thumbnails are not at any one section's angles
+    if median:
         parts.append(ruler)
         parts.append("atlas" + view_angles_label(angles, median=True))
     else:

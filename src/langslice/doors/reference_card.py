@@ -31,15 +31,10 @@ from langslice.tools.descriptions.render import summary
 
 logger = logging.getLogger(__name__)
 
-#: The card's two names (Codex reads the first, Claude Code the second).
 CARD_FILES = ("AGENTS.md", "CLAUDE.md")
-#: Every verb's description and arguments as the job declares them, written by
-#: ``init`` and ``launch`` beside the card
-#: (:func:`langslice.doors.agent_cli.catalog.tools_text`).
 TOOLS_FILE = "TOOLS.md"
 
 
-#: How the card words what a limit counts (``Verb.limits``' keys).
 LIMIT_WORDS = {"fits": "section x candidate fits"}
 
 
@@ -55,9 +50,8 @@ def job_spec(layout: JobLayout) -> JobSpec:
     """The job's settings as ``job.json`` holds them (the tool plugins it
     names loaded)."""
     record = read_job_file(layout) or {}
-    # reportUnknownVariableType: job.json's settings, a JSON object
     saved = cast("JsonObject", record.get("spec") or {})
-    kept, _removed = without_removed_settings(saved)  # the open logs them
+    kept, _removed = without_removed_settings(saved)
     return JobSpec.from_dict(kept)
 
 
@@ -94,7 +88,6 @@ def card_text(layout: JobLayout) -> str:
     spec = job_spec(layout)
     disabled = off_names(spec)
     run = set(enabled(spec, scripting=True))
-    # the engines' tools and the tools plugins add are declared in its run
     from langslice.tools.descriptions.description import DescriptionFacts
 
     variant = DescriptionFacts.from_spec(spec, auto=True, door="cli")

@@ -24,12 +24,6 @@ from langslice.core.refusal import Refused
 from tests.look_synthetic import record, stack
 
 
-def _content(picture) -> np.ndarray:
-    """The zoom's content (above its caption band), gray."""
-    width, height = picture.recipe["shown"]
-    return np.asarray(picture.image.convert("L"))[:height, :width].astype(np.float32)
-
-
 def test_box_fractions_and_compose():
     assert box_fractions([50, 25, 0, 75], (100, 100)) == (0.0, 0.25, 0.5, 0.75)
     assert box_fractions([-10, -10, 500, 500], (100, 50)) == (0.0, 0.0, 1.0, 1.0)

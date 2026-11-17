@@ -38,10 +38,6 @@ if TYPE_CHECKING:
         GeneratedSegmentation,
     )
 
-#: Agent models a host may offer on the ``openai-oauth`` lane (host dialogs
-#: list these; any other ``openai-oauth/*`` string still works). Defined here,
-#: not in ``openai_oauth.py``, so an offline status check can read them
-#: without importing the ADK transport.
 OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
     f"openai-oauth/{name}"
     for name in (
@@ -49,15 +45,9 @@ OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
         "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
     )
 )
-#: Default agent/review model on the ``openai-oauth`` lane.
 OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-6.1-sol"
-#: Image models on the ``openai-oauth`` lane (GPT Image 2.5: ``sunburst``
-#: the most capable, ``flare`` the fastest), and the default. The Codex
-#: backend serves its own current image model whatever the request names.
 OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare")
 OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_IMAGE_MODELS[0]
-#: Image models on the ``gemini-api`` lane (Google's image-generation
-#: models), and the default: the general-purpose one.
 GEMINI_IMAGE_MODELS: tuple[str, ...] = (
     "gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image",
 )

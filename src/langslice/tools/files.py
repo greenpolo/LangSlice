@@ -62,7 +62,6 @@ class Found:
 
     matches: tuple[str, ...]
     hidden: int
-    files_searched: int
     text: str
 
 
@@ -99,7 +98,7 @@ def list_files_tool(run: Run, path: str, glob: str) -> dict[str, object]:
     dict
         ``status`` and the listing's ``text``.
     """
-    run.job.views.flush()  # every picture shown so far is on disk and indexed
+    run.job.views.flush()
     done = list_folder(run.job, str(path or "."), str(glob or ""))
     return {"status": "ok", "text": done.text}
 
@@ -213,7 +212,7 @@ def search_folder(job: Job, query: str, path: str = ".", glob: str = "") -> Foun
     if hidden:
         rows.append(f"... {hidden} more match(es) not shown (narrow the path or the glob, "
                     "or make the query more specific)")
-    return Found(tuple(lines), hidden, files, "\n".join(rows))
+    return Found(tuple(lines), hidden, "\n".join(rows))
 
 
 def _picture_record(job: Job, real: Path) -> PictureRecord | None:
@@ -284,7 +283,7 @@ def _see_again(record: PictureRecord, off: Collection[str]) -> str:
     text = render(f"[[?zoom To see it again, call zoom with picture {record.seq} and a box "
                   "over the part to see (a box as large as the picture shows all of it)."
                   f"||{with_look}]]", off)
-    if redraw is not None:  # the arguments go in after the marks are read
+    if redraw is not None:
         text = text.replace("{call}", ", ".join(f"{key}={value!r}"
                                                 for key, value in redraw.items()))
     return text
@@ -294,7 +293,7 @@ def _dimensions(real: Path) -> str:
     try:
         with Image.open(real) as image:
             return f"{image.width} x {image.height} pixels"
-    except Exception:  # noqa: BLE001 - an unreadable image is described by size alone
+    except Exception:  # noqa: BLE001
         return "an image"
 
 

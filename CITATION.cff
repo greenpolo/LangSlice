@@ -7,7 +7,7 @@ abstract: >
   cutting angles, aligns sections in-plane, and optionally fits FireANTs
   deformations to the stain or to borders traced by an image model.
   Results include coordinate and label maps, registration parameters,
-  and QuickNII / VisuAlign exports, with native registration updates in ABBA.
+  and QuickNII / VisuAlign / ABBA exports.
 type: software
 authors:
   - family-names: Baughman

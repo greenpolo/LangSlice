@@ -6,8 +6,8 @@ the other.
 
 The top layer of the layered core: code that connects LangSlice to another
 program and runs in LangSlice's own Python environment. What is installed into someone else's program lives in
-`connectors/` at the repo root instead (the Fiji/ABBA connector, the Claude
-Desktop configuration).
+`connectors/` at the repo root instead (the Claude Desktop configuration,
+the coding agents' plugins).
 
 ## The layer rule
 
@@ -15,15 +15,15 @@ A host module may import every layer below it: the core, the job layer,
 the tools, the doors (the built-in agent among them) and the providers. Nothing
 below imports a host (import-linter's layers contract, `pyproject.toml`,
 run by `tests/test_import_layers.py`, no exceptions listed). The `langslice`
-command reaches the host commands by module path only (`hosts/cli.py`,
+command reaches the host command by module path only (`hosts/cli.py`,
 `doors.commands.parser.HOST_COMMANDS`).
 
 ## Files and sub-packages
 
-- `cli.py` — the host commands `gui` (the LangSlice window on job folders:
+- `cli.py` — the host command `gui` (the LangSlice window on job folders:
   `FOLDER ...`, an image folder standing for its `langslice/` job folder;
   `--port`, `--no-window`, `--tab viewer|prompt`, the prompt generator filled
-  in from the first folder's job) and `serve` (the engine service),
+  in from the first folder's job),
   registered with the `langslice` command by module path.
 
 - `gui/` — the LangSlice window (`langslice gui`, `linear run --gui`): a
@@ -36,17 +36,3 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   writes only the review comments (`review.json`) and the generator is
   read-only. Only `cli.py` imports it.
   `gui/CLAUDE.md`, `docs/developers/gui.md`.
-
-- `service.py` — `langslice serve --stdio`: the JSON-lines engine
-  service the Fiji connector starts (protocol 3: `setup.status`,
-  `abba.prepare`, `abba.follow`; UTF-8 both ways, lines ending in LF on
-  every system). A long request (`abba.follow`, the
-  follower that mirrors a job's checkpoints into ABBA) runs until the
-  service's input closes: a thread reads the rest of the input and sets the
-  request's stop event at its end. The service reads its input through
-  `doors.stdio.protocol_input` and writes a duplicate of stdout, so a module
-  a request loads neither waits on the input pipe nor prints into the
-  protocol. The protocol models, the preparation of
-  a job from ABBA's snapshots, the follower and its checkpoint rows are
-  door-level, in `doors/abba/`. `docs/developers/architecture.md`,
-  `docs/abba.md`.

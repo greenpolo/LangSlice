@@ -51,7 +51,6 @@ if TYPE_CHECKING:
     from langslice.providers.profiles import default_prompt as default_prompt
     from langslice.providers.profiles import image_model as image_model
 
-#: The public names, each loaded from its module on first use.
 _PUBLIC = {
     "open_job": ("langslice.doors.library.handle", "open_job"),
     "create_job": ("langslice.doors.library.handle", "create_job"),
@@ -73,11 +72,6 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module 'langslice' has no attribute {name!r}")
 
 
-# google-genai warns through the `google_genai.types` logger whenever
-# `response.text` is read from a response whose only part is a function call.
-# The agent loop reads function calls with `event.get_function_calls()`, so
-# the warning is noise that reaches every host's log as if it were an error.
-# Only that message is silenced; other google_genai warnings stay visible.
 import logging as _logging  # noqa: E402
 
 

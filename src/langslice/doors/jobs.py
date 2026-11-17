@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.workspace import Workspace, log_progress
-from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
+from langslice.doors import plugins as _plugins  # noqa: F401
 from langslice.doors.reference_card import write_card
 from langslice.job.job import Job
 from langslice.job.layout import (
@@ -38,14 +38,8 @@ if TYPE_CHECKING:
     from langslice.core.fits.trace.request import ImageModel
     from langslice.tools.pipeline import ToolBox
 
-#: The largest picture a script call may ask for (``view.resolution``): no
-#: model's limit applies, only the source's own pixels (nothing is upsampled
-#: past them) and :data:`langslice.core.pictures.sizes.MIN_RESOLUTION`. The
-#: agent CLI's pictures are read by a model: its job's viewer sets the cap
-#: (:func:`job_viewer`, :data:`langslice.core.pictures.opening.VIEWER_LIMITS`).
 OPEN_MAX_VIEW_EDGE = 1 << 15
 
-#: ``job.json``'s field naming the agent CLI's viewer (``init --viewer``).
 VIEWER_KEY = "viewer"
 
 
@@ -108,10 +102,7 @@ class JobContext(Workspace):
     and the results path the job is opened at). The agent driver's
     ``EngineContext`` adds the model."""
 
-    #: The job's form; the workspace's settings were made from it
-    #: (:meth:`JobSpec.image_settings`).
     spec: JobSpec
-    #: The job folder is :attr:`Workspace.job_folder`, always set here.
     results_path: str
 
     @property
@@ -176,7 +167,7 @@ def read_spec(job_folder: Path) -> JobSpec:
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
             "<images>/langslice).")
     data["image_folder"] = str(images)
-    kept, _removed = without_removed_settings(data)  # the job's open logs them
+    kept, _removed = without_removed_settings(data)
     try:
         spec = JobSpec.from_dict(kept)
     except ValueError as exc:
@@ -191,21 +182,9 @@ class Opened:
 
     job: Job
     ctx: JobContext
-    #: The image model ``trace_borders`` calls (None: the spec's provider,
-    #: resolved by the tool door; a ``custom`` provider without one offers no
-    #: ``trace_borders``).
     image_model: ImageModel | None = None
-    #: No ``trace_borders`` whatever the spec says (a library job made with
-    #: an untested profile, reopened without it).
     traces_off: bool = False
-    #: Who reads the tools' declarations (``agent``: a script, the library;
-    #: ``cli``: the agent CLI;
-    #: :data:`langslice.tools.descriptions.render.DOORS`).
     door: str = "agent"
-    #: The model that reads the pictures, which sets their largest size
-    #: (:data:`langslice.core.pictures.opening.VIEWER_LIMITS`; None: a script,
-    #: no cap but the source's pixels). The agent CLI's is the job's
-    #: (:func:`job_viewer`).
     viewer: str | None = None
     _box: ToolBox | None = field(default=None, repr=False)
 
@@ -284,7 +263,7 @@ def open_folder(
 
     folder = find(path)
     spec = read_spec(folder)
-    load_credentials()  # the image model's keys, as every door loads them
+    load_credentials()
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.load(spec, ctx, folder=folder, results_path=ctx.results_path, persist=persist)
     if persist:
@@ -299,27 +278,22 @@ def create(
     emit: Callable[[str], None] | None = None,
     image_model: ImageModel | None = None,
     door: str = "agent",
-    frozen_given: bool = False,
 ) -> Opened:
     """A job for *spec*'s image folder, as every host makes one
     (``Job.open``: the job folder beside the images or ``spec.job_dir``,
-    ingest, host inputs, first checkpoint; a resume when ``spec.resume``;
-    a prepared ABBA job's saved settings as *spec*'s defaults, its freeze
-    replaced only when *frozen_given*), with its reference card.
+    ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
+    with its reference card.
     *image_model* and *door* as in :func:`open_folder`."""
     folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
                                           emit=emit or log_progress)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
-    job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path,
-                   frozen_given=frozen_given)
+    job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
     ctx.spec = job.spec
     write_card(job.layout)
     return Opened(job, ctx, image_model, door=door,
                   viewer=job_viewer(job.layout) if door == "cli" else None)
 
 
-#: The supplied inputs a registration made elsewhere replaces, by the option
-#: each door names them with (CLI flag, library argument).
 REGISTRATION_EXCLUDES = ("positions", "transforms", "angles", "orientation")
 
 

@@ -41,10 +41,16 @@ the exact source; on the atlas side, how far the spline's forward map (the
 pull-back inverted by Newton's method, as ABBA inverts it) carries a source
 from its exact target. The atlas side is where a user sees the section
 drawn under the atlas borders.
+
+Each round tests folds at the search points within ``NEAR_GAPS`` smallest
+gaps of its new pairs, where adding them changes the spline most, and at the
+search points whose Jacobian, at the last whole test, was below
+``WATCH_FRACTION`` of the median: where a fold could start.
 """
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
@@ -52,44 +58,20 @@ from typing import Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
-# scipy ships no type stubs
-from scipy import spatial  # pyright: ignore[reportMissingTypeStubs]
-
 from langslice.core.geometry.thin_plate import ThinPlateKernel
 
 FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 
-#: Pairs added per round of the greedy placement: few enough that each
-#: round reacts to the last, many enough that a budget of about a thousand
-#: points takes about a dozen rounds.
 BATCH = 64
-#: The fold check around each new pair: a lattice of LOCAL_SIDE points per
-#: side spanning LOCAL_SPAN smallest gaps either side, so its step (a third
-#: of a gap) resolves a fold between two pairs as close as allowed.
 LOCAL_SIDE = 13
 LOCAL_SPAN = 2.0
-#: The most a fold-check lattice is refined where the map stretches the
-#: section: the pull-back is tested at most this many times more finely
-#: per side, so stretched tissue is tested about as densely on the atlas
-#: side as unstretched tissue.
 MAX_REFINE = 4
-#: A new pair within this many smallest gaps of a fold is dropped, and no
-#: pair is sought again that close to it: small enough that a steep part of
-#: the map, where pairs often fold, still gets the pairs that do not.
 BLOCK_GAPS = 2.0
-#: A round tests folds at the search points within this many smallest gaps
-#: of its new pairs, where adding them changes the spline most.
 NEAR_GAPS = 4.0
-#: A round also tests the search points whose Jacobian, at the last whole
-#: test, was below this fraction of the median: where a fold could start.
 WATCH_FRACTION = 0.25
-#: Smallest Jacobian determinant accepted (a fold or collapse below it).
 MIN_JACOBIAN = 1e-6
-#: Newton steps when the pull-back is inverted at a probe point; a step
-#: under :data:`NEWTON_STOP_MM` ends it early.
 NEWTON_STEPS = 12
-#: A Newton step this small (millimetres) has converged.
 NEWTON_STOP_MM = 1e-9
 
 
@@ -101,11 +83,13 @@ class _Tree(Protocol):
         ...
 
 
-#: scipy's k-d tree, typed here: scipy ships no type stubs.
-_KD_TREE = cast(
-    "Callable[[FloatArray], _Tree]",
-    spatial.cKDTree,  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-)
+class _Spatial(Protocol):
+    """scipy's ``spatial`` module, typed here: scipy ships no type stubs."""
+
+    KDTree: Callable[[FloatArray], _Tree]
+
+
+_KD_TREE = cast("_Spatial", importlib.import_module("scipy.spatial")).KDTree
 
 
 class ExactMap(Protocol):

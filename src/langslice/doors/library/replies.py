@@ -41,7 +41,6 @@ def library_reply(verb: str, reply: Any, saved: Sequence[Any]) -> Reply:
     texts = [item for item in media if isinstance(item, str)]
     if texts:
         body["media_texts"] = texts
-    # a mapping in, a mapping out: the rows made uniform, the rest kept
     uniform = cast("Mapping[str, Json]", with_uniform_rows(body))
     out: dict[str, object] = {**to_jsonable(uniform)}
     out["artifacts"], unsaved = artifacts(saved, verb)

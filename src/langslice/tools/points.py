@@ -23,8 +23,6 @@ if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
-#: The frames a section's points are given in: the image file's own pixels
-#: (``section_px``), or the fit grid's (``FitFrame.image``).
 FRAMES = ("file", "fit")
 
 
@@ -73,7 +71,7 @@ def _placed(job: Job, workspace: Workspace, section: Any) -> tuple[Any, Any, Any
     try:
         warp = applied_record(job, job.state, record)
     except ValueError as exc:
-        name = record.id  # pyright: ignore[reportAny]  # the section the warp reads
+        name = record.id  # pyright: ignore[reportAny]
         raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
                       message=f"{name}: {exc}") from exc
     return record, frame, warp
@@ -162,7 +160,7 @@ def section_points(job: Job, workspace: Workspace, section: Any, xyz_um: Any, *,
     try:
         x, y = file_points(held, warp, cols, rows)
     except ValueError as exc:
-        name = record.id  # pyright: ignore[reportAny]  # the section the warp reads
+        name = record.id  # pyright: ignore[reportAny]
         raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
                       message=f"{name}: {exc}") from exc
     if _frame_of(frame) == "fit":

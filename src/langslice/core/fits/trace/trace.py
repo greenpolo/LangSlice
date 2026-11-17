@@ -58,22 +58,16 @@ from langslice.core.workspace import Workspace
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
 
-#: Width of the placed boundaries in Image 1, in canvas pixels at a 1536-px long edge.
 BORDER_WIDTH_PX = 2.0
 
-#: Changes whenever the model's inputs change for the same geometry (prompt text,
-#: attachment order, border rendering, the canvas's upright turn), so a saved
-#: reply is reused only for the exact inputs that produced it.
 INPUT_VERSION = "supplied-2"
 
-#: Attachment roles in request order, per prompt twin.
 _GPT_ATTACHMENTS = (("Image 1: clean photograph", "original"),
                     ("Image 2: placed borders", "rough_overlay"))
 _GEMINI_ATTACHMENTS = (("Image 1: placed borders", "rough_overlay"),
                        ("Image 2: clean photograph", "original"))
 
 
-#: Where a profile's own prompt names the section plane.
 PLANE_PLACEHOLDER = "{plane}"
 
 
@@ -157,7 +151,7 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
                       f"The saved image reply {result_path} cannot be read "
                       f"({problem}); nothing was started. The file is "
                       "damaged: tell the user.")
-    result = cast("dict[str, Any]", saved)  # a saved result: by key
+    result = cast("dict[str, Any]", saved)
     call_directory = result_path.parent
     directory = result.get("artifact_dir")
     if isinstance(directory, str):
@@ -165,7 +159,7 @@ def _saved_result(result_path: Path) -> dict[str, Any] | None:
             directory, call_directory, levels=1)
     paths = result.get("artifact_paths")
     if isinstance(paths, dict):
-        named = cast("dict[str, str]", paths)  # a saved result: by key
+        named = cast("dict[str, str]", paths)
         result["artifact_paths"] = {
             key: _path_in_call(path, call_directory, levels=2)
             for key, path in named.items()}
@@ -179,7 +173,7 @@ def _path_in_call(path: str, call_directory: Path, *, levels: int) -> str:
     ``result.json`` stores it, and the attempt's part of an older file's
     absolute path, written on either system.
     """
-    written = PureWindowsPath(path)  # splits on both separators
+    written = PureWindowsPath(path)
     return str(call_directory.joinpath(*written.parts[-levels:]))
 
 
@@ -188,11 +182,7 @@ def _relative_in_call(path: str, call_directory: Path) -> str:
     return Path(path).relative_to(call_directory).as_posix()
 
 
-#: The file a call key's running attempt holds a lock on (``filelock``)
-#: until its outcome is saved.
 _CLAIM = ".call.lock"
-#: How long a new attempt waits for the call key's claim, in seconds: a
-#: claim released a moment ago can still be refused briefly on Windows.
 CLAIM_WAIT_S = 1.0
 
 
@@ -228,7 +218,7 @@ def _open_attempt(
     except Refused:
         claim.release()
         raise
-    if landed is not None and landed.get("raw_received"):  # a reply landed
+    if landed is not None and landed.get("raw_received"):
         claim.release()
         return {**landed, "cached": True}
     attempt = 1
@@ -246,9 +236,7 @@ def _finish_attempt(
     result: dict[str, Any],
 ) -> dict[str, Any]:
     """Save an attempt's outcome (its own and the call key's) and release the key."""
-    # paths relative to the call key: the file names no folder of this computer
     call_directory = result_path.parent
-    # start_correction's paths: file name to path
     paths = cast("dict[str, str]", result["artifact_paths"])
     stored = {
         **result,
@@ -311,7 +299,6 @@ def _canvas_and_placement(
         prepared.image, provider=provider, image_model=model, upright=stance,
         footprint=footprint(labels, prepared.atlas_to_slice))
     placement = render_to_canvas @ prepared.atlas_to_slice
-    # float64 preserves large atlas IDs across nearest-neighbour projection.
     placed = cv2.warpAffine(
         labels.astype(np.float64), placement[:2], canvas.size,
         flags=cv2.INTER_NEAREST, borderValue=0,
@@ -358,8 +345,6 @@ def shown_labels(
     return np.where(keep, shown, 0).astype(shown.dtype)
 
 
-#: Image-model requests one stack session keeps in flight at once. The agent
-#: never reads a reply, so calls run at the agent's pace rather than one by one.
 MAX_CONCURRENT_IMAGE_CALLS = 8
 
 
@@ -419,14 +404,13 @@ def start_correction(
     if not isinstance(prompt, str):
         raise Refused(RefusalCode.BAD_ARGS,
                       "prompt is text; nothing was started.")
-    # Validate prerequisites before spending a call or marking an attempt.
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
     key: dict[str, Any] = {
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     }
     remade = prepared.metadata.get("section_image")
-    if remade is not None:  # the section the model is shown is not the opening image
+    if remade is not None:
         key["section_image"] = remade
     regions = {name: list(entries) for name, entries in
                (("include", include), ("exclude", exclude)) if entries}
@@ -434,7 +418,7 @@ def start_correction(
         key["regions"] = regions
     own_prompt = getattr(image_model, "prompt", None)
     own_order = getattr(image_model, "photograph_first", None)
-    if own_prompt is not None or own_order is not None:  # a profile's own inputs
+    if own_prompt is not None or own_order is not None:
         key["profile_inputs"] = digest({"prompt": own_prompt, "photograph_first": own_order})
     call_key = digest(key)
     call_directory = _calls_folder(calls_dir, out, section_id).resolve() / call_key[:24]
@@ -463,8 +447,6 @@ def start_correction(
         "raw_reply": "raw_reply.png", "prompt": "prompt.txt",
         "base_prompt": "base_prompt.txt", "prompt_diff": "prompt_diff.txt",
     }.items()}
-    # The pictures sent are not kept (the canvas and its placed borders are
-    # drawn again from the request); their PNG digests are.
     sent_images = {"original": canvas, "rough_overlay": rough}
     _save_texts(paths, {"prompt": sent, "base_prompt": base_prompt,
                         "prompt_diff": prompt_diff(base_prompt, sent) + "\n"})
@@ -504,7 +486,6 @@ def start_correction(
             raw.save(paths["raw_reply"])
             mask = extract_thinned_lines(raw, canvas.size)
             Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
-            # Even an empty drawing is retained; anatomy is not a submit gate.
             result.update(
                 status="ok", route=generated.route, raw_size=list(raw.size),
                 model_border_pixels=int(mask.sum()),
@@ -564,7 +545,7 @@ def reply_on_grid(
                             borderValue=0)
     from langslice.core.fits.trace.canvas import crop_to_aspect
 
-    framed = crop_to_aspect(raw, canvas_size[0] / canvas_size[1])  # as the lines are read
+    framed = crop_to_aspect(raw, canvas_size[0] / canvas_size[1])
     picture = np.asarray(framed.resize(canvas_size, Image.Resampling.LANCZOS)
                          if framed.size != canvas_size else framed)
     reply = cv2.warpAffine(picture, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR,

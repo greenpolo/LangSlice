@@ -28,11 +28,8 @@ from langslice.core.stack.stack import Stack
 from langslice.job.layout import JobLayout
 from langslice.job.state_file import write_json_atomic
 
-#: The manifest of a tool's layers, in its folder.
 MANIFEST_FILE = "layers.json"
-#: Under the tool's folder: the layer files.
 LAYERS_SUBDIR = "layers"
-#: Under ``exports/``: the copies of the layers.
 EXPORT_SUBDIR = "plugins"
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")

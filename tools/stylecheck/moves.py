@@ -48,16 +48,13 @@ from tools.stylecheck.jsondata import as_list, as_table, as_text, load_json
 from tools.stylecheck.scope import Key
 from tools.stylecheck.settings import Record
 
-#: Where the move map lives, relative to the repository root.
 MOVES_FILE = "tools/stylecheck/moves.json"
 
-#: The settings whose items are module names, each read as a list.
 MODULE_LISTS = (
     "stylecheck.json_boundary_modules",
     "stylecheck.cli_modules",
 )
 
-#: The settings whose value is one module name.
 MODULE_NAMES = (
     "stylecheck.docs_renderer_module",
     "stylecheck.decorators_module",
@@ -66,16 +63,12 @@ MODULE_NAMES = (
     "stylecheck.infra_package",
 )
 
-#: The setting that holds import-linter's layers, highest first.
 LAYERS = "stylecheck.layers"
 
-#: The setting whose keys may be dotted ``module.Type`` names.
 TYPE_NAMES = "stylecheck.type_names"
 
-#: The fields of one move in the file.
 FIELDS = ("path", "symbol", "new_path", "new_symbol")
 
-#: The symbol of a module's code outside every function and class.
 MODULE_LEVEL = "<module>"
 
 
@@ -83,7 +76,6 @@ class MovesError(Exception):
     """Signal a move map that cannot be read."""
 
 
-#: A definition: its file relative to the root and its qualified name.
 Place = tuple[str, str]
 
 

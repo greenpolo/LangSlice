@@ -36,9 +36,6 @@ __all__ = [
     "region_outlines",
 ]
 
-#: How much thicker than the other atlas lines a picture draws the regions
-#: it highlights (``grep_atlas_view``'s regions, a restricted fit's
-#: ``restrict_to``, marked damage), the others drawn faint.
 HIGHLIGHT_WIDTH = 2.0
 
 
@@ -106,7 +103,6 @@ def placed_border_coverage(
     return stroke_boundaries(edges, size, s, width_px)
 
 
-#: Stride of the coarse coordinate grid that finds each region's fine-pixel box.
 COARSE_STEP = 8
 
 
@@ -143,7 +139,7 @@ def smooth_owner_map(
     for region in np.unique(labels):
         mask = labels == region
         if region == 0:
-            box = (0, width, 0, height)  # the background also lies outside the plane
+            box = (0, width, 0, height)
         else:
             ys, xs = np.nonzero(mask)
             box = (max(xs.min() - pad, 0), min(xs.max() + pad + 1, width),
@@ -159,7 +155,6 @@ def smooth_owner_map(
         rows, cols = np.nonzero(near.any(axis=1))[0], np.nonzero(near.any(axis=0))[0]
         if rows.size == 0 or cols.size == 0:
             continue
-        # Coarse indices back to fine pixels, with one coarse step of slack.
         r0 = max(int(rows[0]) * COARSE_STEP - COARSE_STEP, 0)
         r1 = min(int(rows[-1]) * COARSE_STEP + 2 * COARSE_STEP, native_x.shape[0])
         c0 = max(int(cols[0]) * COARSE_STEP - COARSE_STEP, 0)
@@ -298,8 +293,6 @@ def region_contours(
         if box is None or uid == 0:
             continue
         rows, cols = box
-        # Pad by one so a region touching its own bounding box still traces a
-        # closed contour; the offset below puts it back in image coordinates.
         sub = np.pad((labels[rows, cols] == uid).astype(np.uint8), 1)
         contours, _ = cv2.findContours(sub, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
         offset = np.array([cols.start - 1, rows.start - 1], dtype=np.float64)

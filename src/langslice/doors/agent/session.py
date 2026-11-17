@@ -53,7 +53,6 @@ _USER_ID = "langslice-user"
 def build_plugins(run_label: str) -> list[BasePlugin]:
     """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
-        # One working set per session: the instance remembers its cut.
         ContextFilterPlugin(custom_filter=WorkingSetImages()),
     ]
     model_call_delay_s = env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
@@ -62,7 +61,6 @@ def build_plugins(run_label: str) -> list[BasePlugin]:
     capture_dir = env_value("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
-    # Unknown or misplaced arguments are refused, never silently dropped.
     plugins.append(StrictArgumentsPlugin())
     return plugins
 
@@ -77,7 +75,7 @@ def _with_reasoning(model: str | object, reasoning: str | None) -> str | object:
     if not reasoning or not hasattr(model, "reasoning_effort"):
         return model
     copier = getattr(model, "model_copy", None)
-    if callable(copier):  # pydantic BaseLlm, e.g. the OAuth OpenAIOAuthLlm
+    if callable(copier):
         return copier(update={"reasoning_effort": reasoning})
     object.__setattr__(model, "reasoning_effort", reasoning)
     return model
@@ -94,7 +92,6 @@ def build_agent(
     reasoning: str | None = None,
 ) -> LlmAgent:
     """Construct an :class:`LlmAgent` with the harness's standard config."""
-    # kwargs dict so the enum-typed media_resolution string is accepted as-is.
     config_kwargs: dict[str, Any] = {
         "temperature": 1.0,
         "max_output_tokens": max_output_tokens,
@@ -110,16 +107,7 @@ def build_agent(
     )
 
 
-#: What a cached input token costs relative to an uncached one, measured on
-#: the OAuth lane's quota headers; OpenAI's published API rate is 0.1x.
 CACHED_TOKEN_WEIGHT = 0.13
-
-
-def _int_or_none(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 class TokenTally:
@@ -247,7 +235,6 @@ async def run_agent_session(
         live.start(agent, seed_message)
     if trace is not None:
         trace.seed(seed_message)
-    # The nudge is traced where it is sent, not where it is written.
     nudge: str | None = None
     tool_calls = 0
     turns = 0
@@ -283,8 +270,6 @@ async def run_agent_session(
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
         saw_tool_call = False
-        # Close inside this task before a submit break leaves the loop.
-        # Deferred finalization detaches ADK telemetry in a different context.
         async with aclosing(runner.run_async(
             user_id=_USER_ID, session_id=run_label, new_message=message, run_config=run_config
         )) as events:
@@ -294,8 +279,6 @@ async def run_agent_session(
                 if live is not None:
                     live.event(event)
                 if getattr(event, "error_message", None):
-                    # A model/provider error is a stop, not a turn to nudge past:
-                    # looping would re-pay the same failure over and over.
                     if live is not None:
                         live.emit("error", text=str(event.error_message))
                     raise RuntimeError(
@@ -323,8 +306,6 @@ async def run_agent_session(
         if done():
             break
         if background is not None:
-            # Work still running when the turn ended: wait for it, and its
-            # notice is the next message.
             items = await asyncio.to_thread(background)
             if items:
                 from langslice.doors.agent.media import items_to_parts
@@ -336,14 +317,9 @@ async def run_agent_session(
         message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
 
     if debrief and done():
-        # One more user message in the SAME context, after the job is over:
-        # what did the agent reach for that was not there? Its answer is data
-        # for the people building the environment, never for the run.
         if trace is not None:
             trace.nudge(debrief, turn=turns + 1)
         answer: list[str] = []
-        # The debrief's own usage is counted too: it is the biggest single
-        # request of the run (the whole history plus a long answer).
         try:
             async with aclosing(runner.run_async(
                 user_id=_USER_ID,
@@ -367,7 +343,7 @@ async def run_agent_session(
                         text = getattr(part, "text", None)
                         if isinstance(text, str) and text and not getattr(part, "thought", False):
                             answer.append(text)
-        except Exception as exc:  # the debrief is a courtesy; it never fails a run
+        except Exception as exc:
             logger.warning("%s: debrief failed: %s", run_label, exc)
         if debrief_sink is not None and answer:
             debrief_sink.append("\n".join(answer).strip())

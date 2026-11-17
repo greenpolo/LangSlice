@@ -67,6 +67,9 @@ LangSlice draws it (ABBA's inverse of the pull-back, by Newton's method),
 and on the section side. The connector's warp row carries the atlas side's
 median, 95th and 99th percentiles and maximum. The exact map's own
 smallest sampled Jacobian (a 65x65 screen) is reported, not enforced.
+
+``MIN_POINTS`` is the fewest pairs a warp takes and ``MIN_GRID_SIDE`` the
+even grid of that smallest budget.
 """
 
 from __future__ import annotations
@@ -108,36 +111,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: ABBA's point budget: its cost grows fast with the point count.
 MAX_POINTS = 33 * 33
-#: Pairs in the even start grid over the overlap's bounding box, about a
-#: quarter of the budget so most pairs go where the spline errs.
 START_POINTS = 17 * 17
-#: The smaller start tried when that one folds.
 SMALL_START_POINTS = 9 * 9
-#: The start box's margin around the overlap, as a fraction of its size.
 START_MARGIN = 0.05
-#: Points per side of the coarse grid over the rest of the snapshot.
 FRAME_SIDE = 9
-#: Search points along the snapshot's long side: about 25-50 um apart on
-#: a whole mouse section, finer than the warps' smoothing.
 SEARCH_SIDE = 320
-#: Smallest distance between a new pair and a placed one, in search steps.
 MIN_GAP_STEPS = 1.5
-#: Smallest distance between two pairs added in one round, in search steps.
 BATCH_GAP_STEPS = 8.0
-#: The even snapshot grids tried when every adaptive start folds, in points
-#: per side.
 GRID_SIDES = (33, 25, 17, 9)
-#: The fewest pairs a warp takes, and the even grid of the smallest budget.
 MIN_POINTS = 16
 MIN_GRID_SIDE = 4
-#: Search error at which pairs stop being added, in millimetres.
 TOLERANCE_MM = 0.005
-#: Points per side of the screen of the exact map's Jacobian (reported).
 SCREEN_SIDE = 65
-#: Smallest fraction of the snapshot the overlap may cover before the whole
-#: snapshot is used instead.
 MIN_REGION_FRACTION = 0.01
 
 
@@ -501,7 +487,6 @@ def world_landmarks(
 
     step_px = max(frame.file_size) / SEARCH_SIDE
     search, region = _samples(exact, step_px, step_px)
-    # held out: every other search step, halfway between search points
     probes, _ = _samples(exact, 2.0 * step_px, step_px, region=region)
     spacing = Spacing(
         min_gap_px=MIN_GAP_STEPS * step_px,

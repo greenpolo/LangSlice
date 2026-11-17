@@ -46,18 +46,13 @@ from langslice.core.stack.json_reads import (
 from langslice.core.stack.section import Angles
 from langslice.core.stack.trace import BorderTrace
 
-#: A JSON object as this module writes it.
 Written = dict[str, JsonValue]
 
 
-# --- the affine --------------------------------------------------------------
-
-#: The keys of an affine's knobs.
 PHYSICAL_KEYS = (
     "rotation_deg", "scale_x", "scale_y", "translate_x_mm", "translate_y_mm",
     "shear", "pivot",
 )  # fmt: skip
-#: The keys of a stored affine, as :class:`StoredAffine` names them.
 AFFINE_KEYS = (
     "kind", "params", "physical", "calibration", "mirrored", "note",
     "in_plane", "regions", "fit_atlas", "orientation", "stale",
@@ -251,9 +246,6 @@ def affine_from_json(data: JsonObject) -> StoredAffine:
     )
 
 
-# --- the deformation ---------------------------------------------------------
-
-#: The keys of a deformation reference.
 DEFORMATION_KEYS = (
     "keep_linear", "record", "key", "linear_key", "steps", "summary",
     "inverse_source", "landmark_revision", "landmark_pairs",
@@ -305,7 +297,6 @@ def deformation_to_json(deformation: DeformationRef) -> Written:
                 ("landmark_holds", warp.holds),
             ]
         )
-        # a warp built on the linear placement writes its baseline as null
         form["landmark_baseline_key"] = warp.baseline_key
         form["landmark_baseline_steps"] = to_jsonable(warp.baseline_steps)
         form["steps"] = to_jsonable(deformation.steps)
@@ -348,7 +339,6 @@ def deformation_from_json(data: JsonObject) -> DeformationRef:
     key = optional_at(data, "key", text_at)
     steps = optional_at(data, "steps", objects_at)
     if kept_linear is None:
-        # every fit's reference names its saved fit and the steps that made it
         key = text_at(data, "key")
         steps = objects_at(data, "steps")
     return DeformationRef(
@@ -364,9 +354,6 @@ def deformation_from_json(data: JsonObject) -> DeformationRef:
     )
 
 
-# --- the border trace --------------------------------------------------------
-
-#: The keys of a border trace, in the order its record is written.
 TRACE_KEYS = (
     "id", "geometry_fingerprint", "prompt_edited", "provider", "model",
     "profile", "untested", "include", "exclude", "output_kind",
@@ -469,16 +456,11 @@ def trace_from_json(data: JsonObject) -> BorderTrace:
     )
 
 
-# --- made images, masks and layers -------------------------------------------
-
-#: The keys of a made image's entry.
 IMAGE_KEYS = ("source", "file", "digest", "made")
-#: The keys of a mask's entry.
 MASK_KEYS = (
     "kind", "section_image", "atlas_image", "params", "inputs",
     "registration", "file", "left_out",
 )  # fmt: skip
-#: The keys of a layer's reference.
 LAYER_KEYS = ("id", "name", "kind", "frame", "file", "tool", "call", "created")
 
 
@@ -631,9 +613,6 @@ def layer_from_json(data: JsonObject) -> LayerRef:
         created=text_at(data, "created"),
         extra=other_keys(data, LAYER_KEYS),
     )
-
-
-# --- cutting angles ----------------------------------------------------------
 
 
 def angles_to_json(angles: Angles) -> Written:

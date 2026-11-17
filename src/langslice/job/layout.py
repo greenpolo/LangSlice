@@ -1,8 +1,7 @@
 """Where a job's files live: the job folder beside the images, and its names.
 
 One stack, one job folder: ``<images>/langslice/``. Every host puts it next
-to the images it hands LangSlice (the CLI's folder, the snapshots ABBA
-exports), so a job travels with its images and is found
+to the images it hands LangSlice, so a job travels with its images and is found
 without an id. Inside::
 
     job.lock             the write lock (:mod:`langslice.job.lock`)
@@ -64,14 +63,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-#: The job folder's name, next to the images.
 JOB_DIRNAME = "langslice"
 JOB_FILE = "job.json"
 STATE_FILE = "state.json"
 HISTORY_DIR = "history"
-#: Under ``history/``: the undo and redo steps.
 UNDO_FILE = "undo.json"
-#: Under ``sections/<name>/``: every write that changed the section.
 SECTION_HISTORY_FILE = "history.jsonl"
 SECTIONS_DIR = "sections"
 VIEWS_DIR = "views"
@@ -79,43 +75,24 @@ VIEWS_INDEX = "views.jsonl"
 EXPORTS_DIR = "exports"
 LOGS_DIR = "logs"
 EVENTS_FILE = "events.jsonl"
-#: Under ``logs/``: the launch prompts ``langslice-job FOLDER launch`` printed,
-#: ``<six-digit number>_<role>.md`` (the exact text).
 LAUNCHES_DIR = "launches"
-#: Agent transcripts: LangSlice's own agent's trace, a coding agent's session.
 TRACE_DIR = "trace"
-#: The job's own Python environment (``langslice-job FOLDER env``).
 ENV_DIR = "env"
-#: Where tool plugins keep their files: ``plugins/<tool>/`` is a plugin tool's
-#: only place to write (:mod:`langslice.job.plugin_store`).
 PLUGINS_DIR = "plugins"
-#: Under ``exports/``: the run's result (the state's shape, unversioned) and
-#: a host job's final result (state + host updates).
 RESULTS_FILE = "linear_results.json"
-#: Under ``exports/``: what the agent run spent (tokens, usage-window share, dollar
-#: estimate), written when the session ends, for the operator.
 SPEND_FILE = "spend.json"
-#: Under ``sections/<name>/``.
 DEFORMABLE_DIR = "deformable"
 MASKS_DIR = "masks"
-#: A section's made images (``<name>.png``, ``<name>.2.png``...; never deleted).
 IMAGES_DIR = "images"
 BORDER_TRACE_DIR = "border_trace"
 SECTION_VIEWS_DIR = "views"
-#: The public rendering of the state (:mod:`langslice.job.public_files`, which
-#: also names each section's map files).
 REGISTRATION_FILE = "registration.json"
-#: The review comments a person left in the LangSlice window
-#: (:mod:`langslice.job.review`).
 REVIEW_FILE = "review.json"
 
-#: The job folder's format, carried by ``job.json``: this layout.
 JOB_FORMAT_VERSION = 1
 FORMAT_KEY = "format_version"
 
 _UNSAFE = re.compile(r"[\x00-\x1f/\\:*?\"<>|]")
-#: The device names Windows refuses as a file or folder name, in any case and
-#: before any dot: ``aux`` and ``aux.png`` alike.
 _RESERVED = re.compile(r"CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³]",
                        re.IGNORECASE)
 
@@ -184,10 +161,6 @@ def locate_job_folder(
     return target, fallback
 
 
-#: ``job.json``'s ``image_folder`` when the job folder is the default one,
-#: ``<images>/langslice``: its parent. Stored relative, so the job folder
-#: moves (or is renamed) with its images. An explicit job folder
-#: (``--job-dir``) stores the absolute path it needs.
 IMAGES_ARE_PARENT = ".."
 
 
@@ -253,7 +226,7 @@ def _windows_name(name: str) -> str:
     A trailing dot or space becomes ``_``, and a device name gets ``_``
     after it (``aux_.png``).
     """
-    if name.endswith((".", " ")):  # Windows drops a trailing dot or space
+    if name.endswith((".", " ")):
         name = name.rstrip(". ") + "_"
     head, dot, rest = name.partition(".")
     if _RESERVED.fullmatch(head.rstrip(" ")):
@@ -339,7 +312,6 @@ class JobLayout:
     """The job folder of one stack and the names inside it."""
 
     folder: Path
-    #: The images this job registers; section folder names come from them.
     image_folder: Path | None = None
     _names: dict[str, str] | None = field(default=None, repr=False)
 
@@ -415,8 +387,6 @@ class JobLayout:
         """The folder of plugin tool *tool* (``plugins/<tool>/``; made on use)."""
         return self.plugins_dir / tool
 
-    # --- sections ---------------------------------------------------------------
-
     def _siblings(self) -> list[str]:
         if self.image_folder is None or not self.image_folder.is_dir():
             return []
@@ -479,8 +449,6 @@ class JobLayout:
     def section_views_dir(self, section_id: str) -> Path:
         return self.section_dir(section_id) / SECTION_VIEWS_DIR
 
-    # --- paths in job files ------------------------------------------------------
-
     def relative(self, path: str | os.PathLike[str]) -> str:
         """*path* as job files store it: relative to the job folder (POSIX
         separators) when inside it; an outside path stays absolute."""
@@ -511,8 +479,6 @@ class JobLayout:
         except OSError:
             pass
 
-
-# --- job.json --------------------------------------------------------------------
 
 
 def read_job_file(layout: JobLayout) -> dict[str, Any] | None:

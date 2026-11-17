@@ -30,8 +30,8 @@ docstring standard, and the Cognitive Complexity definition (SonarSource,
 The formatter decides where lines break; nobody arranges whitespace by
 hand. When a call does not fit on one line it puts one argument per line,
 which lines up keyword names and makes a changed setting one changed line
-in a diff. A `noqa: E501` is allowed only on a URL or a row of a literal
-table [linter `noqa-line-length`].
+in a diff. No `noqa: E501` is written (7.1) [linter `noqa-line-length`,
+`directive`].
 
 **1.2 One idea per line.** [linter `nested-conditional`,
 `conditional-placement`, `nested-comprehension`, `comprehension-clauses`,
@@ -68,17 +68,13 @@ else:
 warning] Separate the steps
 of a function with blank lines. A paragraph longer than 15 lines (comments
 count, blank lines end it) is two steps that need a blank line, or a step
-that needs its own function. A step that is not obvious opens with a short
-comment naming it:
+that needs its own function. A step that is not obvious gets a name of its
+own, as a variable or a function:
 
 ```python
-    # whole-pixel shift from the cross-correlation peak
-    peak = np.unravel_index(np.argmax(np.abs(correlation)), correlation.shape)
-    shift_px = np.array(peak, dtype=float)
-    shift_px[shift_px > midpoints] -= np.array(shape)[shift_px > midpoints]
+    whole_pixel_shift = shift_at_correlation_peak(correlation)
 
-    # refine to a fraction of a pixel around that estimate
-    ...
+    shift_px = refined_to_subpixel(correlation, whole_pixel_shift)
 ```
 
 **1.4 Narrate a pipeline.** [review] A function that runs a sequence of
@@ -112,15 +108,10 @@ a module that reaches 800 is split by topic, never by halves.
 
 **2.3 Imports at the top.** [linter `local-import`] A reader learns a
 module's dependencies from its first lines. An import inside a function is
-allowed for two reasons, and the line says which: a slow optional dependency
-(`torch`, `SimpleITK`, `fireants`, `itk`, `cv2`), or a cycle the layer rule
-forces, naming the module that would cycle. The linter checks the name
-against the import graph.
-
-```python
-    import torch  # local: slow to import, needed only for a deformable fit
-    from langslice.tools.status import save_view  # local: cycle with tools.status
-```
+allowed for two reasons: a slow optional dependency (`torch`, `SimpleITK`,
+`fireants`, `itk`, `cv2`), or a cycle the layer rule forces, where the
+imported module imports this one when it loads. The linter reads both from
+its settings and the import graph, so the line carries no note.
 
 **2.4 `__init__.py` holds no logic.** [linter `init-logic`] It is empty, sets the
 version, or re-exports the package's public names. Nothing else.
@@ -249,8 +240,8 @@ are whole words. Banned as any part of a variable or parameter name, because
 each has come to mean many things here: `held`, `shown`, `drawn`, `placed`,
 `asked`, `wanted`, `picked`, `found`, `thing`, `stuff`. Short names are
 allowed for loop indices (`i`, `j`), coordinates (`x`, `y`, `z`), `key,
-value` pairs, and mathematics where a comment or the docstring names the
-symbol (`R  # rotation part of the affine`). Accepted abbreviations: `n_`
+value` pairs, and mathematics where the docstring names the
+symbol (`R`, the rotation part of the affine). Accepted abbreviations: `n_`
 for counts, `idx`, `img`, `df`, `src`, `dst`, `np`, `pd`, `npt`.
 
 **4.4 One name per type.** [linter `type-name`, from annotations] A parameter of a given
@@ -374,17 +365,26 @@ helpers may go without docstrings when their name says it all.
 
 ## 7. Comments
 
-**7.1 Two kinds of comment.** [review] A step header ("# refine to a
-fraction of a pixel") or a reason the code has to be this way ("# plane by
-plane: the 3D version needs more memory than a 25 µm atlas allows"). A
-comment does not restate the line below it.
+**7.1 No comments, no waivers.** [linter `comment`, `constant-comment`,
+`except-comment`, `directive`] Code
+carries no `#` comment: not on a line of its own, not at the end of a line,
+not as a `#:` line above a constant. What a line does is said by its names;
+why it has to be this way is said in the docstring of its function or
+module. A directive that switches a tool's finding off (`# noqa`,
+`# type: ignore`, `# pyright: ignore`, `# pragma: no cover`, `# fmt:`) is
+not written either: the code is changed until the tool has nothing to
+report, and the checker's finding says how. Only docstrings stay. Vendored
+code (`src/langslice_vendor/`) stays as published. The comments and
+directives written before this rule are in the checker's baseline, which
+only shrinks.
 
 **7.2 Present tense, no history.** [linter `history-comment`] No dates, no names, no quotes,
-no "used to", "legacy", "no longer" in comments. The reason is stated as it
+no "used to", "legacy", "no longer" in a docstring. The reason is stated as it
 holds now; git keeps the history.
 
-**7.3 Constants carry their reason.** [review] A module-level constant has a
-`#:` comment saying why it has its value.
+**7.3 Constants carry their reason.** [review] A module-level constant's
+name says what it is and its unit; why it has its value is said in the
+module's docstring.
 
 **7.4 No commented-out code.** [ruff ERA001] Delete it; git keeps it.
 
@@ -404,10 +404,10 @@ ones.
 
 **8.3 Never lose data silently.** [ruff BLE001, B904, S110; linter
 `broad-except`] No bare
-`except`. A broad `except Exception` names in its comment the failure it
-expects, and its body raises, returns a value the function's type admits, or
-reports the skip through `report_skip`; a body that only passes, continues,
-or logs at debug level is an error. Re-raise with `from error`.
+`except`. A handler names the exceptions it expects; a broad
+`except Exception` is written only where it raises again, and a body that
+only passes, continues, or logs at debug level is an error. Re-raise with
+`from error`.
 
 **8.4 `assert` is for invariants.** [review] An `assert` states something
 valid input cannot break. Input is validated with the checkers (5.6), which
@@ -480,7 +480,6 @@ Keep these through every refactor:
 - Frozen dataclasses for results.
 - Named constants with a one-line reason.
 - Exceptions chained with `from`.
-- Lint exceptions that say why (`# noqa: BLE001 - an atlas without one`).
 - Stable, machine-readable refusal codes.
 
 

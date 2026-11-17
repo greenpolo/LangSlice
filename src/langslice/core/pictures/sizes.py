@@ -12,36 +12,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
 
-#: Long edge, in pixels, of every picture the agent is SHOWN, per picture
-#: level (``ImageSettings.picture_level``): ``(opening, later)``. *Opening*
-#: is each tile of the opening strips (every section, every atlas section
-#: beneath it or in the atlas reference;
-#: :mod:`langslice.core.pictures.opening`); *later* is each picture a tool
-#: returns (each panel of a multi-panel picture). "auto" opens at 512 and lets
-#: the agent pass ``resolution`` per call (:data:`MIN_RESOLUTION` up to the
-#: driver model's own largest image, which the door passes in), 1024 when it
-#: does not. The only other bound is the source: nothing is upsampled past
-#: the pixels it is drawn from (a section's working copy, the atlas plane at
-#: its own voxel size), so a small snapshot stays small. Never a working frame
-#: (:data:`PREVIEW_LONG_EDGE`) and never the image model's input.
 PICTURE_EDGES: dict[str, tuple[int, int]] = {
     "low": (256, 512),
     "medium": (384, 768),
     "high": (512, 1024),
     "auto": (512, 1024),
 }
-#: The level that lets the agent choose each picture's size.
 AUTO_RESOLUTION = "auto"
-#: Smallest long edge the agent may ask for at "auto". The largest is the
-#: driver model's own maximum image (the door knows the model:
-#: ``view_options.view_edge_limit``; the MCP host is Claude,
-#: ``opening.CLAUDE_MAX_VIEW_EDGE``). A value outside is clamped and the
-#: reply says so.
 MIN_RESOLUTION = 128
 
-#: Pictures (and, for the transform tools, sections) one call takes at the doors
-#: that spend a model's context on them: LangSlice's own agent and MCP
-#: (``Job.picture_cap``). The agent CLI and the library set no such cap.
 MAX_IMAGES_PER_CALL = 4
 
 

@@ -46,15 +46,11 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
-#: The atlas channel that is lines; every other atlas channel is an image.
 BORDERS = "borders"
 
 
-#: Raw channels one overlay may add up.
 MAX_OVERLAY_CHANNELS = 6
-#: Atlas image opacity in an overlay when the call lists an image but no opacity.
 DEFAULT_ATLAS_OPACITY = 0.5
-#: Region line width in output pixels, everywhere.
 DEFAULT_BORDER_THICKNESS = 1.0
 
 
@@ -81,19 +77,12 @@ def zoom_fractions(zoom: tuple[float, ...] | list[float],
 class ModeRule:
     """What one mode draws."""
 
-    #: A section is drawn (``channels`` applies).
     section: bool
-    #: Something of the atlas is drawn (the atlas keys apply).
     atlas: bool
-    #: ``atlas_channels`` when the caller gives none.
     atlas_default: tuple[str, ...] = ()
-    #: The atlas images are blended under the section (``atlas_opacity`` applies).
     opacity: bool = False
 
 
-#: Every picture mode, by name: ``look``'s (``section``, ``template`` for
-#: ``atlas``, ``overlay``, ``stacked`` for ``positioning``) and ``borders``
-#: (a deformable fit or trace picture).
 MODE_RULES: dict[str, ModeRule] = {
     "section": ModeRule(section=True, atlas=False),
     "template": ModeRule(section=False, atlas=True, atlas_default=("template",)),
@@ -108,30 +97,17 @@ class DisplayOptions:
     """One call's validated picture options."""
 
     mode: str
-    #: ``[x0, y0, x1, y1]`` pixels of the unzoomed picture (:func:`zoom_fractions`);
-    #: empty is the whole picture.
     zoom: tuple[float, ...]
-    #: Raw channel names drawn together in their colours (empty: one image).
     channels: tuple[str, ...]
-    #: The section image drawn alone (empty: ``preprocessed``).
     image: str
     atlas_channels: tuple[str, ...]
     atlas_opacity: float
-    #: ``(name as asked, ids including descendants)`` per highlighted region;
-    #: a name may carry a side (``"CTX:left"``, :mod:`langslice.core.atlas.sides`),
-    #: which the renderers resolve against the picture's placement.
     regions: tuple[tuple[str, frozenset[int]], ...]
-    #: Which lines ``borders`` draws: ``all`` or ``none``.
     outlines: str
     border_color: str
     border_thickness: float
-    #: ``applied`` or ``none`` (placement pictures).
     deformation: str = "applied"
-    #: Long edge of each picture this call returns
-    #: (:func:`langslice.core.pictures.sizes.picture_edge`).
     long_edge: int = PICTURE_EDGES["low"][1]
-    #: Ontology depth of the regions whose boundaries ``all`` draws
-    #: (:func:`langslice.core.atlas.levels.labels_at`).
     depth: int = OVERLAY_DEPTH
 
     @property

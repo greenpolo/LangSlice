@@ -41,8 +41,6 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
     from langslice.tools.run import Run
 
-#: Names no made image may take: the fits' word for no mask, and ``look``'s
-#: word for every layer.
 RESERVED = ("none", "all")
 
 
@@ -54,15 +52,11 @@ class ImageRecipe:
     model gives them and checks the values.
     """
 
-    #: ``{image name: weight}``; empty: each raw channel by its tissue
-    #: coverage.
     weights: Mapping[str, float] = field(default_factory=dict[str, float])
     clahe_clip: float = images.DEFAULT_CLAHE_CLIP
     clahe_tiles: int = images.DEFAULT_CLAHE_TILES
     n4: bool = False
-    #: ``[low, high]``, fractions 0 to 1 of the blended image; empty: none.
     contrast: Sequence[float] = ()
-    #: The gamma after the blend; None (or 0, 1): linear.
     gamma: float | None = None
     invert: bool = False
 
@@ -72,14 +66,9 @@ class ImagesMade:
     """What :func:`make_section_image` did."""
 
     name: str
-    #: The sections the image was made for (or removed from).
     sections: list[str]
     deleted: bool = False
-    #: The image as ``status`` lists it now
-    #: (:func:`langslice.core.sections.images.summary`); empty once it is
-    #: deleted everywhere.
     in_force: dict[str, Any] = field(default_factory=dict)
-    #: Every section image of the stack now, raw channels first.
     images: list[str] = field(default_factory=list)
 
 
@@ -324,10 +313,6 @@ def make_section_image(
                 raise Refused(RefusalCode.UNKNOWN_IMAGE, message=str(exc),
                               images=images.image_names(workspace, record)) from exc
     reset = label == PREPROCESSED and recipe == images.OPENING_RECIPE
-    # The sections are made at once on threads, one per core; their N4
-    # (SimpleITK, which holds Python's lock) runs in worker processes of
-    # ITK_THREADS threads each. A failure is the first failing section's, in
-    # order, once every section is done.
     tasks = 2 * len(records) if recipe["n4"] and not reset else 0
     with process_pool(tasks, threads_each=ITK_THREADS) as pool:
         making = _Making(job, workspace, label, recipe, reset,

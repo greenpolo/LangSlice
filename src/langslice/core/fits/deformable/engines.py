@@ -63,50 +63,17 @@ from langslice.core.hardware import (
 
 logger = logging.getLogger(__name__)
 
-#: Histogram bins for mutual information, both engines.
 MUTUAL_INFORMATION_BINS = 32
-#: Random samples per Elastix iteration.
 ELASTIX_SPATIAL_SAMPLES = 4096
-#: Threads every CPU engine call uses, whatever the machine or pool size: the
-#: thread count changes a multithreaded fit's last bits (module docstring).
 FIT_THREADS = 8
-#: Elastix's RandomSeed, and torch's seed around a FireANTs fit.
 RANDOM_SEED = 20261002
-#: The largest move of one gradient step, in FireANTs' half-resolutions (half a
-#: pixel of the level), fixed. Tuned on Carey sections and two unpublished
-#: fluorescence series:
-#: at 0.8 close-ups of the cerebellar granular layers and the hippocampal cell
-#: layers fit at least as tightly as ANTs SyN did and fluorescent brainstem
-#: kept its shape; 3.2 tore folia across the white matter. The optimizer is
-#: FireANTs' SGD with ANTs' step rule (:func:`_global_step_sgd`), not its
-#: default Adam: Adam scales each pixel's step by its own gradient history, so
-#: pixels the masks leave out (an excluded region) moved as far as any, driven
-#: by the faint smoothed gradient around them.
 FIREANTS_LEARNING_RATE = 0.8
-#: A fit of traced lines (``section_image="lines"``: the image model's lines
-#: and the regions they enclose against the atlas borders and regions) is run
-#: at ANTs SyN's settings, which these three settings give; tuned on Carey
-#: (seven brains, the image model's saved replies, scored against the
-#: raters), where FireANTs at the stain fit's settings followed
-#: hallucinated lines, folded and labelled worse than ANTs. The step is ANTs'
-#: own 0.2 voxel (0.4 half-pixels), half the stain fit's.
 TRACED_LEARNING_RATE = 0.4
-#: The whole warp of a traced fit is smoothed this many times wider than its
-#: smoothness says (80 um: a total sigma of 0.04 mm instead of 0.02), so a
-#: stray or invented line bends the atlas less locally.
 TRACED_TOTAL_SIGMA_FACTOR = 2.0
-#: Each pyramid level halves the grid (shrink factors 2^(n-1)..1 for n levels).
 FIREANTS_SHRINK = 2
-#: Fixed-point iterations (and relaxation) that invert each half of the SyN
-#: warp (:func:`_invert`) and a tapered restricted step (``fit._invert_step``, the
-#: same fixed point on the section grid in numpy).
 INVERSE_ITERATIONS = 200
 INVERSE_RELAXATION = 0.5
-#: The installed FireANTs release, read from its package metadata so a fit
-#: records the release that ran it; part of the deformable cache key
-#: (``core.fits.deformation.cache_key``).
 FIREANTS_VERSION = importlib.metadata.version("fireants")
-#: CUBLAS needs this before its first use for deterministic matrix products.
 _CUBLAS_ENV = ("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 
@@ -120,20 +87,13 @@ class EngineInputs:
     moving_mask: np.ndarray
     spacing_mm: tuple[float, float]
     origin_mm: tuple[float, float]
-    #: Label-map channels: paired region indicators (float, softened) and
-    #: their metric weights. FireANTs only.
     fixed_labels: list[np.ndarray] = field(default_factory=list)
     moving_labels: list[np.ndarray] = field(default_factory=list)
     label_weights: list[float] = field(default_factory=list)
-    #: Edge channel (stain fits): smoothed gradient magnitudes of both images
-    #: and its metric weight; None without one.
     fixed_edges: np.ndarray | None = None
     moving_edges: np.ndarray | None = None
     edge_weight: float = 0.0
-    #: Local correlation window radius in working-grid pixels.
     correlation_radius_px: int = 4
-    #: The atlas's brain scale (``core.atlas.brain_size.brain_scale``): the
-    #: smoothness sigmas, adult mouse, are multiplied by it.
     brain_scale: float = 1.0
 
 
@@ -148,12 +108,8 @@ class EngineResult:
     runtime_s: float
     engine_version: str
     notes: list[str] = field(default_factory=list)
-    #: Section pixels the fit's metric left out, on the working grid (an
-    #: engine that estimates its own weighting reports them); None otherwise.
     left_out: np.ndarray | None = None
-    #: Seconds the fit waited for the machine's GPU queue (:func:`gpu_turn`).
     gpu_wait_s: float = 0.0
-    #: Times the GPU was out of memory and the fit ran again (:data:`OOM_RETRIES`).
     oom_retries: int = 0
 
 
@@ -190,9 +146,6 @@ def _windows_fcntl() -> Iterator[None]:
         del sys.modules["fcntl"]
 
 
-#: One import at a time: torch's first import is not safe from two threads,
-#: and the import swaps ``sys.stdout`` (process-wide) while it runs, which
-#: two threads at once would leave swapped.
 _IMPORTING = threading.Lock()
 
 
@@ -206,15 +159,13 @@ def import_fireants() -> Any:
     _IMPORTING.acquire()
     try:
         import torch
-        # FireANTs warns once per module that its optional fused CUDA kernels
-        # are absent; the plain torch path is what LangSlice runs.
         for name in ("fireants", "fireants.registration.optimizers.adam",
                      "fireants.interpolator", "fireants.registration.abstract",
                      "fireants.io.image"):
             logging.getLogger(name).setLevel(logging.ERROR)
-        with contextlib.redirect_stdout(io.StringIO()), _windows_fcntl():  # "Using FFO: False"
+        with contextlib.redirect_stdout(io.StringIO()), _windows_fcntl():
             from fireants.registration.syn import SyNRegistration  # noqa: F401
-    except ImportError as exc:  # pragma: no cover - depends on the environment
+    except ImportError as exc:  # pragma: no cover
         raise RuntimeError(
             "The deformable engine needs FireANTs and torch, LangSlice dependencies "
             "(reinstall LangSlice)"
@@ -259,7 +210,7 @@ def _deterministic(device: str) -> Generator[None, None, None]:
     own back. No fit draws a random number, so the fits beside it never
     change its result.
     """
-    import torch  # local: slow to import; the fit has loaded it already
+    import torch
 
     settings = _TORCH_SETTINGS
     with _TORCH_LOCK:
@@ -270,18 +221,12 @@ def _deterministic(device: str) -> Generator[None, None, None]:
                 torch.backends.cudnn.benchmark,
                 torch.get_num_threads(),
             )
-            # Torch flags its grid sampler's backward as nondeterministic for
-            # the image's gradient (atomic adds), which no fit asks for; the
-            # warp's gradient is one sum per output pixel. warn_only keeps
-            # that op, and the deformable tests check that identical inputs
-            # give identical fields. cuDNN's grid sampler is off: its backward
-            # is not one.
             torch.use_deterministic_algorithms(True, warn_only=True)
             torch.backends.cudnn.enabled = False
             torch.backends.cudnn.benchmark = False
             if device == "cpu":
                 torch.set_num_threads(FIT_THREADS)
-            torch.manual_seed(RANDOM_SEED)  # pyright: ignore[reportUnknownMemberType] - torch's stub
+            torch.manual_seed(RANDOM_SEED)  # pyright: ignore[reportUnknownMemberType]
         settings.running += 1
     try:
         with warnings.catch_warnings():
@@ -310,7 +255,7 @@ def _own_stream(device: str) -> Generator[None, None, None]:
     if not on_gpu(device):
         yield
         return
-    import torch  # local: slow to import; the fit has loaded it already
+    import torch
 
     stream = torch.cuda.Stream()
     with torch.cuda.stream(stream):
@@ -387,9 +332,6 @@ def _channel_loss(
 
     class ChannelLoss(torch.nn.Module):
         def forward(self, pred: Any, target: Any) -> Any:
-            # The masks move with their images but carry no gradient, as in
-            # ANTs: through them the warp would be rewarded for sliding an
-            # excluded zone onto tissue that matches badly.
             mask = (pred[:, -1:] * target[:, -1:]).detach()
             area = mask.sum() + 1e-8
             loss = pred.new_zeros(())
@@ -473,8 +415,6 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     update_sigma_mm = settings.smoothness_um / 1000.0 * scale
     total_sigma_mm = (update_sigma_mm * TOTAL_SIGMA_FRACTION
                       * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0))
-    # FireANTs takes Gaussian sigmas in voxels of each pyramid level, as ANTs
-    # took its variances.
     grad_sigma = update_sigma_mm / voxel_mm
     warp_sigma = total_sigma_mm / voxel_mm
     radius = max(1, int(inputs.correlation_radius_px))
@@ -484,12 +424,9 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     moving_channels = [inputs.moving]
     if edges:
         assert inputs.fixed_edges is not None and inputs.moving_edges is not None
-        # The edge channel uses the intensity pair's metric.
         terms.append((metric, float(inputs.edge_weight)))
         fixed_channels.append(inputs.fixed_edges)
         moving_channels.append(inputs.moving_edges)
-    # Each label pair is a mean-squares term on region indicators, the
-    # construction of ants.label_image_registration.
     for f, m, w in zip(inputs.fixed_labels, inputs.moving_labels, inputs.label_weights,
                        strict=True):
         terms.append(("mean_squares", float(w)))
@@ -497,8 +434,6 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         moving_channels.append(m)
 
     def image(channels: list[np.ndarray], mask: np.ndarray) -> Any:
-        # The mask rides as the last channel (FireANTs' masked mode), so it is
-        # resized, never blurred, with the pyramid and warped with the atlas.
         stack = np.stack([*channels, mask.astype(np.float32)], axis=-1).astype(np.float64)
         itk = sitk.GetImageFromArray(stack, isVector=True)
         itk.SetSpacing([float(v) for v in inputs.spacing_mm])
@@ -529,19 +464,14 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
                     smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
                     progress_bar=False, dtype=torch.float32,
                 )
-                # FireANTs builds its optimizers by name; the subclass changes only the step.
                 for half in (registration.fwd_warp, registration.rev_warp):
                     half.optimizer.__class__ = _global_step_sgd()
                 registration.optimize()
-                # Section -> atlas through the midpoint: rev^-1, then fwd; atlas ->
-                # section: fwd^-1, then rev. Both images share one grid, so the
-                # affine part is the identity.
                 with torch.no_grad():
                     forward_warp = registration.fwd_warp.get_warp().detach()
                     reverse_warp = registration.rev_warp.get_warp().detach()
                     forward = compose_warp(forward_warp, _invert(torch, reverse_warp))
                     inverse = compose_warp(reverse_warp, _invert(torch, forward_warp))
-                # Normalized [-1, 1] displacements (x, y) -> millimetres.
                 to_mm = np.array([(width - 1) / 2.0 * inputs.spacing_mm[0],
                                   (height - 1) / 2.0 * inputs.spacing_mm[1]], dtype=np.float64)
                 forward_mm = forward[0].detach().cpu().double().numpy() * to_mm
@@ -550,7 +480,7 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
                 if device == "cuda":
                     torch.cuda.empty_cache()
             break
-        except Exception as exc:  # another process took the memory: wait and fit again
+        except Exception as exc:
             if device != "cuda" or attempt == OOM_RETRIES or not out_of_memory(exc):
                 raise
             torch.cuda.empty_cache()
@@ -586,7 +516,6 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     )
 
 
-#: Elastix's name for the affine's metric (:data:`~.settings.ELASTIX_STAIN_METRIC`).
 ELASTIX_METRIC = "AdvancedMattesMutualInformation"
 
 
@@ -614,10 +543,6 @@ def _elastix_register(
     moving = _elastix_image(inputs.moving, inputs)
     fixed_mask = _elastix_image(inputs.fixed_mask.astype(np.uint8), inputs, np.uint8)
     moving_mask = _elastix_image(inputs.moving_mask.astype(np.uint8), inputs, np.uint8)
-    # The method's own SetNumberOfThreads crashes this itk-elastix build
-    # (segfault in the optimizer's parameter estimation); every component
-    # takes ITK's global default when it is built, so that is set instead,
-    # for this call only.
     with global_threads(itk.MultiThreaderBase, FIT_THREADS):  # type: ignore[attr-defined]
         method = itk.ElastixRegistrationMethod.New(fixed, moving)  # type: ignore[attr-defined]
         method.SetFixedMask(fixed_mask)
@@ -641,8 +566,6 @@ def _parameter_maps(transform: Any) -> list[dict[str, list[str]]]:
     ]
 
 
-#: Pyramid levels and iterations per level of the Elastix affine refinement
-#: (``elastix_affine``), which starts from a placement that is already close.
 ELASTIX_AFFINE_RESOLUTIONS = 3
 ELASTIX_AFFINE_ITERATIONS = 500
 
@@ -662,10 +585,7 @@ class AffineResult:
     engine_version: str
 
 
-#: Run Elastix affines in kept worker processes (ITK holds Python's lock while
-#: it registers, so threads would run them in turn). Tests switch it off.
 ELASTIX_PROCESSES = True
-#: The kept worker pool's name (``core.hardware.kept_process_pool``).
 ELASTIX_POOL = "elastix"
 
 
@@ -735,8 +655,6 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     pm["AutomaticScalesEstimation"] = ("true",)
     pm["Metric"] = (ELASTIX_METRIC,) * metrics
     if edges:
-        # Metric k reads image pair k; pyramids, interpolators and samplers
-        # number one per metric (Elastix's multi-image rules).
         pm["Registration"] = ("MultiMetricMultiResolutionRegistration",)
         pm["Metric0Weight"] = ("1.0",)
         pm["Metric1Weight"] = (repr(float(inputs.edge_weight)),)
@@ -749,8 +667,6 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     pm["NumberOfSpatialSamples"] = (str(ELASTIX_SPATIAL_SAMPLES),)
     pm["NewSamplesEveryIteration"] = ("true",)
     pm["RandomSeed"] = (str(RANDOM_SEED),)
-    # Masks are already widened past the placed atlas footprint; eroding them at
-    # coarse pyramid levels would cut away exactly that informative edge.
     pm["ErodeMask"] = ("false",)
     pm["ErodeFixedMask"] = ("false",)
     pm["ErodeMovingMask"] = ("false",)
@@ -772,7 +688,6 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
         raise RuntimeError("Elastix returned no affine parameters") from exc
     if len(values) != 6 or len(centre) != 2:
         raise RuntimeError(f"Unexpected Elastix affine parameters: {values}, {centre}")
-    # Elastix's affine: T(x) = A (x - c) + c + t, A row-major.
     linear = np.array(values[:4], dtype=np.float64).reshape(2, 2)
     pivot = np.array(centre, dtype=np.float64)
     shift = pivot + np.array(values[4:], dtype=np.float64) - linear @ pivot

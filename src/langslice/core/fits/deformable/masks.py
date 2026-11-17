@@ -32,14 +32,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-#: Widening of the placed atlas footprint so its outline sits inside the metric
-#: (adult mouse; times the brain scale).
 MASK_MARGIN_MM = 0.2
-#: Margin around excluded regions also kept out of the moving mask. Excluded
-#: pixels are blanked to background, which leaves an edge; without this margin
-#: that artificial edge still pulls the section's tissue (measured on a
-#: synthetic shifted region: Elastix moved it 92% as far as with no exclusion).
-#: Adult mouse; times the brain scale.
 EXCLUSION_MARGIN_MM = 0.1
 
 
@@ -74,54 +67,16 @@ def footprint_masks(placed: np.ndarray, excluded: np.ndarray, spacing_mm: float,
     return Masks(fixed=footprint, moving=footprint & ~damage_zone, damage_zone=damage_zone)
 
 
-# --- the EM section mask ---------------------------------------------------
-#
-# Three-class EM pixel weights as emlddmm implements them (Tward et al. 2025,
-# Nat Commun, doi 10.1038/s41467-025-65317-7; emlddmm.py `emlddmm()`), with
-# the warp held fixed (the first fit's) while E and M steps alternate:
-#
-#   matching   J ~ N(f(I_warped), sigmaM)     f: a contrast map, linear per block
-#   artifact   J ~ N(muA, sigmaA)
-#   background J ~ N(muB, sigmaB)
-#
-# J is the fit's section image, I_warped the atlas image through the first
-# fit. Where this departs from emlddmm's defaults it says so below.
-
-#: The EM runs on a coarse grid, as emlddmm runs on downsampled images
-#: (area-averaged; the weights are upsampled back). Micrometres at every brain
-#: scale: the sampling of the slide's holes, tears and debris.
 EM_GRID_UM = 50.0
-#: emlddmm's ``local_contrast`` block, in EM-grid pixels (16 x 50 um = 0.8 mm):
-#: its serial-section example's [1, 16, 16]. Order 1 (an offset and a gain).
-#: Adult mouse: a fit's block is this times the brain scale, rounded
-#: (:func:`block_px`), so it covers the same anatomy.
 EM_BLOCK_PX = 16
-#: E/M alternations.
 EM_ITERATIONS = 20
-#: emlddmm's ridge on each block's normal equations (x the largest entry).
 EM_RIDGE = 1e-7
-#: One width for all three classes (matching, background, artifact):
-#: EM_SIGMA_SCALE x std(J), held fixed (emlddmm does not update them in its
-#: default path). DEVIATION: emlddmm's code default is (1, 2, 5) x std; on
-#: Carey (brightfield) and an unpublished DAPI series that flagged nothing, not
-#: even a 0.3 mm hole. Its published runs use near-equal widths; equal widths
-#: at 0.5 x std catch holes, tears and debris and leave brightfield anatomy
-#: alone; 0.75 x std missed the hole again.
 EM_SIGMA_SCALE = 0.5
-#: Class priors (matching, artifact, background), held fixed. DEVIATION:
-#: emlddmm's code updates them; updated priors ran away on DAPI, where dim
-#: tissue has the background's intensity (background prior 0.1 -> 0.35, the
-#: brainstem left out). These are its README example's values.
 EM_PRIORS = (0.9, 0.05, 0.05)
-#: Background is sampled this far outside the placed footprint (adult mouse;
-#: times the brain scale).
 EM_BACKGROUND_DISTANCE_UM = 500.0
-#: Section pixels whose P(match) is below this are left out of a fit's metric
-#: (the weights are thresholded here when a fit takes them).
 EM_MATCH_THRESHOLD = 0.5
 
 
-#: The keys of a sorting (``em_weights(sorting=)``, ``make_mask``'s ``sorting``).
 SORTING_KEYS = ("match_sd", "background_sd", "artifact_sd", "background_mean", "artifact_mean")
 
 
@@ -213,11 +168,6 @@ def em_weights(
     far = ~(cv2.dilate(fp.astype(np.uint8), cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0)
     inside = Jc[fp] if fp.any() else Jc.ravel()
-    # Means held fixed (emlddmm: update_muA/update_muB False). Its default is
-    # muB = 0.1% quantile, muA = 99.9% (a dark background); its Nissl
-    # serial-section example sets muB = white, muA = black. Here muB is this
-    # image's own background (far from the tissue) and muA the opposite
-    # extreme quantile of the tissue, which reproduces both.
     if far.sum() > 200:
         muB = float(np.median(Jc[far]))
     else:
@@ -230,8 +180,8 @@ def em_weights(
     f = Jc
     block = block_px(scale)
     for _ in range(EM_ITERATIONS):
-        f = _block_linear(Jc, Ic, WM, block)  # M step: the contrast map
-        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigmaM ** 2) / sigmaM  # E step
+        f = _block_linear(Jc, Ic, WM, block)
+        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigmaM ** 2) / sigmaM
         lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sigmaA ** 2) / sigmaA
         lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sigmaB ** 2) / sigmaB
         total = lM + lA + lB

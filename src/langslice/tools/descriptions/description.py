@@ -38,33 +38,22 @@ from langslice.job.plugins import LoadedPlugin, of_spec
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import tools_for
 
-#: The default of an argument the call must give.
 REQUIRED = inspect.Parameter.empty
 
-#: LangSlice's own agent's door (and the library's), whose first message
-#: carries the opening pictures and the status table as parts of their own.
 AGENT_DOOR = "agent"
 
-#: The agent CLI's door, which words some passages its own way.
 CLI_DOOR = "cli"
 
-#: The doors a tool is declared for: ``agent``, ``mcp`` (Claude Desktop) and
-#: ``cli`` (the agent CLI).
 DOORS = (AGENT_DOOR, "mcp", CLI_DOOR)
 
 
 class Offered(Enum):
     """The fact of a run an argument exists in, beside what it needs on."""
 
-    #: In every run.
     ALWAYS = auto()
-    #: Where the caller chooses each picture's size (``resolution``).
     SIZE_CHOSEN = auto()
-    #: Where the host does not force the change tools' pictures on (``view``).
     VIEW_CHOSEN = auto()
-    #: Where the Positioning task is on (``position_sections``' sections).
     POSITIONING = auto()
-    #: Where the door caps no call's pictures (``look``'s ``sheet``).
     UNCAPPED = auto()
 
 
@@ -72,32 +61,15 @@ class Offered(Enum):
 class DescriptionFacts:
     """What of a run changes its tools' descriptions and arguments."""
 
-    #: The caller chooses each picture's size (``look``'s ``resolution``).
     auto: bool = False
-    #: Who reads the declaration (:data:`DOORS`): how a background tool
-    #: answers.
     door: str = AGENT_DOOR
-    #: The host forces the change tools' pictures on: no ``view`` argument.
     forced_view: bool = False
-    #: ``position_sections`` takes ``sections`` (the Positioning task is on).
     positions: bool = True
-    #: The door puts no per-call cap on pictures or sections (the agent CLI
-    #: and the library; ``Job.picture_cap`` None).
     uncapped: bool = False
-    #: The base image prompt ``trace_borders`` carries; empty: none.
     prompt: str = ""
-    #: What the job switches off (``JobSpec.switched_off``).
     switched_off: frozenset[str] = frozenset()
-    #: The tools the run lacks because their task is off. Every text renders
-    #: by these as well as by ``switched_off``: a sentence that needs
-    #: ``set_landmarks`` stands only where the Nonlinear task is on.
     absent: frozenset[str] = frozenset()
-    #: The tool plugins the job loads, compared by identity: their tools are
-    #: declared from their own stubs. Empty: no plugin text anywhere.
     plugins: tuple[LoadedPlugin, ...] = ()
-    #: The job's atlas brain's size next to the adult mouse's
-    #: (``core.atlas.brain_size.brain_scale``): a :class:`Distance` is the
-    #: adult mouse's times it.
     brain_scale: float = 1.0
 
     @classmethod
@@ -171,7 +143,7 @@ def _job_prompt(spec: JobSpec) -> str:
     own = spec.nonlinear.image_prompt
     if own is not None:
         return own.replace(PLANE_PLACEHOLDER, spec.plane)
-    plane = cast("Plane", spec.plane)  # the spec checks it is one
+    plane = cast("Plane", spec.plane)
     return border_correction_tool_prompt(
         plane, provider=spec.nonlinear.provider
     )
@@ -207,7 +179,6 @@ class Distance:
     mouse_words: str = ""
 
 
-#: A passage a fact of the run words.
 Slot = PerCap | PerDoor | Distance
 
 
@@ -215,18 +186,11 @@ Slot = PerCap | PerDoor | Distance
 class Argument:
     """One argument of a tool: its type, its default and its text."""
 
-    #: The type every door's schema is built from.
     annotation: object
-    #: The value a call that leaves the argument out gets, or
-    #: :data:`REQUIRED`. A list or dict default is read, never changed.
     default: object
-    #: What the model reads under the argument's name.
     text: str
     _: KW_ONLY
-    #: The names the argument needs on, as a needs mark writes them
-    #: (``look:overlay``, ``look:atlas|look:positioning``); empty: none.
     needs: str = ""
-    #: The fact of a run the argument exists in.
     offered: Offered = Offered.ALWAYS
 
 

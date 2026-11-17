@@ -13,8 +13,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image
-
 from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -23,16 +21,11 @@ from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.tools.status import stack_status
 
-if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
+if TYPE_CHECKING:
     from langslice.core.fits.trace.request import ImageModel
     from langslice.doors.agent.engine import EngineContext
     from langslice.tools.look import Looked
     from langslice.tools.pipeline import ToolBox
-
-#: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a
-#: picture (captioned PIL image) or a line of text, in reading order.
-Media = Image.Image | str
-
 
 @dataclass
 class Run:
@@ -42,9 +35,7 @@ class Run:
     workspace: EngineContext
     spec: JobSpec
     box: ToolBox
-    #: The picture-size level the tools work at (``core.pictures.sizes``).
     level: str
-    #: The image model is in this run and reachable (``trace_borders``).
     traces_on: bool
     image_model: ImageModel | None
 
@@ -68,8 +59,6 @@ class Run:
         """
         return bool(view) or bool(self.spec.force_view)
 
-    # --- the status rows -------------------------------------------------------
-
     def rows(self) -> dict[str, Any]:
         """The whole status table, the cutting angles and the interval breaks."""
         table = stack_status(self.job)
@@ -90,8 +79,6 @@ class Run:
     def answered(self, *touched: str) -> dict[str, Any]:
         """A write's answer: ``ok`` and the rows it changed."""
         return {"status": "ok", **self.changed(list(touched))}
-
-    # --- sections ---------------------------------------------------------------
 
     def resolve_many(self, refs: Sequence[Any]) -> tuple[list[Section], list[str]]:
         """The sections *refs* name (each once, in order) and the refs that name none."""
@@ -145,4 +132,4 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
-__all__ = ["Media", "Run", "as_list", "drawn_image", "pictured", "spread"]
+__all__ = ["Run", "as_list", "drawn_image", "pictured", "spread"]

@@ -50,34 +50,25 @@ class SectionView:
     """One section as the job holds it now."""
 
     id: str
-    #: Its place in the stack (0-based, in corrected order).
     index: int
-    #: The image file's size in pixels, ``(width, height)``.
     file_size: tuple[int, int]
     pixel_size_um: float | None
-    #: ``file``, ``host`` or ``""`` (neither says).
     pixel_size_source: str
     position_mm: float | None
-    #: ``(pitch_deg, yaw_deg)`` of its atlas plane.
     angles: tuple[float, float]
     flip: bool
     rotation_deg: int
     affine: AffineView | None
-    #: The applied deformation's summary (``key``, ``steps``...), or None.
     deformation: dict[str, Any] | None
     damaged_regions: tuple[str, ...]
     damage_note: str
-    #: Names of the layers it shows.
     layers: tuple[str, ...]
-    #: The properties frozen on it
-    #: (``langslice.job.settings.frozen.PROPERTIES``).
     frozen: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class AtlasView:
     name: str
-    #: Voxel size in micrometres along the atlas's axes.
     resolution_um: tuple[float, ...]
     orientation: str
     species: str
@@ -102,7 +93,6 @@ class SectionRaster:
 
     id: str
     array: np.ndarray
-    #: The image file's size, ``(width, height)``.
     file_size: tuple[int, int]
     rotation_deg: int
     flip: bool
@@ -185,13 +175,9 @@ class ContextReads:
     def __init__(self, run: Run, caller: Caller, call: str) -> None:
         self._run = run
         self._caller = caller
-        #: The call's id, as the layers it makes record it.
         self.call = call
         self._grids: dict[tuple[str, str], Any] = {}
-        self._depth: int = 0  # open ``writing()`` blocks
-        #: The call's undo step so far: the mark it began at, ``job.pushed``
-        #: after it and the number of the undo step on top then; None before
-        #: any write.
+        self._depth: int = 0
         self._step: tuple[int, int, int] | None = None
 
     def _fresh(self) -> None:

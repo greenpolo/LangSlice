@@ -31,19 +31,16 @@ from tools.stylecheck.rules.scopes import (
     string_value,
 )
 
-#: The finding for text matched by its indentation.
 INDENT_MATCH = (
     "Text is matched by its indentation; build it from structured parts "
     "instead of editing it (9.2)."
 )
 
-#: The finding for a reworked docstring.
 DOCSTRING_EDIT = (
     "A __doc__ is assigned or reworked; only the renderer of tool "
     "descriptions edits docstrings (9.2)."
 )
 
-#: String methods that find or edit text by a pattern.
 MATCHING_METHODS = frozenset(
     {
         "startswith",
@@ -61,19 +58,14 @@ MATCHING_METHODS = frozenset(
     }
 )
 
-#: Modules whose functions rework text.
 TEXT_MODULES = ("re.", "textwrap.")
 
-#: The fewest long literals that make a function's text assembled.
 MIN_ASSEMBLY_LITERALS = 12
 
-#: The fewest branches that make a function's text assembled.
 MIN_ASSEMBLY_BRANCHES = 6
 
-#: The length from which a literal is prose, not a key or a short label.
 MIN_PROSE_LENGTH = 20
 
-#: Logging methods whose message is not model-facing text.
 LOG_METHODS = frozenset(
     {"debug", "info", "warning", "error", "exception", "critical", "log"}
 )

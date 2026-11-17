@@ -23,8 +23,6 @@ if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 
-# --- a script's own method ----------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class SavedPicture:
@@ -38,7 +36,6 @@ class SavedPicture:
     image: Image.Image
 
 
-#: The caption band of a preview: what it draws and that it is not written.
 PREVIEW_CAPTION = "proposal: {what} drawn as proposed, NOT written"
 
 
@@ -99,9 +96,7 @@ class ScriptContext(ToolContext):
     def __init__(self, run: Run) -> None:
         super().__init__(run, Caller.script(), f"{SCRIPT_CALLER}-0")
         self._calls = 0
-        self._pending = False  # a call id taken by a proposal its write has not used yet
-
-    # --- call ids: one per outermost write ----------------------------------------------
+        self._pending = False
 
     def _begin(self) -> None:
         if self._depth == 0 and not self._pending:
@@ -213,8 +208,6 @@ class ScriptContext(ToolContext):
             layer=ref.name, argv0=str(sys.argv[0]) if sys.argv else "", call=self.call)
         return ref
 
-    # --- previews: a proposal's picture, saved, not written --------------------------------
-
     def preview_overlay(self, section: object, proposal: Mapping[str, Any], *,
                         resolution: int | None = None) -> SavedPicture:
         """The overlay ``look`` draws of the section (atlas borders drawn on
@@ -254,7 +247,6 @@ class ScriptContext(ToolContext):
                  recipe={"renderer": "transport_snapshot", "args": {}, "proposal": what},
                  caption=f"{text}: {held.caption}" if held is not None and held.caption
                  else text,
-                 # a proposal not written: no registration the section holds
                  extra={"registrations": {}})
 
         return self._save([picture], noted, {"section": record.id, "proposal": what})[0]

@@ -3,7 +3,7 @@
 Every call through the tool pipeline sends two events to the toolbox's
 observers, inside its lock: ``tool_start`` before the tool runs and
 ``tool_end`` after it, crash or not. An observer is a host's live display
-(the LangSlice window, ABBA) or the job folder's ``logs/events.jsonl``
+(the LangSlice window) or the job folder's ``logs/events.jsonl``
 (:class:`EventLog`), so a viewer in another process follows any run on any
 door. An event holds what the call was asked and answered, made plain
 (:func:`plain`): never picture bytes, provider signatures or encrypted
@@ -38,14 +38,10 @@ from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
-#: A host's observer of events, a tool call's or a session's.
 LiveCallback = Callable[[dict[str, Any]], None]
 
-#: Tools whose host display targets are the whole stack.
 _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
-#: The most bytes of a call's arguments a ``logs/events.jsonl`` line keeps.
 EVENT_ARGS_BYTES = 2048
-#: The keys an event never carries: picture bytes and provider secrets.
 _HIDDEN_KEYS = frozenset(
     {TOOL_MEDIA_PARTS_KEY, "thought_signature", "encrypted_content"}
 )
@@ -68,7 +64,7 @@ def plain(value: object) -> object:
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
     if isinstance(value, dict):
-        items = cast("dict[object, object]", value).items()  # any keys
+        items = cast("dict[object, object]", value).items()
         return {
             key: plain(item)
             for key, item in items
@@ -110,7 +106,7 @@ def reply_status(reply: object) -> object:
     """
     if not isinstance(reply, dict):
         return None
-    return cast("dict[object, object]", reply).get("status")  # any keys
+    return cast("dict[object, object]", reply).get("status")
 
 
 def target_ids(
@@ -135,14 +131,14 @@ def target_ids(
     if name in _STACK_TOOLS:
         return every
     if name == "position_sections" and not sections:
-        return every  # the cutting angles alone: every section
+        return every
     if name in ("make_image", "make_mask") and not sections:
         return every
     if name == "look" and not sections and args.get("mode") != "atlas":
         return every
     refs: list[object] = []
     if isinstance(sections, (list, tuple)):
-        for entry in cast("Sequence[object]", sections):  # names or rows
+        for entry in cast("Sequence[object]", sections):
             ref = entry
             if isinstance(entry, dict):
                 ref = cast("dict[str, object]", entry).get("id", "")
@@ -195,9 +191,7 @@ class EventLog:
     logs nothing.
     """
 
-    #: The job whose folder holds the log.
     job: Job
-    #: The door each line names (``agent``, ``mcp``, ``cli``, ``library``).
     door: str
 
     def __call__(self, event: dict[str, Any]) -> None:
@@ -221,7 +215,7 @@ class EventLog:
         }
         if kind == "tool_end":
             status = reply_status(event.get("response"))
-            views = cast("list[str]", event.get("views") or [])  # paths
+            views = cast("list[str]", event.get("views") or [])
             fields.update(
                 step=len(job.undo_stack),
                 views=[job.layout.relative(path) for path in views],

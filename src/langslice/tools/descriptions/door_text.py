@@ -1,9 +1,9 @@
 """What each door adds after the job statement: its opening, the notes.
 
-The agent CLI and MCP give the statement as one text: the statement
+MCP gives the statement as one text: the statement
 (:mod:`~langslice.tools.descriptions.statement`), then the door's own
-paragraph on its opening pictures (:func:`opening_for_mcp`,
-:func:`opening_for_cli`), the image-model line when the job's image model is
+paragraph on its opening pictures (:func:`opening_for_mcp`), the
+image-model line when the job's image model is
 not connected here, the user's notes (``job.json``'s ``notes``) and the
 status table with the recent run notes (:func:`status_and_notes`). The ADK
 agent's first message has the statement and the user's notes, then the
@@ -12,7 +12,7 @@ opening pictures, then the status table, as parts of their own.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection
 
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import status_text
@@ -21,19 +21,15 @@ from langslice.job.review import read_comments, revised
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import is_off
-from langslice.tools.catalog import enabled, verbs_for
 
-#: Said when the job's image model is not connected to LangSlice here.
 _IMAGE_MODEL_OFF = (
     "[[?trace_borders The image-model tool (trace_borders) is off: no image "
     "model is connected to LangSlice (no key or login for this job's image "
     "provider).[[?fireants_syn  Fit each section's deformation to its stain "
     "with fireants_syn.]]]]"
 )
-#: ... as a job that disables nothing reads it.
 IMAGE_MODEL_OFF = render(_IMAGE_MODEL_OFF)
 
-#: What the opening pictures show, said by every door that names them.
 OPENING_SHOWS = (
     "They show every section in strips, in the stack's current order, each "
     "labelled, with the atlas at its current position beneath it at the same "
@@ -43,50 +39,6 @@ OPENING_SHOWS = (
 OPENING_PAGES = (
     "Opening pictures: read every page with show_stack(page=1) through "
     "show_stack(page={pages}) before any write. "
-)
-OPENING_FILES = (
-    "Opening pictures, saved as files, in reading order, each after the "
-    "text that goes with it. "
-)
-OPEN_EVERY_PICTURE = "Open every one of these pictures before any write."
-COMMANDS = "Commands:"
-EVERY_TOOL_A_COMMAND = (
-    "- Every tool is a command: `langslice-job {folder} TOOL --args "
-    "'{{...}}'` (or `--name value`); `langslice-job {folder} schema TOOL "
-    "[TOOL ...]` gives their arguments and descriptions, several at once. "
-    "Pictures come back as files: `picture_files` lists them first, "
-    "`artifacts` again with their kinds (`view`, in the order the reply's "
-    "`pictures` lists their numbers); open them to see them."
-)
-#: The in-tree engines' tools: an engine is never run by a dry run.
-_ENGINE_TOOLS = (
-    "deepslice_place|brainways_ap|stalign_lddmm|stalign_plane_search|"
-    "spomialign|emlddmm_stack|emlddmm_plane"
-)
-DRY_RUN = (
-    "- `--dry-run` runs a write without writing and reports what would "
-    "change[[?elastix_affine|fireants_syn|trace_borders|"
-    + _ENGINE_TOOLS
-    + " ; the "
-    "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders||"
-    + _ENGINE_TOOLS
-    + "=engines' tools]] are "
-    "only checked, not run]]{plugins}."
-)
-DRY_RUN_PLUGINS = "; a plugin's tools are only checked too"
-LONG_TOOLS = (
-    "- Long tools ({tools}): a call answers with the result or, still "
-    "running after 30 s, with its run id and state `running`; the run goes "
-    "on (also when your shell ends the command, where a process may outlive "
-    "it) and `wait ID` answers within 30 s with its answer or its state "
-    "(wait again). `--background` answers at once with the run id; `runs` "
-    "lists the runs. Do not start a fit again while its run goes on."
-)
-PARALLEL_COMMANDS = (
-    "- Commands may run in parallel: each write holds the job folder's "
-    "lock, and a long tool re-checks each section before it applies "
-    "(STALE_INPUT when the section changed meanwhile: run it again for that "
-    "section)."
 )
 SCRIPTS = "Scripts:"
 SCRIPT_PYTHON = (
@@ -116,9 +68,6 @@ SCRIPT_FILES = (
     "`{folder}/scratch/`; `{folder}/AGENTS.md` describes the job folder's "
     "files."
 )
-#: The paragraph on scripts told to a registration agent with a shell:
-#: ``{folder}`` the job folder, ``{python}`` the interpreter of the job's own
-#: Python environment, ``{install}`` the command that installs into it.
 SCRIPTING = "\n".join(
     (
         SCRIPTS,
@@ -130,8 +79,6 @@ SCRIPTING = "\n".join(
     )
 )
 USER_NOTES = "User notes:"
-#: What a statement says of the review comments still open
-#: (:func:`review_lines`).
 REVIEW_OPEN = (
     "A person reviewed this registration in the LangSlice window and left "
     "{comments} on {sections}. review_comments shows each with the box it "
@@ -143,11 +90,8 @@ STATUS_TABLE = (
 )
 NO_RUN_NOTES = "- (none)"
 
-#: How many run notes the status text repeats (the newest).
 RECENT_NOTES = 12
 
-#: ``job.json``'s field holding the user's notes for the job
-#: (``langslice-job FOLDER init --notes``).
 NOTES_KEY = "notes"
 
 
@@ -267,82 +211,6 @@ def opening_for_mcp(pages: int) -> list[str]:
         The paragraph, as statement lines.
     """
     return [OPENING_PAGES.format(pages=pages) + OPENING_SHOWS]
-
-
-def opening_for_cli(
-    folder: str,
-    listing: Sequence[str],
-    disabled: Collection[str],
-    *,
-    spec: JobSpec | None = None,
-) -> list[str]:
-    """Return the agent CLI's opening paragraph and how its commands behave.
-
-    Parameters
-    ----------
-    folder
-        The job folder the commands name.
-    listing
-        The opening in reading order: each strip's text line, then
-        ``- <absolute path>`` of its picture file.
-    disabled
-        What the job switches off.
-    spec
-        The job's settings: the tools its run lacks are not named either,
-        and its plugin tools are listed with the long ones.
-
-    Returns
-    -------
-    list of str
-        The paragraph and the commands, as statement lines.
-    """
-    if spec is not None:  # a verb the run does not have is not named either
-        run = set(enabled(spec, scripting=True))
-        disabled = [
-            *disabled,
-            *(name for name in verbs_for(spec) if name not in run),
-        ]
-    plugins = DRY_RUN_PLUGINS if spec is not None and spec.plugins else ""
-    return [
-        OPENING_FILES + OPENING_SHOWS,
-        "",
-        *listing,
-        "",
-        OPEN_EVERY_PICTURE,
-        "",
-        COMMANDS,
-        EVERY_TOOL_A_COMMAND.format(folder=folder),
-        render(DRY_RUN.format(plugins=plugins), disabled),
-        LONG_TOOLS.format(tools=", ".join(long_verbs(disabled, spec=spec))),
-        PARALLEL_COMMANDS,
-    ]
-
-
-def long_verbs(
-    disabled: Collection[str], *, spec: JobSpec | None = None
-) -> list[str]:
-    """Return the verbs that compute outside the job lock and may take long.
-
-    Parameters
-    ----------
-    disabled
-        What the job switches off.
-    spec
-        The job's settings; given, the verbs its run does not have are left
-        out.
-
-    Returns
-    -------
-    list of str
-        The long verbs (``tools.catalog.Verb.long``), in the catalog's order.
-    """
-    return [
-        name
-        for name, verb in verbs_for(spec).items()
-        if verb.long
-        and not is_off(disabled, name)
-        and (spec is None or verb.tool.is_on(spec))
-    ]
 
 
 def review_lines(

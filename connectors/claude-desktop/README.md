@@ -19,11 +19,3 @@ claude --strict-mcp-config --mcp-config connectors/claude-desktop/langslice.mcp.
 
 For a coding agent that also writes scripts and uses a shell, use the
 [Claude Code agent CLI setup](../claude-code/README.md).
-
-## Jobs prepared in ABBA
-
-ABBA's **Register › LangSlice…** opens the LangSlice window on the job it
-prepared; its prompt generator writes the message to paste into the
-conversation, and the job then starts like any other (`start_job` with the
-job's folder). While ABBA is open, every write appears in ABBA
-([ABBA](../../docs/abba.md)).

@@ -79,31 +79,14 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
-#: Long edge of the section grid a fit runs on and its record lives on. The
-#: engine works on a coarser grid (the detail level's micrometres); this grid
-#: carries the final field, the labels and the masks.
 FIT_LONG_EDGE = 1536
-#: The detail level every tool fit runs at: detail never changes which
-#: candidate looks best, so the tool fixes it; tests set ``coarse`` here for
-#: speed.
 DETAIL_LEVEL = "standard"
-#: Fitted records kept in memory for reuse (a record is tens of megabytes).
 CACHE_SIZE = 8
-#: The ``fit_atlas`` that reads the boundaries of the regions the image model
-#: is shown (``levels.MODEL_DEPTH``; the engine's ``borders_merged``). Every
-#: other ``fit_atlas`` is one of the atlas's images, by its own name
-#: (:func:`langslice.core.atlas.images.atlas_images`).
 FIT_BORDERS = "borders"
 TRACED_BORDERS = "traced_borders"
-#: Flags listed per fit before the rest are only counted.
 MAX_FLAGS = 12
-#: Longest one ``fit_deformable`` call waits for running ``trace_borders``
-#: calls its traced section images need (an image call takes ~1-3 minutes).
 TRACE_WAIT_S = 300.0
-#: Run several fits in a process pool; a single fit runs in this process.
-#: Tests switch the pool off.
 USE_PROCESS_POOL = True
-#: Guards every RecordStore's cache: sections are fitted on threads at once.
 _STORE_LOCK = threading.Lock()
 
 
@@ -112,16 +95,12 @@ def engine_available() -> bool:
     return all(importlib.util.find_spec(name) is not None for name in ("fireants", "torch"))
 
 
-#: The refusal when :func:`engine_available` is False (model-facing text,
-#: pinned by the text snapshot).
 ENGINE_MISSING = (
     "The deformable engine cannot run on this host: torch and fireants must both "
     "import. They are LangSlice's dependencies: reinstall LangSlice "
     "(its pyproject.toml pins the FireANTs build)"
 )
 
-
-# --- the linear placement a deformation lives on --------------------------
 
 
 def linear_key(state: Stack, section: Section) -> str:
@@ -148,13 +127,9 @@ def clear_stale(state: Stack) -> list[str]:
 class FitStart(StrEnum):
     """Name what a deformation is built on (a step's ``start``)."""
 
-    #: The section's linear placement alone.
     LINEAR = "linear"
-    #: The deformation the section holds, composed under the new one.
     CURRENT = "current"
 
-
-# --- the grid and the images a fit reads ----------------------------------
 
 
 @dataclass
@@ -315,8 +290,6 @@ def traced_lines(
     return warped > 0.05, stored
 
 
-# --- one candidate's choices ----------------------------------------------
-
 
 @dataclass(frozen=True)
 class Choice:
@@ -324,11 +297,7 @@ class Choice:
 
     fit_section: str
     fit_atlas: str
-    #: The warp's smoothness in micrometres (``FitSettings.smoothness_um``).
     smoothness_um: float = DEFAULT_SMOOTHNESS_UM
-    #: The section mask by name (``"none"`` or a mask of the section,
-    #: :mod:`langslice.core.sections.masks`); its weights reach the fit through
-    #: :attr:`Job.section_weights`.
     mask: str = "none"
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...], *,
@@ -393,8 +362,6 @@ def cache_key(
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
         "placement": grid.placement.to_dict(), "image": image_identity,
         "settings": settings.to_dict(), "start": previous_key or "linear",
-        # The engine and the section mask: a record from another engine or
-        # mask is not reused.
         "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,
                    list(DETAIL[settings.detail].iterations)],
         **({"traced_engine": [TRACED_LEARNING_RATE, TRACED_TOTAL_SIGMA_FACTOR, "balanced"]}
@@ -402,8 +369,6 @@ def cache_key(
         **({"section_mask": mask_identity} if mask_identity is not None else {}),
     })
 
-
-# --- records: cache, disk, the reference on the state ---------------------
 
 
 def folder_name(key: str) -> str:
@@ -473,10 +438,10 @@ class RecordStore:
         return record
 
     def put(self, key: str, record: DeformableRecord) -> None:
-        if record.saved_as is None:  # a record with a folder is at storage precision
+        if record.saved_as is None:
             record.round_to_storage()
         record.saved_as = folder_name(key)
-        with _STORE_LOCK:  # sections are fitted on threads at once
+        with _STORE_LOCK:
             self.cache[key] = record
             self.cache.move_to_end(key)
             while len(self.cache) > CACHE_SIZE:
@@ -496,7 +461,7 @@ class RecordStore:
         held = section.deformation
         if held is None or held.linear_key != linear_key(state, section):
             return None
-        if held.key is None:  # a kept-linear marker: no saved fit
+        if held.key is None:
             return None
         return self.get(section.id, held.key)
 
@@ -519,11 +484,10 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
             "median": round(float(np.median(step)), 3) if step.size else 0.0,
         }
     flags: list[dict[str, Any]] = []
-    # Whole-section flags first, so the per-region cap never hides them.
     for flag in sorted(record.diagnostics.get("flags", []),
                        key=lambda item: item.get("code") not in SECTION_FLAGS):
         if flag.get("code") == FitFlag.FOLDS:
-            fold = float(flag["fold_fraction"])  # pyright: ignore[reportAny]  # saved JSON
+            fold = float(flag["fold_fraction"])  # pyright: ignore[reportAny]
             flags.append({"code": FitFlag.FOLDS, "fold_fraction": round(fold, 5)})
             continue
         if flag.get("code") == FitFlag.DISPLACEMENT_OUTSIZED:
@@ -618,8 +582,6 @@ def provenance(
     }
 
 
-# --- running fits ----------------------------------------------------------
-
 
 @dataclass
 class Job:
@@ -635,9 +597,6 @@ class Job:
     lines: np.ndarray | None
     result: DeformableRecord | CandidateFailure | None = None
     cached: bool = False
-    #: The section mask's weights (float, the fit grid's ``(H, W)``;
-    #: :func:`langslice.core.sections.masks.section_weights`); None for no
-    #: mask.
     section_weights: np.ndarray | None = None
 
 
@@ -654,7 +613,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
                 previous=job.previous, section_weights=job.section_weights,
             ))
             waiting.append(job)
-        except Exception as exc:  # noqa: BLE001 - a bad candidate must not sink the rest
+        except Exception as exc:  # noqa: BLE001
             job.result = CandidateFailure(job.settings, f"{type(exc).__name__}: {exc}")
     if not prepared:
         return

@@ -51,18 +51,11 @@ from langslice.engines.deepslice import alignment, network
 from langslice.engines.deepslice.network import Weights
 from langslice.plugin_api import RefusalCode, ToolError
 
-#: The extra's packages by import name: TensorFlow, the Keras 2 DeepSlice's
-#: network is written for, and the reader of its weight files.
 REQUIRED_MODULES = ("tensorflow", "tf_keras", "h5py")
-#: The command a missing package's refusal names.
 INSTALL = 'pip install "langslice[engines]"'
-#: DeepSlice's mouse atlas in a QUINT file (``target``).
 TARGET = "ABA_Mouse_CCFv3_2017_25um.cutlas"
-#: DeepSlice 1.2.8's name for itself in a QUINT file (``aligner``).
 ALIGNER = "prerelease_1.0.0"
-#: The DeepSlice version vendored, and its commit.
 VERSION = "1.2.8 (b0d6965)"
-#: One DeepSlice run at a time in this process (see the module text).
 RUN_LOCK = threading.Lock()
 
 
@@ -308,7 +301,7 @@ def run_deepslice(request: EngineRequest) -> EngineRun:
     with RUN_LOCK, contextlib.redirect_stdout(log):
         try:
             return _pipeline(request, started)
-        except Exception as error:  # noqa: BLE001 - anything DeepSlice or TensorFlow raises fails the call
+        except Exception as error:  # noqa: BLE001
             (request.out_folder / "deepslice_error.log").write_text(
                 traceback.format_exc(), encoding="utf-8", newline="\n"
             )
@@ -317,7 +310,7 @@ def run_deepslice(request: EngineRequest) -> EngineRun:
                 f"DeepSlice: {type(error).__name__}: {error}",
             ) from error
         finally:
-            if "tf_keras" in sys.modules:  # the run's model is let go
+            if "tf_keras" in sys.modules:
                 fresh_keras_session()
             (request.out_folder / "deepslice_stdout.log").write_text(
                 log.getvalue(), encoding="utf-8", newline="\n"
@@ -352,7 +345,7 @@ def _pipeline(request: EngineRequest, started: float) -> EngineRun:
         timings["spacing_s"] = time.monotonic() - step
 
     numbers = table.numbers
-    if not request.order:  # numbered in the final table's order
+    if not request.order:
         numbers = np.arange(1, len(table.ids) + 1)
     final = _Table(
         table.ids, anchorings, numbers, table.bad, table.widths, table.heights
@@ -386,7 +379,6 @@ def fresh_keras_session() -> None:
     test stack) and raises nothing.
     """
     os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
-    # tf_keras has no type information here: typed by hand.
     keras = cast("_Keras", importlib.import_module("tf_keras"))
     keras.backend.clear_session()
 
@@ -401,7 +393,6 @@ def hidden_gpus() -> None:
     """
     os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-    # TensorFlow's module has no type information here: typed by hand.
     tensorflow = cast("_TensorFlow", importlib.import_module("tensorflow"))
     with contextlib.suppress(RuntimeError):
         tensorflow.config.set_visible_devices([], "GPU")

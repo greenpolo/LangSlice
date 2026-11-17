@@ -9,28 +9,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from langslice import __version__
 from langslice.doors import user_settings
 
 logger = logging.getLogger(__name__)
 
-#: The Fiji connector's protocol with ``langslice serve --stdio``
-#: (:mod:`langslice.doors.abba.contract`); a connector speaking another
-#: refuses to run.
-PROTOCOL_VERSION = 3
 _KEY_ENV = {
     "openai-api": ("OPENAI_API_KEY",),
     "gemini-api": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "anthropic-api": ("ANTHROPIC_API_KEY",),
 }
-#: The key providers that can run an image model (``anthropic-api`` runs the
-#: agent only).
 _IMAGE_KEY_PROVIDERS = ("openai-api", "gemini-api")
 
 
@@ -92,7 +84,6 @@ def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
 
 
 def _oauth_status() -> dict[str, object]:
-    # Do not call load_credentials: status must never refresh tokens or contact a provider.
     try:
         from langslice.providers.connections import (
             openai_oauth_credentials_path,
@@ -107,23 +98,6 @@ def _oauth_status() -> dict[str, object]:
     except (OSError, ValueError, AttributeError):
         pass
     return {"configured": False, "source": None, "validated": False}
-
-
-def setup_status() -> dict[str, str | int]:
-    """Return the installation the Fiji connector talks to, offline.
-
-    Returns
-    -------
-    dict
-        ``version``, ``protocol_version`` (:data:`PROTOCOL_VERSION`),
-        ``python_executable`` and ``environment_prefix``.
-    """
-    return {
-        "version": __version__,
-        "protocol_version": PROTOCOL_VERSION,
-        "python_executable": sys.executable,
-        "environment_prefix": sys.prefix,
-    }
 
 
 def image_model_connected(provider: str) -> bool:
@@ -152,8 +126,6 @@ def image_model_connected(provider: str) -> bool:
     return bool(_api_status(canonical, keys)["configured"])
 
 
-#: The image providers a saved connection can stand for, in the order they
-#: are tried: the ChatGPT sign-in, the OpenAI key, the Gemini key.
 SAVED_IMAGE_PROVIDERS: tuple[str, ...] = (
     "openai-oauth", "openai-api", "gemini-api")
 
@@ -187,7 +159,7 @@ def save_api_key(provider: str, api_key: str) -> dict[str, object]:
     key = api_key.strip()
     if not key or any(character.isspace() or ord(character) < 32 for character in key):
         raise ValueError("Enter a nonempty API key without whitespace or control characters.")
-    saved = _read_saved()  # entries of providers this version does not know are kept
+    saved = _read_saved()
     saved[provider] = key
     path = _credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,7 +171,6 @@ def save_api_key(provider: str, api_key: str) -> dict[str, object]:
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        # mkstemp creates mode 600 on POSIX, before writing any secret.
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)

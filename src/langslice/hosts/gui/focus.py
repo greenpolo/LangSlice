@@ -17,11 +17,7 @@ from dataclasses import dataclass
 from langslice.core.jsonable import JsonObject
 from langslice.job.settings.tool_table import TOOLS
 
-#: The reads whose targets the viewer follows besides every write: the two
-#: that look at sections.
 FOLLOWED_READS = frozenset({"look", "zoom"})
-#: Whether a call of each kind of tool (``job.settings.tool_table``) moves
-#: the focus: a write does; a read only when it is one of FOLLOWED_READS.
 _KIND_MOVES = {"read": False, "write": True}
 
 
@@ -33,9 +29,7 @@ class Focus:
     call (the opening).
     """
 
-    #: The target sections, in the call's order, without repeats.
     sections: tuple[str, ...]
-    #: The tool, its call's ``execution_id`` and when it started (UTC).
     tool: str | None = None
     call: str | None = None
     at: str | None = None
@@ -57,7 +51,7 @@ def is_followed(name: str) -> bool:
         :data:`FOLLOWED_READS`.
     """
     tool = TOOLS.get(name)
-    if tool is None:  # a plugin's tool, or one of another version: a write
+    if tool is None:
         return True
     return name in FOLLOWED_READS or _KIND_MOVES[tool.kind]
 

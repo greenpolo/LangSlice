@@ -36,12 +36,8 @@ from langslice.core.stack.stack import Stack, plane_angles
 from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
-#: Intensity percentile (inside the atlas anatomy) mapped to white when an
-#: atlas image other than the template is shown.
 ATLAS_IMAGE_PERCENTILE = 99.5
 
-
-# --- atlas images --------------------------------------------------------
 
 
 def _image_plane(
@@ -125,7 +121,6 @@ def regions_in_plane(
         ctx.atlas, position_mm, plane=cast(Plane, state.plane),
         pitch_deg=pitch, yaw_deg=yaw,
     ))
-    # An atlas-only picture has no section: a side is the picture's own.
     left = regions_left(ctx.atlas, options.regions, position_mm, state.plane, pitch, yaw,
                         np.eye(2))
     return [name for name, ids in options.regions
@@ -139,8 +134,6 @@ def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
     box = zoom_box(list(zoom), image.size)
     return cropped_geometry(image.crop(box), image, box)
 
-
-# --- section and atlas pictures -----------------------------------------
 
 
 def framed_section(
@@ -250,12 +243,9 @@ def framed_atlas(
     origin = (box[0], box[1])
     region_lines: list[np.ndarray] = []
     if options.regions:
-        # An atlas-only picture has no section: a side is the picture's own.
         left = regions_left(ctx.atlas, options.regions, position_mm, plane,
                             pitch, yaw, np.eye(2))
         region_lines = region_polys(labels, options.regions, left)
-    # One arrangement for the whole picture, resolved against this atlas plate's
-    # own pixels (there is no section here to judge contrast against).
     drawn_polys = context + region_lines
     coverage = (
         line_coverage(canvas.shape[:2], drawn_polys, thickness=options.border_thickness,

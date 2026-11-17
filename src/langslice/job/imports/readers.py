@@ -95,7 +95,6 @@ from typing import Any, cast
 import numpy as np
 
 ANCHORING_KEYS = ("ox", "oy", "oz", "ux", "uy", "uz", "vx", "vy", "vz")
-#: DeepSlice's CSV has no target; its mouse model's (DeepSlice ``config.json``).
 DEEPSLICE_DEFAULT_TARGET = "ABA_Mouse_CCFv3_2017_25um.cutlas"
 
 
@@ -132,8 +131,6 @@ class RegistrationFile:
     notes: list[str] = field(default_factory=list)
 
 
-# --- reading the files -----------------------------------------------------------------
-
 
 def _number(value: Any) -> float | None:
     try:
@@ -156,7 +153,6 @@ def _nr(value: Any) -> int | None:
 
 
 def _order_nr(order: Any) -> int | None:
-    # registration.json's order counts from 0; QuickNII's nr (the exporter's) from 1.
     found = _nr(order)
     return None if found is None else found + 1
 
@@ -173,7 +169,6 @@ def _anchoring(values: Sequence[Any] | None) -> tuple[tuple[float, ...] | None, 
 def _markers(raw: Any) -> list[list[float]]:
     if not isinstance(raw, list) or not raw:
         return []
-    # DeepSlice's QUINT writer stores only a slice's first marker, unwrapped.
     rows = [raw] if all(not isinstance(value, list) for value in raw) else raw
     markers = []
     for row in rows:
@@ -230,7 +225,6 @@ def _anchoring_from_text(text: str) -> tuple[tuple[float, ...] | None, str | Non
 def _quicknii_xml(path: str, raw: str) -> RegistrationFile:
     import xml.etree.ElementTree as ElementTree
 
-    # As DeepSlice's own reader: escape each bare & (its writer leaves them).
     cleaned = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", raw)
     root = ElementTree.fromstring(cleaned)
     entries = []
@@ -247,8 +241,6 @@ def _quicknii_xml(path: str, raw: str) -> RegistrationFile:
 
 
 def _declared(raw: str, name: str) -> str | None:
-    # DeepSlice 1.2.8's write_QuickNII_XML passes the series attributes as
-    # pandas ``namespaces``, so they are written as ``xmlns:aligner="..."``.
     found = re.search(rf'xmlns:{name}="([^"]*)"', raw)
     return found.group(1) if found else None
 

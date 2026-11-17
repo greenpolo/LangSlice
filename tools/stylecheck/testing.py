@@ -6,7 +6,7 @@ import ast
 import textwrap
 from pathlib import Path
 
-from tools.stylecheck import rules as rules  # registers every check
+from tools.stylecheck import rules as rules
 from tools.stylecheck.core import (
     MODULE_CHECKS,
     PROJECT_CHECKS,
@@ -17,11 +17,8 @@ from tools.stylecheck.core import (
     module_name_from_path,
 )
 
-#: The repository root, whose ``pyproject.toml`` gives the default settings.
 REPOSITORY = Path(__file__).resolve().parents[2]
 
-#: Where a snippet lives unless a test says otherwise: a core module, which
-#: every layer rule and boundary setting treats as ordinary package code.
 SNIPPET_PATH = "src/langslice/core/example.py"
 
 

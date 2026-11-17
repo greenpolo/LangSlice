@@ -21,14 +21,9 @@ import numpy as np
 if TYPE_CHECKING:
     from numpy.lib.npyio import NpzFile
 
-#: Where the averaged volumes are kept between calls and processes.
 CACHE = Path.home() / ".cache" / "langslice-engines"
-#: The voxel the engines fit at, um.
 ATLAS_UM = 50.0
-#: BrainGlobe's own image of every atlas.
 TEMPLATE = "template"
-#: The Nissl LangSlice lends every Allen CCFv3 atlas: the template of the
-#: augmented atlas, which is the CCFv3 grid extended 0.35 mm at the front.
 BORROWED_NISSL = "ccfv3augmented_nissl"
 AUGMENTED = "ccfv3augmented_mouse_25um"
 AUGMENTED_VOXEL_UM, AUGMENTED_AP_OFFSET_UM = 25.0, 350.0
@@ -47,7 +42,7 @@ class _Atlas(Protocol):
 class _AtlasApi(Protocol):
     """Name BrainGlobe's atlas class (its names are typed as a closed set)."""
 
-    def BrainGlobeAtlas(  # noqa: N802 - BrainGlobe's name
+    def BrainGlobeAtlas(  # noqa: N802
         self, atlas_name: str, /, *, check_latest: bool
     ) -> _Atlas: ...
 
@@ -136,17 +131,13 @@ def averaged_image(atlas: str, image: str) -> AveragedImage:
 
 def _atlas(name: str) -> _Atlas:
     """Open a BrainGlobe atlas as the job does, without its version check."""
-    api = cast(  # BrainGlobe types its atlas names as a closed set
-        "_AtlasApi", importlib.import_module("brainglobe_atlasapi")
-    )
+    api = cast("_AtlasApi", importlib.import_module("brainglobe_atlasapi"))
     return api.BrainGlobeAtlas(name, check_latest=False)
 
 
 def _kept(path: Path) -> AveragedImage:
     """Read a volume kept by an earlier call."""
-    stored = cast(  # numpy types np.load's result as Any: an .npz file
-        "NpzFile[np.float64]", np.load(path)
-    )
+    stored = cast("NpzFile[np.float64]", np.load(path))
     with stored:
         return AveragedImage(
             np.asarray(stored["image"]),
@@ -176,9 +167,7 @@ def _keep(path: Path, averaged: AveragedImage) -> None:
 
 def _dims(array: np.ndarray) -> tuple[int, ...]:
     """Read an array's shape as integers."""
-    return cast(  # numpy types an array's shape as Any: integers
-        "tuple[int, ...]", array.shape
-    )
+    return cast("tuple[int, ...]", array.shape)
 
 
 def _block_mean(data: np.ndarray, factors: list[int]) -> np.ndarray:
@@ -197,9 +186,7 @@ def _block_mean(data: np.ndarray, factors: list[int]) -> np.ndarray:
         shape[2] // factors[2],
         factors[2],
     )
-    means = cast(  # numpy types a mean over axes as Any: an array
-        "np.ndarray", trimmed.reshape(blocks).mean((1, 3, 5))
-    )
+    means = cast("np.ndarray", trimmed.reshape(blocks).mean((1, 3, 5)))
     return means
 
 
@@ -212,9 +199,7 @@ def _borrowed_nissl(
     offset) onto the atlas grid and zeroed outside the brain, one slab of
     blocks at a time (a 10 um volume is gigabytes).
     """
-    ndimage = cast(  # SciPy ships no stubs for ndimage
-        "_Ndimage", importlib.import_module("scipy.ndimage")
-    )
+    ndimage = cast("_Ndimage", importlib.import_module("scipy.ndimage"))
     template = np.asarray(_atlas(AUGMENTED).template, np.float32)
     annotation = np.asarray(source.annotation)
     step = np.asarray(steps, np.float64) / AUGMENTED_VOXEL_UM

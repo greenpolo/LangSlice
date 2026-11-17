@@ -15,9 +15,6 @@ from langslice.tools.descriptions.description import (
     ToolDescription,
 )
 
-#: How far a displaced piece lies from its place before a dense fit alone no
-#: longer reaches it, so landmarks move it first (adult mouse; measured on
-#: sagittal and horizontal sections).
 LANDMARK_MOVE_UM = 400.0
 
 SET_LANDMARKS = ToolDescription(

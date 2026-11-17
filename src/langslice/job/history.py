@@ -84,13 +84,9 @@ from langslice.job.undo_steps import older_undo_steps
 
 logger = logging.getLogger(__name__)
 
-#: Who wrote a line LangSlice found rather than made.
 HOST = "host"
-#: Who wrote a line when no tool runs (a script's ``job.context``).
 SCRIPT = "script"
-#: The row fields of a registration, which ``restore_registration`` copies.
 REGISTRATION_KEYS = ("flip", "rotation_deg", "transform", "deformation")
-#: The fields of a line that are not the section's row.
 _LINE_KEYS = ("seq", "step", "by", "at", "registration", "digest")
 
 
@@ -231,9 +227,6 @@ def _number(data: JsonObject, key: str) -> int | None:
     if data.get(key) is None:
         return None
     return integer_at(data, key)
-
-
-# --- registrations ---------------------------------------------------------
 
 
 def registration_value(
@@ -385,9 +378,6 @@ def section_row(section: Section) -> JsonObject:
     return as_object("section", to_jsonable(section_to_json(section)))
 
 
-# --- the section histories --------------------------------------------------
-
-
 class SectionHistories:
     """Read and append the job folder's section histories (the module text).
 
@@ -399,7 +389,6 @@ class SectionHistories:
 
     def __init__(self, layout: JobLayout) -> None:
         self.layout = layout
-        #: The lines read per file, with the file's stamp then.
         self._cache: dict[
             Path, tuple[tuple[int, int, int], tuple[Row, ...]]
         ] = {}
@@ -570,7 +559,7 @@ class SectionHistories:
         torn = _ends_mid_line(path)
         with path.open("a", encoding="utf-8", newline="\n") as stream:
             if torn:
-                stream.write("\n")  # the cut line stays on its own
+                stream.write("\n")
             for line in (*carried, row):
                 stream.write(json.dumps(line.to_json()) + "\n")
         if carried:

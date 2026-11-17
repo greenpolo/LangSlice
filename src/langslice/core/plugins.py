@@ -23,19 +23,12 @@ import numpy as np
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.tool_kinds import Group, Kind
 
-#: The plugin API's version. A plugin that names another is refused.
 PLUGIN_API_VERSION = 1
 
-#: A tool name: a Python identifier, so a script can call it as a method.
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-#: What a script's own writes through ``job.context`` are recorded as (a
-#: transform's ``kind``, a deformation's ``method``, the maker of its layers
-#: and pictures): no plugin tool takes the name.
 SCRIPT_CALLER = "script"
 
-#: The kinds of layer.
 LAYER_KINDS: tuple[str, ...] = ("points", "lines", "labels", "scalar", "picture")
-#: The frames each kind may have (the first is the default).
 KIND_FRAMES: dict[str, tuple[str, ...]] = {
     "points": ("section_px", "atlas_um"),
     "lines": ("section_px", "atlas_um"),
@@ -44,7 +37,6 @@ KIND_FRAMES: dict[str, tuple[str, ...]] = {
     "picture": ("none",),
 }
 
-#: Most characters of a layer name.
 MAX_LAYER_NAME = 48
 
 
@@ -85,34 +77,15 @@ class ToolSpec:
     handler: Callable[..., ToolResult]
     kind: Kind
     group: Group
-    #: ``position`` | ``transform`` | ``nonlinear`` | None: the tool exists only
-    #: while that task is on; ``angles``: while the agent may write the cutting
-    #: angles (as ``position_sections``).
     task: str | None = None
-    #: The section properties the tool may write (position, angles,
-    #: orientation, affine, deformation).
     writes: tuple[str, ...] = ()
-    #: Computes outside the job's write lock and applies under it.
     long: bool = False
-    #: The most one call takes, by what it counts (``sections``: the length of
-    #: the ``sections`` argument).
     limits: Mapping[str, int] = field(default_factory=dict)
-    #: What the tool needs while it is on (groups of names; as ``ToolDef.needs``).
     needs: tuple[tuple[str, ...], ...] = ()
-    #: The plugin's own version, recorded in the job's provenance.
     version: str = ""
-    #: The plugin API version the tool was written for.
     api_version: int = PLUGIN_API_VERSION
-    #: Anything the plugin wants kept with the tool in the job's provenance
-    #: (JSON values), e.g. the text of a tool description it was given.
     meta: Mapping[str, Any] = field(default_factory=dict)
-    #: The atlases the tool is offered on: shell-style patterns for the job's
-    #: atlas name (``("allen_mouse_*um", "ccfv3augmented_mouse_25um")``); empty
-    #: means every atlas. On any other atlas the tool does not exist (it is off
-    #: as a disabled tool is: not declared, not listed, named in no text).
     atlases: tuple[str, ...] = ()
-    #: The section planes the tool is offered on (``coronal``, ``sagittal``,
-    #: ``horizontal``); empty means every plane.
     planes: tuple[str, ...] = ()
 
 
@@ -121,8 +94,6 @@ class ToolResult:
     """What a handler returns: the reply (JSON values) and its pictures."""
 
     reply: dict[str, Any] = field(default_factory=dict)
-    #: Pictures (PIL images, captions burned in) sent with the reply and saved
-    #: in the job folder like every picture a tool shows.
     pictures: list[Any] = field(default_factory=list)
 
 
@@ -144,19 +115,12 @@ class Layer:
     kind: str
     frame: str
     name: str = ""
-    #: points: ``(N, 2)`` (``section_px``) or ``(N, 3)`` (``atlas_um``).
     xy: np.ndarray | None = None
-    #: points: one text label per point; lines: one per line.
     tags: tuple[str, ...] = ()
-    #: points: one number per point.
     values: tuple[float, ...] = ()
-    #: lines: ``(coordinates, closed)`` each; coordinates ``(M, 2|3)``.
     paths: tuple[tuple[np.ndarray, bool], ...] = ()
-    #: labels: a 2-D integer raster; scalar: a 2-D float raster.
     raster: np.ndarray | None = None
-    #: scalar: the level drawn as an outline on a picture.
     level: float = 0.5
-    #: picture: a PIL image.
     image: Any = None
 
     @classmethod

@@ -368,7 +368,7 @@ already has some. The work's own landing is not refused.
 
 The five engines in `langslice.engines` are tools of every job, on every
 door (`langslice-job init`, `langslice linear run`, the MCP server's
-`start_job`, the library, the ABBA worker); no job names them in `plugins`.
+`start_job`, the library); no job names them in `plugins`.
 Each tool is a row of the tool table (`job/settings/tool_table.py`,
 `ToolDef.engine`, with the atlases and planes it is offered on), listed
 after the other tools, switched off by the job's
@@ -553,7 +553,7 @@ the same content; plugin tool calls and replies are traced like native ones.
 
 A plugin is loaded, in the process that opens the job, by every door that opens
 a job naming it: the library, `langslice linear run`, the agent CLI and the
-MCP server; the ABBA follower, which changes nothing of the job, loads it too.
+MCP server.
 The in-tree engines load the same way on every door, for every job that has
 one of their tools.
 A plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).

@@ -63,30 +63,23 @@ from langslice.core.shared_files import remove_tree
 if TYPE_CHECKING:
     from langslice.core.fits.deformable.record import DeformableRecord
 
-#: The store's folder name inside a record's folder.
 WARP_STORE = "warp.ome.zarr"
 OME_VERSION = "0.6"
-#: How the section-grid displacement fields are stored (read back as float32).
 FIELD_DTYPE = np.float16
-#: How an engine's own working-grid fields are stored: as it produced them.
 STEP_DTYPE = np.float32
 FIELD_GROUP = "coordinateTransformations/field"
 INVERSE_GROUP = "coordinateTransformations/inverse_field"
 STEP_GROUP = "coordinateTransformations/step_field"
 STEP_INVERSE_GROUP = "coordinateTransformations/step_inverse_field"
-#: The fields :func:`read` returns, by the group that holds each.
 FIELD_GROUPS = {"field_mm": FIELD_GROUP, "inverse_field_mm": INVERSE_GROUP,
                 "step_field_mm": STEP_GROUP,
                 "step_inverse_field_mm": STEP_INVERSE_GROUP}
-#: The record's other arrays, by the image group that holds each.
 IMAGE_GROUPS = {"labels": "warped_labels", "footprint": "footprint", "left_out": "left_out",
                 "weights": "weights"}
 LEVEL = "s0"
 SECTION, PLACED, ATLAS = "section", "placed_atlas", "atlas"
 BLOSC_LEVEL = 5
 
-#: The atlas axis each orientation letter starts from (BrainGlobe's origin
-#: convention: the axis runs away from that side).
 _AXIS_RUNS = {
     "a": "anterior to posterior", "p": "posterior to anterior",
     "s": "superior to inferior", "i": "inferior to superior",
@@ -98,8 +91,6 @@ def at_storage_precision(field_mm: np.ndarray) -> np.ndarray:
     """*field_mm* as the store keeps it: rounded to float16, as float32."""
     return np.asarray(field_mm).astype(FIELD_DTYPE).astype(np.float32)
 
-
-# --- the metadata ---------------------------------------------------------------------
 
 
 def _plane_axes(unit: str) -> list[dict[str, Any]]:
@@ -138,13 +129,12 @@ def _image_attributes(name: str, system: dict[str, Any], scale: list[float],
                       *, origin: list[float] | None = None) -> dict[str, Any]:
     to_system = {"input": {"path": LEVEL}, "output": {"name": system["name"]}}
     placing = {"type": "scale", "scale": scale, **to_system}
-    if origin is not None:  # a working grid: its first pixel is off zero
+    if origin is not None:
         steps = [{"type": "scale", "scale": scale},
                  {"type": "translation", "translation": origin}]
         placing = {"type": "sequence", "transformations": steps, **to_system}
     return {"ome": {"version": OME_VERSION, "multiscales": [{
         "name": name,
-        # One level: nothing was downsampled (the spec's SHOULD fields).
         "type": "none",
         "metadata": {"description": "a single full-resolution level"},
         "coordinateSystems": [system],
@@ -227,8 +217,6 @@ def _whole_map_groups(
     return None
 
 
-# --- writing and reading --------------------------------------------------------------
-
 
 def _blosc(dtype: np.dtype[Any]) -> Any:
     from zarr.codecs import BloscCodec
@@ -260,7 +248,6 @@ def write(directory: str | Path, record: DeformableRecord) -> Path:
     root = zarr.open_group(str(path), mode="w", zarr_format=3)
     transforms = root.create_group("coordinateTransformations")
 
-    # a record without a step keeps its fields whole, on the section grid
     step = record.stored_step
     whole = [("field", record.field_mm, SECTION)] if step is None else []
     if record.inverse_field_mm is not None and step is None:
@@ -271,7 +258,6 @@ def write(directory: str | Path, record: DeformableRecord) -> Path:
         planes = _field_planes(field_mm).astype(FIELD_DTYPE)
         _array(group, LEVEL, planes, ("c", "y", "x"))
 
-    # an engine's step on its working grid, as the engine produced it
     if isinstance(step, EngineStep):
         engine_fields = [("step_field", step.field_mm, SECTION),
                          ("step_inverse_field", step.inverse_field_mm, PLACED)]

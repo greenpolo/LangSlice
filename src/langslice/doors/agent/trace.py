@@ -75,8 +75,6 @@ from langslice.job.layout import TRACE_DIR
 
 logger = logging.getLogger(__name__)
 
-#: Directory for full-content session traces. Unset means no tracing at all
-#: (the one switch every door's trace reads, :mod:`langslice.doors.call_log`).
 TRACE_DIR_ENV = _TRACE_DIR_ENV
 
 
@@ -110,11 +108,7 @@ class SessionTrace:
                  mirror_dir: str | Path | None = None) -> None:
         self._steps = 0
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in run_label)
-        # Same uuid trick as RequestCapturePlugin: concurrent sessions can share
-        # a run label, and must not share a file.
         self.path = Path(trace_dir) / f"{safe}_{uuid.uuid4().hex[:8]}.jsonl"
-        #: Every file the trace is written to: :attr:`path`, then the same
-        #: name in *mirror_dir* when that is another folder.
         self.paths = [self.path]
         if mirror_dir is not None and not _same_folder(Path(mirror_dir), Path(trace_dir)):
             self.paths.append(Path(mirror_dir) / self.path.name)
@@ -144,7 +138,6 @@ class SessionTrace:
                 with path.open("a", encoding="utf-8", newline="\n") as handle:
                     handle.write(line)
             except Exception:
-                # A debug trace must never take down a 40-section run.
                 logger.warning("Could not write trace record to %s", path, exc_info=True)
 
     def seed(self, message: types.Content) -> None:
@@ -183,8 +176,6 @@ class SessionTrace:
 
         usage = getattr(event, "usage_metadata", None)
         if text or thought or calls or usage is not None:
-            # ``turn`` counts driver invocations; ``step`` counts model
-            # responses, which is what a reader paging through a trace wants.
             self._steps += 1
             record: dict[str, Any] = {
                 "kind": "model",
@@ -217,8 +208,6 @@ class SessionTrace:
     def _tool_record(response: Any, turn: int) -> dict[str, Any]:
         payload = getattr(response, "response", None)
         if isinstance(payload, dict):
-            # ADK lifts tool media out of the payload before the model sees it;
-            # if anything is left behind it is Part objects, not JSON.
             payload = {k: v for k, v in payload.items() if k != TOOL_MEDIA_PARTS_KEY}
         media = [part_summary(part) for part in getattr(response, "parts", None) or []]
         record: dict[str, Any] = {

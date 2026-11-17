@@ -51,8 +51,6 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-# --- calibration ---------------------------------------------------------
-
 
 def calibrate(
     state: Stack, ctx: Workspace, record: Section, section: Image.Image
@@ -73,8 +71,6 @@ def calibrate(
     )
     return plane.shape[1] * atlas_um_per_px(ctx.atlas) / float(section.width), "uncalibrated"
 
-
-# --- the closed-form fit -------------------------------------------------
 
 def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
     """The same map read on a frame shifted by *offset*.
@@ -99,37 +95,18 @@ class FittedAffine:
     numbers stay on the section's working frame.
     """
 
-    #: The section's position, to the micrometre.
     position_mm: float
-    #: The six normalized numbers on the section's frame, as stored.
     params: tuple[float, ...]
-    #: The knobs the interactive tools take, about the canvas centre: one
-    #: representation for every transform a run records.
     physical: PhysicalAffine
-    #: Whether the fit turns the section over.
     mirrored: bool
-    #: The working frame's scale, and where it came from.
     calibration: Calibration
-    #: The regions report of a restricted fit (``include``, ``exclude``,
-    #: ``atlas_kept_fraction``); None for a fit by every region.
     regions: JsonObject | None = None
 
 
-# --- the Elastix affine ----------------------------------------------------
-
-#: The atlas image the Elastix affine fits the section to: ``nissl``, the
-#: atlas's Nissl image where it has one, else its template
-#: (:func:`langslice.core.atlas.images.default_image`).
 ELASTIX_ATLAS_IMAGE = "nissl"
-#: Working grid of the Elastix affine
-#: (``core.fits.deformable.settings.DETAIL``: 20 um in the adult mouse, times
-#: the atlas's brain scale).
 ELASTIX_DETAIL = "standard"
 
 
-#: A restricted region must have support in both atlas-plane dimensions.
-#: Three-voxel regions have crashed Elastix; this is a conservative preflight,
-#: not a registration-quality score. Check before adding the fit's halo.
 ELASTIX_MIN_REGION_SPAN = 4
 
 
@@ -195,12 +172,7 @@ class ElastixFit:
     start_params: list[float]
     report: dict[str, Any]
     placement: Any
-    start_placement: Any
-    grid_image: Image.Image
-    fit_image: Image.Image
     engine: dict[str, Any]
-    #: What the fit read, named; set by the operation that ran it
-    #: (``tools.affine_fit.elastix_fit``).
     inputs: InputsBlock | None = None
 
 
@@ -247,16 +219,11 @@ def elastix_affine(
         elastix_settings(include, exclude, atlas_image, ctx.brain_scale, edges),
         section_weights=section_weights)
     _check_elastix_region(prepared, ctx.atlas, include)
-    assert prepared.inputs is not None  # prepare_fit always builds engine inputs
+    assert prepared.inputs is not None
     result = fit_elastix_affine(prepared.inputs)
-    # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
-    # the engine's map becomes a map of grid pixels: section -> placed atlas.
     mm = grid.placement.section_mm_per_px
     to_mm = np.diag([mm, mm, 1.0])
     step = np.linalg.inv(to_mm) @ result.matrix_mm @ to_mm
-    # A grid point p now meets the atlas where p's step lands: the atlas
-    # reaches the grid through inv(step), and the six numbers are that
-    # placement on the working frame they are stored against.
     params = grid.params_after(start, step)
     fitted = replace(grid.placement,
                      atlas_to_section=np.linalg.inv(step) @ grid.placement.atlas_to_section)
@@ -269,8 +236,7 @@ def elastix_affine(
     }
     return ElastixFit(
         params=params, start_params=start,
-        report=report, placement=fitted, start_placement=grid.placement,
-        grid_image=grid.image, fit_image=image,
+        report=report, placement=fitted,
         engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
                 "section_image": look, "native_parameters": result.native_parameters},
     )
@@ -319,7 +285,7 @@ def fit_elastix(
                              include=include, exclude=exclude, atlas_image=atlas_image,
                              section_image=section_image, edges=edges,
                              section_weights=section_weights)
-    except Refused as refusal:  # regions too small, or a side it lacks
+    except Refused as refusal:
         return Refused(refusal.code, id=section.id, message=refusal.message)
     except Exception as exc:
         logger.warning("elastix_affine failed for %s: %s", section.id, exc)
@@ -328,8 +294,6 @@ def fit_elastix(
             id=section.id,
             message=f"The Elastix affine failed: {exc}",
         )
-    # The fitted 2x3 on the working frame; the numbers stay on that frame,
-    # the knobs are read on the canvas about its centre.
     in_section = denormalized_affine(fit.params, rendered.size)
     on_canvas = _conjugate(in_section, geometry.section_offset)
     params = normalized_affine(in_section, rendered.size)
@@ -358,8 +322,6 @@ def fit_elastix(
         regions=regions,
     )
 
-
-# --- what the interactive tools share ------------------------------------
 
 
 def physical_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]:

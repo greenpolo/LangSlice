@@ -99,7 +99,6 @@ def raw_channels(run: Run) -> list[str] | dict[str, list[str]]:
     return list(next(iter(distinct))) if len(distinct) == 1 else named
 
 
-#: The tools that fit a deformation, as ``can_change`` names them.
 DEFORMABLE_FITS = ("fireants_syn", "trace_borders", "stalign_lddmm",
                    "spomialign", "emlddmm_stack")
 
@@ -142,6 +141,6 @@ def can_change(run: Run) -> list[str]:
         out.append("masks for the fits")
     added = [name for name, tool in tools_for(spec).items()
              if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)]
-    if added:  # tools the job's plugins added (a job without any has none)
+    if added:
         out.append(f"whatever the plugin tools change ({', '.join(added)})")
     return out

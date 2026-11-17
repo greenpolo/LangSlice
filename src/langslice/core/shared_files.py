@@ -22,11 +22,7 @@ from typing import TypeVar
 
 Result = TypeVar("Result")
 
-#: How long an operation that another process's open handle makes fail is
-#: tried again, in seconds: readers and scanners hold a file for
-#: milliseconds, and a real denial should not stall a write for long.
 RETRY_S = 1.0
-#: The pause between two tries, in seconds.
 RETRY_POLL_S = 0.02
 
 
@@ -98,6 +94,5 @@ def _remove_again(
         raise error[1]
     target = Path(path)
     if not target.is_symlink():
-        # Windows refuses to delete a read-only file
         target.chmod(target.stat().st_mode | stat.S_IWRITE)
     retried(functools.partial(function, path))

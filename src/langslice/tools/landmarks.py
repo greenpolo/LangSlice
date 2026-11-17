@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#: ``delete=[DELETE_ALL]`` removes every pair of the section.
 DELETE_ALL = "all"
 
 
@@ -59,8 +58,6 @@ def landmark_section(job: Job, section: str) -> Section:
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [section])
-    # The pairs only serve a deformation: a section whose deformation is frozen
-    # takes neither pairs nor a triangulation (FROZEN).
     check_frozen(job, [record.id], "deformation")
     return record
 
@@ -125,8 +122,6 @@ def _endpoint(
                 "reply gave.", job.spec.switched_off),
         )
     recipe = picture.recipe or {}
-    # On a zoom, x and y are the numbers its grid prints: pixels of the whole
-    # picture it was cut from. They are the same on the source picture.
     frame = source_frame(recipe)
     if frame is not None and np.isfinite([x, y]).all():
         x, y = (float(v) for v in frame.to_picture([x, y]))
@@ -184,7 +179,7 @@ def _endpoint(
         if key:
             try:
                 warp = job.deformations.get(record.id, key)
-            except ValueError:  # its record.json does not load (the error names it)
+            except ValueError:
                 logger.warning("Landmark view warp of %s unreadable", record.id, exc_info=True)
                 warp = None
             if warp is None:
@@ -206,7 +201,6 @@ def _endpoint(
             ),
         )
     canonical_x, canonical_y = cast("list[float]", canonical.tolist())
-    # the picture's record and panel, read back from its saved recipe
     context = copy.deepcopy(cast("JsonObject", held))
     panel_facts = copy.deepcopy(cast("JsonObject", panel))
     return Endpoint(
@@ -234,8 +228,6 @@ def _atlas_regions(
             for item in items}
 
 
-#: How deep inside the atlas (native pixels from its outline) the point a
-#: refusal proposes lies, so that the rounding of picture pixels keeps it inside.
 INSIDE_MARGIN_PX = 1.5
 
 
@@ -260,7 +252,6 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
     depth = np.asarray(distance_transform_edt(inside))
     deep = depth >= INSIDE_MARGIN_PX
     target = deep if deep.any() else inside
-    # The index of the nearest target pixel, per pixel: (2, rows, cols).
     nearest = np.asarray(distance_transform_edt(~target, return_distances=False,
                                                 return_indices=True))
     sentences = []
@@ -321,14 +312,12 @@ def _edited_pair(
     """
     atlas_end = None if previous is None else previous.atlas
     section_end = None if previous is None else previous.section
-    # an endpoint as the call gave it, checked by _endpoint
     if "atlas" in edit:
         given = cast("dict[str, Any]", edit["atlas"])
         atlas_end = _endpoint(job, section, given, "atlas", label)
     if "section" in edit:
         given = cast("dict[str, Any]", edit["section"])
         section_end = _endpoint(job, section, given, "section", label)
-    # a new pair gives both endpoints (refused above otherwise)
     assert atlas_end is not None and section_end is not None
     plane: JsonObject = {} if previous is None else previous.plane
     if "atlas" in edit:
@@ -351,16 +340,11 @@ class LandmarksEdited:
 
     section: str
     written: bool
-    #: The call named no pairs and no delete: it only lists them.
     listing: bool
-    #: The pairs added or edited, by id, in call order.
     changed: tuple[str, ...]
     deleted: tuple[str, ...]
-    #: The region each new atlas endpoint lies in, by pair id.
     atlas_endpoint_regions: dict[str, str]
-    #: One compact record per pair: id, endpoints, state.
     landmarks: Sequence[JsonObject]
-    #: Which pairs the current warp was built from (empty: no warp).
     warp: JsonObject
 
     def reply(self) -> dict[str, Any]:
@@ -392,7 +376,6 @@ class LandmarksEdited:
         return reply
 
 
-#: The states a pair can be in, as the reply counts them.
 _PAIR_STATES = ("applied", "moved", "pending", "stale")
 
 
@@ -504,9 +487,6 @@ def set_landmarks(
         warp=geometry.warp_report(job.state, record))
 
 
-# --- the tool ----------------------------------------------------------------
-
-#: The most pairs one call pictures (one picture per pair).
 MAX_PAIR_PICTURES = 4
 
 
@@ -560,6 +540,6 @@ def set_landmarks_tool(
             job, workspace, "set_landmarks", pictures, notes, {})
         looked = Looked(pictures=[p.image for p in pictures], entries=entries)
         return pictured(result, looked)
-    except Exception as exc:  # noqa: BLE001 - the write stands
+    except Exception as exc:  # noqa: BLE001
         result["render_failed"] = str(exc)
         return result

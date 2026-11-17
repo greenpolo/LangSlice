@@ -32,27 +32,19 @@ from pathlib import Path
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.layout import TRACE_DIR
 
-#: Entries one listing shows; the rest are counted.
 LIST_ENTRIES = 200
-#: Matches one search shows; the rest are counted.
 SEARCH_MATCHES = 60
-#: Lines one read returns when no limit is given, and the most it ever returns.
 READ_LINES = 400
 READ_LINES_MAX = 2000
-#: Bytes of text one read or one search reply holds.
 TEXT_BYTES = 60_000
-#: A line longer than this is cut (said on the line).
 LINE_CHARS = 400
-#: A file larger than this is not searched.
 SEARCH_FILE_BYTES = 8_000_000
 
-#: Folders of the job folder's top level these tools never show or open.
 HIDDEN = frozenset({TRACE_DIR})
 
 PICTURE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".bmp"})
 
 
-#: How many names of the nearest existing folder a missing path's refusal lists.
 NEAREST_NAMES = 20
 
 
@@ -88,7 +80,7 @@ class Entry:
     """One listed item: its path relative to the job folder."""
 
     path: str
-    kind: str  # "dir", "text", "picture", "binary"
+    kind: str
     size: int
 
 
@@ -145,7 +137,6 @@ def is_text(path: Path) -> bool:
     try:
         head.decode("utf-8")
     except UnicodeDecodeError as error:
-        # A multi-byte character cut by the 8 KB window is not binary.
         if error.start < len(head) - 4:
             return False
     return True

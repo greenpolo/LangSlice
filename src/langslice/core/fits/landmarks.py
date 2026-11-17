@@ -304,11 +304,9 @@ def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = Fal
     draw.text((x + 10, top), text, fill="white")
 
 
-#: Markers of one kind closer than this (picture pixels) share one label.
 MERGE_PX = 12.0
 
 
-#: The colour folded triangles are outlined in on a warped overlay.
 FOLD_COLOUR = "#ff2bd6"
 
 
@@ -321,7 +319,6 @@ def draw_folds(
     a warp saved by an earlier version names otherwise is skipped)."""
     warp_facts = landmark_warp(section)
     folds: JsonObject = {} if warp_facts is None else warp_facts.folds
-    # the folded triangles, each the ids of its corner pairs
     triangles = cast("list[list[str]]", folds.get("triangles", []))
     by_id = {pair.id: pair.section_fraction_xy for pair in section_pairs(section)}
     draw = ImageDraw.Draw(image)
@@ -363,9 +360,6 @@ def draw_landmarks(
             if x0 <= xy[0] < x1 and y0 <= xy[1] < y1:
                 placed.append((role, np.asarray(xy, dtype=float), pair.id,
                                stale(state, section, pair)))
-    # Markers of one kind at the same spot, or near enough for their labels to
-    # collide, are one group with one label naming every id; labels of
-    # different groups never cover each other.
     groups: list[list[tuple[str, np.ndarray, str, bool]]] = []
     for item in placed:
         for group in groups:
@@ -381,8 +375,6 @@ def draw_landmarks(
     for group in groups:
         first = group[0]
         label = ", ".join(member[2] for member in group)
-        # A pair whose two endpoints meet (its warp applied) is labelled once:
-        # the other kind's group of the same ids at that spot already says it.
         if any(other[0][0] != first[0] and {m[2] for m in other} == {m[2] for m in group}
                and any(np.hypot(*(a[1] - b[1])) <= MERGE_PX for a in other for b in group)
                for other in labelled):

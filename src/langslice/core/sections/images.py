@@ -74,37 +74,20 @@ from langslice.core.workspace import ImageSettings, Workspace
 
 logger = logging.getLogger(__name__)
 
-#: The image every fit reads by default and every picture without an image draws.
 PREPROCESSED = "preprocessed"
-#: What a made image's name may be (it is also its file's name).
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
-#: Longest name a made image may have.
 MAX_NAME = 32
-#: The kinds of section image.
 RAW, MADE = "raw", "made"
-#: CLAHE clip limit and tile grid of the automatic path (the opening recipe's).
 DEFAULT_CLAHE_CLIP = AUTO_CLAHE_CLIP
 DEFAULT_CLAHE_TILES = AUTO_CLAHE_TILE[0]
-#: Accepted CLAHE ranges (0 clip = no CLAHE).
 MAX_CLAHE_CLIP = 40.0
 MAX_CLAHE_TILES = 32
-#: Accepted gamma range of a recipe.
 MIN_GAMMA, MAX_GAMMA = 0.1, 10.0
-#: A recipe's automatic weights (each raw channel by its squared tissue coverage).
 AUTO = "auto"
-#: zlib level of the image files (fast; the files are a few megabytes).
 PNG_COMPRESS_LEVEL = 3
-#: Threads the opening images of a stack are made on.
 OPENING_THREADS = 8
-#: Working-size planes kept on ``Workspace.image_cache`` (a few megabytes each).
 IMAGE_CACHE_SIZE = 64
 
-#: A look, as :func:`langslice.core.sections.renders.render_slice` takes it:
-#: ``None`` (the section's ``preprocessed`` image), ``{"image": name}`` (one
-#: section image alone, in gray), ``{"overlay": [raw names]}`` (raw channels
-#: together in their colours,
-#: :func:`langslice.core.sections.channels.composite`) or ``{"file": True}``
-#: (the working copy as read, in colour: a plugin's raw raster).
 Look = dict[str, Any] | None
 
 
@@ -117,8 +100,6 @@ class _Layout(Protocol):
 
     def relative(self, path: str | Path) -> str: ...
 
-
-# --- recipes ---------------------------------------------------------------------------
 
 
 def validate_recipe(
@@ -186,7 +167,6 @@ def validate_recipe(
             "contrast": limits, "gamma": power, "invert": invert}
 
 
-#: The recipe the arguments' defaults give: the opening image's own.
 OPENING_RECIPE: dict[str, Any] = validate_recipe()
 
 
@@ -201,7 +181,7 @@ def recipe_words(recipe: Mapping[str, Any]) -> str:
              f"CLAHE {clip:g} on {tiles}x{tiles} tiles" if clip else "no CLAHE"]
     if recipe.get("n4"):
         parts.append("N4")
-    if recipe.get("denoise"):  # an image made when make_image denoised
+    if recipe.get("denoise"):
         parts.append("denoise")
     if recipe.get("contrast"):
         low, high = recipe["contrast"]
@@ -223,8 +203,6 @@ def compact_recipe(recipe: Mapping[str, Any]) -> dict[str, Any]:
             out[key] = recipe[key]
     return out
 
-
-# --- the opening image -----------------------------------------------------------------
 
 
 def opening_source(settings: ImageSettings) -> dict[str, Any]:
@@ -269,8 +247,6 @@ def is_opening(entry: ImageRef | None) -> bool:
     """Whether *entry* (None: no entry, the opening is implied) is an opening image."""
     return entry is None or "opening" in entry.source
 
-
-# --- digests, files ---------------------------------------------------------------------
 
 
 def digest_of(array: np.ndarray) -> str:
@@ -343,8 +319,6 @@ def write_image(
     return entry
 
 
-# --- names and planes -------------------------------------------------------------------
-
 
 def raw_names(ws: Workspace, section_id: str) -> list[str]:
     """The section's raw channels, in file order."""
@@ -383,7 +357,6 @@ def _resolved_file(ws: Workspace, entry: ImageRef) -> Path:
     return Path(folder) / path
 
 
-#: Guards every workspace's image cache (sections are made on threads).
 _CACHE_LOCK = threading.Lock()
 
 
@@ -396,7 +369,7 @@ def _cached(ws: Workspace, key: tuple[str, str], make: Callable[[], np.ndarray])
         if held is not None:
             cache.move_to_end(key)
             return held
-    made = make()  # outside the lock: other sections' planes go on
+    made = make()
     with _CACHE_LOCK:
         cache[key] = made
         while len(cache) > IMAGE_CACHE_SIZE:
@@ -463,8 +436,6 @@ class ImageView:
     kind: str
     array: np.ndarray
     digest: str | None
-    #: The made image's file, relative to the job folder; for a raw channel the
-    #: section's image file (in the image folder).
     file: str | None
     source: dict[str, Any] | None
 
@@ -484,7 +455,7 @@ def read_image(ws: Workspace, section: Section, name: str) -> ImageView:
         return ImageView(name=name, kind=RAW, array=array, digest=None, file=section.id,
                          source=None)
     entry = entry_of(section, name)
-    if entry is None:  # the opening image, implied
+    if entry is None:
         return ImageView(name=name, kind=MADE, array=array, digest=digest_of(array), file=None,
                          source=opening_source(ws.settings))
     return ImageView(name=name, kind=MADE, array=array, digest=entry.digest,
@@ -503,8 +474,6 @@ def images_digest(section: Section) -> dict[str, str]:
     compares, so remaking an image while it runs makes the section stale."""
     return {name: entry.digest for name, entry in sorted(section.images.items())}
 
-
-# --- making an image from a recipe --------------------------------------------------------
 
 
 def _tone(values: np.ndarray, recipe: Mapping[str, Any]) -> np.ndarray:
@@ -542,8 +511,6 @@ def sources_of(
     return [name for name, _v in used], [value for _n, value in used]
 
 
-#: Runs N4 on planes: the planes corrected, in order (:func:`n4_here`, or a
-#: caller's worker processes).
 Enhance = Callable[[list[np.ndarray]], list[np.ndarray]]
 
 
@@ -611,8 +578,6 @@ def make(
                                    for name, value in zip(names, used, strict=True)}
 
 
-# --- the opening image of a job ---------------------------------------------------------
-
 
 def opening_entry(ws: Workspace, layout: _Layout, section_id: str) -> ImageRef:
     """The opening ``preprocessed`` image of one section, written: its entry."""
@@ -632,7 +597,7 @@ def ensure_opening(ws: Workspace, layout: _Layout, state: Stack) -> list[str]:
     def one(section: Section) -> tuple[Section, ImageRef | None]:
         try:
             return section, opening_entry(ws, layout, section.id)
-        except Exception:  # noqa: BLE001 - an unreadable file is the section's own problem
+        except Exception:  # noqa: BLE001
             logger.warning("the opening image of %s could not be made", section.id,
                            exc_info=True)
             return section, None
@@ -646,8 +611,6 @@ def ensure_opening(ws: Workspace, layout: _Layout, state: Stack) -> list[str]:
             written.append(section.id)
     return written
 
-
-# --- status --------------------------------------------------------------------------------
 
 
 def describe_source(entry: ImageRef | None,
@@ -685,7 +648,7 @@ def summary(state: Stack, settings: ImageSettings) -> dict[str, Any]:
         if not held:
             continue
         texts = [json.dumps(value, sort_keys=True) for value in held.values()]
-        common = max(texts, key=texts.count)  # ties: the first section's
+        common = max(texts, key=texts.count)
         row: dict[str, Any] = dict(json.loads(common))
         differ = {section: value for (section, value), text in zip(held.items(), texts,
                                                                     strict=True)

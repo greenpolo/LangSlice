@@ -1,4 +1,4 @@
-name: Worker package
+name: Package
 
 on:
   pull_request:
@@ -38,26 +38,13 @@ jobs:
               exit 1
             fi
           fi
-      - name: Exercise installed worker outside checkout
+      - name: Run the installed command outside the checkout
         shell: bash
         run: |
           cd "$RUNNER_TEMP"
           langslice version
-          python - <<'PY'
-          import json
-          import subprocess
-          import sys
-          result = subprocess.run(
-              [sys.executable, '-m', 'langslice', 'serve', '--stdio'],
-              input=json.dumps({"id": "smoke", "method": "setup.status", "params": {}}) + "\n",
-              text=True, capture_output=True, check=True, timeout=60,
-          )
-          reply = json.loads(result.stdout)
-          assert reply['id'] == 'smoke' and reply['type'] == 'result', reply
-          assert reply['result']['version'], reply
-          print(result.stdout)
-          PY
+          langslice-job ops > /dev/null
       - uses: actions/upload-artifact@v4
         with:
-          name: langslice-worker-${{ matrix.os }}
+          name: langslice-wheel-${{ matrix.os }}
           path: dist/*.whl

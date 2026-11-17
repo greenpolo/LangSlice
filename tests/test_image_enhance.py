@@ -1,4 +1,4 @@
-"""N4 bias-field correction and denoising of one plane (SimpleITK)."""
+"""N4 bias-field correction of one plane (SimpleITK)."""
 
 from __future__ import annotations
 

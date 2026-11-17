@@ -54,30 +54,14 @@ LOOK_TOOL = "look"
 class Looked:
     """What :func:`look_pictures` (and ``grep_atlas_view``) showed."""
 
-    #: The pictures, in order, each saved with a number.
     pictures: list[Image.Image] = field(default_factory=list)
-    #: ``{"id", "caption"}`` per picture: its number and index caption.
     entries: list[dict[str, Any]] = field(default_factory=list)
-    #: Pictures drawn but left out of this reply: ``{"mode", "sections",
-    #: "positions_mm", "caption", "how"}`` each; "how" says how to get it.
     not_shown: list[dict[str, Any]] = field(default_factory=list)
-    #: :func:`show_result` only: ``{"id", "error", "message"}`` per section
-    #: whose picture could not be drawn (the write stands).
     failed: list[dict[str, Any]] = field(default_factory=list)
-    #: ``look`` with ``layers``: per picture and layer asked for, ``{"picture",
-    #: "section", "name", "tool", "kind", "drawn"}`` (and ``reason`` for a layer
-    #: not drawn).
     layers: list[dict[str, Any]] = field(default_factory=list)
-    #: ``look`` with ``masks``: per picture and mask asked for, ``{"picture",
-    #: "section", "name", "drawn"}`` (and ``kind``, ``stale`` for a mask drawn, ``reason``
-    #: for one not).
     masks: list[dict[str, Any]] = field(default_factory=list)
-    #: ``look`` with ``sheet``: the sheets' ``{"id", "caption", "tiles"}``
-    #: (``pictures`` then holds the sheets, and ``entries`` the tiled pictures).
     sheets: list[dict[str, Any]] = field(default_factory=list)
 
-
-# --- saving ------------------------------------------------------------------------------
 
 
 def _picture_id(name: str) -> int:
@@ -145,8 +129,6 @@ def not_shown(pictures: Sequence[Any], mode: str, *, verb: str = "") -> list[dic
 def _words(arguments: dict[str, Any]) -> str:
     return ", ".join(f"{key}={value!r}" for key, value in arguments.items())
 
-
-# --- look --------------------------------------------------------------------------------
 
 
 def _strings(value: Any, name: str) -> list[Any]:
@@ -225,7 +207,6 @@ def look_tool(
         reply["masks"] = looked.masks
     reply = pictured(reply, looked)
 
-    # the sheets are attached; the pictures they tile are saved
     if looked.sheets:
         reply["tiled"] = reply["pictures"]
         reply["pictures"] = [
@@ -330,7 +311,6 @@ def look_pictures(
     every picture is saved and numbered as usual (its JPEG an artifact of kind
     ``tile``), and ``pictures`` holds the sheets.
     """
-    # the request as the model gave it, checked below
     mode, sections = request.mode, request.sections
     positions_mm, images = request.positions_mm, request.images
     atlas_layers, atlas_opacity = request.atlas_layers, request.atlas_opacity
@@ -418,7 +398,7 @@ def _under_registrations(
     trial = copy.deepcopy(job.state)
     shown: list[tuple[str, int, bool]] = []
     for ref, number in registrations.items():
-        given = cast("object", number)  # the model's, checked there
+        given = cast("object", number)
         record, entry, held = ops_registrations.entry_for(job, ref, given)
         if ids and record.id not in ids:
             raise Refused(RefusalCode.BAD_ARGS,
@@ -431,7 +411,7 @@ def _under_registrations(
         copy_.rotation_deg = entry.rotation_deg
         copy_.transform = entry.transform
         copy_.deformation = entry.deformation
-        number = cast("int", entry.registration)  # a numbered line
+        number = cast("int", entry.registration)
         shown.append((record.id, number, held == number))
     drawn = ids or [name for name, _number, _held in shown]
     return trial, drawn, tuple(shown)
@@ -505,7 +485,6 @@ def _reply(
                   masks=_mask_notes(shown, entries))
 
 
-#: The mode a sheet is saved under (its folder ``<n>_look_sheet``).
 SHEET_MODE = "sheet"
 
 
@@ -562,8 +541,6 @@ def _sheet_reply(
                   masks=_mask_notes(drawn, entries), sheets=made)
 
 
-# --- a change tool's picture --------------------------------------------------------------
-
 
 def show_result(
     job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
@@ -599,7 +576,7 @@ def show_result(
                                         positions_mm=tuple(float(v) for v in positions_mm))
             try:
                 drawn = looks.look(workspace, state, request, store=job.deformations)
-            except Exception as exc:  # noqa: BLE001 - the write stands; say why
+            except Exception as exc:  # noqa: BLE001
                 code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
                 failed.append({"error": code, "message": str(exc)})
         else:
@@ -612,7 +589,7 @@ def show_result(
                                             images=tuple(str(v) for v in images))
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
-                except Exception as exc:  # noqa: BLE001 - the write stands; say why
+                except Exception as exc:  # noqa: BLE001
                     code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
                     failed.append({"id": section, "error": code,
                                    "message": str(exc)})

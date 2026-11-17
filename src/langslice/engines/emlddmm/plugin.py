@@ -69,23 +69,16 @@ NAME = "emlddmm"
 DEFAULTS = {
     "device": "auto",
     "dtype": "float64",
-    "section_um": 58.88,  # the published mouse serial-section example's pixel
+    "section_um": 58.88,
     "section_weight": "gap",
     "memory_limit_gb": 24.0,
 }
 
-#: GB of GPU memory per million voxels (slots x rows x columns) in float64, measured on the
-#: 2026-10-18 Fig 3 runs (33 M voxels: 12.5 GB; 97 M: more than 27 GB).
 GB_PER_MVOX = 0.4
-#: The published example's slice thickness, um.
 EXAMPLE_SLICE_UM = 20.0
-#: examples/mouse_serial_section_example/atlas_to_target_config.json (supplement 7.2.4).
 PUBLISHED = {"iterations": [100, 50, 25], "kernel_um": 500.0, "warp_freedom": 10000.0}
 SORTING_KEYS = ("match_sd", "background_sd", "artifact_sd", "background_mean", "artifact_mean")
-#: What a fit fits (``fit``), as every engine tool names it: the transforms (each
-#: section's turn and shift and the stack's scale and shear), the 3-D warp, or both.
 FITS = ("transform", "warp", "both")
-#: emlddmm's sources as LangSlice runs them (the fork's commits).
 ENGINE_VERSION = "emlddmm 9c4dc80 + e426ece + 6ff62b0"
 
 
@@ -95,14 +88,11 @@ def scale_iterations(iterations: int) -> list[int]:
     [100, 50, 25] runs."""
     first = int(iterations)
     return [first, max(1, first // 2), max(1, first // 4)]
-#: Sections whose planes differ by less than this (an imported placement's rounding) are one stack.
 ANGLE_TOLERANCE_DEG = 1.0
-LATTICE_PX = 8  # the map is read every 8 fit-grid pixels and interpolated (the warp is smooth)
-NO_WARP = 10 ** 6  # emlddmm's v_start past the last iteration: the warp never starts
-OVERLAYS = 4  # the pictures a landing or a plane proposal sends
+LATTICE_PX = 8
+NO_WARP = 10 ** 6
+OVERLAYS = 4
 
-
-# --- the agent-facing declarations ----------------------------------------------------------
 
 
 def emlddmm_stack(
@@ -115,7 +105,7 @@ def emlddmm_stack(
     fit: Literal["transform", "warp", "both"] = "both",
     warp_freedom: float = 10000.0,
     iterations: int = 100,
-    sorting: dict[str, Any] = {},  # noqa: B006 (a declaration's default, as the native stubs)
+    sorting: dict[str, Any] = {},  # noqa: B006
     view: bool = True,
 ) -> dict[str, Any]:
     """Fit the whole stack to the atlas at once with emlddmm, on its current plane.
@@ -283,8 +273,6 @@ def emlddmm_plane(
     ...
 
 
-# --- frames -----------------------------------------------------------------------------------
-
 
 def _unit(v: Any) -> np.ndarray:
     v = np.asarray(v, np.float64)
@@ -322,7 +310,7 @@ def _sample(
     n = len(flat)
     pad = np.zeros(
         (-n % 1024, 2), np.float32
-    )  # remap wants maps under 32767 per side
+    )
     flat = np.concatenate([flat, pad]).reshape(-1, 1024, 2)
     channels = (
         [array]
@@ -379,9 +367,8 @@ def _section(
     scaled, back = (
         grey / unit,
         float(slide / unit > 0.5),
-    )  # white slide: brightfield
+    )
     plane = frame.plane
-    # micrometres per fit-grid pixel at the section's linear scale (atlas micrometres)
     px_um = float(np.mean(plane["px_um"])) / float(
         np.sqrt(abs(np.linalg.det(placed[:2, :2])))
     )
@@ -460,8 +447,6 @@ def _plane_um(sec: dict[str, Any], p: np.ndarray) -> np.ndarray:
         p.shape
     ) + sec["q"]
 
-
-# --- the stack --------------------------------------------------------------------------------
 
 
 def _slots(
@@ -547,13 +532,13 @@ def _stack(
     )
     if (
         tilt > ANGLE_TOLERANCE_DEG
-    ):  # sections of one job share its cutting angles
+    ):
         raise ToolError(
             RefusalCode.NOT_A_STACK,
             f"the sections' planes differ by {tilt:.1f} degrees: "
             "emlddmm needs one cutting angle for the stack",
         )
-    n = _unit(np.cross(dy, dx))  # rows (n, dy, dx): a proper rotation
+    n = _unit(np.cross(dy, dx))
     centres = np.array([s["centre"] for s in secs])
     order = np.argsort(centres @ n)
     secs = [secs[i] for i in order]
@@ -565,8 +550,6 @@ def _stack(
     z = rel @ n
     slot, dz = _slots(z, slot_um, cos)
     section_um = config["section_um"]
-    # the stack's in-plane grid: the union of the sections' footprints (the image border read
-    # through each registration), a margin of two pixels
     corners = []
     off_xy = np.stack([rel @ dx, rel @ dy], 1)
     for sec, off in zip(secs, off_xy, strict=True):
@@ -636,7 +619,7 @@ def _stack(
         uv = np.stack([mesh_x - off[0], mesh_y - off[1]], -1) - sec["q"]
         p = (
             uv @ sec["Qi"].T
-        )  # native pixels of the plane under every stack pixel
+        )
         g = _unreg(sec, p)
         sx, sy = sec["down_s"]
         at = (g + 0.5) / np.array([sx, sy]) - 0.5
@@ -657,7 +640,7 @@ def _stack(
         W0[k] = keep
         if (
             sec["soft"] is not None
-        ):  # the section mask: emlddmm takes soft weights, W0 *= weights
+        ):
             W0[k] *= np.clip(_sample(sec["soft"], at), 0.0, 1.0)
         tissue = (
             _sample(
@@ -740,8 +723,6 @@ def _check_sorting(sorting: dict[str, Any]) -> dict[str, float]:
     return {key: float(value) for key, value in sorting.items()}
 
 
-# --- the engine -------------------------------------------------------------------------------
-
 
 def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
             params: dict[str, Any]) -> dict[str, Any]:
@@ -753,7 +734,7 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     how = {"device": config["device"], "dtype": config["dtype"]}
     try:
         out = engine.run(arrays, {**params, **how})
-    except Exception as exc:  # noqa: BLE001 - the fit's failure is its refusal
+    except Exception as exc:  # noqa: BLE001
         failure = f"{type(exc).__name__}: {exc}"
         raise ToolError(RefusalCode.FIT_FAILED,
                         f"emlddmm failed: {failure}") from exc
@@ -769,13 +750,11 @@ def _arrays(st: dict[str, Any], queries: list[np.ndarray]) -> dict[str, Any]:
             "q_n": np.array([len(q) for q in queries], int)}
 
 
-# --- pictures ---------------------------------------------------------------------------------
-
 
 def _font(size: int = 11) -> Any:
     try:
         return ImageFont.load_default(size)
-    except TypeError:  # an older Pillow
+    except TypeError:
         return ImageFont.load_default()
 
 
@@ -826,8 +805,6 @@ def _energy_files(energy: np.ndarray, folder: Path) -> None:
     image.save(folder / "energy.png")
 
 
-# --- landing helpers --------------------------------------------------------------------------
-
 
 def _expand(native: np.ndarray, w: int, h: int) -> np.ndarray:
     """A map read on the lattice (nh, nw, 2) as a full fit-grid map (h, w, 2)."""
@@ -845,9 +822,9 @@ def _lattice(sec: dict[str, Any], off: np.ndarray) -> dict[str, Any]:
     w, h = sec["grid"]
     nw, nh = int(math.ceil((w - 1) / LATTICE_PX)) + 1, int(math.ceil((h - 1) / LATTICE_PX)) + 1
     xs, ys = np.linspace(0, w - 1, nw), np.linspace(0, h - 1, nh)
-    gxy = np.stack(np.meshgrid(xs, ys), -1)  # (nh, nw, 2) as (x, y)
+    gxy = np.stack(np.meshgrid(xs, ys), -1)
     p_old = _reg(sec, gxy)
-    uv = _plane_um(sec, p_old) + off  # (column, row) um in the stack frame
+    uv = _plane_um(sec, p_old) + off
     return {"shape": (nh, nw), "gxy": gxy, "p_old": p_old,
             "q": np.stack([uv[..., 1].ravel(), uv[..., 0].ravel()], -1)}
 
@@ -914,12 +891,10 @@ def _device(config: dict[str, Any]) -> str:
     """The device the fit will run on: ``auto`` is the GPU when torch sees one."""
     if config["device"] != "auto":
         return str(config["device"])
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-
-# --- emlddmm_stack ----------------------------------------------------------------------------
 
 
 def _meta(rec: dict[str, Any]) -> dict[str, Any]:
@@ -947,7 +922,7 @@ def _weights_on_grid(st: dict[str, Any], sec: dict[str, Any], off: np.ndarray,
     float16 weight map on the section's fit grid, read through its current registration."""
     w, h = sec["grid"]
     gxy = np.stack(np.meshgrid(np.arange(w), np.arange(h)), -1).astype(np.float64)
-    uv = _plane_um(sec, _reg(sec, gxy)) + off  # (column, row) um in the stack frame
+    uv = _plane_um(sec, _reg(sec, gxy)) + off
     ix = ((uv[..., 0] - st["gx"][0]) / st["section_um"]).astype(np.float32)
     iy = ((uv[..., 1] - st["gy"][0]) / st["section_um"]).astype(np.float32)
     got = cv2.remap(np.ascontiguousarray(stack_weights, np.float32), ix, iy, cv2.INTER_LINEAR,
@@ -1012,8 +987,6 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                             "moved_mm": (float(np.median(moved)), float(moved.max())),
                             "set_aside": _set_aside(out, sec["slot"], sec)})
         _write_files(st, out, folder, secs, A, A0, A2d, {}, asked, chosen, config)
-        # every conversion that can run before the write lock does; a deformation on a section
-        # whose transform is just rewritten composes with the new placement, so it waits
         t_rows = {rec["sec"]["id"]: lctx.transform_from_matrix(rec["sec"]["id"], rec["matrix"],
                                                                note=note).row()
                   for rec in records if routes[rec["sec"]["id"]] == "transform"}
@@ -1024,7 +997,6 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                 proposals[sec["id"]] = lctx.deformation_from_map(
                     sec["id"], _expand(rec["native"], *sec["grid"]), note=note,
                     meta=_meta(rec), weights=rec["weights"], settings=settings,
-                    # read through its deformation: built on it
                     start="current" if sec["applied"] is not None else "linear",
                     engine_settings=chosen, engine_version=ENGINE_VERSION)
         written: dict[str, str] = {}
@@ -1065,7 +1037,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
             code = failed.get(sid, {}).get("error")
             if sid in written and sid not in failed:
                 problem, wrote = "", written[sid]
-            elif sid in written:  # the transform stands, the warp did not land
+            elif sid in written:
                 problem, wrote = f"transform only, deformation {code}", "transform only"
             else:
                 problem, wrote = code or RefusalCode.FROZEN, "not written"
@@ -1123,7 +1095,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
 
     try:
         work = ctx.start_work([sec["id"] for sec in secs], land)
-    except Exception as exc:  # SECTION_BUSY and the like
+    except Exception as exc:
         as_payload = getattr(exc, "payload", None)
         payload = as_payload() if as_payload else {"error": RefusalCode.NOT_STARTED,
                                                    "message": str(exc)}
@@ -1143,8 +1115,6 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                        "files": _blocks.job_path(ctx, folder)})
 
 
-# --- emlddmm_plane ----------------------------------------------------------------------------
-
 
 def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
                 section_image: str, atlas_image: str, iterations: int,
@@ -1162,9 +1132,6 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     folder = _blocks.call_folder(ctx, "plane")
     out = _engine(config, folder, _arrays(st, [np.zeros((0, 2)) for _ in secs]), params)
     A, A0, A2d = (np.asarray(out[k], np.float64) for k in ("A", "A0", "A2d"))
-    # The slot planes' common normal is A's first row (the gradient of the slot coordinate), the
-    # atlas point on a plane is A^-1 [z, 0, 0, 1] about the volume's centre, which the engine
-    # put at the origin.
     centre = (np.asarray(atlas.shape, float) - 1) / 2.0 * np.asarray(atlas.resolution_um)
     Ai = np.linalg.inv(A)
     found = [ctx.angles_from_plane(A[0, :3].tolist(),
@@ -1176,9 +1143,6 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     new = np.array([f["position_mm"] for f in found])
     scale, shift_mm = (np.polyfit(old, new, 1) if np.ptp(old) > 0
                        else (1.0, float(np.mean(new - old))))
-    # emlddmm moves a shared in-plane turn and shift into every section's A2d (and the start
-    # carries one when the stack is tilted): a section's own residual is what it has beyond the
-    # stack's median
     a2d = A2d[[sec["slot"] for sec in secs]]
     turns = np.degrees(np.arctan2(a2d[:, 1, 0], a2d[:, 0, 0]))
     shifts = a2d[:, :2, 2] / 1000.0
@@ -1213,8 +1177,6 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                        **({} if _captured(out) else {"energy": "not captured"}),
                        "files": _blocks.job_path(ctx, folder)}, pictures)
 
-
-# --- the factory ------------------------------------------------------------------------------
 
 
 def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:

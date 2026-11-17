@@ -46,16 +46,11 @@ from langslice.plugin_api import gpu_turn
 if TYPE_CHECKING:
     import torch
 
-#: The vendored STalign package.
 PACKAGE = "langslice_vendor.stalign"
-#: The ``mode`` of a plane search; any other runs the 2-D fit.
 PLANE = "plane"
-#: Query points sampled at once through STalign's map.
 QUERY_CHUNK = 1 << 20
 
-#: A value of STalign's keyword arguments as the plugin sets them.
 Option = float | int | str | dict[str, str]
-#: A value of a call's result.
 Output = np.ndarray | str | float
 
 
@@ -79,7 +74,7 @@ class _Fit(Protocol):
 class _STalign(Protocol):
     """Name the functions of STalign this module calls (it ships no types)."""
 
-    def LDDMM(  # noqa: N802 - STalign's name
+    def LDDMM(  # noqa: N802
         self,
         source_axes: list[np.ndarray],
         source: np.ndarray,
@@ -89,7 +84,7 @@ class _STalign(Protocol):
         **_options: object,
     ) -> _Fit: ...
 
-    def LDDMM_3D_to_slice(  # noqa: N802 - STalign's name
+    def LDDMM_3D_to_slice(  # noqa: N802
         self,
         source_axes: list[np.ndarray],
         source: np.ndarray,
@@ -103,10 +98,10 @@ class _STalign(Protocol):
         self,
         xv: list[torch.Tensor],
         v: torch.Tensor,
-        A: torch.Tensor,  # noqa: N803 - STalign's name
+        A: torch.Tensor,  # noqa: N803
         *,
         direction: str,
-        XJ: torch.Tensor,  # noqa: N803 - STalign's name
+        XJ: torch.Tensor,  # noqa: N803
     ) -> torch.Tensor: ...
 
 
@@ -116,7 +111,6 @@ class _Figures(Protocol):
     def update(self, snap: Mapping[str, np.ndarray]) -> None: ...
 
 
-#: How STalign makes its figures: its class, called with the fit's problem.
 FiguresMaker = Callable[[object], _Figures]
 
 
@@ -130,12 +124,10 @@ class _Records(threading.local):
     """Hold the energy record of the fit running on this thread."""
 
     def __init__(self) -> None:
-        #: The fit's record, or None on a thread that runs no fit here.
         self.energy: list[np.ndarray] | None = None
 
 
 _RECORDS = _Records()
-#: Serializes installing the stand-in for STalign's figures.
 _INSTALL = threading.Lock()
 
 
@@ -158,16 +150,12 @@ def run(
     dict of str to Output
         The call's results by name (see the module text).
     """
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     options = dict(params)
     device = resolve_device(str(options.pop("device", AUTO)))
     if not on_gpu(device) or str(arrays["mode"]) == PLANE:
-        # The plane search runs no fit iterations: its multi-start
-        # pre-alignment is CPU work in float64 wherever the fit would run, so
-        # it takes no GPU turn and several sections search at once.
         device = CPU
-    # the GPU at float32, the CPU at float64 (STalign's C++ engine)
     dtype = torch.float32 if on_gpu(device) else torch.float64
     threads = int(str(options.pop("threads", 4)))
     precision = str(dtype).replace("torch.", "")
@@ -205,15 +193,15 @@ class _How:
 def _stalign() -> _STalign:
     """Import STalign, its end-of-fit figures replaced by the record."""
     module = importlib.import_module(PACKAGE)
-    figures = cast(  # STalign ships no types: the module of its figures
+    figures = cast(
         "_FiguresModule", importlib.import_module(f"{PACKAGE}._lddmm_common")
     )
     with _INSTALL:
-        current = figures._Figures  # noqa: SLF001  # pyright: ignore[reportPrivateUsage] - STalign's figures hook
+        current = figures._Figures  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if current is not _EnergyRecord:
             _EnergyRecord.figures = current
-            figures._Figures = _EnergyRecord  # noqa: SLF001  # pyright: ignore[reportPrivateUsage] - STalign's figures hook
-    return cast("_STalign", module)  # STalign ships no types: its functions
+            figures._Figures = _EnergyRecord  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return cast("_STalign", module)
 
 
 class _EnergyRecord:
@@ -229,7 +217,6 @@ class _EnergyRecord:
         STalign's description of the fit, which its own figures read.
     """
 
-    #: STalign's own figures class, which another caller's fit draws with.
     figures: ClassVar[FiguresMaker | None] = None
 
     def __init__(self, problem: object) -> None:
@@ -256,7 +243,7 @@ class _EnergyRecord:
 
 def _plain(value: object) -> np.ndarray:
     """Copy a tensor or array as a float64 array on the CPU."""
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().double().numpy()
@@ -270,7 +257,6 @@ def _json(value: Mapping[str, Option]) -> str:
 
 def _listed(item: object) -> object:
     """Turn a tensor or array into nested lists, for JSON."""
-    # numpy types tolist() as Any: nested lists
     return cast("object", _plain(item).tolist())
 
 
@@ -281,7 +267,7 @@ def _lddmm(
     how: _How,
 ) -> dict[str, Output]:
     """Run STalign's 2-D fit and sample its map at the query points."""
-    import torch  # local: slow to import, needed only when a fit runs
+    import torch
 
     start = arrays["A0"]
     energy: list[np.ndarray] = []

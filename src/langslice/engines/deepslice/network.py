@@ -42,10 +42,7 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-#: Where DeepSlice's metadata keeps its weights (its ``config.json``).
 BUCKET = "https://data-proxy.ebrains.eu/api/v1/buckets/deepslice/weights"
-#: The weight files, by role: name and SHA-256 of the file DeepSlice 1.2.8
-#: downloads (checked against its own run, ``README.md``).
 XCEPTION = (
     "xception_weights_tf_dim_ordering_tf_kernels.h5",
     "c5bf1c05b020c4177164039b854c3ef92b16b73384734647c1f0ad5cf79f6975",
@@ -58,16 +55,10 @@ SECONDARY = (
     "Synthetic_data_final.hdf5",
     "b85b7325158d117b2ac7559495c0b50dfcf3545aa29281a345f9ef1e33542e42",
 )
-#: Where the weights are kept unless the plugin's options say otherwise.
 CACHE_FOLDER = Path("~/.cache/langslice/deepslice")
-#: How long one download may stall, seconds.
 DOWNLOAD_TIMEOUT_S = 600
-#: The side, pixels, every image is read at (Xception's input).
 SIDE_PX = 299
-#: scikit-image's ``rgb2gray`` weights of red, green and blue.
 GREY_WEIGHTS = (0.2125, 0.7154, 0.0721)
-#: The suffixes DeepSlice reads an image by.
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
 
 
 @dataclass(frozen=True)
@@ -208,7 +199,7 @@ def _fetched(folder: Path, file: tuple[str, str]) -> Path:
     logger.info("Fetching DeepSlice's weights from %s", url)
     folder.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(name + ".part")
-    opened = cast(  # urlopen is untyped: a binary stream
+    opened = cast(
         "IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S)
     )
     with opened as response, partial.open("wb") as out:
@@ -262,7 +253,7 @@ def predict(
         generator.reset()
         _load_weights(keras, model, weights.secondary)
         secondary = model.predict(generator, steps=steps, verbose=0)
-        anchorings = cast(  # the two networks' answers averaged
+        anchorings = cast(
             "npt.NDArray[np.float64]",
             np.mean([anchorings, secondary], axis=0),
         )
@@ -277,7 +268,6 @@ def predict(
 
 def _load_keras() -> _Keras:
     """Import tf_keras's model parts and h5py."""
-    # tf_keras and h5py have no type information here: typed by hand.
     applications = importlib.import_module("tf_keras.applications")
     models = importlib.import_module("tf_keras.models")
     layers = importlib.import_module("tf_keras.layers")
@@ -341,7 +331,6 @@ def _generator(keras: _Keras, images: Sequence[Path]) -> _Generator:
         {"Filenames": [str(path) for path in images]}
     )
     with warnings.catch_warnings():
-        # Keras warns that the standard-deviation step runs without centring.
         warnings.simplefilter("ignore")
         generator = cast(
             "_DataGenerator",

@@ -35,10 +35,7 @@ from langslice.job.imports.readers import (
     read_registration,
 )
 
-#: Relative aspect-ratio difference between the registered image and the
-#: job's file above which the placement is said to be by fractions only.
 ASPECT_TOLERANCE = 0.01
-#: The transform ``kind`` an imported placement carries.
 IMPORTED_KIND = "imported"
 
 
@@ -143,8 +140,6 @@ class ImportResult:
             "pixel_size_source": self.pixel_size_source,
         }
 
-
-# --- to the job's atlas ----------------------------------------------------------------
 
 
 def _fraction_map_from_anchoring(anchoring: Sequence[float], atlas: dict[str, Any],
@@ -284,7 +279,7 @@ def import_placements(
                     f"{shown[0]} x {shown[1]}: placed by the same "
                     "fractions of width and height")
         matrix = pixel_map_on(fractions, shown)
-        if registered_on == "oriented":  # file pixels -> oriented pixels, as [row, col, 1]
+        if registered_on == "oriented":
             matrix = matrix @ SWAP @ orientation_matrix(sizes.file_size, int(turn[0]),
                                                         bool(turn[1])) @ SWAP
         prepared.append((index, section_id, rule, sizes, matrix, problems))
@@ -335,10 +330,6 @@ def import_placements(
     )
 
 
-# --- as a job's supplied inputs ----------------------------------------------------------
-
-#: The warning when the file carries VisuAlign markers: only the linear
-#: registration is imported.
 MARKERS_NOT_IMPORTED = (
     "The file's VisuAlign nonlinear markers ({count} section(s)) were not imported: "
     "only its linear registration is. LangSlice's nonlinear step replaces them.")
@@ -397,9 +388,7 @@ def registration_inputs(
         pixel_size = float(result.pixel_size_um)
         overridden = [p.section_id for p in result.placements
                       if p.pixel_size_source != "imported"]
-        if overridden:  # one pixel size for the job: place every section against it
-            # The settings text stays the job's: these frames are keyed by
-            # the pixel size, so none is shared with the job's own.
+        if overridden:
             fixed = replace(
                 workspace.settings, supplied_pixel_size=pixel_size,
                 stack_pixel_size_um=pixel_size, file_pixel_sizes_um={})
@@ -418,7 +407,6 @@ def registration_inputs(
     yaws = [p.yaw_deg for p in placements]
     if max(pitches) - min(pitches) <= ANGLE_EPSILON_DEG \
             and max(yaws) - min(yaws) <= ANGLE_EPSILON_DEG:
-        # One plane for the stack (differences below a written file's rounding).
         angles: dict[str, Any] = {"pitch": float(np.median(pitches)),
                                   "yaw": float(np.median(yaws))}
     else:

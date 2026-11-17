@@ -20,29 +20,20 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-#: The window's title, and its name in the taskbar.
 TITLE = "LangSlice"
-#: Windows groups taskbar windows by this identity; without one of its own
-#: the window would be filed under Python's, with Python's icon.
 APP_ID = "LangSlice.Window"
-#: The icon: LangSlice's mark (``assets/logo/logomark_dark_512.png``).
 ICON = Path(__file__).parent / "static" / "langslice.ico"
-#: ``DWMWA_USE_IMMERSIVE_DARK_MODE``: the attribute for a dark title bar.
 DARK_TITLE_BAR = 20
-#: The window's size without one given, and the smallest it can be made.
 DEFAULT_SIZE = (1440, 960)
 MIN_SIZE = (960, 640)
-#: The page's ground (``static/tokens.css`` ``--ground``), until it loads.
 GROUND = "#121213"
-#: The arguments that carry a size: the address, the width, the height.
 SIZED_ARGUMENTS = 3
-#: ``os.name`` on Windows, where the taskbar and title bar are set.
 WINDOWS = "nt"
 USAGE = "usage: python -m langslice.hosts.gui.app URL [WIDTH HEIGHT]"
 
 
 class _Handle(Protocol):
-    def ToInt64(self) -> int: ...  # noqa: N802 - .NET's name
+    def ToInt64(self) -> int: ...  # noqa: N802
 
 
 class _Native(Protocol):
@@ -63,7 +54,7 @@ class _Window(Protocol):
 
 
 class _Webview(Protocol):
-    def create_window(  # noqa: PLR0913 - pywebview's call
+    def create_window(  # noqa: PLR0913
         self,
         title: str,
         url: str,
@@ -78,13 +69,13 @@ class _Webview(Protocol):
 
 
 class _Shell(Protocol):
-    def SetCurrentProcessExplicitAppUserModelID(  # noqa: N802 - Win32's name
+    def SetCurrentProcessExplicitAppUserModelID(  # noqa: N802
         self, app_id: str
     ) -> int: ...
 
 
 class _Dwm(Protocol):
-    def DwmSetWindowAttribute(  # noqa: N802 - Win32's name
+    def DwmSetWindowAttribute(  # noqa: N802
         self, window: int, attribute: int, value: object, size: int
     ) -> int: ...
 
@@ -137,7 +128,6 @@ def main() -> int:
         raise SystemExit(USAGE)
     sized = len(args) >= SIZED_ARGUMENTS
     width, height = (int(args[1]), int(args[2])) if sized else DEFAULT_SIZE
-    # pywebview comes with the `window` extra only.
     webview = cast("_Webview", importlib.import_module("webview"))
     own_taskbar_identity()
     window = webview.create_window(

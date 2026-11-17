@@ -25,14 +25,11 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
-
-# scipy ships no type stubs
 from scipy import ndimage as ndi  # pyright: ignore[reportMissingTypeStubs]
 
 from langslice.core.fits.deformable.geometry import WorkingGrid
 from langslice.core.geometry.triangulation import PiecewiseAffine
 
-#: scipy's bilinear sampler, typed here: scipy ships no type stubs.
 _map_coordinates = cast(
     "Callable[..., np.ndarray]",
     ndi.map_coordinates,  # pyright: ignore[reportUnknownMemberType]
@@ -80,7 +77,6 @@ class MeshStep:
     simplices: np.ndarray
 
 
-#: What a record's fields are rebuilt from; None: they are stored whole.
 StoredStep = EngineStep | MeshStep
 
 
@@ -128,9 +124,6 @@ def mesh_fields(
         Placed atlas to section, the same shape and units.
 
     """
-    # The mesh's own Delaunay maps forward by a vectorised lookup; given
-    # triangles, by a loop over them, ten times slower. Its own triangles
-    # are the stored ones wherever scipy triangulates as it did then.
     mesh = PiecewiseAffine(step.source_xy, step.target_xy)
     if not np.array_equal(mesh.simplices, step.simplices):
         mesh = PiecewiseAffine(step.source_xy, step.target_xy, step.simplices)
@@ -191,7 +184,6 @@ def compose_forward(
     numpy.ndarray
         The total forward field, ``(height, width, 2)``.
     """
-    # numpy types a shape loosely: a field is (height, width, 2)
     height, width, _ = cast("tuple[int, int, int]", step_mm.shape)
     xx, yy = _pixel_centres((width, height))
     moved_x = xx + step_mm[..., 0] / mm_per_px
@@ -224,7 +216,6 @@ def compose_inverse(
     numpy.ndarray
         The total inverse field, ``(height, width, 2)``.
     """
-    # numpy types a shape loosely: a field is (height, width, 2)
     height, width, _ = cast("tuple[int, int, int]", step_inverse_mm.shape)
     xx, yy = _pixel_centres((width, height))
     back_x = xx + previous_inverse_mm[..., 0] / mm_per_px

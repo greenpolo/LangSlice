@@ -28,13 +28,8 @@ import numpy as np
 
 from langslice.core.atlas.disk_cache import cached_volume
 
-#: The adult Allen mouse brain's annotated volume (``allen_mouse_25um``, as
-#: :func:`annotated_volume_mm3` counts it): the brain every distance was
-#: tuned on, factor 1.
 REFERENCE_VOLUME_MM3 = 505.4
-#: The factor is rounded to a multiple of this.
 SCALE_STEP = 0.05
-#: The annotation is counted every this many micrometres (at least every voxel).
 SAMPLE_UM = 100.0
 
 _scales: dict[tuple[Any, ...], float] = {}

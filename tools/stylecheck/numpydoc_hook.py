@@ -19,8 +19,6 @@ take for unknown parameters. ``# numpydoc ignore``
 comments are not honoured: the baseline is the one list of exceptions.
 """
 
-# numpydoc ships no type information, and annotates a validator's
-# parameters as a one-item tuple; this module types what it uses.
 # pyright: reportMissingTypeStubs=false, reportIncompatibleMethodOverride=false
 
 from __future__ import annotations
@@ -39,16 +37,12 @@ from numpydoc.validate import ERROR_MSGS, get_validation_checks
 from tools.stylecheck.core import Config, Module, Project, Violation
 from tools.stylecheck.jsondata import as_list, as_table, as_text, load_toml
 
-#: Decorators that make a function a property, which has no Returns.
 PROPERTY_DECORATORS = ("property", "cached_property", "setter", "getter")
 
-#: numpydoc's ``validate``, with the report type its documentation gives.
 VALIDATE = cast(Callable[..., dict[str, object]], numpydoc.validate.validate)
 
-#: Annotations that mark a class attribute as no constructor field.
 NOT_FIELDS = ("ClassVar", "KW_ONLY")
 
-#: Base classes whose annotated fields are the constructor's parameters.
 FIELD_BASES = ("NamedTuple", "BaseModel")
 
 
@@ -155,7 +149,6 @@ def _target_violations(
         filename=str(module.path),
         ancestry=target.ancestry,
     )
-    # cast: numpydoc reports each error as a (code, message) pair
     errors = cast(list[tuple[str, str]], report["errors"])
 
     return [

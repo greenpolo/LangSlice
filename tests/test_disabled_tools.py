@@ -209,7 +209,6 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
     from langslice.doors.reference_card import card_text
     from langslice.tools.descriptions.door_text import (
         image_model_off_text,
-        opening_for_cli,
         opening_for_mcp,
     )
     from langslice.tools.descriptions.statement import (
@@ -234,10 +233,7 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         for door, connected in itertools.product(DOORS, (True, False)):
             door_facts = StatementFacts.from_run(spec, state, ctx, tool_names=names,
                                                  auto=door == "cli")
-            opening = (opening_for_mcp(3) if door == "mcp"
-                       else opening_for_cli(
-                           "/job", ["Strip 1 of 1: s0.png", "- /job/views/1/view.jpg"],
-                           spec.switched_off))
+            opening = opening_for_mcp(3) if door == "mcp" else ()
             texts[f"statement {door} connected={connected}"] = job_statement(
                 door_facts, door=door, opening=opening,
                 image_model_off=not connected)

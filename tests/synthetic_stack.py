@@ -196,11 +196,6 @@ class Normaliser:
         return self.text(f"<{type(value).__name__}> {value}")
 
 
-def canonical(value: Any) -> str:
-    """The one JSON spelling snapshots are written and compared in."""
-    return json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
-
-
 def full_spec(folder: Path) -> Any:
     from langslice.job.settings.spec import (
         JobSpec,

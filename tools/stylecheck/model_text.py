@@ -16,7 +16,6 @@ from dataclasses import dataclass
 
 from tools.stylecheck.core import Module, Project, Violation
 
-#: The checks and tool codes that judge a docstring's form and wording.
 DOCSTRING_RULES = frozenset(
     {
         "summary-first-word",
@@ -28,7 +27,6 @@ DOCSTRING_RULES = frozenset(
     }
 )
 
-#: The rule prefixes that judge docstrings as a family.
 DOCSTRING_PREFIXES = ("numpydoc:", "ruff:D")
 
 

@@ -123,7 +123,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
             context = ToolContext(door, caller, f"{self.call}-bg")
             try:
                 result = land(context)
-            except Refused as refusal:  # a ToolError too
+            except Refused as refusal:
                 return Landed(status=FAILED, text=str(refusal))
             reply = dict(result.reply)
             return Landed(

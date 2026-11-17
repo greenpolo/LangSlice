@@ -15,13 +15,9 @@ from PIL import Image
 
 from langslice.core.pictures.jpeg import encode_jpeg
 
-#: The serialized bytes one MCP reply may hold, its JSON and texts included
-#: and every picture base64 (Claude Desktop refuses a reply past ~1 MB).
 REPLY_BYTES = 680_000
-#: Room a strip's page keeps for its texts and the JSON around them.
 TEXT_ROOM = 8_000
 
-#: A reply's content in order: a text, or a picture's JPEG bytes.
 Item = str | bytes
 
 

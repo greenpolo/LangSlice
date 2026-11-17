@@ -32,40 +32,32 @@ from tools.stylecheck.core import (
 from tools.stylecheck.rules.enclosing import parent_map
 from tools.stylecheck.rules.scopes import call_name
 
-#: The comprehension nodes.
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 
-#: Statements whose whole value may be a conditional expression.
 VALUE_STATEMENTS = (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Return)
 
-#: The finding for a conditional expression inside a larger expression.
 MISPLACED_CONDITIONAL = (
     "A conditional expression is used inside a larger expression; assign "
     "it to a name first."
 )
 
-#: The finding for a pair indexed by a test.
 INDEXED_PAIR = (
     "A pair indexed by a test is a conditional in disguise; write "
     "'a if test else b' as the whole value of an assignment (1.2)."
 )
 
-#: The finding for ``test and a or b`` used as a value.
 AND_OR_CONDITIONAL = (
     "'test and a or b' is a conditional in disguise, and wrong when a is "
     "falsy; write 'a if test else b' as the whole value of an "
     "assignment (1.2)."
 )
 
-#: Expressions whose value is a truth, not a value chosen by a test.
 TRUTH_NODES = (ast.Compare, ast.BoolOp, ast.Name, ast.NamedExpr)
 
-#: Calls that answer a test with a truth.
 TRUTH_CALLS = frozenset(
     {"bool", "isinstance", "issubclass", "hasattr", "callable", "any", "all"}
 )
 
-#: Method-name prefixes of calls that answer a test with a truth.
 TRUTH_PREFIXES = ("is_", "has_", "can_", "exists", "startswith", "endswith")
 
 

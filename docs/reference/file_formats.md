@@ -42,8 +42,6 @@ The files most readers use are the exports (`exports/quicknii.json`,
                         every tool call on every door, a script_write line per write
                         a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
-                        abba_applied.jsonl (a job followed in ABBA: what each checkpoint did there);
-                        abba_warps/ (the follower's converted ABBA warp rows, one file per deformation and placement);
                         env.lock, held while env/ is made
   trace/                agent transcripts: the built-in agent's trace (also when it is sent elsewhere), a coding agent's session copied in by its harness plugin, and its launch check (<harness>_<session>.launch.json)
   env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
@@ -383,7 +381,7 @@ follow the job through it.
 | `tool_end` | that call ends | the same, plus `step`, `views`, `failed`, `status` |
 
 The tool lines are written for every door: `door` is `agent` (the built-in
-agent, `langslice linear run` and the ABBA worker), `mcp`, `cli` (the agent
+agent and `langslice linear run`), `mcp`, `cli` (the agent
 CLI) or `library` (a script). `execution_id` pairs a call's two lines.
 `target_ids` are the sections the call names (every section for `status`,
 `undo`, `redo`, `submit` and a stack-wide call), as filenames. `args` are the
@@ -453,50 +451,6 @@ nothing reads it yet. `agent` keeps a model per connection, spelled as
 `langslice linear run` started with neither `--model` nor `--reasoning` runs
 on the chosen connection's entry. A value LangSlice does not know reads as
 unset. `LANGSLICE_SETTINGS` names another file, or `off` for none.
-
-## A job prepared in ABBA (`~/.langslice/abba/`)
-
-**Register › LangSlice…** in ABBA keeps each ABBA project's job in
-`~/.langslice/abba/<project key>/`, the key being the first 12 hexadecimal
-digits of the SHA-256 of the atlas name, a newline and the names of all the
-session's slices, sorted and joined by newlines:
-
-```text
-~/.langslice/abba/<project key>/
-  section_0001.tif ...  the calibrated snapshots, the job's images (one TIFF page per channel)
-  langslice/            the job folder
-  abba_project.json     atlas, slice_names (all the session's slices at creation), sections (snapshot to slice name), created_at, keys (sessions that continued this folder)
-  abba_sections.json    snapshot filename to ABBA slice name, the job's sections
-  gui.log               the last LangSlice window's output
-```
-
-A folder moved aside by **Start a new job** is renamed
-`<project key>.old-<yyyyMMdd-HHmmss>`.
-
-The job folder's `job.json` holds the prepared settings (ABBA's positions,
-cutting angles, pixel size and channel names as `inputs`, the slices already
-registered in ABBA frozen, `transform.angles` on) and a `host` block, written
-once by the worker's `abba.prepare` before any checkpoint:
-
-| Field | Meaning |
-|---|---|
-| `format`, `kind` | `3`, `"abba"` |
-| `abba.project_key` | the project key above |
-| `abba.atlas` | ABBA's atlas name |
-| `abba.sections` | snapshot filename to ABBA slice name |
-| `abba.registered` | the snapshots whose slices carried registrations in ABBA |
-| `abba.existing_warp` | the snapshots whose slices carried a spline or BigWarp step not LangSlice's |
-| `abba.angles_deg` | ABBA's stack-wide cutting angles, `pitch_deg` and `yaw_deg` |
-| `abba.z_offset_mm` | ABBA's atlas offset along the slicing axis |
-| `abba.pixel_size_um` | the snapshots' pixel size, one for the job: ABBA's image frame at 3072 pixels on its long side, in 0.01 µm steps, or the sections' finest source pixel when that is coarser |
-| `abba.thickness_um`, `abba.interval_um` | the medians of ABBA's slice thicknesses and position gaps (0: none) |
-| `abba.prepared_at` | when it was prepared (UTC, ISO 8601) |
-
-`logs/abba_applied.jsonl` is written by the connector, one line per
-checkpoint applied in ABBA: `at` (UTC), `applied` (the snapshots changed),
-`failed` (snapshot to ABBA's or the connector's reason), `angles` (whether
-the cutting angles changed) and `angles_failed` (the reason) when they could not be.
-Nothing reads it back.
 
 ## Exports (`exports/`)
 
@@ -614,7 +568,7 @@ file pixel `(x, y)` is first ABBA's centred source point `((x - (W - 1)/2)
 v, (y - (H - 1)/2) v)`, then the affine registration takes it to world `x,
 y`, exactly LangSlice's linear map. The warp registration is a thin-plate
 spline through at most `landmarks` pairs (16 to 1089, 1089 by default) placed where it errs most
-(`core/maps/abba.py`, as the Fiji connector's warp rows), stored as ABBA
+(`core/maps/abba.py`), stored as ABBA
 stores BigWarp's: `srcPts` the atlas side (where the deformation takes each
 point), `tgtPts` the section side (the point as the affine step placed it).
 

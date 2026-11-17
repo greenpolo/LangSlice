@@ -40,7 +40,6 @@ from langslice.tools.descriptions.door_text import (
     image_model_state,
 )
 
-#: The roles, as the connectors name their agents.
 ROLES = ("register", "register-scripting")
 
 _NUMBERED = re.compile(r"^(\d{6})_")
@@ -141,7 +140,7 @@ def mcp_prompt(job_folder: Path, atlas_loader: Any = None, *,
     try:
         image_folder = str(session.ctx.image_folder)
         folder = image_folder
-        try:  # the name start_job accepts: the images' folder when it leads to this job
+        try:
             from langslice.doors.jobs import find
 
             if Path(find(image_folder)) != Path(session.job.folder):
@@ -187,7 +186,7 @@ def write_tools(folder: Path, box: Any) -> Path | None:
         content = tools_text(str(folder), list(box.names), box.variant, box.job.spec)
         with path.open("w", encoding="utf-8", newline="\n") as output:
             output.write(content)
-    except Exception:  # noqa: BLE001 - the launch stands without its tools file
+    except Exception:  # noqa: BLE001
         logging.getLogger(__name__).warning("Could not write %s", path, exc_info=True)
         return None
     return path

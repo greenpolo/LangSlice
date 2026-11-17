@@ -138,12 +138,11 @@ put it elsewhere.
   placement only: when `warps_left_out` names sections, tell the user that
   their warps are left out of this export and that PyNutil on
   `exports/visualign.json` keeps them.
-- **ABBA.** A job started from ABBA (**Register › LangSlice…** in ABBA) is
-  already in ABBA: see the `abba` skill. For any other job there is no
-  correct way to put LangSlice's results into ABBA. Never import
-  `quicknii.json` into ABBA: ABBA misreads its image sizes and cutting
-  angles, and the sections land millimetres off and out of order. To use
-  ABBA, start the job from ABBA.
+- **ABBA.** Write the job as an ABBA project, `exports/<image folder>.abba`,
+  which ABBA opens with **File ‣ Load State**: the `abba` skill has the
+  script. Never import `quicknii.json` into ABBA: ABBA misreads its image
+  sizes and cutting angles, and the sections land millimetres off and out
+  of order.
 
 The LangSlice documentation (https://langslice.readthedocs.io) has a page
 for each: QUINT, VERSO, DMC-BrainMap and ABBA. Point the user to the one

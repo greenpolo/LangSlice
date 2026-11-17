@@ -46,13 +46,9 @@ import numpy as np
 from langslice.core.refusal import RefusalCode, Refused
 
 SIDES: tuple[str, ...] = ("left", "right", "top", "bottom")
-#: The plane whose sections each lie within one hemisphere: no sides.
 UNSIDED_PLANE = "sagittal"
-#: The two names of the halves, by which way the midline runs on the picture.
 LEFT_RIGHT: tuple[str, str] = ("left", "right")
 TOP_BOTTOM: tuple[str, str] = ("top", "bottom")
-#: The midline counts as diagonal on the picture when its two components differ
-#: by less than this fraction of the larger one.
 DIAGONAL_TOLERANCE = 1e-6
 
 
@@ -73,7 +69,6 @@ class SideMask(np.ndarray):
 
     def __array_finalize__(self, obj: Any) -> None:
         self.names = getattr(obj, "names", LEFT_RIGHT)
-#: Separator between a region and its side.
 SEPARATOR = ":"
 
 
@@ -127,7 +122,6 @@ def ml_halves(
         values = np.asarray(atlas.hemispheres)[index[0], index[1], index[2]]
         present = [int(v) for v in np.unique(values) if v]
         if len(present) < 2:
-            # The plane misses one hemisphere: compare with the volume's centre.
             high = ml >= (count / 2.0 - 0.5)
         else:
             means = {v: float(ml[values == v].mean()) for v in present}
@@ -161,7 +155,6 @@ def native_left(
     if not np.isfinite(linear).all() or abs(np.linalg.det(linear)) < 1e-12:
         raise Refused(RefusalCode.SIDES_AMBIGUOUS,
                       "The placement is degenerate, so it has no sides.")
-    # d ML / d display = inverse(L)^T @ d ML / d native.
     shown = np.linalg.inv(linear).T @ gradient
     if not np.isfinite(shown).all() or np.hypot(*shown) < 1e-9:
         raise Refused(RefusalCode.NO_SIDES,
@@ -171,9 +164,7 @@ def native_left(
                       "This placement turns the midline to 45 degrees, "
                       "so neither left/right nor top/bottom is defined.")
     if abs(shown[0]) > abs(shown[1]):
-        # ML increasing toward the right: the low half is on the left.
         return SideMask(~high if shown[0] > 0 else high, LEFT_RIGHT)
-    # ML increasing downward: the low half is on top.
     return SideMask(~high if shown[1] > 0 else high, TOP_BOTTOM)
 
 

@@ -53,7 +53,6 @@ from langslice.job.host_inputs import (
     changed_inputs,
     check_damaged_regions,
     inputs_changed,
-    opening_spec,
 )
 from langslice.job.layout import (
     JobLayout,
@@ -194,7 +193,6 @@ class Job(JobBorderTraces):
         *,
         folder: str | os.PathLike[str] | None = None,
         results_path: str | None = None,
-        frozen_given: bool = False,
     ) -> Job:
         """Open the job folder (*folder*; default
         :func:`~langslice.job.layout.locate_job_folder`: ``spec.job_dir``, else
@@ -215,11 +213,6 @@ class Job(JobBorderTraces):
         refused (:class:`InputsChanged`, naming the keys and how to start
         fresh) before anything is written: the old checkpoint would keep the
         old inputs and drop the new ones.
-
-        A job the ABBA connector prepared opens with its saved settings as
-        the defaults of *spec* (``opening_spec``; *frozen_given*:
-        *spec*'s freeze was given explicitly and replaces the saved one), and
-        *workspace* is given the settings it opens with.
         """
         if folder is None:
             folder, _fallback = locate_job_folder(
@@ -233,13 +226,7 @@ class Job(JobBorderTraces):
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
-        with lock.held():  # read and first checkpoint as one write
-            opened = opening_spec(
-                layout.folder, spec, frozen_given=frozen_given
-            )
-            if opened is not spec:
-                spec = opened
-                workspace.settings = spec.image_settings()
+        with lock.held():
             state = None
             resumed = False
             if spec.resume:
@@ -256,7 +243,7 @@ class Job(JobBorderTraces):
                 )
                 if changed:
                     raise inputs_changed(layout.folder, changed)
-            removed = _removed_settings(layout)  # this spec replaces them
+            removed = _removed_settings(layout)
             write_job_file(layout, spec=spec.to_dict())
             undo_file = UndoFile(layout)
             lists = undo_file.load()
@@ -266,9 +253,7 @@ class Job(JobBorderTraces):
                     f"[ingest] resuming from {layout.state_file}"
                 )
                 state.spec = spec.to_dict()
-                state.image_folder = str(
-                    images
-                )  # where they are now (a moved folder)
+                state.image_folder = str(images)
                 state.submitted = False
             else:
                 state = ingest(spec, workspace)
@@ -277,8 +262,6 @@ class Job(JobBorderTraces):
                 lists.undo, lists.redo = [], []
             if lists.notice is not None:
                 workspace.progress(f"[job] {lists.notice}")
-            # The opening ``preprocessed`` image of every section without one,
-            # outside undo: part of the job as it opens.
             section_images.ensure_opening(workspace, layout, state)
             job = cls(
                 state,
@@ -295,7 +278,7 @@ class Job(JobBorderTraces):
             if not resumed:
                 job.record_opening()
                 if undo_file.path.exists():
-                    job._save_undo()  # a fresh job empties the steps it read, never another's
+                    job._save_undo()
             job.checkpoint()
         _log_migrated(layout, migration, removed)
         layout.log_event("open", resumed=resumed)
@@ -329,8 +312,6 @@ class Job(JobBorderTraces):
             workspace.job_folder = str(layout.folder)
         migration = FolderMigration(workspace, layout)
         undo_file = UndoFile(layout)
-        # stamped before the unlocked reads: a write landing during them is
-        # reloaded by the first sync, not overwritten by the first commit
         seen = (
             file_stamp(str(layout.state_file)),
             file_stamp(str(undo_file.path)),
@@ -361,9 +342,6 @@ class Job(JobBorderTraces):
             section_images.ensure_opening(workspace, layout, job.state)
             or upgraded
         ):
-            # A job of an older format, or one without its opening images:
-            # written once at the current format (a dry run, or a folder this
-            # process cannot write, keeps it in memory).
             if persist and os.access(layout.folder, os.W_OK):
                 job._write_upgrade_if_writable(migration)
         return job

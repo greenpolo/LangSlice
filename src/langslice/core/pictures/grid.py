@@ -20,7 +20,6 @@ from PIL import Image, ImageDraw
 from langslice.core.geometry.pixel_frames import SourceFrame, grid_step
 from langslice.core.pictures.captions import _font
 
-#: Grid line and label colour (no other drawing uses a lime green).
 GRID_COLOUR = "#7dff3a"
 CHIP_COLOUR = "#101010"
 DASH = 4

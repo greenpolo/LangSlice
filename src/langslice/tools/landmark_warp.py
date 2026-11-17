@@ -66,7 +66,6 @@ def _sample(field: np.ndarray, points: np.ndarray) -> np.ndarray:
     )
 
 
-#: What the apply reply's two displacement figures are.
 DISPLACEMENT_NOTE_KEY = "displacement_note"
 DISPLACEMENT_NOTE = (
     "displacement_mm is the whole deformation now applied to the section (every step "
@@ -74,7 +73,6 @@ DISPLACEMENT_NOTE = (
     "present, is only the change this application made over the warp it replaced or "
     "was applied onto."
 )
-#: Folded triangles a reply lists; the rest are counted.
 MAX_FOLDS_LISTED = 8
 
 
@@ -83,18 +81,11 @@ class LandmarksApplied:
     """What :func:`landmark_triangulation` applied, or found applied."""
 
     section: str
-    #: False: the section's warp was already the one these pairs make.
     written: bool
-    #: The pairs the warp is built from, by id.
     built_from: tuple[str, ...]
-    #: The applied deformation's numbers: displacement, folds, flags.
     numbers: JsonObject
-    #: The warp's folded triangles (``area_fraction``, ``triangles``);
-    #: empty or None when it has none.
     folds: JsonObject | None
-    #: Built on the section's earlier deformation (written only).
     composed: bool = False
-    #: Replacing the preceding landmark application (written only).
     replaced: bool = False
 
     def reply(self) -> dict[str, Any]:
@@ -225,7 +216,6 @@ def _mesh(
     try:
         return visualign_mesh(source, target, size=size)
     except DegenerateMesh as exc:
-        # The mesh's first four vertices are the fixed corners.
         raise Refused(
             RefusalCode.LANDMARK_TRIANGULATION_FAILED,
             pairs=sorted(
@@ -306,9 +296,6 @@ def landmark_triangulation(
     """Apply the complete set, replacing the preceding landmark application."""
     record = landmark_section(job, section)
     pairs = _require_applicable(job, record)
-    # The warp is the pairs' and the four corners' mesh alone; a warp saved
-    # before that (with automatic holds) has another revision, so the same
-    # pairs build it again.
     pair_forms = [pair_to_json(pair) for pair in pairs]
     revision = digest({"pairs": pair_forms, "mesh": "pairs and corners"})
     held = record.deformation
@@ -320,9 +307,7 @@ def landmark_triangulation(
         grid = deformation.fit_grid(job.state, workspace, record)
         try:
             current = job.deformations.current(job.state, record)
-        except (
-            ValueError
-        ):  # its record.json does not load (the error names it)
+        except ValueError:
             logger.warning(
                 "Applied deformation of %s unreadable",
                 record.id,
@@ -377,7 +362,6 @@ def landmark_triangulation(
         yy, xx = np.indices((size[1], size[0]), dtype=float)
         points = np.stack([xx, yy], -1)
         mm = grid.placement.section_mm_per_px
-        # The fields as loading the record rebuilds them from its mesh.
         step = MeshStep(mesh.source, mesh.target, mesh.simplices)
         forward_mm, inverse_mm = mesh_fields(step, size, mm)
         folds = _folds(mesh, points, names)
@@ -397,7 +381,6 @@ def landmark_triangulation(
                     "target_xy": mesh.target.tolist(),
                     "simplices": mesh.simplices.tolist(),
                     "margin": 0.1,
-                    # vertices: 4 fixed corners, then the pairs
                     "pair_count": len(names),
                 },
                 runtime_s=time.monotonic() - started,
@@ -455,9 +438,6 @@ def landmark_triangulation(
         composed=previous is not None,
         replaced=replacing,
     )
-
-
-# --- the tool ----------------------------------------------------------------
 
 
 def landmark_triangulation_tool(

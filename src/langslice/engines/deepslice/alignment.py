@@ -34,20 +34,13 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-#: An array of anchorings, one row of nine numbers per section.
 Anchorings = npt.NDArray[np.float64]
 
-#: The 25 um Allen volume DeepSlice's mouse anchorings live in, voxels.
 VOLUME = (528, 320, 456)
-#: The voxel, um, DeepSlice counts depths and spacing in.
 VOXEL_UM = 25.0
-#: The depth range of the mouse volume DeepSlice weights by.
 DEPTH_MAX = 528
-#: The two angles a section is turned by, in DeepSlice's order.
 DORSOVENTRAL, MEDIOLATERAL = "DV", "ML"
-#: DeepSlice's names for the two ways the index can run.
 ROSTRO_CAUDAL, CAUDAL_ROSTRO = "rostro-caudal", "caudal-rostro"
-#: The share of the depth steps ``trim_mean`` leaves out, percent.
 TRIM_PERCENT = 10
 
 
@@ -101,7 +94,7 @@ def propagated(
         The (DV, ML) pair each of the two passes voted.
     """
     votes: list[tuple[float, float]] = []
-    for _ in range(2):  # one angle's turn moves the other a little
+    for _ in range(2):
         good = _rows(anchorings[~bad])
         depths = [_center_depth(row) for row in good]
         dv_angle = _mean_angle(
@@ -169,9 +162,6 @@ def spaced(
     return anchorings, spacing
 
 
-# --- numpy's untyped edges ---------------------------------------------------
-
-
 def _at(values: npt.NDArray[np.float64], index: int) -> np.float64:
     """Return one element, as the float64 it is (numpy leaves it untyped)."""
     return cast("np.float64", values[index])
@@ -192,9 +182,6 @@ def _average(
 ) -> float:
     """Return numpy's weighted average (a float64 numpy leaves untyped)."""
     return float(cast("np.float64", np.average(values, weights=weights)))
-
-
-# --- the plane of one anchoring ----------------------------------------------
 
 
 def _plane(section: Anchorings) -> _Plane:
@@ -241,14 +228,14 @@ def _angle(section: Anchorings, direction: str) -> float:
         depth = -(linear_point / plane.ny)
         b = np.array((x - 100, depth))
         c = b + [100, 0]
-        flipped = depth > y  # b[1] > a[1]
+        flipped = depth > y
     else:
         a = points[1:3]
         linear_point = (x * plane.nx) + ((z - 100) * plane.nz) + plane.k
         depth = -(linear_point / plane.ny)
         b = np.array((depth, z - 100))
         c = b + [0, 100]
-        flipped = depth < y  # b[0] < a[0]
+        flipped = depth < y
 
     ba, bc = a - b, c - b
     dot = cast("np.float64", np.dot(ba, bc))
@@ -257,9 +244,6 @@ def _angle(section: Anchorings, direction: str) -> float:
     radians = cast("np.float64", np.arccos(cosine))
     angle = float(cast("np.float64", np.degrees(radians)))
     return -angle if flipped else angle
-
-
-# --- the angle vote ----------------------------------------------------------
 
 
 def _gaussian_weights(size: int) -> npt.NDArray[np.float64]:
@@ -305,7 +289,7 @@ def _rotated(
     moved = points.reshape(3, 3) - through
     rotated = cast("Anchorings", np.dot(moved, rotation)) + through
     rotated = rotated.reshape(9)
-    for i in range(3):  # back to edge vectors
+    for i in range(3):
         rotated[i + 3] -= rotated[i]
         rotated[i + 6] -= rotated[i]
     return rotated
@@ -381,9 +365,6 @@ def _rotation(axis: Anchorings, degrees: float) -> Anchorings:
     )
 
 
-# --- the spacing -------------------------------------------------------------
-
-
 def _direction(depths: npt.NDArray[np.float64]) -> str:
     """Return which way the depths run along the index (a trimmed mean)."""
     steps = depths[1:] - depths[:-1]
@@ -429,7 +410,7 @@ def _depth_weights(
     kept: list[float] = []
     flags = cast("list[bool]", bad.tolist())
     for weight, is_bad in zip(weights, flags, strict=False):
-        if is_bad:  # a bad section weighs nothing
+        if is_bad:
             kept.append(0.0)
         else:
             kept.append(weight)

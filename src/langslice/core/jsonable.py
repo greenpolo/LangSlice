@@ -14,15 +14,12 @@ from typing import TypeAlias, Union, cast, overload
 
 import numpy as np
 
-#: A value as ``json.loads`` gives it back.
-JsonValue: TypeAlias = Union[  # noqa: UP007 - a recursive alias needs the string form
+JsonValue: TypeAlias = Union[  # noqa: UP007
     None, bool, int, float, str, list["JsonValue"], dict[str, "JsonValue"]
 ]
-#: A JSON-shaped value as the code holds it (read-only containers).
-Json: TypeAlias = Union[  # noqa: UP007 - a recursive alias needs the string form
+Json: TypeAlias = Union[  # noqa: UP007
     None, bool, int, float, str, Sequence["Json"], Mapping[str, "Json"]
 ]
-#: A JSON object as the code holds it.
 JsonObject: TypeAlias = Mapping[str, Json]
 
 
@@ -71,26 +68,25 @@ def to_jsonable(value: object, *, strict: bool = False) -> JsonValue:
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if isinstance(value, np.generic):
-        number = cast("object", value.item())  # numpy types it loosely
+        number = cast("object", value.item())
         return to_jsonable(number, strict=strict)
     if isinstance(value, np.ndarray):
-        nested = cast("object", value.tolist())  # numpy types it loosely
+        nested = cast("object", value.tolist())
         return to_jsonable(nested, strict=strict)
     if isinstance(value, Mapping):
-        # the keys and items of a mapping of any type, read as objects
         mapping = cast("Mapping[object, object]", value)
         return {
             str(key): to_jsonable(item, strict=strict)
             for key, item in mapping.items()
         }
     if isinstance(value, (list, tuple)):
-        items = cast("Sequence[object]", value)  # a sequence of any type
+        items = cast("Sequence[object]", value)
         return [to_jsonable(item, strict=strict) for item in items]
     if strict:
         raise TypeError(
             f"Object of type {type(value).__name__} is not JSON serializable"
         )
     if isinstance(value, (set, frozenset)):
-        members = cast("set[object]", value)  # a set of any type
+        members = cast("set[object]", value)
         return [to_jsonable(item) for item in sorted(members, key=str)]
     return str(value)

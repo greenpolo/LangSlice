@@ -16,8 +16,6 @@ from langslice.core.stack.deformation import DeformationRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 
-#: What a status reply says under ``cutting_angles_deg`` when the sections'
-#: angles differ: each row carries its own.
 PER_SECTION = "per section"
 
 
@@ -28,9 +26,7 @@ def mask_rows(state: Stack, section: Section) -> list[dict[str, Any]]:
     return rows(state, section)
 
 
-#: Step fields that say how a step was made, not with which settings.
 _STEP_FACTS = ("method", "start", "note", "trace", "settings", "include", "exclude")
-#: A native step's stored setting names as the tools name them.
 _STEP_NAMES = {"fit_section": "section_image", "fit_atlas": "atlas_image"}
 
 
@@ -170,9 +166,6 @@ def status_rows(state: Stack) -> list[dict[str, Any]]:
     return rows
 
 
-#: Every field a status row can carry, in order. A model gets rows without
-#: their null and empty fields (:func:`compact_rows`); a script or a coding
-#: agent gets every row with all of them (:func:`uniform_rows`).
 ROW_FIELDS: tuple[str, ...] = (
     "id", "position_mm", "delta_to_next_mm", "flip",
     "rotation_deg",
@@ -180,14 +173,8 @@ ROW_FIELDS: tuple[str, ...] = (
     "deformation", "landmarks", "caveats",
     "frozen", "damage_by_user", "registration",
 )
-#: What :func:`uniform_rows` fills in where a row has no value (else null):
-#: ``frozen`` (the properties the user froze on the section) and
-#: ``damage_by_user`` (``tools.status.stack_status``) are set only when
-#: there are any.
 ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "frozen": [],
                                 "damage_by_user": False}
-#: The reply keys that hold status rows (``status``: the whole table; a
-#: write: the rows it changed).
 ROW_KEYS: tuple[str, ...] = ("rows", "changed")
 
 
@@ -222,7 +209,6 @@ def _status_rows(value: Any) -> bool:
     """*value* is a list of status rows: dicts with no field outside
     :data:`ROW_FIELDS` (``grep_atlas``'s region rows, under the same key, are
     not)."""
-    # ``layers``, ``masks``: only a section with plugin layers / masks has them
     fields = {*ROW_FIELDS, "layers", "masks"}
     return isinstance(value, list) and all(
         isinstance(row, dict) and set(row) <= fields for row in value)

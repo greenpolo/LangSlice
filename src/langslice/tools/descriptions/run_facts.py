@@ -28,17 +28,13 @@ from langslice.job.settings import frozen as freeze
 from langslice.job.settings.needs import render
 from langslice.job.settings.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 
-#: A section's raw channel names, or each section's when they differ.
 Channels = list[str] | dict[str, list[str]]
 
-#: The slicing axis of each plane, as the range fact names it.
 PLANE_AXIS_LABEL: dict[str, str] = {
     "coronal": "AP",
     "sagittal": "ML",
     "horizontal": "DV",
 }
-
-# --- the stack and the atlas ------------------------------------------------
 
 SECTIONS = "- {count} sections, {plane} plane, atlas {atlas} ({species})."
 RANGE = (
@@ -82,8 +78,6 @@ NOTED = (
     "regions are marked from it): {sections}."
 )
 
-# --- what this run changes --------------------------------------------------
-
 POSITIONS_WRITTEN = (
     "- The stack's order follows the positions: writing positions renumbers "
     "the sections, so use filenames to name them."
@@ -115,15 +109,12 @@ TRANSFORM_CAP = "- Each transform tool call takes at most {cap} {sections}."
 HEMISPHERE_CUE = "- What marks a hemisphere, from the user: {cue}"
 USER_FACT = "- {fact}"
 
-# --- what the pictures and fits read ----------------------------------------
-
 RAW_CHANNELS = (
     "the planes of each section's file as read; the names come from the "
     "file or the host and may not say which is the stain"
 )
 CHANNELS_SHARED = "- Raw image channels of every section ({raw}): {names}."
 CHANNELS_PER_SECTION = "- Raw image channels per section ({raw}): {names}."
-#: ``{opening}`` is how ``preprocessed`` was made.
 SECTION_IMAGES = (
     "- Section images (status lists them[[?list_files , list_files shows "
     "their files under sections/<name>/images/]]): the raw channels of each "
@@ -132,7 +123,6 @@ SECTION_IMAGES = (
     "fit[[?trace_borders  and the image model read|| reads]] a section image "
     "by name, and a picture of it is exactly what they read."
 )
-#: The one fact about a channel's signal the agent cannot see from the atlas.
 SPARSE_SIGNAL = (
     "- A channel whose signal is sparse (a tracer, a reporter) shows little "
     "of the anatomy the atlas draws."
@@ -223,7 +213,6 @@ def _protocol_fact(state: Stack) -> str:
 
 
 def _angles_fact(state: Stack, off: Collection[str]) -> str:
-    # each section its own angles: a registration supplied per section
     if state.mixed_angles:
         return render(MIXED_ANGLES, off)
     pitch, yaw = state.stack_angles
@@ -240,7 +229,6 @@ def _section_facts(spec: JobSpec, state: Stack) -> list[str]:
     damaged = [s.id for s in ordered if s.damaged]
     if damaged:
         facts.append(DAMAGED.format(sections=", ".join(damaged)))
-    # the spec checks it: {filename: note}
     notes = cast("Mapping[str, str]", spec.inputs.get("damaged") or {})
     noted = [s.id for s in ordered if s.id in notes]
     if noted:
@@ -275,7 +263,6 @@ def _transform_facts(spec: JobSpec) -> list[str]:
     if cap < MAX_PARALLEL_TRANSFORMS:
         sections = "section" if cap == 1 else "sections"
         facts.append(TRANSFORM_CAP.format(cap=cap, sections=sections))
-    # mirroring belongs to in-plane alignment: never in a positioning-only run
     cue = spec.transform.hemisphere_cue.strip()
     if cue and flips:
         facts.append(HEMISPHERE_CUE.format(cue=cue))
@@ -429,5 +416,5 @@ def section_channels(workspace: Workspace, state: Stack) -> Channels | None:
 def _channel_names(workspace: Workspace, section_id: str) -> list[str] | None:
     try:
         return list(workspace.section_channels(section_id)[0])
-    except Exception:  # noqa: BLE001 - unreadable: the opening says so
+    except Exception:  # noqa: BLE001
         return None

@@ -34,11 +34,8 @@ from PIL import Image
 
 from langslice.core.jsonable import Json, JsonObject
 
-#: The ABBA version the file is written as.
 ABBA_VERSION = "0.25.0"
-#: The dataset file inside the zip.
 DATASET_FILE = "_bdvdataset_0.xml"
-#: The display colours of a section's channels, as ABBA stores them.
 CHANNEL_COLORS = (
     (255, 0, 0),
     (0, 255, 0),
@@ -47,19 +44,11 @@ CHANNEL_COLORS = (
     (0, 255, 255),
     (255, 255, 0),
 )
-#: A one-channel section's colour.
 GRAY = (255, 255, 255)
-#: Half the thickness of a slice along the slicing axis, in millimetres:
-#: the z extent of a warp step's bounded transform around the location.
 WARP_HALF_DEPTH_MM = 0.5
-#: How far a warp step's bounded transform reaches in x and y, millimetres:
-#: beyond any section placed in the atlas.
 WARP_REACH_MM = 50.0
-#: The PIL modes Bio-Formats opens as RGB, split into channels.
 RGB_MODES = {"RGB": 3, "RGBA": 4, "P": 3, "CMYK": 4, "YCbCr": 3}
-#: The identity, as ABBA writes a slice's pre-transform.
 IDENTITY_3D = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-#: The colour converter and source class ABBA records per source.
 CONVERTER = "class net.imglib2.display.RealARGBColorConverterFactory$Imp"
 SOURCE_CLASS = "bdv.SpimSource"
 

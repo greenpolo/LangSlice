@@ -60,7 +60,7 @@ dependencies = [
     # each step once, which LangSlice asks for by name (compose_n 1) where a
     # newer FireANTs takes the setting. FireANTs 1.5.0 pins SimpleITK 2.2.1,
     # so that is the SimpleITK installed. SimpleITK is the one dependency of
-    # FireANTs it imports; it also runs N4 bias-field correction and denoising
+    # FireANTs it imports; it also runs N4 bias-field correction
     # of the preprocessed channel (langslice.core.sections.reading).
     "torch>=2.3",
     "SimpleITK>=2.2.1",
@@ -266,11 +266,9 @@ type_names = { Workspace = "workspace", "langslice.job.job.Job" = "job", JobSpec
 # formats, where a TypedDict or a dict of results may stand.
 json_boundary_modules = [
     "langslice.core.fits.deformable.record",
-    "langslice.doors.abba.contract",
     "langslice.doors.agent.trace",
     "langslice.doors.agent_cli.envelope",
     "langslice.doors.call_log",
-    "langslice.hosts.service",
     "langslice.job.history",
     "langslice.job.imports.matching",
     "langslice.job.imports.placements",

@@ -72,29 +72,22 @@ from langslice.job.settings.spec import JobSpec, NonlinearSpec
 from langslice.providers import connections as image_registry
 from langslice.providers.openai_api import OPENAI_IMAGE_MODELS
 
-#: The atlas species the list is grouped by, in order: (group, words in a name).
 SPECIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Mouse", ("mouse",)),
     ("Rat", ("_rat_",)),
 )
 
 
-#: The properties the form's "what you already know" can keep on every
-#: section (:data:`langslice.job.settings.frozen.PROPERTIES`), each with its
-#: task.
 KEEP: dict[str, str] = {"angles": "position", "orientation": "transform"}
 
-#: The image models LangSlice lists for each provider that has some.
 IMAGE_MODELS: dict[str, tuple[str, ...]] = {
     "openai-oauth": image_registry.OPENAI_OAUTH_IMAGE_MODELS,
     "openai-api": OPENAI_IMAGE_MODELS,
     "gemini-api": image_registry.GEMINI_IMAGE_MODELS,
 }
 
-#: The image-model provider ``none`` as the form names it.
 NO_IMAGE_MODEL = "None (no image model)"
 
-#: ``host.kind`` of a job prepared in ABBA.
 ABBA_HOST = "abba"
 
 
@@ -102,17 +95,11 @@ ABBA_HOST = "abba"
 class Integration:
     """A program the form offers to prepare the results for."""
 
-    #: The form's name for it.
     name: str
-    #: The box's words.
     label: str
-    #: How the message's request names it to the main agent.
     words: str
 
 
-#: The programs the main agent's ``register-brain`` skill prepares results
-#: for, in the form's order. ABBA is not one: a job reaches ABBA only by
-#: starting from it.
 INTEGRATIONS: tuple[Integration, ...] = (
     Integration(
         name="quint",
@@ -134,8 +121,6 @@ def species(name: str) -> str:
     return "Other"
 
 
-#: The image provider the form lists first, and the one its tool list is
-#: built with (any provider that calls an image model would do).
 TRACED_PROVIDER = "openai-oauth"
 
 
@@ -152,7 +137,6 @@ def tools() -> list[dict[str, Any]]:
     the job's ``enabled`` switches it on), and ``runs_in``: the task choices
     (comma-joined)
     whose runs have it (``ToolDef.when``)."""
-    # with an image model named, so the tools that call one are in their runs
     traced = NonlinearSpec(provider=TRACED_PROVIDER)
     specs = [JobSpec(image_folder=".", tasks=tasks, nonlinear=traced)
              for tasks in task_sets()]
@@ -183,7 +167,6 @@ def frozen_off(*properties: str) -> list[str]:
     plain = JobSpec(image_folder=".", tasks=list(ALL_TASKS)).switched_off
     kept = JobSpec(image_folder=".", tasks=list(ALL_TASKS),
                    frozen={"*": list(properties)}).switched_off
-    # without the tools that start off, which no freeze took away
     return [name for name in kept if name not in plain]
 
 
@@ -191,17 +174,11 @@ def frozen_off(*properties: str) -> list[str]:
 class ImageModelChoice:
     """One image-model provider the form offers, as the page reads it."""
 
-    #: The provider's name, as ``--nonlinear-provider`` takes it.
     provider: str
-    #: The name people see.
     label: str
-    #: The job's own default provider.
     default: bool
-    #: The models LangSlice lists for it (``--nonlinear-image-model``).
     models: list[str]
-    #: The model it uses when none is named (None: none LangSlice names).
     default_model: str | None
-    #: This computer has its key or sign-in (always, for no image model).
     connected: bool
 
 
@@ -229,7 +206,6 @@ def image_models() -> list[ImageModelChoice]:
     list of ImageModelChoice
         The providers, in the form's order.
     """
-    # what a job with trace_borders on and no provider named takes
     default = saved_image_provider() or setting("nonlinear.provider").default
     rows: list[ImageModelChoice] = []
     for name in sorted(CANONICAL_PROVIDERS, key=_provider_order):
@@ -281,17 +257,11 @@ def payload() -> dict[str, Any]:
 class AbbaBlock:
     """What the form shows of a job prepared in ABBA (its ``host.abba``)."""
 
-    #: ABBA's name for the atlas.
     atlas: str
-    #: Each snapshot file's ABBA slice name.
     sections: dict[str, str]
-    #: The snapshots ABBA had already registered.
     registered: list[str]
-    #: The registered snapshots with a warp of their own.
     existing_warp: list[str]
-    #: The snapshots' micrometres per pixel.
     pixel_size_um: float
-    #: ABBA's section thickness and interval (0: ABBA had none).
     thickness_um: int
     interval_um: int
 
@@ -304,7 +274,6 @@ class Prefill:
     blank for none.
     """
 
-    #: The image folder, absolute.
     folder: str
     atlas: str
     plane: str
@@ -312,19 +281,13 @@ class Prefill:
     thickness: str
     interval: str
     tasks: list[str]
-    #: The job's ``disabled``.
     off: list[str]
-    #: The job's ``enabled``: the tools that start off and it switches on.
     on: list[str]
-    #: Each :data:`KEEP` property: frozen on every section.
     keep: dict[str, bool]
-    #: ``file: note`` lines.
     damaged: str
     notes: str
     facts: list[str]
-    #: The per-section freezes (``"*"`` is :attr:`keep`'s).
     frozen: dict[str, list[str]]
-    #: The job was prepared in ABBA: what ABBA fixed.
     abba: AbbaBlock | None
 
 

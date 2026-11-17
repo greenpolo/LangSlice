@@ -21,7 +21,6 @@ from langslice.tools.descriptions.description import (
     ToolDescription,
 )
 
-#: Where ``make_mask`` takes its sorting from.
 MaskSource = Literal["em", "fit"]
 
 POSITION_SECTIONS = ToolDescription(

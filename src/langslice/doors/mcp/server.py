@@ -53,7 +53,6 @@ from langslice.doors.mcp.pages import (
 from langslice.doors.reference_card import write_card
 from langslice.doors.stdio import protocol_input
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.host_inputs import opening_spec
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
@@ -73,9 +72,6 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "langslice"
 
-#: Tools that only look (the registry's read verbs; the door's own
-#: ``show_stack`` is marked read-only where it is declared). Hosts may use the
-#: hint to skip a confirmation.
 READ_ONLY_TOOLS = frozenset(name for name, verb in VERBS.items() if verb.kind == "read")
 
 INSTRUCTIONS = (
@@ -105,9 +101,6 @@ class Session:
     notes: str = ""
     pages: list[list[ContentBlock]] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
-    #: The job's nonlinear task names an image model this door cannot reach
-    #: (:func:`langslice.doors.jobs.image_model_off`): its tools and statement
-    #: are a run without one.
     image_model_off: bool = False
 
     @property
@@ -129,8 +122,6 @@ class Session:
             logger.warning("Could not finish the job in %s", self.job.folder, exc_info=True)
 
 
-# --- the job ---------------------------------------------------------------
-
 
 def open_job(
     spec: JobSpec,
@@ -141,13 +132,10 @@ def open_job(
     job folder next to the images (``<images>/langslice``), or *folder*, a
     saved job's (the same place, as its index names it). The nonlinear
     task's image-model tool is offered only when that model is connected
-    (:func:`langslice.doors.jobs.image_model_off`). A job the ABBA
-    connector prepared opens with its saved settings as *spec*'s defaults
-    (``opening_spec``)."""
+    (:func:`langslice.doors.jobs.image_model_off`)."""
     ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
-    assert ctx.job_folder is not None  # build_context sets it
+    assert ctx.job_folder is not None
     job_folder = Path(ctx.job_folder)
-    spec = opening_spec(job_folder, spec, frozen_given=False)
     off = image_model_off(spec, provider_connected(spec))
     reason = refusal(spec, image_model=not off)
     if reason is not None:
@@ -157,10 +145,9 @@ def open_job(
     write_card(job.layout)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = HostTrace(trace_dir, ctx.image_folder) if trace_dir else None
-    # The host is Claude: its pictures are capped at Claude's largest image.
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
                       image_model_connected=not off, door="mcp")
-    box.answers_crashes = True  # a crash is the host's reply
+    box.answers_crashes = True
     return Session(job, ctx, box, trace, image_model_off=off)
 
 
@@ -286,7 +273,7 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
     """
     from langslice.tools.arguments import argument_refusal, normalize_arguments
 
-    registered = server._tool_manager.get_tool(name)  # noqa: SLF001 — FastMCP has no hook
+    registered = server._tool_manager.get_tool(name)  # noqa: SLF001
     if registered is None:
         return
     metadata = registered.fn_metadata
@@ -314,8 +301,6 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
     registered.fn_metadata = Strict.model_construct(
         **{field: getattr(metadata, field) for field in base.model_fields})
 
-
-# --- the server ------------------------------------------------------------
 
 
 def build_server(
@@ -429,8 +414,6 @@ def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None
         try:
             anyio.run(_run_stdio, server, wire, host_input)
         finally:
-            # The host went away: running image-model calls land, pictures
-            # are written (Session.close).
             for session in sessions.values():
                 session.close()
 
@@ -447,16 +430,12 @@ def initialization_options(server: FastMCP) -> InitializationOptions:
 async def _run_stdio(
     server: FastMCP, wire: FileIO, host_input: BinaryIO
 ) -> None:
-    # bare newlines: Windows would write each message's end as \r\n
     text = TextIOWrapper(wire, encoding="utf-8", newline="\n",
                          write_through=True)
     out = anyio.wrap_file(text)
-    # as the SDK reads its own stdin: UTF-8, a bad byte replaced
     source = anyio.wrap_file(
         TextIOWrapper(host_input, encoding="utf-8", errors="replace"))
     streams = stdio_server(stdin=source, stdout=out)
     async with streams as (read_stream, write_stream):
-        # FastMCP.run_stdio_async always writes to sys.stdout; the low-level
-        # server takes the protocol stream explicitly.
         lowlevel = server._mcp_server  # pyright: ignore[reportPrivateUsage]
         await lowlevel.run(read_stream, write_stream, initialization_options(server))

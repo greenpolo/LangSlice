@@ -78,11 +78,8 @@ logger = logging.getLogger(__name__)
 class Exported:
     """What :func:`export_maps` wrote (or, on a dry run, would write)."""
 
-    #: ``(absolute path, kind)`` of every file written.
     files: list[tuple[str, str]] = field(default_factory=list)
-    #: The sections whose maps were written.
     sections: list[str] = field(default_factory=list)
-    #: ``{"id", "reason"}`` per section without maps.
     skipped: list[dict[str, str]] = field(default_factory=list)
     full_resolution: bool = False
     written: bool = True
@@ -363,7 +360,7 @@ def _export_trace(
         now = job.state.by_id(record.id)
         trace_now = None if now is None else now.border_trace
         if trace_now is None or trace_now.artifact_dir != artifact_dir:
-            return []  # traced again meanwhile: the next export writes the new reply
+            return []
         try:
             written = formats.write_trace_reply(layout, record.id, borders, reply, info)
         except OSError:
@@ -419,10 +416,8 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
             copies.append((copy_name,
                            image_plane(workspace, record, PREPROCESSED)))
         except (OSError, ValueError):
-            # the files still serve Nutil and PyNutil without the image
             logger.warning("No image copy of %s", record.id, exc_info=True)
 
-    # the QUINT files and, beside them, the image copies they name
     if rows:
         previous = quint_copies(exports_dir)
         exports_dir.mkdir(parents=True, exist_ok=True)
@@ -444,7 +439,6 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
     path = formats.write_registration(layout, state, workspace)
     if path is not None:
         files.append((str(path), "registration"))
-    # tool plugins' layers (docs/developers/plugins.md)
     if any(record.layers for record in state.slices):
         from langslice.job.plugin_store import export_layers
 

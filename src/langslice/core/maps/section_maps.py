@@ -60,33 +60,12 @@ if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
     from langslice.core.workspace import Workspace
 
-#: ``[x, y, 1]`` <-> ``[row, col, 1]``.
 SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-#: Rows per block when a map is computed (bounds the float64 temporaries).
 BLOCK_ROWS = 256
-#: Marker grid of :func:`marker_grid`: the long edge in this many steps,
-#: about 900 markers on a 3:2 image. VisuAlign's mesh interpolates linearly
-#: between markers, and a FireANTs warp bends on a finer scale, so the
-#: markers reproduce it only approximately: on real sections a median of
-#: 4 to 8 um and a 95th percentile of 18 to 36 um from LangSlice's map,
-#: against 6 to 12 and 26 to 49 um with 28 steps and 2 to 5 and 12 to 24
-#: um with 48. PyNutil triangulates markers in pure Python, in time that
-#: grows with the cube of their number: 25 to 50 s a section here, 15 s
-#: with 28 steps, one to four minutes with 48.
 MARKER_DIVISIONS = 36
-#: The grid's step is never shorter than this (a small image gets fewer
-#: markers; Nutil drops a marker in the same whole pixel as another).
 MARKER_MIN_SPACING_PX = 32
-#: Each marker moves off the regular grid by up to this fraction of a step
-#: (one on the grid's outline only along it), so that no edge of the
-#: readers' triangles runs through the lattice of pixel centres, where a
-#: point on an edge falls in neither triangle in their arithmetic, and no
-#: four markers share a circle.
 MARKER_JITTER = 0.2
-#: Seed of that movement, fixed so an export is reproducible.
 MARKER_SEED = 0
-#: The grid's outline stands this many pixels outside the image, so every
-#: point of the image lies inside the markers' triangles.
 MARKER_MARGIN_PX = 1.0
 
 
@@ -228,8 +207,6 @@ def placement_problem(state: Stack, section: Section) -> str | None:
     return None
 
 
-#: ``registration.json``'s ``problem`` for an uncalibrated section: neither
-#: the file nor the host gives a pixel size.
 SCALE_UNKNOWN = ("pixel size unknown: neither the file nor the host gives one, so the "
                  "section image's width is mapped onto the atlas plane's width at this "
                  "position (uncalibrated), as the pictures draw it")
@@ -240,11 +217,6 @@ def scale_problem(frame: SectionFrame) -> str | None:
     return SCALE_UNKNOWN if frame.calibration_source == "uncalibrated" else None
 
 
-#: Sections whose frame :func:`section_frame` keeps (least recently used
-#: first out). Each keeps only its frame at its current key, so moving a
-#: section never grows the cache; the cap is above any stack's size because
-#: every write maps every section (``registration.json``), and a smaller
-#: least-recently-used cap would recompute all of them on every write.
 FRAME_CACHE_SECTIONS = 512
 
 
@@ -262,7 +234,6 @@ def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any
     )
 
 
-#: Guards every workspace's frame cache (sections are fitted on threads).
 _FRAME_LOCK = threading.Lock()
 
 
@@ -285,9 +256,6 @@ def section_frame(state: Stack, workspace: Workspace, record: Section) -> Sectio
             cache.move_to_end(record.id)
             return cast(SectionFrame, held[1])
     frame = _section_frame(state, workspace, record)
-    # One frame per section (the one at its current key); the least recently
-    # used section is dropped past FRAME_CACHE_SECTIONS. Sections are fitted
-    # on threads at once, so the cache is changed under a lock.
     with _FRAME_LOCK:
         cache[record.id] = (key, frame)
         cache.move_to_end(record.id)
@@ -347,11 +315,6 @@ def _section_frame(state: Stack, workspace: Workspace, record: Section) -> Secti
     if file_um is not None:
         render_um = float(file_um) * render_scale
     else:
-        # Neither the file nor the host gives a pixel size: the scale every
-        # placement picture draws this section at, the image width mapped onto
-        # the atlas plane's width at its CURRENT position, by
-        # core.fits.affine.calibrate, never the one stored with a transform
-        # written at another position.
         from langslice.core.fits.affine import calibrate
 
         working_frame = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
@@ -385,8 +348,6 @@ def _section_frame(state: Stack, workspace: Workspace, record: Section) -> Secti
     )
 
 
-# --- through a deformation ------------------------------------------------------------
-
 
 def native_points(
     frame: SectionFrame, warp: DeformableRecord | None, x: np.ndarray, y: np.ndarray,
@@ -414,8 +375,6 @@ def native_points(
     return apply(np.linalg.inv(warp.placement.atlas_to_section), px, py)
 
 
-#: Points per row when a list of points is sampled as a 2-D map (``cv2.remap``
-#: takes at most 32767 rows or columns).
 POINT_ROW = 1024
 
 
@@ -470,8 +429,6 @@ def file_points(
                                                 int(warp.section_size[1]))))
     return apply(to_file, qx, qy)
 
-
-# --- the per-pixel maps -----------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -575,7 +532,6 @@ def marker_grid(
     ys = np.linspace(-margin, height + margin, rows)
     grid_x, grid_y = np.meshgrid(xs, ys)
 
-    # off the lattice; the outline's points slide along the outline only
     generator = np.random.default_rng(MARKER_SEED)
     limit = MARKER_JITTER
     step_x = (width + 2.0 * margin) / (columns - 1)

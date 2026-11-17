@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from langslice.core.refusal import RefusalCode
 
-#: What to do about a code (the envelope's ``error.fix``), written with what
-#: it needs (:mod:`langslice.job.settings.needs`); ``{job}`` is the job folder,
-#: ``{verb}`` the verb.
 FIXES: dict[str, str] = {
     RefusalCode.UNKNOWN_VERB: "List the verbs with `langslice-job ops`.",
     RefusalCode.VERB_OFF: (
@@ -94,12 +91,6 @@ FIXES: dict[str, str] = {
         "Rerun `langslice-job {job} init` with --no-resume to start a new job "
         "from these inputs (the old one's work is replaced), or with the "
         "inputs the job was made from (job.json, spec.inputs) to continue it."
-    ),
-    RefusalCode.IMAGE_MODEL_OFF: (
-        "Connect the job's image model to LangSlice (`langslice login` for "
-        "openai-oauth, or its API key) and call it again[[?fireants_syn ; "
-        "without it, fit each section's deformation to its stain with "
-        "fireants_syn]]."
     ),
     RefusalCode.INTERVAL_BREAKS_UNSUPPORTED: (
         "Report a break only where the written spacing exceeds "
