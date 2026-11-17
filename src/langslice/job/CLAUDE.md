@@ -491,7 +491,8 @@ longer exist be taken over by the images it is opened with.
   step files are not read (`undo_steps.UndoFile` warns once per process).
   `without_removed_settings(spec)` leaves out of saved settings what
   LangSlice no longer has (`REMOVED_SETTINGS`, the `REMOVED_TASKS` task
-  `reorder`) and names them; the doors read `job.json` through it
+  `reorder`; a saved `enabled` that is not a list is an earlier setting of
+  that name, `REUSED_SETTINGS`) and names them; the doors read `job.json` through it
   (`doors.jobs.read_spec`, the reference card) and the job logs them
   (`warn_removed_settings`). The module text names the two old shapes the
   core reads itself (a deformation record's format, its fit settings'

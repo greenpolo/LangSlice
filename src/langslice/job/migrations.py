@@ -44,8 +44,9 @@ gets a ``migrated`` line when it writes the folder again):
   ``REMOVED_STACK_KEYS`` and a section's ``REMOVED_SECTION_KEYS``
   (``drop_removed_keys``, which the job's migration runs after the
   table, at every format);
-- ``job.json``'s settings: ``REMOVED_SETTINGS`` and the tasks of
-  ``REMOVED_TASKS`` (``without_removed_settings``), which the
+- ``job.json``'s settings: ``REMOVED_SETTINGS``, an earlier setting
+  under a name of ``REUSED_SETTINGS`` (``enabled``, now a list of tools)
+  and the tasks of ``REMOVED_TASKS`` (``without_removed_settings``), which the
   doors read the saved settings through.
 
 Two old shapes are read in the core, because the job never sees them
@@ -113,7 +114,6 @@ REMOVED_SETTINGS = (
     "max_quota_percent",
     "agent_preprocessing",
     "agent_damage",
-    "enabled",
     "position.gated",
     "position.bayesian",
     "transform.flip",
@@ -121,6 +121,10 @@ REMOVED_SETTINGS = (
     "transform.automatic",
     "nonlinear.engine",
 )
+#: A name an earlier LangSlice used for a setting it dropped and this one
+#: uses for another, with the type of the current one's value: a saved value
+#: of any other type is the earlier setting's, left out like the rest.
+REUSED_SETTINGS: dict[str, type] = {"enabled": list}
 #: The tasks an earlier LangSlice's ``job.json`` names that this one lacks.
 REMOVED_TASKS = ("reorder",)
 #: The keys of the stack a state may hold that no reader uses.
@@ -596,6 +600,18 @@ def _without(row: JsonObject, keys: Sequence[str]) -> JsonObject:
     return {key: value for key, value in row.items() if key not in keys}
 
 
+def _without_reused(kept: Fields) -> list[str]:
+    """Drop the earlier settings under a reused name; return their names."""
+    earlier = [
+        name
+        for name, kind in REUSED_SETTINGS.items()
+        if name in kept and not isinstance(kept[name], kind)
+    ]
+    for name in earlier:
+        del kept[name]
+    return earlier
+
+
 def without_removed_settings(
     settings: JsonObject,
 ) -> tuple[Fields, tuple[str, ...]]:
@@ -610,7 +626,8 @@ def without_removed_settings(
     Returns
     -------
     kept : dict
-        The settings without :data:`REMOVED_SETTINGS`, and without the
+        The settings without :data:`REMOVED_SETTINGS`, without an earlier
+        setting under one of :data:`REUSED_SETTINGS`' names, and without the
         tasks of :data:`REMOVED_TASKS` in ``tasks``.
     removed : tuple of str
         What was left out: each setting's name, and ``tasks: <task>``.
@@ -623,6 +640,7 @@ def without_removed_settings(
         if isinstance(holder, dict) and key in holder:
             del holder[key]
             removed.append(name)
+    removed.extend(_without_reused(kept))
     tasks = kept.get("tasks")
     if isinstance(tasks, list):
         for task in REMOVED_TASKS:
