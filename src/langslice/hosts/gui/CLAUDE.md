@@ -114,8 +114,9 @@ below), still served at `classic.html` until it is removed.
   pictures over a millimetre ruler, every placed section's thumbnail in stair
   rows, two in Simple and three in Extended, gliding to its new place when
   the agent moves it; wheel zoom, drag pan, double-click for the whole axis,
-  hover names, click picks). `src/extended/`: `ExtendedView` (meters, four
-  sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
+  hover names, click picks). `src/extended/`: `ExtendedView` (the progress box:
+  one meter per step the job's `tasks` ask for, counted over its sections;
+  four sections a page or the table), `Journal`, `Lightbox`. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
   Prompt generator (its message from `static/generator-logic.js`, the same

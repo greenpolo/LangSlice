@@ -32,7 +32,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
     <main className="extended">
       <div className="extended-head">
         <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
-        <Meters rows={run.rows} />
+        <Progress rows={run.rows} tasks={run.header.tasks} done={done} />
       </div>
       <div className="extended-body">
         <section className="extended-main">
@@ -67,29 +67,44 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
   );
 }
 
-// How far the registration is: of the job's sections, how many are placed, aligned and
-// warped.
-function Meters({ rows }: { rows: Row[] }) {
-  if (!rows.length) return <div className="meters" />;
-  const meters = [
-    ['Placed in the atlas', rows.filter(r => typeof r.position_mm === 'number').length],
-    ['Aligned to the atlas', rows.filter(r => r.transform).length],
-    ['Warped to fit', rows.filter(r => r.deformation).length],
-  ] as const;
+// How far the registration is, in the steps the job asked for (`tasks` in its settings):
+// placed, aligned, warped, each counted over the job's sections. A job without a task list
+// (an older one) shows all three. Done once the agent has submitted.
+const STEPS = [
+  { task: 'position', label: 'Placed in the atlas', has: (r: Row) => typeof r.position_mm === 'number' },
+  { task: 'transform', label: 'Aligned to the atlas', has: (r: Row) => Boolean(r.transform) },
+  { task: 'nonlinear', label: 'Warped to fit', has: (r: Row) => Boolean(r.deformation) },
+] as const;
+
+function Progress({ rows, tasks, done }: { rows: Row[]; tasks: unknown; done: boolean }) {
+  const asked = Array.isArray(tasks) ? (tasks as string[]) : null;
+  const steps = STEPS.filter(s => !asked || asked.includes(s.task));
+  if (!rows.length || !steps.length) return <div className="progress-slot" />;
+  const counts = steps.map(s => rows.filter(s.has).length);
+  const finished = counts.filter(n => n === rows.length).length;
+  const left = asked ? STEPS.filter(s => !asked.includes(s.task)).map(s => s.label.toLowerCase()) : [];
   return (
-    <dl className="meters" aria-label="How far the registration is">
-      {meters.map(([label, n]) => (
-        <div key={label} className={'meter' + (n === rows.length ? ' full' : n === 0 ? ' none' : '')}>
-          <dt>{label}</dt>
-          <dd>
-            <span className="meter-count">{n} of {rows.length}</span>
-            <span className="meter-bar">
-              <motion.span className="meter-fill" initial={false} animate={{ scaleX: n / rows.length }} transition={{ duration: 0.5, ease: EASE_OUT }} />
-            </span>
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <section className="progress" aria-label="How far the registration is">
+      <div className="progress-head">
+        <b>{done ? 'Submitted' : 'Progress'}</b>
+        <span>{finished} of {steps.length} {steps.length === 1 ? 'step' : 'steps'}</span>
+      </div>
+      <ol className="progress-steps">
+        {steps.map((s, i) => {
+          const n = counts[i];
+          return (
+            <li key={s.task} className={'meter' + (n === rows.length ? ' full' : n === 0 ? ' none' : '')}>
+              <span className="meter-label">{s.label}</span>
+              <span className="meter-count">{n} of {rows.length}</span>
+              <span className="meter-bar">
+                <motion.span className="meter-fill" initial={false} animate={{ scaleX: n / rows.length }} transition={{ duration: 0.5, ease: EASE_OUT }} />
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      {left.length > 0 && <p className="progress-note">Not asked for: {left.join(', ')}.</p>}
+    </section>
   );
 }
 
