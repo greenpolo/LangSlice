@@ -52,7 +52,7 @@ const RIM_STEP = 0.03;
 const PINHOLE = 0.01;
 const SOFT_PER_PX = 1 / 128;
 const MASK_W = 256;
-const DEBRIS = 0.03;
+const DEBRIS = 0.1;
 const FILL = 0.66;
 const VIEW = new THREE.Vector3(-0.85, 0.45, 0.85);
 
@@ -241,7 +241,8 @@ function token(name: string, fallback: string): THREE.Vector3 {
 // patch inside the tissue (white matter) stays. Specks under `SPECK_PX` pixels go, the
 // dark pixels the neighbourhood mean pushed out into the ground are peeled off the outer
 // edge, pinholes under `PINHOLE` of the picture are filled, and a piece apart from the
-// tissue and under `DEBRIS` of its largest piece (dirt or glare on the slide) goes. The ground's colour is
+// tissue goes when it is under `DEBRIS` of the largest piece (dirt or glare on the slide)
+// or cut by the picture's border (something at the slide's edge, not the section). The ground's colour is
 // replaced by its tissue neighbours' so the linear filter never pulls a dark rim into
 // the tissue's edge; the pixels go to the texture as they are, never through a canvas,
 // which would premultiply the alpha and turn the cut ground black. The mask is made on a
@@ -353,7 +354,11 @@ function tissueMask(d: Uint8ClampedArray, w: number, h: number): Uint8Array {
   for (const hole of patches(holes, w, h)) if (hole.length < PINHOLE * n) for (const i of hole) mask[i] = 1;
   const pieces = patches(mask, w, h);
   const largest = pieces.reduce((most, piece) => Math.max(most, piece.length), 0);
-  for (const piece of pieces) if (piece.length < DEBRIS * largest) for (const i of piece) mask[i] = 0;
+  for (const piece of pieces) {
+    if (piece.length === largest) continue;
+    const cut = piece.some(i => { const x = i % w, y = (i - x) / w; return x === 0 || y === 0 || x === w - 1 || y === h - 1; });
+    if (cut || piece.length < DEBRIS * largest) for (const i of piece) mask[i] = 0;
+  }
   return mask;
 }
 

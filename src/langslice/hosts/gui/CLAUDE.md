@@ -136,7 +136,8 @@ The page is a React app (`web/`, below), built into `static/`.
   brighter than the corners' luminance over a 5x5 mean; smooth patches
   touching the ground outside, glare or grey smears, cut; specks dropped,
   the dark outer edge peeled, pinholes filled, a piece apart from the tissue
-  and under `DEBRIS` of its largest piece, dirt on the slide, dropped; then
+  dropped when it is under `DEBRIS` of the largest piece or cut by the
+  picture's border, dirt on the slide; then
   spread to the picture's size and softened over `SOFT_PER_PX` of its width
   into the alpha; uploaded as a `DataTexture`,
   never through a canvas, whose premultiplied alpha would blacken the cut
