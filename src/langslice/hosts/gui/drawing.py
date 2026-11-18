@@ -9,6 +9,7 @@ that image's contrast enhancement makes a scanner's tile mosaic stand out.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Protocol, cast
 
 from PIL import Image
@@ -21,6 +22,14 @@ from langslice.core.sections.renders import render_slice
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+
+
+class Style(StrEnum):
+    """How a section's picture is drawn: raw channels, quiet, or on paper."""
+
+    RAW = "raw"
+    CALM = "calm"
+    PAPER = "paper"
 
 
 class Opened(Protocol):

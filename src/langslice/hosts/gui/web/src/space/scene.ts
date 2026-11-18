@@ -39,6 +39,7 @@ const ARRIVE_MAX_S = 0.16;
 const INFLATE_MM = 0.08;
 const STAGGER_MAX_S = 0.06;
 const TISSUE_STEP = 0.013;
+const BRIGHT_GROUND = 0.5;
 const SPECK_PX = 24;
 const WALL_REACH_MM = 0.25;
 const WALL_SPANS = 24;
@@ -236,7 +237,8 @@ function token(name: string, fallback: string): THREE.Vector3 {
 }
 
 // A picture with its tissue in the alpha channel. The ground is the darkest of the four
-// corners' 4x4 mean luminances (the calm pictures' flat floor); a pixel is tissue when the
+// corners' 4x4 mean luminances (the calm pictures' flat floor; over `BRIGHT_GROUND` it is
+// the light look's paper, and the picture is read by its darkness); a pixel is tissue when the
 // mean of its 5x5 neighbourhood stands `TISSUE_STEP` above it, so dim tissue stays and the
 // ground's JPEG noise does not speckle. What is left of the slide around the tissue goes
 // next: a smooth patch (fine texture under `SMOOTH` of its brightness above the ground,
@@ -320,6 +322,10 @@ function tissueMask(d: Uint8ClampedArray, w: number, h: number): Uint8Array {
     let sum = 0;
     for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 4; x++) sum += lum[y * w + x];
     low = Math.min(low, sum / 16);
+  }
+  if (low > BRIGHT_GROUND) {
+    for (let i = 0; i < n; i++) lum[i] = 1 - lum[i];
+    low = 1 - low;
   }
   const mean = box(lum, w, h, 2);
   const mask = new Uint8Array(n);

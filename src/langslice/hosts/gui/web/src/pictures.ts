@@ -115,7 +115,14 @@ function sectionOf(url: string): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-// The address of a section's quiet picture under its current registration.
+// How the window's look draws a section: quiet on the dark stage, or on paper in the
+// light look. The viewer is mounted again when the look changes, so an address made
+// from this is never stale.
+export function pictureStyle(): 'calm' | 'paper' {
+  return document.documentElement.dataset.theme === 'light' ? 'paper' : 'calm';
+}
+
+// The address of a section's picture under its current registration, in the window's look.
 export function overlayUrl(job: number, id: string, edge: number, key: string | null | undefined) {
-  return `jobs/${job}/render/overlay/${encodeURIComponent(id)}?edge=${edge}&key=${encodeURIComponent(String(key ?? ''))}&style=calm`;
+  return `jobs/${job}/render/overlay/${encodeURIComponent(id)}?edge=${edge}&key=${encodeURIComponent(String(key ?? ''))}&style=${pictureStyle()}`;
 }

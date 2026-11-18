@@ -74,8 +74,8 @@
   --focus: var(--lavender);
   --idle-handle: var(--stage-line);
 
-  /* The brain strip's own ground: its thumbnails are pictures on black, so it stays
-     dark in the light look. */
+  /* The stage's own ground, the one the pictures are drawn on (`calm.STAGE`; in the
+     light look `paper.PAPER`). */
   --stage: var(--ground);
   --stage-text: var(--muted);
   --stage-line: var(--tract);
@@ -125,7 +125,8 @@
 }
 
 /* The light look (`<html data-theme="light">`, the Light | Dark button): paper grounds
-   and dark words; pictures keep their black. */
+   and dark words; the pictures are on paper too (`?style=paper`), as a brightfield
+   slide reads. */
 :root[data-theme="light"] {
   color-scheme: light;
   --ground: #f3f3f1;
@@ -142,10 +143,11 @@
   --violet: #62589f;
   --pink: #bd3f5a;
   --green: #2b8457;
-  --stage: #121213;
-  --stage-text: #9a9a9e;
-  --stage-line: #4a4a50;
-  --stage-focus: #a4addf;
+  --picture: #fbfaf7;
+  --stage: #fbfaf7;
+  --stage-text: #68686d;
+  --stage-line: #b4b4af;
+  --stage-focus: #4f5bb5;
 }
 
 html {

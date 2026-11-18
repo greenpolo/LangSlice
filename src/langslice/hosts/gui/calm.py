@@ -31,6 +31,10 @@ grain is under
 ``GLARE_BRIGHT`` of it, at least ``GLARE_AREA`` of the picture, when over
 ``GLARE_APART`` of its surround (``GLARE_RING`` pixels) is not tissue, or
 over ``GLARE_OUT`` of it is not and over ``GLARE_HALO`` of that still glows.
+A brightfield section (dark stain on a bright slide: the median of its
+scanned pixels, and of their outer ``SLIDE_RIM`` pixels, over
+``BRIGHT_SLIDE``) is read by its darkness under the
+slide's white, the ``SLIDE_LEVEL`` percentile.
 """
 
 from __future__ import annotations
@@ -85,6 +89,9 @@ THREAD = 12
 THREAD_FRINGE = 2
 EDGE_GLOW_RIM = 2
 UNSCANNED = 4.0
+BRIGHT_SLIDE = 140.0
+SLIDE_RIM = 3
+SLIDE_LEVEL = 92
 
 
 def main_channel(names: list[str]) -> str:
@@ -200,6 +207,12 @@ def calm(
         The tissue tinted on the stage, the borders a soft light layer.
     """
     grey = np.asarray(bare.convert("L")).astype(np.float32)
+    if is_brightfield(bare):
+        scanned = grey > UNSCANNED
+        white = float(np.percentile(grey[scanned], SLIDE_LEVEL))
+        grey = np.where(scanned, np.clip(white - grey, 0, 255), 0.0).astype(
+            np.float32
+        )
     mask = tissue_mask(grey)
     mask[scale_bar(grey)] = 0.0
     inside = grey[mask > 0.5]
@@ -221,6 +234,35 @@ def calm(
         alpha = (np.clip(change / 110.0, 0, 1) * strength)[..., None]
         rgb = rgb * (1 - alpha) + np.array(LINE, np.float32) * alpha
     return Image.fromarray(rgb.astype(np.uint8), "RGB")
+
+
+def is_brightfield(picture: Image.Image) -> bool:
+    """Tell a brightfield slide (dark stain on bright glass) from darkfield.
+
+    Parameters
+    ----------
+    picture
+        A section's picture.
+
+    Returns
+    -------
+    bool
+        Whether the median of its scanned pixels, and of the rim of what
+        was scanned (the glass around the tissue), is over ``BRIGHT_SLIDE``.
+    """
+    grey = np.asarray(picture.convert("L")).astype(np.float32)
+    scanned = (grey > UNSCANNED).astype(np.uint8)
+    if not scanned.any():
+        return False
+    padded = np.pad(scanned, SLIDE_RIM)
+    core = np.asarray(cv2.erode(padded, disk(SLIDE_RIM)), dtype=np.uint8)
+    rim = (scanned > 0) & (
+        core[SLIDE_RIM:-SLIDE_RIM, SLIDE_RIM:-SLIDE_RIM] < 1
+    )
+    return (
+        float(np.median(grey[scanned > 0])) > BRIGHT_SLIDE
+        and float(np.median(grey[rim])) > BRIGHT_SLIDE
+    )
 
 
 def scale_bar(grey: npt.NDArray[np.float32]) -> tuple[slice, slice]:

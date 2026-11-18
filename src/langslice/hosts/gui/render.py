@@ -50,9 +50,11 @@ from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.doors.jobs import JobContext, NoJob, context, read_spec
 from langslice.hosts.gui.calm import draw_calm_overlay, draw_calm_thumb
+from langslice.hosts.gui.drawing import Style
 from langslice.hosts.gui.drawing import draw_atlas as _atlas_picture
 from langslice.hosts.gui.drawing import draw_overlay as _overlay_picture
 from langslice.hosts.gui.drawing import draw_thumb as _thumb_picture
+from langslice.hosts.gui.paper import draw_paper_overlay, draw_paper_thumb
 from langslice.hosts.gui.space import (
     AtlasShell,
     ShellError,
@@ -364,7 +366,7 @@ class JobRenderer:
         )
 
     def overlay(
-        self, section_id: str, edge: int, *, calm: bool = False
+        self, section_id: str, edge: int, *, style: Style = Style.RAW
     ) -> bytes:
         """Draw a section under its current registration.
 
@@ -374,9 +376,11 @@ class JobRenderer:
             The section's filename.
         edge
             The picture's long edge in pixels (:func:`edge_px`).
-        calm
-            The Simple view's quiet picture (:mod:`.calm`): the main stain
-            alone, the borders soft; else the raw channels in colour.
+        style
+            ``calm``: the Simple view's quiet picture (:mod:`.calm`), the
+            main stain alone, the borders soft; ``paper``: the light look's
+            (:mod:`.paper`), the section on paper; ``raw``: the raw channels
+            in colour.
 
         Returns
         -------
@@ -396,15 +400,19 @@ class JobRenderer:
         state = self._state()
         section = _section(state, section_id)
         opened = self._open()
-        kind = "calm-overlay" if calm else "overlay"
+        kind = f"{style}-overlay"
         key = (kind, section_id, edge, render_key(state, section_id))
-        drawer = draw_calm_overlay if calm else _overlay_picture
+        drawer = {
+            Style.RAW: _overlay_picture,
+            Style.CALM: draw_calm_overlay,
+            Style.PAPER: draw_paper_overlay,
+        }[style]
         draw = partial(drawer, opened, state, section, edge)
         still = self._still(render_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
 
     def thumb(
-        self, section_id: str, edge: int, *, calm: bool = False
+        self, section_id: str, edge: int, *, style: Style = Style.RAW
     ) -> bytes:
         """Draw a section's thumbnail: its raw channels, oriented.
 
@@ -415,8 +423,9 @@ class JobRenderer:
         edge
             The thumbnail's long edge in pixels, at most the working
             copy's (nothing is upsampled).
-        calm
-            The Simple view's quiet picture: the main stain alone.
+        style
+            ``calm``: the Simple view's quiet picture, the main stain alone;
+            ``paper``: the light look's, on paper; ``raw``: the raw channels.
 
         Returns
         -------
@@ -435,9 +444,13 @@ class JobRenderer:
         state = self._state()
         section = _section(state, section_id)
         opened = self._open()
-        kind = "calm-thumb" if calm else "thumb"
+        kind = f"{style}-thumb"
         key = (kind, section_id, edge, thumb_key(state, section_id))
-        drawer = draw_calm_thumb if calm else _thumb_picture
+        drawer = {
+            Style.RAW: _thumb_picture,
+            Style.CALM: draw_calm_thumb,
+            Style.PAPER: draw_paper_thumb,
+        }[style]
         draw = partial(drawer, opened, section, edge)
         still = self._still(thumb_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
