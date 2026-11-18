@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DUR, EASE_IN_OUT, EASE_OUT } from '../motion';
 import { cached, newestOf, picture } from '../pictures';
 import type { Axis, Row, Strip } from '../run';
+import { justSwitched, STAGE_IN, STAGE_SHOWN } from '../space/mode';
 import { short } from './Stage';
 
 const PAD = 72;               // side margins, px: the ends' names sit in them
@@ -55,9 +56,10 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
   const toX = (mm: number) => (view ? PAD + ((mm - view.lo) / (view.hi - view.lo)) * inner : 0);
 
   // The row: each placed section in view, in the order of its position, at its own place
-  // where there is room and pushed aside just enough where there is not.
+  // where there is room and pushed aside just enough where there is not; none before the
+  // axis is measured, so nothing glides in from its left end when it appears.
   const layout = useMemo(() => {
-    const inView = placedRows
+    const inView = (width ? placedRows : [])
       .map(r => ({ id: r.id, mm: r.position_mm as number, order: r.order ?? 0 }))
       .filter(p => !view || (p.mm >= view.lo - 1e-9 && p.mm <= view.hi + 1e-9))
       .sort((a, b) => a.mm - b.mm || a.order - b.order);
@@ -105,10 +107,13 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
   const ticks = view ? tickMarks(view, inner) : [];
   const glide = { duration: DUR.glide, ease: EASE_IN_OUT };
   return (
-    <div
+    <motion.div
       ref={ref}
       className={'cut' + (domain ? ' zoomed' : '') + (done ? ' done' : '')}
       style={{ height }}
+      initial={justSwitched() ? STAGE_IN : false}
+      animate={STAGE_SHOWN}
+      transition={{ duration: 0.24, ease: EASE_OUT }}
       onWheel={onWheel}
       onPointerDown={onDown}
       onPointerMove={onMove}
@@ -188,7 +193,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
         </span>
       )}
       <span className="cut-waiting">{waiting ? (waiting === rows.length ? `${rows.length} sections, not placed yet` : `${waiting} not placed yet`) : ''}</span>
-    </div>
+    </motion.div>
   );
 }
 

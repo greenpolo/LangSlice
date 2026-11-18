@@ -119,7 +119,8 @@ The page is a React app (`web/`, below), built into `static/`.
   the 3D view (three.js). `mode.ts` keeps 2D | 3D (`useStageMode`,
   `setStageMode`; the switch is in `Viewer.tsx`, its buttons pressed to 0.97; the
   stage switched to comes in with a 240 ms ease-out crossfade and a little blur,
-  `justSwitched`, never when the window opens); `SpaceStage.tsx` is both
+  `justSwitched`, the cutting axis too when 2D comes back, never when the
+  window opens); `SpaceStage.tsx` is both
   views' 3D stage (the focus Stage in a column, the Volume beside it, no
   panel or border around it). `scene.ts` (`Space`) maps atlas micrometres to
   scene millimetres by the orientation letters (anterior +z, superior +y,
@@ -130,17 +131,26 @@ The page is a React app (`web/`, below), built into `static/`.
   brain's edge do not hide it) and each placed section as an opaque slab
   whose basis is its thumbnail's corners (`TR-TL`, `BL-TL`, the normal times
   the thickness; the shear the decomposition leaves is kept), only its
-  picture's ground (the luminance of the picture's corners) left out, no
-  mipmaps (they blur the tissue into the ground at a slant). A section
+  picture's ground left out by a mask made once per picture (`tissueImage`:
+  brighter than the corners' luminance over a 5x5 mean; smooth patches
+  touching the ground outside, glare or grey smears, cut; specks dropped,
+  the dark outer edge peeled, pinholes filled; uploaded as a `DataTexture`,
+  never through a canvas, whose premultiplied alpha would blacken the cut
+  ground into a rim), a hard edge, no mipmaps (they blur the tissue into
+  the ground at a slant); picking follows the same mask. A section
   without a written transform sits where the core's identity puts it: its
   picture as the job keeps it (no turn or flip beyond the job's), centred
   on the atlas plane at its position, at its true pixel size. A section
   without a position is not drawn; a newly placed one appears where it is,
   whole (never part see-through); a changed placement is glided to on critically damped springs
   (position, size, rotation); the sections a call changed come in stack
-  order over `BATCH_S`; nothing else moves. The sections in focus rise by
-  `LIFT` of the brain's height with a thin frame in the accent, and the
-  others grey a little; sections are never see-through. OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
+  order over `BATCH_S`; nothing else moves. The sections in focus lift by
+  `LIFT` of the brain's height (an ease-out over `FOCUS_S`) and brighten a
+  little, and the others grey a little; sections are never see-through.
+  The brain's nearest surface only is drawn (a depth pass first), and
+  inside it, behind everything, its far wall in the sections' mean tissue
+  colour where sections stand close (`WALL_REACH_MM`), so the gaps of a
+  thin-section stack do not read as black ribs. OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
   to the mesh; reduced motion moves everything at once; a click on a slab
   picks its section. `Volume.tsx` fetches the shell once per job, the space
   again when a row's `render_key` changes (at most every `SPACE_MS`), the

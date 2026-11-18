@@ -9,10 +9,11 @@
 // Nothing moves but what the registration moves: when a section's placement changes, its
 // slab glides from the old placement to the new one (position, rotation, size, on
 // critically damped springs); a newly placed section appears where it is, whole, and a batch
-// placed by one call comes in stack order over `BATCH_S`. Sections are always opaque. The
-// sections the agent is looking at rise clearly out of the stack (`LIFT` of the brain's
-// height) with a thin frame in the accent, and the others grey a little. The brain keeps
-// a thin grey silhouette so it still reads around the sections.
+// placed by one call comes in stack order over `BATCH_S`. Sections are always opaque, cut
+// to their tissue with a hard edge. The sections the agent is looking at lift a little
+// (`LIFT` of the brain's height, an ease-out over `FOCUS_S`) and brighten a little, and the
+// others grey a little. The brain keeps a thin grey silhouette so it still reads around
+// the sections.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -28,14 +29,25 @@ export type Shell = {
 };
 
 const FOV = 30;
-const LIFT = 0.48;
+const LIFT = 0.04;
+const FOCUS_S = 0.26;
 const OMEGA = 4.6;
 const BATCH_S = 1.6;
 const INFLATE_MM = 0.08;
 const STAGGER_MAX_S = 0.06;
+const TISSUE_STEP = 0.013;
+const SPECK_PX = 24;
+const WALL_REACH_MM = 0.25;
+const WALL_SPANS = 24;
+const ISLAND_PX = 40;
+const GLARE_PX = 30;
+const SMOOTH = 0.04;
+const RIM_STEP = 0.03;
+const PINHOLE = 0.01;
 const VIEW = new THREE.Vector3(-0.85, 0.45, 0.85);
 
 type Spring = { x: THREE.Vector3; v: THREE.Vector3 };
+type Tissue = { mask: Uint8Array; w: number; h: number };
 type Slab = {
   id: string;
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -46,8 +58,9 @@ type Slab = {
   goal: { pos: THREE.Vector3; quat: THREE.Quaternion; size: THREE.Vector3; shear: THREE.Matrix4 };
   placed: boolean;
   shown: number;
-  focus: number;
-  hover: number;
+  focus: { from: number; to: number; at: number };
+  rise: number;
+  tissue: Tissue | null;
   url: string;
   wait: number;
   order: number;
@@ -64,54 +77,34 @@ const VERTEX = /* glsl */ `
   }
 `;
 
-// The picture as it is: the tissue opaque, the ground around it (the calm pictures' floor,
-// `floor` its luminance, read from the picture's corners) left out, judged on the mean of
-// a pixel and its four neighbours so the JPEG's noise in the ground does not speckle; a thin frame in the
-// accent around the tissue's box for a section in focus (brightened a little), in grey under
-// the pointer; `see` greys and darkens a
-// section a little while others are in focus (it stays opaque).
+// The picture as it is: the tissue opaque, the ground cut away by the mask in the
+// texture's alpha (`tissue`) with a hard edge, never blended; `lit`
+// brightens a section in focus a little and `see` greys a section a little while others
+// are in focus.
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
-  uniform float floor;
-  uniform vec4 tissueBox;
-  uniform vec2 texel;
-  uniform float focus;
-  uniform float hover;
-  uniform float shown;
+  uniform float lit;
   uniform float see;
-  uniform vec3 accent;
-  uniform vec3 edgeColor;
+  uniform float shown;
   varying vec2 vUv;
   varying float vEdge;
   void main() {
-    if (vEdge > 0.5) discard;
-    vec3 c = hasMap > 0.5 ? texture2D(map, vUv).rgb : vec3(0.0);
-    float lum = dot(c, vec3(0.299, 0.587, 0.114));
-    vec2 t = 1.5 * texel;
-    vec3 w = vec3(0.299, 0.587, 0.114);
-    float near = (lum + dot(texture2D(map, vUv + vec2(t.x, 0.0)).rgb, w) + dot(texture2D(map, vUv - vec2(t.x, 0.0)).rgb, w)
-      + dot(texture2D(map, vUv + vec2(0.0, t.y)).rgb, w) + dot(texture2D(map, vUv - vec2(0.0, t.y)).rgb, w)) / 5.0;
-    float tissue = hasMap > 0.5 ? smoothstep(floor + 0.006, floor + 0.02, near) : 0.0;
-    vec2 px = max(fwidth(vUv), vec2(1e-5));
-    vec2 inner = min(vUv - tissueBox.xy, tissueBox.zw - vUv) / px;
-    float inside = step(-1.5, min(inner.x, inner.y));
-    float ring = (1.0 - smoothstep(0.6, 1.8, abs(min(inner.x, inner.y)))) * inside;
-    float frame = ring * max(focus, 0.6 * hover);
-    vec3 grey = vec3(lum) * 0.62;
-    vec3 tissueColor = mix(c * (1.0 + 0.18 * focus), grey, 0.7 * see);
-    vec3 col = mix(tissueColor, mix(edgeColor, accent, focus), frame);
-    float body = tissue;
-    float a = max(body, frame * hasMap) * shown;
-    if (a < 0.02) discard;
-    gl_FragColor = vec4(col, a);
+    if (vEdge > 0.5 || hasMap < 0.5 || shown < 0.5) discard;
+    vec4 t = texture2D(map, vUv);
+    if (t.a < 0.5) discard;
+    float lum = dot(t.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 col = mix(t.rgb * (1.0 + 0.12 * lit), vec3(lum) * 0.7, 0.45 * see);
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 // The brain as brainrender draws its root: matte and see-through, lit by an ambient and a
 // key light over the viewer's shoulder, with a thin grey silhouette where the surface turns
 // away, so its outline still reads around the sections (drawn `INFLATE_MM` outside the
-// surface, so a section reaching the brain's edge does not hide it).
+// surface, so a section reaching the brain's edge does not hide it). Only its nearest
+// surface is drawn (a depth pass goes first), so the folds behind it draw no rings that
+// could read as see-through sections.
 const BRAIN_VERTEX = /* glsl */ `
   uniform float inflate;
   varying vec3 vNormal;
@@ -133,9 +126,40 @@ const BRAIN_FRAGMENT = /* glsl */ `
     vec3 n = normalize(vNormal);
     float facing = abs(dot(n, normalize(vView)));
     float light = 0.55 + 0.45 * max(dot(n, normalize(vec3(-0.4, 0.8, 0.6))), 0.0);
-    float silhouette = 1.0 - smoothstep(0.1, 0.3, facing);
+    float silhouette = 1.0 - smoothstep(0.06, 0.2, facing);
     vec3 col = mix(tone * light, line, silhouette);
-    gl_FragColor = vec4(col, 0.13 + 0.75 * silhouette);
+    gl_FragColor = vec4(col, 0.07 + 0.6 * silhouette);
+  }
+`;
+
+// The inside of the brain's far wall, where the stack is (`spans`: around each placed
+// section's anterior-posterior place, half the way to its neighbours and at most
+// `WALL_REACH_MM`, merged): flat, in the sections' own mean tissue colour
+// (`tint`), barely shaded by the same key light, drawn behind everything.
+// Looking between two thin sections near the brain's flank then meets tissue-grey, as the
+// brain between them would be, instead of the page's black, so the stack does not read as
+// ribs; in front of the stack, behind it and across a wide gap nothing is filled.
+const WALL_VERTEX = /* glsl */ `
+  varying vec3 vNormal;
+  varying float vZ;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vZ = position.z;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const WALL_FRAGMENT = /* glsl */ `
+  uniform vec3 tint;
+  uniform vec2 spans[${WALL_SPANS}];
+  varying vec3 vNormal;
+  varying float vZ;
+  void main() {
+    bool inside = false;
+    for (int i = 0; i < ${WALL_SPANS}; i++) if (vZ >= spans[i].x && vZ <= spans[i].y) inside = true;
+    if (!inside) discard;
+    float light = 0.85 + 0.15 * abs(dot(normalize(vNormal), normalize(vec3(-0.4, 0.8, 0.6))));
+    gl_FragColor = vec4(tint * light, 1.0);
   }
 `;
 
@@ -173,37 +197,165 @@ function token(name: string, fallback: string): THREE.Vector3 {
   return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
-// A picture's ground (the darkest of its four corners' 4x4 mean luminances) and the box
-// around its tissue (what is brighter than the ground), in uv, a little padded.
-function ground(img: HTMLImageElement): { floor: number; box: THREE.Vector4 } {
+// A picture with its tissue in the alpha channel. The ground is the darkest of the four
+// corners' 4x4 mean luminances (the calm pictures' flat floor); a pixel is tissue when the
+// mean of its 5x5 neighbourhood stands `TISSUE_STEP` above it, so dim tissue stays and the
+// ground's JPEG noise does not speckle. What is left of the slide around the tissue goes
+// next: a smooth patch (fine texture under `SMOOTH` of its brightness above the ground,
+// where tissue's is several times that) that touches the ground outside the section is
+// a scanner's glare or a flat grey smear, not tissue, and is cut with a margin; a smooth
+// patch inside the tissue (white matter) stays. Specks under `SPECK_PX` pixels go, the
+// dark pixels the neighbourhood mean pushed out into the ground are peeled off the outer
+// edge, and pinholes under `PINHOLE` of the picture are filled. The ground's colour is
+// replaced by its tissue neighbours' so the linear filter never pulls a dark rim into
+// the tissue's edge; the pixels go to the texture as they are, never through a canvas,
+// which would premultiply the alpha and turn the cut ground black.
+function tissueImage(img: HTMLImageElement): { pixels: Uint8Array; tissue: Tissue; colour: THREE.Vector3 | null } | null {
   const w = img.naturalWidth, h = img.naturalHeight;
-  const whole = { floor: 0, box: new THREE.Vector4(0, 0, 1, 1) };
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx || !w || !h) return whole;
+  if (!ctx || w < 8 || h < 8) return null;
   ctx.drawImage(img, 0, 0);
-  const d = ctx.getImageData(0, 0, w, h).data;
-  const lum = (x: number, y: number) => {
-    const i = 4 * (y * w + x);
-    return (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
-  };
+  const pic = ctx.getImageData(0, 0, w, h);
+  const d = pic.data;
+  const n = w * h;
+  const lum = new Float32Array(n);
+  for (let i = 0; i < n; i++) lum[i] = (0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]) / 255;
   let low = 1;
   for (const [x0, y0] of [[0, 0], [w - 4, 0], [0, h - 4], [w - 4, h - 4]]) {
     let sum = 0;
-    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 4; x++) sum += lum(x, y);
+    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 4; x++) sum += lum[y * w + x];
     low = Math.min(low, sum / 16);
   }
-  let x0 = w, y0 = h, x1 = -1, y1 = -1;
-  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-    if (lum(x, y) > low + 0.015) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const mean = box(lum, w, h, 2);
+  const mask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) mask[i] = mean[i] > low + TISSUE_STEP ? 1 : 0;
+  dropSmall(mask, w, h, SPECK_PX);
+
+  const local = box(lum, w, h, 1);
+  const fine = new Float32Array(n);
+  for (let i = 0; i < n; i++) fine[i] = Math.abs(lum[i] - local[i]);
+  const grain = box(fine, w, h, 3);
+  const smooth = new Uint8Array(n);
+  for (let i = 0; i < n; i++) smooth[i] = mask[i] && grain[i] < SMOOTH * (mean[i] - low + 0.02) ? 1 : 0;
+  const near = grow(outside(mask, w, h), w, h, 2);
+  const cut = new Uint8Array(n);
+  for (const patch of patches(smooth, w, h)) {
+    if (patch.length < GLARE_PX || !patch.some(i => near[i])) continue;
+    for (const i of patch) cut[i] = 1;
   }
-  if (x1 < x0) return { floor: low, box: whole.box };
-  const pad = 0.015;
-  return {
-    floor: low,
-    box: new THREE.Vector4(Math.max(0, x0 / w - pad), Math.max(0, y0 / h - pad), Math.min(1, (x1 + 1) / w + pad), Math.min(1, (y1 + 1) / h + pad)),
-  };
+  const margin = grow(cut, w, h, 3);
+  for (let i = 0; i < n; i++) if (margin[i]) mask[i] = 0;
+  dropSmall(mask, w, h, ISLAND_PX);
+
+  for (let pass = 0; pass < 3; pass++) {
+    const ground = outside(mask, w, h);
+    const rim: number[] = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!mask[i] || lum[i] >= low + RIM_STEP) continue;
+      if ((x > 0 && ground[i - 1]) || (x < w - 1 && ground[i + 1]) || (y > 0 && ground[i - w]) || (y < h - 1 && ground[i + w])) rim.push(i);
+    }
+    for (const i of rim) mask[i] = 0;
+  }
+  const ground = outside(mask, w, h);
+  const holes = new Uint8Array(n);
+  for (let i = 0; i < n; i++) holes[i] = !mask[i] && !ground[i] ? 1 : 0;
+  for (const hole of patches(holes, w, h)) if (hole.length < PINHOLE * n) for (const i of hole) mask[i] = 1;
+
+  let near2 = mask.slice();
+  for (let pass = 0; pass < 2; pass++) {
+    const next = near2.slice();
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (near2[i]) continue;
+      let r = 0, g = 0, b = 0, c = 0;
+      for (const j of [i - 1, i + 1, i - w, i + w, i - w - 1, i - w + 1, i + w - 1, i + w + 1]) {
+        if (!near2[j]) continue;
+        r += d[4 * j]; g += d[4 * j + 1]; b += d[4 * j + 2]; c++;
+      }
+      if (!c) continue;
+      d[4 * i] = r / c; d[4 * i + 1] = g / c; d[4 * i + 2] = b / c;
+      next[i] = 1;
+    }
+    near2 = next;
+  }
+  for (let i = 0; i < n; i++) d[4 * i + 3] = mask[i] ? 255 : 0;
+  let r = 0, g = 0, b = 0, count = 0;
+  for (let i = 0; i < n; i++) if (mask[i]) { r += d[4 * i]; g += d[4 * i + 1]; b += d[4 * i + 2]; count++; }
+  const colour = count ? new THREE.Vector3(r / count / 255, g / count / 255, b / count / 255) : null;
+  return { pixels: new Uint8Array(d.buffer.slice(0)), tissue: { mask, w, h }, colour };
+}
+
+// The mean over a (2r+1) square around each pixel, the picture's edge repeated.
+function box(src: Float32Array, w: number, h: number, r: number): Float32Array {
+  const rows = new Float32Array(src.length), out = new Float32Array(src.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += src[y * w + Math.min(w - 1, Math.max(0, x + k))];
+    rows[y * w + x] = sum / (2 * r + 1);
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += rows[Math.min(h - 1, Math.max(0, y + k)) * w + x];
+    out[y * w + x] = sum / (2 * r + 1);
+  }
+  return out;
+}
+
+// The 4-connected patches of the set pixels, each as its pixels' indices.
+function patches(set: Uint8Array, w: number, h: number): Int32Array[] {
+  const seen = new Uint8Array(set.length);
+  const queue = new Int32Array(set.length);
+  const out: Int32Array[] = [];
+  for (let start = 0; start < set.length; start++) {
+    if (seen[start] || !set[start]) continue;
+    let head = 0, tail = 0;
+    queue[tail++] = start; seen[start] = 1;
+    while (head < tail) {
+      const i = queue[head++];
+      const x = i % w, y = (i - x) / w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (j < 0 || seen[j] || !set[j]) continue;
+        seen[j] = 1; queue[tail++] = j;
+      }
+    }
+    out.push(queue.slice(0, tail));
+  }
+  return out;
+}
+
+// The ground outside the tissue: the patches of non-tissue that reach the picture's border.
+function outside(mask: Uint8Array, w: number, h: number): Uint8Array {
+  const free = new Uint8Array(mask.length);
+  for (let i = 0; i < mask.length; i++) free[i] = mask[i] ? 0 : 1;
+  const out = new Uint8Array(mask.length);
+  for (const patch of patches(free, w, h)) {
+    const border = patch.some(i => { const x = i % w, y = (i - x) / w; return x === 0 || y === 0 || x === w - 1 || y === h - 1; });
+    if (border) for (const i of patch) out[i] = 1;
+  }
+  return out;
+}
+
+// The set grown by *steps* pixels, 4-connected.
+function grow(set: Uint8Array, w: number, h: number, steps: number): Uint8Array {
+  let cur = set;
+  for (let s = 0; s < steps; s++) {
+    const next = cur.slice();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (cur[i]) continue;
+      if ((x > 0 && cur[i - 1]) || (x < w - 1 && cur[i + 1]) || (y > 0 && cur[i - w]) || (y < h - 1 && cur[i + w])) next[i] = 1;
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+// The tissue patches smaller than *size* pixels, taken away.
+function dropSmall(mask: Uint8Array, w: number, h: number, size: number) {
+  for (const patch of patches(mask, w, h)) if (patch.length < size) for (const i of patch) mask[i] = 0;
 }
 
 // Faces wound so their normals point away from the mesh's centre, on the whole.
@@ -237,7 +389,7 @@ export class Space {
   private controls: OrbitControls;
   private geometry = slabGeometry();
   private slabs = new Map<string, Slab>();
-  private brain: THREE.Mesh | null = null;
+  private brain: THREE.Group | null = null;
   private axes: { el: HTMLElement; at: THREE.Vector3 }[] = [];
   private map: ((um: number[]) => THREE.Vector3) | null = null;
   private size = new THREE.Vector3(11, 8, 13);
@@ -254,8 +406,11 @@ export class Space {
   private pointer: { x: number; y: number } | null = null;
   private ray = new THREE.Raycaster();
   private touched = false;
-  private accent = token('--lavender', '#a4addf');
-  private edgeColor = token('--muted', '#8f8d87');
+  private lifting = new THREE.Vector3();
+  private wall: THREE.Mesh | null = null;
+  private tint = new THREE.Vector3();
+  private tints = new Map<string, THREE.Vector3>();
+  private spans = Array.from({ length: WALL_SPANS }, () => new THREE.Vector2(1, 0));
   private fitted = false;
   private textures = new Map<string, THREE.Texture>();
 
@@ -344,11 +499,25 @@ export class Space {
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     if (this.brain) { this.scene.remove(this.brain); this.drop(this.brain); }
-    this.brain = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
-      vertexShader: BRAIN_VERTEX, fragmentShader: BRAIN_FRAGMENT, transparent: true, depthWrite: false,
-      side: THREE.FrontSide, uniforms: { tone: { value: token('--text', '#c6c4be') }, line: { value: token('--text', '#c6c4be') }, inflate: { value: INFLATE_MM } },
+    const inflate = { value: INFLATE_MM };
+    const depth = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
+      vertexShader: BRAIN_VERTEX, fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }', colorWrite: false,
+      side: THREE.FrontSide, uniforms: { inflate },
     }));
-    this.brain.renderOrder = 2;
+    depth.renderOrder = 2;
+    const skin = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
+      vertexShader: BRAIN_VERTEX, fragmentShader: BRAIN_FRAGMENT, transparent: true, depthWrite: false, depthFunc: THREE.LessEqualDepth,
+      side: THREE.FrontSide, uniforms: { tone: { value: token('--text', '#c6c4be') }, line: { value: token('--text', '#c6c4be') }, inflate },
+    }));
+    skin.renderOrder = 3;
+    this.brain = new THREE.Group();
+    this.wall = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
+      vertexShader: WALL_VERTEX, fragmentShader: WALL_FRAGMENT, side: THREE.BackSide, depthWrite: false,
+      uniforms: { tint: { value: this.tint }, spans: { value: this.spans } },
+    }));
+    this.wall.renderOrder = -1;
+    this.wall.visible = this.tints.size > 0;
+    this.brain.add(this.wall, depth, skin);
     this.scene.add(this.brain);
 
     const box = geometry.boundingBox!;
@@ -368,7 +537,7 @@ export class Space {
     this.thickness = Math.max(thicknessUm, 1) / 1000;
     const known = new Set(list.map(s => s.id));
     for (const [id, s] of this.slabs) {
-      if (!known.has(id)) { this.scene.remove(s.mesh); s.mesh.material.dispose(); this.slabs.delete(id); }
+      if (!known.has(id)) { this.scene.remove(s.mesh); s.mesh.material.dispose(); this.slabs.delete(id); this.tints.delete(id); }
     }
     const changed: Slab[] = [];
     for (const item of list) {
@@ -381,6 +550,8 @@ export class Space {
       if (s.placed && (!was || this.reduced)) this.snap(s);
       if (s.placed && (!was || before.distanceToSquared(s.goal.pos) > 1e-8)) changed.push(s);
     }
+    this.spread();
+    this.tinted();
     changed.sort((a, b) => a.order - b.order);
     const gap = changed.length > 2 && !this.reduced ? Math.min(STAGGER_MAX_S, BATCH_S / changed.length) : 0;
     changed.forEach((s, i) => { s.wait = i * gap; });
@@ -391,19 +562,43 @@ export class Space {
     if (!s || s.url === url) return;
     s.url = url;
     this.textures.get(id)?.dispose();
-    const tex = new THREE.Texture(img);
+    const cut = tissueImage(img);
+    if (!cut) return;
+    const tex = new THREE.DataTexture(cut.pixels, cut.tissue.w, cut.tissue.h, THREE.RGBAFormat);
+    s.tissue = cut.tissue;
+    if (cut.colour) this.tints.set(id, cut.colour);
+    this.tinted();
     tex.flipY = false;
     tex.colorSpace = THREE.NoColorSpace;
     tex.generateMipmaps = false;
     tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
     tex.needsUpdate = true;
     this.textures.set(id, tex);
     s.mesh.material.uniforms.map.value = tex;
     s.mesh.material.uniforms.hasMap.value = 1;
-    const { floor, box } = ground(img);
-    s.mesh.material.uniforms.floor.value = floor;
-    s.mesh.material.uniforms.tissueBox.value = box;
-    s.mesh.material.uniforms.texel.value.set(1 / Math.max(1, img.naturalWidth), 1 / Math.max(1, img.naturalHeight));
+  }
+
+  private spread() {
+    const zs = [...this.slabs.values()].filter(s => s.placed).map(s => s.goal.pos.z).sort((a, b) => a - b);
+    const runs: [number, number][] = [];
+    zs.forEach((z, i) => {
+      const before = i > 0 ? Math.min(WALL_REACH_MM, (z - zs[i - 1]) / 2) : 0;
+      const after = i < zs.length - 1 ? Math.min(WALL_REACH_MM, (zs[i + 1] - z) / 2) : 0;
+      const last = runs[runs.length - 1];
+      if (last && z - before <= last[1] + 1e-6) last[1] = z + after;
+      else runs.push([z - before, z + after]);
+    });
+    const kept = runs.filter(r => r[1] > r[0]).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0])).slice(0, WALL_SPANS);
+    this.spans.forEach((v, i) => { if (kept[i]) v.set(kept[i][0], kept[i][1]); else v.set(1, 0); });
+  }
+
+  private tinted() {
+    this.tint.set(0, 0, 0);
+    let count = 0;
+    for (const [id, c] of this.tints) if (this.slabs.get(id)?.placed) { this.tint.add(c); count++; }
+    if (count) this.tint.multiplyScalar(1 / count);
+    if (this.wall) this.wall.visible = count > 0 && this.spans.some(v => v.y > v.x);
   }
 
   setFocus(ids: string[]) {
@@ -412,11 +607,8 @@ export class Space {
 
   private make(id: string): Slab {
     const material = new THREE.ShaderMaterial({
-      vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: true, depthWrite: true, side: THREE.DoubleSide,
-      uniforms: {
-        map: { value: null }, hasMap: { value: 0 }, floor: { value: 0 }, tissueBox: { value: new THREE.Vector4(0, 0, 1, 1) }, texel: { value: new THREE.Vector2(1 / 256, 1 / 256) }, focus: { value: 0 }, hover: { value: 0 }, shown: { value: 0 }, see: { value: 0 },
-        accent: { value: this.accent }, edgeColor: { value: this.edgeColor },
-      },
+      vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: false, depthWrite: true, side: THREE.DoubleSide,
+      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 } },
     });
     const mesh = new THREE.Mesh(this.geometry, material);
     mesh.matrixAutoUpdate = false;
@@ -429,7 +621,7 @@ export class Space {
       size: { x: new THREE.Vector3(1, 1, 1), v: new THREE.Vector3() },
       quat: new THREE.Quaternion(), spin: new THREE.Vector3(),
       goal: { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), size: new THREE.Vector3(1, 1, 1), shear: new THREE.Matrix4() },
-      placed: false, shown: 0, focus: 0, hover: 0, url: '', wait: 0, order: 0,
+      placed: false, shown: 0, focus: { from: 0, to: 0, at: 0 }, rise: 0, tissue: null, url: '', wait: 0, order: 0,
     };
     this.slabs.set(id, s);
     return s;
@@ -497,29 +689,27 @@ export class Space {
   };
 
   private step(dt: number) {
-    const lift = this.size.y * LIFT;
+    const rise = this.size.y * LIFT;
     const w2 = OMEGA * OMEGA, damp = 2 * OMEGA;
-    const ease = this.reduced ? 1 : 1 - Math.exp(-dt * 10);
+    const ease = this.reduced ? 1 : 1 - Math.exp(-dt / (FOCUS_S / 3));
+    const now = performance.now() / 1000;
     const err = new THREE.Quaternion(), turn = new THREE.Quaternion();
     const some = [...this.focused].some(id => this.slabs.get(id)?.placed);
     for (const s of this.slabs.values()) {
       const u = s.mesh.material.uniforms;
       const on = this.focused.has(s.id) && s.placed;
       u.see.value += ((some && !on ? 1 : 0) - u.see.value) * ease;
-      s.mesh.renderOrder = on ? 1 : 0;
-      s.focus += ((on ? 1 : 0) - s.focus) * ease;
-      s.hover += ((this.hovered === s.id ? 1 : 0) - s.hover) * ease;
+      const lift = this.lifted(s, on ? 1 : 0, now);
+      s.rise = rise * lift;
+      u.lit.value = lift;
       const waiting = s.wait > 0;
       if (waiting) s.wait -= dt;
       s.shown = s.placed && !(waiting && s.shown === 0) ? 1 : 0;
-      u.focus.value = s.focus;
-      u.hover.value = s.hover;
       u.shown.value = s.shown;
       s.mesh.visible = s.shown > 0;
       if (!s.mesh.visible) continue;
       if (waiting) { this.write(s); continue; }
       const goal = s.goal.pos.clone();
-      goal.y += lift * s.focus;
       if (this.reduced) {
         s.pos.x.copy(goal); s.size.x.copy(s.goal.size); s.quat.copy(s.goal.quat);
       } else {
@@ -540,8 +730,19 @@ export class Space {
     }
   }
 
+  // How far a section's focus has come, 0 to 1: an ease-out over `FOCUS_S` from where it
+  // was when its focus last changed; at once with reduced motion.
+  private lifted(s: Slab, to: number, now: number): number {
+    const f = s.focus;
+    const t = this.reduced ? 1 : Math.min(1, (now - f.at) / FOCUS_S);
+    const at = f.from + (f.to - f.from) * (1 - (1 - t) ** 3);
+    if (to !== f.to) s.focus = { from: at, to, at: now };
+    return at;
+  }
+
   private write(s: Slab) {
-    s.mesh.matrix.compose(s.pos.x, s.quat, s.size.x).multiply(s.goal.shear);
+    this.lifting.copy(s.pos.x).setY(s.pos.x.y + s.rise);
+    s.mesh.matrix.compose(this.lifting, s.quat, s.size.x).multiply(s.goal.shear);
     s.mesh.matrixWorldNeedsUpdate = true;
   }
 
@@ -559,8 +760,14 @@ export class Space {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), this.camera);
     const meshes = [...this.slabs.values()].filter(s => s.placed).map(s => s.mesh);
-    const hits = this.ray.intersectObjects(meshes, false);
-    return hits.length ? String(hits[0].object.userData.id) : null;
+    for (const hit of this.ray.intersectObjects(meshes, false)) {
+      const t = this.slabs.get(String(hit.object.userData.id))?.tissue;
+      if (!t || !hit.uv) continue;
+      const x = Math.min(t.w - 1, Math.max(0, Math.floor(hit.uv.x * t.w)));
+      const y = Math.min(t.h - 1, Math.max(0, Math.floor(hit.uv.y * t.h)));
+      if (t.mask[y * t.w + x]) return String(hit.object.userData.id);
+    }
+    return null;
   }
 
   private pick() {

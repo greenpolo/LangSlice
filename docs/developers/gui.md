@@ -97,10 +97,13 @@ the registration look like, and how did it get here.
   it, at its true pixel size, centred on the atlas at its position, so
   shrinkage, turns and offsets show as they are; it moves only when its
   registration changes, and the sections one call changes come in one after
-  another. The sections the agent is looking at rise clearly out of the
-  stack with a thin frame, and the others grey a little; sections are never
-  see-through. The brain keeps a thin outline so it reads around the
-  sections. Drag to turn the brain, scroll to zoom; pointing at a section
+  another. Each section is cut to its tissue: the slide's flat ground and
+  any smooth glare or grey smear touching it are left out, dim tissue is
+  kept. The sections the agent is looking at lift a little and brighten a
+  little (they are shown in 2D on the left), and the others grey a little;
+  sections are never see-through. Between closely stacked sections the
+  inside of the brain shows in the sections' own tissue colour. The brain
+  keeps a thin outline so it reads around the sections. Drag to turn the brain, scroll to zoom; pointing at a section
   names it, clicking shows it. With reduced motion the sections move at
   once.
 - **Where the sections sit in the brain.** The cutting axis, as in Simple,
