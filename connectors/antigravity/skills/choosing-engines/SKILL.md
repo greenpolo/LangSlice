@@ -53,12 +53,14 @@ hint of where to start, not a rule:
   most often and never worst.
 - **Cerebellum and brainstem:** `emlddmm_stack` then a FireANTs warp looked
   best; FireANTs alone was sometimes worst there.
-- **Torn sections with missing tissue:** SPOmiAlign, on inverted DAPI, was
-  sometimes best and never worst.
+- **Torn sections with missing tissue:** SPOmiAlign, on inverted DAPI, does
+  decently: sometimes best and never worst.
 - **Split sections or displaced pieces:** no clear winner. SPOmiAlign could
   balloon or fold the outline off the tissue; FireANTs was never worst.
-- STalign was most often the worst of the engines tried, on intact and on
-  torn tissue.
+- **STalign for in-plane fits:** not advised; its in-plane transform was most
+  often the worst of the engines tried, on intact and on torn tissue. When
+  `stalign_plane_search` returns an in-plane fit along with the cutting
+  angles, that fit is worth checking.
 
 Whatever the engine, look at the result: every one of them had sections it
 got wrong.
