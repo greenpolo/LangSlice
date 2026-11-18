@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { EASE_OUT } from './motion';
 import { go, useNav } from './nav';
 import { useRun } from './run';
+import { setStageMode, useStageMode } from './space/mode';
 import { ExtendedView } from './extended/ExtendedView';
 import { Lightbox } from './extended/Lightbox';
 import { Review } from './review/Review';
@@ -20,6 +21,7 @@ export type Focus = {
 
 export function Viewer() {
   const nav = useNav();
+  const stage = useStageMode();
   const rows = useRun(s => s.rows);
   const agentFocus = useRun(s => s.focus);
   const done = useRun(s => s.status === 'Submitted');
@@ -68,6 +70,10 @@ export function Viewer() {
         <button className={'ghost-button review-button' + (done ? ' ready' : '')} aria-pressed={review !== false} onClick={() => setReview(review === false ? focus.ids[0] ?? null : false)}>
           Review{open > 0 && <span className="badge">{open}</span>}
         </button>
+        <div className="views-switch" role="group" aria-label="Where the sections are shown">
+          <button className={stage === '2d' ? 'on' : ''} aria-pressed={stage === '2d'} onClick={() => setStageMode('2d')}>2D</button>
+          <button className={stage === '3d' ? 'on' : ''} aria-pressed={stage === '3d'} onClick={() => setStageMode('3d')}>3D</button>
+        </div>
         <div className="views-switch" role="group" aria-label="How much the viewer shows">
           <button className={nav.view === 'simple' ? 'on' : ''} aria-pressed={nav.view === 'simple'} onClick={() => go({ view: 'simple' })}>Simple</button>
           <button className={nav.view === 'extended' ? 'on' : ''} aria-pressed={nav.view === 'extended'} onClick={() => go({ view: 'extended' })}>Extended</button>

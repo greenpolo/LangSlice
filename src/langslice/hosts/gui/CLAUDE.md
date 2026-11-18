@@ -18,7 +18,11 @@ on the right the journal (the run so far as a timeline of the agent's words,
 its tool calls quiet lines between them). The window is neutral
 graphite around greyscale pictures with one accent colour; the agent's words
 are in a serif face, the window's in a sans-serif face
-(`static/tokens.css`).
+(`static/tokens.css`). Both views have **2D | 3D** beside Simple |
+Extended (one setting, kept in `localStorage` as `langslice.stage`): 3D
+takes the cutting axis's place, showing the sections in focus in a narrow
+column at the left and the atlas brain in three dimensions, with every
+placed section in it, filling the rest (`src/space/`).
 
 ## The rule
 
@@ -111,7 +115,48 @@ The page is a React app (`web/`, below), built into `static/`.
   it; wheel zoom, drag pan, double-click for the whole span, hover names,
   click picks). `src/extended/`: `ExtendedView` (the progress box:
   one meter per step the job's `tasks` ask for, counted over its sections;
-  four sections a page), `Journal`, `Lightbox`. `src/review/Review`:
+  four sections a page; in 3D no cutting axis), `Journal`, `Lightbox`. `src/space/`:
+  the 3D view (three.js). `mode.ts` keeps 2D | 3D (`useStageMode`,
+  `setStageMode`; the switch is in `Viewer.tsx`, its buttons pressed to 0.97; the
+  stage switched to comes in with a 240 ms ease-out crossfade and a little blur,
+  `justSwitched`, the cutting axis too when 2D comes back, never when the
+  window opens); `SpaceStage.tsx` is both
+  views' 3D stage (the focus Stage in a column, the Volume beside it, no
+  panel or border around it). `scene.ts` (`Space`) maps atlas micrometres to
+  scene millimetres by the orientation letters (anterior +z, superior +y,
+  the animal's right -x, centred on the atlas), draws BrainGlobe's root mesh
+  as brainrender shows it (matte, see-through, lit over the viewer's
+  shoulder, faces turned outward, with a thin grey silhouette where the
+  surface turns away, drawn `INFLATE_MM` outside it so sections reaching the
+  brain's edge do not hide it) and each placed section as an opaque slab
+  whose basis is its thumbnail's corners (`TR-TL`, `BL-TL`, the normal times
+  the thickness; the shear the decomposition leaves is kept), only its
+  picture's ground left out by a mask made once per picture (`tissueImage`:
+  brighter than the corners' luminance over a 5x5 mean; smooth patches
+  touching the ground outside, glare or grey smears, cut; specks dropped,
+  the dark outer edge peeled, pinholes filled; uploaded as a `DataTexture`,
+  never through a canvas, whose premultiplied alpha would blacken the cut
+  ground into a rim), a hard edge, no mipmaps (they blur the tissue into
+  the ground at a slant); picking follows the same mask. A section
+  without a written transform sits where the core's identity puts it: its
+  picture as the job keeps it (no turn or flip beyond the job's), centred
+  on the atlas plane at its position, at its true pixel size. A section
+  still at the job's initial spacing (`position_source` `initial`) is not drawn; a newly placed one appears where it is,
+  whole (never part see-through); a changed placement is glided to on critically damped springs
+  (position, size, rotation); the sections a call changed come in stack
+  order over `BATCH_S`; nothing else moves. The sections in focus lift by
+  `LIFT` of the brain's height (an ease-out over `FOCUS_S`) and brighten a
+  little, and the others grey a little; sections are never see-through.
+  The brain's nearest surface only is drawn (a depth pass first), and
+  inside it, behind everything, its far wall in the sections' mean tissue
+  colour where sections stand close (`WALL_REACH_MM`), so the gaps of a
+  thin-section stack do not read as black ribs. OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
+  to the mesh; reduced motion moves everything at once; a click on a slab
+  picks its section. `Volume.tsx` fetches the shell once per job, the space
+  again when a row's `render_key` changes (at most every `SPACE_MS`), the
+  calm thumbnails through `pictures.ts` (`THUMB_RANK`, after the stage's),
+  and shows the placed count, the thickness, a hint and the hovered
+  section's name; in 3D the journal's column is narrower. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment.
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
   Prompt generator (its message from `static/generator-logic.js`, the same
@@ -197,7 +242,17 @@ The page is a React app (`web/`, below), built into `static/`.
   without a `job.json`, 404 for an index not listed),
   `jobs/<n>/snapshot?since=&gen=&sv=`,
   `jobs/<n>/picture/<number>` (the `view.jpg` of a picture the job's
-  `views.jsonl` lists, read from disk), `jobs/<n>/strip` (`JobRenderer.strip`),
+  `views.jsonl` lists, read from disk), `jobs/<n>/strip` (`JobRenderer.strip`), `jobs/<n>/space` (`JobRenderer.space`,
+  `space.job_space`: the thickness, the job's or `DEFAULT_THICKNESS_UM`, and
+  whether it was given; the plane's axis; each section's id, order and
+  `corners_um`, its thumbnail's top-left, top-right and bottom-left corners
+  in atlas micrometres in the atlas's axis order, null while unplaced; 409
+  without a state this LangSlice reads) and `jobs/<n>/shell`
+  (`JobRenderer.shell`, `space.atlas_shell`: the atlas's orientation and
+  extent, and its `root` mesh (`mesh_from_structure`, the mesh brainrender
+  draws, in the atlas micrometres the corners use): the vertex and triangle
+  counts, `positions` base64 of little-endian float32 x, y, z and `indices`
+  of uint32 triangles; 409 for an atlas without one),
   `jobs/<n>/render/overlay|thumb/<section>?edge=&key=` (the section's filename
   URL-encoded and one of the job's sections, else 404; `key`, the row's
   `render_key`, is for the browser's cache only), `jobs/<n>/render/atlas/<k>?edge=`,
@@ -254,6 +309,11 @@ The page is a React app (`web/`, below), built into `static/`.
   `write` in `job.settings.tool_table`, a plugin's or an unknown tool, and
   `look` and `zoom`, `FOLLOWED_READS`); `started_focus(record)`: a followed
   `tool_start` with targets gives its `target_ids` in order without repeats.
+- `space.py` — the 3D view's numbers: `atlas_shell(workspace)` ->
+  `AtlasShell` (`ShellError` without a root mesh), `job_space(workspace, state, thickness_um=)` -> `Space`
+  (`SpaceSection` per section in stack order), `section_corners` (from
+  `core.maps.section_maps.section_frame`, the frame `registration.json` is
+  written from, through the thumbnail's turn and flip, `turned_corners`).
 - `render.py` — the viewer's pictures of a job's current registration.
   `RenderPool(atlas_loader=, workers=WORKERS)`: one `ThreadPoolExecutor` (2)
   for every job and one `JobRenderer` per job folder (`renderer`); the jobs

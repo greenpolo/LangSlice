@@ -53,6 +53,13 @@ from langslice.hosts.gui.calm import draw_calm_overlay, draw_calm_thumb
 from langslice.hosts.gui.drawing import draw_atlas as _atlas_picture
 from langslice.hosts.gui.drawing import draw_overlay as _overlay_picture
 from langslice.hosts.gui.drawing import draw_thumb as _thumb_picture
+from langslice.hosts.gui.space import (
+    AtlasShell,
+    ShellError,
+    Space,
+    atlas_shell,
+    job_space,
+)
 from langslice.job.folder.layout import JOB_FILE
 
 logger = logging.getLogger(__name__)
@@ -315,6 +322,7 @@ class JobRenderer:
         self._lock = threading.Lock()
         self._pictures: OrderedDict[_Key, bytes] = OrderedDict()
         self._flying: dict[_Key, Future[bytes]] = {}
+        self._shell: tuple[_Opened, AtlasShell] | None = None
 
     def strip(self) -> Strip:
         """Describe the positioning strip of the job as it stands.
@@ -470,10 +478,60 @@ class JobRenderer:
         draw = partial(_atlas_picture, opened, state, position_mm, edge)
         return self._picture(key, opened, draw)
 
+    def shell(self) -> AtlasShell:
+        """Read the job's atlas brain mesh for the 3D view, once per atlas.
+
+        Returns
+        -------
+        AtlasShell
+            The atlas's root mesh.
+
+        Raises
+        ------
+        RenderError
+            When the job's spec, images or atlas cannot be read, or the
+            atlas has no brain mesh.
+        """
+        opened = self._open()
+        kept = self._shell
+        if kept is not None and kept[0] is opened:
+            return kept[1]
+        with self._drawing:
+            try:
+                shell = atlas_shell(opened.workspace)
+            except ShellError as exc:
+                raise RenderError(str(exc)) from exc
+        self._shell = (opened, shell)
+        return shell
+
+    def space(self) -> Space:
+        """Place the job's sections in the atlas for the 3D view.
+
+        Returns
+        -------
+        Space
+            Each section's thumbnail corners in atlas micrometres (None
+            while unplaced) and the section thickness.
+
+        Raises
+        ------
+        RenderError
+            When the job has no state, or its spec, images or atlas cannot
+            be read.
+        """
+        opened = self._open()
+        state = self._state()
+        thickness_um = opened.workspace.spec.position.thickness_um
+        with self._drawing:
+            return job_space(
+                opened.workspace, state, thickness_um=thickness_um
+            )
+
     def release(self) -> None:
         """Let go of the workspace and pictures until the next drawing."""
         with self._opening:
             self._opened = None
+            self._shell = None
         with self._lock:
             self._pictures.clear()
 

@@ -38,11 +38,12 @@ a { color: inherit; text-decoration: none; }
 .simple { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 30px; }
 .simple .speaker { padding-top: var(--space-2); }
 .views-switch { display: flex; font-size: var(--size-xs); }
-.views-switch > * { padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.views-switch > * { padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; cursor: pointer; transition: scale var(--dur-press) var(--ease-out), color var(--dur-quick) ease, background-color var(--dur-quick) ease; }
+.views-switch > :active { scale: 0.97; }
 .views-switch > :first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .views-switch > :last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left-width: 0; }
 .views-switch .on { color: var(--name); background: var(--selected); }
-@media (hover: hover) and (pointer: fine) { .views-switch a:hover { color: var(--name); background: var(--wash); } }
+@media (hover: hover) and (pointer: fine) { .views-switch > :not(.on):hover { color: var(--name); background: var(--wash); } }
 
 /* Who is speaking. */
 .speaker {
@@ -333,3 +334,25 @@ a { color: inherit; text-decoration: none; }
   .cut.done .cut-key { animation: none; }
 }
 @keyframes fade { from { opacity: 0; } }
+
+/* Extended's 3D stage: the sections in focus in a narrow column, the atlas brain beside;
+   the journal gives up some of its width to it. */
+.extended.space .extended-body { grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 380px); }
+.space-split { display: grid; grid-template-columns: minmax(190px, 21%) minmax(0, 1fr); gap: var(--space-3); }
+.space-side { position: relative; min-width: 0; min-height: 0; }
+.space-side .tile-name { gap: var(--space-1); font-size: var(--size-xs); white-space: nowrap; overflow: hidden; }
+.volume { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.space .stage { margin-bottom: var(--space-4); }
+.simple.space .space-split { grid-template-columns: minmax(200px, 22%) minmax(0, 1fr); }
+.volume-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; outline: none; }
+.volume-canvas:active { cursor: grabbing; }
+.volume-canvas.pointing { cursor: pointer; }
+.volume-wait { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--stage-text); font-size: var(--size-sm); pointer-events: none; }
+.volume-facts { position: absolute; left: var(--space-2); top: 0; margin: 0; display: flex; gap: var(--space-3); align-items: baseline; color: var(--stage-text); font-size: var(--size-sm); font-variant-numeric: tabular-nums; pointer-events: none; }
+.volume-facts b { color: var(--name); font-weight: var(--weight-strong); }
+.volume-thick { color: var(--faint); }
+.volume-hint { position: absolute; right: var(--space-2); bottom: 0; margin: 0; color: var(--faint); font-size: var(--size-xs); pointer-events: none; }
+.volume-axis { position: absolute; left: 0; top: 0; color: var(--faint); font-size: var(--size-xs); letter-spacing: 0.02em; pointer-events: none; white-space: nowrap; transition: opacity var(--dur-quick) ease; }
+.volume-axis.off { opacity: 0; }
+.volume-tip { position: absolute; left: 0; top: 0; display: flex; gap: var(--space-2); padding: 3px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--name); font-size: var(--size-xs); pointer-events: none; white-space: nowrap; }
+.volume-tip span { color: var(--muted); font-variant-numeric: tabular-nums; }
