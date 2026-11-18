@@ -149,13 +149,16 @@ The page is a React app (`web/`, below), built into `static/`.
   on the atlas plane at its position, at its true pixel size. A section
   still at the job's initial spacing (`position_source` `initial`) is not drawn; a newly placed one appears where it is,
   whole (never part see-through); a changed placement is glided to on critically damped springs
-  (position, size, rotation); the sections a call changed come in stack
-  order over `BATCH_S`; nothing else moves. The sections in focus lift by
+  (position, size, rotation); the sections a call moved go in stack
+  order over `BATCH_S`, and the sections a call placed for the first time
+  arrive one after another over `ARRIVE_S`; nothing else moves. The sections in focus lift by
   `LIFT` of the brain's height (an ease-out over `FOCUS_S`), brighten a
   little and carry the accent along their cut edge, and the others grey a
   little (none is marked while every section is shown); a section farther
   from the viewer is a little darker (`FAR_SHADE`), so the stack reads in
-  depth; sections are never see-through. The scene's motion runs on the
+  depth; nothing of a section is drawn outside the atlas's box (`ROOM_MM`
+  around the brain), so a section not yet aligned does not hang out of the
+  atlas; sections are never see-through. The scene's motion runs on the
   page's clock (`performance.now()`), the same as the window's.
   The brain's nearest surface only is drawn (a depth pass first), and
   inside it, behind everything, its far wall in the sections' mean tissue

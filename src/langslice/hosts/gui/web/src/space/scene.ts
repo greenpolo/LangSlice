@@ -8,8 +8,9 @@
 // corners span, as thick as the job's sections; a section without a position is not drawn.
 // Nothing moves but what the registration moves: when a section's placement changes, its
 // slab glides from the old placement to the new one (position, rotation, size, on
-// critically damped springs); a newly placed section appears where it is, whole, and a batch
-// placed by one call comes in stack order over `BATCH_S`. Sections are always opaque, cut
+// critically damped springs); a newly placed section appears where it is, whole; a batch
+// one call moves goes in stack order over `BATCH_S`, and a batch it places for the first
+// time arrives one section after another over `ARRIVE_S`, so the placing is seen. Sections are always opaque, cut
 // to their tissue with a smooth edge one pixel wide. The sections the agent is looking at
 // lift a little (`LIFT` of the brain's height, an ease-out over `FOCUS_S`), brighten a
 // little and carry the accent along their cut edge, and the others grey a little. The brain keeps a thin grey silhouette so it still reads around
@@ -29,10 +30,12 @@ export type Shell = {
 };
 
 const FOV = 30;
-const LIFT = 0.07;
+const LIFT = 0.05;
 const FOCUS_S = 0.26;
 const OMEGA = 4.6;
 const BATCH_S = 2.2;
+const ARRIVE_S = 6;
+const ARRIVE_MAX_S = 0.16;
 const INFLATE_MM = 0.08;
 const STAGGER_MAX_S = 0.06;
 const TISSUE_STEP = 0.013;
@@ -41,6 +44,7 @@ const WALL_REACH_MM = 0.25;
 const WALL_SPANS = 24;
 const WALL_SHADE = 0.2;
 const FAR_SHADE = 0.34;
+const ROOM_MM = 0.15;
 const ISLAND_PX = 40;
 const GLARE_PX = 30;
 const SMOOTH = 0.04;
@@ -77,9 +81,11 @@ const VERTEX = /* glsl */ `
   varying vec2 vUv;
   varying float vEdge;
   varying float vFar;
+  varying vec3 vWorld;
   void main() {
     vUv = uv;
     vEdge = edge;
+    vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vFar = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -92,7 +98,9 @@ const VERTEX = /* glsl */ `
 // what is behind; `lit` brightens a section in focus a little and draws its cut edge in the
 // accent (`accent`), `see` greys a section while others are in focus, and a section
 // farther from the viewer (`depth`: the near and far ends of the brain) is a little darker,
-// so the stack reads in depth.
+// so the stack reads in depth. Nothing is drawn outside the atlas's box (`roomLow`,
+// `roomHigh`, `ROOM_MM` around the brain): a section not yet aligned keeps its true size,
+// and what of it would hang outside the atlas is left out.
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
@@ -103,9 +111,15 @@ const FRAGMENT = /* glsl */ `
   uniform vec2 depth;
   varying vec2 vUv;
   varying float vEdge;
+  uniform vec3 roomLow;
+  uniform vec3 roomHigh;
+  uniform float rise;
   varying float vFar;
+  varying vec3 vWorld;
   void main() {
     if (vEdge > 0.5 || hasMap < 0.5 || shown < 0.5) discard;
+    vec3 at = vec3(vWorld.x, vWorld.y - rise, vWorld.z);
+    if (any(lessThan(at, roomLow)) || any(greaterThan(at, roomHigh))) discard;
     vec4 t = texture2D(map, vUv);
     float cover = clamp((t.a - 0.5) / max(fwidth(t.a), 0.0001) + 0.5, 0.0, 1.0);
     if (cover <= 0.0) discard;
@@ -470,6 +484,8 @@ export class Space {
   private textures = new Map<string, THREE.Texture>();
   private accent = token('--lavender', '#a4addf');
   private depth = new THREE.Vector2(0, 1);
+  private roomLow = new THREE.Vector3(-1e6, -1e6, -1e6);
+  private roomHigh = new THREE.Vector3(1e6, 1e6, 1e6);
 
   constructor(
     private host: HTMLElement,
@@ -579,6 +595,8 @@ export class Space {
 
     const box = geometry.boundingBox!;
     this.bounds.copy(box);
+    this.roomLow.copy(box.min).addScalar(-ROOM_MM);
+    this.roomHigh.copy(box.max).addScalar(ROOM_MM);
     this.axes[0].at.set(0, box.min.y, box.max.z + 0.9);
     this.axes[1].at.set(0, box.min.y, box.min.z - 0.9);
     this.axes[2].at.set(0, box.max.y + 1.1, 0);
@@ -597,6 +615,7 @@ export class Space {
       if (!known.has(id)) { this.scene.remove(s.mesh); s.mesh.material.dispose(); this.slabs.delete(id); this.tints.delete(id); }
     }
     const changed: Slab[] = [];
+    let arrived = 0;
     for (const item of list) {
       const s = this.slabs.get(item.id) ?? this.make(item.id);
       s.order = item.order;
@@ -606,11 +625,14 @@ export class Space {
       else s.placed = false;
       if (s.placed && (!was || this.reduced)) this.snap(s);
       if (s.placed && (!was || before.distanceToSquared(s.goal.pos) > 1e-8)) changed.push(s);
+      if (s.placed && !was) arrived++;
     }
     this.spread();
     this.tinted();
     changed.sort((a, b) => a.order - b.order);
-    const gap = changed.length > 2 && !this.reduced ? Math.min(STAGGER_MAX_S, BATCH_S / changed.length) : 0;
+    const arriving = 2 * arrived > changed.length;
+    const gap = changed.length <= 2 || this.reduced ? 0
+      : arriving ? Math.min(ARRIVE_MAX_S, ARRIVE_S / changed.length) : Math.min(STAGGER_MAX_S, BATCH_S / changed.length);
     changed.forEach((s, i) => { s.wait = i * gap; });
   }
 
@@ -666,7 +688,8 @@ export class Space {
   private make(id: string): Slab {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: false, depthWrite: true, side: THREE.DoubleSide,
-      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 }, accent: { value: this.accent }, depth: { value: this.depth } },
+      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 }, accent: { value: this.accent }, depth: { value: this.depth },
+        roomLow: { value: this.roomLow }, roomHigh: { value: this.roomHigh }, rise: { value: 0 } },
     });
     material.alphaToCoverage = true;
     const mesh = new THREE.Mesh(this.geometry, material);
@@ -764,6 +787,7 @@ export class Space {
       u.see.value += ((some && !on ? 1 : 0) - u.see.value) * ease;
       const lift = this.lifted(s, on ? 1 : 0, now);
       s.rise = rise * lift;
+      u.rise.value = s.rise;
       u.lit.value = lift;
       const waiting = s.wait > 0;
       if (waiting) s.wait -= dt;
