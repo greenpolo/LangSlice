@@ -157,9 +157,10 @@ The page is a React app (`web/`, below), built into `static/`.
   little and carry the accent along their cut edge, and the others grey a
   little (none is marked while every section is shown); a section farther
   from the viewer is a little darker (`FAR_SHADE`), so the stack reads in
-  depth; nothing of a section is drawn outside the atlas's box (`ROOM_MM`
-  around the brain), so a section not yet aligned does not hang out of the
-  atlas; sections are never see-through. The scene's motion runs on the
+  depth; nothing of a section is drawn outside the atlas's own cross-section
+  box at that place along the brain (`crossSections`: `ROOM_BINS` steps,
+  `ROOM_MM` wider), so a section not yet aligned, drawn at its true size,
+  does not hang out of the atlas; sections are never see-through. The scene's motion runs on the
   page's clock (`performance.now()`), the same as the window's.
   The brain's nearest surface only is drawn (a depth pass first), and
   inside it, behind everything, its far wall in the sections' mean tissue
@@ -303,7 +304,11 @@ The page is a React app (`web/`, below), built into `static/`.
   `blue`, else the first), `draw_calm_overlay` (two `look` calls on that
   channel, with and without the borders; their difference is the border
   layer, so `look`'s scale bar goes), `draw_calm_thumb`, `calm` (the tissue
-  `tissue_mask`ed off the tile floor, `scale_bar` cleared, a soft knee, a
+  `tissue_mask`ed off the tile floor, with what lies beside the
+  tissue on the slide left out (`without_debris`: out-of-focus dirt, glare
+  that stands out of the tissue, marks at the picture's border, the
+  scanner's bright line and smears along the edge of what it scanned
+  (`scan_edge`, `without_edge_glow`, `without_threads`)), `scale_bar` cleared, a soft knee, a
   cool tint on `STAGE`, the borders at `LINE_STRENGTH`, fainter when small).
 - `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
   `visualign`); `run_export(folder, kind)` -> `Written` writes one through

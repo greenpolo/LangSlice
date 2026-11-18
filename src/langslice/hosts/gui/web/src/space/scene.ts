@@ -45,6 +45,7 @@ const WALL_SPANS = 24;
 const WALL_SHADE = 0.2;
 const FAR_SHADE = 0.34;
 const ROOM_MM = 0.15;
+const ROOM_BINS = 96;
 const ISLAND_PX = 40;
 const GLARE_PX = 30;
 const SMOOTH = 0.04;
@@ -98,9 +99,10 @@ const VERTEX = /* glsl */ `
 // what is behind; `lit` brightens a section in focus a little and draws its cut edge in the
 // accent (`accent`), `see` greys a section while others are in focus, and a section
 // farther from the viewer (`depth`: the near and far ends of the brain) is a little darker,
-// so the stack reads in depth. Nothing is drawn outside the atlas's box (`roomLow`,
-// `roomHigh`, `ROOM_MM` around the brain): a section not yet aligned keeps its true size,
-// and what of it would hang outside the atlas is left out.
+// so the stack reads in depth. Nothing is drawn outside the atlas's own cross-section at
+// the fragment's place along the brain (`room`: the brain's extent to the sides and up and
+// down in `ROOM_BINS` steps from front to back, `ROOM_MM` wider): a section not yet aligned
+// keeps its true size, and what of it would hang outside the atlas is left out.
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
@@ -111,15 +113,17 @@ const FRAGMENT = /* glsl */ `
   uniform vec2 depth;
   varying vec2 vUv;
   varying float vEdge;
-  uniform vec3 roomLow;
-  uniform vec3 roomHigh;
+  uniform sampler2D room;
+  uniform vec2 roomSpan;
   uniform float rise;
   varying float vFar;
   varying vec3 vWorld;
   void main() {
     if (vEdge > 0.5 || hasMap < 0.5 || shown < 0.5) discard;
     vec3 at = vec3(vWorld.x, vWorld.y - rise, vWorld.z);
-    if (any(lessThan(at, roomLow)) || any(greaterThan(at, roomHigh))) discard;
+    if (at.z < roomSpan.x || at.z > roomSpan.y) discard;
+    vec4 side = texture2D(room, vec2((at.z - roomSpan.x) / (roomSpan.y - roomSpan.x), 0.5));
+    if (at.x < side.x || at.x > side.y || at.y < side.z || at.y > side.w) discard;
     vec4 t = texture2D(map, vUv);
     float cover = clamp((t.a - 0.5) / max(fwidth(t.a), 0.0001) + 0.5, 0.0, 1.0);
     if (cover <= 0.0) discard;
@@ -432,6 +436,40 @@ function dropSmall(mask: Uint8Array, w: number, h: number, size: number) {
   for (const patch of patches(mask, w, h)) if (patch.length < size) for (const i of patch) mask[i] = 0;
 }
 
+// The brain's extent at each of `ROOM_BINS` steps from *back* to *front* (scene z): the
+// least and greatest x and y of the mesh's vertices there, `ROOM_MM` wider, as left, right,
+// bottom, top; a step with no vertex takes its neighbour's.
+function crossSections(positions: Float32Array, back: number, front: number): Float32Array {
+  const out = new Float32Array(4 * ROOM_BINS);
+  for (let b = 0; b < ROOM_BINS; b++) out.set([Infinity, -Infinity, Infinity, -Infinity], 4 * b);
+  for (let i = 0; i < positions.length; i += 3) {
+    const at = Math.floor(((positions[i + 2] - back) / (front - back)) * ROOM_BINS);
+    for (const b of [at - 1, at, at + 1]) {
+      if (b < 0 || b >= ROOM_BINS) continue;
+      out[4 * b] = Math.min(out[4 * b], positions[i] - ROOM_MM);
+      out[4 * b + 1] = Math.max(out[4 * b + 1], positions[i] + ROOM_MM);
+      out[4 * b + 2] = Math.min(out[4 * b + 2], positions[i + 1] - ROOM_MM);
+      out[4 * b + 3] = Math.max(out[4 * b + 3], positions[i + 1] + ROOM_MM);
+    }
+  }
+  for (const order of [[...Array(ROOM_BINS).keys()], [...Array(ROOM_BINS).keys()].reverse()]) {
+    let last = -1;
+    for (const b of order) {
+      if (Number.isFinite(out[4 * b])) last = b;
+      else if (last >= 0) out.set(out.subarray(4 * last, 4 * last + 4), 4 * b);
+    }
+  }
+  return out;
+}
+
+function roomTexture(sides: Float32Array): THREE.DataTexture {
+  const tex = new THREE.DataTexture(sides, sides.length / 4, 1, THREE.RGBAFormat, THREE.FloatType);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 // Faces wound so their normals point away from the mesh's centre, on the whole.
 function outward(p: Float32Array, idx: Uint32Array) {
   let cx = 0, cy = 0, cz = 0;
@@ -489,8 +527,8 @@ export class Space {
   private textures = new Map<string, THREE.Texture>();
   private accent = token('--lavender', '#a4addf');
   private depth = new THREE.Vector2(0, 1);
-  private roomLow = new THREE.Vector3(-1e6, -1e6, -1e6);
-  private roomHigh = new THREE.Vector3(1e6, 1e6, 1e6);
+  private room = roomTexture(new Float32Array([-1e6, 1e6, -1e6, 1e6]));
+  private roomSpan = new THREE.Vector2(-1e6, 1e6);
 
   constructor(
     private host: HTMLElement,
@@ -600,8 +638,10 @@ export class Space {
 
     const box = geometry.boundingBox!;
     this.bounds.copy(box);
-    this.roomLow.copy(box.min).addScalar(-ROOM_MM);
-    this.roomHigh.copy(box.max).addScalar(ROOM_MM);
+    this.room.dispose();
+    this.room = roomTexture(crossSections(positions, box.min.z - ROOM_MM, box.max.z + ROOM_MM));
+    this.roomSpan.set(box.min.z - ROOM_MM, box.max.z + ROOM_MM);
+    for (const slab of this.slabs.values()) slab.mesh.material.uniforms.room.value = this.room;
     this.axes[0].at.set(0, box.min.y, box.max.z + 0.9);
     this.axes[1].at.set(0, box.min.y, box.min.z - 0.9);
     this.axes[2].at.set(0, box.max.y + 1.1, 0);
@@ -694,7 +734,7 @@ export class Space {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: false, depthWrite: true, side: THREE.DoubleSide,
       uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 }, accent: { value: this.accent }, depth: { value: this.depth },
-        roomLow: { value: this.roomLow }, roomHigh: { value: this.roomHigh }, rise: { value: 0 } },
+        room: { value: this.room }, roomSpan: { value: this.roomSpan }, rise: { value: 0 } },
     });
     material.alphaToCoverage = true;
     const mesh = new THREE.Mesh(this.geometry, material);
