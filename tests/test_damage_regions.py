@@ -40,7 +40,7 @@ def _box(folder: Path, *, inputs: dict[str, Any] | None = None, plane: str = "co
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: HalvesAtlas())
     state = ingest(spec, ctx)
     apply_host_inputs(state, spec)
-    state.slices[0].position_mm = 1.0
+    state.slices[0].set_position(1.0)
     box = build_tools(state, ctx, spec)
     return state, ctx, box
 

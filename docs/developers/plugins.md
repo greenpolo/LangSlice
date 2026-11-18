@@ -238,9 +238,8 @@ section's folder (`sections/<name>/deformable/<key>/`, its engine
 `{"method": "plugin:<tool>", "start": "linear" | "current", "note"?,
 "settings"?}` (after the held deformation's steps for `current`), and `look`,
 `export_maps`, `registration.json`, the VisuAlign markers and the ABBA
-connector read it like any other. A section without a position is that
-section's row `NO_POSITION`, one whose transform cannot be used
-`INVALID_LINEAR_PLACEMENT`, as a native fit refuses them; a
+connector read it like any other. A section whose transform cannot be used is
+that section's row `INVALID_LINEAR_PLACEMENT`, as a native fit refuses it; a
 map of another shape, not float or not finite is `BAD_FIELD`. Maps are
 converted before the job's write lock is taken.
 
@@ -326,8 +325,7 @@ with ctx.writing():                                    # one undo step
 ```
 
 Positions and angles go first: `set_transforms` builds its record on the placement
-the section holds when it is called (a section without a position is that
-row's `NO_POSITION`). `set_positions` takes one stack-wide angle pair
+the section holds when it is called. `set_positions` takes one stack-wide angle pair
 (`cutting_angles`). A frozen affine is that row's `FROZEN`, a transform write clears
 the deformation, and `undo` takes the whole block back.
 
@@ -608,7 +606,7 @@ between calls.
 | `TOO_MANY_SECTIONS` | More sections than `limits["sections"]` (the message says so, and that it is the plugin's limit) |
 | `READ_TOOL_WRITES`, `WRITE_NOT_DECLARED` | A write by a read tool, or of a property not in `writes` |
 | `FROZEN`, `STALE_INPUT`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS` | Rows of a write, as for native tools |
-| `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (any call that needs one), or whose transform is missing or cannot be used (marked stale, made on another orientation) |
+| `INVALID_LINEAR_PLACEMENT` | A section whose transform is missing or cannot be used (marked stale, made on another orientation) |
 | `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
 | `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
 | `PLUGIN_FAILED` | The handler raised something other than `ToolError` (or a refusal of the context's) |

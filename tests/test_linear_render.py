@@ -71,8 +71,8 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
         _corner_image(tmp_path / f"s{index}.png")
     ctx = _ctx(tmp_path)
     state = ingest(ctx.spec, ctx)
-    state.slices[0].position_mm = 1.0
-    state.slices[1].position_mm = 1.5
+    state.slices[0].set_position(1.0)
+    state.slices[1].set_position(1.5)
     state.slices[1].flip = True
     state.slices[2].damage_note = "half the section is gone"
     state.slices[0].transform = affine_from_json({
@@ -84,9 +84,11 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     rows = status_rows(state)
     assert [row["id"] for row in rows] == ["s0.png", "s1.png", "s2.png"]
     assert rows[0]["delta_to_next_mm"] == 0.5
-    assert rows[1]["delta_to_next_mm"] is None
+    assert rows[1]["delta_to_next_mm"] == round(rows[2]["position_mm"] - 1.5, 3)
+    assert rows[2]["delta_to_next_mm"] is None
     assert rows[1]["flip"] is True
-    assert rows[2]["position_mm"] is None
+    assert rows[1]["position_source"] == "written"
+    assert rows[2]["position_source"] == "initial"
     assert rows[2]["damage_note"] == "half the section is gone"
     assert rows[0]["transform"]["kind"] == "silhouette"
     assert rows[0]["transform"]["mirrored"] is True
@@ -98,8 +100,8 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     rows = status_rows(state)
     assert rows[2]["damaged"] is True and rows[2]["damaged_regions"] == ["CTX", "OB"]
 
-    state.slices[0].position_mm = 5.0
-    state.slices[1].position_mm = 4.0
+    state.slices[0].set_position(5.0)
+    state.slices[1].set_position(4.0)
     assert status_rows(state)[0]["delta_to_next_mm"] == -1.0
 
 

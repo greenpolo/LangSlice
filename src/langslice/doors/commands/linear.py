@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.stack.section import INITIAL
 from langslice.doors import credentials
 from langslice.doors import plugins as _plugins  # noqa: F401
 from langslice.doors.agent_cli.background import DETACHED
@@ -214,6 +215,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         position=PositionSpec(
             thickness_um=getattr(args, "position_thickness_um", None),
             interval_um=getattr(args, "position_interval_um", None),
+            start_mm=getattr(args, "position_start_mm", None),
             strict_interval=bool(
                 getattr(args, "position_strict_interval", False)),
             playbook=bool(getattr(args, "position_playbook", False)),
@@ -410,7 +412,7 @@ def run_linear(args: argparse.Namespace) -> None:
 
     state = asyncio.run(run(spec, emit=print))
 
-    positioned = [s for s in state.slices if s.position_mm is not None]
+    positioned = [s for s in state.slices if s.position_source != INITIAL]
     transformed = [s for s in state.slices if s.transform is not None]
     print()
     print("Linear run complete" if state.submitted else "Linear run ended without a submission")

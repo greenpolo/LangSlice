@@ -63,7 +63,7 @@ def _box(folder: Path, atlas: Any, image: Image.Image, *, pixel_size_um: float |
                    inputs=inputs)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
-    state.slices[0].position_mm = position_mm
+    state.slices[0].set_position(position_mm)
     return state, build_tools(state, ctx, spec)
 
 

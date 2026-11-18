@@ -229,6 +229,16 @@ SETTINGS: tuple[Setting, ...] = (
         aliases=("--interval",),
     ),
     Setting(
+        name="position.start_mm",
+        type="float | None",
+        default=None,
+        doors=EVERY_DOOR,
+        json_key="spec.position.start_mm",
+        keyword="position",
+        flags=("--position-start-mm",),
+        aliases=("--start-mm",),
+    ),
+    Setting(
         name="position.strict_interval",
         type="bool",
         default=False,

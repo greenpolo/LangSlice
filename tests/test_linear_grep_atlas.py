@@ -71,17 +71,14 @@ def test_lookup_by_acronym_name_and_id_with_ancestry(tmp_path: Path):
 def test_presence_flag_follows_the_section_placement(tmp_path: Path):
     state, grep = _grep(tmp_path)
     record = state.slices[0]
-    record.position_mm = 2.0
+    record.set_position(2.0)
     rows = {r["acronym"]: r["in_section"] for r in grep("a", record.id)["rows"]}
     assert rows["HPF"] and rows["CTX"] and rows["TH"]
     assert "in_section" not in grep("a")["rows"][0]
-    record.position_mm = 15.0
+    record.set_position(15.0)
     rows = {r["acronym"]: r["in_section"] for r in grep("a", record.id)["rows"]}
     assert not rows["HPF"] and not rows["CTX"] and rows["TH"]
     assert grep("o", "missing.png")["error"] == "UNKNOWN_SLICE_IDS"
-    record.position_mm = None
-    result = grep("CTX", record.id)
-    assert "in_section" not in result["rows"][0] and "no position" in result["note"]
 
 
 def test_rows_are_capped_and_the_rest_counted(tmp_path: Path):

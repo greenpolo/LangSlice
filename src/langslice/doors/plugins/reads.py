@@ -55,7 +55,7 @@ class SectionView:
     file_size: tuple[int, int]
     pixel_size_um: float | None
     pixel_size_source: str
-    position_mm: float | None
+    position_mm: float
     angles: tuple[float, float]
     flip: bool
     rotation_deg: int

@@ -127,7 +127,8 @@ class StripSection:
 
     id: str
     order: int
-    position_mm: float | None
+    position_mm: float
+    position_source: str
     render_key: str
     thumb_key: str
 
@@ -342,6 +343,7 @@ class JobRenderer:
                 section.id,
                 order,
                 _rounded_mm(section.position_mm),
+                section.position_source,
                 render_key(state, section.id),
                 thumb_key(state, section.id),
             )
@@ -372,8 +374,7 @@ class JobRenderer:
         -------
         bytes
             A JPEG: the section under its stored transform and applied
-            deformation with the atlas borders (``look``'s ``overlay``);
-            a section with no position yet alone, oriented (``section``).
+            deformation with the atlas borders (``look``'s ``overlay``).
 
         Raises
         ------
@@ -693,9 +694,7 @@ def _section(state: Stack, section_id: str) -> Section:
     return section
 
 
-def _rounded_mm(position_mm: float | None) -> float | None:
-    if position_mm is None:
-        return None
+def _rounded_mm(position_mm: float) -> float:
     return round(position_mm, 3)
 
 

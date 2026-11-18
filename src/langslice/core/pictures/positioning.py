@@ -4,7 +4,7 @@ A horizontal millimetre ruler; above it, atlas thumbnails at the requested
 positions, each over its own millimetre (moved aside only as far as its
 neighbours need) and joined by a short line to it; below it, the sections
 in POSITION order (their current ``position_mm``, ties in stack order,
-``index_original``; sections without a position last), evenly spaced,
+``index_original``), evenly spaced,
 each joined by a line to its position. Both rows are sorted along
 the ruler, so no two lines cross; each section is labelled by its
 filename, so a filename order that disagrees with the positions shows in
@@ -90,15 +90,14 @@ class SectionEntry:
 
     id: str
     labels: tuple[str, ...]
-    position_mm: float | None
+    position_mm: float
     extent_um: tuple[float, float]
 
 
 def position_order(entries: Sequence[SectionEntry]) -> list[SectionEntry]:
     """*entries* (given in stack order) sorted by position; ties keep the
-    given order, sections without a position go last."""
-    return sorted(entries, key=lambda entry: (entry.position_mm is None,
-                                              entry.position_mm or 0.0))
+    given order."""
+    return sorted(entries, key=lambda entry: entry.position_mm)
 
 
 def _even(count: int, parts: int) -> list[int]:
@@ -108,11 +107,11 @@ def _even(count: int, parts: int) -> list[int]:
 
 
 def split(
-    positions: Sequence[float | None], atlas_mm: Sequence[float], per_picture: int = PER_PICTURE,
+    positions: Sequence[float], atlas_mm: Sequence[float], per_picture: int = PER_PICTURE,
 ) -> list[tuple[list[int], list[int]]]:
     """The pictures of a call: ``(section indices, atlas indices)`` each.
 
-    *positions* are the sections' in position order (None last),
+    *positions* are the sections' in position order,
     *atlas_mm* sorted. The sections are cut into the fewest consecutive runs
     of at most *per_picture*, their sizes as even as possible; each atlas
     position goes to the run whose positions surround it (the boundary
@@ -128,8 +127,7 @@ def split(
         start += size
     bounds: list[float] = []
     for left, right in zip(runs, runs[1:], strict=False):
-        a, b = positions[left[-1]], positions[right[0]]
-        bounds.append(math.inf if a is None or b is None else (a + b) / 2.0)
+        bounds.append((positions[left[-1]] + positions[right[0]]) / 2.0)
     held: list[list[int]] = [[] for _ in runs]
     for index, mm in enumerate(atlas_mm):
         held[sum(1 for bound in bounds if mm > bound)].append(index)
@@ -179,7 +177,7 @@ class Slot:
     top: float
     width: float
     height: float
-    position_mm: float | None
+    position_mm: float
     label: tuple[str, ...]
 
     @property
@@ -323,7 +321,7 @@ def _layout(
     def room(n: int) -> float:
         return inner / max(n, 1) - 4
 
-    values = [float(e.position_mm) for e in sections if e.position_mm is not None]
+    values = [e.position_mm for e in sections]
     lo, hi = ruler_range(values + [float(mm) for mm, _e in atlas], bounds, brain_scale)
     x0, x1 = float(MARGIN), float(width - MARGIN)
 
@@ -356,8 +354,7 @@ def _layout(
     section_slots: list[Slot] = []
     for entry, x in zip(sections, centres(len(sections)), strict=True):
         w, h = entry.extent_um[0] / um_per_px, entry.extent_um[1] / um_per_px
-        where = ((f"{entry.position_mm:.2f} mm", f"{entry.position_mm:.2f}")
-                 if entry.position_mm is not None else ("no position", "none"))
+        where = (f"{entry.position_mm:.2f} mm", f"{entry.position_mm:.2f}")
         label = (_first_fitting(entry.labels, font_px, room(len(sections))),
                  _first_fitting(where, font_px, room(len(sections))))
         section_slots.append(Slot(key=entry.id, centre_x=x, top=top, width=w, height=h,
@@ -428,7 +425,7 @@ def paint(
     shown_sections, shown_atlas = visible(layout, window)
     um = layout.um_per_px / s
     for slot in shown_atlas:
-        tile = draw_atlas(float(slot.position_mm or 0.0), um).convert("RGB")
+        tile = draw_atlas(slot.position_mm, um).convert("RGB")
         out.paste(tile, (round(X(slot.centre_x) - tile.width / 2.0),
                          round(Y(slot.bottom) - tile.height)))
     for slot in shown_sections:
@@ -454,8 +451,6 @@ def paint(
                  cv2.LINE_AA, _SHIFT)
         k += 1
     for slot in layout.atlas:
-        if slot.position_mm is None:
-            continue
         x = X(layout.x_at(slot.position_mm))
         cv2.line(canvas, _pt(X(slot.centre_x), Y(slot.bottom) + 2 * s), _pt(x, Y(ry) - 5 * s),
                  ATLAS_LINE_COLOR, thin, cv2.LINE_AA, _SHIFT)
@@ -464,8 +459,6 @@ def paint(
                              _pt(x, Y(ry) - 1)], dtype=np.int32)
         cv2.fillPoly(canvas, [triangle], ATLAS_LINE_COLOR, cv2.LINE_AA, _SHIFT)
     for slot in layout.sections:
-        if slot.position_mm is None:
-            continue
         x = X(layout.x_at(slot.position_mm))
         cv2.line(canvas, _pt(X(slot.centre_x), Y(slot.top) - 3 * s), _pt(x, Y(ry)),
                  SECTION_LINE_COLOR, thin, cv2.LINE_AA, _SHIFT)
@@ -586,7 +579,7 @@ def positioning_pictures(
         extent, working[record.id], finest[record.id] = section_extent(ws, state, record)
         entries[record.id] = SectionEntry(
             id=record.id, labels=label_candidates(record),
-            position_mm=None if record.position_mm is None else float(record.position_mm),
+            position_mm=record.position_mm,
             extent_um=extent)
     atlas = [(float(mm), atlas_extent(ws, state, float(mm), angles)) for mm in positions_mm]
     layouts = plan(list(entries.values()), atlas, range_mm=ws.position_range,
@@ -660,14 +653,9 @@ def positioning_caption(
             which = f"{count} of the {layout.total} sections ({ends})"
         else:
             which = f"{count} section{'s' if count != 1 else ''}"
-        placed = [slot.position_mm for slot in layout.sections if slot.position_mm is not None]
-        span = ""
-        if placed:
-            span = (f" at {placed[0]:.2f} mm" if min(placed) == max(placed) else
-                    f", {min(placed):.2f}-{max(placed):.2f} mm")
-        unplaced = count - len(placed)
-        if unplaced:
-            span += f", {unplaced} without a position at the right"
+        placed = [slot.position_mm for slot in layout.sections]
+        span = (f" at {placed[0]:.2f} mm" if min(placed) == max(placed) else
+                f", {min(placed):.2f}-{max(placed):.2f} mm")
         parts.append(f"{head}: {which} below in position order{span}"
                      f"{f', {shown}' if shown else ''}")
     else:

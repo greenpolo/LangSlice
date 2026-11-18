@@ -27,7 +27,7 @@ from tests.test_linear_fit_affine_regions import (
 _ATLAS = HalvesAtlas()
 
 
-def _open(tmp_path: Path, n: int = 2, position_mm: float | None = 1.0,
+def _open(tmp_path: Path, n: int = 2, position_mm: float = 1.0,
           **spec_kwargs: Any) -> tuple[Job, Any]:
     image: Image.Image = _left_half_section()
     for index in range(n):
@@ -38,7 +38,7 @@ def _open(tmp_path: Path, n: int = 2, position_mm: float | None = 1.0,
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     for record in job.state.slices:
-        record.position_mm = position_mm
+        record.set_position(position_mm)
     return job, ctx
 
 
@@ -107,19 +107,17 @@ def test_an_orientation_change_keeps_the_knob_values_and_says_so(tmp_path: Path)
 def test_refusals_write_nothing(tmp_path: Path):
     job, ctx = _open(tmp_path, n=3, frozen={"s2.png": ["orientation", "affine"]},
                      disabled=["interactive_transform:flip"])
-    _record(job, "s1.png").position_mm = None
     done = transforms.interactive_transform(job, ctx, [
         {"id": "s2.png", "rotation_deg": 1.0},
         {"id": "s0.png", "flip": True},
         {"id": "s0.png", "rotate_quarter": 45},
         {"id": "s0.png", "scale_x": float("inf")},
         {"id": "s0.png", "scale_x": "wide"},
-        {"id": "s1.png", "rotation_deg": 1.0},
         {"id": "nope.png", "rotation_deg": 1.0},
         "s0.png",
     ])
     assert [entry.refusal.code for entry in done.entries if entry.refusal] == [
-        "FROZEN", "OPTION_OFF", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS", "NO_POSITION",
+        "FROZEN", "OPTION_OFF", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS",
         "UNKNOWN_SLICE_IDS", "BAD_ARGS"]
     assert done.written == [] and job.undo_stack == []
     assert _record(job, "s0.png").transform is None

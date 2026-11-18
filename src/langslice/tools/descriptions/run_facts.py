@@ -23,6 +23,7 @@ from langslice.core.fits.deformation import engine_available
 from langslice.core.pictures.options import BORDERS
 from langslice.core.pictures.sizes import MIN_RESOLUTION
 from langslice.core.sections.images import opening_source, opening_words
+from langslice.core.stack.section import INITIAL
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.job.settings import frozen as freeze
@@ -71,8 +72,16 @@ MIXED_ANGLES = (
     "status row carries its own cutting_angles_deg.[[?position_sections  "
     "position_sections sets one angle for every section.]]"
 )
-POSITIONS = "- {positioned} of {count} sections carry a position."
-NO_POSITIONS = "- No section carries a position yet."
+INITIAL_POSITIONS = (
+    "- {initial} of {count} sections are still at their initial position, "
+    "as ABBA places a new stack: the first section at the job's start, each "
+    "next one a spacing further (position_source `initial` in status). "
+    "Nobody has checked these positions."
+)
+SET_POSITIONS = (
+    "- Every section's position was supplied or written (position_source "
+    "`input` or `written` in status)."
+)
 DAMAGED = "- Sections with marked damage regions: {sections}."
 NOTED = (
     "- The user noted damage on these sections (damage_note in status; no "
@@ -222,11 +231,12 @@ def _angles_fact(state: Stack, off: Collection[str]) -> str:
 
 def _section_facts(spec: JobSpec, state: Stack) -> list[str]:
     ordered = state.in_order()
-    positioned = [s for s in ordered if s.position_mm is not None]
-    facts = [NO_POSITIONS]
-    if positioned:
-        count = len(state.slices)
-        facts = [POSITIONS.format(positioned=len(positioned), count=count)]
+    initial = [s for s in ordered if s.position_source == INITIAL]
+    facts = [SET_POSITIONS]
+    if initial:
+        facts = [
+            INITIAL_POSITIONS.format(initial=len(initial), count=len(ordered))
+        ]
     damaged = [s.id for s in ordered if s.damaged]
     if damaged:
         facts.append(DAMAGED.format(sections=", ".join(damaged)))

@@ -13,7 +13,6 @@ draw at: a section's own (``Section.angles``) for a picture of that section,
 from __future__ import annotations
 
 import logging
-import math
 import threading
 
 import numpy as np
@@ -23,7 +22,6 @@ from langslice.core.atlas.load import get_reference_slice, get_root_mask
 from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.geometry.affine import resize_long_edge
 from langslice.core.geometry.pixel_frames import cropped_geometry
-from langslice.core.pictures.sizes import opening_edge
 from langslice.core.sections.reading import mask_box
 from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack, plane_angles
@@ -31,7 +29,6 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-SEED_ATLAS_MAX_IMAGES = 48
 
 PLANE_CACHE_SIZE = 128
 _plane_lock = threading.Lock()
@@ -109,30 +106,3 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
     return cropped_geometry(resize_long_edge(picture, int(long_edge)), picture)
 
 
-def reference_atlas(
-    ctx: Workspace, state: Stack, *, long_edge: int | None = None,
-    max_images: int = SEED_ATLAS_MAX_IMAGES,
-) -> tuple[float, list[tuple[float, Image.Image]]]:
-    """The atlas at evenly spaced positions for the opening: ``(step, pictures)``.
-
-    The reference spans the atlas's valid range at the nominal interval, or
-    coarser when that would exceed *max_images*. Each picture is framed to the
-    atlas anatomy at the stack's cutting angles (``Stack.view_angles``:
-    the median of the sections' when they differ) and at most *long_edge*
-    (None: the run's opening size), never upsampled; a plane with nothing in it
-    (an oblique plane through the volume's corner) is skipped.
-    :mod:`langslice.core.pictures.opening` lays the pictures out as strips.
-    """
-    pos_lo, pos_hi = ctx.position_range
-    span = pos_hi - pos_lo
-    step = max(state.interval_mm or 0.0, span / max(1, max_images - 1))
-    step = math.ceil(step / 0.05) * 0.05
-    edge = int(long_edge or opening_edge(ctx))
-    pictures: list[tuple[float, Image.Image]] = []
-    for k in range(int(span / step) + 1):
-        position = pos_lo + k * step
-        picture = atlas_section(ctx, state, position, frame=True, angles=state.view_angles)
-        if np.asarray(picture).max() < 8:
-            continue
-        pictures.append((position, atlas_sized(picture, edge)))
-    return step, pictures

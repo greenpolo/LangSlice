@@ -121,7 +121,7 @@ def test_submit_waits_and_the_work_gives_way_under_the_lock(tmp_path: Path):
     background work, whose landing needs that lock: the work thread gives
     way and the landing runs on the waiting thread."""
     job, _ = _open(tmp_path, tasks=["position"])
-    assert all(record.position_mm is None for record in job.state.slices)
+    assert all(record.position_source == "initial" for record in job.state.slices)
     release = threading.Event()
     landed_on: list[str] = []
 
@@ -130,7 +130,7 @@ def test_submit_waits_and_the_work_gives_way_under_the_lock(tmp_path: Path):
         with job.writing():
             before = job.snapshot()
             for index, record in enumerate(job.state.in_order()):
-                record.position_mm = 2.0 + 0.2 * index
+                record.set_position(2.0 + 0.2 * index)
             job.commit(before)
         landed_on.append(threading.current_thread().name)
         return Landed(status=DONE, text="positions written.")
@@ -150,14 +150,14 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     inputs moved since the trace was asked for (STALE_INPUT)."""
     job, ctx = _open(tmp_path, tasks=["nonlinear"])
     record = job.state.slices[0]
-    record.position_mm = 2.0
+    record.set_position(2.0)
     record.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     record.border_trace = trace_from_json(
         {"id": "s0.png", "status": "ok", "geometry_fingerprint": "g"})
     expected = section_inputs(job.state, record, deformation=True)
     _note_step(job, "a write elsewhere")
     assert section_inputs(job.state, record, deformation=True) == expected
-    record.position_mm = 2.5
+    record.set_position(2.5)
     depth = len(job.undo_stack)
     landed = land_trace(job, ctx, record.id, expected)
     assert landed.status == FAILED and landed.result["error"] == RefusalCode.STALE_INPUT
@@ -165,7 +165,7 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     assert record.deformation is None and len(job.undo_stack) == depth
     record.border_trace = trace_from_json(
         {"id": "s0.png", "geometry_fingerprint": "g", "status": "error", "message": "no image"})
-    record.position_mm = 2.0
+    record.set_position(2.0)
     failed = land_trace(job, ctx, record.id, expected)
     assert failed.result["error"] == "TRACE_FAILED"
     assert "no image" in failed.text

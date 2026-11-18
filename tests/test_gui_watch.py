@@ -35,7 +35,9 @@ def _job(tmp_path: Path) -> Path:
 
 def _state(folder: Path, positions: list[float | None], *, submitted: bool = False) -> None:
     slices = [Section(id=f"s{i:03d}.png", index_original=i, index_corrected=i,
-                         position_mm=p) for i, p in enumerate(positions)]
+                      position_mm=0.0 if p is None else p,
+                      position_source="initial" if p is None else "written")
+              for i, p in enumerate(positions)]
     write_checkpoint(Stack(atlas="allen_mouse_25um", slices=slices,
                                 submitted=submitted), str(folder / "state.json"))
 
@@ -95,7 +97,7 @@ def test_state_replaced_whole_is_reread(tmp_path: Path) -> None:
     _state(folder, [None, None])
     watcher = JobWatcher(folder)
     snap = _snap(watcher)
-    assert [r["position_mm"] for r in snap["sections"]] == [None, None]
+    assert [r["position_mm"] for r in snap["sections"]] == [0.0, 0.0]
     version = snap["state_version"]
     _state(folder, [2.1, 2.4], submitted=True)
     watcher.poll(force=True)
@@ -186,7 +188,7 @@ def test_an_older_state_is_read_through_the_jobs_migrations(tmp_path: Path) -> N
     snap = _snap(JobWatcher(folder))
     assert snap["sections_note"] == ""
     assert [(r["id"], r["position_mm"]) for r in snap["sections"]] == [
-        ("s000.png", 2.1), ("s001.png", None)]
+        ("s000.png", 2.1), ("s001.png", 0.0)]
     assert json.loads((folder / "state.json").read_text(encoding="utf-8")) == data
 
 def _end(name: str, step: int, sections: tuple[str, ...] = (), failed: bool = False) -> dict:
@@ -319,7 +321,7 @@ def test_rows_carry_their_render_key_and_a_numeric_position(tmp_path: Path) -> N
     assert state is not None
     assert [(r["id"], r["position_mm"], r["render_key"]) for r in rows] == [
         ("s000.png", 2.1, render_key(state, "s000.png")),
-        ("s001.png", None, render_key(state, "s001.png"))]
+        ("s001.png", 0.0, render_key(state, "s001.png"))]
     write_json_atomic(str(folder / "state.json"), {
         "format_version": 99, "slices": [{"id": "a.png", "index_corrected": 0,
                                           "position_mm": "4.5"}]})

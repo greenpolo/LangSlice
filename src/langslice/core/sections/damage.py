@@ -282,10 +282,9 @@ def damage_picture(
     is *long_edge* on its long side (``display.default_options``'s size
     when None). Captioned with the marked regions and the note.
 
-    :class:`Refused` ``NO_POSITION`` for a section without a position,
-    ``NO_REGIONS`` for one without marked regions; ``ValueError`` (unknown
-    regions) and the side refusals (a side the placement cannot define)
-    pass through.
+    :class:`Refused` ``NO_REGIONS`` for one without marked regions;
+    ``ValueError`` (unknown regions) and the side refusals (a side the
+    placement cannot define) pass through.
     """
     from langslice.core.fits.affine import calibrate
     from langslice.core.fits.deformable.plane_images import resolve_entries
@@ -303,10 +302,6 @@ def damage_picture(
     )
     from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
 
-    if record.position_mm is None:
-        raise Refused(RefusalCode.NO_POSITION,
-                      "The section has no position, so its "
-                      "marked regions cannot be drawn on it.")
     entries = list(record.damaged_regions)
     if not entries:
         raise Refused(RefusalCode.NO_REGIONS,

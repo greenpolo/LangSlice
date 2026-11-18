@@ -48,7 +48,7 @@ def _open(tmp_path: Path, atlas: SyntheticAtlas, n: int = 2) -> tuple[Job, Any]:
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     for record in job.state.slices:
-        record.position_mm = POSITION
+        record.set_position(POSITION)
     return job, ctx
 
 

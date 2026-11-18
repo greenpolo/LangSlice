@@ -73,7 +73,7 @@ def test_a_40_section_stack_takes_more_strips_at_higher_levels(
 ):
     state, ctx = _stack(tmp_path / level, 40, level=level)
     for index, record in enumerate(state.in_order()):
-        record.position_mm = 1.0 + 0.1 * index
+        record.set_position(1.0 + 0.1 * index)
     parts = opening_parts(state, ctx)
     found = _strips(parts)
     assert len(found) == strips
@@ -92,7 +92,7 @@ def test_tall_paired_strips_stay_inside_the_patch_budget(tmp_path: Path, level: 
     """Portrait sections at full size over their atlas: the worst strip height."""
     state, ctx = _stack(tmp_path / level, 4, size=(600, 900), level=level)
     for index, record in enumerate(state.in_order()):
-        record.position_mm = 1.0 + 0.2 * index
+        record.set_position(1.0 + 0.2 * index)
         record.damaged_regions = ["CTX"]
     for limit in (None, CLAUDE_IMAGE_LIMIT):
         edge, budget = limit or (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
@@ -101,29 +101,20 @@ def test_tall_paired_strips_stay_inside_the_patch_budget(tmp_path: Path, level: 
             assert patches(image.size) <= budget
 
 
-def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
+def test_every_section_has_its_atlas_row_from_the_start(tmp_path: Path):
     state, ctx = _stack(tmp_path / "s", 3)
-    bare = opening_parts(state, ctx)
-    assert "Beneath each section" not in (bare[0].text or "")
-    assert any(p.text and p.text.startswith("Atlas reference strip") for p in bare)
-    ((_, unplaced),) = _strips(bare)
-    reference = next(p.text for p in bare if p.text and p.text.startswith("Atlas reference"))
-    count = int(reference.split("the atlas at ")[1].split()[0])
-    atlas = _strips(bare, "Atlas strip ")
-    per_strip, _tile = strip_layout(OPENAI_MAX_IMAGE_EDGE, PICTURE_EDGES["low"][0])
-    assert len(atlas) == -(-count // per_strip)
-    assert all(image.width <= OPENAI_MAX_IMAGE_EDGE for _text, image in atlas)
-
-    state.in_order()[0].position_mm = 2.0
-    mixed = opening_parts(state, ctx)
-    assert "Beneath each section" in (mixed[0].text or "")
-    assert any(p.text and p.text.startswith("Atlas reference strip") for p in mixed)
-    ((_, paired),) = _strips(mixed)
-    assert paired.height > unplaced.height and paired.width == unplaced.width
+    initial = opening_parts(state, ctx)
+    assert "Beneath each section" in (initial[0].text or "")
+    assert "3 of the 3 sections are still at their initial position" in (
+        initial[0].text or "")
+    assert not any(p.text and p.text.startswith("Atlas") for p in initial)
+    ((_, first),) = _strips(initial)
+    assert first.width <= OPENAI_MAX_IMAGE_EDGE
 
     for record in state.in_order():
-        record.position_mm = 2.0
+        record.set_position(2.0)
     placed = opening_parts(state, ctx)
+    assert "initial position" not in (placed[0].text or "")
     assert not any(p.text and p.text.startswith("Atlas") for p in placed)
     assert sum(p.inline_data is not None for p in placed) == 1
 

@@ -491,6 +491,7 @@ class JobWatcher:
                 key = None if record is None else render_key(state, record.id)
                 self.rows.append({
                     "order": order, "id": row["id"], "position_mm": row.get("position_mm"),
+                    "position_source": row.get("position_source"),
                     "angles": angles, "flip": row.get("flip"),
                     "rotation_deg": row.get("rotation_deg"),
                     "transform": (row.get("transform") or {}).get("kind"),

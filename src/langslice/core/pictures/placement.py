@@ -430,7 +430,7 @@ class Staged:
 def stage(
     ws: Workspace, state: Stack, record: Section, params: dict[str, float], pivot: object,
 ) -> Staged:
-    """*record* (which has a position) with the knobs *params*, its working
+    """*record* with the knobs *params*, its working
     frame, calibration and canvas, and *pivot* ("canvas" or ``[fx, fy]``
     fractions of the canvas) resolved onto it.
 
@@ -444,7 +444,7 @@ def stage(
             section.size,
             um_per_px,
             ws.atlas,
-            float(record.position_mm or 0.0),
+            record.position_mm,
             state.plane,
             record.pitch_deg,
             record.yaw_deg,

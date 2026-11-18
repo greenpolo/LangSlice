@@ -147,7 +147,7 @@ def _tools(tmp_path: Path):
         resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
-    record.position_mm = 0.2
+    record.set_position(0.2)
     box = build_tools(state, ctx, ctx.spec)
     return {tool.__name__: tool for tool in box.tools}, box, state
 
@@ -169,8 +169,6 @@ def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
 
     assert look("flicker", sections=["s.tif"])["error"] == "UNKNOWN_MODE"
     assert look("overlay", sections=["ghost.tif"])["error"] == "UNKNOWN_SLICE_IDS"
-    state.slices[0].position_mm = None
-    assert look("overlay", sections=["s.tif"])["error"] == "NO_POSITION"
 
 
 

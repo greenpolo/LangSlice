@@ -49,7 +49,6 @@ from langslice.job.settings.needs import marked, render
 from langslice.tools.changing import masks as ops_masks
 from langslice.tools.changing.images import check_image
 from langslice.tools.changing.transforms import (
-    NO_POSITION,
     mirror_message,
     physical_knobs,
     reverses_orientation,
@@ -437,7 +436,7 @@ def elastix_fit(
     masks (:mod:`langslice.tools.changing.masks`), its weights under 0.5 left
     out.
 
-    Refused: ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``BAD_ARGS`` (an image
+    Refused: ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (an image
     the atlas does not have), ``UNKNOWN_IMAGE``, ``UNKNOWN_MASK``,
     ``STALE_MASK``, ``HAS_DEFORMATION``, ``UNKNOWN_REGIONS``, ``NO_SIDES``,
     ``REGION_TOO_SMALL``, ``FIT_FAILED``.
@@ -445,10 +444,6 @@ def elastix_fit(
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [str(section)])
-    if record.position_mm is None:
-        raise Refused(
-            RefusalCode.NO_POSITION, message=NO_POSITION.format(record.id)
-        )
     if record.deformation:
         raise refit_refusal(record)
     try:

@@ -93,10 +93,6 @@ class ContextFrames(ContextReads):
         from langslice.core.fits import deformation
         from langslice.core.geometry.affine import IDENTITY_PARAMS
 
-        if record.position_mm is None:
-            raise ToolError(RefusalCode.NO_POSITION,
-                            f"{record.id} has no position yet; write its "
-                            "position first.")
         key = (record.id, section_inputs(self._run.state, record))
         if key not in self._grids:
             try:

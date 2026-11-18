@@ -83,10 +83,10 @@ def test_angles_alone_and_nothing_to_write(tmp_path: Path):
 def test_order_follows_position(tmp_path: Path):
     job, ctx = _open(tmp_path)
     low, high = ctx.position_range
-    unplaced = job.state.by_id("s2.png")
-    assert unplaced is not None
-    unplaced.position_mm = None
     step = (high - low) / 10
+    held = job.state.by_id("s2.png")
+    assert held is not None
+    held.set_position(low + 2.5 * step)
     done = positions.position_sections(job, ctx, [
         {"id": "s0.png", "position_mm": low + 3 * step},
         {"id": "s1.png", "position_mm": low + 1 * step},
@@ -97,7 +97,7 @@ def test_order_follows_position(tmp_path: Path):
     assert "s2.png" not in done.reordered and "s0.png" in done.reordered
     assert [record.index_corrected for record in job.state.in_order()] == [0, 1, 2, 3]
     positions.position_sections(job, ctx, [{"id": "s1.png", "position_mm": low + 5 * step}])
-    assert _ids(job) == ["s3.png", "s0.png", "s2.png", "s1.png"]
+    assert _ids(job) == ["s3.png", "s2.png", "s0.png", "s1.png"]
     assert len(job.undo_stack) == 2
     assert job.undo()
     assert _ids(job) == ["s1.png", "s3.png", "s2.png", "s0.png"]

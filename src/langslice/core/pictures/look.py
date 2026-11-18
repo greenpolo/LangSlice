@@ -404,9 +404,7 @@ def _registration_words(request: LookRequest, record: Section) -> str:
 
 
 def _where(record: Section) -> str:
-    if record.position_mm is None:
-        return "no position"
-    return f"at {float(record.position_mm):.2f} mm{angles_label(record.angles)}"
+    return f"at {record.position_mm:.2f} mm{angles_label(record.angles)}"
 
 
 
@@ -514,14 +512,11 @@ def _overlay_picture(
     ws: Workspace, state: Stack, record: Section, request: LookRequest, long_edge: int,
     base: tuple[int, int] | None, store: RecordStore | None,
 ) -> LookPicture:
-    if record.position_mm is None:
-        raise Refused(RefusalCode.NO_POSITION,
-                      f"{record.id} has no position to draw the atlas at")
     names, picked = _images_for(ws, record, request.images)
     layers = _atlas_layers(ws, request)
     options = _options(request, names=names, image=picked, layers=layers,
                        long_edge=long_edge, regions=_highlighted(ws, request))
-    position = float(record.position_mm)
+    position = record.position_mm
     if request.zoom and base is None:
         whole = placement_pictures(ws, state, record, position, options, {}, store=store)
         x0, y0, x1, y1 = whole.canvas.panels[0].content_box if whole.canvas else (0, 0, 1, 1)
@@ -629,7 +624,7 @@ def overlay_region_window(
                        layers=_atlas_layers(ws, request),
                        long_edge=int(request.long_edge or picture_edge(ws)),
                        regions=_highlighted(ws, request))
-    placed = placement_pictures(ws, drawn, record, float(record.position_mm or 0),
+    placed = placement_pictures(ws, drawn, record, record.position_mm,
                                 options, {}, store=store)
     assert placed.canvas is not None
     panel = placed.canvas.panels[0]
@@ -847,7 +842,6 @@ def _positioning(
         layout = one.layout
         ids = tuple(slot.key for slot in layout.sections)
         rows = ", ".join(f"{slot.label[0]} {slot.position_mm:.2f} mm"
-                         if slot.position_mm is not None else f"{slot.label[0]} no position"
                          for slot in layout.sections)
         text = one.caption + (f". Sections: {rows}" if rows else "")
         counts = [f"{section.id}: {len(section.landmarks.pairs)}"
@@ -860,7 +854,7 @@ def _positioning(
                          base=(layout.width, layout.height), shown=one.content,
                          um_per_px=one.um_per_px)
         extra = {"part": layout.part, "parts": layout.parts,
-                 "positions_mm": [float(slot.position_mm or 0.0) for slot in layout.atlas],
+                 "positions_mm": [slot.position_mm for slot in layout.atlas],
                  "range_mm": [float(v) for v in layout.range_mm]}
         note(one.image, sections=ids, mode="positioning", recipe=recipe, caption=text,
              extra=extra)
@@ -899,19 +893,14 @@ def look(
     if request.mode == "atlas":
         if request.sections:
             records = _records(state, request.sections)
-            for record in records:
-                if record.position_mm is None:
-                    raise Refused(RefusalCode.NO_POSITION,
-                                  f"{record.id} has no position to draw its "
-                                  "atlas plane at")
-            own = tuple(float(record.position_mm or 0.0) for record in records)
+            own = tuple(record.position_mm for record in records)
             if request.positions_mm and tuple(request.positions_mm) != own:
                 raise Refused(RefusalCode.BAD_ARGS,
                               "Name sections or give positions_mm, not both: a "
                               "section's atlas picture is at its own plane.")
-            return [_atlas_picture(ws, state, float(record.position_mm or 0.0),
+            return [_atlas_picture(ws, state, record.position_mm,
                                    replace(request, sections=(record.id,),
-                                           positions_mm=(float(record.position_mm or 0.0),)),
+                                           positions_mm=(record.position_mm,)),
                                    long_edge, base, base_um, record.angles)
                     for record in records]
         if not request.positions_mm:

@@ -521,7 +521,7 @@ def _round(value: float, digits: int) -> float:
 
 def _table(
     proposals: list[Proposal],
-    prior_mm: dict[str, float | None],
+    prior_mm: dict[str, float],
     result: WriteResult | None,
     propose_only: bool,
 ) -> tuple[list[str], list[list[str | float | None]]]:
@@ -533,10 +533,7 @@ def _table(
 
     table: list[list[str | float | None]] = []
     for row in proposals:
-        before = prior_mm[row.id]
-        change = None
-        if before is not None:
-            change = _round(row.position_mm - before, 3)
+        change = _round(row.position_mm - prior_mm[row.id], 3)
         cell: list[str | float | None] = [
             row.id,
             _round(row.position_mm, 3),

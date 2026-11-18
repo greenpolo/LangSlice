@@ -24,7 +24,7 @@ from tests.linear_tool_helpers import submit as _submit
 from tests.linear_tool_helpers import tool_named as _tool
 
 
-def _positions(state) -> dict[str, float | None]:
+def _positions(state) -> dict[str, float]:
     return {record.id: record.position_mm for record in state.slices}
 
 
@@ -43,6 +43,7 @@ def test_a_write_checkpoints_the_whole_state(tmp_path: Path):
 
 def test_a_batch_write_undoes_and_redoes_as_one_step(tmp_path: Path):
     state, _, box = _box(tmp_path)
+    initial = _positions(state)
     _tool(box, "position_sections")([
         {"id": "s0.png", "position_mm": 1.0},
         {"id": "s1.png", "position_mm": 2.0},
@@ -52,7 +53,8 @@ def test_a_batch_write_undoes_and_redoes_as_one_step(tmp_path: Path):
     assert len(box.job.undo_stack) == 1
 
     assert _tool(box, "undo")()["status"] == "ok"
-    assert all(s.position_mm is None for s in state.slices)
+    assert _positions(state) == initial
+    assert all(s.position_source == "initial" for s in state.slices)
     assert _tool(box, "redo")()["status"] == "ok"
     assert [s.position_mm for s in state.in_order()][:3] == [1.0, 2.0, 3.0]
     assert _tool(box, "undo")()["status"] == "ok"
@@ -63,13 +65,15 @@ def test_a_batch_write_undoes_and_redoes_as_one_step(tmp_path: Path):
 
 def test_undo_and_redo_take_several_steps_in_one_call(tmp_path: Path):
     state, _, box = _box(tmp_path)
+    initial = _positions(state)
     for k, name in enumerate(["s0.png", "s1.png", "s2.png"]):
         _tool(box, "position_sections")([{"id": name, "position_mm": 1.0 + k}], view=False)
     assert len(box.job.undo_stack) == 3
     undone = _tool(box, "undo")(steps=2)
     assert undone["status"] == "ok" and undone["steps"] == 2 and undone["undo_depth"] == 1
     assert sorted(undone["undone"]["sections"]) == ["s1.png", "s2.png"]
-    assert [_positions(state)[n] for n in ("s0.png", "s1.png", "s2.png")] == [1.0, None, None]
+    assert [_positions(state)[n] for n in ("s0.png", "s1.png", "s2.png")] == [
+        1.0, initial["s1.png"], initial["s2.png"]]
     redone = _tool(box, "redo")(steps=5)
     assert redone["steps"] == 2 and redone["redo_depth"] == 0
     assert "the history held 2" in redone["message"]
@@ -139,8 +143,6 @@ def test_cutting_angles_are_one_write_for_the_stack(tmp_path: Path):
 def test_one_section_is_written_shown_and_undone(tmp_path: Path):
     state, ctx, box = _box(tmp_path, placed=True)
     transform = single_transform(_tool(box, "interactive_transform"))
-    state.by_id("s1.png").position_mm = None
-    assert transform("s1.png", 2.0)["error"] == "NO_POSITION"
 
     row = transform("s0.png", 5.0, 1.1, 1.0, 0.25, -0.1)
     assert row["status"] == "ok" and row["id"] == "s0.png" and row["written"] is True
@@ -238,7 +240,7 @@ def test_a_picture_that_fails_leaves_the_write_standing(tmp_path: Path, monkeypa
 def _regions_box(tmp_path: Path, **kwargs):
     state, ctx, spec = _stack(tmp_path, n=3, atlas=SyntheticAtlas(), **kwargs)
     for record in state.slices:
-        record.position_mm = 0.1
+        record.set_position(0.1)
     return state, ctx, build_tools(state, ctx, spec)
 
 
@@ -299,7 +301,7 @@ def test_submit_ends_the_run_and_escalates(tmp_path: Path):
 def test_submit_takes_positions_that_run_against_the_order(tmp_path: Path):
     """Order follows position: a dip in an increasing stack is not refused."""
     state, _, box = _box(tmp_path, tasks=["position"], placed=True)
-    state.by_id("s2.png").position_mm = 0.5
+    state.by_id("s2.png").set_position(0.5)
     assert _submit(box)["status"] == "ok"
     assert state.submitted is True
 
@@ -310,10 +312,10 @@ def test_submit_accepts_a_stack_that_runs_backwards_and_emits_atlas_order(tmp_pa
     ordered = state.in_order()
     n = len(ordered)
     for index, record in enumerate(ordered):
-        record.position_mm = 10.0 - index
+        record.set_position(10.0 - index)
     ids_before = [r.id for r in ordered]
     for record in ordered[3:]:
-        record.position_mm = float(record.position_mm) - 4.0
+        record.set_position(float(record.position_mm) - 4.0)
     result = _submit(box, interval_breaks=[ids_before[3]])
     assert result["status"] == "ok"
     after = state.in_order()
@@ -339,7 +341,7 @@ def test_submit_refuses_a_break_the_positions_do_not_show(tmp_path: Path):
 def test_submit_accepts_a_break_the_positions_do_show(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     for record in state.in_order()[3:]:
-        record.position_mm = float(record.position_mm) + 4.0
+        record.set_position(float(record.position_mm) + 4.0)
     assert _submit(box, interval_breaks=["s3"])["status"] == "ok"
     assert state.interval_breaks == [3]
     assert box.submission["interval_breaks"] == ["s3.png"]
@@ -350,20 +352,20 @@ def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
                          position=PositionSpec(strict_interval=True, interval_um=500))
     assert _submit(box)["status"] == "ok"
     state.submitted = False
-    state.by_id("s4.png").position_mm = 5.0
+    state.by_id("s4.png").set_position(5.0)
     refusal = _submit(box)
     assert refusal["error"] == "STRICT_INTERVAL"
     assert refusal["failures"][0]["between"] == ["s3.png", "s4.png"]
-    state.by_id("s4.png").position_mm = 4.0
+    state.by_id("s4.png").set_position(4.0)
     strict = _submit(box, interval_breaks=["s2.png"])
     assert strict["error"] == "STRICT_INTERVAL" and strict["reported_breaks"] == ["s2.png"]
 
 
 def test_a_refused_submit_writes_nothing(tmp_path: Path):
     state, ctx, box = _box(tmp_path, tasks=["position"], placed=True)
-    state.by_id("s2.png").position_mm = None
+    state.by_id("s2.png").position_source = "initial"
     assert _submit(box)["error"] == "MISSING_POSITIONS"
-    state.by_id("s2.png").position_mm = 3.0
+    state.by_id("s2.png").set_position(3.0)
     assert _submit(box, interval_breaks=["s3.png"])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
     assert state.submitted is False
     assert box.job.undo_stack == []

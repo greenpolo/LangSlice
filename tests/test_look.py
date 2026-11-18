@@ -101,10 +101,6 @@ def test_overlay_keeps_the_placement_frame_for_the_layers(tmp_path: Path):
     assert held.frame is not None and held.panel is not None
     assert held.recipe == picture.recipe and held.caption == picture.caption
     assert "identity transform" in picture.caption and "atlas borders" in picture.caption
-    record(state, "s2.png").position_mm = None
-    with pytest.raises(Refused) as caught:
-        look(ws, state, LookRequest("overlay", sections=("s2.png",)))
-    assert caught.value.code == "NO_POSITION"
     with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("overlay", sections=("s1.png",), warp="bent"))
     assert caught.value.code == "BAD_WARP"
@@ -115,7 +111,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     held = snapshot(state, ["s1.png"])
     assert not changed_since(state, held)
     moved = record(state, "s1.png")
-    moved.position_mm = 0.2
+    moved.set_position(0.2)
     moved.transform = affine_from_json({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]})
     assert changed_since(state, held)
     back = restored(state, held)
@@ -123,7 +119,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
     assert record(back, "s1.png").transform is None
     assert moved.position_mm == 0.2
     moved.position_mm, moved.transform = 0.15, None
-    record(state, "s0.png").position_mm = 0.22
+    record(state, "s0.png").set_position(0.22)
     assert not changed_since(state, held)
     state.slices = [s for s in state.slices if s.id != "s1.png"]
     assert changed_since(state, held)

@@ -91,7 +91,7 @@ def _run(tmp_path: Path, atlas: SyntheticAtlas, *, n: int = 1, transformed: bool
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     for record in state.slices:
-        record.position_mm = 0.1
+        record.set_position(0.1)
         if transformed:
             record.transform = affine_from_json(dict(IDENTITY))
     stub = StubModel(spec) if provider != "none" else None

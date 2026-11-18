@@ -45,7 +45,7 @@ def _synthetic(tmp_path: Path, atlas: SyntheticAtlas, n: int = 3, **spec_kwargs:
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     for record, position in zip(state.in_order(), POSITIONS, strict=False):
-        record.position_mm = position
+        record.set_position(position)
     return state, ctx, build_tools(state, ctx, spec)
 
 
@@ -69,7 +69,7 @@ def _rgb(tmp_path: Path):
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: slab)
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
-        record.position_mm = 5.0 + index
+        record.set_position(5.0 + index)
     return state, ctx, build_tools(state, ctx, spec)
 
 

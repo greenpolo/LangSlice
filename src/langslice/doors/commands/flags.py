@@ -136,7 +136,14 @@ FLAGS: dict[str, Flag] = {
     "--position-interval-um": Flag(
         type=int,
         metavar="UM",
-        help="Known section interval in microns; omit to infer spacing",
+        help="Known section interval in microns: the spacing of the "
+        "sections' initial positions; omit to spread them over the atlas",
+    ),
+    "--position-start-mm": Flag(
+        type=float,
+        metavar="MM",
+        help="The first section's initial atlas position in mm; omit to "
+        "centre the stack in the atlas",
     ),
     "--position-strict-interval": Flag(
         action="store_true",

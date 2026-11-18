@@ -211,7 +211,7 @@ def test_a_read_never_waits_for_another_writer_and_sees_what_it_saved(capsys, im
         holder.close()
     with langslice.open_job(images) as later:
         assert later.undo()["status"] == "ok"
-    assert saved(images)[ID2].get("position_mm") is None
+    assert saved(images)[ID2].get("position_source") == "initial"
 
 
 def test_a_job_that_read_while_locked_out_writes_on_the_state_as_saved(images):
@@ -245,7 +245,7 @@ def test_a_job_that_read_while_locked_out_writes_on_the_state_as_saved(images):
     assert len(reader.job.undo_stack) == depth + 2
     reader.undo()
     reader.undo()
-    assert reader.state.resolve(ID2).position_mm is None
+    assert reader.state.resolve(ID2).position_source == "initial"
     reader.close()
     writer.close()
 

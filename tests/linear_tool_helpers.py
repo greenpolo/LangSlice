@@ -53,7 +53,7 @@ def stack(folder: Path, n: int = 5, *, placed: bool = False, atlas: Any = None,
     state = ingest(spec, ctx)
     if placed:
         for index, record in enumerate(state.in_order()):
-            record.position_mm = 2.0 + 0.5 * index
+            record.set_position(2.0 + 0.5 * index)
     return state, ctx, spec
 
 

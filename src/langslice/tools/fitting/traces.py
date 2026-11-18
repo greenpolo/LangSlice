@@ -187,7 +187,7 @@ def trace_borders(
     (a bad *restrict_to*, or one that leaves no region on the plane);
     ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY`` (other background work runs on
     the section); ``FROZEN`` (the section's deformation is frozen);
-    ``NO_POSITION``; ``INVALID_LINEAR_PLACEMENT`` (no usable transform);
+    ``INVALID_LINEAR_PLACEMENT`` (no usable transform);
     ``BORDER_TRACE_IO_ERROR``; ``STALE_INPUT`` (the geometry changed
     while the call was prepared).
     """

@@ -28,7 +28,7 @@ from langslice.core.pictures.captions import (
 from langslice.core.pictures.opening import (
     CLAUDE_MAX_VIEW_EDGE,
     COLUMN_GAP,
-    section_tile,
+    pair_tiles,
     strip_layout,
 )
 from langslice.core.pictures.sizes import (
@@ -79,7 +79,7 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: TwoRegionAtlas())
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
-        record.position_mm = 0.2 + 0.1 * index
+        record.set_position(0.2 + 0.1 * index)
     box = build_tools(state, ctx, spec)
     tools = Tools({tool.__name__: tool for tool in box.tools})
     tools.box = box
@@ -106,7 +106,8 @@ def _seed_sections(state: Any, ctx: Any) -> list[Image.Image]:
     strips = [Image.open(io.BytesIO(p.inline_data.data)) for p in parts if p.inline_data]
     _count, tile = strip_layout(image_limit(ctx)[0], opening_edge(ctx))
     assert strips[0].width == len(state.slices) * tile + (len(state.slices) - 1) * COLUMN_GAP
-    return [section_tile(ctx, state, record, tile) for record in state.in_order()]
+    return [pair_tiles(ctx, state, record, record.position_mm, tile)[0]
+            for record in state.in_order()]
 
 
 
@@ -183,7 +184,7 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: TwoRegionAtlas())
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
-        record.position_mm = 0.2 + 0.1 * index
+        record.set_position(0.2 + 0.1 * index)
     job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
     job.workspace = ctx
     return state, ctx, job

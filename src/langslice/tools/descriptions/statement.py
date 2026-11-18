@@ -169,8 +169,9 @@ TASK_NOTES = "{title} notes from the user:"
 TOOLS = "`{name}`"
 
 SUBMIT_POSITIONS = (
-    "- `submit` is refused unless every section has a position of its own, "
-    "damaged sections included."
+    "- `submit` is refused while any section is still at its initial "
+    "position: every section needs a position of its own, damaged sections "
+    "included."
 )
 STRICT_SPACING = (
     "- Every consecutive spacing must be within {tolerance:.0%} of "

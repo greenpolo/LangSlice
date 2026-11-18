@@ -247,7 +247,7 @@ def _write_transforms(
     planes: dict[str, Plane] = {}
     for row in rows:
         here = context.section(row.id)
-        if row.refused is None and here.position_mm is not None:
+        if row.refused is None:
             planes[row.id] = (here.position_mm, here.angles)
     params = in_plane_params(context, run, planes)
     errors = {

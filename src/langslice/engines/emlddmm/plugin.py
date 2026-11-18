@@ -80,6 +80,7 @@ PUBLISHED = {"iterations": [100, 50, 25], "kernel_um": 500.0, "warp_freedom": 10
 SORTING_KEYS = ("match_sd", "background_sd", "artifact_sd", "background_mean", "artifact_mean")
 FITS = ("transform", "warp", "both")
 ENGINE_VERSION = "emlddmm 9c4dc80 + e426ece + 6ff62b0"
+NEEDS_TRANSFORM = "needs a transform first"
 
 
 def scale_iterations(iterations: int) -> list[int]:
@@ -488,21 +489,16 @@ def _stack(
     for view in (
         [ctx.section(name) for name in names] if names else ctx.sections()
     ):
-        what = "a position and a transform" if need_transform else "a position"
         try:
-            if view.position_mm is None:
-                raise ToolError(RefusalCode.NO_POSITION, f"needs {what} first")
             if need_transform and view.affine is None:
-                raise ToolError(
-                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"needs {what} first"
-                )
+                raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                NEEDS_TRANSFORM)
             sec = _section(
                 ctx, view.id, section_image, atlas_image, mask, config
             )
             if need_transform and not sec["has_transform"]:
-                raise ToolError(
-                    RefusalCode.INVALID_LINEAR_PLACEMENT, f"needs {what} first"
-                )
+                raise ToolError(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                                NEEDS_TRANSFORM)
         except ToolError as exc:
             if exc.code == RefusalCode.BAD_ARGS:
                 raise

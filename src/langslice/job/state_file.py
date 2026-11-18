@@ -50,7 +50,7 @@ from langslice.core.stack.stack import Stack
 Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 
 FORMAT_KEY = "format_version"
-STATE_FORMAT_VERSION = 5
+STATE_FORMAT_VERSION = 6
 
 
 def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
