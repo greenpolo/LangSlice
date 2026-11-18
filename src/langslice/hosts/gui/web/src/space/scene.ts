@@ -10,9 +10,9 @@
 // slab glides from the old placement to the new one (position, rotation, size, on
 // critically damped springs); a newly placed section appears where it is, whole, and a batch
 // placed by one call comes in stack order over `BATCH_S`. Sections are always opaque, cut
-// to their tissue with a hard edge. The sections the agent is looking at lift a little
-// (`LIFT` of the brain's height, an ease-out over `FOCUS_S`) and brighten a little, and the
-// others grey a little. The brain keeps a thin grey silhouette so it still reads around
+// to their tissue with a smooth edge one pixel wide. The sections the agent is looking at
+// lift a little (`LIFT` of the brain's height, an ease-out over `FOCUS_S`), brighten a
+// little and carry the accent along their cut edge, and the others grey a little. The brain keeps a thin grey silhouette so it still reads around
 // the sections.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -29,21 +29,27 @@ export type Shell = {
 };
 
 const FOV = 30;
-const LIFT = 0.04;
+const LIFT = 0.07;
 const FOCUS_S = 0.26;
 const OMEGA = 4.6;
-const BATCH_S = 1.6;
+const BATCH_S = 2.2;
 const INFLATE_MM = 0.08;
 const STAGGER_MAX_S = 0.06;
 const TISSUE_STEP = 0.013;
 const SPECK_PX = 24;
 const WALL_REACH_MM = 0.25;
 const WALL_SPANS = 24;
+const WALL_SHADE = 0.2;
+const FAR_SHADE = 0.34;
 const ISLAND_PX = 40;
 const GLARE_PX = 30;
 const SMOOTH = 0.04;
 const RIM_STEP = 0.03;
 const PINHOLE = 0.01;
+const SOFT_PER_PX = 1 / 128;
+const MASK_W = 256;
+const DEBRIS = 0.03;
+const FILL = 0.66;
 const VIEW = new THREE.Vector3(-0.85, 0.45, 0.85);
 
 type Spring = { x: THREE.Vector3; v: THREE.Vector3 };
@@ -70,32 +76,44 @@ const VERTEX = /* glsl */ `
   attribute float edge;
   varying vec2 vUv;
   varying float vEdge;
+  varying float vFar;
   void main() {
     vUv = uv;
     vEdge = edge;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vFar = -mv.z;
+    gl_Position = projectionMatrix * mv;
   }
 `;
 
 // The picture as it is: the tissue opaque, the ground cut away by the mask in the
-// texture's alpha (`tissue`) with a hard edge, never blended; `lit`
-// brightens a section in focus a little and `see` greys a section a little while others
-// are in focus.
+// texture's alpha (`tissue`, softened over a few pixels so its half-way contour is a smooth
+// line), the cut one screen pixel wide through the samples' coverage, never blended with
+// what is behind; `lit` brightens a section in focus a little and draws its cut edge in the
+// accent (`accent`), `see` greys a section while others are in focus, and a section
+// farther from the viewer (`depth`: the near and far ends of the brain) is a little darker,
+// so the stack reads in depth.
 const FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform float hasMap;
   uniform float lit;
   uniform float see;
   uniform float shown;
+  uniform vec3 accent;
+  uniform vec2 depth;
   varying vec2 vUv;
   varying float vEdge;
+  varying float vFar;
   void main() {
     if (vEdge > 0.5 || hasMap < 0.5 || shown < 0.5) discard;
     vec4 t = texture2D(map, vUv);
-    if (t.a < 0.5) discard;
+    float cover = clamp((t.a - 0.5) / max(fwidth(t.a), 0.0001) + 0.5, 0.0, 1.0);
+    if (cover <= 0.0) discard;
     float lum = dot(t.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 col = mix(t.rgb * (1.0 + 0.12 * lit), vec3(lum) * 0.7, 0.45 * see);
-    gl_FragColor = vec4(col, 1.0);
+    vec3 col = mix(t.rgb * (1.0 + 0.12 * lit), vec3(lum) * 0.62, 0.55 * see);
+    float rim = (1.0 - smoothstep(0.6, 0.92, t.a)) * lit;
+    float far = clamp((vFar - depth.x) / max(depth.y - depth.x, 0.001), 0.0, 1.0);
+    gl_FragColor = vec4(mix(col * (1.0 - ${FAR_SHADE.toFixed(2)} * far), accent, 0.9 * rim), cover);
   }
 `;
 
@@ -135,7 +153,9 @@ const BRAIN_FRAGMENT = /* glsl */ `
 // The inside of the brain's far wall, where the stack is (`spans`: around each placed
 // section's anterior-posterior place, half the way to its neighbours and at most
 // `WALL_REACH_MM`, merged): flat, in the sections' own mean tissue colour
-// (`tint`), barely shaded by the same key light, drawn behind everything.
+// (`tint`) darkened to `WALL_SHADE` of it (it is in the sections' shade, and a flat patch as
+// bright as tissue would read as a section), barely shaded by the same key light, drawn
+// behind everything.
 // Looking between two thin sections near the brain's flank then meets tissue-grey, as the
 // brain between them would be, instead of the page's black, so the stack does not read as
 // ribs; in front of the stack, behind it and across a wide gap nothing is filled.
@@ -159,7 +179,7 @@ const WALL_FRAGMENT = /* glsl */ `
     for (int i = 0; i < ${WALL_SPANS}; i++) if (vZ >= spans[i].x && vZ <= spans[i].y) inside = true;
     if (!inside) discard;
     float light = 0.85 + 0.15 * abs(dot(normalize(vNormal), normalize(vec3(-0.4, 0.8, 0.6))));
-    gl_FragColor = vec4(tint * light, 1.0);
+    gl_FragColor = vec4(tint * light * ${WALL_SHADE.toFixed(2)}, 1.0);
   }
 `;
 
@@ -206,19 +226,73 @@ function token(name: string, fallback: string): THREE.Vector3 {
 // a scanner's glare or a flat grey smear, not tissue, and is cut with a margin; a smooth
 // patch inside the tissue (white matter) stays. Specks under `SPECK_PX` pixels go, the
 // dark pixels the neighbourhood mean pushed out into the ground are peeled off the outer
-// edge, and pinholes under `PINHOLE` of the picture are filled. The ground's colour is
+// edge, pinholes under `PINHOLE` of the picture are filled, and a piece apart from the
+// tissue and under `DEBRIS` of its largest piece (dirt or glare on the slide) goes. The ground's colour is
 // replaced by its tissue neighbours' so the linear filter never pulls a dark rim into
 // the tissue's edge; the pixels go to the texture as they are, never through a canvas,
-// which would premultiply the alpha and turn the cut ground black.
+// which would premultiply the alpha and turn the cut ground black. The mask is made on a
+// copy `MASK_W` pixels wide (its sizes are for that width, and a larger picture would cost
+// the page a second each), then spread to the picture's size and softened over
+// `SOFT_PER_PX` of the width into the alpha, so the shader's half-way contour is smooth.
 function tissueImage(img: HTMLImageElement): { pixels: Uint8Array; tissue: Tissue; colour: THREE.Vector3 | null } | null {
-  const w = img.naturalWidth, h = img.naturalHeight;
+  const W = img.naturalWidth, H = img.naturalHeight;
+  if (W < 8 || H < 8) return null;
+  const full = pixelsOf(img, W, H);
+  const shrink = Math.max(1, Math.round(W / MASK_W));
+  const w = Math.max(8, Math.round(W / shrink)), h = Math.max(8, Math.round(H / shrink));
+  const small = shrink > 1 ? pixelsOf(img, w, h) : full;
+  if (!full || !small) return null;
+  const mask = tissueMask(small, w, h);
+  const d = full;
+  const N = W * H;
+  const wide = new Uint8Array(N);
+  for (let y = 0; y < H; y++) {
+    const row = Math.min(h - 1, Math.floor(y / shrink)) * w;
+    for (let x = 0; x < W; x++) wide[y * W + x] = mask[row + Math.min(w - 1, Math.floor(x / shrink))];
+  }
+  const soft = Math.max(shrink, Math.round(W * SOFT_PER_PX));
+  let near = wide.slice();
+  for (let pass = 0; pass < soft + 2; pass++) {
+    const next = near.slice();
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (near[i]) continue;
+      let r = 0, g = 0, b = 0, c = 0;
+      for (const j of [i - 1, i + 1, i - W, i + W, i - W - 1, i - W + 1, i + W - 1, i + W + 1]) {
+        if (!near[j]) continue;
+        r += d[4 * j]; g += d[4 * j + 1]; b += d[4 * j + 2]; c++;
+      }
+      if (!c) continue;
+      d[4 * i] = r / c; d[4 * i + 1] = g / c; d[4 * i + 2] = b / c;
+      next[i] = 1;
+    }
+    near = next;
+  }
+  const solid = new Float32Array(N);
+  for (let i = 0; i < N; i++) solid[i] = wide[i];
+  const alpha = box(box(solid, W, H, soft), W, H, soft);
+  let r = 0, g = 0, b = 0, count = 0;
+  for (let i = 0; i < N; i++) {
+    if (wide[i]) { r += d[4 * i]; g += d[4 * i + 1]; b += d[4 * i + 2]; count++; }
+    d[4 * i + 3] = Math.round(255 * alpha[i]);
+  }
+  const colour = count ? new THREE.Vector3(r / count / 255, g / count / 255, b / count / 255) : null;
+  return { pixels: new Uint8Array(d.buffer.slice(0)), tissue: { mask: wide, w: W, h: H }, colour };
+}
+
+// A picture's pixels at a size, read back from a canvas.
+function pixelsOf(img: HTMLImageElement, w: number, h: number): Uint8ClampedArray | null {
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx || w < 8 || h < 8) return null;
-  ctx.drawImage(img, 0, 0);
-  const pic = ctx.getImageData(0, 0, w, h);
-  const d = pic.data;
+  if (!ctx) return null;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h).data;
+}
+
+// Which pixels of a small picture are tissue (the steps the comment above names).
+function tissueMask(d: Uint8ClampedArray, w: number, h: number): Uint8Array {
   const n = w * h;
   const lum = new Float32Array(n);
   for (let i = 0; i < n; i++) lum[i] = (0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]) / 255;
@@ -263,29 +337,10 @@ function tissueImage(img: HTMLImageElement): { pixels: Uint8Array; tissue: Tissu
   const holes = new Uint8Array(n);
   for (let i = 0; i < n; i++) holes[i] = !mask[i] && !ground[i] ? 1 : 0;
   for (const hole of patches(holes, w, h)) if (hole.length < PINHOLE * n) for (const i of hole) mask[i] = 1;
-
-  let near2 = mask.slice();
-  for (let pass = 0; pass < 2; pass++) {
-    const next = near2.slice();
-    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      if (near2[i]) continue;
-      let r = 0, g = 0, b = 0, c = 0;
-      for (const j of [i - 1, i + 1, i - w, i + w, i - w - 1, i - w + 1, i + w - 1, i + w + 1]) {
-        if (!near2[j]) continue;
-        r += d[4 * j]; g += d[4 * j + 1]; b += d[4 * j + 2]; c++;
-      }
-      if (!c) continue;
-      d[4 * i] = r / c; d[4 * i + 1] = g / c; d[4 * i + 2] = b / c;
-      next[i] = 1;
-    }
-    near2 = next;
-  }
-  for (let i = 0; i < n; i++) d[4 * i + 3] = mask[i] ? 255 : 0;
-  let r = 0, g = 0, b = 0, count = 0;
-  for (let i = 0; i < n; i++) if (mask[i]) { r += d[4 * i]; g += d[4 * i + 1]; b += d[4 * i + 2]; count++; }
-  const colour = count ? new THREE.Vector3(r / count / 255, g / count / 255, b / count / 255) : null;
-  return { pixels: new Uint8Array(d.buffer.slice(0)), tissue: { mask, w, h }, colour };
+  const pieces = patches(mask, w, h);
+  const largest = pieces.reduce((most, piece) => Math.max(most, piece.length), 0);
+  for (const piece of pieces) if (piece.length < DEBRIS * largest) for (const i of piece) mask[i] = 0;
+  return mask;
 }
 
 // The mean over a (2r+1) square around each pixel, the picture's edge repeated.
@@ -413,6 +468,8 @@ export class Space {
   private spans = Array.from({ length: WALL_SPANS }, () => new THREE.Vector2(1, 0));
   private fitted = false;
   private textures = new Map<string, THREE.Texture>();
+  private accent = token('--lavender', '#a4addf');
+  private depth = new THREE.Vector2(0, 1);
 
   constructor(
     private host: HTMLElement,
@@ -524,7 +581,7 @@ export class Space {
     this.bounds.copy(box);
     this.axes[0].at.set(0, box.min.y, box.max.z + 0.9);
     this.axes[1].at.set(0, box.min.y, box.min.z - 0.9);
-    this.axes[2].at.set(0, box.max.y + 0.7, 0);
+    this.axes[2].at.set(0, box.max.y + 1.1, 0);
     this.fit();
   }
 
@@ -567,6 +624,7 @@ export class Space {
     const tex = new THREE.DataTexture(cut.pixels, cut.tissue.w, cut.tissue.h, THREE.RGBAFormat);
     s.tissue = cut.tissue;
     if (cut.colour) this.tints.set(id, cut.colour);
+    this.spread();
     this.tinted();
     tex.flipY = false;
     tex.colorSpace = THREE.NoColorSpace;
@@ -580,7 +638,7 @@ export class Space {
   }
 
   private spread() {
-    const zs = [...this.slabs.values()].filter(s => s.placed).map(s => s.goal.pos.z).sort((a, b) => a - b);
+    const zs = [...this.slabs.values()].filter(s => s.placed && s.url).map(s => s.goal.pos.z).sort((a, b) => a - b);
     const runs: [number, number][] = [];
     zs.forEach((z, i) => {
       const before = i > 0 ? Math.min(WALL_REACH_MM, (z - zs[i - 1]) / 2) : 0;
@@ -608,8 +666,9 @@ export class Space {
   private make(id: string): Slab {
     const material = new THREE.ShaderMaterial({
       vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: false, depthWrite: true, side: THREE.DoubleSide,
-      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 } },
+      uniforms: { map: { value: null }, hasMap: { value: 0 }, lit: { value: 0 }, see: { value: 0 }, shown: { value: 0 }, accent: { value: this.accent }, depth: { value: this.depth } },
     });
+    material.alphaToCoverage = true;
     const mesh = new THREE.Mesh(this.geometry, material);
     mesh.matrixAutoUpdate = false;
     mesh.visible = false;
@@ -652,7 +711,7 @@ export class Space {
     const extent = this.bounds.getSize(new THREE.Vector3());
     const lift = extent.y * LIFT;
     centre.y += lift / 2;
-    const r = 0.5 * Math.hypot(extent.x, extent.y + lift, extent.z) * 0.8;
+    const r = 0.5 * Math.hypot(extent.x, extent.y + lift, extent.z) * FILL;
     const half = THREE.MathUtils.degToRad(FOV / 2);
     const fit = Math.min(half, Math.atan(Math.tan(half) * this.camera.aspect));
     const dist = r / Math.sin(fit);
@@ -676,13 +735,17 @@ export class Space {
     if (this.map) this.fit();
   }
 
-  private tick = (now: number) => {
+  private tick = () => {
     this.frame = requestAnimationFrame(this.tick);
+    const now = performance.now();
     const dt = Math.min(1 / 30, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (!this.visible || document.hidden) return;
     this.step(dt);
     this.controls.update(dt);
+    const away = this.camera.position.distanceTo(this.controls.target);
+    const reach = 0.5 * this.size.z;
+    this.depth.set(away - reach, away + reach);
     this.pick();
     this.renderer.render(this.scene, this.camera);
     this.label();
@@ -748,9 +811,15 @@ export class Space {
 
   private label() {
     const w = this.host.clientWidth, h = this.host.clientHeight;
+    const centre = this.bounds.getCenter(new THREE.Vector3());
+    const middle = centre.clone().project(this.camera);
+    const rim = centre.clone().add(new THREE.Vector3(0, 0.5 * this.size.y, 0)).project(this.camera);
+    const radius = Math.abs(rim.y - middle.y) * 1.25;
+    const away = this.camera.position.distanceTo(centre);
     for (const a of this.axes) {
       const p = a.at.clone().project(this.camera);
-      const off = p.z > 1 || !this.map;
+      const behind = this.camera.position.distanceTo(a.at) > away && Math.hypot((p.x - middle.x) * this.camera.aspect, p.y - middle.y) < radius;
+      const off = p.z > 1 || !this.map || behind;
       a.el.classList.toggle('off', off);
       if (!off) a.el.style.transform = `translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h}px) translate(-50%, -50%)`;
     }

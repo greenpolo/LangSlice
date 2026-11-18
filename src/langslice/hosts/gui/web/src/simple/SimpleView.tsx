@@ -35,7 +35,7 @@ export function SimpleView({ focus, review, ring }: { focus: Focus; review: Reac
       <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />
       {space && run.job !== null ? (
         <SpaceStage job={run.job} rows={run.rows} strip={run.strip} shown={shown} box={box} sideRef={stageRef}
-          onPick={focus.pick} focus={ring ? [ring] : focus.ids.length === run.rows.length ? [] : shown} />
+          onPick={focus.pick} focus={ring ? [ring] : shown.length === run.rows.length ? [] : shown} />
       ) : (
         <motion.div className="stage" ref={stageRef} initial={justSwitched() ? STAGE_IN : false} animate={STAGE_SHOWN}
           transition={{ duration: 0.24, ease: EASE_OUT }}>

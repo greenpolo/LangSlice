@@ -12,7 +12,7 @@ import { short } from '../simple/Stage';
 import { Space, type Placed, type Shell } from './scene';
 
 const SPACE_MS = 1500;
-const THUMB_EDGE = 256;
+const THUMB_EDGE = 512;
 const THUMB_RANK = 500;
 
 type SpaceAnswer = { thickness_um: number; given_thickness: boolean; plane_axis: number; sections: Placed[] };

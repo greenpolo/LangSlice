@@ -7,7 +7,8 @@
 
 const MAX = 3;
 const KEPT = 96;
-const TRIES = 6;
+const TRIES = 12;
+const AGAIN_MS = 700;
 
 type Waiting = { url: string; rank: number; tries: number; done: ((img: HTMLImageElement | null) => void)[] };
 
@@ -98,7 +99,7 @@ async function fetchOne(item: Waiting) {
   try { status = (await fetch(item.url, { cache: 'no-store' })).status; } catch { status = 0; }
   item.tries += 1;
   if ((status === 503 || status === 200) && item.tries < TRIES) {
-    setTimeout(() => { queue.push(item); pump(); }, status === 200 ? 0 : 2500);
+    setTimeout(() => { queue.push(item); pump(); }, status === 200 ? 0 : AGAIN_MS);
     return;
   }
   finish(item, null);
