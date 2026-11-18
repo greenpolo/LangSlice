@@ -135,8 +135,7 @@ section's own angles (`Section.angles`): the placement pictures
 `registration.json` (`maps.section_maps.section_frame`, memoized by the section's
 angles) and so the QuickNII/VisuAlign anchorings, and `grep_atlas`'s
 in-section check. A picture without a section (`look`'s `atlas` and the
-positioning picture's atlas thumbnails, `grep_atlas_view`, the opening's
-atlas reference) is drawn at `Stack.view_angles` (the shared angle, or
+positioning picture's atlas thumbnails, `grep_atlas_view`) is drawn at `Stack.view_angles` (the shared angle, or
 the median of the sections' when they differ), and its caption says which:
 `Stack.drawn_at_median(angles)`, `pictures.captions.view_angles_label` ("at the
 median of the sections' cutting angles, pitch .. yaw .."). The atlas-plane
@@ -308,7 +307,11 @@ the angles in a caption (empty for the flat plane).
 - `stack/` — the stack and its sections as declared shapes. `Stack`
   (`stack.py`) holds the sections (`slices`) and the run's bookkeeping;
   `Section` (`section.py`) its order, orientation (`flip`, `rotation_deg`),
-  `position_mm`, `angles`, damage, and frozen parts: `transform` a
+  `position_mm` (always a number: the initial position from
+  `stack.initial_positions`, the job's start plus the section's index times
+  its spacing clamped to the atlas, until the host or a write sets one) and
+  `position_source` (`initial`, `input`, `written`; `Section.set_position`),
+  `angles`, damage, and frozen parts: `transform` a
   `StoredAffine` (`affine.py`: `params`, the knobs `PhysicalAffine`,
   `Calibration`, `FitRegions`), `deformation` a `DeformationRef`
   (`deformation.py`: the saved fit's folder and key, its `linear_key`,
@@ -332,7 +335,8 @@ the angles in a caption (empty for the flat plane).
   `fits.frame.correction_fingerprint`), and the core cannot import `job`.
 - `stack/status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
-  `status_rows` (each row's `transform` is `transform_entry`: the stored
+  `status_rows` (each row's `position_mm` with its `position_source`, and
+  `delta_to_next_mm` to the next section; its `transform` is `transform_entry`: the stored
   transform's `kind`, its knobs as `interactive_transform` takes them and
   `mirrored`, null without one; a section holding a deformation carries
   `deformation`, `deformation_entry`: `method` (the last step's,
@@ -404,7 +408,7 @@ the angles in a caption (empty for the flat plane).
   current registration (`pictures.placement.draw_canvas`, mode `overlay`, the warp
   from *store*) and on the atlas template (mode `template`), on one canvas
   and crop, side by side (`beside`), their outlines strong over the
-  faint borders; `Refused` `NO_POSITION` / `NO_REGIONS`.
+  faint borders; `Refused` `NO_REGIONS`.
 - `pictures/look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, images=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
@@ -446,7 +450,7 @@ the angles in a caption (empty for the flat plane).
   section the stack no longer holds `SECTION_GONE` (the zoom crops the saved
   picture for either). Its refusals (`Refused`): `UNKNOWN_MODE`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_IMAGE`,
   `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `BAD_ARGS`,
-  `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
+  `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
   `atlas.borders.HIGHLIGHT_WIDTH` times as thick, the other borders faint,
   and its caption says so; `region_only` omits the context borders for a
@@ -456,8 +460,8 @@ the angles in a caption (empty for the flat plane).
 - `pictures/positioning.py` — the positioning picture, ABBA's layout: a millimetre
   ruler, atlas thumbnails above it, each over its own millimetre (moved
   aside only as far as its neighbours need), the sections below in
-  POSITION order (`position_order`: ties in stack order, `index_original`;
-  no position last, without a line), evenly spaced, each joined by a
+  POSITION order (`position_order`: ties in stack order, `index_original`),
+  evenly spaced, each joined by a
   line to its position, so no two lines cross; each label is the
   section's filename, so a filename order that disagrees with the
   positions shows there. A stack is split, never shrunk: at most

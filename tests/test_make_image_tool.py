@@ -43,7 +43,7 @@ def _box(tmp_path: Path, atlas: Any, n: int = 2) -> tuple[Any, Any, Any]:
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     box = build_tools(job.state, ctx, spec, job=job)
     for record in job.state.slices:
-        record.position_mm = 0.1
+        record.set_position(0.1)
         record.transform = affine_from_json(
             {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                             "calibration": {"section_um_per_px": UM, "source": "host"}})

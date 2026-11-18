@@ -79,7 +79,7 @@ def _row(section_id: str, index: int, transform: dict[str, Any]) -> dict[str, An
     return {
         "id": section_id, "index_original": index, "index_corrected": index,
         "flip": False, "rotation_deg": 0, "damaged_regions": [], "damage_note": "",
-        "position_mm": 2.6 + index * 0.1, "transform": transform,
+        "position_mm": 2.6 + index * 0.1, "position_source": "written", "transform": transform,
         "border_trace": None, "deformation": None, "landmarks": {},
         "layers": [], "masks": {}, "images": {}, "caveats": [],
         "cutting_angles_deg": dict(ANGLES),

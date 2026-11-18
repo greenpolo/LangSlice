@@ -89,7 +89,7 @@ def review_pictures(
         Each comment with its state (:data:`OPEN`: the section is as it was
         when the person commented; :data:`REVISED`: it has changed since),
         and per section with open comments the overlay (``look`` mode
-        ``overlay``; ``section`` for a section with no position) with its
+        ``overlay``) with its
         boxes outlined, numbered by comment, saved like a ``look`` picture.
         At most ``Job.picture_cap`` pictures; the rest ``not_shown``.
     """
@@ -147,9 +147,8 @@ def _outlined(
 ) -> _Picture:
     record = state.by_id(section)
     assert record is not None
-    mode = "overlay" if record.position_mm is not None else "section"
     request = looks.LookRequest(
-        mode=mode, sections=(section,), long_edge=long_edge
+        mode="overlay", sections=(section,), long_edge=long_edge
     )
     picture = looks.look(workspace, state, request, store=job.deformations)[0]
     width, height = cast("list[int]", picture.recipe["shown"])

@@ -258,12 +258,15 @@ stay). Without `overlay`, `atlas_opacity` and `warp` go; without `atlas` and
 `positioning`, `positions_mm` goes; without `section` and `overlay`,
 `layers` and `registrations` go.
 
-**Details.** New jobs leave sections without supplied positions unplaced; no
-position is inferred from filename order or the nominal interval. The opening
-shows unplaced sections beside a separate overview of the atlas. In
-`positioning` mode an unplaced section appears at the right, labelled "no
-position", with no line to the ruler; `positions_mm` draws candidate atlas
-planes above it.
+**Details.** Every section has a position from the moment the job is made, as
+ABBA places a new stack: the first section at `position.start_mm` and each
+next one `position.interval_um` further, clamped to the atlas
+([settings](settings.md#position-settings)); a position supplied in
+`inputs.positions` replaces it. So every picture shows each section against
+the atlas at its position: the opening pairs each section with its atlas
+plane, and `positioning` joins every section to the ruler. A section still at
+its initial position is `position_source: "initial"` in `status`;
+`positions_mm` draws candidate atlas planes above the sections.
 
 `look(mode="atlas", sections=[...])` draws one atlas picture per section, at
 that section's own position and cutting angles (captioned `atlas at 5.00 mm
@@ -460,8 +463,10 @@ Writes nothing.
 Returns the stack as it stands. Writes nothing. Takes no arguments. The reply
 holds:
 
-- one row per section: filename, position, spacing to the next placed
-  section, flip and quarter turn, transform, damaged regions and note,
+- one row per section: filename, position and who set it
+  (`position_source`: `initial`, the job's start and spacing; `input`, the
+  host; `written`, a tool or a script), spacing to the next section, flip and
+  quarter turn, transform, damaged regions and note,
   deformation and how it was made, the number of the registration it holds,
   masks, and frozen properties;
 - the cutting angles and the interval breaks;
@@ -596,8 +601,8 @@ the section's applied deformation saved when its engine estimated one
 mask and no drawn mask. `elastix_affine` and `fireants_syn` cut the weights at
 0.5 and combine them with the section's own mask; a tool plugin's engine uses
 them as its own limits say. With `mask="none"` every pixel inside the placed
-atlas outline counts. A section that cannot get a mask (no position; no
-deformation for `fit`) is that section's row and the others are written.
+atlas outline counts. A section that cannot get a mask (no usable transform;
+no deformation for `fit`) is that section's row and the others are written.
 `status` lists each section's masks (name, kind, `stale`,
 `earlier_registration`).
 
@@ -725,9 +730,9 @@ them (a negative angle tilts it the other way):
 An edge D mm from the picture's centre moves about D x tan(angle) mm along
 the slicing axis: 10 degrees moves an edge 4 mm from the centre about 0.7 mm.
 
-Sections without a supplied position stay unplaced until the agent writes
-them; no position is inferred from filename order or the nominal interval.
-`cutting_angles` is refused while any section has its angles frozen.
+A section starts at its initial position (the job's start and spacing) until
+it is supplied or written; `submit` refuses a stack with a section still
+there. `cutting_angles` is refused while any section has its angles frozen.
 
 **In a run when** Positioning is on, or Linear is on with
 [`transform.angles`](settings.md#transform-settings) (then only

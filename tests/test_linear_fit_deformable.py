@@ -80,7 +80,7 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *,
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     record = state.slices[0]
-    record.position_mm = 0.1
+    record.set_position(0.1)
     record.transform = affine_from_json(
         {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                         "calibration": {"section_um_per_px": 25.0, "source": "host"}})

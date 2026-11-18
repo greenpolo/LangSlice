@@ -384,8 +384,8 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     job = init(capsys, images)
     code, envelope = cli(capsys, str(images), "status", "--verbose")
     assert code == 0
-    code, refused = cli(capsys, str(images), "export_maps")
-    assert code == 3
+    code, refused = cli(capsys, str(images), "export_maps", "--sections", "nope.png")
+    assert code == 2
     lines = [json.loads(line) for line in (job / "logs" / "calls.jsonl").read_text(
         encoding="utf-8")
              .splitlines()]
@@ -393,7 +393,7 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     seen = lines[1]
     assert seen["arguments"] == ["--verbose"] and seen["ok"] is True
     assert seen["exit"] == 0 and seen["artifacts"] == []
-    assert lines[2]["ok"] is False and lines[2]["error"] == "NOTHING_EXPORTED"
+    assert lines[2]["ok"] is False and lines[2]["error"] == "UNKNOWN_SLICE_IDS"
     assert [line["reply"] for line in lines] == [
         "logs/calls/000001_init.json", "logs/calls/000002_status.json",
         "logs/calls/000003_export_maps.json"]
@@ -521,9 +521,6 @@ def test_exit_codes_and_fix_hints(capsys, images):
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_SLICE_IDS"
     code, envelope = cli(capsys, str(images), "export_maps", "--args", "{not json")
     assert code == 2 and envelope["error"]["code"] == "BAD_JSON"
-    code, envelope = cli(capsys, str(images), "export_maps")
-    assert code == 3 and envelope["error"]["code"] == "NOTHING_EXPORTED"
-    assert envelope["error"]["fix"]
     code, envelope = cli(capsys, str(images), "fit_affine")
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_VERB"
 
@@ -984,7 +981,7 @@ def test_the_command_line_runs_only_the_setup_and_checking_verbs(capsys, images)
     code, status = cli(capsys, str(job), "status")
     assert code == 0 and len(status["result"]["rows"]) == 3
     code, exported = cli(capsys, str(job), "export_maps")
-    assert exported["error"]["code"] == "NOTHING_EXPORTED", exported
+    assert code == 0 and exported["ok"] is True, exported
 
     for verb, arguments in [("position_sections", {"sections": [
             {"id": ID0, "position_mm": 0.1}]}), ("look", {"mode": "section"}),
@@ -994,7 +991,7 @@ def test_the_command_line_runs_only_the_setup_and_checking_verbs(capsys, images)
         assert "registration tool, not a command" in refused["error"]["message"]
         assert f"open_job(FOLDER).{verb}(" in refused["error"]["fix"]
     code, after = cli(capsys, str(job), "status")
-    assert all(row["position_mm"] is None for row in after["result"]["rows"])
+    assert all(row["position_source"] == "initial" for row in after["result"]["rows"])
 
     code, listed = cli(capsys, str(job), "ops")
     assert code == 0 and {row["name"] for row in listed["result"]["verbs"]} == set(CLI_VERBS)

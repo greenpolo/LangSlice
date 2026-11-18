@@ -132,17 +132,17 @@ def test_the_export_reproduces_langslice_s_maps(job_folder: Path) -> None:
                  for sid in (ID0, ID1)}
     path = Path(done.path)
     assert path == job_folder / "exports" / "stack.abba" and path.is_file()
-    assert done.sections == [ID0, ID1] and done.warped == [ID0]
-    assert [row["id"] for row in done.skipped] == [ID2]
+    assert done.sections == [ID0, ID1, ID2] and done.warped == [ID0]
+    assert done.skipped == []
     assert done.warp_error_um[ID0]["max"] < 10.0
 
     state, sources, dataset = _read(path)
     assert state["version"] == "0.25.0"
-    assert len(state["slices_state_list"]) == 2
+    assert len(state["slices_state_list"]) == 3
     assert sum(len(entry["actions"][0]["original_sources"]["source_indexes"])
                for entry in state["slices_state_list"]) == len(sources)
     openers = json.loads(dataset.findtext(".//openers") or "[]")
-    assert [Path(o["location"]).name for o in openers] == [ID0, ID1]
+    assert [Path(o["location"]).name for o in openers] == [ID0, ID1, ID2]
     assert all(o["type"] == "BIOFORMATS" for o in openers)
     assert len(dataset.findall(".//ViewSetup")) == len(sources)
 
@@ -192,7 +192,7 @@ def test_linear_only_and_what_abba_cannot_open(job_folder: Path,
         with pytest.raises(Refused):
             job.export_abba(landmarks=5000)
         done = job.export_abba(warps=False)
-        assert done.warped == [] and done.sections == [ID0, ID1]
+        assert done.warped == [] and done.sections == [ID0, ID1, ID2]
         state, _sources, _dataset = _read(Path(done.path))
         assert all(len([a for a in entry["actions"] if a["type"] == "RegisterSliceAction"]) == 1
                    for entry in state["slices_state_list"])

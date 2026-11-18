@@ -32,10 +32,8 @@ Draw pictures of sections and the atlas. Writes nothing.
                 atlas_layers on it. "positioning": the sections and the atlas
                 along the slicing axis as ABBA lays them out: the atlas at
                 positions_mm above a millimetre ruler, the sections below it in
-                order of position, each placed section joined by a line to its
-                position. Unplaced sections appear at the right, labelled "no
-                position", without a line to the ruler. A long stack is split
-                into several pictures, none shrunk.
+                order of position, each joined by a line to its position. A long
+                stack is split into several pictures, none shrunk.
             sections: Filenames (the extension may be left off); empty is every
                 section.
             positions_mm: Atlas positions in millimetres along the slicing axis:

@@ -247,8 +247,8 @@ def _trace_picture(
         title=f"{section_id}  trace_borders result: the image model's lines",
     )
     at = ""
-    if section is not None and section.position_mm is not None:
-        at = f", at {float(section.position_mm):.2f} mm"
+    if section is not None:
+        at = f", at {section.position_mm:.2f} mm"
     caption = (
         f"{section_id} trace_borders: the image model's traced lines drawn "
         f"on the section{at}"
@@ -278,11 +278,7 @@ def fit_caption(
     borders are drawn in, and the fit's *numbers* (``deformation.summary``)."""
     choice = fit.choice
     read = _FIT_SECTION_WORDS.get(choice.fit_section, choice.fit_section)
-    at = (
-        f", at {float(record.position_mm):.2f} mm"
-        if record.position_mm is not None
-        else ""
-    )
+    at = f", at {record.position_mm:.2f} mm"
     moved = cast("dict[str, object]", numbers.get("displacement_mm") or {})
     facts = (
         (

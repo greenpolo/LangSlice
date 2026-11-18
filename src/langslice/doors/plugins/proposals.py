@@ -132,10 +132,6 @@ class ContextProposals(ContextFrames):
         if len(values) != 6 or not np.isfinite(values).all():
             raise ToolError(RefusalCode.BAD_ARGS,
                             "a transform is six finite numbers [a, b, tx, c, d, ty]")
-        if record.position_mm is None:
-            raise ToolError(RefusalCode.NO_POSITION,
-                            f"{record.id} has no position yet; write its "
-                            "position first.")
         workspace, state = self._run.workspace, self._run.state
         rendered = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, workspace, record, rendered)
@@ -298,9 +294,6 @@ class ContextProposals(ContextFrames):
             assert record is not None
             position = plane.get("position_mm", record.position_mm)
             angles = plane.get("angles") or (record.pitch_deg, record.yaw_deg)
-            if position is None:
-                raise ToolError(RefusalCode.NO_POSITION,
-                                f"{name} has no position to read the file at")
             planes[name] = (float(position), float(angles[0]), float(angles[1]))
         result = import_placements(
             Path(path), self._run.workspace, section_ids=names,

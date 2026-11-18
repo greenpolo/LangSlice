@@ -124,12 +124,8 @@ def test_invalid_affines_are_rejected(tmp_path, monkeypatch, params):
         prepare_linear_registration(state, ctx, record.id)
 
 
-def test_missing_position_transform_and_explicit_stale_orientation(tmp_path, monkeypatch):
+def test_missing_transform_and_explicit_stale_orientation(tmp_path, monkeypatch):
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch)
-    record.position_mm = None
-    with pytest.raises(ValueError, match="position"):
-        prepare_linear_registration(state, ctx, record.id)
-    record.position_mm = 4
     assert record.transform is not None
     record.transform = affine_from_json(
         {**affine_to_json(record.transform), "orientation": {"flip": True, "rotation_deg": 0}})

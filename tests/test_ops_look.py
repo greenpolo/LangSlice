@@ -56,7 +56,7 @@ def _job(tmp_path: Path, *, persist: bool = True):
         for record in job.state.slices:
             source = state0.by_id(record.id)
             assert source is not None
-            record.position_mm = source.position_mm
+            record.set_position(source.position_mm)
         job.commit(before)
     if not persist:
         job = Job.load(spec, ws, folder=ws.job_folder, results_path=ws.results_path,
@@ -69,7 +69,7 @@ def _move(job: Job, section_id: str, position: float) -> None:
         before = job.snapshot()
         record = job.state.by_id(section_id)
         assert record is not None
-        record.position_mm = position
+        record.set_position(position)
         job.commit(before)
 
 

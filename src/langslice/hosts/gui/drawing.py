@@ -100,12 +100,10 @@ def draw_overlay(
     -------
     Image.Image
         The section's raw channels under its transform and applied
-        deformation with the atlas borders; a section with no position
-        alone, oriented.
+        deformation with the atlas borders.
     """
-    mode = "overlay" if section.position_mm is not None else "section"
     request = LookRequest(
-        mode=mode,
+        mode="overlay",
         sections=(section.id,),
         images=raw_channels(opened, section),
         long_edge=edge,

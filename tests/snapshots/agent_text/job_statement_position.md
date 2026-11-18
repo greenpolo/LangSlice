@@ -10,7 +10,7 @@ Run facts:
 - 0.00 mm is the anterior edge of the volume; positions increase toward posterior.
 - Cutting protocol: nominal section interval not supplied, section thickness not supplied. Infer positions and spacing from anatomy. Estimate missing protocol values where the evidence supports them, and record estimates or unresolved uncertainty in your notes. Spacing may vary where sections are missing.
 - Stack-wide cutting angles: pitch 0.00 deg, yaw 0.00 deg.
-- No section carries a position yet.
+- 3 of 3 sections are still at their initial position, as ABBA places a new stack: the first section at the job's start, each next one a spacing further (position_source `initial` in status). Nobody has checked these positions.
 - The stack's order follows the positions: writing positions renumbers the sections, so use filenames to name them.
 - The orientation shown is fixed; transforms are not part of this run.
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
@@ -22,7 +22,7 @@ Run facts:
 Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `review_comments`, `position_sections`, `mark_damage`, `note`, `undo`, `redo`, `submit`, `stalign_plane_search`, `emlddmm_plane`.
 
 Constraints:
-- `submit` is refused unless every section has a position of its own, damaged sections included.
+- `submit` is refused while any section is still at its initial position: every section needs a position of its own, damaged sections included.
 - A reported interval break is accepted only at a section whose interval from the section before it, in the positions you wrote, exceeds 1.5x the stack's median written spacing.
 - Corrections are recorded as data; the user's image files are never modified.
 - LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute priority: this run may be evaluated on the quality of its registration alone, without regard to the time or tokens it spends.

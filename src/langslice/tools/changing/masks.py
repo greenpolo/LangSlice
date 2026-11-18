@@ -163,8 +163,8 @@ def make_mask(
     again replaces it. *delete* removes the entry (the weights file stays; undo
     brings the entry back).
 
-    A section that cannot get its mask is that section's row (``NO_POSITION``,
-    ``INVALID_LINEAR_PLACEMENT``, ``NO_DEFORMATION`` / ``NO_SORTING`` for source
+    A section that cannot get its mask is that section's row
+    (``INVALID_LINEAR_PLACEMENT``, ``NO_DEFORMATION`` / ``NO_SORTING`` for source
     ``fit``, ``FIT_FAILED``); the others are written. Refused, nothing written:
     ``UNKNOWN_SLICE_IDS``, ``SECTION_BUSY``, ``BAD_ARGS`` (the name, the source,
     the starting points, an atlas image the atlas does not have), ``UNKNOWN_IMAGE``,

@@ -10,6 +10,7 @@ plugin layers may refine or annotate that placement.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from langslice.core.stack.affine import StoredAffine
 from langslice.core.stack.deformation import DeformationRef
@@ -32,20 +33,12 @@ class MixedAngles(ValueError):
     """
 
 
-@dataclass(frozen=True)
-class Placed:
-    """Hold a section together with the position it has.
+PositionSource = Literal["initial", "input", "written"]
 
-    Parameters
-    ----------
-    section
-        The section that has a position.
-    position_mm
-        Its atlas position in millimetres.
-    """
-
-    section: Section
-    position_mm: float
+INITIAL: PositionSource = "initial"
+INPUT: PositionSource = "input"
+WRITTEN: PositionSource = "written"
+POSITION_SOURCES: tuple[PositionSource, ...] = (INITIAL, INPUT, WRITTEN)
 
 
 @dataclass
@@ -76,7 +69,13 @@ class Section:
         What is wrong with the tissue, in words: the host's note first,
         then the agent's. A note alone does not make the section damaged.
     position_mm
-        Its atlas position in millimetres; None until placed.
+        Its atlas position in millimetres. Every section has one from the
+        start: the job's initial spacing until the host supplies one or a
+        tool writes one.
+    position_source
+        Who set the position: ``initial`` (the job's start and spacing),
+        ``input`` (the host's ``inputs.positions``) or ``written`` (a tool
+        or a script).
     transform
         Its in-plane affine; None until it has one.
     border_trace
@@ -109,7 +108,8 @@ class Section:
     rotation_deg: int = 0
     damaged_regions: list[str] = field(default_factory=list[str])
     damage_note: str = ""
-    position_mm: float | None = None
+    position_mm: float = 0.0
+    position_source: PositionSource = INITIAL
     transform: StoredAffine | None = None
     border_trace: BorderTrace | None = None
     deformation: DeformationRef | None = None
@@ -120,22 +120,20 @@ class Section:
     caveats: list[str] = field(default_factory=list[str])
     angles: Angles = FLAT
 
-    def held_position(self) -> float:
-        """Return the section's position, which the caller needs it to have.
+    def set_position(
+        self, position_mm: float, *, source: PositionSource = WRITTEN
+    ) -> None:
+        """Set the section's position and who set it.
 
-        Returns
-        -------
-        float
-            Its atlas position in millimetres.
-
-        Raises
-        ------
-        ValueError
-            When the section has no position yet.
+        Parameters
+        ----------
+        position_mm
+            The atlas position in millimetres.
+        source
+            Who sets it (:data:`POSITION_SOURCES`).
         """
-        if self.position_mm is None:
-            raise ValueError(f"{self.id} has no position")
-        return float(self.position_mm)
+        self.position_mm = float(position_mm)
+        self.position_source = source
 
     @property
     def damaged(self) -> bool:

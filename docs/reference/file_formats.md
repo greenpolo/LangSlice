@@ -58,13 +58,18 @@ paths are relative to the job folder. The default image folder reference is
 ### Old job folders
 
 A job folder an earlier LangSlice wrote opens as the current format
-(`state.json` format 5): one table of migrations (`job/migrations.py`)
+(`state.json` format 6): one table of migrations (`job/migrations.py`)
 reads it. `state.json` of format 3 is read as format 4 (its section images,
 [below](#section-images-sectionsstemimagesnamepng)), and format 4 as format
 5: a section's image-model border trace, under `image_correction` in format
 4, is under `border_trace`; an old trace stays in
 `sections/<name>/image_correction/` with the paths stored to it, and new
-traces go under `sections/<name>/border_trace/`.
+traces go under `sections/<name>/border_trace/`. Format 5 is read as format 6
+(`job/position_migration.py`): every section gets a number in `position_mm`
+and a `position_source`; a section without a position gets its initial
+position (the job's start and spacing) and `initial`, a placed one `input`
+when the job's `inputs.positions` names it, else `written`. A section history
+line without a position leaves the section's current one.
 What a file still holds of what LangSlice no longer has is dropped as it is
 read, with one logged warning per name (the `langslice.job.migrations`
 logger: on the agent CLI's standard error, in a script's logging):
@@ -74,8 +79,8 @@ logger: on the agent CLI's standard error, in a script's logging):
   `position.bayesian`, `transform.flip`, `transform.interactive`,
   `transform.automatic`, `nonlinear.engine`, and the task `reorder`;
 - in `state.json` and the section histories: the stack's `appearance` and a
-  section's `position_source` and `damaged` (a whole-section damage flag;
-  damage is marked by region, `damaged_regions`).
+  section's `damaged` (a whole-section damage flag; damage is marked by
+  region, `damaged_regions`).
 
 An open that writes (the agent CLI, the library, MCP, `Job.open`) writes
 `job.json` and `state.json` again at the current format without them, once,
@@ -140,7 +145,7 @@ Each section:
 | `image` | `file`, `size` (`[width, height]` of the file), `pixel_size_um` (of the file), `pixel_size_source` (`host`, `file`, or `uncalibrated`: neither gives one, so the scale is the one every placement picture draws the section at, the image width mapped onto the atlas plane's width at its current position) |
 | `pixel_to_atlas_um` | 3x3: a file pixel `[row, col, 1]` -> atlas micrometres (3 rows, the atlas axes), the linear placement; null without a placement |
 | `mapping` | `linear`, `linear (identity in-plane: no transform written)`, `linear + residual` (the maps hold the complete mapping), or null |
-| `problem` | why there is no matrix (`no position`, an unreadable file, ...), or, with a matrix, that the pixel size is unknown (`uncalibrated`, as the pictures draw it); else null |
+| `problem` | why there is no matrix (a stale or unusable transform, an unreadable file, ...), or, with a matrix, that the pixel size is unknown (`uncalibrated`, as the pictures draw it); else null |
 | `parameters_digest` | SHA-256 of the parameters, the matrix and the image facts |
 | `maps` | null until `export_maps` wrote the section's maps (`submit` writes none); else `files` (kind -> relative path), `grid_size`, `full_resolution`, the grid's `pixel_to_atlas_um`, and `current` (false once the section changed after the maps were written) |
 
@@ -149,7 +154,7 @@ Each section:
 | Key under `parameters` | Content |
 |---|---|
 | `atlas` | `name`, `version` |
-| `plane` | `name`, `position_mm`, `position_um`, `pitch_deg`, `yaw_deg` |
+| `plane` | `name`, `position_mm`, `position_um`, `position_source` (`initial`: the job's start and spacing; `input`: the host; `written`: a tool or a script), `pitch_deg`, `yaw_deg` |
 | `orientation` | Counter-clockwise quarter turn `rotation_deg`, followed by left-right `flip` |
 | `affine` | Null without a transform; otherwise `kind`, `params`, `physical` and `mirrored` |
 | `deformation` | Null, or a residual record with `kind`, `record`, `key`, `steps`, `inverse_source` |
@@ -412,7 +417,7 @@ one.
 |---|---|
 | `id` | the comment's number in the job, as text; never reused |
 | `section` | the section's filename |
-| `box` | `[x0, y0, x1, y1]`, fractions of the section's overlay picture without its caption band (`look` mode `overlay`; `section` for a section with no position), left to right and top to bottom |
+| `box` | `[x0, y0, x1, y1]`, fractions of the section's overlay picture without its caption band (`look` mode `overlay`), left to right and top to bottom |
 | `text` | the person's words, at most 500 characters |
 | `at` | when it was written, UTC |
 | `key` | 16 hex digits of the section's look snapshot when it was written; a comment is revised once the section's key differs |

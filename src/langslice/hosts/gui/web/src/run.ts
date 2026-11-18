@@ -10,6 +10,8 @@ export type Row = {
   id: string;
   order?: number;
   position_mm: number | null;
+  // Who set the position: 'initial' (the job's start and spacing), 'input' or 'written'.
+  position_source?: string | null;
   render_key?: string | null;
   transform?: string | null;
   deformation?: string | null;
@@ -28,7 +30,7 @@ export type Strip = {
   step_mm: number;
   atlas: { k: number; position_mm: number }[];
   angles: string;
-  sections: { id: string; order: number; position_mm: number | null; thumb_key: string }[];
+  sections: { id: string; order: number; position_mm: number; position_source: string; thumb_key: string }[];
 };
 export type Job = { index: number; name: string; path: string; changed_at?: number; status?: string };
 // A review comment: its box as [x0, y0, x1, y1] fractions of the section's picture as

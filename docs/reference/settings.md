@@ -271,10 +271,20 @@ engine's README under `src/langslice/engines/` lists its options.
 | Key | Default | Flag | What it does |
 |---|---|---|---|
 | `position.thickness_um` | not supplied | `--position-thickness-um` | Section thickness, a whole number of µm. |
-| `position.interval_um` | not supplied | `--position-interval-um` | Distance between consecutive sections in the stack, a whole number of µm. |
+| `position.interval_um` | not supplied | `--position-interval-um` | Distance between consecutive sections in the stack, a whole number of µm; also the spacing of the sections' initial positions. |
+| `position.start_mm` | centred | `--position-start-mm` | The first section's initial position along the cutting axis, in atlas mm from the volume's origin edge. |
 | `position.strict_interval` | off | `--position-strict-interval` | `submit` requires positions at most 10% from the interval; needs `interval_um`. |
 | `position.playbook` | off | `--position-playbook` | Adds positioning guidance to the job statement: compare candidate planes and regions, write supported placements, revisit uncertainty, review the stack. |
 | `position.notes` | empty | `--position-notes TEXT` | Your notes for this task, shown to the agent with it. |
+
+Every section starts at an initial position, as ABBA places a new stack: the
+first at `start_mm`, each next one (in the stack's order) `interval_um`
+further, every position clamped to the atlas volume. Without an interval the
+stack spreads over the whole volume (its length over the number of sections);
+without a start the run is centred in the volume. Positions given in
+`inputs.positions` replace the initial ones of their sections. `submit` refuses
+a stack while any section is still at its initial position, so the agent
+checks and writes every one.
 
 Give the thickness and interval when you know them. Without them the agent
 infers positions and spacing from the anatomy and records its estimates in

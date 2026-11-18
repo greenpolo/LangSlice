@@ -284,7 +284,7 @@ def look_pictures(
     are ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
     ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``,
-    ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the mode:
+    ``BAD_WARP``, ``OPTION_OFF`` (the job disables the mode:
     ``look:<mode>`` in its ``disabled`` list).
 
     ``layers`` names the layers tool plugins and scripts left on the sections

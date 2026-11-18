@@ -69,7 +69,7 @@ def test_a_bad_freeze_is_refused_when_the_spec_is_made(bad: Any, message: str):
 
 def test_a_frozen_position_must_have_been_supplied(tmp_path: Path):
     assert _spec(frozen={"a.tif": ["position"]}, inputs={"positions": {"a.tif": 1.0}})
-    with pytest.raises(ValueError, match="a position has no default"):
+    with pytest.raises(ValueError, match="a frozen position must be supplied"):
         _stack(tmp_path, n=2, placed=False, frozen={"*": ["position"]})
     state, _spec_made, _tools = _stack(
         tmp_path, n=2, placed=False, frozen={"*": ["position"]}, tasks=["transform"],

@@ -75,7 +75,7 @@ def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_pa
     again = redraw(zoomed.recipe, [0, 0, width / 2, height], ws, state=state)
     assert again.recipe["args"]["region_only"]
     assert again.recipe["args"]["highlight"] == ["STR"]
-    record(state, "s1.png").position_mm = 0.22
+    record(state, "s1.png").set_position(0.22)
     stale = redraw(first.recipe, [], ws, state=state, region="STR")
     assert stale.stale and "at 0.15 mm" in stale.caption
     assert stale.recipe["args"]["zoom"] == window

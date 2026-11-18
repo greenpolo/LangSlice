@@ -159,9 +159,9 @@ def test_an_overlay_is_looks_overlay_with_the_deformation_and_without_its_captio
     assert _difference(warped, drawn) < 3.0
     assert _difference(drawn, linear) > 0.05
     assert _difference(warped, drawn) < _difference(warped, linear)
-    alone = _image(renderer.overlay(ID2, 512))
-    section = _look_content(job, LookRequest(mode="section", sections=(ID2,), long_edge=512))
-    assert _difference(alone, section) < 3.0
+    initial = _image(renderer.overlay(ID2, 512))
+    overlay = _look_content(job, LookRequest(mode="overlay", sections=(ID2,), long_edge=512))
+    assert _difference(initial, overlay) < 3.0
 
 
 def test_the_render_key_changes_with_what_the_section_shows(job: Path) -> None:
@@ -172,7 +172,7 @@ def test_the_render_key_changes_with_what_the_section_shows(job: Path) -> None:
     moved = copy.deepcopy(state)
     section = moved.by_id(ID1)
     assert section is not None
-    section.position_mm = 0.2
+    section.set_position(0.2)
     assert render_key(moved, ID1) != keys[ID1]
     assert render_key(moved, ID0) == keys[ID0]
 
@@ -185,8 +185,9 @@ def test_the_strip(job: Path, pool: ThreadPoolExecutor) -> None:
     assert [(thumb.k, thumb.position_mm) for thumb in strip.atlas] == [(0, 0.1), (1, 0.2)]
     assert strip.angles == ""
     rows = {row["id"]: row for row in _snapshot(job)["sections"]}
-    assert [(s.id, s.order, s.position_mm) for s in strip.sections] == [
-        (ID0, 1, 0.1), (ID1, 2, 0.15), (ID2, 3, None)]
+    assert [(s.id, s.order, s.position_source) for s in strip.sections] == [
+        (ID0, 1, "input"), (ID1, 2, "input"), (ID2, 3, "initial")]
+    assert [s.position_mm for s in strip.sections][:2] == [0.1, 0.15]
     assert [s.render_key for s in strip.sections] == [rows[s.id]["render_key"]
                                                        for s in strip.sections]
 

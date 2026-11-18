@@ -46,7 +46,7 @@ def _stack(folder: Path, n: int = 5, *, placed: bool = True, atlas: Any = None,
     if placed:
         low, high = ctx.position_range
         for index, record in enumerate(state.in_order()):
-            record.position_mm = min(high, max(low, 2.0 + 0.5 * index))
+            record.set_position(min(high, max(low, 2.0 + 0.5 * index)))
     box = build_tools(state, ctx, spec, image_model=image_model)
     return state, spec, {tool.__name__: tool for tool in box.tools}
 

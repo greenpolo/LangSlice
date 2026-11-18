@@ -99,7 +99,7 @@
 ```json
 {
  "error": "MISSING_POSITIONS",
- "message": "3 of 3 section(s) have no position; every section needs one, damaged ones included.",
+ "message": "3 of 3 section(s) are still at their initial position (the job's start and spacing); every section needs a position written, damaged ones included.",
  "missing_ids": [
   "s0.png",
   "s1.png",
@@ -118,9 +118,11 @@
  "changed": [
   {
    "damaged": false,
+   "delta_to_next_mm": 0.025,
    "flip": false,
    "id": "s0.png",
    "position_mm": 0.1,
+   "position_source": "written",
    "rotation_deg": 0
   }
  ],
@@ -165,6 +167,7 @@
    "flip": false,
    "id": "s0.png",
    "position_mm": 0.25,
+   "position_source": "written",
    "rotation_deg": 0
   }
  ],
@@ -182,15 +185,20 @@
  "interval_breaks": [],
  "n_sections": 3,
  "order": [
-  "s0.png",
   "s1.png",
-  "s2.png"
+  "s2.png",
+  "s0.png"
  ],
  "pictures": [
   {
    "caption": "positioning: 1 section below in position order at 0.25 mm, preprocessed; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
    "id": 2
   }
+ ],
+ "reordered": [
+  "s1.png",
+  "s2.png",
+  "s0.png"
  ],
  "status": "ok",
  "written": [
@@ -286,7 +294,7 @@
 ```json
 {
  "error": "MISSING_POSITIONS",
- "message": "2 of 3 section(s) have no position; every section needs one, damaged ones included.",
+ "message": "2 of 3 section(s) are still at their initial position (the job's start and spacing); every section needs a position written, damaged ones included.",
  "missing_ids": [
   "s1.png",
   "s2.png"
@@ -331,6 +339,7 @@
    ],
    "id": "s1.png",
    "position_mm": 0.25,
+   "position_source": "written",
    "rotation_deg": 0
   }
  ],
@@ -349,14 +358,18 @@
  "n_sections": 3,
  "order": [
   "s0.png",
-  "s1.png",
-  "s2.png"
+  "s2.png",
+  "s1.png"
  ],
  "pictures": [
   {
    "caption": "positioning: 1 section below in position order at 0.25 mm, preprocessed; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s1.png 0.25 mm",
    "id": 3
   }
+ ],
+ "reordered": [
+  "s2.png",
+  "s1.png"
  ],
  "status": "ok",
  "written": [

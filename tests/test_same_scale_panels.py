@@ -59,7 +59,7 @@ def _job(tmp_path: Path, pixel_size_um: float = 25.0) -> tuple[Any, Any]:
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     for record in state.in_order():
-        record.position_mm = 0.1
+        record.set_position(0.1)
     return state, ctx
 
 

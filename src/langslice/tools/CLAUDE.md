@@ -178,8 +178,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   (each value clamped into `workspace.position_range` and reported; new angles give every section the one plane, so a
   stack whose sections carried different angles is flattened, undo
   restoring them, and drop the render cache), then the stack is numbered by
-  position (`order_by_position`: placed sections by increasing position take
-  the places placed sections held, an unplaced one keeps its own;
+  position (`order_by_position`: by increasing position, ties in their order;
+  every write marks the position `written`;
   `renumber(order)`, indices only); returns `SectionsPositioned`
   (`written`, `clamped`, `unknown`, `cutting_angles`, `order`,
   `reordered`). Refused: `BAD_ARGS`, `FROZEN` (a section named has its
@@ -229,8 +229,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `fit`: the sorting the applied deformation saved (`NO_DEFORMATION`,
   `NO_SORTING`). *sorting* takes the five starting points (`SORTING_KEYS`),
   the shape every engine's `sorting` has; `method` and `artifact`, keys only
-  STalign's takes, are refused by name (`BAD_ARGS`). A section that cannot get its mask is its row (`NO_POSITION`,
-  `INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_SORTING`, `FIT_FAILED`);
+  STalign's takes, are refused by name (`BAD_ARGS`). A section that cannot get its mask is its row
+  (`INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_SORTING`, `FIT_FAILED`);
   when none can, the first row's refusal. Refused: `UNKNOWN_SLICE_IDS`,
   `SECTION_BUSY`, `UNKNOWN_IMAGE`, `UNKNOWN_MASK` (delete), `BAD_ARGS`.
   Returns `MasksMade` (`rows`, one `MaskMade` per section: `id`, the
@@ -246,8 +246,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   (`job.review`, `review.json`, written by the LangSlice window only) as
   `ReviewRow`s (`id`, `section`, `comment`, `box` fractions, `state`
   `open` / `revised`; an open one drawn: `picture`, `box_px`), and per
-  section with open comments its overlay (`look` mode `overlay`, `section`
-  without a position) with the boxes outlined and numbered by
+  section with open comments its overlay (`look` mode `overlay`) with the boxes outlined and numbered by
   `core.pictures.review_boxes.draw_boxes`, saved as tool `review_comments`
   (at most `Job.picture_cap`, the rest `not_shown`). A read: no state, no
   undo step.
@@ -329,8 +328,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `skipped` as `STALE_INPUT`; the exports and `registration.json` last,
   under the lock): per placed section the maps
   (`core.maps.section_maps.section_maps` through the applied deformation record, written
-  by `job.public_files.write_section_maps`; a section without a position, or
-  whose record or file cannot be read, is `skipped` with its reason), then
+  by `job.public_files.write_section_maps`; a section without a usable
+  placement, or whose record or file cannot be read, is `skipped` with its reason), then
   `exports/quicknii.json` and `exports/visualign.json` for every placed
   section (`job.quint.job_export`, markers from
   `core.maps.section_maps.residual_markers`) with the PNG copies they name
@@ -362,7 +361,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `registration.json` through `job.dmc_brainmap`, `langslice_export.json`:
   `linear_only`, `warps_left_out`, `not_registered`); images an earlier
   export left are removed (DMC numbers images by their place). A section
-  without a position, or whose plane DMC refuses, is written as an image
+  without a usable placement, or whose plane DMC refuses, is written as an image
   without a registration; an applied deformation is never written.
   `BAD_ARGS` for a channel DMC does not offer (`DMC_CHANNELS`) or an atlas
   whose axes it cannot read. Returns `DmcExported`. A job that persists
@@ -391,7 +390,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `section_points(job, workspace, section, xyz_um, frame=)` -> `SectionPoints`
   (`xy`, `off_plane_um`: each point projected onto the plane, then
   `core.maps.section_maps.file_points`). Refused: `UNKNOWN_SLICE_IDS`,
-  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
+  `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
   `BAD_ARGS`.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `set_transforms(job,
@@ -412,7 +411,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   orientation); a frozen orientation refuses a changed flip or quarter turn
   and a transform that would mirror the section. Per entry `FROZEN`
   (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
-  `BAD_ROTATION`, `OPTION_OFF`, `NO_POSITION`, the stager's codes
+  `BAD_ROTATION`, `OPTION_OFF`, the stager's codes
   (`core.pictures.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
   `refusal`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
@@ -441,7 +440,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   section's current placement, written nowhere (`core.fits.affine.ElastixFit`;
   a script's `job.context.fit_elastix`): regions checked, the marked regions
   added to `exclude` unless `marked` is False, `mask` narrowing the section
-  mask; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`, `UNKNOWN_REGIONS`,
+  mask; `UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `UNKNOWN_REGIONS`,
   `NO_SIDES`, `REGION_TOO_SMALL`, `FIT_FAILED`.
 - `deformable.py` — `fit_deformable(job, workspace, records, choice,
   restrict_to=, overrides=)`: one deformation (a resolved
@@ -453,7 +452,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   under one `TRACE_WAIT_S` deadline and adding the trace's regions to the
   call's (`traced_regions`; the row's `trace_regions`, and the record keeps
   the regions each fit ran with), the record cache, the engine). Per-section
-  problems (`NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
+  problems (`INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
   `NO_TRACE`/`TRACE_*`, `BAD_SETTINGS`, `FIT_FAILED`, `RECORD_WRITE_FAILED`,
   `STALE_INPUT`) are rows, not refusals. Returns `DeformableFit`: `rows`
   (call order, `deformable_rows.DeformableRow`: the `AppliedFit` or the
@@ -516,7 +515,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   the section's applied deformation, which becomes the record's `parent` (its
   `step` one more) and whose key the section must still hold. The step carries
   *settings* (the call's, by the tool's names). Refused: `UNKNOWN_SLICE_IDS`,
-  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
+  `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
   deformation), `DEFORMATION_UNREADABLE`.
   `apply_warps(job, warps)`: writes them as ONE undo step under the job's
   lock, each replacing the section's deformation (step `start` `linear`) or,
@@ -532,7 +531,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   written nowhere (a script's `job.context.fit_fireants`): the record;
   `mask` through `core.fits.deformable.fit.with_section_mask`, `em` False runs
   once, `marked` adds the section's marked regions to `exclude`. Refused:
-  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `NO_POSITION`,
+  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`,
   `INVALID_LINEAR_PLACEMENT`, `FIT_FAILED`.
 
 - `traces.py` — (the tool's body: `trace_borders_tool`, the run's image
@@ -572,7 +571,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   Prepared outside the lock, started and written under it. Refused:
   `UNKNOWN_SLICE_IDS`, `SECTION_BUSY` (other background work runs on the
   section), `FROZEN` (the section's deformation is frozen),
-  `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` (no usable transform; a refusal
+  `INVALID_LINEAR_PLACEMENT` (no usable transform; a refusal
   raised while the trace is prepared, such as `NO_SIDES` or `BAD_ARGS` for
   regions that leave nothing on the plane, keeps its own code),
   `BORDER_TRACE_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
@@ -642,7 +641,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   crop, or a dry run's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_IMAGE`,
   `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`,
-  `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
+  `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
   `layers` names the layers tool plugins left (`"all"`: every one) to
   draw on `section` and `overlay` pictures (`BAD_ARGS` in another mode);
   `Looked.layers` says per picture which were drawn. `show_result(job, workspace, tool,

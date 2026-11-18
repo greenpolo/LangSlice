@@ -47,7 +47,7 @@ def test_spec_rejects_an_unknown_plane_and_task():
 
 def test_state_round_trips_and_resolves_by_filename_only():
     state = _stack()
-    state.slices[0].position_mm = 4.0
+    state.slices[0].set_position(4.0)
     state.slices[2].transform = affine_from_json(
         {"kind": "silhouette", "params": [1, 0, 0, 0, 1, 0]})
     again = stack_from_json(stack_to_json(state))
@@ -92,11 +92,13 @@ def test_in_order_follows_the_corrected_index():
 
 def test_restore_refills_the_same_object():
     state = _stack()
+    before = state.slices[0].position_mm
     snapshot = stack_to_json(state)
-    state.slices[0].position_mm = 9.0
+    state.slices[0].set_position(9.0)
     state.notes.append("changed")
     state.replace_with(stack_from_json(snapshot))
-    assert state.slices[0].position_mm is None
+    assert state.slices[0].position_mm == before
+    assert state.slices[0].position_source == "initial"
     assert state.notes == []
 
 

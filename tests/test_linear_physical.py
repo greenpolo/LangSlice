@@ -245,7 +245,7 @@ def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
     _section((512, 512)).save(tmp_path / "s.png")
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
-    record.position_mm = 0.2
+    record.set_position(0.2)
     assert canvas_um_per_px(ctx, record)[0] is None
 
     from langslice.core.sections.renders import render_slice
@@ -296,7 +296,7 @@ def _half_section(tmp_path: Path):
         resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
-    record.position_mm = 0.2
+    record.set_position(0.2)
     box = build_tools(state, ctx, ctx.spec)
     return {tool.__name__: tool for tool in box.tools}, state, box
 

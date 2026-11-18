@@ -56,7 +56,7 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *, hole: bool):
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     record = state.slices[0]
-    record.position_mm = 0.1
+    record.set_position(0.1)
     record.transform = affine_from_json(
         {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                         "calibration": {"section_um_per_px": 25.0, "source": "host"}})
@@ -177,10 +177,10 @@ def test_a_new_registration_marks_a_mask_earlier_but_a_turn_makes_it_stale(tmp_p
     section_masks.write_mask(layout, record, "m", np.ones((6, 6)), _meta(state, record))
     assert section_masks.mask_rows(state, record) == [
         {"name": "m", "kind": "em", "stale": False, "earlier_registration": False}]
-    record.position_mm = 1.5
+    record.set_position(1.5)
     view = section_masks.read_mask(layout, state, record, "m")
     assert not view.stale and view.earlier_registration
-    record.position_mm = 1.0
+    record.set_position(1.0)
     assert not section_masks.read_mask(layout, state, record, "m").earlier_registration
     record.damaged_regions = ["TH"]
     assert section_masks.read_mask(layout, state, record, "m").earlier_registration

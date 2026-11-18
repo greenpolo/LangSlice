@@ -12,7 +12,7 @@ Run facts:
 - 0.00 mm is the anterior edge of the volume; positions increase toward posterior.
 - Cutting protocol: nominal section interval not supplied, section thickness not supplied. Infer positions and spacing from anatomy. Estimate missing protocol values where the evidence supports them, and record estimates or unresolved uncertainty in your notes. Spacing may vary where sections are missing.
 - Stack-wide cutting angles: pitch 0.00 deg, yaw 0.00 deg.
-- No section carries a position yet.
+- 3 of 3 sections are still at their initial position, as ABBA places a new stack: the first section at the job's start, each next one a spacing further (position_source `initial` in status). Nobody has checked these positions.
 - The stack's order follows the positions: writing positions renumbers the sections, so use filenames to name them.
 - Alignment canvas: each section is drawn at its TRUE physical size from its pixel size (read from the file, or given by the host; without one the section image's width is mapped onto the atlas plane's width and the tool payload says uncalibrated), and the atlas at its voxel size; scale 1.0 is the section's calibrated size.
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.
@@ -26,7 +26,7 @@ Run facts:
 Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `review_comments`, `position_sections`, `interactive_transform`, `mark_damage`, `make_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `stalign_lddmm`, `stalign_plane_search`, `spomialign`, `emlddmm_stack`, `emlddmm_plane`.
 
 Constraints:
-- `submit` is refused unless every section has a position of its own, damaged sections included.
+- `submit` is refused while any section is still at its initial position: every section needs a position of its own, damaged sections included.
 - A reported interval break is accepted only at a section whose interval from the section before it, in the positions you wrote, exceeds 1.5x the stack's median written spacing.
 - `submit` is refused unless every section carries a transform, damaged sections included.
 - A damaged section (one with marked regions) still needs a transform made for its surviving anatomy: set it by hand with `interactive_transform`, or fit it with `elastix_affine`, which leaves the marked regions out of the fit. Inspect each overlay against the surviving internal anatomy before submitting.
@@ -53,13 +53,13 @@ Method:
 
 Work with the tools, then call `submit`.
 
-Opening pictures: read every page with show_stack(page=1) through show_stack(page=1) before any write. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale when the stack has positions; when a section has none, atlas reference strips at evenly spaced positions follow.
+Opening pictures: read every page with show_stack(page=1) through show_stack(page=1) before any write. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale.
 
-Status table (filename, position, spacing to the next placed section, flags):
+Status table (filename, position, '(initial)' for a position still at the job's initial spacing, spacing to the next section, flags):
 filename  position_mm  delta_to_next_mm  flags  transform(kind, mirrored)  deformation(methods)
-s0.png  unplaced  -
-s1.png  unplaced  -
-s2.png  unplaced  -
+s0.png  0.042 mm (initial)  0.083
+s1.png  0.125 mm (initial)  0.083
+s2.png  0.208 mm (initial)  -
 
 Recent run notes:
-- ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm
+- ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm; initial positions 0.04 to 0.21 mm

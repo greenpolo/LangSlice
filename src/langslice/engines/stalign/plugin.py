@@ -665,7 +665,7 @@ def _search_section(call: _PlaneCall, name: str) -> ToolResult:
         newline="\n",
     )
     pitch0, yaw0 = (float(v) for v in view_of.angles)
-    position0 = float(view_of.position_mm or 0.0)
+    position0 = view_of.position_mm
     change = {
         "pitch_deg": round(plane["pitch_deg"] - pitch0, 2),
         "yaw_deg": round(plane["yaw_deg"] - yaw0, 2),

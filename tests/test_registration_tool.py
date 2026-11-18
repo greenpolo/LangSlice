@@ -136,7 +136,7 @@ def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_pat
     assert calls[0].prompt == border_correction_tool_prompt(provider="openai-oauth")
     assert repeated["cached"] is True and repeated["prompt_edited"] is False
     assert repeated["artifact_dir"] == first["artifact_dir"]
-    record.position_mm = 4.5
+    record.set_position(4.5)
     changed = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert len(calls) == 2
     assert changed["geometry_fingerprint"] != first["geometry_fingerprint"]

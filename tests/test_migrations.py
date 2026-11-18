@@ -49,7 +49,7 @@ def _old_folder(tmp_path: Path) -> Path:
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     with job.writing():
         before = job.snapshot()
-        job.state.slices[0].position_mm = 5.0
+        job.state.slices[0].set_position(5.0)
         job.commit(before)
     job.close()
     folder = images / "langslice"
@@ -63,6 +63,7 @@ def _old_folder(tmp_path: Path) -> Path:
     for path in [folder / "state.json"]:
         state = json.loads(path.read_text(encoding="utf-8"))
         state["appearance"] = {}
+        state["format_version"] = 5
         state["slices"] = [{**row, **old_rows} for row in state["slices"]]
         path.write_text(json.dumps(state), encoding="utf-8")
     return folder
@@ -82,7 +83,7 @@ def test_an_old_folder_opens_with_one_warning_per_removed_name(
     handle.close()
     messages = _warnings(caplog)
     named = ["max_input_tokens", "transform.flip", "tasks: reorder", "'appearance'",
-             "'damaged' (in 2 section(s))", "'position_source' (in 2 section(s))"]
+             "'damaged' (in 2 section(s))"]
     assert len(messages) == len(named)
     for name in named:
         assert sum(name in message for message in messages) == 1, name
@@ -94,16 +95,15 @@ def test_an_old_folder_opens_with_one_warning_per_removed_name(
     for path in [folder / "state.json"]:
         state = json.loads(path.read_text(encoding="utf-8"))
         assert "appearance" not in state
-        assert all("damaged" not in row and "position_source" not in row
-                   for row in state["slices"])
+        assert all("damaged" not in row for row in state["slices"])
+        assert [row["position_source"] for row in state["slices"]] == ["written", "written"]
     events = [json.loads(line) for line in
               (folder / "logs" / "events.jsonl").read_text(
                   encoding="utf-8").splitlines()]
     migrated = [event for event in events if event["kind"] == "migrated"]
     assert len(migrated) == 1
     assert migrated[0]["settings"] == ["max_input_tokens", "transform.flip", "tasks: reorder"]
-    assert migrated[0]["dropped"] == {"appearance": 1, "slices.position_source": 2,
-                                      "slices.damaged": 2}
+    assert migrated[0]["dropped"] == {"appearance": 1, "slices.damaged": 2}
 
     caplog.clear()
     with caplog.at_level(logging.WARNING):
@@ -122,7 +122,7 @@ def test_a_dry_run_of_an_old_folder_warns_and_writes_nothing(
         opened = open_folder(folder, atlas_loader=lambda _n: _ATLAS, persist=False)
     assert opened.job.state.slices[0].position_mm == 5.0
     opened.close()
-    assert len(_warnings(caplog)) == 6
+    assert len(_warnings(caplog)) == 5
     after = {path: path.read_bytes() for path in folder.rglob("*") if path.is_file()}
     assert after == before
 
@@ -192,7 +192,7 @@ def test_an_open_that_writes_finds_the_trace_through_its_stored_paths(tmp_path: 
     assert (folder / OLD_DIR / "result.json").read_bytes() == reply_before
     for path in [folder / "state.json"]:
         state = json.loads(path.read_text(encoding="utf-8"))
-        assert state["format_version"] == STATE_FORMAT_VERSION == 5
+        assert state["format_version"] == STATE_FORMAT_VERSION == 6
         row = state["slices"][0]
         assert "image_correction" not in row
         assert row["border_trace"]["artifact_dir"] == OLD_DIR
@@ -200,7 +200,7 @@ def test_an_open_that_writes_finds_the_trace_through_its_stored_paths(tmp_path: 
               (folder / "logs" / "events.jsonl").read_text(
                   encoding="utf-8").splitlines()]
     migrated = [event for event in events if event["kind"] == "migrated"]
-    assert migrated[-1]["migrations"] == ["state_4_to_5"]
+    assert migrated[-1]["migrations"] == ["state_4_to_5", "state_5_to_6"]
 
     stamp = (folder / "state.json").read_bytes()
     langslice.open_job(folder, atlas_loader=lambda _n: _ATLAS).close()

@@ -99,23 +99,9 @@ def draw_calm_overlay(
     -------
     Image.Image
         The main stain on the stage under the section's transform and
-        applied deformation, the atlas borders soft over it; a section
-        with no position alone, oriented, without borders.
+        applied deformation, the atlas borders soft over it.
     """
     channel = (main_channel(raw_names(opened.workspace, section.id)),)
-    if section.position_mm is None:
-        bare = look(
-            opened.workspace,
-            state,
-            LookRequest(
-                mode="section",
-                sections=(section.id,),
-                images=channel,
-                long_edge=edge,
-            ),
-            store=opened.store,
-        )
-        return calm(content(bare[0]))
     request = LookRequest(
         mode="overlay",
         sections=(section.id,),

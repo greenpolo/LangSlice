@@ -313,8 +313,6 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
             with Image.open(BytesIO(base64.b64decode(picture.data))) as image:
                 assert max(image.size) <= CLAUDE_MAX_IMAGE_EDGE
                 assert patches(image.size) <= CLAUDE_MAX_IMAGE_PATCHES
-    assert any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
-                   for page in job.pages for block in page)
 
 
 def test_start_job_takes_a_folder_only_and_names_one_when_none_is_open():
@@ -482,4 +480,5 @@ def test_mcp_tools_and_a_script_work_on_one_job(tmp_path: Path):
     assert position(_text(after)["rows"], "s1.png") == 2.0
     assert "error" not in _text(undone), _text(undone)
     rows = _text(last)["rows"]
-    assert position(rows, "s1.png") is None and position(rows, "s0.png") == 1.0
+    held = {row["id"]: row for row in rows}
+    assert held["s1.png"]["position_source"] == "initial" and position(rows, "s0.png") == 1.0

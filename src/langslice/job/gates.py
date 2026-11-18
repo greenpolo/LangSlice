@@ -6,6 +6,7 @@ from typing import Any
 
 from langslice.core.fits import deformation
 from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
+from langslice.core.stack.section import INITIAL
 from langslice.core.stack.stack import Stack
 from langslice.job.settings.spec import JobSpec
 
@@ -22,17 +23,20 @@ def _gate(code: RefusalCode, message: str, **facts: object) -> Refused:
 
 
 def missing_positions(state: Stack) -> Refused | None:
-    """``None`` when every section has a position, else the refusal
-    naming the sections without one."""
+    """``None`` when every section's position was supplied or written, else
+    the refusal naming the sections still at their initial position."""
     missing = [
-        record.id for record in state.in_order() if record.position_mm is None
+        record.id
+        for record in state.in_order()
+        if record.position_source == INITIAL
     ]
     if not missing:
         return None
     return _gate(
         RefusalCode.MISSING_POSITIONS,
-        f"{len(missing)} of {len(state.slices)} section(s) have no position; "
-        "every section needs one, damaged ones included.",
+        f"{len(missing)} of {len(state.slices)} section(s) are still at their "
+        "initial position (the job's start and spacing); every section needs "
+        "a position written, damaged ones included.",
         missing_ids=missing,
     )
 
@@ -53,15 +57,15 @@ def strict_interval_error(state: Stack, breaks: list[int]) -> Refused | None:
     interval = float(state.interval_mm or 0.0)
     if interval <= 0:
         return None
-    placed = state.placed()
+    ordered = state.in_order()
     tolerance = interval * STRICT_INTERVAL_TOLERANCE
     failures: list[dict[str, Any]] = []
-    for before, after in zip(placed, placed[1:], strict=False):
+    for before, after in zip(ordered, ordered[1:], strict=False):
         spacing = abs(after.position_mm - before.position_mm)
         if abs(spacing - interval) > tolerance:
             failures.append(
                 {
-                    "between": [before.section.id, after.section.id],
+                    "between": [before.id, after.id],
                     "spacing_mm": round(spacing, 3),
                 }
             )
@@ -90,9 +94,8 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
         return None
     ordered = state.in_order()
     deltas = [
-        abs(float(b.position_mm) - float(a.position_mm))
+        abs(b.position_mm - a.position_mm)
         for a, b in zip(ordered, ordered[1:], strict=False)
-        if a.position_mm is not None and b.position_mm is not None
     ]
     if not deltas:
         return None
@@ -122,9 +125,7 @@ def unsupported_breaks(state: Stack, breaks: list[int]) -> Refused | None:
             )
             continue
         before, after = ordered[position - 1], ordered[position]
-        if before.position_mm is None or after.position_mm is None:
-            continue
-        written = abs(float(after.position_mm) - float(before.position_mm))
+        written = abs(after.position_mm - before.position_mm)
         if written > threshold:
             continue
         failures.append(

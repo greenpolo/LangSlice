@@ -44,7 +44,7 @@ def _write_positions(
         value = min(high, max(low, requested))
         if value != requested:
             clamped.append((record.id, requested, value))
-        record.position_mm = value
+        record.set_position(value)
         written.append((record.id, value))
     return written, clamped, unknown
 
@@ -92,21 +92,11 @@ def renumber(order: Sequence[Section]) -> list[str]:
 def order_by_position(job: Job) -> list[str]:
     """Number the stack in the order of the sections' positions; the ids moved.
 
-    Placed sections run by increasing position (ties keep their order) and
-    take the places the placed sections held; a section without a position
-    keeps its own place. No undo step.
+    The sections run by increasing position (ties keep their order). No
+    undo step.
     """
     ordered = job.state.in_order()
-    placed = sorted(
-        (record for record in ordered if record.position_mm is not None),
-        key=lambda record: float(record.position_mm or 0.0),
-    )
-    queue = iter(placed)
-    result = [
-        next(queue) if record.position_mm is not None else record
-        for record in ordered
-    ]
-    return renumber(result)
+    return renumber(sorted(ordered, key=lambda record: record.position_mm))
 
 
 def position_sections(
@@ -282,11 +272,8 @@ def position_sections_tool(
         section.id for section in job.state.in_order()
     ]
     in_stack = [job.state.by_id(name) for name in in_picture]
-    stack_mm = [
-        section.position_mm for section in in_stack if section is not None
-    ]
     positions = distinct_positions(
-        [float(mm) for mm in stack_mm if mm is not None]
+        [section.position_mm for section in in_stack if section is not None]
     )
     mode = "overlay" if run.spec.off("look:positioning") else "positioning"
     looked = show_result(

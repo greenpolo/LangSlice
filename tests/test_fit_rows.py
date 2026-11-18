@@ -58,7 +58,7 @@ def test_an_applied_fit_ends_with_what_was_written():
 
 
 def test_the_core_fits_refusal_keeps_the_section_where_it_named_it():
-    refused = Refused(RefusalCode.NO_POSITION, id="a.png", message="m")
+    refused = Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, id="a.png", message="m")
     assert list(affine_row_to_json(AffineRow("a.png", refusal=refused))) == [
         "status", "error", "id", "message"]
     stale = Refused(RefusalCode.STALE_INPUT, message="m")
