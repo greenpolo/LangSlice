@@ -94,9 +94,8 @@ def search_regions(
     """Regions whose acronym or name matches *query*
     (:func:`langslice.core.atlas.search.grep_structures`).
 
-    With *section* (the filename of a section with a position), each row says
-    whether the region or a descendant appears in the atlas plane at that
-    placement; a section without a position gets a ``note`` instead. Returns
+    With *section* (a section's filename), each row says whether the region
+    or a descendant appears in the atlas plane at its placement. Returns
     ``query``, ``matches`` (the total), ``rows`` (at most
     :data:`~langslice.core.atlas.search.GREP_ATLAS_LIMIT`), ``more`` when some
     were left out. Refused: ``BAD_ARGS`` (empty query), ``NO_STRUCTURES``,
@@ -127,22 +126,16 @@ def _grep_regions(job: Job, workspace: Workspace, text: str, section: object) ->
                       message="This atlas has no region hierarchy.")
     state = job.state
     present: set[int] | None = None
-    note = ""
     if section != "":
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [section])
-        if record.position_mm is None:
-            note = f"{record.id} has no position yet, so in_section is omitted."
-        else:
-            present = plane_structure_ids(state, workspace, record.position_mm,
-                                          record.angles)
+        present = plane_structure_ids(state, workspace, record.position_mm,
+                                      record.angles)
     rows, total = grep_structures(entries, text, present, limit=GREP_ATLAS_LIMIT)
     result: dict[str, Any] = {"query": text, "matches": total, "rows": rows}
     if total > len(rows):
         result["more"] = total - len(rows)
-    if note:
-        result["note"] = note
     return result
 
 

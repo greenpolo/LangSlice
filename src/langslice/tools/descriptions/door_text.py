@@ -33,8 +33,7 @@ IMAGE_MODEL_OFF = render(_IMAGE_MODEL_OFF)
 OPENING_SHOWS = (
     "They show every section in strips, in the stack's current order, each "
     "labelled, with the atlas at its current position beneath it at the same "
-    "scale when the stack has positions; when a section has none, atlas "
-    "reference strips at evenly spaced positions follow."
+    "scale."
 )
 OPENING_PAGES = (
     "Opening pictures: read every page with show_stack(page=1) through "
@@ -85,8 +84,9 @@ REVIEW_OPEN = (
     "marks; work on them first."
 )
 STATUS_TABLE = (
-    "Status table (filename, position, spacing to the next placed section, "
-    "flags):\n{table}\n\nRecent run notes:\n{notes}"
+    "Status table (filename, position, '(initial)' for a position still at "
+    "the job's initial spacing, spacing to the next section, flags):\n"
+    "{table}\n\nRecent run notes:\n{notes}"
 )
 NO_RUN_NOTES = "- (none)"
 

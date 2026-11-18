@@ -18,6 +18,10 @@ migration         reads  what it does, to the next format
                          is named ``section_image``
 ``state_4_to_5``  4      a section's ``image_correction`` is named
                          ``border_trace``
+``state_5_to_6``  5      every section gets a position and who set it:
+                         a section without one its initial position
+                         (the job's start and spacing), the others the
+                         host or a write (``position_migration.py``)
 ================  =====  =============================================
 
 A section's ``registrations.jsonl`` (its registrations, before the section
@@ -69,6 +73,7 @@ from functools import partial
 
 import numpy as np
 
+from langslice.core.atlas.load import get_position_range_mm, load_atlas
 from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
 from langslice.core.sections.images import (
     DEFAULT_CLAHE_CLIP,
@@ -81,6 +86,7 @@ from langslice.core.sections.images import (
     validate_recipe,
     write_file,
 )
+from langslice.core.space import as_plane
 from langslice.core.stack.codec import image_from_json, image_to_json
 from langslice.core.stack.json_reads import (
     as_number,
@@ -91,6 +97,7 @@ from langslice.core.stack.json_reads import (
 )
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
+from langslice.job import position_migration as positions
 from langslice.job.folder.layout import JobLayout
 from langslice.job.state_file import (
     STATE_FORMAT_VERSION,
@@ -120,7 +127,7 @@ REMOVED_SETTINGS = (
 REUSED_SETTINGS: dict[str, type] = {"enabled": list}
 REMOVED_TASKS = ("reorder",)
 REMOVED_STACK_KEYS = ("appearance",)
-REMOVED_SECTION_KEYS = ("position_source", "damaged")
+REMOVED_SECTION_KEYS = ("damaged",)
 
 OLD_TRACE_KEY, TRACE_KEY = "image_correction", "border_trace"
 OLD_REGISTRATION_LIST = "registrations.jsonl"
@@ -158,6 +165,7 @@ class FolderMigration:
         self.used = False
         self.applied: list[str] = []
         self.dropped: dict[str, int] = {}
+        self.initial: dict[str, float] = {}
 
     def seed(self, data: JsonObject) -> None:
         """Remember the section images a current state already holds.
@@ -223,6 +231,26 @@ class FolderMigration:
                     self.applied.append(row.name)
         self.used = True
         return fields
+
+    def position_range(self, data: JsonObject) -> tuple[float, float]:
+        """Return the atlas volume's extent along a state's cutting axis.
+
+        Parameters
+        ----------
+        data
+            A whole state's fields (its ``atlas`` and ``plane``).
+
+        Returns
+        -------
+        tuple of float
+            The workspace's range, else the one of the atlas the state
+            names, loaded for it.
+        """
+        if self.workspace is not None:
+            return self.workspace.position_range
+        atlas = load_atlas(str(data.get("atlas")))
+        plane = as_plane(str(data.get("plane") or "coronal"))
+        return get_position_range_mm(atlas, plane=plane)
 
     def section_image(
         self,
@@ -700,6 +728,7 @@ class Migration:
 STATE_MIGRATIONS = (
     Migration("state_3_to_4", 3, state_3_to_4),
     Migration("state_4_to_5", 4, state_4_to_5),
+    Migration("state_5_to_6", 5, positions.state_5_to_6),
 )
 
 

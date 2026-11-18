@@ -10,7 +10,9 @@ the 3D view sits exactly where its pictures say it does:
 - the atlas brain (:func:`atlas_shell`): the atlas's ``root`` mesh, the
   one brainrender draws, its vertices as float32 and its triangles as
   uint32, base64 encoded;
-- each section's picture corners (:func:`section_corners`): the top-left,
+- each section's picture corners (:func:`section_corners`), once the host
+  or a tool has given it a position (the job's initial spacing is not a
+  placement): the top-left,
   top-right and bottom-left corners of its thumbnail (the section turned and
   flipped as it is kept, as ``render/thumb`` draws it) in atlas micrometres,
   in the atlas's own axis order, the fourth corner the parallelogram's;
@@ -37,7 +39,7 @@ from langslice.core.maps.section_maps import (
     section_frame,
 )
 from langslice.core.space import atlas_space_context, slice_axis_index
-from langslice.core.stack.section import Section
+from langslice.core.stack.section import INITIAL, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
@@ -216,9 +218,12 @@ def section_corners(
     -------
     Corners or None
         The thumbnail's top-left, top-right and bottom-left corners in
-        atlas micrometres; None for a section without a linear placement
+        atlas micrometres; None for a section still at the job's initial
+        spacing (not placed by anyone yet), one without a linear placement
         or one whose frame cannot be made (logged).
     """
+    if section.position_source == INITIAL:
+        return None
     if placement_problem(state, section) is not None:
         return None
     try:

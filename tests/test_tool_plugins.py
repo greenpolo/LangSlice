@@ -426,7 +426,7 @@ def test_the_fit_frame_carries_the_marked_damage_on_the_native_plane(make, image
     from tests.test_linear_fit_affine_regions import HalvesAtlas
 
     state, _c, box = box_of(images, ref, atlas=HalvesAtlas())
-    state.by_id("s0.png").position_mm = 1.0
+    state.by_id("s0.png").set_position(1.0)
     assert call(box, "damage_of")["excluded"] is None
     assert call(box, "mark_damage", section="s0.png", regions=["L"])["status"] == "ok"
     reply = call(box, "damage_of")

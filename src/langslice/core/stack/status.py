@@ -13,7 +13,7 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.stack.affine import StoredAffine
 from langslice.core.stack.codec import physical_to_json
 from langslice.core.stack.deformation import DeformationRef
-from langslice.core.stack.section import Section
+from langslice.core.stack.section import INITIAL, Section
 from langslice.core.stack.stack import Stack
 
 PER_SECTION = "per section"
@@ -104,13 +104,15 @@ def stack_angles_entry(state: Stack) -> dict[str, float] | str:
 def status_rows(state: Stack) -> list[dict[str, Any]]:
     """One row per section in corrected order. The ``ls`` of the environment.
 
-    ``delta_to_next_mm`` is the SIGNED distance to the next section in
-    corrected order that carries a position, and null when this section has
-    none or no placed section follows it. ``mirrored`` (in ``transform``) comes off
-    the recorded transform. Data only: no comparison against the nominal
-    interval, no verdict. ``transform`` is the section's transform
-    (:func:`transform_entry`: its kind and knobs) and ``deformation`` the
-    deformation it holds (:func:`deformation_entry`: its method, its steps'
+    ``position_source`` says who set ``position_mm``: ``initial`` (the
+    job's start and spacing, set by no one), ``input`` (the host) or
+    ``written`` (a tool or a script). ``delta_to_next_mm`` is the SIGNED
+    distance to the next section in corrected order, null for the last.
+    ``mirrored`` (in ``transform``) comes off the recorded transform. Data
+    only: no comparison against the nominal interval, no verdict.
+    ``transform`` is the section's transform (:func:`transform_entry`: its
+    kind and knobs) and ``deformation`` the deformation it holds
+    (:func:`deformation_entry`: its method, its steps'
     methods and its settings). ``damaged_regions``
     are the section's marked regions (``damaged``: it has some); a
     ``damage_note`` may stand alone (a host's note). When the sections'
@@ -127,24 +129,16 @@ def status_rows(state: Stack) -> list[dict[str, Any]]:
     ordered = state.in_order()
     mixed = state.mixed_angles
     rows: list[dict[str, Any]] = []
-    for index, section in enumerate(ordered):
-        here = section.position_mm
+    following = [*ordered[1:], None]
+    for section, after in zip(ordered, following, strict=True):
         delta: float | None = None
-        if here is not None:
-            following = next(
-                (
-                    value
-                    for r in ordered[index + 1 :]
-                    if (value := r.position_mm) is not None
-                ),
-                None,
-            )
-            if following is not None:
-                delta = round(following - here, 3)
+        if after is not None:
+            delta = round(after.position_mm - section.position_mm, 3)
         rows.append(
             {
                 "id": section.id,
-                "position_mm": round(here, 3) if here is not None else None,
+                "position_mm": round(section.position_mm, 3),
+                "position_source": section.position_source,
                 "delta_to_next_mm": delta,
                 "flip": section.flip,
                 "rotation_deg": section.rotation_deg,
@@ -167,7 +161,7 @@ def status_rows(state: Stack) -> list[dict[str, Any]]:
 
 
 ROW_FIELDS: tuple[str, ...] = (
-    "id", "position_mm", "delta_to_next_mm", "flip",
+    "id", "position_mm", "position_source", "delta_to_next_mm", "flip",
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
     "deformation", "landmarks", "caveats",
@@ -182,8 +176,8 @@ def uniform_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rows (whole or compacted) with every field of :data:`ROW_FIELDS`:
     null where a row has no value (or its :data:`ROW_DEFAULTS` value), then
     any other field a row carries. One schema for every row, so a script can
-    read any field of any row (the last placed section's
-    ``delta_to_next_mm`` is null, not missing)."""
+    read any field of any row (the last section's ``delta_to_next_mm`` is
+    null, not missing)."""
     extra = list(dict.fromkeys(key for row in rows for key in row if key not in ROW_FIELDS))
     def filled(row: dict[str, Any], key: str) -> Any:
         if key in row:
@@ -244,9 +238,9 @@ def status_text(state: Stack) -> str:
         elif row["damage_note"]:
             flags.append(f"damage note: {row['damage_note']}")
         flags.extend(row["caveats"])
-        position = (
-            "unplaced" if row["position_mm"] is None else f"{row['position_mm']:.3f} mm"
-        )
+        position = f"{row['position_mm']:.3f} mm"
+        if row["position_source"] == INITIAL:
+            position += " (initial)"
         delta = (
             "-" if row["delta_to_next_mm"] is None else f"{row['delta_to_next_mm']:.3f}"
         )

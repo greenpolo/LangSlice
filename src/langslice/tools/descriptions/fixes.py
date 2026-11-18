@@ -43,10 +43,6 @@ FIXES: dict[str, str] = {
         "Put the section back at the position and cutting angles the "
         "message names, then call it again."
     ),
-    RefusalCode.NO_POSITION: (
-        "Write the section's position first[[?position_sections  "
-        "(position_sections)]]."
-    ),
     RefusalCode.MISSING_POSITIONS: (
         "Write every section's own position first[[?position_sections  "
         "(position_sections)]]."

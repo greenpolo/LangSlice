@@ -127,7 +127,7 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
         encoding="utf-8"))
     assert registration["format_version"] == 1
     assert [entry["id"] for entry in registration["sections"]] == ["s0.png", "s1.png", "s2.png"]
-    assert all(entry["parameters"]["plane"]["position_mm"] is None
+    assert all(entry["parameters"]["plane"]["position_source"] == "initial"
                for entry in registration["sections"])
 
 
@@ -147,10 +147,11 @@ def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
     assert [(line["seq"], line["by"], line["step"]) for line in lines("s0")] == [(1, "host", 0)]
     with job.acting("position_sections"):
         before = job.snapshot()
-        job.state.by_id("s0.png").position_mm = 2.5
+        job.state.by_id("s0.png").set_position(2.5)
         job.commit(before)
-    assert [(line["by"], line["position_mm"]) for line in lines("s0")] == [
-        ("host", None), ("position_sections", 2.5)]
+    assert [(line["by"], line["position_source"]) for line in lines("s0")] == [
+        ("host", "initial"), ("position_sections", "written")]
+    assert lines("s0")[-1]["position_mm"] == 2.5
     assert len(lines("s1")) == 1
     step = json.loads((root / "history" / "undo.json").read_text(
         encoding="utf-8"))["undo"][-1]
@@ -166,8 +167,8 @@ def test_each_write_is_a_line_per_section_and_undo_names_lines(tmp_path: Path):
     assert again.redo() and again.state.notes[-1] == "note 59"
     for _ in range(61):
         assert again.undo()
-    assert again.state.by_id("s0.png").position_mm is None
-    assert [line["position_mm"] for line in lines("s0")] == [None, 2.5, None]
+    assert again.state.by_id("s0.png").position_source == "initial"
+    assert [line["position_source"] for line in lines("s0")] == ["initial", "written", "initial"]
 
 
 @pytest.mark.parametrize("damage", ["unreadable", "newer"])
@@ -267,7 +268,7 @@ def test_records_stay_while_an_older_langslice_s_undo_steps_are_beside(tmp_path:
         encoding="utf-8")
     record = job.state.by_id("s0.png")
     before = job.snapshot()
-    record.position_mm = 4.0
+    record.set_position(4.0)
     job.commit(before)
     assert old.is_dir()
 
@@ -281,7 +282,7 @@ def test_a_line_cut_short_is_skipped_and_the_next_starts_on_its_own(tmp_path: Pa
         encoding="utf-8")
     record = job.state.by_id("s0.png")
     before = job.snapshot()
-    record.position_mm = 4.0
+    record.set_position(4.0)
     job.commit(before)
     lines = path.read_text(encoding="utf-8").splitlines()
     assert lines[1] == '{"seq": 2, "step": 1, "by": "pos'

@@ -14,7 +14,7 @@ from langslice.core.refusal import Refused
 from langslice.core.stack.codec import affine_from_json
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
-from langslice.job.settings.spec import JobSpec, NonlinearSpec
+from langslice.job.settings.spec import JobSpec, NonlinearSpec, PositionSpec
 from langslice.tools.bookkeeping import submit as ops_submit
 from tests.fakes import SlabAtlas
 
@@ -37,7 +37,7 @@ def _placed(tmp_path: Path, **nonlinear: Any) -> Job:
     job, _ = _open(tmp_path, tasks=["nonlinear"], nonlinear=NonlinearSpec(
         provider="none", **nonlinear))
     for index, record in enumerate(job.state.in_order()):
-        record.position_mm = 2.0 + 0.2 * index
+        record.set_position(2.0 + 0.2 * index)
         record.transform = affine_from_json(dict(IDENTITY))
     return job
 
@@ -67,22 +67,30 @@ def test_the_host_can_require_a_deformation_on_every_section(tmp_path: Path):
     assert "require_deformation" not in JobSpec(image_folder=".").to_dict()["nonlinear"]
 
 
-def test_ingest_leaves_sections_unplaced_and_submit_refuses(tmp_path: Path):
+def test_ingest_gives_initial_positions_and_submit_refuses_them(tmp_path: Path):
     job, _ = _open(tmp_path, tasks=["position"])
-    assert all(record.position_mm is None for record in job.state.slices)
+    assert all(record.position_source == "initial" for record in job.state.slices)
     refused = _refused(job)
     assert refused.code == "MISSING_POSITIONS"
     assert refused.payload()["missing_ids"] == ["s0.png", "s1.png", "s2.png"]
 
 
 @pytest.mark.parametrize("tasks, inputs, expected", [
-    (["position"], {"positions": {"s1.png": 2.0, "s3.png": 3.0}}, [None, 2.0, None, 3.0, None]),
-    (["transform"], {}, [None] * 5),
+    (["position"], {"positions": {"s1.png": 2.0, "s3.png": 3.0}},
+     [(1.9, "initial"), (2.0, "input"), (9.5, "initial"), (3.0, "input"), (17.1, "initial")]),
+    (["transform"], {}, [(1.9, "initial"), (5.7, "initial"), (9.5, "initial"),
+                         (13.3, "initial"), (17.1, "initial")]),
 ])
-def test_supplied_positions_place_only_their_sections(tmp_path: Path, tasks, inputs, expected):
+def test_supplied_positions_replace_only_their_sections(tmp_path: Path, tasks, inputs, expected):
     job, _ = _open(tmp_path, n=5, tasks=tasks, inputs=inputs)
-    assert [record.position_mm for record in sorted(
+    assert [(record.position_mm, record.position_source) for record in sorted(
         job.state.slices, key=lambda record: record.index_original)] == expected
+
+
+def test_the_initial_positions_start_and_space_as_the_settings_say(tmp_path: Path):
+    job, _ = _open(tmp_path, n=3, tasks=["position"],
+                   position=PositionSpec(start_mm=4.0, interval_um=500))
+    assert [record.position_mm for record in job.state.in_order()] == [4.0, 4.5, 5.0]
 
 
 def test_saved_pictures_record_the_history_depth(tmp_path: Path):
@@ -90,7 +98,9 @@ def test_saved_pictures_record_the_history_depth(tmp_path: Path):
     for position in (2.0, 3.0):
         with job.writing():
             before = job.snapshot()
-            job.state.by_id("s0.png").position_mm = position  # type: ignore[union-attr]
+            section = job.state.by_id("s0.png")
+            assert section is not None
+            section.set_position(position)
             job.commit(before)
     assert len(job.undo_stack) == 2
     picture = Image.new("RGB", (20, 10))

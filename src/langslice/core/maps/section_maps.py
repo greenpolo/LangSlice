@@ -191,8 +191,8 @@ def stored_params(section: Section) -> tuple[float, ...]:
 def placement_problem(state: Stack, section: Section) -> str | None:
     """Why *section* has no linear map yet (None: it has one). A section
     without a transform is placed by the identity, as its pictures show it."""
-    if section.position_mm is None or not np.isfinite(section.position_mm):
-        return "no position"
+    if not np.isfinite(section.position_mm):
+        return "no finite position"
     transform = section.transform
     if transform is None:
         return None
@@ -227,7 +227,7 @@ def _frame_key(state: Stack, workspace: Workspace, record: Section) -> tuple[Any
     settings = workspace.settings
     return (
         record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
-        record.held_position(),
+        record.position_mm,
         state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
         stored_params(record),
         json.dumps(settings.supplied_pixel_size, default=str),
@@ -329,7 +329,7 @@ def _section_frame(state: Stack, workspace: Workspace, record: Section) -> Secti
                    else unturned_render)
     file_to_render = orient @ pixel_center_map(file_size, unturned_render)
     plane = state.plane
-    position = record.held_position()
+    position = record.position_mm
     atlas = workspace.atlas
     atlas_to_render, geometry = linear_placement_matrix(
         render_size, render_um, atlas, position, plane, record.pitch_deg, record.yaw_deg,

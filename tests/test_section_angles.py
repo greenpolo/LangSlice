@@ -103,7 +103,8 @@ def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_p
 
     stored = {FORMAT_KEY: STATE_FORMAT_VERSION, "atlas": "allen_mouse_25um",
               "plane": "coronal", "cutting_angles_deg": {"pitch": 2.0, "yaw": -1.0},
-              "slices": [{"id": f"s{i}.png", "index_original": i, "index_corrected": i}
+              "slices": [{"id": f"s{i}.png", "index_original": i, "index_corrected": i,
+                          "position_mm": 1.0 + i}
                          for i in range(3)]}
     path = tmp_path / "state.json"
     path.write_text(json.dumps(stored), encoding="utf-8")
@@ -301,7 +302,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     assert state is not None
     assert {name: angles_to_json(state.by_id(name).angles) for name in IDS} == SECTION_ANGLES
     saved = json.loads((job / "state.json").read_text(encoding="utf-8"))
-    assert saved["format_version"] == 5 and saved["cutting_angles_deg"] is None
+    assert saved["format_version"] == 6 and saved["cutting_angles_deg"] is None
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--nonlinear-provider", "none", "--pitch", "1",
                          "--section-angles", json.dumps(SECTION_ANGLES))

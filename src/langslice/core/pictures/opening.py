@@ -12,10 +12,8 @@ Each strip's long edge is the model lane's largest image
 (:func:`langslice.core.pictures.sizes.opening_edge`), so a larger level means
 fewer tiles per strip and more strips. A strip also stays inside the lane's
 patch budget (:data:`MAX_IMAGE_PATCHES`): past it the vision encoder would
-shrink the whole strip, labels included. A stack with no position at all gets
-section-only strips followed by the atlas reference (evenly spaced positions)
-in the same strip format; a stack where some section lacks a position gets both
-the paired strips and the reference.
+shrink the whole strip, labels included. Every section has a position (its
+initial one until a host or a tool sets it), so every column is a pair.
 """
 
 from __future__ import annotations
@@ -26,12 +24,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageDraw
 
-from langslice.core.atlas.planes import reference_atlas
 from langslice.core.pictures.captions import angles_label, caption
 from langslice.core.pictures.scale import atlas_at, pair_scale, section_at
 from langslice.core.pictures.sizes import opening_edge
-from langslice.core.sections.renders import render_slice
-from langslice.core.stack.section import Section
+from langslice.core.stack.section import INITIAL, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 
@@ -90,12 +86,6 @@ def tile_label(record: Section) -> str:
     if record.damaged:
         flags.append("damaged")
     return record.id + (f" [{', '.join(flags)}]" if flags else "")
-
-
-def section_tile(ctx: Workspace, state: Stack, record: Section, tile: int
-                 ) -> Image.Image:
-    """The section as the agent is shown it, the whole image, at most *tile*."""
-    return render_slice(ctx, record, long_edge=tile)
 
 
 def pair_tiles(ctx: Workspace, state: Stack, record: Section, position_mm: float,
@@ -209,19 +199,12 @@ def opening_items(
     edge, budget = limit
     count, tile = strip_layout(edge, opening_edge(ctx))
     ordered = list(state.in_order())
-    placed = any(record.position_mm is not None for record in ordered)
-    unplaced = [record for record in ordered if record.position_mm is None]
 
     def column(record: Section) -> list[Image.Image]:
         position = record.position_mm
-        if placed and position is not None:
-            section, atlas = pair_tiles(ctx, state, record, position, tile)
-            return [_cell(section, tile_label(record), tile),
-                    _cell(atlas, f"atlas {position:.2f} mm", tile)]
-        cells = [_cell(section_tile(ctx, state, record, tile), tile_label(record), tile)]
-        if placed:
-            cells.append(_cell(None, "no position", tile))
-        return cells
+        section, atlas = pair_tiles(ctx, state, record, position, tile)
+        return [_cell(section, tile_label(record), tile),
+                _cell(atlas, f"atlas {position:.2f} mm", tile)]
 
     columns = [column(record) for record in ordered[:1]]
     with ThreadPoolExecutor(OPENING_THREADS) as pool:
@@ -232,10 +215,14 @@ def opening_items(
               if state.mixed_angles else f"at the stack's cutting angles{_angles(state)}")
     beneath = (
         " Beneath each section is the atlas at that section's current position "
-        f"{planes}, labelled 'atlas <position> mm' "
-        "('no position' where it has none)."
-        if placed else ""
+        f"{planes}, labelled 'atlas <position> mm'."
     )
+    initial = sum(record.position_source == INITIAL for record in ordered)
+    if initial:
+        beneath += (
+            f" {initial} of the {len(ordered)} sections are still at their initial "
+            "position (the job's start and spacing), set by no one."
+        )
     items: list[str | Image.Image] = [(
         f"The {len(ordered)} sections of the stack follow in {len(strips)} "
         f"strip{'s' if len(strips) != 1 else ''}, in their current order, "
@@ -251,38 +238,5 @@ def opening_items(
             + ", ".join(record.id for record in members)
         )
         items.append(strip)
-
-    if unplaced:
-        items.extend(reference_items(state, ctx, tile=tile, count=count, budget=budget,
-                                     max_bytes=max_bytes))
     return items
 
-
-def reference_items(
-    state: Stack, ctx: Workspace, *, tile: int, count: int, budget: int,
-    max_bytes: int | None = None,
-) -> list[str | Image.Image]:
-    """The atlas reference (evenly spaced positions) as strips of atlas tiles."""
-    step, pictures = reference_atlas(ctx, state, long_edge=tile)
-    if not pictures:
-        return []
-    planes = (
-        "at the median of the sections' cutting angles"
-        + angles_label(state.view_angles, ANGLES_WORDS) if state.mixed_angles
-        else f"at the stack's cutting angles{_angles(state)}")
-    columns = [[_cell(picture, f"atlas {position:.2f} mm", tile)]
-               for position, picture in pictures]
-    strips = pack_strips(columns, tile, count, budget, max_bytes)
-    items: list[str | Image.Image] = [(
-        f"Atlas reference strip{'s' if len(strips) != 1 else ''}: the atlas at "
-        f"{len(pictures)} positions, every {step:.2f} mm from {pictures[0][0]:.2f} to "
-        f"{pictures[-1][0]:.2f} mm, {planes}, "
-        f"in {len(strips)} strip{'s' if len(strips) != 1 else ''}, each atlas section "
-        "labelled 'atlas <position> mm' above it."
-    )]
-    bounds = [start for start, _strip in strips] + [len(pictures)]
-    for number, (start, strip) in enumerate(strips):
-        first, last = pictures[start][0], pictures[bounds[number + 1] - 1][0]
-        items.append(f"Atlas strip {number + 1} of {len(strips)}: {first:.2f} to {last:.2f} mm")
-        items.append(strip)
-    return items

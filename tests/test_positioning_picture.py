@@ -31,24 +31,24 @@ from langslice.core.pictures.positioning import (
 from langslice.core.pictures.zoom import redraw
 from langslice.core.refusal import Refused
 from langslice.job.state_file import stack_to_json
-from tests.look_synthetic import SECTIONS, stack
+from tests.look_synthetic import stack
 
 SECTION_UM = (9000.0, 6500.0)
 ATLAS_UM = (10000.0, 7000.0)
 RANGE = (0.0, 13.2)
 
 
-def _entries(positions: Sequence[float | None]) -> list[SectionEntry]:
+def _entries(positions: Sequence[float]) -> list[SectionEntry]:
     return [SectionEntry(id=f"s{k}", labels=(f"{k}: s{k}.tif", str(k)), position_mm=p,
                          extent_um=SECTION_UM) for k, p in enumerate(positions)]
 
 
-def _plan(positions: Sequence[float | None], atlas_mm: tuple[float, ...] = (3.0, 6.5, 10.0), **kw):
+def _plan(positions: Sequence[float], atlas_mm: tuple[float, ...] = (3.0, 6.5, 10.0), **kw):
     return plan(_entries(positions), [(mm, ATLAS_UM) for mm in atlas_mm],
                 range_mm=RANGE, tile_edge=kw.pop("tile_edge", 512), **kw)
 
 
-def _one(positions: Sequence[float | None], atlas_mm: tuple[float, ...] = (3.0, 6.5, 10.0), **kw):
+def _one(positions: Sequence[float], atlas_mm: tuple[float, ...] = (3.0, 6.5, 10.0), **kw):
     layouts = _plan(positions, atlas_mm, **kw)
     assert len(layouts) == 1
     return layouts[0]
@@ -65,9 +65,9 @@ def _segments_cross(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
 
 
 
-def test_position_order_keeps_stack_order_for_ties_and_puts_unplaced_last():
-    entries = _entries([5.0, None, 2.0, 5.0, 1.0, None, 2.0])
-    assert [e.id for e in position_order(entries)] == ["s4", "s2", "s6", "s0", "s3", "s1", "s5"]
+def test_position_order_keeps_stack_order_for_ties():
+    entries = _entries([5.0, 2.0, 5.0, 1.0, 2.0])
+    assert [e.id for e in position_order(entries)] == ["s3", "s1", "s4", "s0", "s2"]
 
 
 def test_split_cuts_even_consecutive_runs():
@@ -83,8 +83,8 @@ def test_split_gives_each_atlas_position_to_the_run_around_it():
     positions = [1.0, 2.0, 3.0, 7.0, 8.0, 9.0]
     pieces = split(positions, [0.5, 2.5, 4.9, 5.1, 12.0], per_picture=3)
     assert pieces == [([0, 1, 2], [0, 1, 2]), ([3, 4, 5], [3, 4])]
-    pieces = split([1.0, 2.0, None, None], [9.0], per_picture=2)
-    assert pieces == [([0, 1], [0]), ([2, 3], [])]
+    pieces = split([1.0, 2.0, 3.0, 4.0], [9.0], per_picture=2)
+    assert pieces == [([0, 1], []), ([2, 3], [0])]
 
 
 def test_split_splits_a_run_holding_too_many_atlas_positions():
@@ -168,21 +168,16 @@ def test_positioning_sections_ordered_by_position_not_index(tmp_path: Path):
     assert picture.sections == ("s0.png", "s1.png")
 
 
-@pytest.mark.parametrize("placed", [False, True])
-def test_unplaced_sections_can_compare_candidates_without_writing(tmp_path: Path, placed: bool):
+def test_sections_can_compare_candidates_without_writing(tmp_path: Path):
     ws, state = stack(tmp_path)
-    for record in state.slices:
-        record.position_mm = None
-    if placed:
-        state.slices[1].position_mm = 0.15
+    state.slices[1].set_position(0.01)
     before = stack_to_json(state)
     pictures = look(ws, state, LookRequest("positioning", positions_mm=(0.05, 0.2)))
     assert stack_to_json(state) == before
     assert len(pictures) == 1
     picture = pictures[0]
     assert picture.extra["positions_mm"] == [0.05, 0.2]
-    assert f"{2 if placed else 3} without a position" in picture.caption
-    expected = ("s1.png", "s0.png", "s2.png") if placed else SECTIONS
+    expected = ("s1.png", "s0.png", "s2.png")
     assert picture.sections == expected
     width, height = picture.recipe["shown"]
     zoomed = redraw(picture.recipe, [0, 0, width, height], ws, state=state)

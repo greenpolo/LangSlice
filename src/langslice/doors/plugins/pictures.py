@@ -148,8 +148,7 @@ class ContextPictures(ContextProposals):
                     held.angles = (float(angles[0]), float(angles[1]))
                 held.deformation = None
         records = [state.by_id(name) for name in names]
-        positions = distinct_positions([float(r.position_mm) for r in records
-                                        if r is not None and r.position_mm is not None])
+        positions = distinct_positions([r.position_mm for r in records if r is not None])
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="positioning", sections=tuple(names),
                                     positions_mm=tuple(positions), long_edge=edge,

@@ -47,7 +47,7 @@ def test_opening_of_100_angled_sections_filters_the_volume_once(
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
-        record.position_mm = 0.2 + 0.008 * index
+        record.set_position(0.2 + 0.008 * index)
         record.angles = (4.0, -3.0)
     monkeypatch.setattr(oblique, "_filtered_cache", {})
     calls = []

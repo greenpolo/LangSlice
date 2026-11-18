@@ -25,7 +25,6 @@ from langslice.core.stack.section import (
     FLAT,
     Angles,
     MixedAngles,
-    Placed,
     Section,
 )
 
@@ -41,6 +40,49 @@ def plane_angles(state: Stack, angles: Angles | None) -> Angles:
         if angles is None
         else (float(angles[0]), float(angles[1]))
     )
+
+
+def initial_positions(
+    count: int,
+    bounds: tuple[float, float],
+    start_mm: float | None,
+    spacing_mm: float | None,
+) -> list[float]:
+    """Return the initial position of each of *count* sections, in order.
+
+    ABBA's rule: the first section at *start_mm*, each next one
+    *spacing_mm* further along the cutting axis, every position clamped
+    to the atlas volume. Without a spacing the stack spreads over the
+    whole volume (its extent over *count*); without a start the run is
+    centred in the volume.
+
+    Parameters
+    ----------
+    count
+        The number of sections.
+    bounds
+        The atlas volume's extent along the cutting axis, in millimetres.
+    start_mm
+        The first section's position; None to centre the run.
+    spacing_mm
+        The distance between consecutive sections; None to spread the
+        stack over the volume.
+
+    Returns
+    -------
+    list of float
+        One position per section, the first section's first.
+    """
+    low, high = float(bounds[0]), float(bounds[1])
+    spacing = (high - low) / max(count, 1)
+    if spacing_mm:
+        spacing = float(spacing_mm)
+    start = (low + high - (count - 1) * spacing) / 2.0
+    if start_mm is not None:
+        start = float(start_mm)
+    return [
+        min(max(start + index * spacing, low), high) for index in range(count)
+    ]
 
 
 @dataclass
@@ -99,20 +141,6 @@ class Stack:
         list of Section
         """
         return sorted(self.slices, key=lambda section: section.index_corrected)
-
-    def placed(self) -> list[Placed]:
-        """Return the sections that have a position, in corrected order.
-
-        Returns
-        -------
-        list of Placed
-            Each with its position as a number.
-        """
-        return [
-            Placed(section, float(section.position_mm))
-            for section in self.in_order()
-            if section.position_mm is not None
-        ]
 
     def by_id(self, section_id: str) -> Section | None:
         """Return the section with filename *section_id*.
@@ -267,10 +295,9 @@ def normalize_to_atlas_order(state: Stack) -> bool:
     the new order (``n - i``). Returns True when the stack was reversed.
     """
     ordered = state.in_order()
-    placed = state.placed()
-    if len(placed) < 2:
+    if len(ordered) < 2:
         return False
-    if placed[-1].position_mm >= placed[0].position_mm:
+    if ordered[-1].position_mm >= ordered[0].position_mm:
         return False
     n = len(ordered)
     for section in ordered:

@@ -274,7 +274,7 @@ def _cells(answer: Answer, row: ProposalRow) -> list[Cell]:
     """Return one section's cells."""
     view = answer.facts.views[row.id]
     change = None
-    if row.position_mm is not None and view.position_mm is not None:
+    if row.position_mm is not None:
         change = rounded(row.position_mm - view.position_mm, 3)
     own_pitch = own_yaw = None
     if row.own is not None:

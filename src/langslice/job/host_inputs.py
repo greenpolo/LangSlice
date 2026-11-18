@@ -22,7 +22,7 @@ from langslice.core.sections.damage import (
 )
 from langslice.core.stack.affine import IDENTITY_PHYSICAL, StoredAffine
 from langslice.core.stack.codec import affine_from_json
-from langslice.core.stack.section import ROTATIONS, Section
+from langslice.core.stack.section import INPUT, ROTATIONS, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.job.settings import frozen as freeze
@@ -102,8 +102,10 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
         if missing:
             raise ValueError(f"inputs.order names sections that are not here: {missing}")
         tail = [s for s in state.in_order() if s.id not in {str(name) for name in order}]
+        spacing = sorted(record.position_mm for record in state.slices)
         for index, record in enumerate([r for r in known if r is not None] + tail):
             record.index_corrected = index
+            record.position_mm = spacing[index]
         state.notes.append(f"inputs: order set by the host ({len(order)} sections)")
 
     positions = inputs.get("positions") or {}
@@ -111,7 +113,7 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
         applied = 0
         for name, value in positions.items():
             record = _section(state, "positions", cast("object", name))
-            record.position_mm = float(value)
+            record.set_position(float(cast("float", value)), source=INPUT)
             applied += 1
         state.notes.append(f"inputs: {applied} position(s) set by the host")
 
@@ -172,13 +174,13 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
         if unknown:
             raise ValueError(f"frozen names sections that are not here: {unknown}")
         held = freeze.sections_of(frozen, [record.id for record in state.in_order()])
-        unplaced = [name for name, props in held.items()
-                    if "position" in props and (rec := state.by_id(name)) is not None
-                    and rec.position_mm is None]
-        if unplaced:
+        unsupplied = [name for name, props in held.items()
+                      if "position" in props and (rec := state.by_id(name)) is not None
+                      and rec.position_source != INPUT]
+        if unsupplied:
             raise ValueError(
-                f"frozen: the position of {unplaced} is frozen, and a position has no "
-                "default: supply it in inputs.positions")
+                f"frozen: the position of {unsupplied} is frozen, and a frozen position "
+                "must be supplied: supply it in inputs.positions")
         for name, props in held.items():
             record = _section(state, "frozen", name)
             if "affine" in props and record.transform is None:

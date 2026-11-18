@@ -44,7 +44,7 @@ from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.space import as_plane
 from langslice.core.stack.section import Section
-from langslice.core.stack.stack import Stack
+from langslice.core.stack.stack import Stack, initial_positions
 from langslice.job.border_traces import JobBorderTraces
 from langslice.job.checkpoint import file_stamp, state_from_file
 from langslice.job.folder import recent
@@ -85,12 +85,21 @@ logger = logging.getLogger(__name__)
 
 
 def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
-    """Discover the folder and build the stack state. Plain code, no model."""
+    """Discover the folder and build the stack state. Plain code, no model.
+
+    Every section starts at its initial position, as ABBA places a new
+    stack: ``position.start_mm`` plus its index times the spacing
+    (``position.interval_um``), clamped to the atlas
+    (:func:`~langslice.core.stack.stack.initial_positions`).
+    """
     paths = discover_slices(workspace.image_folder)
     if not paths:
         raise ValueError(f"No slice images found in {workspace.image_folder}")
 
     pos_lo, pos_hi = workspace.position_range
+    places = initial_positions(
+        len(paths), (pos_lo, pos_hi), spec.start_mm, spec.interval_mm
+    )
     state = Stack(
         image_folder=workspace.image_folder,
         atlas=spec.atlas,
@@ -103,13 +112,15 @@ def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
                 id=os.path.basename(path),
                 index_original=index,
                 index_corrected=index,
+                position_mm=round(places[index], 4),
             )
             for index, path in enumerate(paths)
         ],
     )
     state.notes.append(
         f"ingest: {len(paths)} sections, atlas {spec.atlas} ({spec.plane}) "
-        f"spans {pos_lo:.2f}-{pos_hi:.2f} mm"
+        f"spans {pos_lo:.2f}-{pos_hi:.2f} mm; initial positions "
+        f"{places[0]:.2f} to {places[-1]:.2f} mm"
     )
     workspace.progress(
         f"[ingest] {len(paths)} sections from {workspace.image_folder}"

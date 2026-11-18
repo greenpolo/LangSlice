@@ -231,7 +231,6 @@ class Adjusted:
 _ENTRY = "Each entry is an object: the section's id and what to change."
 _ROTATIONS = "rotate_quarter is 0, 90, 180 or 270."
 _OPTION_OFF = "{} is switched off for this job; leave it out."
-NO_POSITION = "{} has no position yet; write its position first."
 KNOB_DEFAULTS: dict[str, float] = {
     "rotation_deg": 0.0,
     "scale_x": 1.0,
@@ -284,7 +283,6 @@ def interactive_transform(
     that is not a finite number, a flip that is not true/false),
     ``BAD_ROTATION``, ``OPTION_OFF`` (the job disables
     ``interactive_transform:flip`` or ``:rotate`` and the call changes it),
-    ``NO_POSITION`` (a transform to build on a section without a position) and
     the stager's codes (:func:`langslice.core.pictures.placement.stage`). All
     the changed sections are written together, under the job's lock; the tool
     door draws the picture of what was written
@@ -408,13 +406,6 @@ def interactive_transform(
                 pending[name] = (flip, rotation, None)
             done.append(
                 Adjustment(id=name, orientation=orientation, written=changed)
-            )
-            continue
-        if record.position_mm is None:
-            done.append(
-                _refused(
-                    name, RefusalCode.NO_POSITION, NO_POSITION.format(name)
-                )
             )
             continue
         stored_pivot = physical_knobs(held).pivot

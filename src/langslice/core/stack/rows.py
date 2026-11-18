@@ -46,7 +46,14 @@ from langslice.core.stack.landmarks_json import (
     landmarks_from_json,
     landmarks_to_json,
 )
-from langslice.core.stack.section import FLAT, Angles, Section
+from langslice.core.stack.section import (
+    FLAT,
+    INITIAL,
+    POSITION_SOURCES,
+    Angles,
+    PositionSource,
+    Section,
+)
 
 _T = TypeVar("_T")
 
@@ -54,7 +61,8 @@ Row = dict[str, JsonValue]
 
 ROW_KEYS = (
     "id", "index_original", "index_corrected", "flip", "rotation_deg",
-    "damaged_regions", "damage_note", "position_mm", "transform",
+    "damaged_regions", "damage_note", "position_mm", "position_source",
+    "transform",
     "border_trace", "deformation", "landmarks", "layers", "masks",
     "images", "caveats", "cutting_angles_deg",
 )  # fmt: skip
@@ -92,6 +100,7 @@ def section_to_json(section: Section) -> Row:
         "damaged_regions": list[JsonValue](section.damaged_regions),
         "damage_note": section.damage_note,
         "position_mm": section.position_mm,
+        "position_source": section.position_source,
         "transform": transform,
         "border_trace": trace,
         "deformation": deformation,
@@ -181,11 +190,16 @@ def _texts(row: JsonObject, key: str) -> list[str]:
     return list(texts_at(row, key))
 
 
-def _position(row: JsonObject) -> float | None:
-    """Return a row's position, or None for an unplaced section."""
-    if row.get("position_mm") is None:
-        return None
-    return number_at(row, "position_mm")
+def _position_source(row: JsonObject) -> PositionSource:
+    """Return who set a row's position; refuse a word it does not know."""
+    source = _or_default(row, "position_source", text_at, INITIAL)
+    for known in POSITION_SOURCES:
+        if source == known:
+            return known
+    raise ValueError(
+        f"section {row.get('id')}: position_source must be one of "
+        f"{', '.join(POSITION_SOURCES)}, not {source!r}"
+    )
 
 
 def _images(row: JsonObject) -> dict[str, ImageRef]:
@@ -250,7 +264,8 @@ def section_from_json(row: JsonObject) -> Section:
         rotation_deg=_or_default(row, "rotation_deg", integer_at, 0),
         damaged_regions=_texts(row, "damaged_regions"),
         damage_note=_or_default(row, "damage_note", text_at, ""),
-        position_mm=_position(row),
+        position_mm=number_at(row, "position_mm"),
+        position_source=_position_source(row),
         transform=transform,
         border_trace=trace,
         deformation=deformation,

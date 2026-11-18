@@ -76,7 +76,7 @@ export function ExtendedView({ focus, review, ring, onPictures }: {
 // placed, aligned, warped, each counted over the job's sections. A job without a task list
 // (an older one) shows all three. Done once the agent has submitted.
 const STEPS = [
-  { task: 'position', label: 'Placed in the atlas', has: (r: Row) => typeof r.position_mm === 'number' },
+  { task: 'position', label: 'Placed in the atlas', has: (r: Row) => typeof r.position_mm === 'number' && r.position_source !== 'initial' },
   { task: 'transform', label: 'Aligned to the atlas', has: (r: Row) => Boolean(r.transform) },
   { task: 'nonlinear', label: 'Warped to fit', has: (r: Row) => Boolean(r.deformation) },
 ] as const;

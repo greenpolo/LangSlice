@@ -118,7 +118,7 @@ def test_another_job_writing_both_files_hands_over_its_history(tmp_path: Path):
     second, _ = _open(folder)
     start = second.state.by_id("s2.png").position_mm
     before = second.snapshot()
-    second.state.by_id("s2.png").position_mm = 6.0
+    second.state.by_id("s2.png").set_position(6.0)
     second.commit(before)
 
     assert first.sync() is not None

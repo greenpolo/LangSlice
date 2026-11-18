@@ -62,7 +62,7 @@ def _open(tmp_path: Path, atlas: SyntheticAtlas, *, preprocess: str = "auto") ->
     with job.writing():
         before = job.snapshot()
         for record in job.state.slices:
-            record.position_mm = 0.1
+            record.set_position(0.1)
             record.transform = affine_from_json(
                 {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                                 "calibration": {"section_um_per_px": UM, "source": "host"}})
@@ -254,7 +254,7 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
         for entry in record.images.values():
             assert (folder / entry.file).is_file()
     saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))
-    assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 5 and "appearance" not in saved
+    assert saved[FORMAT_KEY] == STATE_FORMAT_VERSION == 6 and "appearance" not in saved
     assert loaded.undo_stack
     drawn = render_slice(fresh, s0, long_edge=160)
     source, _ = fresh.working_source("s0.png")
@@ -282,7 +282,7 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
         before = other.snapshot()
         record = other.state.by_id("s0.png")
         assert record is not None
-        record.position_mm = 0.2
+        record.set_position(0.2)
         other.commit(before)
 
     real = job_module.read_checkpoint
@@ -302,4 +302,4 @@ def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
     assert held is not None and held.position_mm == 0.2
     saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     row = next(item for item in saved["slices"] if item["id"] == "s0.png")
-    assert saved[FORMAT_KEY] == 5 and row["position_mm"] == 0.2
+    assert saved[FORMAT_KEY] == 6 and row["position_mm"] == 0.2

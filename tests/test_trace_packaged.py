@@ -87,7 +87,7 @@ def _job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubModel]:
     with job.writing():
         before = job.snapshot()
         record = job.state.slices[0]
-        record.position_mm = 0.1
+        record.set_position(0.1)
         record.transform = affine_from_json(
             {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                             "calibration": {"section_um_per_px": 25.0, "source": "host"}})
@@ -210,7 +210,7 @@ def test_a_section_changed_while_the_model_draws_gets_nothing(tmp_path, atlas):
     traces.trace_borders(job, ctx, ID, image_model=stub.model)
     with job.writing():
         before = job.snapshot()
-        job.state.slices[0].position_mm = 0.15
+        job.state.slices[0].set_position(0.15)
         job.commit(before)
     depth = len(job.undo_stack)
     stub.gate.set()

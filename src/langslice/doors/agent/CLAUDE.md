@@ -115,7 +115,7 @@ written with what it needs (`job/settings/needs.py`) and rendered for the job.
   `PRICES`; the provider modules supply raw usage only.
 - `langslice/tools/descriptions/statement.py` — `build_job_statement`: the job, the run facts (`run_facts`:
   the range, the optional protocol (`cutting_protocol_fact`: unknown values
-  stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections
+  stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, how many sections are still at their initial position
   the damaged sections and the user's
   damage notes, what is frozen (`job.settings.frozen.statement`: sections sharing a
   freeze are one clause), that the order follows the positions;
@@ -291,9 +291,9 @@ run's cost. The rules that follow:
   unchanged history prefix may be cached; a byte-identical copy appended
   later is new input. Never budget a re-sent picture as a cache hit.
 - **The opening** is ABBA-style strips (`core/pictures/opening.py`): the sections in
-  current order. Unplaced sections have no paired atlas plane; a separate
-  atlas overview follows whenever any section is unplaced. Placed sections
-  have the atlas at their current position beneath them. Every tile is
+  current order, each with the atlas at its current position beneath it
+  (every section has one: its initial position until it is written); the
+  text says how many are still at their initial position. Every tile is
   labelled in its pixels, each strip at the model lane's largest image
   (`doors.tools.view_options.image_limit`) and within its patch budget.
 

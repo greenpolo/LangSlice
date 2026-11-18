@@ -67,7 +67,7 @@ def calibrate(
     if known is not None:
         return known, source
     plane = annotation_slice(
-        ctx.atlas, record.position_mm or 0.0, plane=state.plane,
+        ctx.atlas, record.position_mm, plane=state.plane,
         pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
     )
     return plane.shape[1] * atlas_um_per_px(ctx.atlas) / float(section.width), "uncalibrated"
@@ -260,13 +260,9 @@ def fit_elastix(
     A local refinement of the section's CURRENT placement (its stored six
     numbers, or the identity without a transform) by :func:`elastix_affine`:
     the fitted affine (a ``regions`` report when regions were given), or the
-    section's refusal, which names it (``id``): ``NO_POSITION``, the fit's
-    own code (regions too small, a side it lacks) or ``FIT_FAILED``.
+    section's refusal, which names it (``id``): the fit's own code
+    (regions too small, a side it lacks) or ``FIT_FAILED``.
     """
-    if section.position_mm is None:
-        return Refused(RefusalCode.NO_POSITION, id=section.id,
-                       message=f"{section.id} has no position yet; write its "
-                       "position first.")
     rendered = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
     stored = None if section.transform is None else section.transform.params
     start = (list(stored) if stored is not None and len(stored) == 6

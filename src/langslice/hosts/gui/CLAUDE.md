@@ -141,7 +141,7 @@ The page is a React app (`web/`, below), built into `static/`.
   without a written transform sits where the core's identity puts it: its
   picture as the job keeps it (no turn or flip beyond the job's), centred
   on the atlas plane at its position, at its true pixel size. A section
-  without a position is not drawn; a newly placed one appears where it is,
+  still at the job's initial spacing (`position_source` `initial`) is not drawn; a newly placed one appears where it is,
   whole (never part see-through); a changed placement is glided to on critically damped springs
   (position, size, rotation); the sections a call changed come in stack
   order over `BATCH_S`; nothing else moves. The sections in focus lift by
@@ -323,7 +323,7 @@ The page is a React app (`web/`, below), built into `static/`.
   folders; read again when `job.json` changes; a spec, image or atlas that
   cannot be read is `RenderError` with the reason) and draws from the
   watcher's `current_stack`: `overlay(id, edge)` (`look` mode `overlay`, the
-  applied deformation; mode `section` for a section with no position),
+  applied deformation),
   `thumb(id, edge)` (`render_slice`, oriented); both draw the section's raw
   channels in their own colours (`drawing.py`: `draw_overlay`, `draw_thumb`,
   `draw_atlas`, `raw_channels`, at most `MAX_OVERLAY_CHANNELS`, `content`),

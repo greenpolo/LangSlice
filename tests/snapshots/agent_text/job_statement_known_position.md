@@ -10,7 +10,7 @@ Run facts:
 - 0.00 mm is the anterior edge of the volume; positions increase toward posterior.
 - Cutting protocol: nominal section interval not supplied, section thickness not supplied. Infer positions and spacing from anatomy. Estimate missing protocol values where the evidence supports them, and record estimates or unresolved uncertainty in your notes. Spacing may vary where sections are missing.
 - Stack-wide cutting angles: pitch 0.00 deg, yaw 0.00 deg.
-- No section carries a position yet.
+- 3 of 3 sections are still at their initial position, as ABBA places a new stack: the first section at the job's start, each next one a spacing further (position_source `initial` in status). Nobody has checked these positions.
 - The positions shown are given; this run does not change them.
 - Alignment canvas: each section is drawn at its TRUE physical size from its pixel size (read from the file, or given by the host; without one the section image's width is mapped onto the atlas plane's width and the tool payload says uncalibrated), and the atlas at its voxel size; scale 1.0 is the section's calibrated size.
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.

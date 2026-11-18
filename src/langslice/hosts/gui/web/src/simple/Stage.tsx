@@ -133,7 +133,7 @@ function Tags({ row }: { row: Row }) {
   const tags = [
     row.transform ? HOW[row.transform] || row.transform : '',
     row.deformation ? 'warped' : '',
-    typeof row.position_mm !== 'number' ? 'not placed' : '',
+    row.position_source === 'initial' ? 'initial position' : '',
   ].filter(Boolean);
   return (
     <>

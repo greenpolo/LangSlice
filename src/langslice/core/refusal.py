@@ -105,7 +105,6 @@ class RefusalCode(TextEnum):
     NO_IMAGES = "NO_IMAGES"
     NO_JOB = "NO_JOB"
     NO_PICTURE = "NO_PICTURE"
-    NO_POSITION = "NO_POSITION"
     NO_REGIONS = "NO_REGIONS"
     NO_SIDES = "NO_SIDES"
     NO_SORTING = "NO_SORTING"

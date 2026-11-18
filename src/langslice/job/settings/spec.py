@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any, cast
 
@@ -132,12 +133,25 @@ def supplied_pixel_sizes(value: Any) -> tuple[float | None, dict[str, float]]:
     return _micrometres(value, "inputs.pixel_size_um"), {}
 
 
+def _filled(kind: Callable[..., object], value: object) -> object:
+    """Return a task section of the form filled from its saved keys."""
+    return kind(**cast("dict[str, object]", value or {}))
+
+
+def _finite_number(value: object) -> bool:
+    """Return whether *value* is a finite int or float (not a bool)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value)
+
+
 @dataclass
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""
 
     thickness_um: int | None = None
     interval_um: int | None = None
+    start_mm: float | None = None
     strict_interval: bool = False
     playbook: bool = False
     notes: str = ""
@@ -148,6 +162,10 @@ class PositionSpec:
             if value is not None and (isinstance(value, bool) or not isinstance(value, int)
                                       or value <= 0):
                 raise ValueError(f"{name} must be a positive integer in micrometres or null")
+        if self.start_mm is not None and not _finite_number(self.start_mm):
+            raise ValueError(
+                "start_mm must be a number of atlas millimetres or null"
+            )
         if self.strict_interval and self.interval_um is None:
             raise ValueError("strict_interval requires a supplied interval_um")
 
@@ -483,6 +501,12 @@ class JobSpec:
         value = self.position.interval_um
         return value / 1000.0 if value is not None else None
 
+    @property
+    def start_mm(self) -> float | None:
+        """The first section's initial position (``position.start_mm``)."""
+        value = self.position.start_mm
+        return float(value) if value is not None else None
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         if data.get("job_dir") is None:
@@ -522,7 +546,8 @@ class JobSpec:
         if unknown:
             raise ValueError(f"Unknown job setting(s) {sorted(unknown)}")
         kwargs: dict[str, Any] = {
-            name: nested[name](**(value or {})) if name in nested else value
+            name: _filled(nested[name], cast("object", value))
+            if name in nested else value
             for name, value in data.items()}
         enabled = cast("list[str]", kwargs.pop("enabled", []))
         return cls(**kwargs, enabled=enabled)

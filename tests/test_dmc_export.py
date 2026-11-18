@@ -355,8 +355,8 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
         folder == Path(exported_job.folder) / "exports" / "dmc_brainmap" / "M7"
     )
     assert done.written and all(Path(path).is_file() for path in done.files)
-    assert done.registered == [ID0, ID1]
-    assert [skip.section for skip in done.skipped] == [ID2]
+    assert done.registered == [ID0, ID1, ID2]
+    assert done.skipped == []
     assert done.warps_left_out == [ID0]
 
     params = json.loads((folder / "params.json").read_text(encoding="utf-8"))
@@ -387,7 +387,7 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
     assert registration["imgName"] == {
         str(i): name for i, name in enumerate(images)
     }
-    assert sorted(registration["atlasLocation"]) == ["0", "1"]
+    assert sorted(registration["atlasLocation"]) == ["0", "1", "2"]
     for key in ("0", "1"):
         assert len(registration["atlasDots"][key]) >= 5
         assert len(registration["sampleDots"][key]) == len(
@@ -404,9 +404,7 @@ def test_the_export_writes_a_dmc_animal_folder(exported_job: Any) -> None:
         "deformation (a warp) applied in LangSlice is left out"
         in record["note"]
     )
-    assert record["not_registered"] == [
-        {"section": ID2, "reason": "no position"}
-    ]
+    assert record["not_registered"] == []
 
     (channel / "old_downsampled.tif").write_bytes(b"")
     exported_job.export_dmc_brainmap(channel="green")

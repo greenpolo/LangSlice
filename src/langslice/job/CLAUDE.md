@@ -20,13 +20,13 @@ its folders: `folder/` (where the job's files live: `layout.py`, `lock.py`,
 `undo_steps.py`), `exports/` (the files written for others:
 `public_files.py`, `quint.py`, `quint_images.py`, `abba_project.py`,
 `dmc_brainmap.py`), `imports/` and `settings/`. The top holds the job
-itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`,
+itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_migration.py`,
 `gates.py`, `host_inputs.py`, `background.py`, `border_traces.py`,
 `pictures.py`, `review.py`, `plugins.py`, `plugin_store.py`.
 
 ## The job's settings (`settings/`)
 
-- `schema.py`: one row per setting (`SETTINGS`, 46 rows of `Setting`): its
+- `schema.py`: one row per setting (`SETTINGS`, 47 rows of `Setting`): its
   name (`atlas`, a section's `position.thickness_um`, a supplied answer's
   `inputs.positions`), its type and the job's default, the doors that may
   set it (`run`, `init`, `mcp`, `library`), its `job.json` key, the
@@ -54,7 +54,8 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`,
   `PositionSpec.thickness_um` and `interval_um`, and the state's millimetre
   equivalents, are optional (`None` when not supplied); known values are
   positive integers in micrometres, and strict spacing requires an
-  interval.
+  interval. `PositionSpec.start_mm` (`JobSpec.start_mm`) and the interval
+  are the start and spacing of the sections' initial positions (`ingest`).
 - `tool_table.py` and `needs.py`: what a job can switch off (and, through
   `ToolDef.writes`, what its frozen properties switch off: `off_names`).
   `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
@@ -177,7 +178,7 @@ job.lock             the write lock (lock.py), held while a writer syncs and com
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; the user's "notes" (every door
                      gives them to the agent); the agent CLI's "viewer"
-state.json           the checkpoint (Stack, state format 5): THE TRUTH
+state.json           the checkpoint (Stack, state format 6): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 review.json          the review comments the LangSlice window keeps (review.py):
                      not state, no undo step, the window its only writer
@@ -461,7 +462,11 @@ longer exist be taken over by the images it is opened with.
   step to the next format; `state_3_to_4` makes a format-3 state's
   `appearance` recipes into section image files and entries, drops the raw
   channels' display properties, names a mask's `channel` `section_image`).
-  `state_4_to_5` names a section's `image_correction` `border_trace`; an
+  `state_5_to_6` (`position_migration.py`) gives every section a position
+  and its `position_source` (an unplaced one its initial position, kept on
+  the migration's `initial` for the history lines; `position_range` loads
+  the atlas when there is no workspace). `state_4_to_5` names a section's
+  `image_correction` `border_trace`; an
   old trace stays in `sections/<name>/image_correction/` with the paths
   stored to it, new traces go under `border_trace/`.
   `FolderMigration(workspace, layout)` is a job's `upgrade`, which every
@@ -470,7 +475,7 @@ longer exist be taken over by the images it is opened with.
   rows in order from a file's format, refuses one no row reads
   (`state_file.older_format`), then drops at every format the keys no
   reader uses (`drop_removed_keys`: `REMOVED_STACK_KEYS` `appearance`,
-  `REMOVED_SECTION_KEYS` `position_source` and `damaged`), logging one
+  `REMOVED_SECTION_KEYS` `damaged`), logging one
   warning per key the first time (`dropped`, with the sections that held
   it). It keeps one memo of the images it made across the checkpoint and
   the history lines (`seed` takes a current state's entries); `used` says
@@ -538,9 +543,14 @@ longer exist be taken over by the images it is opened with.
   checked; `spec.frozen` must name sections that are here, a frozen position
   must have been supplied, and a frozen affine without a supplied transform
   carries `host_transform()`, `kind` `"host"`), `changed_inputs` (above;
-  `frozen` counts as a changed input). New sections remain unplaced until
-  the caller supplies or writes positions; no positions are interpolated
-  or extrapolated around supplied ones. Saved positions are preserved on
+  `frozen` counts as a changed input). `ingest` gives every new section
+  its initial position, as ABBA places a new stack
+  (`core.stack.stack.initial_positions`: `start_mm` plus the index times the
+  interval, without an interval the volume's length over the number of
+  sections, without a start the run centred, all clamped to the volume;
+  `position_source` `initial`); `apply_host_inputs` keeps those positions in
+  the stack's order when `inputs.order` reorders it, and a supplied position
+  replaces its section's (`input`). Saved positions are preserved on
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions.
@@ -551,7 +561,7 @@ longer exist be taken over by the images it is opened with.
   against the atlas and the section's placement as `mark_damage` checks the
   agent's (`core.sections.damage.checked_entries`, `side_pair_refusal`). The submit
   gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`,
-  status `refused`, or None), in order and only for the tasks that are on: `MISSING_POSITIONS` (no position),
+  status `refused`, or None), in order and only for the tasks that are on: `MISSING_POSITIONS` (a section still at its initial position),
   `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
   `MISSING_DEFORMATIONS`, only where the host requires a deformation on every

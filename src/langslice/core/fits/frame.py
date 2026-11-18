@@ -29,7 +29,6 @@ from langslice.core.geometry.affine import (
     pixel_center_map,
 )
 from langslice.core.pictures.canvas import CanvasGeometry, canvas_geometry
-from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.images import PREPROCESSED, entry_of, is_opening
 from langslice.core.sections.renders import (
     PREVIEW_LONG_EDGE,
@@ -158,7 +157,7 @@ def prepare_linear_registration(
 ) -> LinearRegistrationInput:
     """Prepare a supplied affine placement, preserving shear and physical scale.
 
-    Requires a written position (``NO_POSITION`` refused) and an invertible
+    Requires an invertible
     affine (a ``ValueError`` saying why). When the transform
     carries an ``orientation`` snapshot or a ``stale`` flag, it is checked
     before the fit is used. The scale is the one every placement picture and
@@ -182,9 +181,6 @@ def prepare_linear_registration(
     section = state.by_id(section_id)
     if section is None:
         raise ValueError(f"Unknown section: {section_id}")
-    if section.position_mm is None or not np.isfinite(section.position_mm):
-        raise Refused(RefusalCode.NO_POSITION, f"{section_id} has no "
-                      "position yet; write its position first.")
     orientation = None
     if params is None:
         transform = section.transform

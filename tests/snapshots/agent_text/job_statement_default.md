@@ -10,7 +10,7 @@ Run facts:
 - 0.00 mm is the anterior edge of the volume; positions increase toward posterior.
 - Cutting protocol: nominal section interval not supplied, section thickness not supplied. Infer positions and spacing from anatomy. Estimate missing protocol values where the evidence supports them, and record estimates or unresolved uncertainty in your notes. Spacing may vary where sections are missing.
 - Stack-wide cutting angles: pitch 0.00 deg, yaw 0.00 deg.
-- No section carries a position yet.
+- 3 of 3 sections are still at their initial position, as ABBA places a new stack: the first section at the job's start, each next one a spacing further (position_source `initial` in status). Nobody has checked these positions.
 - The stack's order follows the positions: writing positions renumbers the sections, so use filenames to name them.
 - Alignment canvas: each section is drawn at its TRUE physical size from its pixel size (read from the file, or given by the host; without one the section image's width is mapped onto the atlas plane's width and the tool payload says uncalibrated), and the atlas at its voxel size; scale 1.0 is the section's calibrated size.
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.
@@ -23,7 +23,7 @@ Run facts:
 Tools (each one's own description says what it does and returns): `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `review_comments`, `position_sections`, `interactive_transform`, `mark_damage`, `make_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `trace_borders`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `stalign_lddmm`, `stalign_plane_search`, `spomialign`, `emlddmm_stack`, `emlddmm_plane`.
 
 Constraints:
-- `submit` is refused unless every section has a position of its own, damaged sections included.
+- `submit` is refused while any section is still at its initial position: every section needs a position of its own, damaged sections included.
 - A reported interval break is accepted only at a section whose interval from the section before it, in the positions you wrote, exceeds 1.5x the stack's median written spacing.
 - `submit` is refused unless every section carries a transform, damaged sections included.
 - A damaged section (one with marked regions) still needs a transform made for its surviving anatomy: set it by hand with `interactive_transform`, or fit it with `elastix_affine`, which leaves the marked regions out of the fit. Inspect each overlay against the surviving internal anatomy before submitting.

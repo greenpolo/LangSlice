@@ -296,7 +296,7 @@ def test_unmatched_missing_and_markers_are_reported(capsys, images, atlas, tmp_p
     folder = Path(envelope["result"]["job_folder"])
     state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     held = {row["id"]: row for row in state["slices"]}
-    assert held[ID2]["position_mm"] is None and held[ID2]["transform"] is None
+    assert held[ID2]["position_source"] == "initial" and held[ID2]["transform"] is None
     assert held[ID0]["deformation"] is None
 
 
