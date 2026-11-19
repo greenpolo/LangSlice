@@ -602,33 +602,6 @@ def quint_copies(exports_dir: Path) -> list[str]:
     return names
 
 
-def derived_files(layout: JobLayout, state: Stack) -> list[tuple[Path, str]]:
-    """``(path, kind)`` of every derived file the job folder holds now:
-    ``registration.json``, the exports and the image copies they name, each
-    section's maps and its exported trace reply."""
-    found: list[tuple[Path, str]] = []
-    top = layout.folder / REGISTRATION_FILE
-    if top.exists():
-        found.append((top, "registration"))
-    for name, kind in ((QUICKNII_FILE, "quicknii"), (VISUALIGN_FILE, "visualign")):
-        if (layout.exports_dir / name).exists():
-            found.append((layout.exports_dir / name, kind))
-    exports = layout.exports_dir
-    copies = [exports / name for name in quint_copies(exports)]
-    found += [(path, "quint_image") for path in copies if path.is_file()]
-    for record in state.in_order():
-        folder = layout.section_dir(record.id)
-        found += [
-            (folder / name, kind)
-            for kind, name in SECTION_FILES.items()
-            if (folder / name).exists()
-        ]
-        trace = trace_reply_path(layout, record.id)
-        if trace.exists():
-            found.append((trace, "trace_reply"))
-    return found
-
-
 def write_landmarks(layout: JobLayout, state: Stack) -> None:
     """Derived readable pairs; always regenerated from state, never read back."""
     from langslice.core.fits.landmarks import section_pairs, stale

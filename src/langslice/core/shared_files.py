@@ -12,13 +12,15 @@ stands. Elsewhere the first try is the answer and they cost nothing.
 from __future__ import annotations
 
 import functools
+import json
 import os
 import shutil
 import stat
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 Result = TypeVar("Result")
 
@@ -63,6 +65,45 @@ def replace_file(source: str | os.PathLike[str], target: str | os.PathLike[str])
         The file it replaces, atomically.
     """
     retried(functools.partial(os.replace, source, target))
+
+
+def write_json_atomic(
+    path: str | os.PathLike[str],
+    data: Any,
+    *,
+    indent: int | None = 2,
+    allow_nan: bool = True,
+) -> None:
+    """Write *data* as JSON to *path* through a uniquely named temporary file
+    in the same folder and a rename, so two writers never share a temporary
+    and a reader never sees half a file.
+
+    Parameters
+    ----------
+    path
+        The file to write; its folder is made when missing.
+    data
+        The JSON-serialisable value.
+    indent
+        The indent of the text; None writes it compact.
+    allow_nan
+        False raises ``ValueError`` for a NaN or infinity.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            if indent is None:
+                json.dump(data, handle, separators=(",", ":"), allow_nan=allow_nan)
+            else:
+                json.dump(data, handle, indent=indent, allow_nan=allow_nan)
+        os.chmod(tmp_path, 0o644)
+        replace_file(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 def remove_tree(path: str | os.PathLike[str]) -> None:

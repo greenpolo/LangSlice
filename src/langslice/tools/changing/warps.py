@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.core.fits import deformation
 from langslice.core.fits.deformable.settings import FitSettings
 from langslice.core.fits.engine_log import engine_output, failure_message
@@ -108,8 +109,6 @@ def fit_record(
     weights = ops_masks.section_weights(job, record, label)
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
-    except Refused:
-        raise
     except (ValueError, OSError) as exc:
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}") from exc
     previous = None
@@ -139,7 +138,7 @@ def fit_record(
         )
         with engine_output(job.engine_log, f"FireANTs fit of {record.id}"):
             outcome = run_prepared(prepared)
-    except Exception as exc:
+    except ENGINE_FAILURES as exc:
         raise Refused(
             RefusalCode.FIT_FAILED,
             message=f"{record.id}: "
@@ -238,8 +237,6 @@ def warp_from_map(
         raise Refused(RefusalCode.BAD_ARGS, message="start is 'linear' or 'current'.")
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
-    except Refused:
-        raise
     except (ValueError, OSError) as exc:
         raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=f"{record.id}: {exc}") from exc
     previous: deformation.DeformableRecord | None = None

@@ -1,7 +1,7 @@
 """The host's input, read by a door's protocol away from the process's stdin.
 
-A door that serves a host over stdio (the MCP server, ``langslice serve
---stdio``) waits on its input in a thread for as long as it runs. On
+A door that serves a host over stdio (the MCP server, ``langslice mcp``)
+waits on its input in a thread for as long as it runs. On
 Windows a synchronous read of a pipe blocks every other call on the same
 pipe, and the runtime of many compiled modules asks about the standard
 handles when it loads (numpy's, scipy's Fortran ones such as ``_odepack``):

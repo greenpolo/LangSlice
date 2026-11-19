@@ -332,6 +332,10 @@ class JobSpec:
     plugin_config: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        try:
+            self.inputs = dict(self.inputs or {})
+        except (TypeError, ValueError):
+            raise ValueError(f"inputs must be a mapping of {list(INPUT_KEYS)}") from None
         if self.image_resolution not in IMAGE_RESOLUTIONS:
             raise ValueError(
                 f"Unsupported image_resolution {self.image_resolution!r}; "
@@ -344,18 +348,14 @@ class JobSpec:
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
         if unknown:
             raise ValueError(f"Unknown task(s) {unknown}; expected any of {list(ALL_TASKS)}")
-        if self.inputs is not None:
-            if not isinstance(self.inputs, dict):
-                raise ValueError(f"inputs must be a mapping of {list(INPUT_KEYS)}")
-            strange = sorted(str(key) for key in self.inputs if key not in INPUT_KEYS)
-            if strange:
-                raise ValueError(
-                    f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
-                )
-            supplied_angles(self.inputs.get("angles"))
-            supplied_pixel_sizes(self.inputs.get("pixel_size_um"))
-            marks = self.inputs.get("damaged_regions")
-            supplied_damaged_regions(marks, self.plane)
+        strange = sorted(str(key) for key in self.inputs if key not in INPUT_KEYS)
+        if strange:
+            raise ValueError(
+                f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
+            )
+        supplied_angles(self.inputs.get("angles"))
+        supplied_pixel_sizes(self.inputs.get("pixel_size_um"))
+        supplied_damaged_regions(self.inputs.get("damaged_regions"), self.plane)
         if not isinstance(self.disabled, (list, tuple)) or not all(
             isinstance(name, str) for name in self.disabled
         ):
@@ -417,7 +417,7 @@ class JobSpec:
         if self.plugins:
             tool_table.tools_for(self)
         self.frozen = freeze.clean(self.frozen)
-        supplied = (self.inputs or {}).get("positions") or {}
+        supplied = self.inputs.get("positions") or {}
         unsupplied = sorted(
             name
             for name, held in self.frozen.items()
@@ -485,7 +485,7 @@ class JobSpec:
             settings a border trace depends on, the whole form as text and
             what a fit says of a section with no written transform.
         """
-        inputs: dict[str, object] = self.inputs or {}
+        inputs: dict[str, object] = self.inputs
         supplied = inputs.get("pixel_size_um")
         stack_um, file_um = supplied_pixel_sizes(supplied)
         names = inputs.get("channel_names")

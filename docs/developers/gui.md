@@ -335,7 +335,7 @@ which are committed, so installing LangSlice needs no Node.
 The window is a page served by `langslice gui` on `127.0.0.1` under a random
 address, reachable only from this computer. The agent viewer watches the job folder's files
 (`logs/events.jsonl`, `views.jsonl`, `trace/`, `state.json`,
-`history/undo.json`, `job.json`, `exports/spend.json`; see
+`job.json`; see
 [file formats](../reference/file_formats.md)) four times a second while a page looks at the
 job, and serves only the folders it lists. The sections' pictures, the cutting axis's
 thumbnails, and the 3D view's sections (their thumbnails' corners in the

@@ -21,14 +21,11 @@ full-resolution section needs nothing but the section's own size.
 
 from __future__ import annotations
 
-import logging
 import math
 from typing import Any
 
 import numpy as np
 from PIL import Image
-
-logger = logging.getLogger(__name__)
 
 IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 

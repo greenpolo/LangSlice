@@ -122,32 +122,28 @@ def locate_job_folder(
     job_dir: str | os.PathLike[str] | None = None,
     *,
     emit: Callable[[str], None] | None = None,
-    root: Path | None = None,
-    job_id: str | None = None,
     register: bool = True,
-) -> tuple[Path, dict[str, Any] | None]:
-    """``(job folder, fallback)`` for a job on *image_folder*.
+) -> Path:
+    """The job folder for a job on *image_folder*.
 
     *job_dir* given: exactly there (``JobSpec.job_dir``, ``--job-dir``).
     Otherwise ``<images>/langslice`` (:func:`job_folder_for`), unless that
     cannot be created or written (a read-only image folder): then
-    ``<root>/<id>/`` (``~/.langslice/jobs/``), the id *job_id* or one fixed
-    by the image folder's path (:func:`langslice.job.folder.index.folder_id`,
-    so a
-    reopen finds it), said once through *emit* and, with *register*,
-    recorded in the id's index entry. *fallback* is ``{"image_folder",
-    "reason"}`` then, None otherwise.
+    ``~/.langslice/jobs/<id>/``, the id fixed by the image folder's path
+    (:func:`langslice.job.folder.index.folder_id`, so a reopen finds it),
+    said once through *emit* and, with *register*, recorded in the id's
+    index entry.
     """
     from langslice.job.folder import index
 
     if job_dir:
-        return Path(os.path.abspath(os.path.expanduser(os.fspath(job_dir)))), None
+        return Path(os.path.abspath(os.path.expanduser(os.fspath(job_dir))))
     images = Path(os.path.abspath(os.fspath(image_folder)))
     folder = job_folder_for(images)
     if writable(folder, images):
-        return folder, None
-    root = Path(root) if root is not None else index.default_root()
-    job_id = job_id or index.folder_id(images)
+        return folder
+    root = index.default_root()
+    job_id = index.folder_id(images)
     target = root / job_id
     fallback = {"image_folder": str(images), "reason": f"{folder} cannot be created or written"}
     if emit is not None:
@@ -159,7 +155,7 @@ def locate_job_folder(
         held = index.lookup(root, job_id)
         if held is None or held.get("job_folder") != str(target) or "fallback" not in held:
             index.register(root, job_id, target, fallback=fallback)
-    return target, fallback
+    return target
 
 
 IMAGES_ARE_PARENT = ".."

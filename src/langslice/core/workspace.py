@@ -39,11 +39,6 @@ logger = logging.getLogger(__name__)
 HostPreprocessing = Mapping[str, str | bool | float | Sequence[float]]
 
 
-def log_progress(message: str) -> None:
-    """The default progress sink: the log."""
-    logger.info(message)
-
-
 @dataclass(frozen=True)
 class ImageSettings:
     """The settings of a job the core reads, and only those.
@@ -74,7 +69,7 @@ class Workspace:
 
     settings: ImageSettings
     image_folder: str
-    emit: Callable[[str], None] = log_progress
+    emit: Callable[[str], None] | None = None
     atlas_loader: Callable[[str], Any] = load_atlas
     render_cache: dict[tuple[str, bool, int, int, str], Image.Image] = field(
         default_factory=dict, repr=False
@@ -100,7 +95,9 @@ class Workspace:
     _pixel_sizes: dict[str, float | None] = field(default_factory=dict, repr=False)
 
     def progress(self, message: str) -> None:
-        self.emit(message)
+        """Say *message*: through ``emit`` when the host gave one, and always in the log."""
+        if self.emit is not None:
+            self.emit(message)
         logger.info(message)
 
     def image_path(self, slice_id: str) -> str:

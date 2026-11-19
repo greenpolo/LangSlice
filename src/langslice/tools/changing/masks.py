@@ -289,8 +289,6 @@ def _from_em(
 
     try:
         grid = deformation.fit_grid(job.state, workspace, section)
-    except Refused:
-        raise
     except (ValueError, OSError) as exc:
         raise Refused(
             RefusalCode.INVALID_LINEAR_PLACEMENT,
@@ -356,7 +354,7 @@ def read(job: Job, section: Section, name: str) -> MaskView:
     from langslice.core.sections.masks import read_mask
 
     try:
-        return read_mask(job.layout, job.state, section, name)
+        return read_mask(job.layout.folder, job.state, section, name)
     except KeyError as exc:
         raise Refused(
             RefusalCode.UNKNOWN_MASK,

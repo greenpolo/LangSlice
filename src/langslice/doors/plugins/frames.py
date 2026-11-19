@@ -15,9 +15,9 @@ from typing import Any
 import numpy as np
 
 from langslice.core.plugins import ToolError
-from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.refusal import RefusalCode
 from langslice.core.stack.section import Section
-from langslice.doors.plugins.reads import ContextReads, as_tool_error
+from langslice.doors.plugins.reads import ContextReads
 from langslice.tools.stale import section_inputs
 
 
@@ -439,10 +439,7 @@ class ContextFrames(ContextReads):
         return out
 
     def _points(self, function: Callable[..., Any], name: str, values: Any, frame: str) -> Any:
-        try:
-            return function(self._run.job, self._run.workspace, name, values, frame=frame)
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        return function(self._run.job, self._run.workspace, name, values, frame=frame)
 
 
 def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:

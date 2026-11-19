@@ -16,6 +16,7 @@ import difflib
 import hashlib
 import io
 import json
+import logging
 import re
 from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
@@ -51,12 +52,14 @@ from langslice.core.fits.trace.prompts import (
 from langslice.core.fits.trace.request import BorderTraceRequest, ImageModel
 from langslice.core.geometry.affine import pixel_center_map
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.shared_files import replace_file, retried
+from langslice.core.shared_files import retried, write_json_atomic
 from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 BORDER_WIDTH_PX = 2.0
 
@@ -85,8 +88,8 @@ def profile_prompt(image_model: ImageModel, plane: Plane) -> tuple[str, bool]:
     (:func:`~langslice.core.fits.trace.prompts.border_correction_tool_prompt`).
     """
     provider = image_model.provider
-    own = getattr(image_model, "prompt", None)
-    order = getattr(image_model, "photograph_first", None)
+    own = image_model.prompt
+    order = image_model.photograph_first
     photograph_first = supplied_prompt_is_gpt_twin(provider) if order is None else bool(order)
     if own is None:
         return border_correction_tool_prompt(plane, provider=provider), photograph_first
@@ -96,9 +99,9 @@ def profile_prompt(image_model: ImageModel, plane: Plane) -> tuple[str, bool]:
 def profile_marks(image_model: ImageModel) -> dict[str, Any]:
     """What a trace record says of an untested profile (``profile``, ``untested``
     True); nothing for a provider's own model and prompt."""
-    if getattr(image_model, "tested", True):
+    if image_model.tested:
         return {}
-    return {"profile": getattr(image_model, "profile", None) or "custom", "untested": True}
+    return {"profile": image_model.profile or "custom", "untested": True}
 
 
 def prompt_diff(base: str, edited: str) -> str:
@@ -117,10 +120,7 @@ def prompt_diff(base: str, edited: str) -> str:
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
-    temporary = path.with_suffix(".tmp")
-    text = json.dumps(value, indent=2, allow_nan=False) + "\n"
-    temporary.write_text(text, encoding="utf-8", newline="\n")
-    replace_file(temporary, path)
+    write_json_atomic(path, value, allow_nan=False)
 
 
 def _png_sha256(image: Image.Image) -> str:
@@ -467,8 +467,8 @@ def start_correction(
     }
     if regions:
         key["regions"] = regions
-    own_prompt = getattr(image_model, "prompt", None)
-    own_order = getattr(image_model, "photograph_first", None)
+    own_prompt = image_model.prompt
+    own_order = image_model.photograph_first
     if own_prompt is not None or own_order is not None:
         key["profile_inputs"] = digest({"prompt": own_prompt, "photograph_first": own_order})
     call_key = digest(key)
@@ -578,6 +578,7 @@ def start_correction(
                 model_border_pixels=int(mask.sum()),
             )
         except Exception as exc:
+            logger.exception("The border trace of %s failed", section_id)
             result.update(Refused.from_exception(exc).payload())
         return _finish_attempt(directory, result_path, claim, result)
 

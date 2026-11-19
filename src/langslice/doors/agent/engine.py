@@ -22,7 +22,6 @@ from google.genai import types
 
 from langslice.core.atlas.load import load_atlas
 from langslice.core.stack.stack import Stack
-from langslice.core.workspace import log_progress
 from langslice.doors.agent.media import opening_parts, packaged_tools
 from langslice.doors.agent.session import build_agent, run_agent_session
 from langslice.doors.agent.spend import SpendMonitor
@@ -99,7 +98,7 @@ def build_context(
 
     folder = os.path.abspath(spec.image_folder)
     if job_folder is None:
-        job_folder, _fallback = locate_job_folder(folder, spec.job_dir, emit=emit or log_progress)
+        job_folder = locate_job_folder(folder, spec.job_dir, emit=emit or logger.info)
     job_folder = Path(job_folder)
     return EngineContext(
         settings=spec.image_settings(),
@@ -108,7 +107,7 @@ def build_context(
         job_folder=str(job_folder),
         results_path=spec.out or str(JobLayout(job_folder).results_file),
         model=spec.model or DEFAULT_REVIEW_MODEL,
-        emit=emit or log_progress,
+        emit=emit,
         atlas_loader=atlas_loader or load_atlas,
     )
 

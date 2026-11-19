@@ -244,15 +244,11 @@ class Placed:
         Greedy rounds run.
     dropped
         Pairs dropped because they made the spline fold.
-    search_max_mm
-        The largest atlas-side error estimate at the search grid's region
-        points when the placement stopped.
     """
 
     pairs: Pairs
     rounds: int
     dropped: int
-    search_max_mm: float
 
 
 @dataclass(frozen=True)
@@ -437,7 +433,6 @@ def refine(
         pairs=current,
         rounds=rounds,
         dropped=dropped,
-        search_max_mm=float(np.max(error)),
     )
 
 

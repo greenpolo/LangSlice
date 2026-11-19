@@ -120,7 +120,7 @@ def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
         return ", ".join("a fixed corner" if i < 4 else names[i - 4] for i in group)
 
     groups = "; ".join(ids(group) for group in exc.vertices[:6])
-    if "Repeated" in str(exc):
+    if exc.repeated:
         return (
             f"Pairs with the same section point cannot be triangulated ({groups}). "
             "Move one section endpoint of each group, or delete one pair."
@@ -364,8 +364,6 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
         )
         result.engine["name"] = "landmark_triangulation"
         result.stored_step = step
-    except Refused:
-        raise
     except (ValueError, OSError) as exc:
         raise Refused(RefusalCode.LANDMARK_TRIANGULATION_FAILED, message=str(exc)) from exc
     key = digest(

@@ -17,14 +17,13 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.plugins import ToolError
-from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.refusal import RefusalCode
 from langslice.core.stack.section import Section
 from langslice.doors.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
     TransformProposal,
 )
-from langslice.doors.plugins.reads import as_tool_error
 from langslice.tools.changing import warps
 
 
@@ -230,8 +229,6 @@ class ContextFits(ContextProposals):
                     ).placement.atlas_to_section,
                     dtype=np.float64,
                 )
-            except Refused as refusal:
-                raise as_tool_error(refusal) from refusal
             except ValueError as exc:
                 raise ToolError(
                     RefusalCode.INVALID_LINEAR_PLACEMENT, f"{record.id}: {exc}"
@@ -304,23 +301,18 @@ class ContextFits(ContextProposals):
                 exclude=left_out,
             )
             resolve_image(workspace.atlas, str(chosen.atlas_image))
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
         except (TypeError, ValueError) as exc:
             raise ToolError(RefusalCode.BAD_ARGS, str(exc)) from exc
-        try:
-            fitted = warps.fit_record(
-                self._run.job,
-                workspace,
-                record.id,
-                chosen,
-                start=start,
-                mask=label,
-                marked=bool(marked),
-                section_image=str(section_image),
-            )
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        fitted = warps.fit_record(
+            self._run.job,
+            workspace,
+            record.id,
+            chosen,
+            start=start,
+            mask=label,
+            marked=bool(marked),
+            section_image=str(section_image),
+        )
         native_xy = np.stack(composed_native_grid(fitted, 1), axis=-1).astype(np.float64)
         settings = {
             "restrict_to": list(regions),
@@ -381,21 +373,18 @@ class ContextFits(ContextProposals):
 
         record = self._record(section)
         label = _mask_name(mask)
-        try:
-            fitted = elastix_fit(
-                self._run.job,
-                self._run.workspace,
-                record.id,
-                restrict_to=list(restrict_to),
-                exclude=list(exclude),
-                atlas_image=str(atlas_image),
-                mask=label,
-                marked=bool(marked),
-                section_image=str(section_image),
-                edges=bool(edges),
-            )
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        fitted = elastix_fit(
+            self._run.job,
+            self._run.workspace,
+            record.id,
+            restrict_to=list(restrict_to),
+            exclude=list(exclude),
+            atlas_image=str(atlas_image),
+            mask=label,
+            marked=bool(marked),
+            section_image=str(section_image),
+            edges=bool(edges),
+        )
         proposal = self.transform_from_params(
             record.id, fitted.params, note=note or "Elastix affine, settings of the caller's"
         )

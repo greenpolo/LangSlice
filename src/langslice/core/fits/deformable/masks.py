@@ -86,22 +86,6 @@ def block_px(scale: float = 1.0) -> int:
     return max(2, round(EM_BLOCK_PX * scale))
 
 
-def em_parameters(scale: float = 1.0) -> dict[str, Any]:
-    """Everything above that changes the mask, at brain *scale*; part of the
-    deformable cache key and of a stain fit's record."""
-    return {
-        "method": "three-class EM after emlddmm (Tward et al. 2025)",
-        "grid_um": EM_GRID_UM,
-        "block_px": block_px(scale),
-        "iterations": EM_ITERATIONS,
-        "ridge": EM_RIDGE,
-        "sigma_scale": EM_SIGMA_SCALE,
-        "priors": list(EM_PRIORS),
-        "background_distance_um": EM_BACKGROUND_DISTANCE_UM * scale,
-        "match_threshold": EM_MATCH_THRESHOLD,
-    }
-
-
 def _block_linear(J: np.ndarray, image: np.ndarray, weight: np.ndarray, block: int) -> np.ndarray:
     """emlddmm's local contrast: per *block* x *block* tile, the weighted least
     squares J ~ c0 + c1 * image, evaluated on the tile."""

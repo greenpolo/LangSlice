@@ -9,11 +9,13 @@ from scipy.spatial import Delaunay
 class DegenerateMesh(ValueError):
     """Input no triangulation can use; ``vertices`` are the offending vertex
     indices (groups of repeated points, or collapsed triangles) into the
-    mesh's vertex list."""
+    mesh's vertex list, and ``repeated`` is True for repeated points and False
+    for collapsed triangles."""
 
-    def __init__(self, message: str, vertices: list[list[int]]) -> None:
+    def __init__(self, message: str, vertices: list[list[int]], *, repeated: bool) -> None:
         super().__init__(message)
         self.vertices = vertices
+        self.repeated = repeated
 
 
 class PiecewiseAffine:
@@ -53,6 +55,7 @@ class PiecewiseAffine:
             raise DegenerateMesh(
                 "Repeated section landmarks have no unique triangulation",
                 [members for members in groups.values() if len(members) > 1],
+                repeated=True,
             )
         self.delaunay = Delaunay(self.source) if simplices is None else None
         self.simplices = (
@@ -67,6 +70,7 @@ class PiecewiseAffine:
             raise DegenerateMesh(
                 "Collapsed section triangle",
                 [self.simplices[k].tolist() for k in np.flatnonzero(flat)],
+                repeated=False,
             )
         self.folded = area_a * area_b <= 0
         self._order = np.concatenate([np.flatnonzero(~self.folded), np.flatnonzero(self.folded)])

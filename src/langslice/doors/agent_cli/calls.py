@@ -66,6 +66,7 @@ from langslice.tools.descriptions.render import Declaration, declaration
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from langslice.doors.commands.flags import FlagGroup
     from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ WARN_KEYS = (
 )
 HELP_FLAGS = frozenset({"--help", "-h"})
 ROW_VERBS = frozenset({"status"})
+INIT_FLAG_GROUPS: tuple[FlagGroup, ...] = ("job", "resume", "init")
 
 
 def progress(message: str) -> None:
@@ -803,10 +805,18 @@ def init_parser() -> argparse.ArgumentParser:
     from langslice.doors.commands.flags import add_flags
 
     parser = _Parser(prog="langslice-job FOLDER init", add_help=False)
-    add_flags(parser, "job")
-    add_flags(parser, "resume")
-    add_flags(parser, "init", choices={"--viewer": sorted(VIEWER_LIMITS)})
+    for group in INIT_FLAG_GROUPS:
+        add_flags(parser, group, choices={"--viewer": sorted(VIEWER_LIMITS)})
     return parser
+
+
+def init_flags() -> list[dict[str, Any]]:
+    """``init``'s flags as data (:func:`langslice.doors.commands.flags.flag_rows`),
+    the ones :func:`init_parser` adds."""
+    from langslice.core.pictures.opening import VIEWER_LIMITS
+    from langslice.doors.commands.flags import flag_rows
+
+    return flag_rows(INIT_FLAG_GROUPS, choices={"--viewer": sorted(VIEWER_LIMITS)})
 
 
 def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
@@ -961,10 +971,8 @@ def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelop
             "role": role,
             "job_folder": str(layout.folder),
             "prompt": made.prompt,
-            **made.facts,
         },
-        artifacts=[{"path": str(saved), "kind": "launch"}, *made.artifacts],
-        warnings=made.warnings,
+        artifacts=[{"path": str(saved), "kind": "launch"}],
     )
 
 

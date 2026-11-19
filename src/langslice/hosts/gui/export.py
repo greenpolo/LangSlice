@@ -230,6 +230,8 @@ class Exports:
                 message=written.message,
                 skipped=written.skipped,
             )
+        except Refused as refusal:
+            done = ExportState(state=ExportStatus.FAILED, format=kind, message=str(refusal))
         except IMAGE_FAILURES as exc:
             message = str(exc) or type(exc).__name__
             done = ExportState(state=ExportStatus.FAILED, format=kind, message=message)

@@ -52,7 +52,6 @@ def register(
     job_id: str,
     folder: Path,
     *,
-    created_at: str | None = None,
     fallback: dict[str, Any] | None = None,
 ) -> Path:
     """Write the id's entry, pointing at *folder*; owner-only. Returns its path.
@@ -66,7 +65,7 @@ def register(
         "format_version": INDEX_FORMAT_VERSION,
         "job_id": job_id,
         "job_folder": str(Path(os.path.abspath(folder))),
-        "created_at": created_at or datetime.now(UTC).isoformat(timespec="seconds"),
+        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if fallback is not None:
         record["fallback"] = fallback

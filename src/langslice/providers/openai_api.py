@@ -10,12 +10,12 @@ Endpoint and key come from the environment (loaded by
 
 from __future__ import annotations
 
-import atexit
 import importlib
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from langslice.providers.client_cache import CachedClient
 from langslice.providers.connections import OPENAI_OAUTH_IMAGE_MODELS
 from langslice.providers.gemini_api import read_env
 
@@ -34,15 +34,7 @@ def get_openai_image_model() -> str:
     return read_env("OPENAI_IMAGE_MODEL") or DEFAULT_IMAGE_MODEL
 
 
-_image_client_instance: openai.OpenAI | None = None
-
-
-def get_openai_image_client() -> openai.OpenAI:
-    """One OpenAI client for image edits, made on first use (see the module
-    text for the endpoint and key). ``RuntimeError`` without a key."""
-    global _image_client_instance
-    if _image_client_instance is not None:
-        return _image_client_instance
+def _make_image_client() -> openai.OpenAI:
     api_key = read_env("OPENAI_IMAGE_API_KEY") or read_env("OPENAI_API_KEY")
     if api_key is None:
         raise RuntimeError(
@@ -53,22 +45,13 @@ def get_openai_image_client() -> openai.OpenAI:
     base_url = read_env("OPENAI_IMAGE_BASE_URL") or read_env("OPENAI_BASE_URL") or DEFAULT_BASE_URL
     client_cls = cast(Callable[..., "openai.OpenAI"], importlib.import_module("openai").OpenAI)
     logger.info("Creating the OpenAI image client: base_url=%s", base_url)
-    _image_client_instance = client_cls(base_url=base_url, api_key=api_key)
-    return _image_client_instance
+    return client_cls(base_url=base_url, api_key=api_key)
 
 
-def close_client() -> None:
-    """Close the cached client and release its HTTP transport."""
-    global _image_client_instance
-    if _image_client_instance is None:
-        return
-    close = getattr(_image_client_instance, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception as exc:
-            logger.debug("Failed to close the OpenAI image client cleanly: %s", exc)
-    _image_client_instance = None
+_IMAGE_CLIENT = CachedClient(_make_image_client, "OpenAI image client")
 
 
-atexit.register(close_client)
+def get_openai_image_client() -> openai.OpenAI:
+    """One OpenAI client for image edits, made on first use (see the module
+    text for the endpoint and key). ``RuntimeError`` without a key."""
+    return _IMAGE_CLIENT.get()

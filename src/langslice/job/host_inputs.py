@@ -37,7 +37,7 @@ HOST_TRANSFORM_KIND = "host"
 
 def _named(spec: JobSpec, key: str) -> set[str]:
     """The section filenames ``spec.inputs[key]`` names (a list, or a mapping's keys)."""
-    return {str(name) for name in (spec.inputs or {}).get(key) or []}
+    return {str(name) for name in spec.inputs.get(key) or []}
 
 
 def host_damaged_ids(spec: JobSpec) -> set[str]:
@@ -96,7 +96,7 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
     aligned. The other "none" values (the flat plane, no flip and no turn,
     no deformation) are what a section starts with.
     """
-    inputs = spec.inputs or {}
+    inputs = spec.inputs
 
     order = inputs.get("order") or []
     if order:
@@ -291,7 +291,7 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     if isinstance(inputs, dict):
         saved_inputs = cast("dict[str, Json]", inputs)
     old = to_jsonable(saved_inputs)
-    new = to_jsonable(spec.inputs or {})
+    new = to_jsonable(spec.inputs)
     keys = set(old) | set(new)
     changed = [key for key in keys if old.get(key) != new.get(key)]
     if freeze.clean(saved.get("frozen")) != freeze.clean(spec.frozen):

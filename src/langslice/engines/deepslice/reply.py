@@ -143,7 +143,7 @@ class Answer:
         if self.choice.propose_only:
             return "proposal only"
         if AnswerPart.ANGLES not in self.choice.parts:
-            return "not choice"
+            return "not chosen"
         if self.written.angles_written:
             return "written"
         if self.facts.angles_frozen:
@@ -186,7 +186,7 @@ def answered(answer: Answer, pictures: list[Image.Image], *, view_sentence: bool
         The pictures the reply carries.
     view_sentence
         Whether the reply ends with the sentence pointing to ``look``'s
-        positioning view (no picture choice, and that view on).
+        positioning view (no picture chosen, and that view on).
 
     Returns
     -------

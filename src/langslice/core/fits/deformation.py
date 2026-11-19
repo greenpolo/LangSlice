@@ -576,7 +576,6 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
                 "code": flag["code"],
                 "region": flag.get("acronym"),
                 "area_ratio": None if ratio is None else round(float(ratio), 2),
-                "limits": flag.get("limits"),
             }
         )
     result["flags"] = flags[:MAX_FLAGS]
@@ -740,7 +739,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
                 )
             )
             waiting.append(job)
-        except ENGINE_FAILURES as exc:
+        except (Refused, *ENGINE_FAILURES) as exc:
             job.result = CandidateFailure(job.settings, f"{type(exc).__name__}: {exc}")
     if not prepared:
         return

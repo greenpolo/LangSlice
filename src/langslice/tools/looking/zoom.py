@@ -69,11 +69,9 @@ def zoom_tool(
     """
     try:
         number = int(picture or 0) or None
-        done = zoom_picture(run.job, run.workspace, as_list(box), picture=number, region=region)
-    except Refused:
-        raise
     except (TypeError, ValueError):
         raise Refused(RefusalCode.BAD_ARGS, "picture is a picture number.") from None
+    done = zoom_picture(run.job, run.workspace, as_list(box), picture=number, region=region)
     reply: dict[str, object] = {
         "status": "ok",
         "picture": done.picture,

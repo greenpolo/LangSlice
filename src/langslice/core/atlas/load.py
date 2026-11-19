@@ -1,6 +1,5 @@
 import contextlib
 import importlib
-import logging
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -15,8 +14,6 @@ from langslice.core.space import (
     atlas_space_context,
     slice_axis_index,
 )
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_ATLAS_NAME = "allen_mouse_25um"
 
@@ -98,11 +95,6 @@ def position_mm_to_index(atlas: _AtlasLike, position_mm: float, *, plane: Plane 
             f"Valid range for '{atlas.atlas_name}': 0.0mm to {max_pos:.3f}mm"
         )
     return idx
-
-
-def index_to_position_mm(atlas: _AtlasLike, idx: int, *, plane: Plane = "coronal") -> float:
-    """Convert an array index along the slice-normal axis to a physical position (mm)."""
-    return idx * _resolution_mm_for_plane(atlas, plane)
 
 
 def get_position_range_mm(atlas: _AtlasLike, *, plane: Plane = "coronal") -> tuple[float, float]:

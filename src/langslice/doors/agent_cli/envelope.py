@@ -1,8 +1,8 @@
 """The agent CLI's answer: one JSON envelope on stdout, an exit code.
 
-Every agent command (``langslice-job ops``, ``schema``, ``job FOLDER ...``)
-prints exactly one JSON object on stdout and nothing else; progress and logs
-go to stderr. The envelope::
+Every agent CLI command (``langslice-job ops``, ``langslice-job schema``,
+``langslice-job FOLDER ...``) prints exactly one JSON object on stdout and
+nothing else; progress and logs go to stderr. The envelope::
 
     {"ok": true|false,
      "picture_files": ["/.../view.jpg", ...],   # only when the call drew pictures

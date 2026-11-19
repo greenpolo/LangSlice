@@ -144,11 +144,10 @@ def read_file_tool(run: Run, path: str, offset: int, limit: int) -> dict[str, ob
     """
     run.job.views.flush()
     try:
-        done = read_folder_file(run.job, str(path or ""), int(offset or 0), int(limit or 400))
-    except Refused:
-        raise
+        first, count = int(offset or 0), int(limit or 400)
     except (TypeError, ValueError):
         raise Refused(RefusalCode.BAD_ARGS, "offset and limit are whole numbers.") from None
+    done = read_folder_file(run.job, str(path or ""), first, count)
     reply: dict[str, object] = {"status": "ok", "text": done.text}
     if done.picture is not None:
         reply["picture"] = done.picture

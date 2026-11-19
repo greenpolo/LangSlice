@@ -151,7 +151,7 @@ def write(
     stack: tuple[float, float] | None,
     choice: PartChoice,
 ) -> Written:
-    """Write the parts choice, as one undo step.
+    """Write the parts chosen, as one undo step.
 
     Parameters
     ----------

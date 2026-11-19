@@ -30,17 +30,11 @@ def _job_result(
 
     Raises ``TimeoutError`` when *timeout* passes first.
     """
-    try:
-        return future.result(timeout=timeout)
-    except TimeoutError:
-        if not future.done():
-            raise
-        error: BaseException = future.exception() or TimeoutError()
-        failure = Refused.from_exception(error).payload()
-        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
-    except Exception as exc:
-        failure = Refused.from_exception(exc).payload()
-        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
+    error = future.exception(timeout=timeout)
+    if error is None:
+        return future.result()
+    failure = Refused.from_exception(error).payload()
+    return {"id": section_id, "geometry_fingerprint": fingerprint, **failure}
 
 
 def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -> bool:

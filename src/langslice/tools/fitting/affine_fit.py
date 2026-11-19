@@ -331,6 +331,8 @@ def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
                 edges=call.edges,
                 section_weights=weights,
             )
+    except Refused as refusal:
+        return _SectionFit(AffineRow(section.id, refusal=_told(job, section.id, refusal)))
     except ENGINE_FAILURES as exc:
         logger.warning("elastix_affine failed for %s: %s", section.id, exc)
         failure = _fit_failure(job, section.id, exc)
@@ -377,18 +379,15 @@ def _told(job: Job, section_id: str, refusal: Refused) -> Refused:
 
 
 def _fit_failure(job: Job, section_id: str, exc: Exception) -> Refused:
-    """Return the row's refusal of a fit that raised: the exception's own code
-    and text, or ``FIT_FAILED`` with the engine's last words.
+    """Return the row's ``FIT_FAILED`` for a fit that raised, with the
+    engine's last words.
     """
-    code = getattr(exc, "code", RefusalCode.FIT_FAILED)
-    message = str(exc)
-    if code == RefusalCode.FIT_FAILED:
-        message = failure_message(
-            f"{type(exc).__name__}: {exc}",
-            job.engine_log,
-            f"the Elastix affine of {section_id} failed",
-        )
-    return Refused(code, message=message)
+    message = failure_message(
+        f"{type(exc).__name__}: {exc}",
+        job.engine_log,
+        f"the Elastix affine of {section_id} failed",
+    )
+    return Refused(RefusalCode.FIT_FAILED, message=message)
 
 
 def elastix_fit(

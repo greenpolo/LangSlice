@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -47,14 +47,10 @@ _NUMBERED = re.compile(r"^(\d{6})_")
 
 @dataclass
 class Launch:
-    """One launch prompt: its text, the artifacts (the saved launch file, the
-    opening pictures in reading order, ``TOOLS.md``) and what went unsaved."""
+    """One launch prompt: its role and its text."""
 
     role: str
     prompt: str
-    artifacts: list[dict[str, Any]] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-    facts: dict[str, Any] = field(default_factory=dict)
 
 
 def resolution_range(opened: Any) -> dict[str, int]:

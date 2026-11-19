@@ -76,16 +76,18 @@ IMAGE_MODEL_KEY = "image_model"
 
 
 _OPEN: dict[int, weakref.ref[Opened]] = {}
-_EXIT_HOOKED = False
+
+
+@functools.cache
+def _hook_exit() -> None:
+    """Close the jobs a script left open when the interpreter stops, once."""
+    from langslice.job.pictures import at_exit
+
+    at_exit(_close_open)
 
 
 def _track(opened: Opened) -> None:
-    global _EXIT_HOOKED
-    if not _EXIT_HOOKED:
-        from langslice.job.pictures import at_exit
-
-        at_exit(_close_open)
-        _EXIT_HOOKED = True
+    _hook_exit()
     key = id(opened)
     _OPEN[key] = weakref.ref(opened, lambda _ref: _OPEN.pop(key, None))
 
@@ -218,7 +220,7 @@ class JobHandle:
         *full_resolution* the image file's own pixels. A section without a
         placement, or whose deformation record or file cannot be read, raises
         ``ValueError``; an unknown name, ``UNKNOWN_SLICE_IDS``
-        (:class:`langslice.core.refusal.Refused`, a ``ValueError``)."""
+        (:class:`langslice.core.refusal.Refused`)."""
         from langslice.tools.bookkeeping.exports import section_maps
 
         return section_maps(

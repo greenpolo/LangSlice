@@ -23,7 +23,8 @@ from typing import Any, BinaryIO
 import anyio
 from anyio import to_thread
 from mcp.server.fastmcp import Context, FastMCP
-from mcp.server.lowlevel.server import NotificationOptions
+from mcp.server.fastmcp.tools import Tool
+from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server
@@ -34,11 +35,12 @@ from langslice.core.pictures.opening import (
 )
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import Stack
-from langslice.doors.agent.engine import EngineContext, build_context
 from langslice.doors.call_log import TRACE_DIR_ENV, HostTrace
 from langslice.doors.jobs import (
+    JobContext,
     NoJob,
     close_job,
+    context,
     find,
     image_model_off,
     provider_connected,
@@ -53,6 +55,7 @@ from langslice.doors.mcp.pages import (
 from langslice.doors.reference_card import write_card
 from langslice.doors.stdio import protocol_input
 from langslice.doors.tools.toolbox import build_tools
+from langslice.job.folder.layout import locate_job_folder
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tool_table import refusal
@@ -83,20 +86,38 @@ INSTRUCTIONS = (
 )
 
 
+class LangSliceServer(FastMCP):
+    """FastMCP, with the two members of its internals this door needs.
+
+    FastMCP has no public way to read a registered tool or to reach the
+    protocol server under it (to run it over the door's own streams); a
+    subclass reaches both through its own protected members, here and nowhere
+    else.
+    """
+
+    def registered_tool(self, name: str) -> Tool | None:
+        """Return the tool registered under *name*, None when there is none."""
+        return self._tool_manager.get_tool(name)
+
+    def protocol_server(self) -> Server:
+        """Return the protocol server this FastMCP serves."""
+        return self._mcp_server
+
+
 @dataclass
 class Session:
     """One open job as this door holds it.
 
     ``job`` is the core :class:`~langslice.job.job.Job` (state, spec,
     undo/redo, checkpoint, submit gates), the one
-    ``langslice.doors.agent.engine.run`` opens; ``box`` is the tools over it,
+    ``langslice.doors.jobs.open_folder`` opens; ``box`` is the tools over it,
     whose gates and delivery bookkeeping this door shares with the ADK agent's.
     The rest is the door's own: the user's notes, the opening pages and the
     trace.
     """
 
     job: Job
-    ctx: EngineContext
+    ctx: JobContext
     box: ToolBox
     trace: HostTrace | None
     notes: str = ""
@@ -133,9 +154,8 @@ def open_job(
     saved job's (the same place, as its index names it). The nonlinear
     task's image-model tool is offered only when that model is connected
     (:func:`langslice.doors.jobs.image_model_off`)."""
-    ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
-    assert ctx.job_folder is not None
-    job_folder = Path(ctx.job_folder)
+    job_folder = folder or locate_job_folder(spec.image_folder, spec.job_dir, emit=logger.info)
+    ctx = context(spec, job_folder, atlas_loader=atlas_loader)
     off = image_model_off(spec, provider_connected(spec))
     reason = refusal(spec, image_model=not off)
     if reason is not None:
@@ -277,7 +297,7 @@ def host_tool(session: Session, tool: Callable[..., object]) -> Callable[..., An
 
 
 def strict_arguments(
-    server: FastMCP,
+    server: LangSliceServer,
     name: str,
     tool: Callable[..., Any],
     trace: Callable[[], HostTrace | None] = lambda: None,
@@ -297,7 +317,7 @@ def strict_arguments(
     """
     from langslice.tools.arguments import argument_refusal, normalize_arguments
 
-    registered = server._tool_manager.get_tool(name)
+    registered = server.registered_tool(name)
     if registered is None:
         return
     metadata = registered.fn_metadata
@@ -336,7 +356,7 @@ def build_server(
     *,
     atlas_loader: Callable[[str], Any] | None = None,
     sessions: dict[str, Session] | None = None,
-) -> FastMCP:
+) -> LangSliceServer:
     """The server. *spec_for* turns a folder into this server's job spec,
     for a folder without a job (:func:`open_folder`).
 
@@ -348,7 +368,7 @@ def build_server(
     *sessions* holds the open job under ``"job"`` (the caller closes it when
     the server stops: :func:`serve`).
     """
-    server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
+    server = LangSliceServer(SERVER_NAME, instructions=INSTRUCTIONS)
     current: dict[str, Session] = {} if sessions is None else sessions
 
     def install(session: Session) -> None:
@@ -445,20 +465,20 @@ def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None
                 session.close()
 
 
-def initialization_options(server: FastMCP) -> InitializationOptions:
+def initialization_options(server: LangSliceServer) -> InitializationOptions:
     """What the server tells the host when it connects: its capabilities with
     ``tools.listChanged``, so a host takes the tool list again when
     ``start_job`` installs a job's tools (``send_tool_list_changed``); a host
     ignores the notice from a server that does not advertise it."""
-    lowlevel = server._mcp_server
+    lowlevel = server.protocol_server()
     return lowlevel.create_initialization_options(NotificationOptions(tools_changed=True))
 
 
-async def _run_stdio(server: FastMCP, wire: FileIO, host_input: BinaryIO) -> None:
+async def _run_stdio(server: LangSliceServer, wire: FileIO, host_input: BinaryIO) -> None:
     text = TextIOWrapper(wire, encoding="utf-8", newline="\n", write_through=True)
     out = anyio.wrap_file(text)
     source = anyio.wrap_file(TextIOWrapper(host_input, encoding="utf-8", errors="replace"))
     streams = stdio_server(stdin=source, stdout=out)
     async with streams as (read_stream, write_stream):
-        lowlevel = server._mcp_server
+        lowlevel = server.protocol_server()
         await lowlevel.run(read_stream, write_stream, initialization_options(server))

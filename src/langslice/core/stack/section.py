@@ -152,8 +152,3 @@ class Section:
     def yaw_deg(self) -> float:
         """Return the yaw of the section's plane, in degrees."""
         return self.angles[1]
-
-    @property
-    def is_oblique(self) -> bool:
-        """Return whether the section's plane is angled."""
-        return bool(self.pitch_deg or self.yaw_deg)

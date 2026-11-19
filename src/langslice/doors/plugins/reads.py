@@ -19,7 +19,7 @@ from PIL import Image
 
 from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.plugins import ToolError
-from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.refusal import RefusalCode
 from langslice.core.space import Plane
 from langslice.core.stack.codec import deformation_to_json, physical_to_json
 from langslice.core.stack.section import Section
@@ -191,7 +191,7 @@ class ContextReads:
         state = self._run.state
         record = state.resolve(section)
         if record is None:
-            raise as_tool_error(unknown_sections(state, [str(section)]))
+            raise unknown_sections(state, [str(section)])
         return record
 
     def _view(self, record: Section) -> SectionView:
@@ -317,10 +317,7 @@ class ContextReads:
         from langslice.tools.changing import masks as ops_masks
 
         record = self._record(section)
-        try:
-            view = ops_masks.read(self._run.job, record, str(name))
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        view = ops_masks.read(self._run.job, record, str(name))
         if view.stale:
             raise ToolError(
                 RefusalCode.STALE_MASK, ops_masks.stale_mask(self._run.job, record.id, str(name))
@@ -442,24 +439,3 @@ class ContextReads:
             )
             for ref in record.layers
         ]
-
-
-def as_tool_error(refusal: Refused) -> ToolError:
-    """Turn a refusal into the :class:`ToolError` a plugin catches.
-
-    Parameters
-    ----------
-    refusal
-        The refusal an operation raised.
-
-    Returns
-    -------
-    ToolError
-        The same code, the refusal's message first and its other facts
-        after it.
-    """
-    return ToolError(
-        refusal.code,
-        str(refusal),
-        **{key: value for key, value in refusal.facts.items() if key != "message"},
-    )

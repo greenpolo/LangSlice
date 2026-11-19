@@ -90,9 +90,7 @@ JOB_COMMANDS: dict[str, str] = {
     "pip packages in it, listed in scripts/requirements.txt; `remove` deletes it and "
     "keeps that list, from which `env` rebuilds it.",
     "python SCRIPT [ARGS ...]": "Run your own Python script with the job's environment's "
-    "python (`env`, made when missing): its output and exit code are the script's. "
-    "Faster than calling that python yourself: LangSlice and the atlas are usually "
-    "loaded already.",
+    "python (`env`, made when missing): its output and exit code are the script's.",
 }
 
 
@@ -100,39 +98,6 @@ def command_names() -> list[str]:
     """The job commands by name (``init``, ``launch``, ``runs``, ``wait``,
     ``ops``, ``schema``, ``env``, ``python``)."""
     return [key.split()[0] for key in JOB_COMMANDS]
-
-
-def flags_table(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:
-    """An argparse parser's options as data: per option its ``flag`` (the
-    long form), ``aliases``, ``help``, ``default``, ``choices``,
-    ``takes_value`` and ``metavar``; a hidden option (an old spelling) is
-    left out."""
-    formatter = parser._get_formatter()
-    rows: list[dict[str, Any]] = []
-    for action in parser._actions:
-        if (
-            not action.option_strings
-            or isinstance(action, argparse._HelpAction)
-            or (action.help == argparse.SUPPRESS)
-        ):
-            continue
-        strings = sorted(action.option_strings, key=lambda text: (-len(text), text))
-        try:
-            text = formatter._expand_help(action) if action.help else ""
-        except (KeyError, TypeError, ValueError):
-            text = action.help or ""
-        rows.append(
-            {
-                "flag": strings[0],
-                "aliases": strings[1:],
-                "help": " ".join(text.split()),
-                "default": action.default if action.default is not argparse.SUPPRESS else None,
-                "choices": list(action.choices) if action.choices is not None else None,
-                "takes_value": action.nargs != 0,
-                "metavar": action.metavar if isinstance(action.metavar, str) else None,
-            }
-        )
-    return rows
 
 
 def command_entry(name: str) -> dict[str, Any]:
@@ -144,10 +109,10 @@ def command_entry(name: str) -> dict[str, Any]:
         "usage": f"langslice-job FOLDER {key}",
     }
     if name == "init":
-        from langslice.doors.agent_cli.calls import init_parser
+        from langslice.doors.agent_cli.calls import init_flags
 
         entry["usage"] = "langslice-job IMAGE_FOLDER init [--flag value ...]"
-        entry["flags"] = flags_table(init_parser())
+        entry["flags"] = init_flags()
     elif name == "launch":
         entry["flags"] = [
             {

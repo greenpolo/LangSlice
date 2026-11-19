@@ -139,9 +139,6 @@ and returns a `record.DeformableRecord`. No custom solver.
   section_weights=)` takes a section mask's weights (float, the section grid;
   `core/sections/masks.py`), thresholds them at `EM_MATCH_THRESHOLD` (0.5) and
   ANDs them into the fixed mask. `run_prepared` runs one in this process.
-  `with_section_mask(prepared, mask)` narrows a prepared fit's fixed mask to
-  a caller's own (bool on the section grid; a script's `fit_fireants(mask=)`,
-  the Elastix affine's `mask=`).
   `fit_prepared` runs the prepared fits of a call (different sections or settings):
   on a GPU at once on threads of the caller, as many as the GPU queue's
   slots, on the CPU in a spawn process
@@ -182,7 +179,7 @@ the adult CCFv3 brain, about 1.7 for `whs_sd_rat_39um`, 0.7 for DeMBA P4),
 areas by its square. `prepare_fit` / `prepare_warp` read it once
 (`PreparedFit.brain_scale`) and hand it on: `EngineInputs.brain_scale` (the
 smoothness sigmas, recorded in the engine's native parameters with
-`brain_scale`), the EM sorting's scale (`masks.block_px`, `masks.em_parameters`),
+`brain_scale`), the EM sorting's scale (`masks.block_px`),
 `footprint_masks(..., scale)`, `regions.model_extent` / `named_regions`
 (`brain_scale=`), `record.diagnose(..., brain_scale=)`. The working grid is
 `DETAIL[...].working_um` times the scale, so a rat section is fitted as a
@@ -357,12 +354,11 @@ undo and every child find their records.
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
 fraction in the footprint, inverse consistency, and flags REGION_VANISHED /
-FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. Area ratios raise no flag:
-REGION_COMPRESSED / EXPANDED (outside 0.5 to 2, 0.1 to 10 for ventricles)
-fired on 187 of 299 records of the 2026-11-15 demo brains, mostly on layer
-slivers, and against the human nonlinear references the regions with the
-largest area change had moved closer to the truth, not further. The codes
-stay in `FitFlag` for records saved before. A fit's reply lists them (`core.fits.deformation.summary`: whole-section flags first,
+FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. Area ratios raise no flag (a flag on
+a region's area change fired on 187 of 299 records of the 2026-11-15 demo
+brains, mostly on layer slivers, and against the human nonlinear references
+the regions with the largest area change had moved closer to the truth, not
+further). A fit's reply lists them (`core.fits.deformation.summary`: whole-section flags first,
 at most `MAX_FLAGS`, each region flag with its acronym); a notice words them in one
 line, each code once and a region code with its regions (`core.fits.deformation.flag_words`,
 also `langslice.plugin_api.flag_words`). Limits are the

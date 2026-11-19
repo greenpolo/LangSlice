@@ -16,6 +16,8 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
+from langslice.core.failures import IMAGE_FAILURES
+
 DEFAULT_MAX_IMAGES = 500
 DEFAULT_KEEP_IMAGES = 250
 
@@ -159,7 +161,7 @@ def part_summary(part: types.Part) -> dict[str, Any]:
             try:
                 with Image.open(io.BytesIO(data)) as img:
                     summary["dimensions"] = [img.width, img.height]
-            except Exception:
+            except IMAGE_FAILURES:
                 summary["dimensions"] = None
         return summary
 

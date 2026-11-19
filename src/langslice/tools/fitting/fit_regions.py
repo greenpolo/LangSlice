@@ -96,7 +96,7 @@ def region_box(
         names = [split_side(name)[0] for name in regions]
         geometry = stage(workspace, state, record, dict(KNOB_DEFAULTS), "canvas").geometry
         mask = regions_mask(workspace.atlas, geometry.annotation, names)
-    except IMAGE_FAILURES as exc:
+    except (Refused, *IMAGE_FAILURES) as exc:
         logger.warning("region box failed for %s: %s", record.id, exc)
         return None
     rows = np.flatnonzero(mask.any(axis=1))

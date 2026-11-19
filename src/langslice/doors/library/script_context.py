@@ -212,9 +212,7 @@ class ScriptContext(ToolContext):
                 held = row.get("deformation")
                 text = str(
                     row.get("note")
-                    or (
-                        held._warp.step.get("note") if isinstance(held, DeformationProposal) else ""
-                    )
+                    or (held.warp.step.get("note") if isinstance(held, DeformationProposal) else "")
                     or ""
                 )
                 if record is not None and record.id in result.written and text:

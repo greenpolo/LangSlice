@@ -11,12 +11,13 @@ or ``vertex_adc`` when ``GOOGLE_GENAI_USE_VERTEXAI`` is set):
 
 from __future__ import annotations
 
-import atexit
 import importlib
 import logging
 import os
 from collections.abc import Callable
 from typing import Protocol, cast
+
+from langslice.providers.client_cache import CachedClient
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,6 @@ class GenAIClientProtocol(Protocol):
     models: _GenAIModelsProtocol
 
     def close(self) -> None: ...
-
-
-_client_instance: GenAIClientProtocol | None = None
 
 
 def read_env(name: str) -> str | None:
@@ -113,40 +111,23 @@ def _vertex_location() -> str:
     return read_env("GOOGLE_CLOUD_LOCATION") or "us-central1"
 
 
-def close_client() -> None:
-    """Close the cached client and release its transport."""
-    global _client_instance
-    if _client_instance is None:
-        return
-    close = getattr(_client_instance, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception as exc:
-            logger.debug("Failed to close GenAI client cleanly: %s", exc)
-    _client_instance = None
-
-
-def get_client() -> GenAIClientProtocol:
-    """The google-genai client for the selected backend, made on first use."""
-    global _client_instance
-    if _client_instance is not None:
-        return _client_instance
+def _make_client() -> GenAIClientProtocol:
     genai_module = importlib.import_module("google.genai")
     client_cls = cast(Callable[..., GenAIClientProtocol], genai_module.Client)
     backend = get_backend()
     if backend == _BACKEND_AI_STUDIO:
-        _client_instance = client_cls(api_key=get_api_key())
-    elif backend == _BACKEND_VERTEX_API_KEY:
-        _client_instance = client_cls(vertexai=True, api_key=get_api_key())
-    else:
-        logger.info(
-            "Using Vertex ADC auth (project=%s, location=%s)", _vertex_project(), _vertex_location()
-        )
-        _client_instance = client_cls(
-            vertexai=True, project=_vertex_project(), location=_vertex_location()
-        )
-    return _client_instance
+        return client_cls(api_key=get_api_key())
+    if backend == _BACKEND_VERTEX_API_KEY:
+        return client_cls(vertexai=True, api_key=get_api_key())
+    logger.info(
+        "Using Vertex ADC auth (project=%s, location=%s)", _vertex_project(), _vertex_location()
+    )
+    return client_cls(vertexai=True, project=_vertex_project(), location=_vertex_location())
 
 
-atexit.register(close_client)
+_CLIENT = CachedClient(_make_client, "GenAI client")
+
+
+def get_client() -> GenAIClientProtocol:
+    """The google-genai client for the selected backend, made on first use."""
+    return _CLIENT.get()

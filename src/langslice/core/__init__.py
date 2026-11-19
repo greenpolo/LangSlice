@@ -9,13 +9,20 @@ turns the pictures into what its host reads (ADK message parts, MCP image
 blocks, files).
 
 The layer rule (``pyproject.toml`` ``[tool.importlinter]``, run by
-``tests/test_import_layers.py``; ``tests/test_core_imports.py`` checks what a
-fresh interpreter loads): modules here import other core modules only. Never
-the job layer (:mod:`langslice.job`), the operations (:mod:`langslice.tools`),
-a door (:mod:`langslice.doors`), the agent driver
-(:mod:`langslice.doors.agent`), a host, a provider, or ``google.*``,
-``litellm``, ``openai``.
+``tests/test_import_layers.py``): modules here import other core modules only.
+Never the job layer (:mod:`langslice.job`), the tools
+(:mod:`langslice.tools`), a door (:mod:`langslice.doors`), a host, a provider,
+or ``google.*``, ``litellm``, ``openai``.
 
-Sub-packages: :mod:`.atlas` (BrainGlobe access), :mod:`.deformable` (the
-deformable fit), :mod:`.nonlinear` (the image-model border route).
+Sub-packages: :mod:`.atlas` (BrainGlobe access), :mod:`.sections` (section
+files: channels, images, masks, damage, renders), :mod:`.stack` (the stack
+state and its JSON), :mod:`.geometry` (affine maps, oblique plane sampling,
+triangulation), :mod:`.fits` (the affine fit, deformations, landmarks, the
+deformable fit and the image model's border trace), :mod:`.maps` (section
+maps and the ABBA, ITK and imported forms), :mod:`.pictures` (every picture
+drawn and its options). Single modules: :mod:`.workspace` (one job's sections
+and atlas), :mod:`.space`, :mod:`.refusal`, :mod:`.plugins`,
+:mod:`.connections`, :mod:`.failures`, :mod:`.hardware`, :mod:`.jsonable`,
+:mod:`.outside`, :mod:`.shared_files`, :mod:`.tool_kinds` and
+:mod:`.worker_threads`.
 """

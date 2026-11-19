@@ -71,21 +71,25 @@ def build_rotation_matrix(
 _volume_cache: dict[tuple[Any, ...], tuple[np.ndarray, tuple[float, float, float]]] = {}
 _filtered_cache: dict[tuple[Any, ...], np.ndarray] = {}
 FILTERED_CACHE_SIZE = 4
-_volume_lock = threading.Lock()
-_filtered_lock = threading.Lock()
-_annotation_lock = threading.Lock()
+_volume_lock = threading.RLock()
+_filtered_lock = threading.RLock()
+_annotation_lock = threading.RLock()
 
 
-def _atlas_key(cache: dict[Any, Any], atlas: Any, *parts: Any) -> tuple[Any, ...]:
+def _atlas_key(
+    cache: dict[Any, Any], lock: threading.RLock, atlas: Any, *parts: Any
+) -> tuple[Any, ...]:
     """The key of *parts* for *atlas* in *cache*: a weak reference to the atlas
     object first, so the entry is the atlas's own (two atlases that share a name
     never meet; no ``id()`` is reused after one is freed) and is dropped from
-    *cache* when the atlas is garbage collected."""
+    *cache* when the atlas is garbage collected, under *lock*, which is
+    re-entrant because collection can run on a thread that already holds it."""
     holder: list[tuple[Any, ...]] = []
 
     def drop(_ref: Any) -> None:
-        if holder:
-            cache.pop(holder[0], None)
+        with lock:
+            if holder:
+                cache.pop(holder[0], None)
 
     key = (weakref.ref(atlas, drop), *parts)
     holder.append(key)
@@ -101,7 +105,7 @@ def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.n
     one plane per section re-filtered the volume once per section. Filtering
     once and sampling with ``prefilter=False`` gives the same values.
     """
-    key = _atlas_key(_filtered_cache, atlas, kind, int(downsample), int(order))
+    key = _atlas_key(_filtered_cache, _filtered_lock, atlas, kind, int(downsample), int(order))
     with _filtered_lock:
         hit = _filtered_cache.get(key)
         if hit is None:
@@ -162,7 +166,7 @@ def _scaled_volume(
     Cached per (atlas, kind, downsample): a 25 um mouse template is 300 MB as
     float32 and the fit re-samples it hundreds of times per section.
     """
-    key = _atlas_key(_volume_cache, atlas, kind, int(downsample))
+    key = _atlas_key(_volume_cache, _volume_lock, atlas, kind, int(downsample))
     with _volume_lock:
         return _scaled_volume_locked(atlas, kind, downsample, key)
 
@@ -461,7 +465,7 @@ def _compact_annotation(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
     """(sorted ids, the annotation as indices into them), cached per atlas in
     memory and on disk (:func:`langslice.core.atlas.disk_cache.cached_volume`).
     The indices are 16-bit while the atlas has at most 65536 ids."""
-    key = _atlas_key(_annotation_index_cache, atlas)
+    key = _atlas_key(_annotation_index_cache, _annotation_lock, atlas)
     with _annotation_lock:
         hit = _annotation_index_cache.get(key)
         if hit is not None:
@@ -503,6 +507,7 @@ def sample_oblique_annotation(
     ids, index_volume = _compact_annotation(atlas)
     key = _atlas_key(
         _annotation_plane_cache,
+        _annotation_lock,
         atlas,
         float(position_mm),
         str(plane),

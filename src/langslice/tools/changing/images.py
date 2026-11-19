@@ -196,20 +196,19 @@ def make_image_tool(
     job = run.job
     ids = _section_ids(run, as_list(sections))
     try:
-        given = ImageRecipe(
-            weights=dict(weights or {}),
-            clahe_clip=clahe_clip,
-            clahe_tiles=clahe_tiles,
-            n4=bool(n4),
-            contrast=as_list(contrast),
-            gamma=_exponent(gamma),
-            invert=bool(invert),
-        )
-        done = make_section_image(job, run.workspace, str(name), ids, given, delete=bool(delete))
-    except Refused:
-        raise
+        exponent = _exponent(gamma)
     except (TypeError, ValueError):
         raise Refused(RefusalCode.BAD_ARGS, "gamma is a number.") from None
+    given = ImageRecipe(
+        weights=dict(weights or {}),
+        clahe_clip=clahe_clip,
+        clahe_tiles=clahe_tiles,
+        n4=bool(n4),
+        contrast=as_list(contrast),
+        gamma=exponent,
+        invert=bool(invert),
+    )
+    done = make_section_image(job, run.workspace, str(name), ids, given, delete=bool(delete))
     reply: dict[str, object] = {
         "status": "ok",
         "image": done.name,

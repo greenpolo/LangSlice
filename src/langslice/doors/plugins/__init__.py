@@ -10,6 +10,7 @@ the plugins a ``JobSpec`` names.
 
 from __future__ import annotations
 
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.core.fits.deformable.gpu_queue import gpu_turn, out_of_memory
 from langslice.core.fits.deformation import flag_words
 from langslice.core.hardware import map_sections
@@ -42,6 +43,7 @@ from langslice.doors.plugins.writes import WriteResult
 _loader.install()
 
 __all__ = [
+    "ENGINE_FAILURES",
     "PLUGIN_API_VERSION",
     "AffineView",
     "AtlasPlane",

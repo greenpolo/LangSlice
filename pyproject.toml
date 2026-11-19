@@ -213,7 +213,7 @@ line-length = 100
 include = ["src/langslice/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "ERA001", "T201", "RUF100"]
+select = ["E", "F", "I", "B", "UP", "BLE001", "ERA001", "SLF001", "T201", "PLW0603", "RUF100"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/langslice/cli.py" = ["T201"]

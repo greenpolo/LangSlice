@@ -333,7 +333,7 @@ deformation gate.
 - Provider `none` (`NonlinearSpec.uses_image_model` False) builds
   `fireants_syn` but no `trace_borders`. A door that cannot reach the job's
   image model builds the same toolbox (`image_model_connected=False`) and
-  says so (`langslice.tools.descriptions.door_text.IMAGE_MODEL_OFF`).
+  says so (`langslice.tools.descriptions.door_text.image_model_off_text`).
 - `look` in mode overlay draws each section with its applied deformation
   unless `warp` is `none`.
 

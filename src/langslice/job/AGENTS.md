@@ -574,8 +574,7 @@ longer exist be taken over by the images it is opened with.
   the floating-point predictor, which ImageJ 1.x cannot read;
   `FLOAT_COMPRESSION`), `write_labels` (the uint32 ids, the uint16 Fiji
   index with the atlas colours of indexes 1-255 as its lookup table, the
-  csv), `derived_files` (the CLI's artifacts after submit, the image
-  copies `quicknii.json` names among them, `quint_copies`), the file names
+  csv), `quint_copies` (the image copies `quicknii.json` names), the file names
   (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`, `VISUALIGN_FILE`).
 - `imports/readers.py` — a linear registration made elsewhere, read (never
   written to the job): `read_registration` (QuickNII/VisuAlign/DeepSlice
