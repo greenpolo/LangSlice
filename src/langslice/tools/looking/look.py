@@ -688,9 +688,10 @@ def show_result(
             )
             try:
                 drawn = looks.look(workspace, state, request, store=job.deformations)
+            except Refused as refusal:
+                failed.append({"error": refusal.code, "message": str(refusal)})
             except IMAGE_FAILURES as exc:
-                code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
-                failed.append({"error": code, "message": str(exc)})
+                failed.append({"error": RefusalCode.RENDER_FAILED, "message": str(exc)})
         else:
             for section in sections:
                 window = tuple(float(v) for v in windows.get(section) or ())
@@ -705,9 +706,12 @@ def show_result(
                 )
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
+                except Refused as refusal:
+                    failed.append({"id": section, "error": refusal.code, "message": str(refusal)})
                 except IMAGE_FAILURES as exc:
-                    code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
-                    failed.append({"id": section, "error": code, "message": str(exc)})
+                    failed.append(
+                        {"id": section, "error": RefusalCode.RENDER_FAILED, "message": str(exc)}
+                    )
     shown, rest = split_shown(job, drawn)
     entries = save_pictures(
         job,

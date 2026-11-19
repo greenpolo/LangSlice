@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     import torch
 
 PACKAGE = "langslice_vendor.stalign"
+FIGURES_HOOK = "_Figures"
 PLANE = "plane"
 QUERY_CHUNK = 1 << 20
 
@@ -108,12 +109,6 @@ class _Figures(Protocol):
 
 
 FiguresMaker = Callable[[object], _Figures]
-
-
-class _FiguresModule(Protocol):
-    """Name the module that holds STalign's figures class."""
-
-    _Figures: FiguresMaker
 
 
 class _Records(threading.local):
@@ -187,12 +182,12 @@ class _How:
 def _stalign() -> _STalign:
     """Import STalign, its end-of-fit figures replaced by the record."""
     module = importlib.import_module(PACKAGE)
-    figures = cast("_FiguresModule", importlib.import_module(f"{PACKAGE}._lddmm_common"))
+    figures = importlib.import_module(f"{PACKAGE}._lddmm_common")
     with _INSTALL:
-        current = figures._Figures
+        current = cast("FiguresMaker", getattr(figures, FIGURES_HOOK))
         if current is not _EnergyRecord:
             _EnergyRecord.figures = current
-            figures._Figures = _EnergyRecord
+            setattr(figures, FIGURES_HOOK, _EnergyRecord)
     return cast("_STalign", module)
 
 

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -57,6 +58,8 @@ from langslice.plugin_api import (
     flag_words,
     map_sections,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULTS = {
     "device": "auto",
@@ -714,6 +717,7 @@ def _lddmm(
         try:
             work = ctx.start_work([sid], land)
         except Exception as exc:
+            logger.warning("STalign work did not start for %s", sid, exc_info=True)
             as_payload = getattr(exc, "payload", None)
             payload = (
                 as_payload()

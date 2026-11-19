@@ -587,6 +587,6 @@ def set_landmarks_tool(
         entries = save_pictures(job, workspace, "set_landmarks", pictures, notes, {})
         looked = Looked(pictures=[p.image for p in pictures], entries=entries)
         return pictured(result, looked)
-    except IMAGE_FAILURES as exc:
+    except (Refused, *IMAGE_FAILURES) as exc:
         result["render_failed"] = str(exc)
         return result

@@ -1,6 +1,6 @@
 """Names an engine takes from libraries that publish no types.
 
-The core's ``outside`` module, kept here as well because an engine imports
+The core's ``outside`` module, kept here because an engine imports
 only the plugin API. The caller states the shape of the name it fetched
 once, with ``cast``, and everything after that is checked.
 """
@@ -27,17 +27,3 @@ def untyped(module: str, name: str) -> object:
     """
     members: dict[str, object] = vars(importlib.import_module(module))
     return members[name]
-
-
-ENGINE_FAILURES: tuple[type[Exception], ...] = (
-    ArithmeticError,
-    AssertionError,
-    AttributeError,
-    ImportError,
-    LookupError,
-    MemoryError,
-    OSError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-)

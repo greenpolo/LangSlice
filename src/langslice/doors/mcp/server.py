@@ -23,7 +23,8 @@ from typing import Any, BinaryIO
 import anyio
 from anyio import to_thread
 from mcp.server.fastmcp import Context, FastMCP
-from mcp.server.lowlevel.server import NotificationOptions
+from mcp.server.fastmcp.tools import Tool
+from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server
@@ -83,6 +84,24 @@ INSTRUCTIONS = (
     "you its tools. Read every show_stack page before writing. Work only through the "
     "LangSlice tools and finish with `submit`."
 )
+
+
+class LangSliceServer(FastMCP):
+    """FastMCP, with the two members of its internals this door needs.
+
+    FastMCP has no public way to read a registered tool or to reach the
+    protocol server under it (to run it over the door's own streams); a
+    subclass reaches both through its own protected members, here and nowhere
+    else.
+    """
+
+    def registered_tool(self, name: str) -> Tool | None:
+        """Return the tool registered under *name*, None when there is none."""
+        return self._tool_manager.get_tool(name)
+
+    def protocol_server(self) -> Server:
+        """Return the protocol server this FastMCP serves."""
+        return self._mcp_server
 
 
 @dataclass
@@ -278,7 +297,7 @@ def host_tool(session: Session, tool: Callable[..., object]) -> Callable[..., An
 
 
 def strict_arguments(
-    server: FastMCP,
+    server: LangSliceServer,
     name: str,
     tool: Callable[..., Any],
     trace: Callable[[], HostTrace | None] = lambda: None,
@@ -298,7 +317,7 @@ def strict_arguments(
     """
     from langslice.tools.arguments import argument_refusal, normalize_arguments
 
-    registered = server._tool_manager.get_tool(name)
+    registered = server.registered_tool(name)
     if registered is None:
         return
     metadata = registered.fn_metadata
@@ -337,7 +356,7 @@ def build_server(
     *,
     atlas_loader: Callable[[str], Any] | None = None,
     sessions: dict[str, Session] | None = None,
-) -> FastMCP:
+) -> LangSliceServer:
     """The server. *spec_for* turns a folder into this server's job spec,
     for a folder without a job (:func:`open_folder`).
 
@@ -349,7 +368,7 @@ def build_server(
     *sessions* holds the open job under ``"job"`` (the caller closes it when
     the server stops: :func:`serve`).
     """
-    server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
+    server = LangSliceServer(SERVER_NAME, instructions=INSTRUCTIONS)
     current: dict[str, Session] = {} if sessions is None else sessions
 
     def install(session: Session) -> None:
@@ -446,20 +465,20 @@ def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None
                 session.close()
 
 
-def initialization_options(server: FastMCP) -> InitializationOptions:
+def initialization_options(server: LangSliceServer) -> InitializationOptions:
     """What the server tells the host when it connects: its capabilities with
     ``tools.listChanged``, so a host takes the tool list again when
     ``start_job`` installs a job's tools (``send_tool_list_changed``); a host
     ignores the notice from a server that does not advertise it."""
-    lowlevel = server._mcp_server
+    lowlevel = server.protocol_server()
     return lowlevel.create_initialization_options(NotificationOptions(tools_changed=True))
 
 
-async def _run_stdio(server: FastMCP, wire: FileIO, host_input: BinaryIO) -> None:
+async def _run_stdio(server: LangSliceServer, wire: FileIO, host_input: BinaryIO) -> None:
     text = TextIOWrapper(wire, encoding="utf-8", newline="\n", write_through=True)
     out = anyio.wrap_file(text)
     source = anyio.wrap_file(TextIOWrapper(host_input, encoding="utf-8", errors="replace"))
     streams = stdio_server(stdin=source, stdout=out)
     async with streams as (read_stream, write_stream):
-        lowlevel = server._mcp_server
+        lowlevel = server.protocol_server()
         await lowlevel.run(read_stream, write_stream, initialization_options(server))

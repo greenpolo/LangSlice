@@ -145,8 +145,8 @@ the angles in a caption (empty for the flat plane).
 
 ## Files
 
-- `refusal.py` — the one refusal: `Refused(code, message, **facts)` (a
-  `ValueError`; `message` positional stands right after the code in the
+- `refusal.py` — the one refusal: `Refused(code, message, **facts)` (an
+  `Exception`, no `ValueError`; `message` positional stands right after the code in the
   reply, `message=` among the facts stands where it is given; `status`
   among the facts is the reply's status word, `error` by default,
   `refused` for a gate), `payload()` the `{"status", "error": code,

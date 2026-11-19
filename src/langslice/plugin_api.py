@@ -10,6 +10,7 @@ the API; ``PLUGIN_API_VERSION`` changes when they do incompatibly.
 """
 
 from langslice.doors.plugins import (
+    ENGINE_FAILURES,
     PLUGIN_API_VERSION,
     AffineView,
     AtlasPlane,
@@ -35,6 +36,7 @@ from langslice.doors.plugins import (
 )
 
 __all__ = [
+    "ENGINE_FAILURES",
     "PLUGIN_API_VERSION",
     "AffineView",
     "AtlasPlane",

@@ -160,11 +160,10 @@ def mark_damage(
                     border_thickness=options.border_thickness,
                 )
             ]
+        except Refused as refusal:
+            failed = {"error": refusal.code, "message": str(refusal)}
         except IMAGE_FAILURES as exc:
-            failed = {
-                "error": getattr(exc, "code", RefusalCode.RENDER_FAILED),
-                "message": str(exc),
-            }
+            failed = {"error": RefusalCode.RENDER_FAILED, "message": str(exc)}
     return DamageRegions(**result, pictures=drawn, render_failed=failed)
 
 

@@ -327,12 +327,13 @@ def _engine(
         )
         for pair in pairs
     ]
+    absent = matching.weights_missing()
     try:
         return engine.fit_pairs(
             inputs, mode=mode, top_k=matches, device_name=str(config.get("device") or "")
         )
     except Exception as error:
-        missing = matching.weights_missing()
+        missing = [name for name in matching.weights_missing() if name in absent]
         if missing:
             raise ToolError(
                 RefusalCode.ENGINE_MISSING,

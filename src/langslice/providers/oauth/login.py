@@ -60,7 +60,7 @@ def _auth_claims(token: str | None) -> dict[str, Any]:
         return {}
     try:
         claims = _decode_jwt_payload(token).get("https://api.openai.com/auth", {})
-    except Exception:
+    except (LookupError, ValueError):
         return {}
     return claims if isinstance(claims, dict) else {}
 
@@ -74,7 +74,7 @@ def account_id_from_id_token(id_token: str | None) -> str | None:
 def _token_expiry(access_token: str) -> float | None:
     try:
         return float(_decode_jwt_payload(access_token)["exp"])
-    except Exception:
+    except (LookupError, TypeError, ValueError):
         return None
 
 
@@ -247,7 +247,7 @@ def login(
         if open_browser:
             try:
                 webbrowser.open(url)
-            except Exception:
+            except (webbrowser.Error, OSError):
                 pass
 
         deadline = time.time() + timeout_s

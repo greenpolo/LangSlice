@@ -32,7 +32,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from langslice.engines._outside import ENGINE_FAILURES, untyped
+from langslice.engines._outside import untyped
 from langslice.engines.spomialign.matching import (
     GPU_DEVICE,
     H,
@@ -42,7 +42,7 @@ from langslice.engines.spomialign.matching import (
     ranked_matches,
     resolve_device,
 )
-from langslice.plugin_api import gpu_turn, out_of_memory
+from langslice.plugin_api import ENGINE_FAILURES, gpu_turn, out_of_memory
 
 if TYPE_CHECKING:
     import torch

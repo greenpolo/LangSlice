@@ -483,7 +483,7 @@ class JobWatcher:
                 if record is not None:
                     try:
                         number = self._histories.registration_number(state, record)
-                    except Exception:
+                    except (OSError, ValueError):
                         number = None
                 angles = row.get("cutting_angles_deg") or (
                     stack_angles_entry(state) if not state.mixed_angles else None
@@ -506,7 +506,7 @@ class JobWatcher:
                     }
                 )
             self.stack = state
-        except Exception:
+        except (AttributeError, LookupError, OSError, TypeError, ValueError):
             self.rows, self.stack = [], None
             slices = _list(data.get("slices"))
             ordered = sorted(

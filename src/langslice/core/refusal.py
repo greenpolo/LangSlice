@@ -170,7 +170,7 @@ class RefusalCode(TextEnum):
     WRONG_SIDE_PAIR = "WRONG_SIDE_PAIR"
 
 
-class Refused(ValueError):
+class Refused(Exception):
     """A call refused, with nothing written.
 
     Parameters

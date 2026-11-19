@@ -16,6 +16,7 @@ import difflib
 import hashlib
 import io
 import json
+import logging
 import re
 from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
@@ -57,6 +58,8 @@ from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
     from langslice.core.stack.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 BORDER_WIDTH_PX = 2.0
 
@@ -575,6 +578,7 @@ def start_correction(
                 model_border_pixels=int(mask.sum()),
             )
         except Exception as exc:
+            logger.exception("The border trace of %s failed", section_id)
             result.update(Refused.from_exception(exc).payload())
         return _finish_attempt(directory, result_path, claim, result)
 

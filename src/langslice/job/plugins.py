@@ -184,7 +184,15 @@ def key_of(ref: str, config: Mapping[str, Any] | None = None) -> str:
 
 
 _LOADED: dict[str, LoadedPlugin] = {}
-_LOADER: Callable[[str, dict[str, Any] | None], LoadedPlugin] | None = None
+
+
+class _Loader:
+    """The one registered plugin loader (:func:`set_loader`), or None."""
+
+    load: Callable[[str, dict[str, Any] | None], LoadedPlugin] | None = None
+
+
+_LOADER = _Loader()
 
 
 def set_loader(
@@ -193,8 +201,7 @@ def set_loader(
     """Register the function that loads a plugin by reference and options. The
     doors do (``langslice.doors.plugins``); it returns the plugin after
     :func:`register`-ing it, or raises :class:`PluginError`."""
-    global _LOADER
-    _LOADER = loader
+    _LOADER.load = loader
 
 
 def register(plugin: LoadedPlugin) -> LoadedPlugin:
@@ -220,12 +227,13 @@ def loaded(refs: Sequence[str], configs: Mapping[str, Any] | None = None) -> lis
         config = (configs or {}).get(ref)
         plugin = _LOADED.get(key_of(ref, config))
         if plugin is None:
-            if _LOADER is None:
+            load = _LOADER.load
+            if load is None:
                 raise PluginError(
                     f"the tool plugin {ref!r} cannot be loaded here: plugins are loaded by "
                     "langslice.doors.plugins (import langslice.plugin_api first)"
                 )
-            plugin = _LOADER(ref, dict(config) if config is not None else None)
+            plugin = load(ref, dict(config) if config is not None else None)
         for tool in plugin.tools:
             if tool.name in names:
                 raise PluginError(

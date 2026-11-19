@@ -235,7 +235,7 @@ def open_window(
     try:
         if open_tab(url):
             return Opened("tab")
-    except Exception:
+    except (OSError, webbrowser.Error):
         pass
     say(f"Open this address in a browser: {url}")
     return Opened("none")

@@ -19,7 +19,7 @@ import numpy as np
 from langslice.core.geometry.affine import IDENTITY_PARAMS
 from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import ToolError
-from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.refusal import RefusalCode
 from langslice.core.stack.affine import (
     Calibration,
     PhysicalAffine,
@@ -28,7 +28,6 @@ from langslice.core.stack.affine import (
 from langslice.core.stack.codec import affine_to_json
 from langslice.core.stack.deformation import DeformationRef
 from langslice.doors.plugins.frames import ContextFrames
-from langslice.doors.plugins.reads import as_tool_error
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import Grid
@@ -69,7 +68,7 @@ class DeformationProposal:
     key: str
     summary: dict[str, Any]
     inverse_consistency_mm: dict[str, float]
-    _warp: MappedWarp = field(repr=False, compare=False)
+    warp: MappedWarp = field(repr=False, compare=False)
 
     def row(self) -> dict[str, Any]:
         return {"id": self.id, "deformation": self}
@@ -84,7 +83,7 @@ class DeformationProposal:
             record folder, since it is not saved.
         """
         return DeformationRef(
-            key=self.key, linear_key=self._warp.linear_key, steps=(dict(self._warp.step),)
+            key=self.key, linear_key=self.warp.linear_key, steps=(dict(self.warp.step),)
         )
 
 
@@ -249,34 +248,31 @@ class ContextProposals(ContextFrames):
         given = to_jsonable(dict(provenance or {}), strict=True)
         fitted_with = to_jsonable(dict(settings or {}), strict=True)
         engine = to_jsonable(dict(engine_settings or {}), strict=True)
-        try:
-            warp = warps.warp_from_map(
-                self._run.job,
-                self._run.workspace,
-                record.id,
-                native_xy,
-                method=self._caller.label,
-                step={"note": text} if text else {},
-                provenance={
-                    **self._caller.provenance(self.call, text, plain_meta),
-                    "input": "full map: fit-grid pixel centres to native atlas pixels",
-                    **given,
-                },
-                weights=weights,
-                start=str(start),
-                settings=fitted_with or None,
-                engine_settings=engine,
-                engine_version=str(engine_version or ""),
-            )
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        warp = warps.warp_from_map(
+            self._run.job,
+            self._run.workspace,
+            record.id,
+            native_xy,
+            method=self._caller.label,
+            step={"note": text} if text else {},
+            provenance={
+                **self._caller.provenance(self.call, text, plain_meta),
+                "input": "full map: fit-grid pixel centres to native atlas pixels",
+                **given,
+            },
+            weights=weights,
+            start=str(start),
+            settings=fitted_with or None,
+            engine_settings=engine,
+            engine_version=str(engine_version or ""),
+        )
         consistency = warp.record.diagnostics.get("inverse_consistency_mm") or {}
         return DeformationProposal(
             id=record.id,
             key=warp.key,
             summary=copy.deepcopy(warp.numbers),
             inverse_consistency_mm={k: round(float(v), 4) for k, v in consistency.items()},
-            _warp=warp,
+            warp=warp,
         )
 
     def read_registration(

@@ -364,8 +364,6 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
         )
         result.engine["name"] = "landmark_triangulation"
         result.stored_step = step
-    except Refused:
-        raise
     except (ValueError, OSError) as exc:
         raise Refused(RefusalCode.LANDMARK_TRIANGULATION_FAILED, message=str(exc)) from exc
     key = digest(

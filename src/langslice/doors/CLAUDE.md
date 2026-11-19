@@ -86,7 +86,7 @@ bodies, and turned into an answer once per door:
   its payload before the tool runs;
 - the library: a verb method returns the reply (`library/replies.Reply`);
   the methods outside the toolbox (`JobHandle.section_maps`, a script's
-  `job.context`) raise the `Refused` (a `ValueError`) or the plugin's
+  `job.context`) raise the `Refused` or the plugin's
   `ToolError`.
 
 ## Files
@@ -442,7 +442,7 @@ bodies, and turned into an answer once per door:
     plugin verbs are known only with it); a job
     that cannot be read answers `JOB_UNREADABLE`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
-    `init`'s read off `calls.init_parser` by `flags_table`, `launch`'s `--role`). Both return the
+    `init`'s from the flags table by `calls.init_flags`, `launch`'s `--role`). Both return the
     envelope. `describe(name, folder)`: what `FOLDER NAME --help` answers,
     `schema NAME` declared for FOLDER's job when it has one.
   - `calls.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every

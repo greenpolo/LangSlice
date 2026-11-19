@@ -739,7 +739,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
                 )
             )
             waiting.append(job)
-        except ENGINE_FAILURES as exc:
+        except (Refused, *ENGINE_FAILURES) as exc:
             job.result = CandidateFailure(job.settings, f"{type(exc).__name__}: {exc}")
     if not prepared:
         return

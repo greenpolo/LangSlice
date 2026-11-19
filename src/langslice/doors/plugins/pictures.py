@@ -15,7 +15,7 @@ from PIL import Image
 
 from langslice.core.jsonable import JsonObject
 from langslice.core.plugins import ToolError
-from langslice.core.refusal import RefusalCode, Refused
+from langslice.core.refusal import RefusalCode
 from langslice.core.stack.affine import StoredAffine
 from langslice.core.stack.codec import affine_from_json
 from langslice.doors.plugins.proposals import (
@@ -23,7 +23,6 @@ from langslice.doors.plugins.proposals import (
     DeformationProposal,
     TransformProposal,
 )
-from langslice.doors.plugins.reads import as_tool_error
 
 
 def _no_registration(image: Image.Image) -> None:
@@ -105,10 +104,7 @@ class ContextPictures(ContextProposals):
             record = held
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="overlay", sections=(record.id,), long_edge=edge)
-        try:
-            drawn = looks.look(self._run.workspace, state, request, store=store)
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        drawn = looks.look(self._run.workspace, state, request, store=store)
         if proposal:
             _no_registration(drawn[0].image)
         return drawn[0].image
@@ -170,12 +166,7 @@ class ContextPictures(ContextProposals):
             long_edge=edge,
             part=part,
         )
-        try:
-            drawn = looks.look(
-                self._run.workspace, state, request, store=self._run.job.deformations
-            )
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        drawn = looks.look(self._run.workspace, state, request, store=self._run.job.deformations)
         images = [picture.image for picture in drawn]
         if proposal:
             for image in images:
@@ -193,7 +184,7 @@ class ContextPictures(ContextProposals):
 
         held = self._run.job.deformations
         store = RecordStore(root=held.root, folder_of=held.folder_of)
-        store.put(proposal.key, proposal._warp.record)
+        store.put(proposal.key, proposal.warp.record)
         return store
 
     @staticmethod

@@ -289,8 +289,6 @@ def _from_em(
 
     try:
         grid = deformation.fit_grid(job.state, workspace, section)
-    except Refused:
-        raise
     except (ValueError, OSError) as exc:
         raise Refused(
             RefusalCode.INVALID_LINEAR_PLACEMENT,

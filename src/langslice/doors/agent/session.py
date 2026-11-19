@@ -345,8 +345,8 @@ async def run_agent_session(
                         text = getattr(part, "text", None)
                         if isinstance(text, str) and text and not getattr(part, "thought", False):
                             answer.append(text)
-        except Exception as exc:
-            logger.warning("%s: debrief failed: %s", run_label, exc)
+        except Exception:
+            logger.warning("%s: debrief failed", run_label, exc_info=True)
         if debrief_sink is not None and answer:
             debrief_sink.append("\n".join(answer).strip())
 

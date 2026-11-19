@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from langslice.job.settings.schema import (
     CLI_TASKS,
@@ -347,6 +347,51 @@ def add_flags(
         if spelling == row.flags[0]:
             for alias in row.aliases:
                 _add(parser, alias, flag, dest, argparse.SUPPRESS, values)
+
+
+def flag_rows(
+    groups: Sequence[FlagGroup],
+    *,
+    choices: Mapping[str, Sequence[str]] | None = None,
+) -> list[dict[str, Any]]:
+    """Return the flags of some groups as data, from the table :func:`add_flags` reads.
+
+    Parameters
+    ----------
+    groups
+        Which commands' flags, in the order the command adds them.
+    choices
+        As :func:`add_flags`.
+
+    Returns
+    -------
+    list of dict
+        Per flag its ``flag``, ``aliases`` (none: an old spelling is hidden),
+        ``help``, ``default``, ``choices``, ``takes_value`` and ``metavar``.
+    """
+    known = choices or {}
+    rows: list[dict[str, Any]] = []
+    for group in groups:
+        for spelling, flag, row in group_flags(group):
+            switch = flag.action in SWITCHES
+            values = (
+                None
+                if switch or flag.action == "append"
+                else _values(known.get(spelling), flag, row)
+            )
+            default = row.default if flag.table_default else None
+            rows.append(
+                {
+                    "flag": spelling,
+                    "aliases": [],
+                    "help": " ".join(flag.help.split()),
+                    "default": [] if flag.action == "append" else default,
+                    "choices": values,
+                    "takes_value": not switch,
+                    "metavar": None if switch else flag.metavar,
+                }
+            )
+    return rows
 
 
 def _values(listed: Sequence[str] | None, flag: Flag, row: Setting) -> list[str] | None:

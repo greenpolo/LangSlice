@@ -25,7 +25,6 @@ from langslice.doors.plugins.proposals import (
 )
 from langslice.doors.plugins.reads import (
     LayerRef,
-    as_tool_error,
     unorient_raster,
 )
 from langslice.tools.refusal import (
@@ -113,15 +112,12 @@ class ContextWrites(ContextProposals):
 
         self._require()
         record = self._record(section)
-        try:
-            with self.writing():
-                live = self._run.state.by_id(record.id) or record
-                given = cast("object", array)
-                return ops_images.add_image(
-                    self._run.job, self._run.workspace, live, str(name), given, note
-                )
-        except Refused as refusal:
-            raise as_tool_error(refusal) from refusal
+        with self.writing():
+            live = self._run.state.by_id(record.id) or record
+            given = cast("object", array)
+            return ops_images.add_image(
+                self._run.job, self._run.workspace, live, str(name), given, note
+            )
 
     def _require(self, *properties: str) -> None:
         caller = self._caller
@@ -291,9 +287,6 @@ class ContextWrites(ContextProposals):
                         stored = affine_from_json(cast("JsonObject", record))
                     assert stored is not None
                     done = transforms.set_transforms(job, {name: stored})
-                except ToolError as exc:
-                    out[name] = Refused(exc.code, message=exc.message).payload(section_id=name)
-                    continue
                 except Refused as refusal:
                     out[name] = refusal.payload(section_id=name)
                     out[name].pop("ids", None)
@@ -356,8 +349,8 @@ class ContextWrites(ContextProposals):
                         RefusalCode.BAD_ARGS,
                         "deformation is this section's DeformationProposal (deformation_from_map)",
                     )
-            except ToolError as exc:
-                out[name] = Refused(exc.code, message=exc.message).payload(section_id=name)
+            except Refused as refusal:
+                out[name] = refusal.payload(section_id=name)
                 continue
             out[name] = {"id": name}
             proposals.append(proposal)
@@ -366,7 +359,7 @@ class ContextWrites(ContextProposals):
             stale = self._stale([proposal.id for proposal in proposals], expect)
             out.update(stale)
             done = warps.apply_warps(
-                job, [proposal._warp for proposal in proposals if proposal.id not in stale]
+                job, [proposal.warp for proposal in proposals if proposal.id not in stale]
             )
             for applied in done.rows:
                 out[applied.id] = _warp_row(applied)

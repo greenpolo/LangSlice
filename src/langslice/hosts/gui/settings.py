@@ -193,7 +193,7 @@ class Settings:
                 self._login(on_url=on_url, timeout_s=SIGNIN_TIMEOUT_S)
             except TimeoutError:
                 error = "The sign-in timed out. Try again."
-            except Exception:
+            except (OSError, RuntimeError, ValueError):
                 error = "The sign-in did not finish. Try again."
             with self._lock:
                 self._signin = {"running": False, "url": None, "error": error}
