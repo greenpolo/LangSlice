@@ -39,7 +39,6 @@ from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.deformation import DeformationRef, LandmarkWarp
 from langslice.core.stack.landmarks import Pair
 from langslice.core.stack.landmarks_json import pair_to_json
-from langslice.job.settings.needs import render
 from langslice.tools.landmarking.landmarks import landmark_section
 from langslice.tools.looking.look import requested_edge, show_result
 from langslice.tools.run import Run, pictured
@@ -171,26 +170,23 @@ def _require_applicable(job: Job, record: Section) -> tuple[Pair, ...]:
     if len(pairs) < 3:
         raise Refused(
             RefusalCode.INSUFFICIENT_LANDMARKS,
-            message=render(
-                f"{record.id} has {len(pairs)} saved pair(s); at least "
-                "three corresponding pairs are required[[?set_landmarks  "
-                "(set_landmarks adds them)]].",
-                job.spec.switched_off,
-            ),
+            message=f"{record.id} has {len(pairs)} saved pair(s); at least "
+            "three corresponding pairs are required"
+            + job.spec.tools_on.say("set_landmarks", " (set_landmarks adds them)")
+            + ".",
         )
     stale_ids = [pair.id for pair in pairs if geometry.stale(job.state, record, pair)]
     if stale_ids:
         raise Refused(
             RefusalCode.STALE_LANDMARK_PLANE,
             pairs=stale_ids,
-            message=render(
-                f"Pairs {', '.join(stale_ids)} were placed against an "
-                f"earlier atlas plane of {record.id}. Draw its current atlas "
-                "plane with look, then re-place their atlas endpoints"
-                "[[?set_landmarks  with set_landmarks (the pair id and an "
-                "atlas endpoint)]], or delete them.",
-                job.spec.switched_off,
-            ),
+            message=f"Pairs {', '.join(stale_ids)} were placed against an "
+            f"earlier atlas plane of {record.id}. Draw its current atlas "
+            "plane with look, then re-place their atlas endpoints"
+            + job.spec.tools_on.say(
+                "set_landmarks", " with set_landmarks (the pair id and an atlas endpoint)"
+            )
+            + ", or delete them.",
         )
     return pairs
 

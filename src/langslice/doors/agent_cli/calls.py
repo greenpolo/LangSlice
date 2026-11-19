@@ -592,7 +592,7 @@ def call(
         )
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
-    token = DISABLED.set(tuple(opened.spec.switched_off))
+    token = DISABLED.set(opened.spec.tools_on)
     try:
         box = opened.tools()
         tools = {tool.__name__: tool for tool in box.tools}

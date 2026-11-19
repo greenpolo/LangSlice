@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.arguments import (
     CuttingAngles,
     SectionPosition,
@@ -22,6 +23,42 @@ from langslice.tools.descriptions.description import (
 )
 
 MaskSource = Literal["em", "fit"]
+
+
+def _mark_damage_text(on: ToolsOn) -> str:
+    landmarks = on.say(
+        "landmark_triangulation",
+        " Tissue shifted further is not\ndamage either: move it with landmarks.",
+    )
+    fits = on.listed(
+        [
+            ("elastix_affine", "elastix_affine"),
+            ("fireants_syn", "fireants_syn"),
+            ("trace_borders", "the image model's\ntrace"),
+        ]
+    )
+    if fits:
+        left_out = f"The marked\nregions are left out of {fits} automatically, and they"
+    else:
+        left_out = "The marked regions"
+    return f"""\
+Mark the regions whose tissue is missing from the section, or lies folded
+over other anatomy, such as a whole hemisphere, the olfactory bulb or the
+cortex: the fits leave them out, and the anatomy around them fits
+cleanly. Tissue that is intact but shifted near its place is not damage;
+left unmarked, the warp fits it.{landmarks} A marked region is never fitted, so
+intact tissue inside a mark goes unfitted too. When most of a large
+region is missing, marking the whole region keeps the anatomy around it
+safe. Small tears, bubbles, stains, low contrast and folds within an
+intact outline are not damage and are not marked. A section is damaged
+exactly when it has marked regions. {left_out} move with the registration because they
+are named by atlas region. One undoable write."""
+
+
+def _mask_section_image(on: ToolsOn) -> str:
+    made = on.say("make_image", " or an image made with make_image")
+    return f'The section image to sort ("preprocessed", a raw channel{made}); "em" only.'
+
 
 POSITION_SECTIONS = ToolDescription(
     summary=("Set where sections sit along the slicing axis, and the stack's cutting angles."),
@@ -141,27 +178,7 @@ under its new transform with the atlas borders on it.""",
 
 MARK_DAMAGE = ToolDescription(
     summary=("Mark the atlas regions a section has lost, so that every fit leaves them out."),
-    body=(
-        """\
-Mark the regions whose tissue is missing from the section, or lies folded
-over other anatomy, such as a whole hemisphere, the olfactory bulb or the
-cortex: the fits leave them out, and the anatomy around them fits
-cleanly. Tissue that is intact but shifted near its place is not damage;
-left unmarked, the warp fits it.[[?landmark_triangulation  Tissue shifted \
-further is not
-damage either: move it with landmarks.]] A marked region is never fitted, so
-intact tissue inside a mark goes unfitted too. When most of a large
-region is missing, marking the whole region keeps the anatomy around it
-safe. Small tears, bubbles, stains, low contrast and folds within an
-intact outline are not damage and are not marked. A section is damaged
-exactly when it has marked regions. \
-[[?elastix_affine|fireants_syn|trace_borders The marked
-regions are left out of \
-[[#elastix_affine=elastix_affine||fireants_syn=fireants_syn||trace_borders=the image model's
-trace]] automatically, and they||The marked regions]] move with the \
-registration because they
-are named by atlas region. One undoable write.""",
-    ),
+    body=(_mark_damage_text,),
     arguments={
         "section": Argument(
             str,
@@ -232,9 +249,7 @@ section's applied deformation saved with it, copied as it was
         "section_image": Argument(
             str,
             "preprocessed",
-            """\
-The section image to sort ("preprocessed", a raw channel\
-[[?make_image  or an image made with make_image]]); "em" only.""",
+            _mask_section_image,
         ),
         "atlas_image": Argument(
             str,

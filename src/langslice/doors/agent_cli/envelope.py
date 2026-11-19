@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langslice.core.refusal import RefusalCode
-from langslice.job.settings.needs import render
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.descriptions.fixes import FIXES
 
 PICTURE_KINDS = ("view", "opening")
@@ -60,9 +60,7 @@ ARGUMENT_CODES = frozenset(
     }
 )
 
-DISABLED: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
-    "langslice_disabled", default=()
-)
+DISABLED: contextvars.ContextVar[ToolsOn] = contextvars.ContextVar("langslice_disabled")
 
 
 def exit_code(code: str) -> int:
@@ -132,7 +130,9 @@ class Envelope:
                 ),
             )
         )
-        hint = render(hint, DISABLED.get()).replace("{job}", job).replace("{verb}", verb)
+        if callable(hint):
+            hint = hint(DISABLED.get(ToolsOn()))
+        hint = hint.replace("{job}", job).replace("{verb}", verb)
         return cls(
             ok=False,
             result=result,

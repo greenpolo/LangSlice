@@ -27,7 +27,6 @@ and the way to see it again (``zoom`` by its number; where the job has no
 from __future__ import annotations
 
 import json
-from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,7 +38,7 @@ from langslice.core.pictures.look import RENDERER as LOOK_RENDERER
 from langslice.core.pictures.modes import LOOK_MODES
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.folder import browse
-from langslice.job.settings.needs import render
+from langslice.job.settings.tools_on import ToolsOn
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
@@ -267,10 +266,10 @@ def _look_arguments(record: PictureRecord) -> dict[str, Any] | None:
     return out
 
 
-def _see_again(record: PictureRecord, off: Collection[str]) -> str:
-    """The reply's line on how to see *record* again, written with its needs
-    and rendered for the job's disabled list *off*: ``zoom`` by its number,
-    else the ``look`` call that draws its view again, else nothing."""
+def _see_again(record: PictureRecord, on: ToolsOn) -> str:
+    """The reply's line on how to see *record* again, for the tools *on* has:
+    ``zoom`` by its number, else the ``look`` call that draws its view again,
+    else nothing."""
     redraw = _look_arguments(record)
     zoomed = bool(((record.recipe or {}).get("args") or {}).get("zoom"))
     unzoomed = ", and the whole picture, unzoomed" if zoomed else ""
@@ -283,11 +282,11 @@ def _see_again(record: PictureRecord, off: Collection[str]) -> str:
             ")."
         )
     )
-    text = render(
-        f"[[?zoom To see it again, call zoom with picture {record.seq} and a box "
-        "over the part to see (a box as large as the picture shows all of it)."
-        f"||{with_look}]]",
-        off,
+    text = on.say(
+        "zoom",
+        f"To see it again, call zoom with picture {record.seq} and a box "
+        "over the part to see (a box as large as the picture shows all of it).",
+        with_look,
     )
     if redraw is not None:
         text = text.replace(
@@ -340,7 +339,7 @@ def read_folder_file(
             f"{shown} is a picture file ({facts}); pixels are not returned here.",
             *_record_text(record),
         ]
-        again = _see_again(record, job.spec.switched_off)
+        again = _see_again(record, job.spec.tools_on)
         if again:
             body.append(again)
         return FileText(shown, kind, "\n".join(body), picture=record.seq)

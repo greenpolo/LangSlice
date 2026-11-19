@@ -61,6 +61,7 @@ from langslice.plugin_api import (
     ToolContext,
     ToolError,
     ToolResult,
+    ToolsOn,
     ToolSpec,
 )
 
@@ -132,6 +133,91 @@ EVERY_SECTION: list[str] = []
 FOLDER_ORDER: list[str] = []
 
 
+def _deepslice_description(on: ToolsOn) -> str:
+    rough_transform = on.say(
+        "elastix_affine", ", and a rough in-plane transform (scale,\nturn, shift)"
+    )
+    turn_first = on.say(
+        "interactive_transform",
+        "Turn and flip every section the right way before the call, because the stack's "
+        "angle is a vote of every section's own angle.",
+        "The stack's angle is a vote of every section's own angle.",
+    )
+    transform_replaced = on.say(
+        "elastix_affine",
+        ", and\na transform replaces the section's transform and clears its deformation",
+    )
+    damage_named = on.say("mark_damage", " (mark_damage)")
+    parts = on.listed(
+        [
+            ("", '"positions" (every run section\'s position)'),
+            ("", '"angles" (the stack\'s cutting angles)'),
+            (
+                "elastix_affine",
+                '"transform" (each section\'s in-plane transform, poor on damaged sections)',
+            ),
+        ],
+        last="or",
+    )
+    change_in_words = on.say(
+        "elastix_affine",
+        ", the proposed in-plane change in words (turn, scale, and shift as a\n"
+        "    share of the width and height)",
+    )
+    return f"""\
+Place sections with DeepSlice, a network trained on mouse brain sections.
+
+DeepSlice looks at each section on its own, without the atlas, and
+estimates the plane it was cut at: its position along the slicing axis
+and its two tilts{rough_transform}. It then combines the sections: the stack's cutting angles
+are a weighted vote of every run section's own angles, sections near the
+middle of the brain counting most, and, when order is given, positions
+are re-spaced along the cutting order. {turn_first} The reply lists each section's own pitch and \
+yaw, so
+a section mounted the other way shows. It works on
+whole coronal sections; a section beyond the ends of the atlas (the tip
+of the olfactory bulb, the caudal medulla) or heavily damaged
+pulls every prediction off unless it is a bad section.
+
+Writes the parts named in write, as one undo step: a changed position
+or angle clears the deformation of each section it moves{transform_replaced}.
+A section whose property is frozen answers FROZEN and the rest land. With
+write empty nothing is written and the reply is the proposal. Runs in
+about half a minute for a stack of forty.
+
+Args:
+    sections: Filenames to run (the extension may be left off); empty
+        means every section. The angle vote and the spacing use exactly
+        these.
+    order: The cutting order, anterior to posterior, as filenames; it
+        must list every section run, once. Given, DeepSlice re-orders
+        the sections by it and spaces them evenly, by the interval the
+        job gives, else by an estimate of its own (the reply says which).
+        Empty: each section keeps the position DeepSlice predicts for it
+        and no spacing is applied. DeepSlice cannot know the cutting
+        order; give it only the order you have established.
+    bad_sections: Filenames DeepSlice leaves out of its angle vote and
+        its spacing fit (damaged, hemisected, outside the atlas). Such a
+        section is still placed, gets the stack's angles and, with
+        order, a position implied by its neighbours. Left out: every
+        section with marked damage{damage_named}. An empty list: none.
+    write: The parts to write, a list of {parts}. Left out:
+        every part the job lets you write. Empty: write nothing and show the
+        proposal.
+    view: True returns the picture described below; false returns none.
+
+Returns:
+    The stack: its cutting angles now and as proposed, the spacing used
+    and whether DeepSlice estimated it, the bad sections and why. Per
+    section, in the proposed order: filename, proposed position in
+    millimetres, the change from its current position, its own pitch
+    and yaw before the vote, whether it is a bad section{change_in_words}, and what was written \
+(or FROZEN
+    and the like). With view true, the
+    positioning picture of the written sections, or, with nothing
+    written, of the proposal, captioned as not written."""
+
+
 def deepslice_place(
     *,
     sections: list[str] = EVERY_SECTION,
@@ -139,67 +225,7 @@ def deepslice_place(
     bad_sections: list[str] | None = None,
     write: list[str] | None = None,
     view: bool = False,
-) -> None:
-    """Place sections with DeepSlice, a network trained on mouse brain sections.
-
-    DeepSlice looks at each section on its own, without the atlas, and
-    estimates the plane it was cut at: its position along the slicing axis
-    and its two tilts[[?elastix_affine , and a rough in-plane transform (scale,
-    turn, shift)]]. It then combines the sections: the stack's cutting angles
-    are a weighted vote of every run section's own angles, sections near the
-    middle of the brain counting most, and, when order is given, positions
-    are re-spaced along the cutting order. [[?interactive_transform Turn and flip ~
-    every section the right way before the call, because the stack's angle is ~
-    a vote of every section's own angle.||The stack's angle is a vote of every ~
-    section's own angle.]] The reply lists each section's own pitch and yaw, so
-    a section mounted the other way shows. It works on
-    whole coronal sections; a section beyond the ends of the atlas (the tip
-    of the olfactory bulb, the caudal medulla) or heavily damaged
-    pulls every prediction off unless it is a bad section.
-
-    Writes the parts named in write, as one undo step: a changed position
-    or angle clears the deformation of each section it moves[[?elastix_affine , and
-    a transform replaces the section's transform and clears its deformation]].
-    A section whose property is frozen answers FROZEN and the rest land. With
-    write empty nothing is written and the reply is the proposal. Runs in
-    about half a minute for a stack of forty.
-
-    Args:
-        sections: Filenames to run (the extension may be left off); empty
-            means every section. The angle vote and the spacing use exactly
-            these.
-        order: The cutting order, anterior to posterior, as filenames; it
-            must list every section run, once. Given, DeepSlice re-orders
-            the sections by it and spaces them evenly, by the interval the
-            job gives, else by an estimate of its own (the reply says which).
-            Empty: each section keeps the position DeepSlice predicts for it
-            and no spacing is applied. DeepSlice cannot know the cutting
-            order; give it only the order you have established.
-        bad_sections: Filenames DeepSlice leaves out of its angle vote and
-            its spacing fit (damaged, hemisected, outside the atlas). Such a
-            section is still placed, gets the stack's angles and, with
-            order, a position implied by its neighbours. Left out: every
-            section with marked damage[[?mark_damage  (mark_damage)]]. An empty list: none.
-        write: The parts to write, a list of [[%="positions" (every run section's ~
-            position)||="angles" (the stack's cutting angles)||elastix_affine="transform" ~
-            (each section's in-plane transform, poor on damaged sections)]]. Left out:
-            every part the job lets you write. Empty: write nothing and show the
-            proposal.
-        view: True returns the picture described below; false returns none.
-
-    Returns:
-        The stack: its cutting angles now and as proposed, the spacing used
-        and whether DeepSlice estimated it, the bad sections and why. Per
-        section, in the proposed order: filename, proposed position in
-        millimetres, the change from its current position, its own pitch
-        and yaw before the vote, whether it is a bad section[[?elastix_affine ~
-        , the proposed in-plane change in words (turn, scale, and shift as a
-        share of the width and height)]], and what was written (or FROZEN
-        and the like). With view true, the
-        positioning picture of the written sections, or, with nothing
-        written, of the proposal, captioned as not written.
-    """
-    ...
+) -> None: ...
 
 
 def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
@@ -231,6 +257,7 @@ def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
             "deepslice_place",
             deepslice_place,
             Handler(options),
+            description=_deepslice_description,
             kind="write",
             group="Positioning",
             task="angles",

@@ -23,7 +23,6 @@ from langslice.core.space import as_plane
 from langslice.core.workspace import ImageSettings
 from langslice.job.settings import frozen as freeze
 from langslice.job.settings import tool_table
-from langslice.job.settings.needs import render
 from langslice.job.settings.schema import (
     ALL_TASKS,
     DEFAULT_ATLAS,
@@ -33,6 +32,7 @@ from langslice.job.settings.schema import (
     PLANES,
     spec_keys,
 )
+from langslice.job.settings.tools_on import ToolsOn
 
 INPUT_KEYS: tuple[str, ...] = (
     "order",
@@ -49,13 +49,19 @@ INPUT_KEYS: tuple[str, ...] = (
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
 
 NO_TRANSFORM = "A written affine transform is required: give the section a transform first"
-NO_TRANSFORM_LINEAR_OFF = (
-    "A written affine transform is required, and Linear is off for this job, "
-    "so nothing here writes one. Supply the in-plane transforms with the job "
-    "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or "
-    "switch Linear on (task transform)[[?elastix_affine  and run "
-    "elastix_affine on the section first]]."
-)
+
+
+def no_transform_linear_off(on: ToolsOn) -> str:
+    """What a fit says of a section with no written transform when Linear is
+    off, for the tools *on* has."""
+    return (
+        "A written affine transform is required, and Linear is off for this job, "
+        "so nothing here writes one. Supply the in-plane transforms with the job "
+        "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or "
+        "switch Linear on (task transform)"
+        + on.say("elastix_affine", " and run elastix_affine on the section first")
+        + "."
+    )
 
 
 def _degrees(value: Any, where: str) -> float:
@@ -466,6 +472,12 @@ class JobSpec:
         return tool_table.is_off(self.switched_off, name)
 
     @property
+    def tools_on(self) -> ToolsOn:
+        """The tools that are off for this run, to word texts by
+        (:attr:`switched_off`)."""
+        return ToolsOn(frozenset(self.switched_off))
+
+    @property
     def switched_off(self) -> list[str]:
         """Every name that is off for this run: ``disabled`` and, after it,
         the tools that can change nothing because everything
@@ -517,11 +529,11 @@ class JobSpec:
         -------
         str
             :data:`NO_TRANSFORM`; for a job whose Linear task is off,
-            :data:`NO_TRANSFORM_LINEAR_OFF` for its disabled tools.
+            :func:`no_transform_linear_off` for its disabled tools.
         """
         if self.has("transform"):
             return NO_TRANSFORM
-        return render(NO_TRANSFORM_LINEAR_OFF, self.disabled)
+        return no_transform_linear_off(ToolsOn(frozenset(self.disabled)))
 
     @property
     def thickness_mm(self) -> float | None:

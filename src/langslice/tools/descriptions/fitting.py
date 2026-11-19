@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Literal
 
 from langslice.core.fits.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.descriptions.description import (
     REQUIRED,
     Argument,
@@ -23,10 +24,15 @@ from langslice.tools.descriptions.landmarks import LANDMARK_MOVE_UM
 FitMetric = Literal["mutual_information", "local_correlation"]
 FitDetail = Literal["coarse", "standard", "fine"]
 
-ELASTIX_AFFINE = ToolDescription(
-    summary=("Fit sections' in-plane affine transforms automatically with elastix."),
-    body=(
-        """\
+MASK_ARGUMENT = """\
+"none" compares every pixel of the section, or the
+name of a mask of that section made with make_mask: pixels with
+a weight under 0.5 are left out."""
+
+
+def _elastix_refines(on: ToolsOn) -> str:
+    warp = on.say("fireants_syn", ", or fit a warp on it")
+    return f"""\
 For a few sections at a time. Elastix refines each section's current
 placement (from the identity when it has no transform) by matching a
 section image against an atlas image, inner anatomy included. It
@@ -35,17 +41,65 @@ section is and does not search from scratch: it moves a section by
 small amounts and does not turn it over. The section's marked damage
 regions are left out of the atlas automatically. A section that holds a
 deformation is refused with HAS_DEFORMATION: undo the deformation
-first[[?fireants_syn , or fit a warp on it]]. Each fit is written as the
-section's transform, one undoable write for the call.""",
+first{warp}. Each fit is written as the
+section's transform, one undoable write for the call."""
+
+
+def _elastix_small_region(on: ToolsOn) -> str:
+    manual = on.say("interactive_transform", " or interactive_transform")
+    return f"""\
+A region too small for elastix is skipped with REGION_TOO_SMALL; use
+a larger region{manual}. No fit is written for it."""
+
+
+def _match_section_image(on: ToolsOn) -> str:
+    made = on.say("make_image", ", or an image made with make_image")
+    return f'The section image to match, by name: "preprocessed", a raw channel{made}.'
+
+
+def _syn_bends(on: ToolsOn) -> str:
+    landmarks = on.say(
+        "landmark_triangulation",
+        " SyN does not move a piece displaced more than ${landmark_move} from its place;"
+        " landmarks do.",
+    )
+    return f"""\
+SyN bends the atlas onto a section image of each section, starting
+from the section's current registration (its linear placement, and its
+deformation when it has one), so each fit builds on the one before;
+undo goes back. `restrict_to` refines single regions on top of the
+current fit.{landmarks} The section's marked damage regions are left out of
+the atlas automatically. Needs a position and a transform. Applied as the
+section's deformation, one undoable write; a later change to the
+section's position, orientation, cutting angles or transform clears it."""
+
+
+def _syn_returns(on: ToolsOn) -> str:
+    beyond = on.say("landmark_triangulation", ", measured beyond any landmark warp")
+    return f"""\
+Per section the displacement (median and max, mm, over the placed atlas),
+the fold fraction and plausibility flags (tissue folded, regions
+vanished or folded over themselves; displacement outsized
+for the section{beyond}); the
+`inputs` it used (section image, atlas image as resolved, mask, damage
+regions left out, intensity scaling) and `estimated` (the fraction of
+the section the fit left out on its own); and a
+picture of each section under its new registration with the atlas borders on it. With
+restrict_to, those regions' borders are drawn thick and the others faint, and the
+picture is zoomed to them when they cover a small part of the
+section."""
+
+
+ELASTIX_AFFINE = ToolDescription(
+    summary=("Fit sections' in-plane affine transforms automatically with elastix."),
+    body=(
+        _elastix_refines,
         """\
 Use restrict_to when a few clearly recognizable, surviving regions
 provide better registration evidence than the whole section. Those
 regions guide a whole-section affine transform. Review the wider
 overlay afterward as well.""",
-        """\
-A region too small for elastix is skipped with REGION_TOO_SMALL; use
-a larger region[[?interactive_transform  or interactive_transform]]. No fit \
-is written for it.""",
+        _elastix_small_region,
         """\
 Both images are scaled from their 1st to 99th percentile inside the
 atlas outline to 0-1. The reply names the section image, atlas image and mask
@@ -70,9 +124,7 @@ every region.""",
         "section_image": Argument(
             str,
             "preprocessed",
-            """\
-The section image to match, by name: "preprocessed", a raw channel\
-[[?make_image , or an image made with make_image]].""",
+            _match_section_image,
         ),
         "atlas_image": Argument(
             str,
@@ -85,11 +137,8 @@ where it has one, else its template.""",
         "mask": Argument(
             str,
             "none",
-            """\
-"none" compares every pixel of the section[[?make_mask , or the
-name of a mask of that section made with make_mask: pixels with
-a weight under 0.5 are left out]].""",
-            needs="make_mask",
+            MASK_ARGUMENT,
+            requires="make_mask",
         ),
         "edges": Argument(
             bool,
@@ -129,17 +178,7 @@ This is ANTs SyN (symmetric normalization; Avants et al. 2008, Medical Image
 Analysis), the most widely used diffeomorphic registration in neuroimaging,
 run by FireANTs (Jena et al. 2026, Nature Communications), which keeps SyN's
 model and runs its optimisation on the GPU.""",
-        """\
-SyN bends the atlas onto a section image of each section, starting
-from the section's current registration (its linear placement, and its
-deformation when it has one), so each fit builds on the one before;
-undo goes back. `restrict_to` refines single regions on top of the
-current fit.[[?landmark_triangulation  SyN does not move a piece displaced \
-more than ${landmark_move} from its place; landmarks do.]] The section's \
-marked damage regions are left out of
-the atlas automatically. Needs a position and a transform. Applied as the
-section's deformation, one undoable write; a later change to the
-section's position, orientation, cutting angles or transform clears it.""",
+        _syn_bends,
         """\
 Use restrict_to when a few clearly recognizable, surviving regions
 provide better registration evidence than the whole section, to refine
@@ -172,9 +211,7 @@ Elastix fits take it. Empty fits by every region.""",
         "section_image": Argument(
             str,
             "preprocessed",
-            """\
-The section image to match, by name: "preprocessed", a raw channel\
-[[?make_image , or an image made with make_image]].""",
+            _match_section_image,
         ),
         "atlas_image": Argument(
             str,
@@ -187,11 +224,8 @@ where it has one, else its template.""",
         "mask": Argument(
             str,
             "none",
-            """\
-"none" compares every pixel of the section[[?make_mask , or the
-name of a mask of that section made with make_mask: pixels with
-a weight under 0.5 are left out]].""",
-            needs="make_mask",
+            MASK_ARGUMENT,
+            requires="make_mask",
         ),
         "smoothness_um": Argument(
             float,
@@ -231,21 +265,7 @@ takes; finer is slower.""",
             offered=Offered.VIEW_CHOSEN,
         ),
     },
-    returns="""\
-Per section the displacement (median and max, mm, over the placed atlas),
-the fold fraction and plausibility flags (tissue folded, regions
-vanished or folded over themselves; displacement outsized
-for the section[[?landmark_triangulation , measured beyond any landmark \
-warp]]); the
-`inputs` it used (section image, atlas image as resolved, mask, damage
-regions left out, intensity scaling) and `estimated` (the fraction of
-the section the fit left out on its own); and a
-picture of each section under its new registration with the atlas borders on \
-it. With
-restrict_to, those regions' borders are drawn thick and the others faint, and \
-the
-picture is zoomed to them when they cover a small part of the
-section.""",
+    returns=_syn_returns,
     slots={
         "landmark_move": Distance(LANDMARK_MOVE_UM, "about {} um", mouse_words="about\n400 um"),
     },

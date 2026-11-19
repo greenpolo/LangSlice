@@ -64,7 +64,7 @@ each switchable alone; `fireants_syn` and `trace_borders` with
 `mark_damage` included, in every run. `JobSpec.disabled` takes single tools
 off on top of that (`job/settings/tool_table.py` lists the names and refuses a
 list that cannot work); every line of the job statement that names a tool is
-written with what it needs (`job/settings/needs.py`) and rendered for the job.
+built from the job's `ToolsOn` (`job/settings/tools_on.py`).
 
 ## Files
 

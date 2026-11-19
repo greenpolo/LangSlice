@@ -38,7 +38,6 @@ from langslice.core.sections.masks import (
 )
 from langslice.core.stack.codec import Written
 from langslice.core.stack.images import MaskRef
-from langslice.job.settings.needs import render
 from langslice.tools.changing.images import check_image
 from langslice.tools.looking.look import show_result
 from langslice.tools.refusal import check_frozen, unknown_sections
@@ -358,11 +357,11 @@ def read(job: Job, section: Section, name: str) -> MaskView:
     except KeyError as exc:
         raise Refused(
             RefusalCode.UNKNOWN_MASK,
-            message=render(
-                f"{section.id} has no mask {name!r}[[?make_mask ; make it "
-                "with make_mask||; status lists each section's masks]].",
-                job.spec.switched_off,
-            ),
+            message=f"{section.id} has no mask {name!r}"
+            + job.spec.tools_on.say(
+                "make_mask", "; make it with make_mask", "; status lists each section's masks"
+            )
+            + ".",
             masks=sorted(section.masks),
         ) from exc
     except ValueError as exc:
@@ -370,7 +369,7 @@ def read(job: Job, section: Section, name: str) -> MaskView:
 
 
 def stale_mask(job: Job, section_id: str, name: str) -> str:
-    """Return the ``STALE_MASK`` message, rendered for the job.
+    """Return the ``STALE_MASK`` message, worded for the job.
 
     Parameters
     ----------
@@ -386,12 +385,10 @@ def stale_mask(job: Job, section_id: str, name: str) -> str:
     str
         What the refusal says.
     """
-    return render(
-        f"{section_id}'s mask {name!r} was made before the section changed"
-        "[[?make_mask ; make it again with make_mask||, so it no longer fits "
-        "the section]].",
-        job.spec.switched_off,
+    again = job.spec.tools_on.say(
+        "make_mask", "; make it again with make_mask", ", so it no longer fits the section"
     )
+    return f"{section_id}'s mask {name!r} was made before the section changed{again}."
 
 
 def section_weights(job: Job, section: Section, name: str) -> np.ndarray | None:

@@ -49,14 +49,14 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_m
   `tool_table.refusal`, the plugins by loading them). `image_settings()`
   makes the core's `ImageSettings` (`core/workspace.py`) from it;
   `missing_transform()` words what a fit says of a section with no written
-  transform (`NO_TRANSFORM`, or `NO_TRANSFORM_LINEAR_OFF` rendered for the
+  transform (`NO_TRANSFORM`, or `no_transform_linear_off(on)` worded for the
   disabled list when Linear is off). Protocol metadata:
   `PositionSpec.thickness_um` and `interval_um`, and the state's millimetre
   equivalents, are optional (`None` when not supplied); known values are
   positive integers in micrometres, and strict spacing requires an
   interval. `PositionSpec.start_mm` (`JobSpec.start_mm`) and the interval
   are the start and spacing of the sections' initial positions (`ingest`).
-- `tool_table.py` and `needs.py`: what a job can switch off (and, through
+- `tool_table.py` and `tools_on.py`: what a job can switch off (and, through
   `ToolDef.writes`, what its frozen properties switch off: `off_names`).
   `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
   group, `when`, scripting / image-model / hidden, `essential`,
@@ -66,11 +66,11 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_m
   cannot work (an unknown or essential name, a task
   with every tool that writes its answer off, a tool without the tools it
   needs), which the spec raises as a `ValueError` when it is made. The
-  kinds and groups are the core's plain names (`core/tool_kinds.py`). `needs.py`:
-  `render(text, off)`, text written with what it needs (`[[?NAMES
-  text||other]]`, `[[#NAMES=item||...]]` lists), dropped or swapped for the
-  disabled list; with nothing off a text renders to itself without its
-  marks, byte for byte. The in-tree engines' tools are rows too: `ToolDef.engine` is the
+  kinds and groups are the core's plain names (`core/tool_kinds.py`).
+  `tools_on.py`: `ToolsOn`, the tools that are off for a job (`JobSpec.tools_on`),
+  asked by the code that words a text (`has`, `has_all`, `has_any`, `say`,
+  `say_all`, `say_any`, `listed`), so a text names only a tool that is on.
+  The in-tree engines' tools are rows too: `ToolDef.engine` is the
   reference of the engine that declares and runs the tool (`ENGINES`,
   `engines_on(spec)`: the engines a run has a tool of), `atlases` / `planes`
   the jobs it is offered on (`ToolDef.fits`), `default_off` a tool that is

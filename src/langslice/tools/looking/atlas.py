@@ -44,7 +44,6 @@ from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack
-from langslice.job.settings.needs import render
 from langslice.tools.arguments import PicturePoint
 from langslice.tools.looking.look import not_shown, save_pictures, split_shown
 from langslice.tools.refusal import unknown_sections
@@ -245,12 +244,10 @@ def region_at_points(
             raise Refused(
                 RefusalCode.UNKNOWN_PICTURE,
                 picture=seq,
-                message=render(
-                    f"{here}: there is no saved picture {seq}. Use "
-                    "the picture number a look[[?zoom  or zoom]] "
-                    "reply gave.",
-                    job.spec.switched_off,
-                ),
+                message=f"{here}: there is no saved picture {seq}. Use "
+                "the picture number a look"
+                + job.spec.tools_on.say("zoom", " or zoom")
+                + " reply gave.",
             )
         recipe = record.recipe or {}
         row: dict[str, Any] = {"picture": seq, "x": x, "y": y}

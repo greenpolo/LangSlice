@@ -54,28 +54,31 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
 
 - `description.py` — the shapes. A `ToolDescription` is a `summary`, the
   `body` paragraphs (one that renders empty goes), one `Argument` per
-  argument (its type, default and text; `needs`: the names it needs on, in
-  needs syntax; `offered`: the run fact it exists in), `returns`,
+  argument (its type, default and text; `requires`: the tool that must be
+  on; `offered`: the run fact it exists in), `returns`,
   `prompt_heading` (`trace_borders`: the paragraph before the run's base
   image prompt) and `slots`: `${name}` passages a fact of the run words
   (`PerCap`: a door with or without a picture cap; `PerDoor`: the agent
   CLI's own wording; `Distance`: a distance at the job's brain scale).
   Texts are prose at no indentation with the model's line breaks; a
-  trailing backslash joins a line too long for the source. A passage that
-  names a tool carries needs marks (`job/settings/needs.py`).
+  trailing backslash joins a line too long for the source. A text that
+  names a tool is a function of the job's `ToolsOn` (`Text`:
+  `job/settings/tools_on.py`) that builds the text from the pieces whose tools
+  are on.
   `DescriptionFacts` is what of a run changes the text: `door` (`agent`, `mcp` or `cli`),
   `auto` (the caller sizes pictures), `forced_view`, `positions`,
   `uncapped`, `prompt` (the base image prompt; empty without an image
-  model), `switched_off`, `absent` and `plugins` (a plugin's text renders
-  by both), `brain_scale`; `from_spec(spec, auto=, image_model=, door=,
+  model), `on` (the `ToolsOn` of what is switched off or absent) and
+  `plugins`, `brain_scale`; `from_spec(spec, auto=, image_model=, door=,
   prompt=, uncapped=, brain_scale=)`.
 - `render.py` — `declaration(name, facts)` (cached): a native tool's
-  description rendered for the run (slots filled, marks rendered, the
+  description worded for the run (slots filled, texts built, the
   arguments it does not offer left out) as `doc` (the docstring layout ADK
   and FastMCP read), `text` (below the summary, unindented: `TOOLS.md`),
   `arguments` (each argument's text on one line: the agent CLI's fix of an
-  unknown argument) and the signature; a plugin tool from its stub's
-  docstring and signature (`argument_texts` reads its `Args`). `declare`
+  unknown argument) and the signature; a plugin tool from its
+  `ToolSpec.description` (else its stub's docstring) and the stub's signature
+  (`argument_texts` reads its `Args`). `declare`
   binds a tool body to its declaration (ADK's `tool_context` added when the
   body takes it, keyword-only after a keyword-only argument,
   `context_parameter`), `summary`, `arguments_schema` (pydantic, unknown keys
@@ -258,7 +261,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   `FileText` (the tools `list_files_tool`, `search_files_tool`, `read_file_tool` flush the
   picture store first and reply with the `text`); each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`), never
-  pixels, and a line written with its needs (`job.settings.needs.render`): the number to
+  pixels, and a line built from the job's `ToolsOn`: the number to
   give `zoom`; where the job disables `zoom`, for a picture whose recipe is
   `look`'s, the `look` call that draws its view again (`_look_arguments`: mode,
   sections, positions, images, masks, atlas layers, warp, registrations, from the

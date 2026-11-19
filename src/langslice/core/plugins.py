@@ -64,9 +64,11 @@ class PluginError(ValueError):
 class ToolSpec:
     """One tool a plugin adds (``docs/developers/plugins.md``).
 
-    ``stub`` is a function whose signature is the tool's arguments and whose
-    docstring is its description, written like the stubs of the native tools'
-    declarations (needs marks allowed); ``handler`` is called as ``handler(ctx,
+    ``stub`` is a function whose signature is the tool's arguments; the
+    tool's description is ``description`` when given (a string, or a function
+    of the run's ``ToolsOn``, which names a tool only where the job has it on),
+    else the stub's docstring, written like the native tools' declarations;
+    ``handler`` is called as ``handler(ctx,
     **arguments)`` with a :class:`langslice.doors.plugins.ToolContext` and
     returns a :class:`ToolResult`. A ``write`` tool writes section properties
     only through the context, and only those named in ``writes``.
@@ -87,6 +89,7 @@ class ToolSpec:
     meta: Mapping[str, Any] = field(default_factory=dict)
     atlases: tuple[str, ...] = ()
     planes: tuple[str, ...] = ()
+    description: str | Callable[[Any], str] = ""
 
 
 @dataclass

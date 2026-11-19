@@ -45,7 +45,6 @@ from langslice.core.sections.damage import exclusions
 from langslice.core.stack import codec
 from langslice.core.stack.affine import FitRegions, StoredAffine
 from langslice.core.stack.codec import Written
-from langslice.job.settings.needs import marked, render
 from langslice.tools.changing import masks as ops_masks
 from langslice.tools.changing.images import check_image
 from langslice.tools.changing.transforms import (
@@ -330,6 +329,7 @@ def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
                 section_image=call.section_image,
                 edges=call.edges,
                 section_weights=weights,
+                instead=_instead(job),
             )
     except Refused as refusal:
         return _SectionFit(AffineRow(section.id, refusal=_told(job, section.id, refusal)))
@@ -358,11 +358,16 @@ def _fit_section(call: _ElastixCall, section: Section) -> _SectionFit:
     return _SectionFit(row, (section, outcome, kept, dropped))
 
 
+def _instead(job: Job) -> str:
+    """What a refusal for a region too small adds after "Select a larger
+    region": the manual transform tool, where the job has it."""
+    return job.spec.tools_on.say("interactive_transform", " or use interactive_transform")
+
+
 def _told(job: Job, section_id: str, refusal: Refused) -> Refused:
     """Return the fitter's refusal as the row says it.
 
-    A failed fit gets the engine's last words; a message naming another
-    tool is rendered for the job's tools.
+    A failed fit gets the engine's last words.
     """
     if refusal.code == RefusalCode.FIT_FAILED:
         return reworded(
@@ -373,8 +378,6 @@ def _told(job: Job, section_id: str, refusal: Refused) -> Refused:
                 f"the Elastix affine of {section_id} failed",
             ),
         )
-    if marked(refusal.message):
-        return reworded(refusal, render(refusal.message, job.spec.switched_off))
     return refusal
 
 
@@ -451,12 +454,10 @@ def elastix_fit(
                 section_image=section_image,
                 edges=edges,
                 section_weights=weights,
+                instead=_instead(job),
             )
-    except Refused as refusal:
-        told = render(refusal.message, job.spec.switched_off)
-        if not told:
-            raise
-        raise reworded(refusal, told) from refusal
+    except Refused:
+        raise
     except Exception as exc:
         raise Refused(
             RefusalCode.FIT_FAILED,

@@ -48,7 +48,6 @@ from langslice.core.sections import images as images_
 from langslice.core.sections.damage import exclusions
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.job.settings.needs import render
 from langslice.tools.changing import masks as ops_masks
 from langslice.tools.changing.images import check_image
 from langslice.tools.fitting.deformable_rows import (
@@ -751,12 +750,13 @@ def refuse_unknown_inputs(
             raise Refused(
                 RefusalCode.UNKNOWN_MASK,
                 sections=lacking,
-                message=render(
-                    f"No mask {label!r} on {named}[[?make_mask ; "
-                    "make it with make_mask||; status lists each "
-                    "section's masks]].",
-                    job.spec.switched_off,
-                ),
+                message=f"No mask {label!r} on {named}"
+                + job.spec.tools_on.say(
+                    "make_mask",
+                    "; make it with make_mask",
+                    "; status lists each section's masks",
+                )
+                + ".",
             )
     return image
 

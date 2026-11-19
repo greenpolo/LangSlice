@@ -65,7 +65,8 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is. The description may use [needs marks](../reference/tools.md#switching-tools-off) (`[[?zoom text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is |
+| `description` | The tool's description in place of the stub's docstring, laid out the same way: a string, or a function of `ToolsOn` (importable from `langslice.plugin_api`) that returns the string. A sentence that names another tool is built only where `on.has("zoom")` is true, for example `on.say("zoom", ", or zoom")`, so no description names a tool the job switched off. Empty: the stub's docstring |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -81,14 +82,14 @@ another version is refused. The same names are importable from
 
 A tool whose `atlases` or `planes` do not fit the job is absent, as a disabled
 tool is: it is not declared or listed, and every sentence
-that names it in the other tools' descriptions (written with [needs
-marks](../reference/tools.md#switching-tools-off), `[[?other_tool ...]]`)
-is dropped. The provenance records the two fields.
+that names it in the other tools' descriptions (built from the job's
+`ToolsOn`, as a plugin's `description` is) is left out. The provenance records
+the two fields.
 
-A plugin's description is also rendered by the tools the job's tasks leave out: a
-sentence written `[[?elastix_affine ...]]` in a plugin's stub stands only where the
-Linear task is on and `elastix_affine` is not disabled or frozen away. The native
-tools' texts render the same way.
+A plugin's `description` is also called by the tools the job's tasks leave out:
+`on.has("elastix_affine")` is true only where the Linear task is on and
+`elastix_affine` is not disabled or frozen away. The native tools' texts are
+built the same way.
 
 The checks run when the factory is called: a name that clashes (with a native
 tool, another plugin tool, or `script`, the name a script's writes are

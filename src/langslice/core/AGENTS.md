@@ -645,7 +645,7 @@ the angles in a caption (empty for the flat plane).
   read it) and `digest`. A section without a written
   transform is refused with the job's own sentence
   (`ImageSettings.missing_transform`, `JobSpec.missing_transform`): with
-  Linear (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller
+  Linear (`transform`) off, `no_transform_linear_off`, which tells the caller
   to supply the transforms (`inputs.transforms`, `--transforms`) or switch
   Linear on and run `elastix_affine` on the section first (the maps still
   read a missing transform as the identity). No provider import.

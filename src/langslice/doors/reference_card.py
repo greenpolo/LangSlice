@@ -24,8 +24,8 @@ import langslice
 from langslice.core.jsonable import JsonObject
 from langslice.job.folder.layout import JobLayout, read_job_file
 from langslice.job.migrations import without_removed_settings
-from langslice.job.settings.needs import render
 from langslice.job.settings.spec import JobSpec
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.catalog import VERBS, enabled, verbs_for
 from langslice.tools.descriptions.render import summary
 
@@ -58,17 +58,14 @@ def job_spec(layout: JobLayout) -> JobSpec:
     return JobSpec.from_dict(kept)
 
 
-def off_names(spec: Any) -> list[str]:
-    """What the card renders as off for a job of *spec*: its switched-off
-    names and the verbs its run does not have (a task that is off takes its
-    tools out of the run), so the card never names a verb the job refuses."""
+def off_tools(spec: Any) -> ToolsOn:
+    """What the card words by for a job of *spec*: its switched-off names and
+    the verbs its run does not have (a task that is off takes its tools out of
+    the run), so the card never names a verb the job refuses."""
     run = set(enabled(spec, scripting=True))
-    return [*spec.switched_off, *(name for name in verbs_for(spec) if name not in run)]
-
-
-def disabled_names(layout: JobLayout) -> list[str]:
-    """The tools and options that are off for the job (:func:`off_names`)."""
-    return off_names(job_spec(layout))
+    return ToolsOn(
+        frozenset([*spec.switched_off, *(name for name in verbs_for(spec) if name not in run)])
+    )
 
 
 def transform_cap_line(layout: JobLayout) -> str:
@@ -80,19 +77,21 @@ def transform_cap_line(layout: JobLayout) -> str:
     cap = int((held.get("transform") or {}).get("max_parallel") or MAX_PARALLEL_TRANSFORMS)
     if cap >= MAX_PARALLEL_TRANSFORMS:
         return ""
-    return render(
-        f"\nThis job: at most {cap} sections per [[?elastix_affine `elastix_affine`"
-        "[[?interactive_transform  or ]]]][[?interactive_transform "
-        "`interactive_transform`]] call.",
-        disabled_names(layout),
+    fits = off_tools(job_spec(layout)).listed(
+        [
+            ("elastix_affine", "`elastix_affine`"),
+            ("interactive_transform", "`interactive_transform`"),
+        ],
+        last="or",
     )
+    return f"\nThis job: at most {cap} sections per {fits} call."
 
 
 def card_text(layout: JobLayout) -> str:
     """The card for the job folder *layout* (see the module text)."""
     images = str(layout.image_folder) if layout.image_folder is not None else "the images"
     spec = job_spec(layout)
-    disabled = off_names(spec)
+    on = off_tools(spec)
     run = set(enabled(spec, scripting=True))
     from langslice.tools.descriptions.description import DescriptionFacts
 
@@ -104,28 +103,30 @@ def card_text(layout: JobLayout) -> str:
         for name, verb in verbs_for(spec).items()
         if name in run
     ) + transform_cap_line(layout)
-    example = render(
-        "(`job.status()`[[?position_sections ,\n`job.position_sections("
-        'sections=[{"id": "<file>", "position_mm": 5.2}])`]])',
-        disabled,
+    example = (
+        "(`job.status()`"
+        + on.say(
+            "position_sections",
+            ',\n`job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])`',
+        )
+        + ")"
     )
-    history = render("[[?redo undo and redo||undo]]", disabled)
+    history = on.say("redo", "undo and redo", "undo")
     histories = (
         f"`history/undo.json`: the {history} steps; "
         "`sections/<name>/history.jsonl`: every registration a section held."
     )
-    exported = render(
-        "[[?export_maps  written by `export_maps`||, not written by this job's verbs]]", disabled
+    exported = on.say(
+        "export_maps", " written by `export_maps`", ", not written by this job's verbs"
     )
-    export_command = render(
-        "[[?export_maps `export_maps` (answers within 30 s: its result, or its run id; "
-        "`wait [id]`, `runs`), ]]",
-        disabled,
+    export_command = on.say(
+        "export_maps",
+        "`export_maps` (answers within 30 s: its result, or its run id; `wait [id]`, `runs`), ",
     )
-    background = render(
-        "[[?trace_borders `trace_borders` lands in the background: "
-        "`job.close()`\n(or a `with` block) waits for it. ]]",
-        disabled,
+    background = on.say(
+        "trace_borders",
+        "`trace_borders` lands in the background: `job.close()`\n"
+        "(or a `with` block) waits for it. ",
     )
     return f"""# LangSlice job folder
 

@@ -40,7 +40,6 @@ from langslice.core.pictures.sizes import (
 )
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.pictures import has_frame
-from langslice.job.settings.needs import render
 from langslice.tools.refusal import unknown_sections
 from langslice.tools.run import as_list, pictured
 
@@ -477,13 +476,10 @@ def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) 
             RefusalCode.UNKNOWN_MASK,
             unknown=unknown,
             masks=held,
-            message=render(
-                f"No drawn section has a mask named "
-                f"{', '.join(unknown)}; the masks: "
-                f"{', '.join(held) or 'none'}.[[?make_mask  Make "
-                "one with make_mask.]]",
-                job.spec.switched_off,
-            ),
+            message=f"No drawn section has a mask named "
+            f"{', '.join(unknown)}; the masks: "
+            f"{', '.join(held) or 'none'}."
+            + job.spec.tools_on.say("make_mask", " Make one with make_mask."),
         )
 
 

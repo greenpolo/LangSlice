@@ -45,6 +45,7 @@ from langslice.plugin_api import (
     ToolContext,
     ToolError,
     ToolResult,
+    ToolsOn,
     ToolSpec,
     WriteResult,
 )
@@ -225,48 +226,50 @@ class CallRecord:
 EVERY_SECTION: list[str] = []
 
 
+def _brainways_description(on: ToolsOn) -> str:
+    turn_first = on.say("interactive_transform", "; turn and flip a section the right way first")
+    return f"""\
+Find each section's position along the slicing axis with Brainways.
+
+Brainways, a network trained on rat and mouse brain sections, compares one
+channel of a section, by itself, with the atlas's coronal planes: it says
+which of two planes is the more anterior, and a search over the planes
+finds the one the section cannot be told apart from. The answer is that
+plane's position and nothing else: it estimates no cutting angles and no
+in-plane placement, and each section is placed independently of the
+others. It works on whole coronal sections{turn_first}. It can miss by millimetres on a single \
+section, so check the result with the positioning view of look.
+
+Writes the positions as one undo step when write holds "positions"; a
+changed position clears the deformation of each section it moves. A
+section whose position is frozen answers FROZEN and the rest land. With
+write empty nothing is written and the reply is the proposal. Runs in
+seconds for a stack of forty.
+
+Args:
+    sections: Filenames to run (the extension may be left off); empty
+        means every section.
+    channel: The raw channel Brainways reads, by name; empty means the
+        section's first raw channel. It reads one channel.
+    write: ["positions"] writes the positions; empty writes nothing and
+        shows the proposal. Left out: ["positions"].
+    view: True returns the picture described below; false returns none.
+
+Returns:
+    Per section, in the proposed order: filename, proposed position in
+    millimetres, the change from its current position, and what was
+    written (or FROZEN and the like). With view true, the
+    positioning picture of the written sections, or, with nothing
+    written, of the proposal, captioned as not written."""
+
+
 def brainways_ap(
     *,
     sections: list[str] = EVERY_SECTION,
     channel: str = "",
     write: list[str] | None = None,
     view: bool = False,
-) -> None:
-    """Find each section's position along the slicing axis with Brainways.
-
-    Brainways, a network trained on rat and mouse brain sections, compares one
-    channel of a section, by itself, with the atlas's coronal planes: it says
-    which of two planes is the more anterior, and a search over the planes
-    finds the one the section cannot be told apart from. The answer is that
-    plane's position and nothing else: it estimates no cutting angles and no
-    in-plane placement, and each section is placed independently of the
-    others. It works on whole coronal sections[[?interactive_transform ~
-    ; turn and flip a section the right way first]]. It can miss by millimetres ~
-    on a single section, so check the result with the positioning view of look.
-
-    Writes the positions as one undo step when write holds "positions"; a
-    changed position clears the deformation of each section it moves. A
-    section whose position is frozen answers FROZEN and the rest land. With
-    write empty nothing is written and the reply is the proposal. Runs in
-    seconds for a stack of forty.
-
-    Args:
-        sections: Filenames to run (the extension may be left off); empty
-            means every section.
-        channel: The raw channel Brainways reads, by name; empty means the
-            section's first raw channel. It reads one channel.
-        write: ["positions"] writes the positions; empty writes nothing and
-            shows the proposal. Left out: ["positions"].
-        view: True returns the picture described below; false returns none.
-
-    Returns:
-        Per section, in the proposed order: filename, proposed position in
-        millimetres, the change from its current position, and what was
-        written (or FROZEN and the like). With view true, the
-        positioning picture of the written sections, or, with nothing
-        written, of the proposal, captioned as not written.
-    """
-    ...
+) -> None: ...
 
 
 def run_brainways_ap(
@@ -641,6 +644,7 @@ def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:
             "brainways_ap",
             brainways_ap,
             handler,
+            description=_brainways_description,
             kind="write",
             group="Positioning",
             task="position",

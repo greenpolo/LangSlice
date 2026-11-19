@@ -36,6 +36,7 @@ from langslice.doors.agent_cli.envelope import (
     Envelope,
 )
 from langslice.job.settings.spec import JobSpec
+from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.descriptions.render import (
     FULL,
@@ -187,7 +188,7 @@ class Declared:
         self.folder: str | None = None
         self.spec: JobSpec | None = None
         self.variant = DescriptionFacts(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)
-        self.disabled: tuple[str, ...] = ()
+        self.on = ToolsOn()
         self.verbs: tuple[str, ...] | None = None
         found = job or _job_here()
         if found:
@@ -207,7 +208,7 @@ class Declared:
                 image_model=opened.image_model_connected,
                 brain_scale=opened.ctx.brain_scale,
             )
-            self.disabled = tuple(opened.spec.switched_off)
+            self.on = opened.spec.tools_on
             self.verbs = tuple(opened.listed_verbs())
         finally:
             opened.close()

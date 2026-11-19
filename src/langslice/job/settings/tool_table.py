@@ -12,8 +12,8 @@ of what its tasks and switches give: ``"zoom"`` is the tool, whole.
 
 The valid names are derived from this table (:func:`valid_names`).
 :func:`refusal` says, in one line, why a list cannot work; the spec refuses
-it when it is made. The text a tool appears in is written with what it needs
-and rendered for the job (:mod:`langslice.job.settings.needs`).
+it when it is made. The text a tool appears in is built for the job's tools
+(:class:`langslice.job.settings.tools_on.ToolsOn`).
 
 The in-tree engines' tools (DeepSlice, Brainways, STalign, SPOmiAlign,
 emlddmm) are rows of this table like every other: ``engine`` names the

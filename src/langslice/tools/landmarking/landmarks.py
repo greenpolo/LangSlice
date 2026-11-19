@@ -19,7 +19,6 @@ from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.landmarks import pair_picture
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.landmarks import Endpoint, Landmarks, Pair
-from langslice.job.settings.needs import render
 from langslice.tools.looking.look import Looked, save_pictures
 from langslice.tools.refusal import check_frozen, unknown_sections
 from langslice.tools.run import Run, pictured
@@ -117,17 +116,15 @@ def _endpoint(
         raise Refused(
             RefusalCode.UNKNOWN_PICTURE,
             picture=seq,
-            message=render(
-                f"{here}: there is no saved picture {seq}"
-                + (
-                    f" (the newest is {newest.seq})"
-                    if (newest := job.views.latest(exclude_tool=None))
-                    else ""
-                )
-                + ". Use the picture number a look[[?zoom  or zoom]] "
-                "reply gave.",
-                job.spec.switched_off,
-            ),
+            message=f"{here}: there is no saved picture {seq}"
+            + (
+                f" (the newest is {newest.seq})"
+                if (newest := job.views.latest(exclude_tool=None))
+                else ""
+            )
+            + ". Use the picture number a look"
+            + job.spec.tools_on.say("zoom", " or zoom")
+            + " reply gave.",
         )
     recipe = picture.recipe or {}
     frame = source_frame(recipe)

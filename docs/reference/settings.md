@@ -94,7 +94,7 @@ A task left out brings none of its tools and takes its answer from
 [`inputs`](#inputs); its properties are frozen on every section. Nonlinear
 needs a linear placement: with Positioning and Linear off, `inputs` must
 supply positions and transforms, and a nonlinear fit refuses a section
-without a transform (`NO_TRANSFORM_LINEAR_OFF`). Two other defaults apply: with `--registration` (an imported
+without a transform (`no_transform_linear_off`). Two other defaults apply: with `--registration` (an imported
 registration) the default is `nonlinear` alone, and in the library with no
 `tasks` it is `nonlinear`, plus `transform` unless every section has a
 supplied transform.

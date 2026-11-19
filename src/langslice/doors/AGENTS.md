@@ -244,7 +244,7 @@ bodies, and turned into an answer once per door:
   the CLI and the library cap no pictures or transform sections, so the card
   states none; `transform_cap_line`: the job's
   own `transform.max_parallel` when lower; less the verbs its `disabled` list
-  names, `disabled_names`), how a long verb's call answers (within 30 s, its
+  names, `off_tools`), how a long verb's call answers (within 30 s, its
   run going on), `picture_files`, `FOLDER schema VERB [VERB ...]`, `schema
   init`, the
   Python entry point and what a method returns, and to keep the agent's own
@@ -403,8 +403,8 @@ bodies, and turned into an answer once per door:
     process's own command line without *argv*): `ops` and `schema` first
     (run inside `stdout_to_stderr`, their envelope printed after), anything
     else `FOLDER VERB`; returns the exit code.
-  - `envelope.py` — the `FIXES` texts are written with `[[?needs ...]]`
-    marks and rendered for the job's disabled list (`DISABLED`, set by
+  - `envelope.py` — a `FIXES` text that names a tool is a function of
+    `ToolsOn`, called with the job's (`DISABLED`, set by
     `job.call` once the job is open);
     `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
     `next`, `error` {code, message, fix}; printed with `picture_files`, the
@@ -558,7 +558,7 @@ with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`
 where `look` does: both are `Offered.SIZE_CHOSEN`; `TOO_MANY_LANDMARK_VIEWS`
 says how many pairs were sent and what to resend; the landmark codes' `FIXES`
-are specific, written with needs marks; `ATLAS_ENDPOINT_OUTSIDE`, an argument
+are specific, built for the job's tools; `ATLAS_ENDPOINT_OUTSIDE`, an argument
 code (exit 2), resends the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is
 an argument of `grep_atlas`. `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
