@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import replace
 
 import numpy as np
 from PIL import Image
@@ -21,7 +22,7 @@ from PIL import Image
 from langslice.core.atlas.load import get_reference_slice, get_root_mask
 from langslice.core.failures import IMAGE_FAILURES
 from langslice.core.geometry.affine import resize_long_edge
-from langslice.core.geometry.pixel_frames import cropped_geometry
+from langslice.core.geometry.pixel_frames import Rendered
 from langslice.core.sections.reading import mask_box
 from langslice.core.stack.section import Angles
 from langslice.core.stack.stack import Stack, plane_angles
@@ -49,21 +50,22 @@ def atlas_mask(
     )
 
 
-def atlas_section(
+def atlas_plane(
     ctx: Workspace,
     state: Stack,
     position_mm: float,
     *,
     frame: bool = False,
     angles: Angles | None = None,
-) -> Image.Image:
-    """The atlas template section at *position_mm*, at the plane's angles.
+) -> Rendered:
+    """The atlas template section at *position_mm*, at the plane's angles,
+    with the map from its pixels to the native plane's (:class:`Rendered`).
 
     *frame* crops to the brain silhouette plus a margin. The silhouette
     comes from the ANNOTATION, not from the render's non-zero
     pixels: reference volumes carry faint background noise that would put the
-    bounding box back at the canvas edges. The image is the caller's own copy
-    (``info`` included): the cached plane is never shared.
+    bounding box back at the canvas edges. The image is the caller's own copy:
+    the cached plane is never shared.
     """
     pitch, yaw = plane_angles(state, angles)
     key = (float(position_mm), str(state.plane), float(pitch), float(yaw), bool(frame))
@@ -73,7 +75,7 @@ def atlas_section(
         if hit is not None:
             cache.move_to_end(key)
     if hit is not None:
-        return hit.copy()
+        return replace(hit, image=hit.image.copy())
     image = get_reference_slice(
         ctx.atlas,
         position_mm,
@@ -81,7 +83,7 @@ def atlas_section(
         pitch_deg=pitch,
         yaw_deg=yaw,
     )
-    image.info["pixel_to_native"] = np.eye(3).tolist()
+    plane = Rendered(image, pixel_to_native=np.eye(3))
     if frame:
         try:
             mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
@@ -90,12 +92,25 @@ def atlas_section(
         else:
             box = mask_box(image.size, mask > 0)
             if box:
-                image = cropped_geometry(image.crop(box), image, box)
+                plane = plane.cropped(image.crop(box), box)
     with _plane_lock:
-        cache[key] = image
+        cache[key] = plane
         while len(cache) > PLANE_CACHE_SIZE:
             cache.popitem(last=False)
-    return image.copy()
+    return replace(plane, image=plane.image.copy())
+
+
+def atlas_section(
+    ctx: Workspace,
+    state: Stack,
+    position_mm: float,
+    *,
+    frame: bool = False,
+    angles: Angles | None = None,
+) -> Image.Image:
+    """The image of :func:`atlas_plane`: the atlas template section at
+    *position_mm*, at the plane's angles, the caller's own copy."""
+    return atlas_plane(ctx, state, position_mm, frame=frame, angles=angles).image
 
 
 def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
@@ -107,4 +122,4 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
     """
     if max(picture.size) <= int(long_edge):
         return picture
-    return cropped_geometry(resize_long_edge(picture, int(long_edge)), picture)
+    return resize_long_edge(picture, int(long_edge))

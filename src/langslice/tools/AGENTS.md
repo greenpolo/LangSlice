@@ -590,8 +590,8 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   positions_mm)` (the tool `grep_atlas_view`): the atlas template at each position (clamped into the
   range) at the stack's view angles with the named regions' borders
   highlighted (`"CTX:left"` allowed; no other borders), saved like a
-  `look` picture (so it can be zoomed: it registers its recipe renderer
-  `grep_atlas_view` with `core.pictures.zoom.RENDERERS`); returns `RegionsView`
+  `look` picture (so it can be zoomed: `tools/looking/zoom.py` hands its redrawer for the
+  recipe renderer `grep_atlas_view`, `redraw_regions`, to `core.pictures.zoom.redraw`); returns `RegionsView`
   (`pictures`, `entries`, `not_shown`, `regions`, `regions_not_in_plane`,
   `clamped`). Refused: `BAD_ARGUMENT`, `PRECONDITION`, `NOT_FOUND`.
 - `look.py` — `look_tool(run, mode, sections, images, ...)`, the tool:

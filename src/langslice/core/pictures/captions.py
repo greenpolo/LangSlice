@@ -6,7 +6,8 @@ picture to its section rides in its pixels (:func:`caption`).
 
 from __future__ import annotations
 
-from functools import lru_cache
+from dataclasses import dataclass
+from functools import cache
 from typing import Any
 
 import cv2
@@ -39,12 +40,19 @@ def view_angles_label(angles: tuple[float, float], *, median: bool) -> str:
 CAPTION_PX = 14
 
 
-@lru_cache(maxsize=1)
-def _caption_font() -> Any:
+@cache
+def font(px: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """PIL's default font at *px* pixels, kept: the one loader of every
+    picture's text."""
     try:
-        return ImageFont.load_default(size=CAPTION_PX)
+        return ImageFont.load_default(size=px)
     except TypeError:
         return ImageFont.load_default()
+
+
+def caption_font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """The font of the caption band, :data:`CAPTION_PX` pixels."""
+    return font(CAPTION_PX)
 
 
 def caption(image: Image.Image, text: str, *, min_width: int = 0) -> Image.Image:
@@ -63,15 +71,15 @@ def caption(image: Image.Image, text: str, *, min_width: int = 0) -> Image.Image
     """
     source = image.convert("RGB")
     width = max(source.width, int(min_width))
-    font = _caption_font()
-    text = wrap_caption(text, font, width - 6)
+    face = caption_font()
+    text = wrap_caption(text, face, width - 6)
     probe = ImageDraw.Draw(source)
-    left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
+    left, top, right, bottom = probe.textbbox((0, 0), text, font=face)
     band = int(bottom - top + 6)
     labelled = Image.new("RGB", (width, source.height + band), (0, 0, 0))
     labelled.paste(source, (0, 0))
     draw = ImageDraw.Draw(labelled)
-    draw.text((3 - left, source.height + 3 - top), text, fill=(255, 255, 255), font=font)
+    draw.text((3 - left, source.height + 3 - top), text, fill=(255, 255, 255), font=face)
     return labelled
 
 
@@ -112,26 +120,88 @@ def wrap_caption(text: str, font: Any, width: int) -> str:
     return "\n".join(out)
 
 
-def _font(px: int) -> Any:
-    try:
-        return ImageFont.load_default(size=px)
-    except TypeError:
-        return ImageFont.load_default()
-
-
 def scale_bar_px(um_per_px: float, mm: float = 1.0) -> int:
     """Length in pixels of a *mm*-millimetre bar on a *um_per_px* canvas."""
     return int(round(mm * 1000.0 / float(um_per_px)))
 
 
-def _draw_scale_bar(canvas: np.ndarray, um_per_px: float, dark: bool) -> None:
-    """A 1 mm bar in the bottom-left corner, labelled. Thin, like a viewer's."""
-    height, width = canvas.shape[:2]
+@dataclass(frozen=True)
+class ScaleBar:
+    """Where a picture's scale bar is drawn, and what it measures.
+
+    *bar* is the filled rectangle ``(x0, y0, x1, y1)`` in picture pixels (the
+    ends exclusive), *label* the box of the ``1 mm`` text above it, *length_um*
+    the micrometres the bar spans, *color* its ink and *thickness* its height
+    in pixels. :func:`scale_bar` makes it for a picture of a given shape and
+    :func:`draw_scale_bar` draws exactly that, so a caller that composes its
+    own picture reads the same place.
+    """
+
+    bar: tuple[int, int, int, int]
+    label: tuple[int, int, int, int]
+    length_um: float
+    color: tuple[int, int, int]
+    thickness: int
+
+
+@dataclass(frozen=True)
+class BarStyle:
+    """How the scale bar sits and looks: *left_px* from the left edge and
+    *bottom_px* up from the bottom edge to the bar's top, *label_gap_px*
+    between the bar and its *text* (drawn at *font_scale* in OpenCV's Hershey
+    font), no shorter than *min_px*, in *dark_ink* on a dark picture and
+    *light_ink* on a pale one."""
+
+    left_px: int = 12
+    bottom_px: int = 14
+    label_gap_px: int = 6
+    min_px: int = 4
+    text: str = "1 mm"
+    font_scale: float = 0.4
+    dark_ink: tuple[int, int, int] = (235, 235, 235)
+    light_ink: tuple[int, int, int] = (40, 40, 40)
+
+
+BAR_STYLE = BarStyle()
+
+
+def scale_bar(shape: tuple[int, ...], um_per_px: float, dark: bool) -> ScaleBar | None:
+    """The 1 mm bar on a picture of *shape* (rows, columns,
+    ...) at *um_per_px*, in the bottom-left corner; None when it would be
+    shorter than a few pixels or wider than the picture. *dark*: the picture
+    is dark, the ink pale."""
+    height, width = int(shape[0]), int(shape[1])
     length = scale_bar_px(um_per_px)
-    if length < 4 or length > width:
-        return
-    color = (235, 235, 235) if dark else (40, 40, 40)
+    if length < BAR_STYLE.min_px or length > width:
+        return None
     thickness = max(1, round(min(height, width) / 400))
-    x0, y0 = 12, height - 14
-    cv2.rectangle(canvas, (x0, y0), (x0 + length, y0 + thickness), color, -1)
-    cv2.putText(canvas, "1 mm", (x0, y0 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+    x0, y0 = BAR_STYLE.left_px, height - BAR_STYLE.bottom_px
+    (text_w, text_h), below = cv2.getTextSize(
+        BAR_STYLE.text, cv2.FONT_HERSHEY_SIMPLEX, BAR_STYLE.font_scale, 1
+    )
+    baseline = y0 - BAR_STYLE.label_gap_px
+    return ScaleBar(
+        bar=(x0, y0, x0 + length + 1, y0 + thickness + 1),
+        label=(x0, baseline - text_h, x0 + text_w, baseline + below + 1),
+        length_um=1000.0,
+        color=BAR_STYLE.dark_ink if dark else BAR_STYLE.light_ink,
+        thickness=thickness,
+    )
+
+
+def draw_scale_bar(canvas: np.ndarray, bar: ScaleBar | None) -> None:
+    """*bar* (:func:`scale_bar`) drawn on *canvas*, labelled. Thin, like a viewer's."""
+    if bar is None:
+        return
+    x0, y0, x1, y1 = bar.bar
+    cv2.rectangle(canvas, (x0, y0), (x1 - 1, y1 - 1), bar.color, -1)
+    cv2.putText(
+        canvas,
+        BAR_STYLE.text,
+        (x0, y0 - BAR_STYLE.label_gap_px),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        BAR_STYLE.font_scale,
+        bar.color,
+        1,
+        cv2.LINE_AA,
+    )

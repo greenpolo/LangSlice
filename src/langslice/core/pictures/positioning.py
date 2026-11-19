@@ -43,7 +43,7 @@ from PIL import Image, ImageDraw
 from langslice.core.atlas.borders import atlas_um_per_px
 from langslice.core.atlas.planes import atlas_section
 from langslice.core.pictures.canvas import zoom_box
-from langslice.core.pictures.captions import _font, caption, view_angles_label
+from langslice.core.pictures.captions import caption, font, view_angles_label
 from langslice.core.pictures.opening import CLAUDE_MAX_IMAGE_EDGE, tile_label
 from langslice.core.pictures.options import DisplayOptions
 from langslice.core.pictures.panels import framed_atlas
@@ -224,7 +224,7 @@ class Layout:
 
 
 def _fits(text: str, px: int, width: float) -> bool:
-    return float(_font(px).getlength(text)) <= width
+    return float(font(px).getlength(text)) <= width
 
 
 def _first_fitting(candidates: Sequence[str], px: int, width: float) -> str:
@@ -363,7 +363,7 @@ def _layout(
             for (mm, _e), (w, _h) in zip(atlas, sizes, strict=True)
         ]
         boxes = [
-            max(w, float(_font(font_px).getlength(t)))
+            max(w, float(font(font_px).getlength(t)))
             for (w, _h), t in zip(sizes, texts, strict=True)
         ]
         xs = _spread([x_at(mm) for mm, _e in atlas], boxes, x0, x1)
@@ -565,8 +565,8 @@ def paint(
     out = Image.fromarray(canvas, mode="RGB")
 
     draw = ImageDraw.Draw(out)
-    small = _font(max(6, round(layout.small_px * s)))
-    font = _font(max(6, round(layout.font_px * s)))
+    small = font(max(6, round(layout.small_px * s)))
+    big = font(max(6, round(layout.font_px * s)))
     majors = [mm for mm, major in ticks if major]
     for mm in majors:
         number = f"{mm:g}"
@@ -584,7 +584,7 @@ def paint(
             stroke_fill=BACKGROUND,
         )
     for slot in layout.atlas:
-        _centred(draw, slot.label[0], X(slot.centre_x), Y(layout.atlas_label_y), font, TEXT_COLOR)
+        _centred(draw, slot.label[0], X(slot.centre_x), Y(layout.atlas_label_y), big, TEXT_COLOR)
     line_h = (layout.font_px + 4) * s
     for slot in layout.sections:
         for row, text in enumerate(slot.label):
@@ -593,7 +593,7 @@ def paint(
                 text,
                 X(slot.centre_x),
                 Y(layout.section_label_y) + row * line_h,
-                font,
+                big,
                 TEXT_COLOR,
             )
     return out
@@ -736,7 +736,7 @@ def positioning_pictures(
     def draw_atlas(position_mm: float, um_per_px: float) -> Image.Image:
         return framed_atlas(
             ws, state, position_mm, atlas_options, um_per_px=um_per_px, angles=angles
-        )
+        ).image
 
     out: list[Positioned] = []
     for layout in chosen:

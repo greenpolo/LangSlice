@@ -12,9 +12,13 @@ watcher. Nothing is written to the job folder; the atlas's own disk cache
 is the only file the core may write, as for any reader.
 
 Every picture is a JPEG (the core's ``encode_jpeg``, the one every door
-sends) with its caption band cut off: the page labels it. The encoded
-pictures are kept in a bounded LRU per job, keyed by kind, section or
-position, edge and :func:`render_key`, so a picture is drawn again only
+sends) drawn from the core's layers, with no caption band and, in the calm
+and paper looks, no scale bar: the page labels it. The one exception is the
+3D view's ``cutout`` of a section, its thumbnail cut to its tissue
+(:mod:`.cutout`): an image with an alpha channel, encoded by
+:func:`encode_cutout`. The encoded pictures are kept in a bounded LRU per
+job, keyed by kind, section or position, edge and :func:`render_key` (a
+thumbnail or cutout by :func:`thumb_key`), so a picture is drawn again only
 when what it shows changed. :class:`RenderPool` runs every job's drawing
 on one pool of two threads; a job draws one picture at a time (a
 workspace's caches are not made for concurrent writers), and concurrent
@@ -24,6 +28,7 @@ requests for one picture share one drawing.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import math
@@ -49,12 +54,13 @@ from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
 from langslice.doors.jobs import JobContext, NoJob, context, read_spec
-from langslice.hosts.gui.calm import draw_calm_overlay, draw_calm_thumb
+from langslice.hosts.gui.calm import draw_calm_cutout, draw_calm_overlay, draw_calm_thumb
 from langslice.hosts.gui.drawing import Style
 from langslice.hosts.gui.drawing import draw_atlas as _atlas_picture
+from langslice.hosts.gui.drawing import draw_cutout as _cutout_picture
 from langslice.hosts.gui.drawing import draw_overlay as _overlay_picture
 from langslice.hosts.gui.drawing import draw_thumb as _thumb_picture
-from langslice.hosts.gui.paper import draw_paper_overlay, draw_paper_thumb
+from langslice.hosts.gui.paper import draw_paper_cutout, draw_paper_overlay, draw_paper_thumb
 from langslice.hosts.gui.space import (
     AtlasShell,
     ShellError,
@@ -66,6 +72,10 @@ from langslice.job.folder.layout import JOB_FILE
 
 logger = logging.getLogger(__name__)
 
+CUTOUT_TYPE = "image/webp"
+CUTOUT_QUALITY = 90
+CUTOUT_ALPHA_QUALITY = 100
+CUTOUT_EFFORT = 4
 MIN_EDGE_PX = 64
 MAX_EDGE_PX = 2048
 EDGE_STEP_PX = 64
@@ -226,6 +236,32 @@ def thumb_key(state: Stack, section_id: str) -> str:
     }
     text = json.dumps(facts, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()[:KEY_DIGITS]
+
+
+def encode_cutout(picture: Image.Image) -> bytes:
+    """Encode a cut-out picture with its alpha channel.
+
+    Parameters
+    ----------
+    picture
+        An RGBA picture (:func:`langslice.hosts.gui.cutout.cut_out`).
+
+    Returns
+    -------
+    bytes
+        A WebP of it (:data:`CUTOUT_TYPE`): the colour at
+        :data:`CUTOUT_QUALITY`, the alpha channel lossless
+        (:data:`CUTOUT_ALPHA_QUALITY`), so the tissue's edge is the one drawn.
+    """
+    buffer = io.BytesIO()
+    picture.save(
+        buffer,
+        format="WEBP",
+        quality=CUTOUT_QUALITY,
+        alpha_quality=CUTOUT_ALPHA_QUALITY,
+        method=CUTOUT_EFFORT,
+    )
+    return buffer.getvalue()
 
 
 def atlas_positions(min_mm: float, max_mm: float, step_mm: float) -> tuple[float, ...]:
@@ -440,6 +476,47 @@ class JobRenderer:
         still = self._still(thumb_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
 
+    def cutout(self, section_id: str, edge: int, *, style: Style = Style.RAW) -> bytes:
+        """Draw a section's thumbnail cut out of its ground, for the 3D view.
+
+        Parameters
+        ----------
+        section_id
+            The section's filename.
+        edge
+            The thumbnail's long edge in pixels, at most the working
+            copy's (nothing is upsampled).
+        style
+            The look the section is drawn in, as for :meth:`thumb`.
+
+        Returns
+        -------
+        bytes
+            An image with an alpha channel (:data:`CUTOUT_TYPE`): the
+            thumbnail, its alpha the tissue with a soft edge.
+
+        Raises
+        ------
+        UnknownSection
+            When the job holds no section *section_id*.
+        RenderError
+            When the picture cannot be drawn, with the reason.
+        RenderBusy
+            When it was not drawn within :data:`WAIT_S`.
+        """
+        state = self._state()
+        section = _section(state, section_id)
+        opened = self._open()
+        key = (f"{style}-cutout", section_id, edge, thumb_key(state, section_id))
+        drawer = {
+            Style.RAW: _cutout_picture,
+            Style.CALM: draw_calm_cutout,
+            Style.PAPER: draw_paper_cutout,
+        }[style]
+        draw = partial(drawer, opened, section, edge)
+        still = self._still(thumb_key, section_id, key[3])
+        return self._picture(key, opened, draw, current=still, encode=encode_cutout)
+
     def atlas_thumb(self, k: int, edge: int) -> bytes:
         """Draw the strip's *k*-th atlas thumbnail.
 
@@ -562,6 +639,7 @@ class JobRenderer:
         draw: Callable[[], Image.Image],
         *,
         current: Callable[[], bool] | None = None,
+        encode: Callable[[Image.Image], bytes] = encode_jpeg,
     ) -> bytes:
         """Return the picture *key* from the cache, else drawn.
 
@@ -578,7 +656,7 @@ class JobRenderer:
                 return ready
             future = self._flying.get(key)
             if future is None:
-                make = partial(self._make, key, opened, draw, current=current)
+                make = partial(self._make, key, opened, draw, current=current, encode=encode)
                 future = self._executor.submit(make)
                 self._flying[key] = future
         try:
@@ -593,6 +671,7 @@ class JobRenderer:
         draw: Callable[[], Image.Image],
         *,
         current: Callable[[], bool] | None = None,
+        encode: Callable[[Image.Image], bytes] = encode_jpeg,
     ) -> bytes:
         """Draw and encode one picture on the pool, then keep it."""
         data: bytes | None = None
@@ -604,7 +683,7 @@ class JobRenderer:
                     picture = _drawn_safely(draw, key)
                 finally:
                     _trim(opened.workspace)
-            data = encode_jpeg(picture)
+            data = encode(picture)
             return data
         finally:
             with self._lock:

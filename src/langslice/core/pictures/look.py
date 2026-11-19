@@ -53,6 +53,7 @@ from langslice.core.atlas.borders import atlas_um_per_px
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.planes import atlas_section
 from langslice.core.fits.affine import calibrate
+from langslice.core.geometry.pixel_frames import Rendered
 from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
 from langslice.core.pictures.captions import (
@@ -74,7 +75,7 @@ from langslice.core.pictures.panels import (
     framed_atlas,
     framed_section,
 )
-from langslice.core.pictures.placement import placement_pictures
+from langslice.core.pictures.placement import PlacedLayers, placement_layers, placement_pictures
 from langslice.core.pictures.positioning import (
     ATLAS_UPSAMPLE,
     POSITIONING_MAX_WIDTH,
@@ -491,6 +492,13 @@ def _zoom_tag(window: Sequence[float], base: Sequence[float], shown: Sequence[fl
     return f"zoom x{max(shown) / extent:.1f}  "
 
 
+def _listed(matrix: np.ndarray | None) -> list[Any]:
+    """*matrix* as nested lists, for a recipe's panels."""
+    if matrix is None:
+        raise ValueError("the picture carries no pixel map")
+    return matrix.tolist()
+
+
 def _recipe(
     request: LookRequest,
     held: dict[str, Any],
@@ -522,7 +530,7 @@ def _section_picture(
     look_ = options.look(state, record)
     whole = render_slice(ws, record, long_edge=long_edge, look=look_)
     base = base or whole.size
-    picture: Image.Image | None = None
+    picture: Rendered | None = None
     enlarged = ""
     if request.zoom:
         try:
@@ -544,14 +552,11 @@ def _section_picture(
     if request.zoom and not enlarged and max(picture.size) < long_edge:
         factor = min(long_edge / max(picture.size), ATLAS_UPSAMPLE)
         if factor > 1.05:
-            from langslice.core.geometry.pixel_frames import cropped_geometry
-
-            picture = cropped_geometry(
-                picture.resize(
-                    (round(picture.width * factor), round(picture.height * factor)),
+            picture = picture.cropped(
+                picture.image.resize(
+                    (round(picture.image.width * factor), round(picture.image.height * factor)),
                     Image.Resampling.LANCZOS,
-                ),
-                picture,
+                )
             )
             enlarged = f" (source pixels enlarged x{factor:.1f})"
     um = base_um * (
@@ -580,15 +585,15 @@ def _section_picture(
         "role": "section",
         "section": record.id,
         "bounds": [0, 0, *picture.size],
-        "pixel_to_file_fraction": picture.info["pixel_to_file_fraction"],
+        "pixel_to_file_fraction": _listed(picture.pixel_to_file_fraction),
     }
     panels = [panel]
-    picture = picture.copy()
-    draw_landmarks(picture, panels, state, record)
-    drawn_layers = _draw_layers(picture, panels, state, record, request, ws)
-    drawn_masks = _draw_masks(picture, panels, state, record, request, ws)
+    drawn = picture.image.copy()
+    draw_landmarks(drawn, panels, state, record)
+    drawn_layers = _draw_layers(drawn, panels, state, record, request, ws)
+    drawn_masks = _draw_masks(drawn, panels, state, record, request, ws)
     text += _mask_words(drawn_masks, record)
-    image = caption(picture, label, min_width=long_edge if request.zoom else 0)
+    image = caption(drawn, label, min_width=long_edge if request.zoom else 0)
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
     recipe = _recipe(one, held, base=base, shown=picture.size, um_per_px=um)
@@ -607,6 +612,53 @@ def _section_picture(
             **({"masks": drawn_masks} if drawn_masks else {}),
         },
     )
+
+
+def overlay_layers(
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    request: LookRequest,
+    *,
+    store: RecordStore | None = None,
+) -> PlacedLayers:
+    """The layers of *record*'s ``overlay`` picture under *request*, before
+    anything is burned into them: the section on the canvas, the atlas
+    borders' coverage, the frame and the scale bar's place
+    (:func:`langslice.core.pictures.placement.placement_layers`), from the
+    options :func:`look` draws the same overlay with (its images, atlas
+    layers, highlighted regions, warp and long edge; no zoom)."""
+    names, picked = _images_for(ws, record, request.images)
+    options = _options(
+        request,
+        names=names,
+        image=picked,
+        layers=_atlas_layers(ws, request),
+        long_edge=int(request.long_edge or picture_edge(ws)),
+        regions=_highlighted(ws, request),
+    )
+    return placement_layers(
+        ws,
+        state,
+        record,
+        record.position_mm,
+        options,
+        {},
+        store=store,
+        label_note=_registration_words(request, record),
+    )
+
+
+def atlas_image(ws: Workspace, state: Stack, position_mm: float, long_edge: int) -> Image.Image:
+    """The atlas plane at *position_mm* as :func:`look`'s ``atlas`` picture
+    draws it, without its caption: the default atlas layers at the stack's
+    view angles, framed to its anatomy, at most *long_edge* and never
+    enlarged past the plane's own voxels."""
+    request = LookRequest(mode="atlas", positions_mm=(position_mm,), long_edge=long_edge)
+    options = _options(
+        request, names=(), image="", layers=_atlas_layers(ws, request), long_edge=long_edge
+    )
+    return framed_atlas(ws, state, position_mm, options, angles=state.view_angles).image
 
 
 def _overlay_picture(
@@ -631,7 +683,7 @@ def _overlay_picture(
     position = record.position_mm
     if request.zoom and base is None:
         whole = placement_pictures(ws, state, record, position, options, {}, store=store)
-        x0, y0, x1, y1 = whole.canvas.panels[0].content_box if whole.canvas else (0, 0, 1, 1)
+        x0, y0, x1, y1 = whole.canvas.panel.content_box
         base = (x1 - x0, y1 - y0)
     if request.zoom and base is not None:
         options = replace(options, zoom=_zoom_pixels(request.zoom, base))
@@ -645,14 +697,12 @@ def _overlay_picture(
         store=store,
         label_note=_registration_words(request, record),
     )
-    image = placed.images[0]
-    shown: tuple[int, int] = image.size
-    um = 0.0
-    if placed.canvas is not None and placed.canvas.panels:
-        panel = placed.canvas.panels[0]
-        x0, y0, x1, y1 = panel.content_box
-        shown = (x1 - x0, y1 - y0)
-        um = placed.canvas.frame.um_per_px / panel.factor
+    image = placed.image
+    canvas = placed.canvas
+    panel = canvas.panel
+    x0, y0, x1, y1 = panel.content_box
+    shown = (x1 - x0, y1 - y0)
+    um = canvas.frame.um_per_px / panel.factor
     base = base or shown
     short, full = image_words(ws, record, names, picked)
     drawn = placed.row.get("deformation_drawn")
@@ -668,17 +718,12 @@ def _overlay_picture(
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
-    border_word = image.info.get("border_word")
-    if border_word:
-        atlas_words += f"; borders {border_word}"
+    if panel.border_word:
+        atlas_words += f"; borders {panel.border_word}"
     if options.regions:
         emphasis = "only" if request.region_only else "drawn thick, the other borders faint"
         atlas_words += f"; regions {', '.join(name for name, _ids in options.regions)} {emphasis}"
-    read = (
-        placed.canvas.panels[0].from_file
-        if placed.canvas is not None and placed.canvas.panels
-        else None
-    )
+    read = panel.from_file
     calibration = placed.row.get("calibration") or {}
     uncalibrated = UNCALIBRATED if calibration.get("source") == "uncalibrated" else ""
     text = (
@@ -697,50 +742,33 @@ def _overlay_picture(
         section_to_picture,
     )
 
-    panels = []
-    if placed.canvas is not None and placed.canvas.panels:
-        panel = placed.canvas.panels[0]
-        swap = np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]])
-        to_section = np.linalg.inv(swap @ section_to_picture(panel) @ swap)
-        warp_key = None
-        if drawn:
-            applied = record.deformation
-            warp_key = "" if applied is None else applied.key or ""
-        panels = [
-            section_panel(
-                record,
-                placed.canvas.frame.section.size,
-                pixel_to_render=to_section,
-                bounds=panel.content_box,
-                warp_key=warp_key,
-            ),
-            {
-                "role": "atlas",
-                "section": record.id,
-                "bounds": list(panel.content_box),
-                "pixel_to_native": (swap @ picture_to_native(panel) @ swap).tolist(),
-                "native_size": list(panel.geometry.annotation.shape[::-1]),
-            },
-        ]
-        draw_landmarks(image, panels, state, record, warp=placed.canvas.frame.warp)
+    swap = np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+    to_section = np.linalg.inv(swap @ section_to_picture(panel) @ swap)
+    warp_key = None
+    if drawn:
+        applied = record.deformation
+        warp_key = "" if applied is None else applied.key or ""
+    panels = [
+        section_panel(
+            record,
+            canvas.frame.section.size,
+            pixel_to_render=to_section,
+            bounds=panel.content_box,
+            warp_key=warp_key,
+        ),
+        {
+            "role": "atlas",
+            "section": record.id,
+            "bounds": list(panel.content_box),
+            "pixel_to_native": (swap @ picture_to_native(panel) @ swap).tolist(),
+            "native_size": list(panel.geometry.annotation.shape[::-1]),
+        },
+    ]
+    draw_landmarks(image, panels, state, record, warp=canvas.frame.warp)
     drawn_layers = _draw_layers(
-        image,
-        panels,
-        state,
-        record,
-        request,
-        ws,
-        warp_record=placed.canvas.frame.warp if placed.canvas else None,
+        image, panels, state, record, request, ws, warp_record=canvas.frame.warp
     )
-    drawn_masks = _draw_masks(
-        image,
-        panels,
-        state,
-        record,
-        request,
-        ws,
-        warp=placed.canvas.frame.warp if placed.canvas else None,
-    )
+    drawn_masks = _draw_masks(image, panels, state, record, request, ws, warp=canvas.frame.warp)
     text += _mask_words(drawn_masks, record)
     recipe["endpoint_panels"] = panels
     recipe["registration_context"] = _landmark_context(state, record)
@@ -797,8 +825,7 @@ def overlay_region_window(
         regions=_highlighted(ws, request),
     )
     placed = placement_pictures(ws, drawn, record, record.position_mm, options, {}, store=store)
-    assert placed.canvas is not None
-    panel = placed.canvas.panels[0]
+    panel = placed.canvas.panel
     if not panel.highlighted:
         raise Refused(RefusalCode.NOT_FOUND, f"Region {region!r} is absent from this overlay.")
     points = np.concatenate(panel.highlighted)
@@ -998,9 +1025,8 @@ def _atlas_picture(
     )
     if section:
         plane = f"{angles_label(angles)} ({section.id}'s cutting angles)"
-    border_word = picture.info.get("border_word")
     text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}" + (
-        f"; borders {border_word}" if border_word else ""
+        f"; borders {picture.border_word}" if picture.border_word else ""
     )
     panels = []
     section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
@@ -1011,13 +1037,15 @@ def _atlas_picture(
             "role": "atlas",
             "section": section.id,
             "bounds": [0, 0, *picture.size],
-            "pixel_to_native": picture.info["pixel_to_native"],
+            "pixel_to_native": _listed(picture.pixel_to_native),
             "native_size": list(atlas_section(ws, state, position_mm, angles=angles).size),
         }
         panels = [panel]
-        picture = picture.copy()
-        draw_landmarks(picture, panels, state, section)
-    image = caption(picture, label)
+        drawn = picture.image.copy()
+        draw_landmarks(drawn, panels, state, section)
+    else:
+        drawn = picture.image
+    image = caption(drawn, label)
     held = snapshot(state, [section.id] if section else [], view_angles=True)
     one = replace(request, positions_mm=(float(position_mm),))
     recipe = _recipe(one, held, base=base, shown=picture.size, um_per_px=um)
@@ -1253,10 +1281,12 @@ __all__ = [
     "LookRequest",
     "MODES",
     "RENDERER",
+    "atlas_image",
     "changed_since",
     "differs_since",
     "image_words",
     "look",
+    "overlay_layers",
     "redraw",
     "restored",
     "snapshot",

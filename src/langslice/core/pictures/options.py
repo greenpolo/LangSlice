@@ -4,7 +4,7 @@ A :class:`DisplayOptions` is one picture's options, built by the core's own
 callers (``look``'s pictures, :mod:`langslice.core.pictures.look`; the fit,
 trace and damage pictures, :func:`default_options`) and drawn by the shared
 renderers (the physical canvas in
-:func:`langslice.core.pictures.canvas.physical_views`, the section and atlas
+:func:`langslice.core.pictures.canvas.physical_layers`, the section and atlas
 pictures below):
 
 - ``mode`` — :data:`MODE_RULES` says what each mode draws.

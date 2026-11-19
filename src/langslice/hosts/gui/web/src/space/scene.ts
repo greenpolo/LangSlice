@@ -38,23 +38,14 @@ const ARRIVE_S = 6;
 const ARRIVE_MAX_S = 0.16;
 const INFLATE_MM = 0.08;
 const STAGGER_MAX_S = 0.06;
-const TISSUE_STEP = 0.013;
-const BRIGHT_GROUND = 0.5;
-const SPECK_PX = 24;
 const WALL_REACH_MM = 0.25;
 const WALL_SPANS = 24;
 const WALL_SHADE = 0.2;
 const FAR_SHADE = 0.34;
 const ROOM_MM = 0.15;
 const ROOM_BINS = 96;
-const ISLAND_PX = 40;
-const GLARE_PX = 30;
-const SMOOTH = 0.04;
-const RIM_STEP = 0.03;
-const PINHOLE = 0.01;
-const SOFT_PER_PX = 1 / 128;
-const MASK_W = 256;
-const DEBRIS = 0.1;
+const COVER_W = 256;
+const HALF_ALPHA = 128;
 const FILL = 0.66;
 const VIEW = new THREE.Vector3(-0.85, 0.45, 0.85);
 
@@ -94,8 +85,8 @@ const VERTEX = /* glsl */ `
   }
 `;
 
-// The picture as it is: the tissue opaque, the ground cut away by the mask in the
-// texture's alpha (`tissue`, softened over a few pixels so its half-way contour is a smooth
+// The picture as it is: the tissue opaque, the ground cut away by the texture's alpha (made
+// by the server, softened over a few pixels so its half-way contour is a smooth
 // line), the cut one screen pixel wide through the samples' coverage, never blended with
 // what is behind; `lit` brightens a section in focus a little and draws its cut edge in the
 // accent (`accent`), `see` greys a section while others are in focus, and a section
@@ -236,210 +227,32 @@ function token(name: string, fallback: string): THREE.Vector3 {
   return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
-// A picture with its tissue in the alpha channel. The ground is the darkest of the four
-// corners' 4x4 mean luminances (the calm pictures' flat floor; over `BRIGHT_GROUND` it is
-// the light look's paper, and the picture is read by its darkness); a pixel is tissue when the
-// mean of its 5x5 neighbourhood stands `TISSUE_STEP` above it, so dim tissue stays and the
-// ground's JPEG noise does not speckle. What is left of the slide around the tissue goes
-// next: a smooth patch (fine texture under `SMOOTH` of its brightness above the ground,
-// where tissue's is several times that) that touches the ground outside the section is
-// a scanner's glare or a flat grey smear, not tissue, and is cut with a margin; a smooth
-// patch inside the tissue (white matter) stays. Specks under `SPECK_PX` pixels go, the
-// dark pixels the neighbourhood mean pushed out into the ground are peeled off the outer
-// edge, pinholes under `PINHOLE` of the picture are filled, and a piece apart from the
-// tissue goes when it is under `DEBRIS` of the largest piece (dirt or glare on the slide)
-// or cut by the picture's border (something at the slide's edge, not the section). The ground's colour is
-// replaced by its tissue neighbours' so the linear filter never pulls a dark rim into
-// the tissue's edge; the pixels go to the texture as they are, never through a canvas,
-// which would premultiply the alpha and turn the cut ground black. The mask is made on a
-// copy `MASK_W` pixels wide (its sizes are for that width, and a larger picture would cost
-// the page a second each), then spread to the picture's size and softened over
-// `SOFT_PER_PX` of the width into the alpha, so the shader's half-way contour is smooth.
-function tissueImage(img: HTMLImageElement): { pixels: Uint8Array; tissue: Tissue; colour: THREE.Vector3 | null } | null {
+// A section's picture with its tissue in the alpha channel, as the server cuts it
+// (`render/cutout`): the texture is the picture as it came, never premultiplied (a
+// premultiplied alpha would turn the cut ground into a dark rim under the linear filter),
+// and a small copy of its alpha serves picking and the mean tissue colour of the far wall.
+async function cutImage(img: HTMLImageElement): Promise<{ texture: THREE.Texture; tissue: Tissue; colour: THREE.Vector3 | null } | null> {
   const W = img.naturalWidth, H = img.naturalHeight;
   if (W < 8 || H < 8) return null;
-  const full = pixelsOf(img, W, H);
-  const shrink = Math.max(1, Math.round(W / MASK_W));
-  const w = Math.max(8, Math.round(W / shrink)), h = Math.max(8, Math.round(H / shrink));
-  const small = shrink > 1 ? pixelsOf(img, w, h) : full;
-  if (!full || !small) return null;
-  const mask = tissueMask(small, w, h);
-  const d = full;
-  const N = W * H;
-  const wide = new Uint8Array(N);
-  for (let y = 0; y < H; y++) {
-    const row = Math.min(h - 1, Math.floor(y / shrink)) * w;
-    for (let x = 0; x < W; x++) wide[y * W + x] = mask[row + Math.min(w - 1, Math.floor(x / shrink))];
-  }
-  const soft = Math.max(shrink, Math.round(W * SOFT_PER_PX));
-  let near = wide.slice();
-  for (let pass = 0; pass < soft + 2; pass++) {
-    const next = near.slice();
-    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (near[i]) continue;
-      let r = 0, g = 0, b = 0, c = 0;
-      for (const j of [i - 1, i + 1, i - W, i + W, i - W - 1, i - W + 1, i + W - 1, i + W + 1]) {
-        if (!near[j]) continue;
-        r += d[4 * j]; g += d[4 * j + 1]; b += d[4 * j + 2]; c++;
-      }
-      if (!c) continue;
-      d[4 * i] = r / c; d[4 * i + 1] = g / c; d[4 * i + 2] = b / c;
-      next[i] = 1;
-    }
-    near = next;
-  }
-  const solid = new Float32Array(N);
-  for (let i = 0; i < N; i++) solid[i] = wide[i];
-  const alpha = box(box(solid, W, H, soft), W, H, soft);
-  let r = 0, g = 0, b = 0, count = 0;
-  for (let i = 0; i < N; i++) {
-    if (wide[i]) { r += d[4 * i]; g += d[4 * i + 1]; b += d[4 * i + 2]; count++; }
-    d[4 * i + 3] = Math.round(255 * alpha[i]);
-  }
-  const colour = count ? new THREE.Vector3(r / count / 255, g / count / 255, b / count / 255) : null;
-  return { pixels: new Uint8Array(d.buffer.slice(0)), tissue: { mask: wide, w: W, h: H }, colour };
-}
-
-// A picture's pixels at a size, read back from a canvas.
-function pixelsOf(img: HTMLImageElement, w: number, h: number): Uint8ClampedArray | null {
+  const bitmap = await createImageBitmap(img, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+  const w = Math.min(W, COVER_W), h = Math.max(1, Math.round((H * w) / W));
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, w, h);
-  return ctx.getImageData(0, 0, w, h).data;
-}
-
-// Which pixels of a small picture are tissue (the steps the comment above names).
-function tissueMask(d: Uint8ClampedArray, w: number, h: number): Uint8Array {
-  const n = w * h;
-  const lum = new Float32Array(n);
-  for (let i = 0; i < n; i++) lum[i] = (0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]) / 255;
-  let low = 1;
-  for (const [x0, y0] of [[0, 0], [w - 4, 0], [0, h - 4], [w - 4, h - 4]]) {
-    let sum = 0;
-    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 4; x++) sum += lum[y * w + x];
-    low = Math.min(low, sum / 16);
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const mask = new Uint8Array(w * h);
+  let r = 0, g = 0, b = 0, count = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (d[4 * i + 3] < HALF_ALPHA) continue;
+    mask[i] = 1; r += d[4 * i]; g += d[4 * i + 1]; b += d[4 * i + 2]; count++;
   }
-  if (low > BRIGHT_GROUND) {
-    for (let i = 0; i < n; i++) lum[i] = 1 - lum[i];
-    low = 1 - low;
-  }
-  const mean = box(lum, w, h, 2);
-  const mask = new Uint8Array(n);
-  for (let i = 0; i < n; i++) mask[i] = mean[i] > low + TISSUE_STEP ? 1 : 0;
-  dropSmall(mask, w, h, SPECK_PX);
-
-  const local = box(lum, w, h, 1);
-  const fine = new Float32Array(n);
-  for (let i = 0; i < n; i++) fine[i] = Math.abs(lum[i] - local[i]);
-  const grain = box(fine, w, h, 3);
-  const smooth = new Uint8Array(n);
-  for (let i = 0; i < n; i++) smooth[i] = mask[i] && grain[i] < SMOOTH * (mean[i] - low + 0.02) ? 1 : 0;
-  const near = grow(outside(mask, w, h), w, h, 2);
-  const cut = new Uint8Array(n);
-  for (const patch of patches(smooth, w, h)) {
-    if (patch.length < GLARE_PX || !patch.some(i => near[i])) continue;
-    for (const i of patch) cut[i] = 1;
-  }
-  const margin = grow(cut, w, h, 3);
-  for (let i = 0; i < n; i++) if (margin[i]) mask[i] = 0;
-  dropSmall(mask, w, h, ISLAND_PX);
-
-  for (let pass = 0; pass < 3; pass++) {
-    const ground = outside(mask, w, h);
-    const rim: number[] = [];
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (!mask[i] || lum[i] >= low + RIM_STEP) continue;
-      if ((x > 0 && ground[i - 1]) || (x < w - 1 && ground[i + 1]) || (y > 0 && ground[i - w]) || (y < h - 1 && ground[i + w])) rim.push(i);
-    }
-    for (const i of rim) mask[i] = 0;
-  }
-  const ground = outside(mask, w, h);
-  const holes = new Uint8Array(n);
-  for (let i = 0; i < n; i++) holes[i] = !mask[i] && !ground[i] ? 1 : 0;
-  for (const hole of patches(holes, w, h)) if (hole.length < PINHOLE * n) for (const i of hole) mask[i] = 1;
-  const pieces = patches(mask, w, h);
-  const largest = pieces.reduce((most, piece) => Math.max(most, piece.length), 0);
-  for (const piece of pieces) {
-    if (piece.length === largest) continue;
-    const cut = piece.some(i => { const x = i % w, y = (i - x) / w; return x === 0 || y === 0 || x === w - 1 || y === h - 1; });
-    if (cut || piece.length < DEBRIS * largest) for (const i of piece) mask[i] = 0;
-  }
-  return mask;
-}
-
-// The mean over a (2r+1) square around each pixel, the picture's edge repeated.
-function box(src: Float32Array, w: number, h: number, r: number): Float32Array {
-  const rows = new Float32Array(src.length), out = new Float32Array(src.length);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    let sum = 0;
-    for (let k = -r; k <= r; k++) sum += src[y * w + Math.min(w - 1, Math.max(0, x + k))];
-    rows[y * w + x] = sum / (2 * r + 1);
-  }
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    let sum = 0;
-    for (let k = -r; k <= r; k++) sum += rows[Math.min(h - 1, Math.max(0, y + k)) * w + x];
-    out[y * w + x] = sum / (2 * r + 1);
-  }
-  return out;
-}
-
-// The 4-connected patches of the set pixels, each as its pixels' indices.
-function patches(set: Uint8Array, w: number, h: number): Int32Array[] {
-  const seen = new Uint8Array(set.length);
-  const queue = new Int32Array(set.length);
-  const out: Int32Array[] = [];
-  for (let start = 0; start < set.length; start++) {
-    if (seen[start] || !set[start]) continue;
-    let head = 0, tail = 0;
-    queue[tail++] = start; seen[start] = 1;
-    while (head < tail) {
-      const i = queue[head++];
-      const x = i % w, y = (i - x) / w;
-      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
-        if (j < 0 || seen[j] || !set[j]) continue;
-        seen[j] = 1; queue[tail++] = j;
-      }
-    }
-    out.push(queue.slice(0, tail));
-  }
-  return out;
-}
-
-// The ground outside the tissue: the patches of non-tissue that reach the picture's border.
-function outside(mask: Uint8Array, w: number, h: number): Uint8Array {
-  const free = new Uint8Array(mask.length);
-  for (let i = 0; i < mask.length; i++) free[i] = mask[i] ? 0 : 1;
-  const out = new Uint8Array(mask.length);
-  for (const patch of patches(free, w, h)) {
-    const border = patch.some(i => { const x = i % w, y = (i - x) / w; return x === 0 || y === 0 || x === w - 1 || y === h - 1; });
-    if (border) for (const i of patch) out[i] = 1;
-  }
-  return out;
-}
-
-// The set grown by *steps* pixels, 4-connected.
-function grow(set: Uint8Array, w: number, h: number, steps: number): Uint8Array {
-  let cur = set;
-  for (let s = 0; s < steps; s++) {
-    const next = cur.slice();
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (cur[i]) continue;
-      if ((x > 0 && cur[i - 1]) || (x < w - 1 && cur[i + 1]) || (y > 0 && cur[i - w]) || (y < h - 1 && cur[i + w])) next[i] = 1;
-    }
-    cur = next;
-  }
-  return cur;
-}
-
-// The tissue patches smaller than *size* pixels, taken away.
-function dropSmall(mask: Uint8Array, w: number, h: number, size: number) {
-  for (const patch of patches(mask, w, h)) if (patch.length < size) for (const i of patch) mask[i] = 0;
+  const colour = count ? new THREE.Vector3(r / count / 255, g / count / 255, b / count / 255) : null;
+  const texture = new THREE.Texture(bitmap);
+  texture.flipY = false;
+  texture.premultiplyAlpha = false;
+  return { texture, tissue: { mask, w, h }, colour };
 }
 
 // The brain's extent at each of `ROOM_BINS` steps from *back* to *front* (scene z): the
@@ -687,19 +500,18 @@ export class Space {
     changed.forEach((s, i) => { s.wait = i * gap; });
   }
 
-  setImage(id: string, url: string, img: HTMLImageElement) {
+  async setImage(id: string, url: string, img: HTMLImageElement) {
     const s = this.slabs.get(id);
     if (!s || s.url === url) return;
     s.url = url;
+    const cut = await cutImage(img);
+    if (!cut || s.url !== url) { cut?.texture.dispose(); return; }
     this.textures.get(id)?.dispose();
-    const cut = tissueImage(img);
-    if (!cut) return;
-    const tex = new THREE.DataTexture(cut.pixels, cut.tissue.w, cut.tissue.h, THREE.RGBAFormat);
+    const tex = cut.texture;
     s.tissue = cut.tissue;
     if (cut.colour) this.tints.set(id, cut.colour);
     this.spread();
     this.tinted();
-    tex.flipY = false;
     tex.colorSpace = THREE.NoColorSpace;
     tex.generateMipmaps = false;
     tex.minFilter = THREE.LinearFilter;

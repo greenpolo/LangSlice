@@ -136,7 +136,7 @@ function useSpeaking(words: Words | null) {
     setOn(true);
     const t = setTimeout(() => setOn(false), Math.min(4200, 600 + words.text.length * 14));
     return () => clearTimeout(t);
-  }, [words?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [words?.n]);
   return on;
 }
 

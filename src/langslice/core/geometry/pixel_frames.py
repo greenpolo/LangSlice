@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -11,18 +12,41 @@ from PIL import Image
 KEYS = ("pixel_to_file_fraction", "pixel_to_native")
 
 
-def cropped_geometry(
-    image: Image.Image, source: Image.Image, box: tuple[int, int, int, int] | None = None
-) -> Image.Image:
-    """Carry source pixel-centre maps through PIL crop/resize operations."""
-    x0, y0, x1, y1 = box or (0, 0, source.width, source.height)
-    sx, sy = (x1 - x0) / image.width, (y1 - y0) / image.height
-    to_source = np.array([[sx, 0, x0 + (sx - 1) / 2], [0, sy, y0 + (sy - 1) / 2], [0, 0, 1.0]])
-    for key in KEYS:
-        held: Any = source.info.get(key)
-        if held is not None:
-            image.info[key] = (np.asarray(held) @ to_source).tolist()
-    return image
+@dataclass(frozen=True)
+class Rendered:
+    """A renderer's image and what is known of where its pixels lie.
+
+    *pixel_to_file_fraction* is the 3x3 map from the image's pixel centres
+    to fractions of the section's image file, *pixel_to_native* the 3x3 map
+    to the native atlas plane's pixel centres: each None where the picture
+    shows no section or no atlas plane. *border_word* is how the atlas lines
+    drawn on it are worded in a caption (``black, white-edged``), empty when
+    none were drawn. :meth:`cropped` carries the maps through a crop or resize
+    of the image.
+    """
+
+    image: Image.Image
+    pixel_to_file_fraction: np.ndarray | None = None
+    pixel_to_native: np.ndarray | None = None
+    border_word: str = ""
+
+    @property
+    def size(self) -> tuple[int, int]:
+        return self.image.size
+
+    def cropped(self, image: Image.Image, box: tuple[int, int, int, int] | None = None) -> Rendered:
+        """*image*, cut from this one at *box* (None: the whole) and possibly
+        resized, with this one's maps carried onto its pixel centres."""
+        x0, y0, x1, y1 = box or (0, 0, self.image.width, self.image.height)
+        sx, sy = (x1 - x0) / image.width, (y1 - y0) / image.height
+        to_source = np.array([[sx, 0, x0 + (sx - 1) / 2], [0, sy, y0 + (sy - 1) / 2], [0, 0, 1.0]])
+        file_map, native_map = (
+            None if held is None else np.asarray(held) @ to_source
+            for held in (self.pixel_to_file_fraction, self.pixel_to_native)
+        )
+        return replace(
+            self, image=image, pixel_to_file_fraction=file_map, pixel_to_native=native_map
+        )
 
 
 def resized_recipe(

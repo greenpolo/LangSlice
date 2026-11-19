@@ -35,7 +35,7 @@ export function Review({ start, onClose, onShow }: { start: string | null; onClo
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [flip, onClose]);
-  useEffect(() => { if (row) onShow?.(row.id); }, [row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (row) onShow?.(row.id); }, [row?.id]);
   if (!row || job === null) return null;
   const mine = comments.filter(c => c.section === row.id);
   return (
@@ -105,7 +105,7 @@ function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: stri
     const o = new ResizeObserver(() => { if (shown.current) draw(shown.current); load(); });
     o.observe(el);
     return () => { alive = false; o.disconnect(); };
-  }, [job, id, renderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job, id, renderKey]);
 
   // A pointer's place as fractions of the picture's content, through the zoom.
   const fraction = (e: React.PointerEvent | React.WheelEvent) => {

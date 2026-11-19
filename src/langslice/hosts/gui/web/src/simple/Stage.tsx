@@ -185,7 +185,7 @@ export function useDirector(job: number | null, wanted: string[], rows: Row[], b
     const wait = shownAt.current + dwell - Date.now();
     if (wait > 0) timer = window.setTimeout(go, wait); else go();
     return () => clearTimeout(timer);
-  }, [key, job, box !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, job, box !== null]);
   const known = new Set(rows.map(r => r.id));
   return shown.filter(id => known.has(id));
 }

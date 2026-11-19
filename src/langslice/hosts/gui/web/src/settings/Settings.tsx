@@ -85,7 +85,7 @@ export function Settings({ shown }: { shown: boolean }) {
       setState(next); setFailed(false);
       if (initial && next.signin.running) startPolling();
     }).catch(() => { if (initial) setFailed(true); });
-  }, [shown]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shown]);
 
   if (failed) return <div className="page settings"><p className="lead">Settings could not be loaded.</p></div>;
   if (!state) return <div className="page settings" aria-busy="true" />;

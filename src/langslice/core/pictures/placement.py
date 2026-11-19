@@ -7,18 +7,22 @@ workspace, the stack state, a section record, numbers, the call's
 with their captions burned in out, plus the metadata a door words its reply
 from. No undo, no gates, no message types.
 
-- :func:`draw_canvas` — the ONE renderer of a section at a placement on its
+- :func:`canvas_layers` — the ONE builder of a section at a placement on its
   millimetre-true canvas
-  (:func:`langslice.core.pictures.canvas.physical_views`), drawn from the
-  render the options ask for at the call's picture size. It returns a
-  :class:`Canvas`: the panels and the :class:`CanvasFrame` they were drawn in
-  (everything that fixes the canvas, kept so the job folder can later be given
-  the picture's layers without re-deriving the geometry).
+  (:func:`langslice.core.pictures.canvas.physical_layers`), drawn from the
+  render the options ask for at the call's picture size. It returns the
+  :class:`CanvasLayers`: the :class:`~langslice.core.pictures.canvas.PlacementLayers`
+  (the section alone, the atlas borders' coverage, the scale bar) and the
+  :class:`CanvasFrame` they were drawn in (everything that fixes the canvas,
+  kept so the job folder can later be given the picture's layers without
+  re-deriving the geometry). :func:`compose_canvas` finishes them into the
+  captioned picture (:class:`Canvas`) and :func:`draw_canvas` does both.
 - :func:`stored_placement` — a section's stored in-plane transform as a
   drawable map; :func:`current_warp` — its applied deformation, when it
   still sits on its placement.
-- :func:`placement_pictures` — one section at one position on the physical
-  canvas, under its complete current registration.
+- :func:`placement_layers` / :func:`placement_pictures` — one section at one
+  position on the physical canvas, under its complete current registration,
+  as layers and as the finished picture.
 - :func:`stage` / :class:`Staged` — the interactive transform's section, its
   calibrated canvas and the resolved pivot.
 """
@@ -42,11 +46,14 @@ from langslice.core.geometry.affine import (
 from langslice.core.pictures.canvas import (
     CanvasGeometry,
     PanelFrame,
+    PlacementLayers,
     SectionDetail,
     canvas_geometry,
+    compose_view,
     knob_words,
-    physical_views,
+    physical_layers,
     pivot_on_canvas,
+    unzoomed_content_size,
 )
 from langslice.core.pictures.drawn import note
 from langslice.core.pictures.options import MODE_RULES, DisplayOptions
@@ -88,7 +95,9 @@ class CanvasFrame:
     ``pitch_deg``, ``yaw_deg``); the section sits on it under ``params`` (the
     knobs about ``pivot`` / ``pivot_in_section``, or a ready 2x3 on
     ``section``'s frame), then ``warp`` (an applied deformation record)
-    resamples it; ``zoom`` crops the canvas and ``long_edge`` sizes each panel.
+    resamples it; ``deformation`` is the folder (relative to the job folder)
+    of the section's applied record when ``warp`` is drawn; ``zoom`` crops
+    the canvas and ``long_edge`` sizes the panel.
     Holding these, the section as placed, the atlas labels, the border mask and
     the pixel-to-atlas map can all be drawn in the same frame as the picture.
     """
@@ -106,19 +115,28 @@ class CanvasFrame:
     warp: DeformableRecord | None
     zoom: list[float] | None
     long_edge: int
+    deformation: str | None = None
+
+
+@dataclass(frozen=True)
+class CanvasLayers:
+    """One placement's *layers* (:class:`PlacementLayers`) and the *frame*
+    they were drawn in."""
+
+    layers: PlacementLayers
+    frame: CanvasFrame
 
 
 @dataclass(frozen=True)
 class Canvas:
-    """One placement's panels (captioned), the frame they were drawn in, and
-    where each panel's pixels sit
-    (:class:`~langslice.core.pictures.canvas.PanelFrame`,
-    one per image: what :mod:`langslice.core.pictures.layers` computes the
-    layers from)."""
+    """One placement's finished picture (captioned), the frame it was drawn
+    in, and where its pixels sit
+    (:class:`~langslice.core.pictures.canvas.PanelFrame`: what
+    :mod:`langslice.core.pictures.layers` computes the layers from)."""
 
-    images: list[Image.Image]
+    image: Image.Image
     frame: CanvasFrame
-    panels: list[PanelFrame] = field(default_factory=list)
+    panel: PanelFrame
 
 
 def canvas_label(
@@ -132,6 +150,172 @@ def canvas_label(
     if options.atlas_images and options.atlas_opacity > 0 and MODE_RULES[options.mode].opacity:
         under = f"  atlas {options.atlas_name()} under at {options.atlas_opacity:g}"
     return label + options.section_tag(state) + under
+
+
+def _shown_render(
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    section: Any,
+    um_per_px: float,
+    options: DisplayOptions,
+    edge: int,
+    span: float,
+) -> tuple[Image.Image, float, tuple[float, float]]:
+    """The render a picture of *record* at *edge* is drawn from when its
+    window spans *span* of the canvas (:func:`shown_section`): large enough
+    that the window comes out at *edge*, never past the working copy."""
+    render_edge = int(math.ceil(edge / span))
+    if render_edge > PREVIEW_LONG_EDGE:
+        render_edge = min(render_edge, max(ws.working_source(record.id)[0].size))
+    return shown_section(
+        ws,
+        record,
+        section,
+        um_per_px,
+        options.look(state, record),
+        long_edge=render_edge,
+    )
+
+
+def canvas_layers(
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    section: Any,
+    um_per_px: float,
+    position: float,
+    params: dict[str, float] | np.ndarray,
+    options: DisplayOptions,
+    *,
+    mode: str | None = None,
+    pivot: tuple[float, float] | None = None,
+    section_offset: tuple[int, int] = (0, 0),
+    label: str = "",
+    long_edge: int | None = None,
+    matrix_label: str = "fitted matrix",
+    warp_record: DeformableRecord | None = None,
+) -> CanvasLayers:
+    """The physical canvas layers of one section at one placement.
+
+    *section* is the working frame a transform is computed on; the
+    picture is drawn from the render the options ask for (a section
+    image, or raw channels together), large enough that the picture, zoom
+    included, comes out at *long_edge* (None: ``options.long_edge``)
+    unless the section's working copy has fewer pixels, with a matrix and
+    the pivot carried onto it. The one builder of every placement
+    picture. *warp_record* (a `DeformableRecord` on this placement)
+    resamples the section into its placed-atlas frame first, so the picture
+    shows the full registration: linear placement plus deformation. A zoom's
+    window is given against the unzoomed picture's content size, which comes
+    from the canvas geometry and *long_edge* without drawing it.
+    """
+    edge = int(long_edge or options.long_edge)
+    window: list[float] = []
+    if not options.full_view:
+        whole, whole_um, _ = _shown_render(
+            ws, state, record, section, um_per_px, options, edge, 1.0
+        )
+        unzoomed = canvas_geometry(
+            whole.size,
+            whole_um,
+            ws.atlas,
+            position,
+            state.plane,
+            record.pitch_deg,
+            record.yaw_deg,
+        )
+        window = options.window(unzoomed_content_size(unzoomed.size, edge))
+    span = (
+        min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
+        if window
+        else 1.0
+    )
+    shown, shown_um, (fx, fy) = _shown_render(
+        ws, state, record, section, um_per_px, options, edge, span
+    )
+    in_section: tuple[float, float] | None = None
+    if shown is not section:
+        if isinstance(params, np.ndarray):
+            params = rescale_section_matrix(params, fx, fy)
+        if pivot is not None:
+            ox, oy = section_offset
+            in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
+    applied = None
+    if warp_record is not None and record.deformation is not None:
+        applied = record.deformation.record
+    frame = CanvasFrame(
+        section_id=record.id,
+        section=shown,
+        um_per_px=shown_um,
+        position_mm=position,
+        plane=state.plane,
+        pitch_deg=record.pitch_deg,
+        yaw_deg=record.yaw_deg,
+        params=params,
+        pivot=pivot if in_section is None else None,
+        pivot_in_section=in_section,
+        warp=warp_record,
+        zoom=window,
+        long_edge=edge,
+        deformation=applied,
+    )
+    detail = (
+        _file_detail(ws, record, options.look(state, record), shown.size, warp_record)
+        if window
+        else None
+    )
+    if warp_record is not None:
+        from langslice.core.fits.deformable import warp_section_image
+
+        shown = warp_section_image(shown, warp_record)
+    layers = physical_layers(
+        shown,
+        shown_um,
+        ws.atlas,
+        position,
+        state.plane,
+        record.pitch_deg,
+        record.yaw_deg,
+        params,
+        mode=mode or options.mode,
+        zoom=window,
+        zoom_pixels=options.zoom,
+        atlas_opacity=options.atlas_opacity,
+        outlines=options.layer,
+        depth=options.depth,
+        border_color=options.border_color,
+        border_thickness=options.border_thickness,
+        pivot=frame.pivot,
+        pivot_in_section=in_section,
+        label=canvas_label(label or record.id, options, state)
+        + ("  uncalibrated" if ws.calibration(record.id)[0] is None else ""),
+        long_edge=edge,
+        atlas_picture=atlas_image_picture(
+            ws, state, options.atlas_channels, position, angles=record.angles
+        ),
+        atlas_name=options.atlas_name(),
+        regions=options.regions,
+        matrix_label=matrix_label,
+        template_lines=options.borders,
+        detail=detail,
+    )
+    return CanvasLayers(layers=layers, frame=frame)
+
+
+def compose_canvas(canvas: CanvasLayers) -> Canvas:
+    """The captioned picture of *canvas* (:func:`compose_view`), noted for
+    the job's saved layers."""
+    view = compose_view(canvas.layers)
+    note(
+        view.image,
+        sections=(canvas.frame.section_id,),
+        mode=view.frame.mode,
+        frame=canvas.frame,
+        panel=view.frame,
+        deformation=canvas.frame.deformation,
+    )
+    return Canvas(image=view.image, frame=canvas.frame, panel=view.frame)
 
 
 def draw_canvas(
@@ -152,24 +336,10 @@ def draw_canvas(
     matrix_label: str = "fitted matrix",
     warp_record: DeformableRecord | None = None,
 ) -> Canvas:
-    """The physical canvas pictures of one section at one placement.
-
-    *section* is the working frame a transform is computed on; the
-    picture is drawn from the render the options ask for (a section
-    image, or raw channels together), large enough that each panel, zoom
-    included, comes out at *long_edge* (None: ``options.long_edge``)
-    unless the section's working copy has fewer pixels, with a matrix and
-    the pivot carried onto it. The one renderer of every placement
-    picture. *warp_record* (a `DeformableRecord` on this placement)
-    resamples the section into its placed-atlas frame first, so the picture
-    shows the full registration: linear placement plus deformation.
-    """
-    edge = int(long_edge or options.long_edge)
-    window: list[float] = []
-    if not options.full_view:
-        from dataclasses import replace
-
-        whole = draw_canvas(
+    """The finished physical canvas picture of one section at one placement:
+    :func:`canvas_layers` (its arguments) composed by :func:`compose_canvas`."""
+    return compose_canvas(
+        canvas_layers(
             ws,
             state,
             record,
@@ -177,7 +347,7 @@ def draw_canvas(
             um_per_px,
             position,
             params,
-            replace(options, zoom=()),
+            options,
             mode=mode,
             pivot=pivot,
             section_offset=section_offset,
@@ -186,102 +356,7 @@ def draw_canvas(
             matrix_label=matrix_label,
             warp_record=warp_record,
         )
-        x0, y0, x1, y1 = whole.panels[0].content_box
-        window = options.window((x1 - x0, y1 - y0))
-    span = (
-        min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
-        if window
-        else 1.0
     )
-    render_edge = int(math.ceil(edge / span))
-    if render_edge > PREVIEW_LONG_EDGE:
-        render_edge = min(render_edge, max(ws.working_source(record.id)[0].size))
-    shown, shown_um, (fx, fy) = shown_section(
-        ws,
-        record,
-        section,
-        um_per_px,
-        options.look(state, record),
-        long_edge=render_edge,
-    )
-    in_section: tuple[float, float] | None = None
-    if shown is not section:
-        if isinstance(params, np.ndarray):
-            params = rescale_section_matrix(params, fx, fy)
-        if pivot is not None:
-            ox, oy = section_offset
-            in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
-    frame = CanvasFrame(
-        section_id=record.id,
-        section=shown,
-        um_per_px=shown_um,
-        position_mm=position,
-        plane=state.plane,
-        pitch_deg=record.pitch_deg,
-        yaw_deg=record.yaw_deg,
-        params=params,
-        pivot=pivot if in_section is None else None,
-        pivot_in_section=in_section,
-        warp=warp_record,
-        zoom=window,
-        long_edge=edge,
-    )
-    detail = (
-        _file_detail(ws, record, options.look(state, record), shown.size, warp_record)
-        if window
-        else None
-    )
-    if warp_record is not None:
-        from langslice.core.fits.deformable import warp_section_image
-
-        shown = warp_section_image(shown, warp_record)
-    panels: list[PanelFrame] = []
-    drawn_mode = mode or options.mode
-    images = physical_views(
-        shown,
-        shown_um,
-        ws.atlas,
-        position,
-        state.plane,
-        record.pitch_deg,
-        record.yaw_deg,
-        params,
-        mode=drawn_mode,
-        zoom=window,
-        zoom_pixels=options.zoom,
-        atlas_opacity=options.atlas_opacity,
-        outlines=options.layer,
-        depth=options.depth,
-        border_color=options.border_color,
-        border_thickness=options.border_thickness,
-        pivot=frame.pivot,
-        pivot_in_section=in_section,
-        label=canvas_label(label or record.id, options, state)
-        + ("  uncalibrated" if ws.calibration(record.id)[0] is None else ""),
-        long_edge=edge,
-        atlas_picture=atlas_image_picture(
-            ws, state, options.atlas_channels, position, angles=record.angles
-        ),
-        atlas_name=options.atlas_name(),
-        regions=options.regions,
-        matrix_label=matrix_label,
-        template_lines=options.borders,
-        panel_frames=panels,
-        detail=detail,
-    )
-    applied = None
-    if warp_record is not None and record.deformation is not None:
-        applied = record.deformation.record
-    for image, panel in zip(images, panels, strict=True):
-        note(
-            image,
-            sections=(record.id,),
-            mode=drawn_mode,
-            frame=frame,
-            panel=panel,
-            deformation=applied,
-        )
-    return Canvas(images=images, frame=frame, panels=panels)
 
 
 def _file_detail(
@@ -382,21 +457,31 @@ def current_warp(
         return None
 
 
-@dataclass
-class Placed:
-    """One section-position pair's pictures on the physical canvas
+@dataclass(frozen=True)
+class PlacedLayers:
+    """One section-position pair's layers on the physical canvas
     (``canvas``). ``row``: the pair's facts (calibration, the transform
     drawn, whether a deformation was drawn)."""
 
-    images: list[Image.Image]
+    canvas: CanvasLayers
     row: dict[str, Any]
-    canvas: Canvas | None = None
+
+
+@dataclass(frozen=True)
+class Placed:
+    """One section-position pair's finished picture on the physical canvas
+    (``canvas``, whose ``image`` it is). ``row``: the pair's facts
+    (calibration, the transform drawn, whether a deformation was drawn)."""
+
+    image: Image.Image
+    row: dict[str, Any]
+    canvas: Canvas
 
 
 Working = dict[str, tuple[Image.Image, float, str]]
 
 
-def placement_pictures(
+def placement_layers(
     ws: Workspace,
     state: Stack,
     record: Section,
@@ -406,16 +491,18 @@ def placement_pictures(
     *,
     store: RecordStore | None = None,
     label_note: str = "",
-) -> Placed:
-    """One section-position pair's pictures: the physical canvas in the
-    options' mode (:data:`langslice.core.pictures.canvas.VIEW_MODES`), the
-    section
-    under its complete current registration — the stored in-plane transform
+) -> PlacedLayers:
+    """One section-position pair's layers: the physical canvas in the
+    options' mode (:data:`langslice.core.pictures.canvas.VIEW_MODES`; for
+    ``overlay`` the section alone, the atlas borders' coverage, the frame and
+    the scale bar's place), the section under its complete current
+    registration — the stored in-plane transform
     (identity when it has none) and, at the position it was fitted at, the
     applied deformation from *store* (unless the options' ``deformation`` is
     ``none``). *working* caches each section's working frame for the call.
     *label_note* follows the section's name in the burned label (``look``'s
-    ``, registration 3 (not held)``).
+    ``, registration 3 (not held)``). :func:`placement_pictures` composes
+    these layers into the picture the agent is shown.
     """
     if record.id not in working:
         section = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
@@ -431,7 +518,7 @@ def placement_pictures(
         and options.mode in WARPED_PLACEMENT_MODES
         else None
     )
-    canvas = draw_canvas(
+    canvas = canvas_layers(
         ws,
         state,
         record,
@@ -455,7 +542,27 @@ def placement_pictures(
         and options.deformation == "applied"
     ):
         row["deformation_drawn"] = False
-    return Placed(images=canvas.images, row=row, canvas=canvas)
+    return PlacedLayers(canvas=canvas, row=row)
+
+
+def placement_pictures(
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    position: float,
+    options: DisplayOptions,
+    working: Working,
+    *,
+    store: RecordStore | None = None,
+    label_note: str = "",
+) -> Placed:
+    """One section-position pair's finished picture: :func:`placement_layers`
+    (its arguments) composed by :func:`compose_canvas`."""
+    placed = placement_layers(
+        ws, state, record, position, options, working, store=store, label_note=label_note
+    )
+    canvas = compose_canvas(placed.canvas)
+    return Placed(image=canvas.image, row=placed.row, canvas=canvas)
 
 
 @dataclass(frozen=True)

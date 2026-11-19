@@ -19,9 +19,11 @@ Content-Security-Policy and ``no-store``. GET endpoints:
 - ``jobs/<n>/strip``: the positioning strip's facts (``JobRenderer.strip``);
 - ``jobs/<n>/space`` and ``jobs/<n>/shell``: the 3D view's sections and
   atlas brain (``JobRenderer.space``, ``JobRenderer.shell``);
-- ``jobs/<n>/render/overlay/<section>?edge=&key=`` and
-  ``jobs/<n>/render/thumb/<section>?edge=&key=``: a section under its
-  current registration, or its thumbnail, drawn now (``render.py``); the
+- ``jobs/<n>/render/overlay/<section>?edge=&key=``,
+  ``jobs/<n>/render/thumb/<section>?edge=&key=`` and
+  ``jobs/<n>/render/cutout/<section>?edge=&key=``: a section under its
+  current registration, its thumbnail, or its thumbnail cut to its tissue
+  (an image with an alpha channel, the 3D view's), drawn now (``render.py``); the
   section is its filename, URL-encoded, and must be one of the job's;
   ``key`` is the page's own (the current state is drawn whatever it says);
   ``style=calm`` or ``style=paper`` draws it in the dark or the light
@@ -69,6 +71,7 @@ from langslice.hosts.gui.comments import CommentRow, CommentWatch
 from langslice.hosts.gui.drawing import Style
 from langslice.hosts.gui.export import ExportError, Exports, reveal
 from langslice.hosts.gui.render import (
+    CUTOUT_TYPE,
     DEFAULT_EDGE_PX,
     JobRenderer,
     RenderBusy,
@@ -102,12 +105,16 @@ _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 _STRIP = re.compile(r"jobs/(\d+)/strip")
 _SPACE = re.compile(r"jobs/(\d+)/space")
 _SHELL = re.compile(r"jobs/(\d+)/shell")
-_RENDER = re.compile(r"jobs/(\d+)/render/(overlay|thumb)/([^/]+)")
+_RENDER = re.compile(r"jobs/(\d+)/render/(overlay|thumb|cutout)/([^/]+)")
 _ATLAS = re.compile(r"jobs/(\d+)/render/atlas/(\d+)")
 _EXPORT = re.compile(r"jobs/(\d+)/export(/reveal)?")
 Answer = int | tuple[bytes, str] | tuple[bytes, str, int]
 _Route = Callable[[JobWatcher, re.Match[str], dict[str, list[str]]], Answer]
-_SECTION_PICTURES = {"overlay": JobRenderer.overlay, "thumb": JobRenderer.thumb}
+_SECTION_PICTURES = {
+    "overlay": (JobRenderer.overlay, "image/jpeg"),
+    "thumb": (JobRenderer.thumb, "image/jpeg"),
+    "cutout": (JobRenderer.cutout, CUTOUT_TYPE),
+}
 HEADERS = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
@@ -322,11 +329,12 @@ class GuiServer:
     def _render(
         self, watcher: JobWatcher, match: re.Match[str], query: dict[str, list[str]]
     ) -> Answer:
-        """Draw a section's overlay or thumbnail, named by its filename."""
-        draw = _SECTION_PICTURES[match[2]]
+        """Draw a section's overlay, thumbnail or cutout, named by its filename."""
+        draw, kind = _SECTION_PICTURES[match[2]]
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
-        return self._jpeg(
-            partial(draw, self._renderer(watcher), unquote(match[3]), edge, style=_style(query))
+        return self._drawn(
+            partial(draw, self._renderer(watcher), unquote(match[3]), edge, style=_style(query)),
+            kind,
         )
 
     def _atlas(
@@ -334,7 +342,7 @@ class GuiServer:
     ) -> Answer:
         renderer = self._renderer(watcher)
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
-        return self._jpeg(partial(renderer.atlas_thumb, int(match[2]), edge))
+        return self._drawn(partial(renderer.atlas_thumb, int(match[2]), edge))
 
     def _export_state(
         self, watcher: JobWatcher, match: re.Match[str], _query: dict[str, list[str]]
@@ -365,14 +373,14 @@ class GuiServer:
     def _renderer(self, watcher: JobWatcher) -> JobRenderer:
         return self.renders.renderer(watcher.folder, watcher.current_stack)
 
-    def _jpeg(self, draw: Callable[[], bytes]) -> Answer:
-        """Answer with a drawn picture, or why there is none.
+    def _drawn(self, draw: Callable[[], bytes], kind: str = "image/jpeg") -> Answer:
+        """Answer with a drawn picture of content type *kind*, or why there is none.
 
         404 for a section or atlas position the job does not have, 409 with
         ``{"error"}`` for a refusal, 503 when the picture took too long.
         """
         try:
-            return draw(), "image/jpeg"
+            return draw(), kind
         except UnknownSection:
             return 404
         except RenderError as exc:

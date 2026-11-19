@@ -435,12 +435,12 @@ def _region_picture(
         if median
         else f"{angles_label(angles)} (the stack's cutting angles)"
     )
-    border_word = picture.info.get("border_word")
     text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; regions highlighted: {names}" + (
-        f"; borders {border_word}" if border_word else ""
+        f"; borders {picture.border_word}" if picture.border_word else ""
     )
     image = caption(
-        picture, tag + atlas_caption(state, position_mm, options, angles=angles, median=median)
+        picture.image,
+        tag + atlas_caption(state, position_mm, options, angles=angles, median=median),
     )
     args = {
         "mode": "atlas",
@@ -454,7 +454,7 @@ def _region_picture(
         "args": args,
         "state": looks.snapshot(state, [], view_angles=True),
         "base": [int(base[0]), int(base[1])],
-        "shown": [int(picture.width), int(picture.height)],
+        "shown": [int(picture.size[0]), int(picture.size[1])],
         "um_per_px": round(um, 4),
     }
     note(
@@ -471,7 +471,7 @@ def _region_picture(
     )
 
 
-def _redraw_regions(
+def redraw_regions(
     recipe: dict[str, Any],
     window: Sequence[float],
     workspace: Workspace,
@@ -512,9 +512,6 @@ def _redraw_regions(
         base_um=base_um,
     )
     return replace(picture, stale=stale)
-
-
-zooms.RENDERERS[REGIONS_RENDERER] = _redraw_regions
 
 
 def grep_atlas_view_tool(

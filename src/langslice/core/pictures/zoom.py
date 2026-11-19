@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import copy
 import io
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -138,11 +138,25 @@ Redrawer = Callable[
     [dict[str, Json], Sequence[float], Workspace, Stack, "RecordStore | None", int | None],
     looks.LookPicture,
 ]
-RENDERERS: dict[str, Redrawer] = {
-    looks.RENDERER: lambda recipe, window, ws, state, store, edge: looks.redraw(
-        recipe, window, ws, state, store=store, zoom_edge=edge
-    ),
-}
+
+
+def _redraw_look(
+    recipe: dict[str, Json],
+    window: Sequence[float],
+    ws: Workspace,
+    state: Stack,
+    store: RecordStore | None,
+    edge: int | None,
+) -> looks.LookPicture:
+    return looks.redraw(recipe, window, ws, state, store=store, zoom_edge=edge)
+
+
+def redrawers(extra: Mapping[str, Redrawer] | None = None) -> dict[str, Redrawer]:
+    """The renderers a recipe can be drawn again by: ``look``'s own and the
+    *extra* ones a caller names (a tool's pictures that
+    :mod:`langslice.core.pictures.look` does not draw)."""
+    return {looks.RENDERER: _redraw_look, **(extra or {})}
+
 
 STALE_NOTE = "drawn as the stack was then; it has changed since"
 
@@ -157,10 +171,12 @@ def redraw(
     picture: Image.Image | bytes | str | Path | None = None,
     long_edge: int | None = None,
     region: str = "",
+    extra: Mapping[str, Redrawer] | None = None,
 ) -> Zoomed:
     """*box* of the picture *recipe* describes, drawn again.
 
-    With a recipe a renderer knows (:data:`RENDERERS`) and the stack *state*,
+    With a recipe a renderer knows (``look``'s, or one of *extra*, renderer
+    name -> :data:`Redrawer`) and the stack *state*,
     the box is redrawn from the source (*store*: an overlay's applied
     deformations); *long_edge* is a positioning zoom's long edge (None: the
     picture's own). Otherwise *picture* (the saved picture: image, bytes or
@@ -194,12 +210,13 @@ def redraw(
             )
         recipe, window = looks.overlay_region_window(workspace, state, recipe, region, store=store)
     source = _image(picture)
-    if recipe is not None and renderer in RENDERERS and state is not None:
+    known = redrawers(extra)
+    if recipe is not None and renderer in known and state is not None:
         if window is None:
             inner = box_fractions(box, _shown(recipe, None))
             window = compose((recipe.get("args") or {}).get("zoom") or (), inner)
         try:
-            drawn = RENDERERS[renderer](recipe, window, workspace, state, store, long_edge)
+            drawn = known[renderer](recipe, window, workspace, state, store, long_edge)
         except Refused as exc:
             if region or exc.code not in CROPPED_INSTEAD or source is None:
                 raise
@@ -334,9 +351,10 @@ def _crop(
 
 __all__ = [
     "CROP_RENDERER",
-    "RENDERERS",
+    "Redrawer",
     "Zoomed",
     "box_fractions",
     "compose",
     "redraw",
+    "redrawers",
 ]

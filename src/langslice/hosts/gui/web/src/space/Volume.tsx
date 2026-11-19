@@ -1,7 +1,7 @@
 // The 3D view's volume: the scene (`scene.ts`) in a box, fed from the server. The atlas
 // brain's mesh (`jobs/<n>/shell`, BrainGlobe's root mesh) is asked for once per job; the sections'
 // corners (`jobs/<n>/space`) again whenever a section's registration changes, at most every
-// SPACE_MS; each section's quiet thumbnail through the window's picture queue, after the
+// SPACE_MS; each section's thumbnail cut to its tissue (`render/cutout`, its alpha made by the server) through the window's picture queue, after the
 // stage's pictures. A slab the person clicks is picked like a picture.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
@@ -18,7 +18,7 @@ const THUMB_RANK = 500;
 type SpaceAnswer = { thickness_um: number; given_thickness: boolean; plane_axis: number; sections: Placed[] };
 
 export function thumbUrl(job: number, id: string, key: string) {
-  return `jobs/${job}/render/thumb/${encodeURIComponent(id)}?edge=${THUMB_EDGE}&key=${encodeURIComponent(key)}&style=${pictureStyle()}`;
+  return `jobs/${job}/render/cutout/${encodeURIComponent(id)}?edge=${THUMB_EDGE}&key=${encodeURIComponent(key)}&style=${pictureStyle()}`;
 }
 
 export function Volume({ job, rows, strip, focus, onPick }: {
@@ -88,10 +88,10 @@ export function Volume({ job, rows, strip, focus, onPick }: {
       picture(url, THUMB_RANK + i).then(img => { if (alive && img) space.current?.setImage(s.id, url, img); });
     });
     return () => { alive = false; };
-  }, [job, thumbs, facts !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job, thumbs, facts !== null]);
 
   const focusKey = focus.join('|');
-  useEffect(() => { space.current?.setFocus(focus); }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { space.current?.setFocus(focus); }, [focusKey]);
 
   const placed = facts ? facts.sections.filter(s => s.corners_um).length : 0;
   const row = hover ? rows.find(r => r.id === hover.id) : undefined;
