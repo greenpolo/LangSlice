@@ -52,7 +52,9 @@ large with their name and position; more are dealt out as a grid of small
 pictures, and the finished run shows every section. These pictures are drawn
 quiet (`calm.py`): the main stain alone (a channel named for DAPI, Hoechst or
 Nissl, else an RGB file's blue), the tissue cut out of the scanner's tile
-floor and the atlas borders a soft light layer. In the light look (the
+floor (`core/sections/tissue.py`, the one place the tissue is found) and the
+atlas borders a soft light layer, drawn from the core's layers (the section
+and the borders' coverage), so no caption or scale bar is in them. In the light look (the
 Light | Dark button in the top bar) they are drawn on paper (`paper.py`): a
 brightfield section (ISH, Nissl, DAB) in its own colours with the slide
 balanced to the paper, a fluorescence section's main stain as ink, and the
@@ -101,7 +103,8 @@ the registration look like, and how did it get here.
   it, at its true pixel size, centred on the atlas at its position, so
   shrinkage, turns and offsets show as they are; it moves only when its
   registration changes, and the sections one call changes come in one after
-  another. Each section is cut to its tissue: the slide's flat ground and
+  another. Each section is cut to its tissue by the server (the
+  same cut as the 2D pictures', sent as the picture's alpha channel): the slide's flat ground and
   any smooth glare or grey smear touching it are left out, dim tissue is
   kept, and dirt on the slide apart from the tissue is dropped. The sections
   the agent is looking at lift a little, brighten a little and carry the

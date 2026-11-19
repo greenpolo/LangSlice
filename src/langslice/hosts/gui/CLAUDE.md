@@ -31,9 +31,11 @@ server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
 imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`,
 `core.connections`, `core.stack.json_reads`; for the viewer's pictures
-`core.pictures.look` (`look`, `LookRequest`, `snapshot`),
-`core.sections.renders.render_slice`, `core.fits.deformation.RecordStore`,
-`core.pictures.jpeg.encode_jpeg`, `core.pictures.captions.view_angles_label`)
+`core.pictures.look` (`overlay_layers`, `atlas_image`, `LookRequest`,
+`snapshot`), `core.pictures.canvas` (`PlacementLayers`, `bordered_section`),
+`core.sections.renders.render_slice`, `core.sections.tissue` (the one tissue
+cut), `core.fits.deformation.RecordStore`,
+`core.pictures.jpeg.encode_jpeg`, `core.pictures.captions` (`view_angles_label`, `draw_scale_bar`))
 and the job layer (`job.settings.tool_table`, `job.settings.spec`,
 `job.settings.walk`, `job.settings.labels`, `job.layout` names and
 `read_job_file` and `job.state_file.viewer_stack`,
@@ -133,21 +135,15 @@ The page is a React app (`web/`, below), built into `static/`.
   brain's edge do not hide it) and each placed section as an opaque slab
   whose basis is its thumbnail's corners (`TR-TL`, `BL-TL`, the normal times
   the thickness; the shear the decomposition leaves is kept), only its
-  picture's ground left out by a mask made once per picture (`tissueImage`,
-  on a copy `MASK_W` pixels wide so it costs the page little:
-  brighter than the corners' luminance over a 5x5 mean, or darker than
-  it when the corners are the light look's paper, `BRIGHT_GROUND`; smooth patches
-  touching the ground outside, glare or grey smears, cut; specks dropped,
-  the dark outer edge peeled, pinholes filled, a piece apart from the tissue
-  dropped when it is under `DEBRIS` of the largest piece or cut by the
-  picture's border, dirt on the slide; then
-  spread to the picture's size and softened over `SOFT_PER_PX` of its width
-  into the alpha; uploaded as a `DataTexture`,
-  never through a canvas, whose premultiplied alpha would blacken the cut
-  ground into a rim), a smooth edge one screen pixel wide (the alpha's
+  picture's ground left out by the picture's own alpha (the server cuts it,
+  `render/cutout`: no segmentation in the page; `cutImage` makes an
+  `ImageBitmap` of it with `premultiplyAlpha: 'none'`, because a
+  premultiplied alpha would blacken the cut ground into a rim under the
+  linear filter, and reads a copy `COVER_W` pixels wide only for picking and
+  the mean tissue colour), a smooth edge one screen pixel wide (the alpha's
   half-way contour, through the samples' coverage, never blended), no
   mipmaps (they blur the tissue into
-  the ground at a slant); picking follows the same mask. A section
+  the ground at a slant); picking follows the alpha. A section
   without a written transform sits where the core's identity puts it: its
   picture as the job keeps it (no turn or flip beyond the job's), centred
   on the atlas plane at its position, at its true pixel size. A section
@@ -174,7 +170,7 @@ The page is a React app (`web/`, below), built into `static/`.
   to the mesh; reduced motion moves everything at once; a click on a slab
   picks its section. `Volume.tsx` fetches the shell once per job, the space
   again when a row's `render_key` changes (at most every `SPACE_MS`), the
-  calm thumbnails through `pictures.ts` (`THUMB_RANK`, after the stage's),
+  cut-out thumbnails (`render/cutout`) through `pictures.ts` (`THUMB_RANK`, after the stage's),
   and shows the placed count, the thickness, a hint and the hovered
   section's name; in 3D the journal's column is narrower. `src/review/Review`:
   one section, arrow keys, wheel zoom, a dragged box and its comment; when
@@ -270,7 +266,7 @@ The page is a React app (`web/`, below), built into `static/`.
   draws, in the atlas micrometres the corners use): the vertex and triangle
   counts, `positions` base64 of little-endian float32 x, y, z and `indices`
   of uint32 triangles; 409 for an atlas without one),
-  `jobs/<n>/render/overlay|thumb/<section>?edge=&key=` (the section's filename
+  `jobs/<n>/render/overlay|thumb|cutout/<section>?edge=&key=` (the section's filename
   URL-encoded and one of the job's sections, else 404; `key`, the row's
   `render_key`, is for the browser's cache only), `jobs/<n>/render/atlas/<k>?edge=`,
   `settings`; anything else 404. The snapshot answer also carries
@@ -296,30 +292,42 @@ The page is a React app (`web/`, below), built into `static/`.
   since, `job.review.revised`), `CommentWatch(folder).rows(state, version)`
   (read again only when `review.json`'s stamp or the watcher's
   `state_version` moved).
-- `calm.py` — the dark look's pictures (`render/overlay|thumb/...?style=calm`,
-  `JobRenderer.overlay(..., style=Style.CALM)`, `drawing.Style`, cached under
-  their own kind):
-  `main_channel` (a channel named for a nuclear or Nissl stain, else
-  `blue`, else the first), `draw_calm_overlay` (two `look` calls on that
-  channel, with and without the borders; their difference is the border
-  layer, so `look`'s scale bar goes), `draw_calm_thumb`, `calm` (the tissue
-  `tissue_mask`ed off the tile floor, with what lies beside the
-  tissue on the slide left out (`without_debris`: out-of-focus dirt, glare
-  that stands out of the tissue, marks at the picture's border, the
-  scanner's bright line and smears along the edge of what it scanned
-  (`scan_edge`, `without_edge_glow`, `without_threads`)), `scale_bar` cleared, a soft knee, a
-  cool tint on `STAGE`, the borders at `LINE_STRENGTH`, fainter when small).
-  A brightfield section (`is_brightfield`: the median of its scanned pixels
-  and of their rim over `BRIGHT_SLIDE`) is read by its darkness under the
-  slide's white.
-- `paper.py` — the light look's pictures (`?style=paper`, `Style.PAPER`):
-  `draw_paper_overlay`, `draw_paper_thumb`, `paper`. A brightfield section
-  (ISH, Nissl, DAB) keeps its own colours, the slide balanced to `PAPER`
-  (its `SLIDE_LEVEL` percentile is white; under `STAIN_FLOOR` of darkness a
-  pixel is paper, the stain coming in over `STAIN_KNEE`), and the ground
-  `look` leaves around it is paper too; a darkfield section is its main
-  stain as `INK` on paper, cut out by `calm.tissue_mask`. The atlas borders
-  are `LINE` ink, from the difference of two `look` calls.
+- The looks, from the core's layers. A look is a function from the core's
+  layers to the window's finished picture: no caption, and a scale bar only
+  where a look means to draw one (the raw look keeps the core's 1 mm bar;
+  calm and paper draw none). `drawing.py` asks the core for the layers
+  (`placed_layers` -> `core.pictures.look.overlay_layers`: the section on the
+  canvas with no border, caption or bar burned in, and the atlas borders'
+  coverage, `border_lines`) and for a thumbnail's render (`render_channels`);
+  `Style` (`raw`, `calm`, `paper`), `main_channel` (a channel named for a
+  nuclear or Nissl stain, else `blue`, else the first) and the raw look
+  (`draw_overlay`: the borders laid cased by the core,
+  `canvas.bordered_section`) are there too. `inks.py` has what the looks
+  share: `ToneCurve` / `tone` (the stretch between two percentiles of the
+  stain over the tissue, a soft knee, a gamma) and `BorderInk` /
+  `lay_borders` (the border coverage laid in one colour, fainter on a small
+  picture). The tissue is cut once, in the core
+  (`core.sections.tissue`: `is_brightfield`, `stain_of`, `tissue_mask`,
+  `tissue_alpha`, with every threshold in a frozen dataclass: `SlideTest`,
+  `Segmentation`, `DebrisRules`, `ScanEdgeRules`, `GlareFilter`).
+- `calm.py` — the dark look (`?style=calm`, `Style.CALM`, cached under its
+  own kind): `draw_calm_overlay`, `draw_calm_thumb`, `draw_calm_cutout`, and
+  `calm(section, lines)`: the main stain (a brightfield section by its
+  darkness under the slide's white) cut to its tissue, toned, tinted on the
+  `Stage`'s ground, the borders soft light ink.
+- `paper.py` — the light look (`?style=paper`, `Style.PAPER`):
+  `draw_paper_overlay`, `draw_paper_thumb`, `draw_paper_cutout`, `paper`. A
+  brightfield section (ISH, Nissl, DAB) keeps its own colours, the slide
+  balanced to the `Page`'s ground (under `stain_floor` of darkness a pixel is
+  paper, the stain coming in over `stain_knee`); a darkfield section is its
+  main stain as ink on paper. The borders are ink.
+- `cutout.py` — `cut_out(painted, weight)`: a thumbnail as an RGBA image
+  whose alpha is the core's tissue weight, trimmed of the dim fringe the
+  mask is grown over (`EdgeFill.trim_px`) and softened by `soft_px`; the
+  colour outside the tissue is the nearest tissue's, so the 3D view's linear
+  filter draws no halo. `JobRenderer.cutout` encodes it (`encode_cutout`: a
+  WebP, `CUTOUT_QUALITY` colour, a lossless alpha, `CUTOUT_TYPE`), kept under
+  the kind `<style>-cutout` and the thumb key.
 - `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
   `visualign`); `run_export(folder, kind)` -> `Written` writes one through
   the library (`langslice.open_job`: `export_abba`, or `export_stack` for
@@ -355,17 +363,19 @@ The page is a React app (`web/`, below), built into `static/`.
   `doors.jobs.read_spec` and `context`, a `RecordStore` on the sections'
   folders; read again when `job.json` changes; a spec, image or atlas that
   cannot be read is `RenderError` with the reason) and draws from the
-  watcher's `current_stack`: `overlay(id, edge)` (`look` mode `overlay`, the
-  applied deformation),
-  `thumb(id, edge)` (`render_slice`, oriented); both draw the section's raw
-  channels in their own colours (`drawing.py`: `draw_overlay`, `draw_thumb`,
-  `draw_atlas`, `raw_channels`, at most `MAX_OVERLAY_CHANNELS`, `content`),
-  not the `preprocessed` image the fits read,
-  whose contrast enhancement makes a scanner's tile mosaic stand out,
-  `atlas_thumb(k, edge)` (`look` mode `atlas` at the stack's view angles: the
-  template, `look`'s own atlas default, because the borrowed Nissl of the
-  Allen atlases would add over a gigabyte), each with its caption band cut off
-  (the recipe's `shown` content) and `encode_jpeg`d; `strip()` -> `Strip`
+  watcher's `current_stack`: `overlay(id, edge)` (the core's overlay layers,
+  the applied deformation, finished by the style), `thumb(id, edge)`
+  (`render_slice`, oriented) and `cutout(id, edge)` (the thumbnail with its
+  tissue in the alpha, for the 3D view); each in a style (the raw look draws
+  the section's raw channels in their own colours: `drawing.py`:
+  `draw_overlay`, `draw_thumb`, `raw_channels`, at most
+  `MAX_OVERLAY_CHANNELS`; never the `preprocessed` image the fits read, whose
+  contrast enhancement makes a scanner's tile mosaic stand out),
+  `atlas_thumb(k, edge)` (`core.pictures.look.atlas_image`: the atlas plane at
+  the stack's view angles, `look`'s own atlas default, because the borrowed
+  Nissl of the Allen atlases would add over a gigabyte, never enlarged past
+  its voxels), the pictures `encode_jpeg`d (a cutout `encode_cutout`);
+  `strip() -> `Strip`
   (`Workspace.position_range` and `axis_ends`, `step_mm` by `strip_step`:
   `NOMINAL_STEP_MM` times `brain_scale`, rounded to `ROUND_STEPS_MM` so
   `MIN_THUMBNAILS` to `MAX_THUMBNAILS` cover the axis, the atlas positions,
@@ -375,7 +385,7 @@ The page is a React app (`web/`, below), built into `static/`.
   drawing; a queued overlay or thumbnail whose section's key has changed
   by its turn is not drawn (answered `RenderBusy`; asked again, it draws
   the section as it is then); a request waits `WAIT_S` (60 s), then
-  `RenderBusy`. The JPEGs are
+  `RenderBusy`. The encoded pictures are
   kept in an LRU of `CACHE_ENTRIES` per job, keyed by kind, section or
   position, edge and render key (a thumbnail by its thumb key), and the workspace's caches are trimmed after
   each drawing (`KEPT_SOURCES`, `KEPT_PLANES`, `KEPT_RENDERS`).

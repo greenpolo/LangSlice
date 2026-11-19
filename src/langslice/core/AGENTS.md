@@ -256,6 +256,18 @@ the angles in a caption (empty for the flat plane).
   `sections.reading.working_intensity_ranges`: the linear stretch each page's
   working plane was read with; `sections/native.py` reads a zoom's file pixels through
   it). Nothing a fit reads comes from here.
+- `sections/tissue.py` — where the tissue is in a picture of a section, the
+  one segmentation (the window's pictures and the 3D view's cut-outs read it;
+  no fit or agent picture does): `is_brightfield` (`SlideTest`), `stain_of`
+  (brightness for darkfield, for brightfield how far the darkest channel
+  stands under the slide's white; `Stain`), `tissue_mask` (a textured region
+  above the scanner's floor, `Segmentation`; small or blurred pieces apart
+  from it and at the picture's border left out, `DebrisRules`; the scanner's
+  bright line and smears at the scan's edge, `ScanEdgeRules`; out-of-focus
+  glare that stands out of the tissue, `GlareFilter`) and `tissue_alpha`
+  (both, the weight 0 to 1 with a feathered edge). `pictures/look.py`'s
+  `overlay_layers` and `atlas_image` give the window the layers of an overlay
+  and the atlas plane without a caption.
 - `pictures/captions.py` — `caption` (a COPY with the text in a band below the
   picture, so a picture pixel is the content's own, the coordinates a zoom
   is given in; `min_width` lays the band out at least that wide; never

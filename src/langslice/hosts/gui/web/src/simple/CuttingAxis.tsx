@@ -70,7 +70,7 @@ export function CuttingAxis({ job, rows, axis, strip, focus, shown, done, onPick
     const step = two ? (w + GAP) / 2 : w + GAP;
     const xs = spread(inView.map(p => toX(p.mm)), step, 16 + w / 2, width - 16 - w / 2);
     return { w, h: w / ASPECT, two, items: inView.map((p, i) => ({ ...p, key: toX(p.mm), x: xs[i], row: two ? i % 2 : 0 })) };
-  }, [rows, width, view?.lo, view?.hi]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, width, view?.lo, view?.hi]);
 
   const waiting = rows.length - placedRows.length;
   const thumbKey = new Map((strip?.sections ?? []).map(s => [s.id, s.thumb_key]));
@@ -239,7 +239,7 @@ function Thumb({ url, rank, id, cutout = false }: { url: string; rank: number; i
     if (!img && id) { const any = newestOf(id); if (any) setImg(any); }
     picture(url, rank).then(i => { if (alive && i) setImg(i); });
     return () => { alive = false; };
-  }, [url, rank]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [url, rank]);
   useLayoutEffect(() => {
     const c = ref.current;
     if (!c || !img) return;

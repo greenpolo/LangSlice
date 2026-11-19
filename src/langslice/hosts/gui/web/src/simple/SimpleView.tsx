@@ -29,7 +29,7 @@ export function SimpleView({ focus, review, ring }: { focus: Focus; review: Reac
     if (job === null || !box || !run.rows.length) return;
     const edge = geometry(run.rows.length, box).edge;
     warm(run.rows.map(r => overlayUrl(job, r.id, edge, r.render_key)));
-  }, [job, rowKeys, box]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job, rowKeys, box]);
   return (
     <main className={'simple' + (space ? ' space' : '')}>
       <Speaker model={run.model} status={run.status} words={run.words} call={call} focusCount={shown.length} />

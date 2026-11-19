@@ -75,7 +75,7 @@ from langslice.core.pictures.panels import (
     framed_atlas,
     framed_section,
 )
-from langslice.core.pictures.placement import placement_pictures
+from langslice.core.pictures.placement import PlacedLayers, placement_layers, placement_pictures
 from langslice.core.pictures.positioning import (
     ATLAS_UPSAMPLE,
     POSITIONING_MAX_WIDTH,
@@ -612,6 +612,53 @@ def _section_picture(
             **({"masks": drawn_masks} if drawn_masks else {}),
         },
     )
+
+
+def overlay_layers(
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    request: LookRequest,
+    *,
+    store: RecordStore | None = None,
+) -> PlacedLayers:
+    """The layers of *record*'s ``overlay`` picture under *request*, before
+    anything is burned into them: the section on the canvas, the atlas
+    borders' coverage, the frame and the scale bar's place
+    (:func:`langslice.core.pictures.placement.placement_layers`), from the
+    options :func:`look` draws the same overlay with (its images, atlas
+    layers, highlighted regions, warp and long edge; no zoom)."""
+    names, picked = _images_for(ws, record, request.images)
+    options = _options(
+        request,
+        names=names,
+        image=picked,
+        layers=_atlas_layers(ws, request),
+        long_edge=int(request.long_edge or picture_edge(ws)),
+        regions=_highlighted(ws, request),
+    )
+    return placement_layers(
+        ws,
+        state,
+        record,
+        record.position_mm,
+        options,
+        {},
+        store=store,
+        label_note=_registration_words(request, record),
+    )
+
+
+def atlas_image(ws: Workspace, state: Stack, position_mm: float, long_edge: int) -> Image.Image:
+    """The atlas plane at *position_mm* as :func:`look`'s ``atlas`` picture
+    draws it, without its caption: the default atlas layers at the stack's
+    view angles, framed to its anatomy, at most *long_edge* and never
+    enlarged past the plane's own voxels."""
+    request = LookRequest(mode="atlas", positions_mm=(position_mm,), long_edge=long_edge)
+    options = _options(
+        request, names=(), image="", layers=_atlas_layers(ws, request), long_edge=long_edge
+    )
+    return framed_atlas(ws, state, position_mm, options, angles=state.view_angles).image
 
 
 def _overlay_picture(
@@ -1234,10 +1281,12 @@ __all__ = [
     "LookRequest",
     "MODES",
     "RENDERER",
+    "atlas_image",
     "changed_since",
     "differs_since",
     "image_words",
     "look",
+    "overlay_layers",
     "redraw",
     "restored",
     "snapshot",

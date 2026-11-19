@@ -947,10 +947,9 @@ def physical_layers(
     )
 
 
-def compose_view(layers: PlacementLayers) -> PhysicalView:
-    """The finished picture of *layers*: the section with the cased atlas
-    borders laid on it, then the scale bar, then the caption band. The one
-    way a placement picture is drawn from its layers."""
+def bordered_section(layers: PlacementLayers) -> np.ndarray:
+    """*layers*' section (a copy, uint8 RGB) with the cased atlas borders laid
+    on it in ``frame.border_color``: what :func:`compose_view` starts from."""
     screen = np.asarray(layers.section, dtype=np.uint8).copy()
     core = layers.frame.border_color
     if core is not None:
@@ -960,6 +959,14 @@ def compose_view(layers: PlacementLayers) -> PhysicalView:
         ):
             if line.any():
                 lay_cased(screen, core, line=line, casing=casing, alpha=alpha)
+    return screen
+
+
+def compose_view(layers: PlacementLayers) -> PhysicalView:
+    """The finished picture of *layers*: the section with the cased atlas
+    borders laid on it, then the scale bar, then the caption band. The one
+    way a placement picture is drawn from its layers."""
+    screen = bordered_section(layers)
     draw_scale_bar(screen, layers.scale_bar)
     labelled = caption(
         Image.fromarray(screen, mode="RGB"), layers.caption, min_width=layers.caption_width
