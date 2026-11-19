@@ -1,8 +1,8 @@
 # Architecture
 
 LangSlice is one Python package in `src/langslice/`. Its interfaces share a
-job and the same operations. Package `CLAUDE.md` files (with identical
-`AGENTS.md` twins) map the implementation in detail.
+job and the same operations. The root `CLAUDE.md` (with an identical
+`AGENTS.md` twin) holds the rules a change must keep.
 
 ## Layers
 
@@ -109,64 +109,12 @@ deleted at any time.
 
 ## Verification and diagnostics
 
-Tests cover layer contracts, geometry and the shared interfaces, and run in
-parallel. A text snapshot pins what the agent is told (tool declarations, job
-statements, refusals); an intended change is regenerated with
-`LANGSLICE_UPDATE_SNAPSHOT=1` and its diff reviewed. Picture changes are
-reviewed by looking at them.
-Image correctness requires inspecting raw output and fitted anatomy, not
-only metrics.
-
-A golden test (`tests/test_golden_outputs.py`) pins everything else a run
-produces, so a change meant to alter no output can show that it alters
-none. Scripts in `tests/golden/` register three real sections to
-`allen_mouse_50um` with no model, once through each door, each door a test
-of its own so a failure names the door that changed:
-
-- `library`: the public library calls every tool that needs no image
-  model (positions, hand transforms, `elastix_affine`, section images,
-  masks, a damage mark, `fireants_syn` coarse on the CPU, landmarks, undo
-  and redo, `restore_registration`, `export_maps`, the atlas lookups and
-  job-folder reads, `note`, refusals and `submit`), with every `look` mode,
-  a zoom and `status` after each write and `look` with its other options;
-- `cli`: the installed `langslice-job` command, one process per call: the
-  catalog, `init`, reads, writes, a dry run, a fit, refusals and a launch
-  prompt, each call's exit code and printed envelope;
-- `mcp`: the installed `langslice mcp` server over stdio with the `mcp`
-  library's client: the greeting, the tool lists (names, descriptions,
-  input schemas) before and after `start_job`, every `show_stack` page and
-  reads, writes and refusals, each result's text blocks whole and image
-  blocks as decoded-pixel digests.
-
-The declarations LangSlice's own agent sends its model have no public
-entry point without a model call; the text snapshot pins them. Each script
-runs in a child interpreter on the checkout's code, through public entry
-points only, with a fresh home folder and only the caller's `PATH` and
-locale, so no setting, credential or saved job of the user's reaches it;
-BrainGlobe's configuration there points at the user's atlas folder. The
-test compares, with no tolerance, every reply, every JSON and text file of
-the job folder (the event log, the agent CLI's call log and the engine log
-included; paths, clock times, durations and call ids replaced by tokens),
-and the decoded pixels or arrays of every picture, map, mask, section
-image and deformation record with the goldens. The pictures the writing
-tools return are kept there whole. The sections are unpublished data, so
-they and the goldens live outside the repository, in `tests/golden/data/`
-(git-ignored) or the folder `LANGSLICE_GOLDEN_DATA` names, and the test is
-skipped where they are missing. It needs the atlas in the local BrainGlobe
-cache, records this machine's pixels and takes about 30 s with the doors in
-parallel, so the default run leaves it out: run it with
-`python -m pytest -m golden`. A failure writes the run's outputs, every
-picture among them, to `actual/<door>/` beside the goldens and lists each
-changed key (a changed text around its first difference), array and
-picture (the differing pixels and the largest difference), headed by the
-door and the commit the goldens were recorded at. An intended change is
-recorded on `main` with `LANGSLICE_UPDATE_GOLDEN=1 python -m pytest -m
-golden`, which rewrites the goldens, records the commit, branch, date and
-uncommitted files in each door's `provenance.json` and fails once, printing
-the diff, so that it is reviewed. Because the goldens are not under version
-control, a branch that regenerated its own would pass on its own changes:
-the update refuses to run on any branch but `main` unless
-`LANGSLICE_GOLDEN_FORCE=1` is set as well.
+The tests cover the layer contracts (`tests/test_import_layers.py`), the
+import graph, the state records, the rules on comments and Markdown files, the
+connectors' skill copies and one registration from start to export on a
+small synthetic brain (`tests/test_smoke.py`); it pins no pixel and no
+wording. Picture changes are reviewed by looking at them. Image correctness
+requires inspecting raw output and fitted anatomy, not only metrics.
 
 [Agent traces](../agents/builtin.md#logs-and-credentials) record calls and results.
 `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` additionally writes redacted ADK request

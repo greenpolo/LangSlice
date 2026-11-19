@@ -266,7 +266,7 @@ def _fit_elastix(
                 rows[index] = AffineRow(record.id, refusal=stale_refusal())
                 continue
             made = fit_transform(outcome, include=kept, exclude=dropped, fit_atlas=fit_atlas)
-            if "orientation" in job.frozen_for(record.id) and reverses_orientation(now, made):
+            if "orientation" in job.spec.frozen_for(record.id) and reverses_orientation(now, made):
                 frozen = section_refusal(job, record.id, "orientation")
                 assert frozen is not None
                 told = reworded(frozen, mirror_message(record.id))

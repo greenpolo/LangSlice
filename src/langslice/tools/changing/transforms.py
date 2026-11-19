@@ -167,7 +167,7 @@ def set_transforms(job: Job, transforms: Mapping[str, StoredAffine]) -> list[str
         record = job.state.by_id(name)
         if (
             record is not None
-            and "orientation" in job.frozen_for(name)
+            and "orientation" in job.spec.frozen_for(name)
             and reverses_orientation(record, transform)
         ):
             raise Refused(
@@ -296,7 +296,7 @@ def interactive_transform(
             done.append(Adjustment(refusal=unknown_sections(state, [str(entry.get("id", ""))])))
             continue
         name = record.id
-        frozen_now = job.frozen_for(name)
+        frozen_now = job.spec.frozen_for(name)
 
         flip = record.flip
         if entry.get("flip") is not None:

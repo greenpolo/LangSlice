@@ -304,7 +304,7 @@ def fit_deformable(
             continue
         running = False
         if traced_choice:
-            running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
+            running = not job.traces.wait(record.id, trace_deadline - time.monotonic())
             record = state.by_id(record.id) or record
         held = record.deformation
         try:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import break_ids, normalize_to_atlas_order
+from langslice.job.gates import submit_errors
 from langslice.tools.bookkeeping.exports import Exported
 from langslice.tools.refusal import unknown_sections
 from langslice.tools.run import as_list
@@ -73,7 +74,7 @@ def submit(
     First every piece of the job's background work is waited for
     (:meth:`langslice.job.background.BackgroundWork.wait_all`: a packaged
     trace lands and its fit applies, each its own undo step).
-    The gates, in order: the job's (:meth:`~langslice.job.job.Job.submit_errors`:
+    The gates, in order: the job's (:func:`~langslice.job.gates.submit_errors`:
     positions, interval breaks, transforms, and, when the host requires one
     (``NonlinearSpec.require_deformation``), a deformation on every section).
     A refusal is :class:`Refused` with the gate's payload, nothing written.
@@ -97,8 +98,8 @@ def submit(
     breaks = clean_breaks(job, interval_breaks)
     job.background.wait_all()
     if traces:
-        job.settle_border_traces()
-    refusal = job.submit_errors(breaks)
+        job.traces.settle()
+    refusal = submit_errors(job.state, job.spec, breaks)
     if refusal is not None:
         raise refusal
 

@@ -11,7 +11,7 @@ input:
   matrix from the image file's pixels ``[row, col, 1]`` to BrainGlobe atlas
   micrometres, plus the section's derived files. Small; rewritten atomically
   on every checkpoint (:func:`write_registration`, called by
-  ``Job.checkpoint``).
+  ``Job.checkpoints``).
 - per section (``sections/<name>/``), on demand only (``export_maps``,
   :func:`write_section_maps`; submit does not write them): ``coords.tif``,
   ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv`` (wherever the

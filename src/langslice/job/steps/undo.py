@@ -1,36 +1,32 @@
-"""Undo steps, and the live sync that keeps the job with its files.
+"""The undo steps: what each write left, and how to take it back.
 
 **Undo.** One pattern: ``before = job.snapshot()`` before a write, then
 ``job.commit(before)`` once it succeeded: a line in the history of each
 section the write changed, one undo step naming the lines they held before
 (:mod:`langslice.job.steps.history`), then the checkpoint. Undo and redo put
-those
-lines back (:meth:`JobUndo.undo`, :meth:`JobUndo.redo`), each appending lines
-of its own; a resumed job reads its steps back, a fresh one starts without
-any. There is no cap on the number of steps.
+those lines back (:meth:`UndoStore.undo`, :meth:`UndoStore.redo`), each
+appending lines of its own; a resumed job reads its steps back, a fresh one
+starts without any. There is no cap on the number of steps.
 
-**Live shared editing.** :meth:`JobUndo.sync` notices that the state file
-changed on disk since this job last read or wrote it (a script edited it, or
-another job on the same folder wrote it) and reloads it before the next
-operation instead of overwriting it. A plain edit becomes one undo step;
-when ``history/undo.json`` changed with it (another job wrote both), its
-steps are read back instead.
+:class:`UndoStore` is the job's ``undo``. It holds the steps, writes the
+history lines they name and keeps the journal of the registrations the writes
+numbered; the live sync with the files, the lock and the checkpoint are the
+job's (:mod:`langslice.job.job`).
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import threading
-from collections.abc import Callable, Iterable, Iterator, Mapping
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping
+from contextlib import AbstractContextManager
 
 from langslice.core.jsonable import Json, JsonObject
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
-from langslice.job.checkpoint import JobCheckpoint, file_stamp, state_from_file
+from langslice.job.checkpoint import Stamp, file_stamp
+from langslice.job.folder.lock import FolderLock
 from langslice.job.state_file import (
-    read_checkpoint,
     set_stack_fields,
     stack_fields,
     stack_from_json,
@@ -39,8 +35,8 @@ from langslice.job.state_file import (
 )
 from langslice.job.steps.history import (
     HOST,
-    SCRIPT,
     Row,
+    SectionHistories,
     now,
     registration_key,
     section_row,
@@ -48,6 +44,7 @@ from langslice.job.steps.history import (
 )
 from langslice.job.steps.undo_steps import (
     NotesBefore,
+    UndoFile,
     UndoLists,
     UndoStep,
     combined_steps,
@@ -58,166 +55,154 @@ logger = logging.getLogger(__name__)
 NOTES = "notes"
 
 
-class JobUndo(JobCheckpoint):
-    """Write under the job's lock, one undo step at a time, and sync."""
+class UndoStore:
+    """The undo and redo steps of one job.
 
-    @contextlib.contextmanager
-    def writing(self) -> Iterator[dict[str, Any] | None]:
-        """Hold the job folder's write lock and bring the state up to date.
+    Parameters
+    ----------
+    state
+        The stack the job registers (changed in place, never replaced).
+    histories
+        The section histories the steps name lines of.
+    lock
+        The job folder's write lock.
+    file
+        ``history/undo.json``.
+    persist
+        False: nothing is written (a dry run).
+    actor
+        Returns the tool this thread runs, ``script`` for none.
+    writing
+        Holds the job's write lock around a step taken back or again
+        (``Job.writing``).
+    checkpoint
+        Writes the state (``Checkpoints.write``).
+    lists
+        The steps already read from *file*; None starts without any.
+    seen
+        The stamp of *file* taken before it was read; None takes it now.
+    """
 
-        Every write goes lock -> :meth:`sync` (reload what another writer
-        saved) -> apply -> :meth:`commit` -> unlock, so a running agent, CLI
-        calls and scripts on one folder never overwrite each other. Yields
-        what :meth:`sync` returned (the state as held before a reload, or
-        None). Reentrant in this thread. A long operation computes outside
-        it, from the state it read, and enters it only to apply: after the
-        sync it checks that each section's inputs are unchanged and refuses
-        a section whose inputs moved (``STALE_INPUT``). The section records
-        are new objects after a reload: resolve them by id inside the block.
-        A thread running the job's background work gives way to a lock holder
-        that waits for that work (:mod:`langslice.job.background`:
-        ``LockYielded``).
-        """
-        with self.lock.held(self._lock_abort()):
-            yield self.sync()
+    def __init__(
+        self,
+        state: Stack,
+        histories: SectionHistories,
+        lock: FolderLock,
+        file: UndoFile,
+        *,
+        persist: bool,
+        actor: Callable[[], str],
+        writing: Callable[[], AbstractContextManager[object]],
+        checkpoint: Callable[[], None],
+        lists: UndoLists | None = None,
+        seen: Stamp = None,
+    ) -> None:
+        self.steps: list[UndoStep] = [] if lists is None else lists.undo
+        self.redo_steps: list[UndoStep] = [] if lists is None else lists.redo
+        self.next_step = 1 if lists is None else lists.next_step
+        self.pushed = 0
+        self.registered: list[tuple[int, str, int]] = []
+        self.stamp: Stamp = seen if seen is not None else file_stamp(str(file.path))
+        self._state = state
+        self._histories = histories
+        self._lock = lock
+        self._file = file
+        self._persist = persist
+        self._actor = actor
+        self._writing = writing
+        self._checkpoint = checkpoint
 
-    def _lock_abort(self) -> Callable[[], bool] | None:
-        """Return what a wait for the lock asks whether to give up.
+    @property
+    def path(self) -> str:
+        """The undo and redo steps, ``history/undo.json``."""
+        return str(self._file.path)
 
-        Nothing at this layer; the layer that runs background work answers
-        its ``gives_way`` in one of that work's threads.
-        """
-        return None
+    def registered_since(self, mark: int) -> dict[str, int]:
+        """The registration each section holds after this thread's writes
+        since ``len(undo.registered)`` was *mark*, by section."""
+        me = threading.get_ident()
+        return {
+            section: number for thread, section, number in self.registered[mark:] if thread == me
+        }
 
-    @contextlib.contextmanager
-    def reading(self) -> Iterator[None]:
-        """For a read: the state brought up to date without waiting for
-        another process's writer. This process's other threads are kept out
-        (their writes are short); when another process holds the job folder's
-        lock (a long fit applying, a plugin tool that holds it while it
-        computes), the state is read as that process last saved it, and the
-        next locked :meth:`sync` puts the job's own back first."""
-        with self.lock.threads():
-            with self.lock.held_if_free() as free:
-                if free:
-                    self.sync()
-            if not free:
-                self._peek()
-            yield
-
-    def _peek(self) -> None:
-        """Read the state file as it stands, without the lock (:meth:`reading`)."""
-        stamp = file_stamp(self.checkpoint_path)
-        if stamp in (self._state_stamp, self._peek_stamp):
-            return
-        try:
-            read = read_checkpoint(self.checkpoint_path)
-        except (OSError, ValueError):
-            return
-        if read is None:
-            return
-        held = stack_to_json(self.state)
-        loaded = stack_to_json(state_from_file(read.fields, self.checkpoint_path))
-        self._peek_stamp = stamp
-        if loaded == held:
-            return
-        if self._peeked is None:
-            self._peeked = held
-        self.state.replace_with(stack_from_json(loaded))
-        self._notify()
-
-    def snapshot(self) -> dict[str, Any]:
-        """The state as it stands: take it before a write, hand it to :meth:`commit`."""
-        return stack_to_json(self.state)
-
-    def commit(self, before: dict[str, Any]) -> None:
-        """Record one write, then checkpoint.
-
-        A history line for each section the write changed, one undo step,
-        the redo side cleared. Call it inside :meth:`writing`, with *before*
-        taken there.
-
-        Parameters
-        ----------
-        before
-            The state before the write, as :meth:`snapshot` gives it.
-        """
-        with self.lock.held():
-            self._push(self._record(before, self.actor))
-            self._end_step()
-
-    def amend(self, before: JsonObject) -> None:
-        """Record a change that belongs to the last write, then checkpoint.
-
-        The deformations a write made stale are cleared after it: their
-        history lines are appended and their sections joined to the
-        write's undo step. Call it inside :meth:`writing`.
-
-        Parameters
-        ----------
-        before
-            The state before the change, as :meth:`snapshot` gives it.
-        """
-        with self.lock.held():
-            if not self.undo_stack:
-                self._record(before, self.actor)
-                self.checkpoint()
-                return
-            top = self.undo_stack[-1]
-            step = self._record(before, self.actor, step=top.step)
-            self.undo_stack[-1] = combined_steps([top, step])
-            self._end_step()
-
-    def _end_step(self) -> None:
-        """Save the undo steps, then checkpoint the state."""
-        self._save_undo()
-        self.checkpoint()
-
-    def _push(self, step: UndoStep) -> None:
-        self.undo_stack.append(step)
-        self.redo_stack.clear()
+    def push(self, step: UndoStep) -> None:
+        """Make *step* the latest step; the redo side is cleared."""
+        self.steps.append(step)
+        self.redo_steps.clear()
         self.pushed += 1
 
-    def merge_steps(self, mark: int) -> None:
+    def amend(self, before: JsonObject, by: str) -> bool:
+        """Record a change that belongs to the last write.
+
+        The history lines are appended and the sections joined to the last
+        step. Call it inside the job's write lock.
+
+        Parameters
+        ----------
+        before
+            The state before the change, as ``Job.snapshot`` gives it.
+        by
+            The tool that made it.
+
+        Returns
+        -------
+        bool
+            False when there is no step to join: the lines are appended and
+            nothing else changes.
+        """
+        if not self.steps:
+            self.record(before, by)
+            return False
+        top = self.steps[-1]
+        step = self.record(before, by, step=top.step)
+        self.steps[-1] = combined_steps([top, step])
+        return True
+
+    def merge(self, mark: int) -> None:
         """Make the undo steps recorded since :attr:`pushed` was *mark* one
         step: the state before the first of them. A tool whose call writes
         through several operations is still one undo step. Call it inside
-        :meth:`writing`."""
-        count = min(self.pushed - mark, len(self.undo_stack))
+        the job's write lock."""
+        count = min(self.pushed - mark, len(self.steps))
         if count < 2:
             return
-        merged = combined_steps(self.undo_stack[-count:])
-        del self.undo_stack[-count:]
-        self.undo_stack.append(merged)
+        merged = combined_steps(self.steps[-count:])
+        del self.steps[-count:]
+        self.steps.append(merged)
         self.pushed -= count - 1
-        self._save_undo()
+        self.save()
 
     def undo(self) -> bool:
         """Take the last step back; False when there is none."""
-        with self.writing():
-            if not self.undo_stack:
+        with self._writing():
+            if not self.steps:
                 return False
-            self.redo_stack.append(self._take(self.undo_stack.pop()))
+            self.redo_steps.append(self._take(self.steps.pop()))
             self._end_step()
             return True
 
     def redo(self) -> bool:
         """Take the last undone step again; False when there is none."""
-        with self.writing():
-            if not self.redo_stack:
+        with self._writing():
+            if not self.redo_steps:
                 return False
-            self.undo_stack.append(self._take(self.redo_stack.pop()))
+            self.steps.append(self._take(self.redo_steps.pop()))
             self._end_step()
             return True
+
+    def _end_step(self) -> None:
+        """Save the undo steps, then checkpoint the state."""
+        self.save()
+        self._checkpoint()
 
     def _take(self, step: UndoStep) -> UndoStep:
         """Put back the lines and stack fields *step* names; return the
         step that puts the state back as it was before.
         """
-        before = stack_to_json(self.state)
+        before = stack_to_json(self._state)
         for section_id, seq in step.sections.items():
-            section = self.state.by_id(section_id)
-            row = self.histories.row(section_id, seq)
+            section = self._state.by_id(section_id)
+            row = self._histories.row(section_id, seq)
             if section is None or row is None:
                 logger.warning(
                     "Undo: line %s of %s is not in its history; the section stays as it is",
@@ -226,17 +211,17 @@ class JobUndo(JobCheckpoint):
                 )
                 continue
             set_head(section, self._current_row(row))
-        set_stack_fields(self.state, step.stack_before)
+        set_stack_fields(self._state, step.stack_before)
         if step.notes_before is not None:
-            self.state.notes = step.notes_before.put_back(self.state.notes)
-        back = self._record(before, self.actor, also=step)
+            self._state.notes = step.notes_before.put_back(self._state.notes)
+        back = self.record(before, self._actor(), also=step)
         return back.model_copy(update={"step": step.step, "by": step.by, "at": step.at})
 
     def _current_row(self, row: Row) -> JsonObject:
         """Return a line's section row at the current state format."""
         return upgraded_row(row.format_version, row.section)
 
-    def _record(
+    def record(
         self,
         before: JsonObject,
         by: str,
@@ -249,17 +234,17 @@ class JobUndo(JobCheckpoint):
         and return the undo step that puts *before* back.
 
         *step* joins the lines to that write (:meth:`amend`); *also* is the
-        step being taken back (:meth:`_take`): its sections and stack fields
-        are named in the step returned even where they did not change.
+        step being taken back: its sections and stack fields are named in the
+        step returned even where they did not change.
         """
         if step is None:
             step = self.next_step
             self.next_step += 1
         then_state = stack_from_json(before)
-        now_notes = self.state.notes
+        now_notes = self._state.notes
         named: Mapping[str, int] = {} if also is None else also.sections
         sections: dict[str, int] = {}
-        for section in self.state.slices:
+        for section in self._state.slices:
             seq = self._record_section(
                 then_state,
                 section,
@@ -283,7 +268,7 @@ class JobUndo(JobCheckpoint):
         """Return the stack fields but the notes that differ from *before*
         (and those *also* names), as *before* holds them.
         """
-        fields = stack_fields(self.state)
+        fields = stack_fields(self._state)
         del fields[NOTES]
         changed = {key: before.get(key) for key in fields if before.get(key) != fields[key]}
         if also is not None:
@@ -292,12 +277,12 @@ class JobUndo(JobCheckpoint):
 
     def _collect_records(self, section_ids: Iterable[str]) -> None:
         """Delete the record folders of these sections that no line names."""
-        if not self.persist:
+        if not self._persist:
             return
         for section_id in section_ids:
-            section = self.state.by_id(section_id)
+            section = self._state.by_id(section_id)
             if section is not None:
-                self.histories.collect_records(section)
+                self._histories.collect_records(section)
 
     def _record_section(
         self,
@@ -317,11 +302,11 @@ class JobUndo(JobCheckpoint):
         row_then, row_now = section_row(old_section), section_row(section)
         if row_then == row_now and not named:
             return None
-        if not self.persist:
-            rows = self.histories.rows(section.id)
+        if not self._persist:
+            rows = self._histories.rows(section.id)
             return rows[-1].seq if rows else 0
         replaced = registration_key(then_state, old_section) != (
-            registration_key(self.state, section)
+            registration_key(self._state, section)
         )
         head = self._line_before(then_state, old_section, step, replaced)
         if row_now != row_then:
@@ -343,25 +328,27 @@ class JobUndo(JobCheckpoint):
         that state is appended first, numbering its registration when it
         is replaced.
         """
-        rows = self.histories.rows(old_section.id)
+        rows = self._histories.rows(old_section.id)
         head = rows[-1] if rows else None
         key_then = registration_key(then_state, old_section)
         unnumbered = (
             replaced
             and key_then is not None
-            and self.histories.number(old_section.id, key_then) is None
+            and self._histories.number(old_section.id, key_then) is None
         )
         row_then = section_row(old_section)
         if head is not None and head.section == row_then and not unnumbered:
             return head
-        return self.histories.append(then_state, old_section, step=step, by=HOST, numbered=replaced)
+        return self._histories.append(
+            then_state, old_section, step=step, by=HOST, numbered=replaced
+        )
 
     def _line_after(self, section: Section, *, step: int, by: str, replaced: bool) -> None:
         """Append the line a write left a section with.
 
         A registration it newly numbered is noted in :attr:`registered`.
         """
-        line = self.histories.append(self.state, section, step=step, by=by, numbered=replaced)
+        line = self._histories.append(self._state, section, step=step, by=by, numbered=replaced)
         if replaced and line.registration is not None:
             self.registered.append((threading.get_ident(), section.id, line.registration))
 
@@ -369,7 +356,7 @@ class JobUndo(JobCheckpoint):
         """Return the number of the registration a section holds.
 
         One never numbered is numbered now, by a ``host`` line. Call it
-        inside :meth:`writing`.
+        inside the job's write lock.
 
         Parameters
         ----------
@@ -381,79 +368,47 @@ class JobUndo(JobCheckpoint):
         int or None
             None while it holds none (or for a job that writes nothing).
         """
-        number = self.histories.registration_number(self.state, section)
-        if number is not None or not self.persist:
+        number = self._histories.registration_number(self._state, section)
+        if number is not None or not self._persist:
             return number
-        if registration_key(self.state, section) is None:
+        if registration_key(self._state, section) is None:
             return None
         last_write = max(self.next_step - 1, 0)
-        line = self.histories.append(self.state, section, step=last_write, by=HOST, numbered=True)
+        line = self._histories.append(self._state, section, step=last_write, by=HOST, numbered=True)
         return line.registration
 
     def record_opening(self) -> None:
         """Append each section's opening line: by ``host``, write 0."""
-        if not self.persist:
+        if not self._persist:
             return
-        with self.lock.held():
-            for section in self.state.slices:
-                self.histories.append(self.state, section, step=0, by=HOST, numbered=False)
+        with self._lock.held():
+            for section in self._state.slices:
+                self._histories.append(self._state, section, step=0, by=HOST, numbered=False)
 
-    def load_undo(self) -> None:
-        """Read the undo steps on disk into the job (none unreadable)."""
-        lists = self.undo_file.load()
-        self.undo_stack, self.redo_stack = lists.undo, lists.redo
+    def load(self) -> None:
+        """Read the undo steps on disk into the store (none unreadable)."""
+        lists = self._file.load()
+        self.steps, self.redo_steps = lists.undo, lists.redo
         self.next_step = max(self.next_step, lists.next_step)
 
-    def _save_undo(self) -> None:
-        if not self.persist:
+    def save(self) -> None:
+        """Write the steps, under the lock."""
+        if not self._persist:
             return
-        with self.lock.held():
-            self.undo_file.save(UndoLists(self.undo_stack, self.redo_stack, self.next_step))
-        self._undo_stamp = file_stamp(self.undo_path)
+        with self._lock.held():
+            self._file.save(UndoLists(self.steps, self.redo_steps, self.next_step))
+        self.stamp = file_stamp(self.path)
 
-    def sync(self) -> dict[str, Any] | None:
-        """Reload the state file if it changed on disk since this job last
-        read or wrote it.
+    def reload_if_changed(self) -> bool:
+        """Read the steps again when ``undo.json`` changed on disk since this
+        store last read or wrote it; whether it did."""
+        stamp = file_stamp(self.path)
+        if stamp == self.stamp:
+            return False
+        self.load()
+        self.stamp = stamp
+        return True
 
-        Returns the state as this job held it before a reload, or ``None``
-        when nothing was reloaded. An edit from outside (``undo.json``
-        unchanged) becomes one undo step by ``script``; when ``undo.json``
-        changed too, another job wrote both and its steps are read back
-        instead. A file that does not parse (a script mid-write) is left
-        alone and read at the next call; the job's own next write replaces it.
-        """
-        if self._peeked is not None:
-            self.state.replace_with(stack_from_json(self._peeked))
-            self._peeked, self._peek_stamp = None, None
-        state_stamp = file_stamp(self.checkpoint_path)
-        undo_stamp = file_stamp(self.undo_path)
-        history_changed = undo_stamp != self._undo_stamp
-        if history_changed:
-            self.load_undo()
-            self._undo_stamp = undo_stamp
-        if state_stamp == self._state_stamp:
-            return None
-        try:
-            read = read_checkpoint(self.checkpoint_path)
-        except (OSError, ValueError):
-            logger.warning(
-                "State file %s changed but does not read; keeping the job's state",
-                self.checkpoint_path,
-                exc_info=True,
-            )
-            return None
-        self._state_stamp = state_stamp
-        if read is None:
-            return None
-        held = stack_to_json(self.state)
-        loaded = stack_to_json(state_from_file(read.fields, self.checkpoint_path))
-        if loaded == held:
-            return None
-        self.state.replace_with(stack_from_json(loaded))
-        if not history_changed:
-            with self.lock.held():
-                self._push(self._record(held, SCRIPT))
-                self._save_undo()
-        logger.info("Reloaded %s: it changed on disk", self.checkpoint_path)
-        self._notify()
-        return held
+    def mark_seen(self) -> None:
+        """Count ``undo.json`` as it stands as read."""
+        self.stamp = file_stamp(self.path)

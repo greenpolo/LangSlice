@@ -1,421 +1,79 @@
-# LangSlice `doors/agent/` — LangSlice's own agent driver
+# `doors/agent/`: LangSlice's own agent
 
-Package guide for `src/langslice/doors/agent/`: the ADK driver that runs the
-linear agent environment, and the rules that environment follows. The
-repo-level `CLAUDE.md` holds the project-wide rules. `AGENTS.md` here is a
-verbatim copy — edit one, mirror to the other. The design this implements is
-`docs/reference/tools.md`; this file is the map of the code, not a second spec.
-
-## Where the linear method lives
-
-The method spans the layers; each package has its own guide:
-
-| Layer | What | Guide |
-|---|---|---|
-| `core/` | `JobSpec`, `Stack`, `Workspace`, renders, pictures, fits, the deformable engine | `core/CLAUDE.md` |
-| `job/` | `Job` (undo, checkpoint, submit gates, image corrections, background work), the job folder | `job/CLAUDE.md` |
-| `tools/` | one operation per verb, `tools/catalog.py` (`VERBS`, `enabled(spec)`) | `tools/CLAUDE.md` |
-| `tools/descriptions/` | the declarations (`render.py`), the job statement (`statement.py`) | `tools/CLAUDE.md` |
-| `doors/` | the toolbox (`doors/tools/`), MCP, the agent CLI, the library | `doors/CLAUDE.md` |
-| `doors/agent/` | this driver: engine, session, ADK plugins, models, media parts, trace, spend | here |
+The ADK driver of `langslice linear run FOLDER`. The tools, their descriptions
+and the job statement are in `tools/`; the job is in `job/`. This note holds
+the rules the driver and its environment keep.
 
 ## One environment, not a pipeline
 
-`langslice linear run FOLDER` is ONE agent environment over a stack of
-sections: one `Stack`, one toolbox, one job statement, one ADK session
-that ends at `submit`. A single section
-is a stack of one.
-There is no node graph, no per-step agent, no single-section agent and no
-sub-session: looking at the whole stack once yields the information for
-every task, and splitting it re-pays for that reading.
+One run is one `Stack`, one toolbox, one job statement and one ADK session that
+ends at `submit`. A single section is a stack of one. There is no node graph, no
+per-step agent, no single-section agent and no sub-session: looking at the whole
+stack once yields the information for every task, and splitting it re-pays for
+that reading.
 
-The toolbox: shared tools for the everyday operations (`look` with its four
-modes, `zoom`, `make_image`, `grep_atlas` / `grep_atlas_view`,
-`status`, the job-folder tools, `note` / `undo` / `redo` / `restore_registration` /
-`submit`) and one
-tool per registration method (`position_sections`,
-`interactive_transform`, `mark_damage`, `elastix_affine`, `fireants_syn`,
-`trace_borders`). Every change tool returns its own picture after the write
-(the computer-use pattern): the positioning picture for
-`position_sections`, the section under its new registration with the atlas
-borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
-(zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
-previews; everything is undoable. Each registration a section holds is
-numbered (`job/steps/history.py`): `look` draws a section under an earlier
-one without writing it, which is how two fits of a section are compared, and
-`restore_registration` puts earlier ones back on the sections named, whatever
-was written since; undo takes back only the job's last write.
-`interactive_transform` batches up to four independent sections in one
-call and one undo step; a dependent refinement waits for the first
-picture. Every picture is saved in the job folder with a number, so `zoom`
-and the job-folder tools reach it later.
+## Lean harness
 
-Tasks (`JobSpec.tasks`) are switched on one by one; a task that is OFF builds
-no tools and takes its answer from `spec.inputs`. Users see Positioning
-(`position`), Linear (`transform`) and Nonlinear (`nonlinear`) (the
-user-facing task names). Which verbs a run has is
-`tools.catalog.enabled(spec)`: `position_sections` with Positioning (or the
-cutting angles left to the agent, `transform.angles`; the stack's order
-follows the positions, so there is no ordering tool);
-`interactive_transform` and `elastix_affine` with `transform` (a mirror is
-the sign of the in-plane affine, so flipping is Linear, never Positioning),
-each switchable alone; `fireants_syn` and `trace_borders` with
-`nonlinear` (`trace_borders` only with an image model); everything else,
-`mark_damage` included, in every run. `JobSpec.disabled` takes single tools
-off on top of that (`job/settings/tool_table.py` lists the names and refuses a
-list that cannot work); every line of the job statement that names a tool is
-built from the job's `ToolsOn` (`job/settings/tools_on.py`).
+Tools return data, no interpretation in any payload. The job statement carries
+the job, the facts, the tools by name, the constraints and a short Method per
+task that is on, holding facts and first principles only, never an order of
+steps. Approved by Nash 2026-10-22, with his principles in his words: "more
+visible structure = good, more visual similarity = good". The Method says:
 
-## Files
+- place each section on its own evidence and compare before writing; review the
+  whole stack and re-check both sides of a gap before reporting a break;
+- fitting algorithms refine a placement that is already close and do not
+  correct a large offset;
+- inspect each fit against surviving internal anatomy and keep only changes that
+  improve it; undo a deformable fit that does not;
+- every fit leaves the marked damage regions out;
+- a fit compares one section image with one atlas image and does best when both
+  show as much internal structure as possible and look alike; no fixed recipe.
 
-- `engine.py` — `EngineContext` (`doors.jobs.JobContext` plus the model),
-  `build_context(spec)` (the job folder from `job.layout.locate_job_folder`:
-  `spec.job_dir`, next to the images, or `~/.langslice/jobs/<id>/` for a
-  read-only image folder), `build_seed_message` (the first message: the job
-  statement and the user's notes, the opening strips,
-  `doors.agent.media.opening_parts`, and `langslice.tools.descriptions.door_text.status_and_notes`),
-  `save_opening` / `with_seed_views` (the opening saved as the job's views,
-  their paths on the live seed event), `run_session` (the system instruction
-  is `langslice.tools.descriptions.statement.SYSTEM_PROMPT`, the same for every job; the first
-  message carries `langslice.tools.descriptions.statement.build_job_statement` plus the user's notes from
-  `job.json`, `langslice.tools.descriptions.door_text.read_notes`; the tools are
-  `doors.agent.media.packaged_tools(box.tools)`; the post-submit
-  `DEBRIEF_PROMPT` when `spec.debrief`, its answer on `state.debrief`;
-  `background_message`: when the model ends its turn while background work
-  runs, the session waits for the first piece to finish
-  (`BackgroundWork.wait_any`) and the finished work's notices and pictures
-  are the next message), and
-  `run(spec, emit=, atlas_loader=, on_event=)`:
-  `Job.open` (the run goes on with `job.spec`), the job
-  folder's card, the toolbox, the session, `close_job` (image corrections
-  settled, pictures written) even without a submit, `Job.emit_results`. No
-  post pass: the session is the whole run.
-- `session.py` — `build_agent` (the ADK `LlmAgent`; `reasoning` set on any
-  resolved model exposing `reasoning_effort`), `build_plugins`,
-  `run_agent_session` (the loop: nudges when the model answers without a
-  tool, no turn, tool-call, token or time limit (including ADK:
-  `max_llm_calls=0`), the debrief; *background*, called in a thread when a
-  turn ends without a submit, returns the next message in place of the
-  nudge: the notices of background work that finished) and `TokenTally`
-  (every call's usage printed and traced; `paid` is uncached input plus
-  cached input at `CACHED_TOKEN_WEIGHT` 0.13, an input-only proxy). No
-  budget stops anything; spend only warns (`spend.py`).
-- `spend.py` — `SpendMonitor`, the operator's spend meter: warnings go to
-  the progress log (`[spend] ...`), the live `spend` event and the trace's
-  `spend` record, NEVER to the model (no text of it enters a message or a
-  tool reply). The usage-window share (from the quota headers the OAuth lane
-  puts in the event metadata) warns every 10 points; the API-key lanes
-  (`lane_of` reads the model object) get a dollar estimate from `PRICES`
-  (one table; source and date in its comment; reasoning tokens as output where
-  ADK reports them apart) warned at $5 doubling; a model with no price is said
-  so once. `engine.run_session` writes `summary()` to `exports/spend.json`
-  after every model call (`run_agent_session(on_spend=)`) and when the
-  session ends or fails. A new provider lane adds its row group to
-  `PRICES`; the provider modules supply raw usage only.
-- `langslice/tools/descriptions/statement.py` — `build_job_statement`: the job, the run facts (`run_facts`:
-  the range, the optional protocol (`cutting_protocol_fact`: unknown values
-  stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, how many sections are still at their initial position
-  the damaged sections and the user's
-  damage notes, what is frozen (`job.settings.frozen.statement`: sections sharing a
-  freeze are one clause), that the order follows the positions;
-  `channel_facts`: the raw channels; the section images (`SECTION_IMAGES_FACT`:
-  what they are, how `preprocessed` was made, `section_images.opening_words`,
-  that every fit and the image model read one by name); `SPARSE_SIGNAL_FACT`
-  (a channel whose signal is sparse shows little of the anatomy the atlas
-  draws); the atlas images and the one the fits' default `nissl` is
-  (`display_facts`' `nissl_image`); and where the caller sizes pictures,
-  `look`'s `resolution` range), the tools BY NAME
-  ONLY (each tool's own description, `langslice/tools/descriptions/render.py`, is its only
-  description; the one exception, `DEFORMABLE_METHODS`, below), the hard constraints (with the damaged-section guidance:
-  a section with marked regions still needs a transform made for its
-  surviving anatomy, by hand or by `elastix_affine`, which leaves the
-  marked regions out; `engine_fact` when FireANTs is missing), the per-task user
-  notes (`task_notes`), the short "Method:" section (facts and first
-  principles, no order of steps). `display_facts` reads
-  the run's raw channels and atlas channels. Every door's statement is
-  assembled in `langslice/tools/descriptions/statement.py`.
-- `adk_plugins.py` — the ADK plugins every session runs with:
-  `WorkingSetImages` (in ADK's `ContextFilterPlugin`, below),
-  `StrictArgumentsPlugin` (ADK drops
-  unknown top-level arguments before a tool runs; this refuses them first,
-  with `tools.arguments.argument_refusal`), `ModelCallPacingPlugin`
-  (`LANGSLICE_ADK_MODEL_CALL_DELAY_S`) and `RequestCapturePlugin`
-  (`LANGSLICE_ADK_CAPTURE_REQUESTS_DIR`).
-- `models.py` — `resolve_adk_model(model)`: `openai-oauth/<model>`
-  -> `providers.oauth.transport.OpenAIOAuthLlm`; `gemini-api/<model>` and bare
-  Gemini ids -> ADK's own; `gemma-*` -> ADK's `Gemma`; `litellm-proxy:`,
-  `openrouter:`, `ollama:` (and a bare `name:tag`) and `gpt-*`/`o*` ids ->
-  ADK's `LiteLlm` (litellm is a core dependency). `LANGSLICE_ENDPOINT` sends every model string to that
-  OpenAI-compatible server. `default_http_options`: timeout and retries for
-  every model call. `env_value` / `env_float` read the environment.
-- `trace.py` — `SessionTrace`, the full-content JSONL trace (what the agent
-  was shown, said, called and got back; images as descriptors, never
-  bytes), written only when `LANGSLICE_TRACE_DIR` is set (`--trace-dir`;
-  `linear run` sets it to the job's `trace/` when neither is given). The
-  engine passes the job's `trace/` as `run_agent_session(trace_mirror=)`:
-  when the trace folder is another, every record is written to the same
-  file name in both (`SessionTrace.paths`), so the job folder always holds
-  its run's trace, line by line as it goes. A
-  job that loaded tool plugins adds a `plugins` record after `session`
-  (`ToolBox.plugins`: provenance and each tool's declaration as the model saw
-  it; `run_agent_session(plugins=)`).
-- `live.py` — `LiveEvents`, the optional in-memory observer behind
-  `engine.run(on_event=...)`: sanitized seed images, assistant text,
-  provider-exposed reasoning summaries, tool calls and results with detached
-  image bytes, usage, completion and errors. Observer failures never fail
-  the run. With an observer ADK streams; partial events are shown but never
-  counted twice toward usage, tool limits or the final answer. Encrypted
-  reasoning stays in provider replay only. The toolbox emits `tool_start` /
-  `tool_end` inside its serialization lock, with resolved `target_ids`, a
-  unique execution id and, on `tool_end`, `views` (the pictures the call
-  saved); these events never enter model context. The same events are
-  lines of the job's `logs/events.jsonl` on every door, observer or not
-  (`tools.events.EventLog`). `plain` (`tools/events.py`) copies JSON
-  content without media bytes.
+With more than one deformable method in the job, none is the default, each
+suits different sections, each builds on the section's current registration so
+methods can be chained, and one line each says what they are
+(`tools.descriptions.statement.DEFORMABLE_METHODS`, the methods' own papers'
+claims; Nash approved the wording 2026-10-21). Which to try, in what order, is
+the model's choice. Still out of the statement: rules of thumb, failure-mode
+warnings and region names (the same text runs against every atlas, species and
+plane). Each tool's description is the only place it is described.
+`position.playbook` (`--position-playbook`) adds a step-by-step positioning
+method; it is guidance, not enforcement.
 
-## The tools
+## Not negotiable
 
-The tools are the toolbox `doors.tools.toolbox.build_tools(state, ctx, spec,
-job=, image_model=, level=, max_view_edge=)` builds: the verbs
-`tools.catalog.enabled(spec)` names, each declared once in
-`langslice/tools/descriptions/render.py` (name, arguments, description) and each body
-(`<tool>_tool(run, ...)`, a function of its module under
-`langslice/tools/`, wired by `doors.tools.toolbox.TOOL_BODIES`)
-argument checking, one call into `langslice/tools/` and the wording. Every
-call runs through
-the tool pipeline's steps (`langslice/tools/pipeline.py`, `TOOL_STEPS`):
-`_serialize` (one lock: ADK runs a turn's calls concurrently, the state has
-one writer), `_log_events` (the host events), `_announce_work` (the notices
-of background work that finished since the last reply, first, under
-`background`, its pictures after the reply's own), `_save_pictures` (every
-picture saved in the job folder with its layers and a number, the exact
-JPEG bytes the door sent; the reply's `pictures` lists the numbers in
-attachment order), `_clear_stale_deformations` (a deformation whose
-`linear_key` no longer matches is cleared in the same undo step; the reply
-says `deformation_cleared`) and `_strict_arguments` (unknown or misplaced
-keys refused, never dropped). Tools return plain PIL pictures under
-`TOOL_MEDIA_PARTS_KEY`; the ADK driver packages them as JPEG parts
-(`doors.agent.media.packaged`), the MCP door as image blocks.
-
-Conventions: sections are named by filename only (`Stack.resolve`:
-the filename, or its stem when no other section shares it; a number is
-refused with the filenames listed, `core.stack.stack.unknown_sections`), in every
-argument, label, caption and status line; ordinary writes answer with the
-rows they changed (`Run.answered`) plus `n_sections`; `status`, `undo`,
-`redo` and `submit` return the whole table, and `status` also the raw
-channels, the made section images (`section_images`), the background work
-still running and what this run lets the agent change.
-
-## Host controls
-
-A host's controls, all plain `JobSpec` fields:
-
-- **Per-task notes** (`position.notes`, `transform.notes`, `nonlinear.notes`):
-  `langslice.tools.descriptions.statement.task_notes` renders each verbatim under "<task> notes from the
-  user:", only when that task is on and the note is non-empty. Global
-  `facts` stay in the run facts.
-- **`transform.max_parallel`** (1..4, default 4): below 4,
-  `interactive_transform` and `elastix_affine` (each takes one to four
-  sections) refuse a call naming more sections (`tools.refusal.check_section_count`)
-  and the statement states the cap.
-- **`disabled`** (default empty): tools the job does
-  without, `--disabled NAME[,NAME...]`. A host's `inputs["damaged"]` note is
-  the section's `damage_note` (shown in status and the statement) whether or
-  not `mark_damage` is disabled; it does not make the section damaged, and it
-  stays first in the note whatever the agent marks.
-- **`frozen`** (`--frozen JSON`; `job/settings/frozen.py`, `docs/reference/settings.md`):
-  per section, which of `position`, `angles`, `orientation`, `affine`,
-  `deformation` the agent may not change; `"*"` is every section. A frozen
-  property keeps the value `inputs` supplies, else its "none" (a frozen
-  affine without a supplied transform gets `job.host_transform()`, `kind`
-  `"host"`, identity, which satisfies `GATE_REFUSED`; a frozen
-  deformation needs no deformation at `submit`). The tools refuse a write that
-  would change one, `FROZEN` (`Job.frozen_refusal`); a fit under a frozen
-  orientation keeps the section's handedness; a task whose properties are all
-  frozen everywhere is off and a task that is off freezes its properties
-  everywhere; a tool that writes only frozen properties is not built
-  (`JobSpec.switched_off`). The statement's frozen line and each status row's
-  `frozen` tell the agent.
-- **`nonlinear.require_deformation`** (`--nonlinear-require-deformation`, default off):
-  every section needs a deformation, and `submit` is refused
-  (`GATE_REFUSED`) until it has one; off, a deformation is the
-  agent's choice and the job line says so.
-- **`force_view`**: the change tools always return their picture (their
-  `view` argument is not declared).
-- **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`):
-  `core.pictures.sizes.PICTURE_EDGES` gives each level an opening tile size and a
-  later-picture size (low 256/512, medium 384/768, high 512/1024; `auto`
-  opens at 512, draws later pictures at 1024 unless the agent asks, and
-  declares `look`'s `resolution`, 128 up to the driver model's largest
-  image). Only what the agent is SHOWN changes: a whole picture is never
-  upsampled past its source (a zoom, and a change tool's picture zoomed to its `restrict_to` regions, is drawn at the picture size,
-  its section read from the image file at the file's own resolution
-  (`core/sections/native.py`), and says when that enlarges its source), and fits,
-  calibration and the
-  image model's inputs do not depend on it. Below `auto` the sizes never appear in
-  model-facing text.
-- **A host may remove `interactive_transform` or `elastix_affine`** with
-  `disabled`; a task that is on keeps at least one tool that writes its
-  answer.
+- Gates are constraints, not coaching: a refusal states the numbers that caused
+  it; a failed `submit` neither writes nor ends the run.
+- One transform representation: every stored transform and fit payload carries
+  `physical` (the knobs `interactive_transform` takes) next to the six
+  normalized numbers, so a fit's numbers hand straight to the manual controls.
+  A value left out keeps the current one.
+- Corrections are data: positions, flips, rotations, angles and transforms are
+  proposals on the state; the user's image files are never modified.
+- The order follows the positions: `position_sections` numbers the stack by
+  position after every call, so there is no ordering tool and no order gate.
+- Every write is one undo step; a batch undoes as one; a landed piece of
+  background work is a step of its own.
+- Spend is the operator's: warnings go to the log and the trace, NEVER into a
+  message or a tool reply (`spend.py`). No budget stops a run.
 
 ## Pictures and context
 
-The OAuth lane resends the whole history on every call (the Codex backend
-refuses stored responses). A cached input token costs ~0.13x an uncached
-one, so a token that sits unchanged in the prefix is nearly free and a new
-one, or one after a prefix edit, is full price. New images are most of a
-run's cost. The rules that follow:
+The OAuth lane resends the whole history on every call. A cached input token
+costs about 0.13 of an uncached one, so an unchanged prefix is nearly free and
+new images are most of a run's cost. Therefore:
 
-- **Images stay** (`adk_plugins.WorkingSetImages`): every tool image is kept
-  until 500 are live, then the oldest media-bearing calls are cut in ONE
-  batch to 250 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`); the cut only
-  moves forward and never touches the opening. A cut result says its
-  pictures were shown and have been dropped. An agent chooses later steps
-  from earlier pictures (its stain, its channels), and a cut breaks the
-  cache at the cut point, so a normal run never reaches it. A dropped
-  picture can be drawn again: `zoom` takes its number.
-- **A tool's images ride inside its `function_call_output`** as labelled
-  `input_image` parts (`openai_oauth._function_call_output`): a separate user
-  message would open a new turn. The request sends `reasoning.context =
-  all_turns`, and each turn's encrypted reasoning item is replayed ahead of
-  it (`thought_signature`), as the Codex CLI does.
-- **Several tool calls per model turn** (`parallel_tool_calls` on the OAuth
-  lane): one call's history cost instead of one per tool; the toolbox
-  serializes them. One `prompt_cache_key` per session.
-- **Rows are compact** (`core.stack.status.compact_rows`): null and empty fields
-  are absent from every payload.
-- **Prefix caching is not content addressing.** An image replayed in its
-  unchanged history prefix may be cached; a byte-identical copy appended
+- Images stay (`adk_plugins.WorkingSetImages`): every tool image is kept until
+  500 are live, then the oldest media-bearing calls are cut in one batch to 250.
+  The agent chooses later steps from earlier pictures, and a cut breaks the
+  cache at the cut point, so a normal run never reaches it. A dropped picture
+  can be drawn again: `zoom` takes its number.
+- A tool's images ride inside its `function_call_output`; a separate user
+  message would open a new turn.
+- Several tool calls per model turn: one call's history cost instead of one per
+  tool; the toolbox serializes them. One `prompt_cache_key` per session.
+- Rows are compact (`core.stack.status.compact_rows`): null and empty fields are
+  absent from every payload.
+- Prefix caching is not content addressing: a byte-identical picture appended
   later is new input. Never budget a re-sent picture as a cache hit.
-- **The opening** is ABBA-style strips (`core/pictures/opening.py`): the sections in
-  current order, each with the atlas at its current position beneath it
-  (every section has one: its initial position until it is written); the
-  text says how many are still at their initial position. Every tile is
-  labelled in its pixels, each strip at the model lane's largest image
-  (`doors.tools.view_options.image_limit`) and within its patch budget.
-
-## The Nonlinear task
-
-The job line asks for a deformation on a section where it improves on its
-linear placement, with the section's stain (and, with an image model, the
-borders it traces) as the evidence. When the host requires a deformation on
-every section (`require_deformation`), the line says every section and
-`submit` refuses `GATE_REFUSED` until every section holds a
-deformation at its current `linear_key`; otherwise `submit` has no
-deformation gate.
-
-- `make_image(name, ...)` and `make_mask(name, ...)`: the section images and
-  the section masks the fits read by name.
-- `fireants_syn(sections, restrict_to=, section_image=, atlas_image=, mask=,
-  smoothness_um=, metric=, edges=, detail=, view=)`:
-  FireANTs SyN on a section image against one of the atlas's images, on
-  top of each section's current registration (each fit builds on the one
-  before; undo is how to start over), the marked damage regions left out;
-  at most 4 sections per call; `ENGINE_UNAVAILABLE` without torch and fireants.
-- `trace_borders(section, prompt="", restrict_to=[])`: LangSlice's own
-  method, packaged: the image model traces the atlas borders onto the
-  section (the agent's per-section edit of the base prompt, which the
-  description carries with the border rules), then FireANTs fits the traced
-  borders and the deformation is applied as its own undo step, as
-  background work (`job.background`): the call returns at once with the
-  work's id; the notice comes at the head of a later reply, or as the next
-  message when the turn ends; `submit` waits. The first answer at a
-  placement and region choice is saved and reused; a call whose fit has
-  already landed fits nothing again. The image model is the door's binding
-  (`build_tools(image_model=)`, else `providers.connections.resolve_image_model`
-  from `nonlinear.provider` / `nonlinear.image_model`).
-- `grep_atlas(query, section="")` and `grep_atlas_view(regions,
-  positions_mm)` look regions up and show their borders on the atlas, for
-  choosing `restrict_to` and `mark_damage` regions.
-- Provider `none` (`NonlinearSpec.uses_image_model` False) builds
-  `fireants_syn` but no `trace_borders`. A door that cannot reach the job's
-  image model builds the same toolbox (`image_model_connected=False`) and
-  says so (`langslice.tools.descriptions.door_text.image_model_off_text`).
-- `look` in mode overlay draws each section with its applied deformation
-  unless `warp` is `none`.
-
-## Rules that are not negotiable here
-
-**Lean harness.** Tools return data, no interpretation in any payload. The
-job statement carries the job, the facts, the tools by name, the
-constraints and a short Method per task that is on, holding facts and first
-principles only, never an order of steps (approved by Nash 2026-10-22, with
-his principles in his words: "more visible structure = good, more visual
-similarity = good"): place each section on its own
-evidence and compare before writing; review the whole stack and re-check
-both sides of a gap before reporting a break; where a fit tool is in the job,
-that fitting algorithms refine a placement that is already close and do not
-correct a large offset; with `interactive_transform`, inspect each fit or
-adjustment against surviving internal anatomy and keep only changes that
-improve it; that every fit leaves the marked damage regions out; inspect each
-deformable fit against internal anatomy and undo one that does not improve;
-a fit's reply names the section image, atlas image and mask it used, and the
-principle (a fit compares one section image with one atlas image and does
-best when both show as much internal structure as possible and look alike;
-no fixed recipe). With more than one deformable method in the job
-(`fireants_syn` and the in-tree engine plugins `stalign_lddmm`, `spomialign`,
-`emlddmm_stack`), the Method says none is the default and each suits
-different sections, that each fit builds on the section's current
-registration so methods can be chained, and says in one line each what the
-present methods are (`langslice.tools.descriptions.statement.DEFORMABLE_METHODS`, the methods' own papers'
-claims; Nash approved the wording 2026-10-21). Which methods to try, in what
-order, and how to group work is the model's choice.
-Still out: rules of thumb, failure-mode warnings and region names in the
-statement (the same text runs against every BrainGlobe atlas, species and
-plane). Each tool's description is the only place it is described, apart from
-the one-line summaries of the deformable methods above.
-
-`--position-playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
-method in the statement: compare candidate planes and distinguishing regions,
-write supported placements, revisit uncertain sections and review the stack.
-This is guidance, not enforcement.
-
-**Gates are constraints, not coaching.** A refusal states the numbers that
-caused it; a failed `submit` neither writes nor ends the run. `submit`
-waits for the background work, then refuses `GATE_REFUSED` (a section still
-at its initial position; spacing outside 10% of the interval or any break,
-with `--position-strict-interval`; a reported break not above 1.5x the median
-written spacing; a section without a transform, damaged included; with
-`nonlinear`, a section without a deformation).
-Gates run only for tasks that are on.
-
-**One transform representation.** Elastix, interactive, imported: every
-stored transform and every fit payload carries `physical` (the knobs
-`interactive_transform` takes — rotation, the two scales, the two shifts,
-`shear` — about a pivot in canvas fractions) next to the six normalized
-numbers and the calibration used, so a fit's numbers hand straight to the
-manual controls and a tweak after a fit keeps its map. A value left out
-keeps the current one.
-
-**Corrections are data.** Positions, flips, rotations, cutting angles and
-transforms are proposals on the state; the user's image files are never
-modified.
-
-**The order follows the positions.** `position_sections` numbers the stack
-by position after every call (`tools.positions.order_by_position`), so there
-is no separate ordering and no order-position gate; a changed orientation
-keeps the transform's knob values, rebuilt on the new orientation.
-
-**Every write checkpoints and is undoable.** One tool call is one undo step,
-so a batch undoes as one; a landed piece of background work is a step of
-its own. The undo steps (no cap) are saved in the job folder, so a resumed
-run can still undo the steps before it.
-
-## Ceilings worth knowing
-
-- `elastix_affine` refines the CURRENT placement with an intensity affine,
-  never a search from scratch: it does not turn sections, and moves them by
-  fractions of a millimetre.
-- True physical scale is honest, not flattering: a specimen smaller than the
-  Allen brain shows the atlas outlines ~10–15% outside the tissue at
-  identity. That is anatomy, not a calibration bug.
-- Region fits (`restrict_to`) are fits of those regions only; a later fit
-  without `restrict_to` builds on them.
-
-## The Claude host (MCP)
-
-The MCP door gives Claude the same toolbox and the same statement, worded
-for door `mcp` (`langslice.tools.descriptions.statement.job_statement`), with the opening as
-`show_stack` pages within the host's reply budget, an opening-read gate
-armed by `start_job`, and no turn budget, nudges, debrief or working set:
-the host owns the loop. `doors/CLAUDE.md` holds the details.

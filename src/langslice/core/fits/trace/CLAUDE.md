@@ -1,180 +1,70 @@
-# LangSlice `core/fits/trace/` — generative-image border correction
+# `core/fits/trace/`: the image-model border correction
 
-Package guide for `src/langslice/core/fits/trace/`; `AGENTS.md` is a verbatim
-twin of this file. The image transport it calls is
-`src/langslice/providers/image_calls.py`. Every way of using LangSlice goes through
-the job folder and its verbs. See `docs/reference/tools.md` for tool behavior and `docs/reference/file_formats.md`
-for coordinate contracts.
+The `trace_borders` tool draws the placed atlas borders on a section (thin
+yellow, regions at `core.atlas.levels.MODEL_DEPTH`), asks an image model to move
+the lines onto the tissue, extracts the lines from the reply and fits them with
+FireANTs. No model is ever shown a colored region map. The prompts are
+`prompts.py`; the image model is an argument, never imported here.
 
-## Supported design
+## Design rules
 
-The stack agent's optional `nonlinear` task uses a supplied linear placement via
-`trace.py`. Its only image tool is `trace_borders(section, prompt="", restrict_to=())`:
-placed-border correction with the agent's edited copy of the base prompt
-(blank = base), one retained reply per geometry, raw and extracted images
-returned separately, no atlas search or rejection. The fit of the extracted
-lines is the traced FireANTs fit (`tools.traces.land_trace`), in `core/fits/deformation.py` and the
-`core/fits/deformable/` package. The prompt sentence review is below.
-
-One border-based route, which needs a written linear placement. No model
-is ever shown a colored region map: the model sees the section with the
-placed borders of the regions at `core.atlas.levels.MODEL_DEPTH` in thin
-yellow.
-
-- **Route "supplied"** — a written linear placement exists.
-  `start_correction` draws the placed region borders on the tissue (Image 1
-  the clean tissue and Image 2 the borders for a GPT-lineage prompt, the
-  other way round for the Gemini wording; `_GPT_ATTACHMENTS` /
-  `_GEMINI_ATTACHMENTS`) and makes ONE model call with
-  `prompts.border_correction_tool_prompt(plane, provider)` or the agent's
-  edit of it. A model profile's own prompt and attachment order
-  (`ImageModel.prompt` / `photograph_first`, `providers/profiles.py`) replace
-  the base prompt (`profile_prompt`) and join the call key; an untested
-  profile marks its request and result `untested` (`profile_marks`).
-It keeps the call-key folders and attempts, takes the image model as an
-argument, and leaves fitting to the tools layer. A running attempt holds a
-lock on its call key's `.call.lock`: another process asking the same call
-meanwhile is refused `BUSY` (after `CLAIM_WAIT_S`, 1 s;
-a reply saved meanwhile is returned `cached`), and an attempt whose process
-died releases it, so the call is made again as the next attempt. The call
-key's `result.json` (and the attempt's copy) store `artifact_dir` and
-`artifact_paths` relative to the call key's folder (`attempt-01`,
-`attempt-01/raw_reply.png`); a cached reply gives them as paths where the
-folder is now, an older file's absolute paths carried over by their last
-parts (`_path_in_call`). An attempt's folder holds
-`request.json` (what was sent: the geometry, and each attached picture's
-role and PNG SHA-256 in the order sent), `prompt.txt`, `base_prompt.txt`,
-`prompt_diff.txt`, `raw_reply.png` (the model's answer, kept as received)
-and `extracted_lines.png` (the lines a fit reads); the pictures sent are not
-kept: `_canvas_and_placement` and `lines.smooth_border_overlay` draw them
-again from the section and the request.
-
-Atlas labels and grayscale references use the same position, plane, cutting
-angles and orientation. Reflection is explicit, never guessed from a
-symmetric silhouette. Supplied matrices map the oriented native annotation
-grid to original input-image pixel centers. Resize, padding, the initial
-affine and the residual deformation are all carried through exports; the
-residual alone is never exported.
-
-## File map
-
-- `trace.py` — `start_correction` (route "supplied"),
-  the call-key folders and attempts, `profile_prompt`, `profile_marks`,
-  `prompt_diff`, `reply_on_grid` (an attempt's lines and raw reply in the
-  image file's frame, for `export_maps`).
-- `canvas.py` — model-facing canvas geometry (`prepare_canvas`,
-  aspect helpers). `prepare_canvas(image, provider=, image_model=, upright=,
-  footprint=)` returns the canvas and `render_to_canvas` (3x3, pixel
-  centres): the section render turned and shifted by an `Upright`, cropped
-  to the footprint's box in the turned frame plus `FOOTPRINT_MARGIN` (15%) of
-  its larger side on every side, clamped to the turned render and then made
-  symmetric about the midline (`through`), scaled to the provider's output
-  frame and padded with the render's background colour, in ONE interpolation
-  (Lanczos; shrinking anti-aliased first by the Lanczos kernel PIL's resize
-  uses). Without a footprint the whole turned render is kept.
-  `trace.footprint(labels, atlas_to_render)` is the placed atlas
-  plane's outline (every non-background region, whatever `restrict_to`
-  shows).
-- `canvas.py` — `upright(atlas, plane, position_mm, pitch, yaw,
-  atlas_to_render)` -> `Upright(up, through)`: which render direction points
-  up on the canvas and the render point its vertical centre line passes
-  through. Coronal: the atlas midline (the section's oblique plane crossing
-  the volume's medio-lateral split, `round(n / 2) - 0.5`), dorsal end up, the
-  canvas centred on it; horizontal: the midline, anterior end up, centred;
-  sagittal: the plane's dorsal direction, no centring. A turn and shift
-  only: a flip in the placement stays. `_canvas_and_placement` folds the
-  turn and crop into `atlas_to_canvas`, so the rough overlay is drawn through it and
-  `core.fits.deformation.traced_lines` reads the model's lines back through it
-  exactly; each attempt's `request.json` also keeps `render_to_canvas` and
-  `upright` (`turn_deg`, clockwise on the screen; `midline_centred`;
-  `atlas_margin`). `reply_on_grid` (the trace-reply export) reads the
-  canvas-to-render map from the same matrix.
-- `lines.py` — the yellow lines of a trace: `smooth_border_overlay`
-  draws them on a section, `extract_thinned_lines`
-  (`yellow_mask`, `thin`) reads the model's lines off a raw reply. It fits
-  nothing and calls no model.
-- `prompts.py` — the prompt functions; the OpenAI-GPT or Gemini wording is
-  selected by `canonical_provider(provider)` (`core/connections.py`).
-- `request.py` — `BorderTraceRequest` / `GeneratedSegmentation`, the
-  request and reply of the one-call-in, one-image-out transport
-  (`providers/image_calls.py`). `mode` (default `"edit"`) is the edit-vs-generate
-  semantic each transport translates its own way; `size_tier` is the
-  output tier the transport passes on. A door resolves a provider name to
-  this call once (`providers.connections.resolve_image_model`) and passes it in
-  as the `ImageModel` (defined here: provider, model, profile and `call`, an
-  `ImageCall` protocol the providers' calls implement); a model call without
-  one is refused, so the core, the job and the tools never import a provider,
-  not even for a type.
-- `frames.py` — canvas and aspect facts only (`image_model_family`,
-  `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
+- One border route, from a written linear placement. One model call per
+  placement and region choice, one reply kept per call key; the raw reply and
+  the extracted lines are kept apart and neither is the evaluation reference.
+- Reflection is explicit, never guessed from a symmetric silhouette. The
+  canvas turn and crop are folded into one matrix, so the rough overlay is
+  drawn through it and the model's lines are read back through it exactly.
+- A running attempt holds a lock on its call key; another process asking the
+  same call is refused `BUSY`, and an attempt whose process died releases it.
+- The pictures sent are not kept; they are drawn again from the section and
+  the request. Exact prompt text and attachment roles are always saved.
+- Provider adapters only translate requests. Task semantics and the choice of
+  wording (GPT-image lineage or Gemini lineage) stay here.
 
 ## Visual review is essential
 
-Inspect raw model replies BEFORE resizing, extraction or registration. Next inspect
-extracted boundaries on the original photograph, then fitted atlas borders on that
-same photograph. Describe concrete anatomical successes, errors and uncertainty.
-A model may redraw tissue; its redrawn photograph is not the evaluation reference.
-A useful model correction can be damaged by the fit. Metrics and fit error codes
-cannot establish anatomical quality; report disagreement with visual evidence.
+Inspect the raw reply BEFORE resizing, extraction or registration; then the
+extracted lines on the original photograph; then the fitted borders on that
+photograph. Describe concrete anatomical successes, errors and uncertainty. A
+model may redraw tissue; its redrawn photograph is not the reference. A useful
+correction can be damaged by the fit. Metrics and fit codes cannot establish
+anatomical quality: report any disagreement with what you see.
 
-Keep rough overlay, exact prompt, raw reply, original-photo correction overlay,
-fitted overlay and labels separately. 
-
-## Prompt review: every sentence
+## Prompt rules: every sentence
 
 Before changing or sending a prompt:
 
-- State each sentence's intended effect and plausible alternative interpretations.
-  Remove ambiguity, redundancy and contradictions. No sentence is exempt.
-- Identify actual attachment order, content and role. Specify what is edited,
-  preserved, and the output frame.
+- State each sentence's intended effect and its plausible alternative
+  readings. Remove ambiguity, redundancy and contradiction; no sentence is
+  exempt.
+- Name the real attachment order, content and role; say what is edited, what
+  is preserved and the output frame.
 - Never write a visibility-conditioned rule ("no tissue, no line", "border what
   you see"). A visible slide feature (bubble, stain, debris) must NOT get a
-  line, and an indistinct region MUST still get its atlas line. The atlas image
+  line, and an indistinct region MUST still get its atlas line: the atlas image
   alone decides which boundaries exist. The only exclusion a prompt may state
-  is tissue physically torn away or missing from the section.
-- Distinguish moving lines onto visible tissue from copying supplied lines.
-  Calling rough lines "correct" can imply retaining them unchanged.
-- Verify actual history before referring to an earlier reply. A second request
-  supplies constructed images, not conversational memory.
-- Follow the vendor guide for the lineage: OpenAI GPT-image (roles by number and
-  purpose, "change only X" plus an explicit preserve list, exclusions allowed)
-  or Google Gemini (positive framing only, "change only X, keep everything else
-  exactly the same"). State the intended use (an annotation overlay on a
-  photograph), that the yellow lines are the only new thing in the image, and
-  that every tissue pixel and its texture is preserved.
-- Save exact text and attachments. Inspect the result before declaring an
-  improvement.
+  is tissue physically torn away or missing.
+- Distinguish moving lines onto visible tissue from copying supplied lines;
+  calling rough lines "correct" can imply keeping them unchanged.
+- Check the real history before referring to an earlier reply: a second
+  request supplies constructed images, not conversational memory.
+- Follow the vendor guide for the lineage. OpenAI GPT-image: roles by number
+  and purpose, "change only X" with an explicit preserve list, exclusions
+  allowed. Gemini: positive framing only, "change only X, keep everything else
+  exactly the same". State the intended use (an annotation overlay on a
+  photograph), that the yellow lines are the only new thing, and that every
+  tissue pixel and its texture is preserved.
+- Per-slice notes ("Additional notes for this slice (supplement the task
+  above)") are subordinate: specimen-specific displacement, damage or slide
+  artifacts. They never replace the task or select borders by visibility, and
+  add no attachment, frame or partition.
+- Inspect the result before declaring an improvement.
 
-Provider adapters only translate requests; task semantics and prompt selection
-stay in nonlinear.
-
-## Base prompt sentence review
-
-`border_correction_tool_prompt` returns `border_refinement_prompt` for the
-Gemini lineage (Image 1 the placed borders, Image 2 the clean photograph);
-OpenAI providers get `_SUPPLIED_GPT` (the same sentences, attachments swapped).
-The notes heading, "Additional notes for this slice (supplement the task
-above)", is subordinate scope and adds no attachment, frame or partition. Notes
-describe specimen-specific displacement, damage or slide artifacts; they are
-never a replacement task or a visibility-based border-selection policy. The exact
-notes and the effective prompt are always saved. Sentence by sentence, with the
-interpretation each was checked against:
-
-| Sentence | Purpose and alternative interpretation checked |
-| --- | --- |
-| Image 1 is the photograph with roughly aligned borders. | Establishes the edit target; "rough" avoids treating the placement as anatomically final. |
-| Image 2 is the same photograph without lines. | Supplies unobscured tissue in the identical frame; it is not an independent atlas plate. |
-| Edit Image 1 so each line follows its region edge in Image 2. | Requests corrected anatomical placement rather than tracing any visible artifact. |
-| Move a line by sliding or bending it. | Describes changes to lines, not movements of tissue pixels. |
-| Keep an already correct line. | Allows partial correction without asking the model to redraw every border. |
-| Infer indistinct boundaries from neighboring structures and the supplied arrangement. | Indistinct surviving anatomy retains boundaries; visibility is not a permission to omit them. |
-| Preserve Image 2's photograph, tissue, background, size, position and frame. | Defines an annotation overlay and excludes synthesized tissue as the intended output. |
-| Keep the same boundary set and thin bright yellow style. | The supplied atlas arrangement decides region identity; artifacts do not introduce regions. |
-| Output one photograph with corrected boundaries replacing the rough ones. | Requests one corrected annotation, with no labels, alternate views or accumulated rough lines. |
-
-## Known limits
-
-One draw per model call. Yellow tissue can contaminate line extraction; the
-border fit does not itself certify region identity or topology. Full details and output frame meanings are
-in the design doc.
+The base prompt asks for exactly this: edit Image 1 (the photograph with rough
+borders) so each line follows its region edge in Image 2 (the same photograph
+without lines); slide or bend a line, keep a correct one, infer indistinct
+boundaries from neighbouring structures; preserve the photograph, tissue,
+background, size, position and frame; keep the same boundary set and the thin
+bright yellow style; output one photograph with the corrected lines replacing
+the rough ones. Each sentence was checked against the readings above; change
+none without repeating that check.

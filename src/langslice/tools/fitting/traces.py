@@ -97,7 +97,7 @@ def _start_trace(
         raise Refused(refusal.code, id=section_id, **refusal.facts)
     try:
         current = handoff.correction_fingerprint(job.state, workspace, section_id)
-        if job.image_job_running(section_id, current):
+        if job.traces.running(section_id, current):
             return TraceStarted(id=section_id, running=True, record=_trace_json(record))
         kept, dropped = exclusions(record, chosen)
         result, call = registration_tool.start_correction(
@@ -129,8 +129,8 @@ def _start_trace(
                 RefusalCode.STALE_INPUT, id=section_id, message=_STALE_MESSAGE + " Call it again."
             )
         if call is not None:
-            job.start_image_job(section_id, fingerprint, call, workers=workers)
-        portable = job.portable(result)
+            job.traces.start(section_id, fingerprint, call, workers=workers)
+        portable = job.traces.portable(result)
         trace = BorderTrace.from_json(portable)
         if _without_cached(trace) != _without_cached(now.border_trace):
             now.border_trace = trace

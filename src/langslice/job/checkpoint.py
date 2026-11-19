@@ -1,13 +1,10 @@
-"""The job's state, its files and the checkpoint that writes them.
+"""The checkpoint: the state file, and what is written and told after it.
 
-:class:`JobCheckpoint` is the base of :class:`langslice.job.job.Job`: it
-holds the stack, the spec and the job folder, writes the checkpoint (the
-state, then ``registration.json`` and the landmark files as the lock's
-outermost hold ends), tells the observers, and holds the section histories
-and undo steps (:mod:`langslice.job.steps.history`) that ``undo.py`` writes.
-Every
-path the state stores (a deformation's ``record``, a border trace's
-artifacts) is relative to the job folder.
+:class:`Checkpoints` is the job's ``checkpoints``
+(:class:`langslice.job.job.Job`): it writes the state file, then
+``registration.json`` and the landmark files as the lock's outermost hold
+ends, and tells the observers. Every path the state stores (a deformation's
+``record``, a border trace's artifacts) is relative to the job folder.
 """
 
 from __future__ import annotations
@@ -15,29 +12,15 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import threading
-from collections.abc import Callable, Iterator, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Iterator
+from typing import TYPE_CHECKING
 
-from langslice.core.fits import deformation
 from langslice.core.jsonable import JsonObject
 from langslice.core.stack.stack import Stack
 from langslice.job.exports import public_files as formats
 from langslice.job.folder.layout import JobLayout
 from langslice.job.folder.lock import FolderLock
-from langslice.job.host_inputs import host_damaged_ids
-from langslice.job.pictures import ViewStore
-from langslice.job.settings.spec import JobSpec
-from langslice.job.state_file import (
-    relative_to,
-    stack_from_json,
-    state_paths,
-    write_checkpoint,
-)
-from langslice.job.steps.history import SCRIPT, SectionHistories
-from langslice.job.steps.undo_steps import UndoFile, UndoStep
+from langslice.job.state_file import stack_from_json, write_checkpoint
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -93,129 +76,50 @@ def state_from_file(data: JsonObject, path: str | os.PathLike[str]) -> Stack:
         raise ValueError(f"{path}: {exc}") from exc
 
 
-class JobCheckpoint:
-    """Hold one job's state and files, and write its checkpoint.
+class Checkpoints:
+    """Write the state file, then tell the observers.
 
     Parameters
     ----------
     state
         The stack the job registers.
-    spec
-        The job's settings form.
     layout
         The job folder and the paths in it.
-    results_path
-        Where the results JSON goes; None is the job folder's
-        ``exports/linear_results.json``.
+    lock
+        The job folder's write lock; the files derived from the state are
+        written as its outermost hold ends.
+    persist
+        False: nothing is written (a dry run).
     seen
-        The stamps of the state file and ``history/undo.json`` taken
-        before they were read; None takes them now.
+        The stamp of the state file taken before it was read; None takes it
+        now.
     """
 
     def __init__(
         self,
         state: Stack,
-        spec: JobSpec,
-        *,
         layout: JobLayout,
-        results_path: str | None = None,
-        seen: tuple[Stamp, Stamp] | None = None,
+        lock: FolderLock,
+        *,
+        persist: bool,
+        seen: Stamp = None,
     ) -> None:
         self.state = state
-        self.spec = spec
-        self.layout = layout
-        self.results_path = str(results_path or layout.results_file)
-        self.histories = SectionHistories(layout)
-        self.undo_file = UndoFile(layout)
-        self.views: ViewStore = ViewStore(layout)
-        self._derived_due = False
-        self.lock = FolderLock(layout.folder)
-        self.host_damaged = frozenset(host_damaged_ids(spec))
-        self.undo_stack: list[UndoStep] = []
-        self.redo_stack: list[UndoStep] = []
-        self.next_step = 1
-        self.pushed: int = 0
-        self.picture_cap: int | None = None
-        self.observers: list[Callable[[Stack], None]] = []
-        self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
-        self.image_executor: ThreadPoolExecutor | None = None
-        self._deformations: deformation.RecordStore | None = None
-        self.persist = True
-        self._workspace: Workspace | None = None
-        self._state_stamp, self._undo_stamp = seen or (
-            file_stamp(self.checkpoint_path),
-            file_stamp(self.undo_path),
-        )
-        self._peeked: dict[str, Any] | None = None
-        self._peek_stamp: Stamp = None
-        self._acting = threading.local()
-        self.registered: list[tuple[int, str, int]] = []
-        self.wire_views()
-
-    @property
-    def lock(self) -> FolderLock:
-        """The job folder's write lock; the files derived from the state are
-        written as its outermost hold ends (:meth:`checkpoint`)."""
-        return self._lock
-
-    @lock.setter
-    def lock(self, lock: FolderLock) -> None:
+        self.workspace: Workspace | None = None
+        self._layout = layout
+        self.stamp: Stamp = seen if seen is not None else file_stamp(self.path)
         self._lock = lock
-        if self._write_derived not in lock.before_release:
-            lock.before_release.append(self._write_derived)
+        self._persist = persist
+        self._derived_due = False
+        self._observers: list[Callable[[Stack], None]] = []
+        lock.before_release.append(self._write_derived)
 
     @property
-    def workspace(self) -> Workspace | None:
-        """The workspace the job's sections and atlas are read through (set by
-        :meth:`open`, :meth:`load` and the tool door): every checkpoint rewrites
-        ``registration.json`` through it
-        (:func:`langslice.job.exports.public_files.write_registration`), and
-        its made
-        section images are read from this job's folder."""
-        return self._workspace
-
-    @workspace.setter
-    def workspace(self, workspace: Workspace | None) -> None:
-        self._workspace = workspace
-        if workspace is not None and getattr(workspace, "job_folder", None) is None:
-            workspace.job_folder = str(self.layout.folder)
-
-    def wire_views(self) -> None:
-        """Number each saved picture's ``step`` with the undo history's depth
-        (call again after replacing :attr:`views`)."""
-        self.views.step_source = lambda: len(self.undo_stack)
-        self.views.registration_source = self.registration_numbers
-
-    @property
-    def folder(self) -> Path:
-        """The job folder."""
-        return self.layout.folder
-
-    @property
-    def checkpoint_path(self) -> str:
+    def path(self) -> str:
         """The state checkpoint, ``<job folder>/state.json``."""
-        return str(self.layout.state_file)
+        return str(self._layout.state_file)
 
-    @property
-    def undo_path(self) -> str:
-        """The undo and redo steps, ``history/undo.json``."""
-        return str(self.undo_file.path)
-
-    @property
-    def engine_log(self) -> str | None:
-        """Where the registration engines' own output goes while they fit
-        (``logs/engine.log``, :mod:`langslice.core.fits.engine_log`); None for
-        a job that persists nothing."""
-        return str(self.layout.logs_dir / "engine.log") if self.persist else None
-
-    def portable(self, correction: dict[str, Any]) -> dict[str, Any]:
-        """A border trace's record with its paths relative to the job folder."""
-        converted = state_paths(
-            {"slices": [{"border_trace": correction}]}, relative_to(self.folder)
-        )
-        return converted["slices"][0]["border_trace"]
-
-    def checkpoint(self) -> None:
+    def write(self) -> None:
         """Write the state (atomically, versioned), then tell every observer.
 
         Its public rendering, ``registration.json``
@@ -235,64 +139,26 @@ class JobCheckpoint:
                     for pair in section.landmarks.pairs
                 )
                 section.landmarks = section.landmarks.model_copy(update={"pairs": pairs})
-        if not self.persist:
+        if not self._persist:
             return
-        with self.lock.held():
-            write_checkpoint(self.state, self.checkpoint_path)
-            self._state_stamp = file_stamp(self.checkpoint_path)
+        with self._lock.held():
+            write_checkpoint(self.state, self.path)
+            self.stamp = file_stamp(self.path)
             self._derived_due = True
-        self._notify()
+        self.notify()
 
     def _write_derived(self) -> None:
         """``registration.json`` and the landmark files of the state as it
         stands, when a checkpoint owes them (called by the lock, held)."""
-        if not self._derived_due or not self.persist:
+        if not self._derived_due or not self._persist:
             return
         self._derived_due = False
-        formats.write_registration(self.layout, self.state, self.workspace)
-        formats.write_landmarks(self.layout, self.state)
+        formats.write_registration(self._layout, self.state, self.workspace)
+        formats.write_landmarks(self._layout, self.state)
 
-    @contextlib.contextmanager
-    def acting(self, tool: str) -> Iterator[None]:
-        """This thread runs *tool*'s call for the block: the history lines its
-        writes append are made by it."""
-        outer = getattr(self._acting, "tool", None)
-        self._acting.tool = tool
-        try:
-            yield
-        finally:
-            self._acting.tool = outer
-
-    @property
-    def actor(self) -> str:
-        """The tool this thread runs (:meth:`acting`); ``script`` for none."""
-        return getattr(self._acting, "tool", None) or SCRIPT
-
-    def registration_numbers(self, ids: Sequence[str]) -> dict[str, int]:
-        """The number of the registration each section of *ids* holds now,
-        for the sections that hold a numbered one (a picture records them)."""
-        out: dict[str, int] = {}
-        for section_id in ids:
-            record = self.state.by_id(section_id)
-            number = (
-                self.histories.registration_number(self.state, record)
-                if record is not None
-                else None
-            )
-            if number is not None:
-                out[section_id] = number
-        return out
-
-    def registered_since(self, mark: int) -> dict[str, int]:
-        """The registration each section holds after this thread's writes
-        since ``len(job.registered)`` was *mark*, by section."""
-        me = threading.get_ident()
-        return {
-            section: number for thread, section, number in self.registered[mark:] if thread == me
-        }
-
-    def _notify(self) -> None:
-        for observer in list(self.observers):
+    def notify(self) -> None:
+        """Call every observer with the state."""
+        for observer in list(self._observers):
             try:
                 observer(self.state)
             except Exception:
@@ -301,18 +167,8 @@ class JobCheckpoint:
     @contextlib.contextmanager
     def observe(self, fn: Callable[[Stack], None]) -> Iterator[None]:
         """Call *fn* with the state after every checkpoint and reload, while open."""
-        self.observers.append(fn)
+        self._observers.append(fn)
         try:
             yield
         finally:
-            self.observers.remove(fn)
-
-    @property
-    def deformations(self) -> deformation.RecordStore:
-        """Fitted records, saved in each section's folder
-        (``sections/<name>/deformable/<key>``; made on first use)."""
-        if self._deformations is None:
-            self._deformations = deformation.RecordStore(
-                root=self.layout.sections_dir, folder_of=self.layout.deformable_dir
-            )
-        return self._deformations
+            self._observers.remove(fn)

@@ -926,7 +926,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
             "atlas": opened.spec.atlas,
             "plane": opened.spec.plane,
             "verbs": listed_verbs,
-            "resumed": bool(opened.job.undo_stack or opened.job.redo_stack),
+            "resumed": bool(opened.job.undo.steps or opened.job.undo.redo_steps),
             **launches.facts(opened),
         }
         if imported is not None:

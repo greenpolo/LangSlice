@@ -193,7 +193,7 @@ def listing(job: Job, section: str) -> Listed:
     it never was. Writes no state."""
     with job.writing():
         record = _resolve(job, section)
-        held = job.number_registration(record)
+        held = job.undo.number_registration(record)
         pictures = saved_pictures(job, record.id)
         rows = [
             row(
@@ -296,7 +296,7 @@ def _check_entry(job: Job, record: Section, entry: Row) -> None:
 def _restore_one(job: Job, record: Section, number: object) -> Restored:
     """Put registration *number* back on *record* (the caller holds the lock
     and commits); refused as :func:`restore` says."""
-    held = job.number_registration(record)
+    held = job.undo.number_registration(record)
     entry = _listed(job, record, number)
     if entry is None:
         raise _unknown(job, record, number)

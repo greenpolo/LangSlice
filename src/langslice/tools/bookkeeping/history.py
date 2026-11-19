@@ -74,8 +74,8 @@ def describe_step(old: Mapping[str, Any], new: Mapping[str, Any]) -> HistoryStep
 
 
 def _steps(job: Job, step: Any, steps: int) -> tuple[dict[str, Any], int]:
-    """Take up to *steps* history steps with *step* (``job.undo`` or
-    ``job.redo``) under one hold of the job's lock: the state before them
+    """Take up to *steps* history steps with *step* (``job.undo.undo`` or
+    ``job.undo.redo``) under one hold of the job's lock: the state before them
     and how many were taken."""
     with job.writing():
         before = job.snapshot()
@@ -88,12 +88,12 @@ def _steps(job: Job, step: Any, steps: int) -> tuple[dict[str, Any], int]:
 def undo(job: Job, steps: int = 1) -> Stepped:
     """Restore the state before the last write: *steps* steps back (as many
     as the history holds when it holds fewer)."""
-    before, taken = _steps(job, job.undo, steps)
+    before, taken = _steps(job, job.undo.undo, steps)
     if not taken:
-        return Stepped(done=False, depth=len(job.undo_stack))
+        return Stepped(done=False, depth=len(job.undo.steps))
     return Stepped(
         done=True,
-        depth=len(job.undo_stack),
+        depth=len(job.undo.steps),
         step=describe_step(job.snapshot(), before),
         steps=taken,
     )
@@ -101,12 +101,12 @@ def undo(job: Job, steps: int = 1) -> Stepped:
 
 def redo(job: Job, steps: int = 1) -> Stepped:
     """Re-apply the writes :func:`undo` reversed, *steps* of them."""
-    before, taken = _steps(job, job.redo, steps)
+    before, taken = _steps(job, job.undo.redo, steps)
     if not taken:
-        return Stepped(done=False, depth=len(job.redo_stack))
+        return Stepped(done=False, depth=len(job.undo.redo_steps))
     return Stepped(
         done=True,
-        depth=len(job.redo_stack),
+        depth=len(job.undo.redo_steps),
         step=describe_step(before, job.snapshot()),
         steps=taken,
     )

@@ -70,7 +70,7 @@ to register, with example pictures. Both subagents preload
 `registration-playbook` (`skills` in their frontmatter) and load the others on
 demand (`Skill` is in their `tools`); `Read` lets `register` open the example
 pictures. The skills' one source is `src/langslice/skills/`; each connector
-carries a copy, checked by `tests/test_connector_skills.py`.
+carries a copy, written by `packaging/build_connector_skills.py` and checked by `tests/test_connector_skills.py`.
 
 Both start with `start_job(image_folder=<folder>)`, named in the launch
 message, which also holds LangSlice's job statement for the job (the one its

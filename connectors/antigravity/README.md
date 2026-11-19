@@ -14,7 +14,7 @@ The registration skills (`registration-playbook`, `placement`,
 `damage-and-masks`, `landmarks`, `choosing-engines`) teach the agents how to
 register, with example pictures they open with `view_file`. Both agents list
 `skills/registration-playbook` in their frontmatter `skills`. The skills' one
-source is `src/langslice/skills/`; each connector carries a copy, checked by
+source is `src/langslice/skills/`; each connector carries a copy, written by `packaging/build_connector_skills.py` and checked by
 `tests/test_connector_skills.py`.
 
 ## Install

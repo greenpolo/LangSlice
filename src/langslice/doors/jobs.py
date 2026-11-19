@@ -67,8 +67,8 @@ def close_job(job: Job) -> None:
     and the library (:meth:`Opened.close`), the MCP door (a replaced
     session, the end of ``serve``) and LangSlice's own agent
     (``doors.agent.engine.run``)."""
-    if job.image_jobs:
-        job.settle_border_traces()
+    if job.traces.pending():
+        job.traces.settle()
     job.close()
 
 

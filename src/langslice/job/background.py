@@ -4,9 +4,9 @@ A tool that takes minutes (``trace_borders``: an image-model call, then a
 fit of what it drew) starts its work here and returns at once with the
 work's id. The work runs on a thread of the job's :class:`BackgroundWork`
 registry (:attr:`langslice.job.job.Job.background`): it first waits for the
-image-model calls of its sections (:meth:`~langslice.job.job.Job.wait_image_job`,
-the job's image-correction machinery, which records each reply on its
-section), then runs its *land* callable, which writes its result as its own
+image-model calls of its sections
+(:meth:`~langslice.job.border_traces.Traces.wait`, which records each reply on
+its section), then runs its *land* callable, which writes its result as its own
 undo step and says what happened. The registry saves the pictures *land*
 drew among the job's pictures (their numbers are the work's ``pictures``)
 and keeps a notice per finished work until it is asked for:
@@ -35,17 +35,20 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.pictures.drawn import collecting, note_for
-from langslice.job.folder.lock import LockYielded
+from langslice.job.border_traces import Traces
+from langslice.job.folder.lock import FolderLock, LockYielded
+from langslice.job.pictures import ViewStore
+from langslice.job.steps.undo import UndoStore
 
 if TYPE_CHECKING:
     from PIL import Image
 
-    from langslice.job.border_traces import JobBorderTraces
+    from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +140,22 @@ class _Entry:
 class BackgroundWork:
     """The background work of one job (see the module text)."""
 
-    def __init__(self, job: JobBorderTraces) -> None:
-        self._job = job
+    def __init__(
+        self,
+        lock: FolderLock,
+        traces: Traces,
+        undo: UndoStore,
+        views: ViewStore,
+        *,
+        acting: Callable[[str], AbstractContextManager[None]],
+        workspace: Callable[[], Workspace | None],
+    ) -> None:
+        self._folder_lock = lock
+        self._traces = traces
+        self._undo = undo
+        self._views = views
+        self._acting = acting
+        self._workspace = workspace
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._count = 0
@@ -257,7 +274,7 @@ class BackgroundWork:
         takes; otherwise the work still running at the deadline stays running.
         """
         deadline = None if timeout is None else time.monotonic() + timeout
-        holding = self._job.lock.held_here()
+        holding = self._folder_lock.held_here()
         if holding:
             self._draining.set()
         try:
@@ -307,7 +324,7 @@ class BackgroundWork:
         _WORKER.active = True
         try:
             for section in entry.wait_for:
-                self._job.wait_image_job(section, None)
+                self._traces.wait(section, None)
             self._land(entry, retry=False)
         except LockYielded:
             entry.yielded = True
@@ -325,15 +342,15 @@ class BackgroundWork:
             entry.claimed = True
         if retry:
             for section in entry.wait_for:
-                self._job.wait_image_job(section, None)
+                self._traces.wait(section, None)
         outer = getattr(_WORKER, "landing", None)
         _WORKER.landing = entry.work.id
-        mark = len(self._job.registered)
+        mark = len(self._undo.registered)
         try:
-            with self._pictures(entry) as drawn, self._job.acting(entry.work.kind):
+            with self._pictures(entry) as drawn, self._acting(entry.work.kind):
                 landed = entry.land()
                 drawn.extend(landed.pictures)
-            entry.work.registrations = self._job.registered_since(mark)
+            entry.work.registrations = self._undo.registered_since(mark)
         except LockYielded:
             with self._lock:
                 entry.claimed = False
@@ -355,15 +372,15 @@ class BackgroundWork:
             yield drawn
         if not drawn:
             return
-        job = self._job
+        workspace = self._workspace()
         held = [note_for(image, notes) for image in drawn]
         entry.work.captions = [str(note.caption or "") if note is not None else "" for note in held]
         try:
-            names = job.views.save(
+            names = self._views.save(
                 tool=entry.work.kind,
                 pictures=list(zip(drawn, held, strict=True)),
                 arguments={"work": entry.work.id, "sections": list(entry.work.sections)},
-                atlas=job.workspace.atlas if job.workspace is not None else None,
+                atlas=workspace.atlas if workspace is not None else None,
             )
             entry.work.pictures = [int(name.split("_", 1)[0]) for name in names]
         except Exception:

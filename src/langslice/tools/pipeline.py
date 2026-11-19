@@ -105,7 +105,7 @@ class ToolBox:
     """The tools of one run over its job, and what only the tools keep.
 
     The job holds the state, undo and redo, the checkpoint, the submit
-    gates, the image-correction jobs and the background work; the toolbox
+    gates, the border traces and the background work; the toolbox
     holds the tools, the submission, the opening-read gate and what every
     call's steps share (the lock, the observers, the verbs).
     """
@@ -342,7 +342,7 @@ def _save_pictures(call: ToolCall) -> Generator[None]:
 @contextlib.contextmanager
 def _name_registrations(call: ToolCall) -> Generator[None]:
     """Name the registration each section the write changed now holds."""
-    mark = len(call.box.job.registered)
+    mark = len(call.box.job.undo.registered)
     yield
     call.reply = registrations_named(call.box.job, call.reply, mark)
 
@@ -485,7 +485,7 @@ def registrations_named(job: Job, reply: object, mark: int) -> object:
         The write's reply; a reply with a ``registration`` of its own keeps
         it.
     mark
-        ``len(job.registered)`` before the write.
+        ``len(job.undo.registered)`` before the write.
 
     Returns
     -------
@@ -494,7 +494,7 @@ def registrations_named(job: Job, reply: object, mark: int) -> object:
         registrations this thread's writes left since *mark*, less the ones
         its status rows (``changed``, ``rows``) show.
     """
-    left = job.registered_since(mark)
+    left = job.undo.registered_since(mark)
     if not left or not isinstance(reply, dict):
         return reply
     fields = cast("dict[str, object]", reply)

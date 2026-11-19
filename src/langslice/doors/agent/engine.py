@@ -227,7 +227,7 @@ async def run_session(
         write_spend(spend)
     if sink and sink[0]:
         state.debrief = sink[0]
-        box.job.checkpoint()
+        box.job.checkpoints.write()
     return outcome
 
 
