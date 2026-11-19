@@ -6,7 +6,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { EASE_OUT } from '../motion';
-import { picture } from '../pictures';
+import { picture, pictureStyle } from '../pictures';
 import type { Row, Strip } from '../run';
 import { short } from '../simple/Stage';
 import { Space, type Placed, type Shell } from './scene';
@@ -18,7 +18,7 @@ const THUMB_RANK = 500;
 type SpaceAnswer = { thickness_um: number; given_thickness: boolean; plane_axis: number; sections: Placed[] };
 
 export function thumbUrl(job: number, id: string, key: string) {
-  return `jobs/${job}/render/thumb/${encodeURIComponent(id)}?edge=${THUMB_EDGE}&key=${encodeURIComponent(key)}&style=calm`;
+  return `jobs/${job}/render/thumb/${encodeURIComponent(id)}?edge=${THUMB_EDGE}&key=${encodeURIComponent(key)}&style=${pictureStyle()}`;
 }
 
 export function Volume({ job, rows, strip, focus, onPick }: {

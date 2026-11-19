@@ -52,7 +52,7 @@ export function App() {
             <TabButton tab="settings" current={nav.tab}>Settings</TabButton>
           </div>
         </header>
-        {nav.tab === 'viewer' && <Viewer />}
+        {nav.tab === 'viewer' && <Viewer key={theme} />}
         {visited.has('prompt') && <div className="pane" hidden={nav.tab !== 'prompt'}><Prompt /></div>}
         {visited.has('settings') && <div className="pane" hidden={nav.tab !== 'settings'}><Settings shown={nav.tab === 'settings'} /></div>}
         <footer className="foot">

@@ -52,7 +52,11 @@ large with their name and position; more are dealt out as a grid of small
 pictures, and the finished run shows every section. These pictures are drawn
 quiet (`calm.py`): the main stain alone (a channel named for DAPI, Hoechst or
 Nissl, else an RGB file's blue), the tissue cut out of the scanner's tile
-floor and the atlas borders a soft light layer. A new focus is shown once
+floor and the atlas borders a soft light layer. In the light look (the
+Light | Dark button in the top bar) they are drawn on paper (`paper.py`): a
+brightfield section (ISH, Nissl, DAB) in its own colours with the slide
+balanced to the paper, a fluorescence section's main stain as ink, and the
+atlas borders as ink over either. A new focus is shown once
 its pictures are ready (at most 4 s); a section still shown glides to its
 new place, a new one fades in and a section's new drawing crossfades over
 the old one. Under the pictures is the cutting axis: a millimetre ruler

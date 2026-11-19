@@ -24,6 +24,8 @@ Content-Security-Policy and ``no-store``. GET endpoints:
   current registration, or its thumbnail, drawn now (``render.py``); the
   section is its filename, URL-encoded, and must be one of the job's;
   ``key`` is the page's own (the current state is drawn whatever it says);
+  ``style=calm`` or ``style=paper`` draws it in the dark or the light
+  look (``calm.py``, ``paper.py``);
 - ``jobs/<n>/render/atlas/<k>?edge=``: the strip's *k*-th atlas thumbnail;
 - ``settings``: the Settings tab's state (``Settings.state``);
 - ``jobs/<n>/export``: the job's last export (``export.Exports.state``).
@@ -64,6 +66,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from langslice.core.maps.abba import MAX_POINTS
 from langslice.hosts.gui import generator
 from langslice.hosts.gui.comments import CommentRow, CommentWatch
+from langslice.hosts.gui.drawing import Style
 from langslice.hosts.gui.export import ExportError, Exports, reveal
 from langslice.hosts.gui.render import (
     DEFAULT_EDGE_PX,
@@ -114,6 +117,12 @@ HEADERS = {
 
 def _int(query: dict[str, list[str]], key: str, default: int) -> int:
     return int(query.get(key, [str(default)])[0])
+
+
+def _style(query: dict[str, list[str]]) -> Style:
+    """Read a picture's ``style`` (``calm``, ``paper``), else raw."""
+    named = query.get("style", [""])[0]
+    return Style(named) if named in set(Style) else Style.RAW
 
 
 def _exports(exports: Exports | None) -> Exports:
@@ -297,9 +306,9 @@ class GuiServer:
         """Draw a section's overlay or thumbnail, named by its filename."""
         draw = _SECTION_PICTURES[match[2]]
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
-        calm = query.get("style", [""])[0] == "calm"
         return self._jpeg(partial(
-            draw, self._renderer(watcher), unquote(match[3]), edge, calm=calm))
+            draw, self._renderer(watcher), unquote(match[3]), edge,
+            style=_style(query)))
 
     def _atlas(self, watcher: JobWatcher, match: re.Match[str],
                query: dict[str, list[str]]) -> Answer:

@@ -92,7 +92,9 @@ The page is a React app (`web/`, below), built into `static/`.
   `useRun(select)`; the run's `log` for the journal; `sendComment`);
   `src/nav.ts` keeps the tab and the view in the address
   (`#tab=viewer|prompt|settings&view=simple|extended&job=n`);
-  `src/pictures.ts` loads the sections' quiet pictures (`?style=calm`) at
+  `src/pictures.ts` loads the sections' pictures in the window's look
+  (`pictureStyle`: `?style=calm`, in the light look `?style=paper`; the
+  viewer is mounted again when the look changes) at
   most three at once, lowest rank first, decoded and kept by address, with
   each section's newest picture as a stand-in (`newestOf`), sizes snapped
   to `EDGES`, and `warm` for the finished run's grid while nothing else
@@ -133,7 +135,8 @@ The page is a React app (`web/`, below), built into `static/`.
   the thickness; the shear the decomposition leaves is kept), only its
   picture's ground left out by a mask made once per picture (`tissueImage`,
   on a copy `MASK_W` pixels wide so it costs the page little:
-  brighter than the corners' luminance over a 5x5 mean; smooth patches
+  brighter than the corners' luminance over a 5x5 mean, or darker than
+  it when the corners are the light look's paper, `BRIGHT_GROUND`; smooth patches
   touching the ground outside, glare or grey smears, cut; specks dropped,
   the dark outer edge peeled, pinholes filled, a piece apart from the tissue
   dropped when it is under `DEBRIS` of the largest piece or cut by the
@@ -298,8 +301,9 @@ The page is a React app (`web/`, below), built into `static/`.
   since, `job.review.revised`), `CommentWatch(folder).rows(state, version)`
   (read again only when `review.json`'s stamp or the watcher's
   `state_version` moved).
-- `calm.py` — the Simple view's pictures (`render/overlay|thumb/...?style=calm`,
-  `JobRenderer.overlay(..., calm=True)`, cached under their own kind):
+- `calm.py` — the dark look's pictures (`render/overlay|thumb/...?style=calm`,
+  `JobRenderer.overlay(..., style=Style.CALM)`, `drawing.Style`, cached under
+  their own kind):
   `main_channel` (a channel named for a nuclear or Nissl stain, else
   `blue`, else the first), `draw_calm_overlay` (two `look` calls on that
   channel, with and without the borders; their difference is the border
@@ -310,6 +314,17 @@ The page is a React app (`web/`, below), built into `static/`.
   scanner's bright line and smears along the edge of what it scanned
   (`scan_edge`, `without_edge_glow`, `without_threads`)), `scale_bar` cleared, a soft knee, a
   cool tint on `STAGE`, the borders at `LINE_STRENGTH`, fainter when small).
+  A brightfield section (`is_brightfield`: the median of its scanned pixels
+  and of their rim over `BRIGHT_SLIDE`) is read by its darkness under the
+  slide's white.
+- `paper.py` — the light look's pictures (`?style=paper`, `Style.PAPER`):
+  `draw_paper_overlay`, `draw_paper_thumb`, `paper`. A brightfield section
+  (ISH, Nissl, DAB) keeps its own colours, the slide balanced to `PAPER`
+  (its `SLIDE_LEVEL` percentile is white; under `STAIN_FLOOR` of darkness a
+  pixel is paper, the stain coming in over `STAIN_KNEE`), and the ground
+  `look` leaves around it is paper too; a darkfield section is its main
+  stain as `INK` on paper, cut out by `calm.tissue_mask`. The atlas borders
+  are `LINE` ink, from the difference of two `look` calls.
 - `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
   `visualign`); `run_export(folder, kind)` -> `Written` writes one through
   the library (`langslice.open_job`: `export_abba`, or `export_stack` for
@@ -506,8 +521,9 @@ The page is a React app (`web/`, below), built into `static/`.
     now and what can be clicked, also `--focus`, the sections in focus;
     grey-violet literal text, pink problems, green Submitted; `--clawd`
     is the mascot's own). `:root[data-theme="light"]` is the light look:
-    paper grounds and dark words, pictures still on black, and the brain
-    strip on a dark ground of its own (`--stage*`). The page keeps the choice in `localStorage` and swaps
+    paper grounds and dark words, the pictures on paper too (`paper.py`;
+    `--stage` and `--picture` are its `PAPER`), made for brightfield
+    sections. The page keeps the choice in `localStorage` and swaps
     the lockup. `lockup.svg` and `logomark.svg` are `assets/logo/`'s dark
     ones, `lockup-light.svg` the light one.
 
@@ -521,6 +537,9 @@ names),
 `tests/test_gui_transcripts.py` (the transcript found by its `start_job`
 call among others and tailed, a half-written line, an old transcript and a
 job with no call left alone, `off`, the watcher showing the words),
+`tests/test_gui_paper.py` (a bright slide told from a dark one, the slide
+and the ground around it drawn as paper with the stain kept, the borders as
+ink, a darkfield stain as ink on paper, the `style` a picture is asked in),
 `tests/test_gui_render.py` (every picture drawn with nothing written to the
 folder, an overlay as `look`'s with its deformation and without its caption,
 the render key, the strip and its spacing, one drawing for concurrent requests,
