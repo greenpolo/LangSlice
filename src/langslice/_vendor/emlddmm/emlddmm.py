@@ -14,6 +14,10 @@
 #   - IPython is optional: its display is imported only when installed (it shows figures
 #     in a notebook; LangSlice runs with n_draw=0 and draws none).
 #   - The print at import ("use display ...") is removed: it wrote to the host's stdout.
+#   - ``emlddmm(energy_callback=f)`` calls ``f(iteration, row)`` after every iteration with
+#     the row appended to ``Esave`` (total, mismatch, regularization ...), which only the
+#     progress figures read; the module's ``print`` goes to the list a thread names with
+#     ``printing_to(lines)`` and prints as usual otherwise.
 # Nothing else is changed. LangSlice's style and type checks do not read this folder.
 
 import numpy as np
@@ -38,6 +42,27 @@ import tifffile as tf # for 16 bit tiff
 from scipy.stats import mode
 from scipy.interpolate import interpn
 import PIL # only required for one format conversion function
+import builtins # LangSlice: print below
+import contextlib # LangSlice: printing_to below
+import threading # LangSlice: printing_to below
+
+_PRINTING = threading.local() # LangSlice: where this thread's prints go
+
+def print(*args, **kwargs): # LangSlice: the module's print, kept by printing_to
+    lines = getattr(_PRINTING, 'lines', None)
+    if lines is None:
+        builtins.print(*args, **kwargs)
+    else:
+        lines.append(kwargs.get('sep', ' ').join(str(arg) for arg in args) + kwargs.get('end', '\n'))
+
+@contextlib.contextmanager
+def printing_to(lines): # LangSlice: keep what this thread prints in the list ``lines``
+    before = getattr(_PRINTING, 'lines', None)
+    _PRINTING.lines = lines
+    try:
+        yield lines
+    finally:
+        _PRINTING.lines = before
 try:    
     PIL.Image.MAX_IMAGE_PIXELS = None # prevent decompression bomb error for large files
 except:
@@ -1117,6 +1142,7 @@ def emlddmm(**kwargs):
                 'priors':None,
                 'update_priors':True,
                 'full_outputs':False,
+                'energy_callback':None, # LangSlice: f(iteration, row) after every iteration
                 'muB':None,
                 'update_muB':False,
                 'muA':None,
@@ -1954,6 +1980,8 @@ def emlddmm(**kwargs):
             Esave.append([E.detach().cpu(),EM.detach().cpu(),ER.detach().cpu(),EN.detach().cpu()])
         if pointsI is not None:
             Esave[-1].append(EP.detach().cpu())
+        if kwargs['energy_callback'] is not None: # LangSlice
+            kwargs['energy_callback'](len(Esave) - 1, [float(e) for e in Esave[-1]])
         Tsave.append(A[:3,-1].detach().clone().squeeze().cpu().numpy())
         Lsave.append(A[:3,:3].detach().clone().squeeze().reshape(-1).cpu().numpy())
         maxvsave.append(torch.max(torch.abs(v.detach())).clone().cpu().numpy())

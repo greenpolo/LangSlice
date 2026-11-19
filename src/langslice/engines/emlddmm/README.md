@@ -9,14 +9,15 @@ made: the slot spacing is an argument of the agent's, not a plugin setting.
 - `engine.py`: the emlddmm calls, in LangSlice's process, imported when a tool runs.
 - emlddmm itself is vendored: `src/langslice/_vendor/emlddmm/emlddmm.py` is the fork's file
   (SliceBench's `comparators/src/emlddmm_fix`), with its `LICENSE` and `NOTICE`. Its header
-  names the upstream commit and our two commits, and the two changes LangSlice made to import it
+  names the upstream commit and our two commits, and the changes LangSlice made to import it
   on numpy 2 and torch 2 in its own process: IPython's `display` is imported only when IPython
-  is installed (it shows figures in a notebook, and the fits draw none), and the print at import
-  is gone (it wrote to LangSlice's stdout). Nothing else of the file is changed. The energy
-  record is taken by wrapping its `interp` (the wrapper finds the calling `emlddmm` frame's local
-  `Esave` list, per thread), and what it prints during a fit goes to the call's `log.txt`.
+  is installed (it shows figures in a notebook, and the fits draw none), the print at import
+  is gone (it wrote to LangSlice's stdout), `emlddmm(energy_callback=f)` calls `f(iteration, row)`
+  with each row it adds to `Esave`, and `printing_to(lines)` keeps what the module prints on
+  the calling thread in a list. Nothing else of the file is changed. The energy
+  record is taken through the callback, and what it prints during a fit goes to the call's `log.txt`.
 - The atlas image is read from BrainGlobe in LangSlice's process at 50 um
-  (`../_atlas_images.py`, kept under `~/.cache/langslice-engines`).
+  (`../_atlas_average.py`, kept in the core's atlas cache).
 
 Needs the LangSlice plugin seams of branch `stalign-plugin-seams` (background work,
 `BUSY`, `FitFrame.applied_map`, `plane.native_to_um`, `angles_from_plane`, the `angles`
@@ -76,10 +77,9 @@ tilt is kept in `settings.json`. The borrowed Nissl `ccfv3augmented_nissl` is bu
 as LangSlice builds it (the augmented template on the atlas grid, 0.35 mm AP offset, zero outside
 the brain).
 
-Inputs, as `plugin.py`'s module text says: the preprocessed channel as it is in [0, 1] (the Fig
-3 benchmark's rule; background 1 on a white slide, 0 on a black one) at 58.88 um, resampled through the section's current registration; the atlas image at 50 um over its
+Inputs, as `plugin.py`'s module text says: the preprocessed channel as it is in [0, 1] (background 1 on a white slide, 0 on a black one) at 58.88 um, resampled through the section's current registration; the atlas image at 50 um over its
 mean; marked damage (with the native margin) and everything outside the image get weight 0; each
-section weighs as the gap it stands for (`section_weight`, as the Fig 3 runner).
+section weighs as the gap it stands for (`section_weight`).
 
 ## Job files (never put into the agent's context)
 

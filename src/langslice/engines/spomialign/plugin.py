@@ -1,14 +1,13 @@
 """SPOmiAlign as a LangSlice tool: the adapter, run in LangSlice's process.
 
 It is a tool of every job (its row of the tool table names
-``langslice.engines.spomialign.plugin:tools``);
-it is imported from this package (no ``PYTHONPATH``). Option
-(``plugin_config``): ``device`` (the torch device; by default the first GPU
-when torch sees one, else the CPU). The method itself runs in this process,
-in ``engine.py`` and ``matching.py``, on RoMa (``romatch``, LangSlice's
-``engines`` extra), imported only when a call runs; a call without it is
-refused ``ENGINE_UNAVAILABLE``. Its declaration is its row of
-the tool table (``langslice.plugins.declared``).
+``langslice.engines.spomialign.plugin:tools``). Option (``plugin_config``):
+``device`` (the torch device: ``auto``, the first GPU when torch sees one,
+else the CPU; ``cpu``, ``cuda`` or a numbered GPU); any other key is refused.
+The method itself runs in this process, in ``engine.py`` and ``matching.py``,
+on RoMa (``romatch``, LangSlice's ``engines`` extra), imported only when a call
+runs; a call without it is refused ``ENGINE_UNAVAILABLE``. Its declaration is
+its row of the tool table (``langslice.plugins.declared``).
 
 Each call puts the section on SPOmiAlign's canvas, runs the engine on (atlas
 image, section), and maps the answer back: the linear part through
@@ -28,18 +27,25 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 from PIL import Image, ImageDraw
 
+from langslice.core.failures import ENGINE_FAILURES
 from langslice.engines import _blocks
+from langslice.engines._devices import AUTO
+from langslice.engines._options import device_option, known_options
+from langslice.engines._pixels import outlined, sample_pixels, slide_colour
 from langslice.engines.spomialign import engine, matching
 from langslice.plugin_api import (
+    FitFrame,
     RefusalCode,
+    SectionView,
     ToolContext,
     ToolError,
     ToolResult,
@@ -48,7 +54,7 @@ from langslice.plugin_api import (
 )
 from langslice.plugins.declared import engine_tool
 
-DEFAULTS = {"device": ""}
+OPTIONS = ("device",)
 MISSING = (
     "SPOmiAlign cannot run here: its matcher, RoMa (the romatch package), "
     "is not installed; install LangSlice's engines extra: "
@@ -64,6 +70,51 @@ WRITES = {
 }
 ENGINE_VERSION = "SPOmiAlign c7f8b7a"
 MATCHER = "RoMa roma_outdoor, coarse resolution 560"
+MIN_MATCHES = 3
+BRIGHTNESS = "8-bit, Nissl rendered dark on white"
+NISSL = _blocks.NISSL
+WORK_W, WORK_H = matching.W, matching.H
+
+
+@dataclass(frozen=True)
+class AtlasWindow:
+    """Hold the percentile window the atlas plate is shown through.
+
+    Parameters
+    ----------
+    low, high
+        The percentiles of the atlas image inside the brain that map to
+        black ink and to white.
+    """
+
+    low: float = 0.5
+    high: float = 99.5
+
+
+@dataclass(frozen=True)
+class MatchesPicture:
+    """Hold the layout of the matches picture saved with a call.
+
+    Parameters
+    ----------
+    drawn_pairs
+        How many of the most confident pairs are drawn.
+    gap_px
+        The white strip between the two canvases.
+    long_edge
+        The longest side of the saved picture.
+    cross_colour
+        The colour of the crosses marking passed-over pairs.
+    """
+
+    drawn_pairs: int = 300
+    gap_px: int = 16
+    long_edge: int = 2400
+    cross_colour: tuple[int, int, int] = (220, 30, 30)
+
+
+ATLAS_WINDOW = AtlasWindow()
+MATCHES_PICTURE = MatchesPicture()
 
 
 def mode_of(fit: str, rigid: bool) -> str:
@@ -72,11 +123,6 @@ def mode_of(fit: str, rigid: bool) -> str:
     if fit == "transform":
         return engine.RIGID if rigid else engine.AFFINE
     return engine.WARP if fit == "warp" else engine.AFFINE_WARP
-
-
-NISSL = _blocks.NISSL
-WORK_W, WORK_H = matching.W, matching.H
-DRAWN_PAIRS = 300
 
 
 def _spomialign_description(on: ToolsOn) -> str:
@@ -202,155 +248,292 @@ def spomialign(
 ) -> dict[str, Any]: ...
 
 
+@dataclass(frozen=True)
+class Options:
+    """Hold the plugin's options (``plugin_config``).
+
+    Parameters
+    ----------
+    device
+        The torch device: ``auto`` (the first GPU when torch sees one, else
+        the CPU), ``cpu``, ``cuda`` or a numbered GPU.
+    """
+
+    device: str = AUTO
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, object] | None) -> Options:
+        """Read the options a job's ``plugin_config`` gives.
+
+        Parameters
+        ----------
+        config
+            The plugin's entry of ``plugin_config``; None gives the defaults.
+
+        Returns
+        -------
+        Options
+            The options.
+
+        Raises
+        ------
+        PluginError
+            For an option the plugin does not take.
+        """
+        given = known_options("SPOmiAlign", config, OPTIONS)
+        return cls(device=device_option(given.get("device", cls.device)))
+
+
 def _canvas_scale(shape: tuple[int, int]) -> int:
+    """How many times finer than the grid the canvas is."""
     return max(1, round(CANVAS_EDGE / max(shape)))
-
-
-def _scale(k: int) -> np.ndarray:
-    """Grid px -> canvas px (pixel centres), canvas k times finer."""
-    return np.array([[k, 0.0, 0.5 * k - 0.5], [0.0, k, 0.5 * k - 0.5], [0.0, 0.0, 1.0]])
-
-
-def _homog(m: np.ndarray) -> np.ndarray:
-    return np.vstack([np.asarray(m, np.float64)[:2], [0.0, 0.0, 1.0]])
 
 
 def _atlas_picture(image: np.ndarray, labels: np.ndarray) -> np.ndarray:
     """The atlas image as SPOmiAlign's published reference looks, a brightfield Nissl
-    plate: white background, dense tissue dark (0.5-99.5 percentile window inside the
-    brain), uint8 RGB. The same rendering as the method-alone arm
-    (``comparators/rigid/spomialign_runner.py`` ``atlas_render``)."""
+    plate: white background, dense tissue dark (a percentile window inside the
+    brain), uint8 RGB."""
     inside = labels > 0
     values = image[inside] if inside.any() else image.ravel()
-    lo, hi = np.percentile(values.astype(np.float32), [0.5, 99.5])
+    lo, hi = np.percentile(values.astype(np.float32), [ATLAS_WINDOW.low, ATLAS_WINDOW.high])
     scaled = np.clip((image.astype(np.float32) - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
     grey = (255 * (1.0 - scaled)).astype(np.uint8)
     return np.repeat(grey[..., None], 3, axis=2)
 
 
-def _slide_fill(stain: np.ndarray) -> tuple[float, ...]:
-    border = np.concatenate([stain[0], stain[-1], stain[:, 0], stain[:, -1]])
-    return tuple(float(v) for v in np.median(border, axis=0))
+@dataclass(frozen=True)
+class _Pair:
+    """Hold the pair SPOmiAlign sees on one canvas and how the canvas maps back.
+
+    Parameters
+    ----------
+    target
+        The atlas image, ``(h, w, 3)`` uint8.
+    source
+        The section, the same shape.
+    keep
+        False in the damage zone.
+    section_keep
+        False where the section mask is below one half; None without a mask.
+    to_canvas
+        Fit-grid px to canvas px (3 x 3).
+    from_canvas
+        Canvas px to the grid of the lookup (native atlas px, or with a
+        deformation the fit grid, read through ``applied``).
+    applied
+        The deformation as native atlas px at every fit-grid pixel, when the
+        canvas is the fit grid.
+    um_per_px
+        The atlas micrometres one canvas pixel spans.
+    work_um
+        The atlas micrometres one pixel of SPOmiAlign's working grid spans.
+    smoothing_px
+        The field's Gaussian sigma, px of the working grid.
+    """
+
+    target: np.ndarray
+    source: np.ndarray
+    keep: np.ndarray
+    section_keep: np.ndarray | None
+    to_canvas: np.ndarray
+    from_canvas: np.ndarray
+    applied: np.ndarray | None
+    um_per_px: float
+    work_um: float
+    smoothing_px: float
+
+    @property
+    def on_grid(self) -> bool:
+        """Say whether the canvas is the fit grid, through the section's deformation."""
+        return self.applied is not None
+
+    def engine_pair(self) -> engine.EnginePair:
+        """Return the pair as the engine takes it."""
+        return engine.EnginePair(
+            target=self.target,
+            source=self.source,
+            keep=self.keep,
+            smoothing_px=self.smoothing_px,
+            section_keep=self.section_keep,
+        )
+
+
+@dataclass(frozen=True)
+class _Canvas:
+    """Hold one section's canvas before the pair is made.
+
+    Parameters
+    ----------
+    plate
+        The atlas plate on the canvas's source grid.
+    damage
+        The damage zone on the same grid.
+    source
+        The section on the canvas.
+    section_keep
+        Where the section mask is at least one half; None without a mask.
+    scale
+        The fit grid's or the atlas plane's px to canvas px (3 x 3).
+    to_canvas
+        Fit-grid px to canvas px (3 x 3).
+    um_per_px
+        The atlas micrometres one canvas pixel spans.
+    """
+
+    plate: np.ndarray
+    damage: np.ndarray
+    source: np.ndarray
+    section_keep: np.ndarray | None
+    scale: np.ndarray
+    to_canvas: np.ndarray
+    um_per_px: float
+
+
+def _grid_canvas(
+    frame: FitFrame,
+    applied: np.ndarray,
+    picture: np.ndarray,
+    zone: np.ndarray,
+    weights: np.ndarray | None,
+) -> _Canvas:
+    """The canvas on the fit grid, through the section's deformation: the atlas plate and damage
+    zone resampled through it and the section resized to it."""
+    stain = _blocks.section_pixels(frame)
+    gh, gw = applied.shape[:2]
+    k = _canvas_scale((gh, gw))
+    size = (gw * k, gh * k)
+    plate = cv2.remap(
+        picture,
+        applied[..., 0],
+        applied[..., 1],
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(255, 255, 255),
+    )
+    damage = cv2.remap(
+        zone.astype(np.uint8),
+        applied[..., 0],
+        applied[..., 1],
+        cv2.INTER_NEAREST,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    section_keep = (
+        None
+        if weights is None
+        else cv2.resize(weights, size, interpolation=cv2.INTER_LINEAR) >= 0.5
+    )
+    plane_px = float(np.mean(frame.plane["px_um"]))
+    placed = np.asarray(frame.placed_atlas_to_section, np.float64)
+    scale = engine.resize_map((gw, gh), size)
+    return _Canvas(
+        plate=plate,
+        damage=damage,
+        source=cv2.resize(stain, size, interpolation=cv2.INTER_LINEAR),
+        section_keep=section_keep,
+        scale=scale,
+        to_canvas=scale,
+        um_per_px=plane_px / float(np.sqrt(abs(np.linalg.det(placed[:2, :2])))) / k,
+    )
+
+
+def _plane_canvas(
+    frame: FitFrame,
+    picture: np.ndarray,
+    zone: np.ndarray,
+    weights: np.ndarray | None,
+) -> _Canvas:
+    """The canvas on the atlas plane's grid, the section resampled onto it through its linear
+    placement."""
+    stain = _blocks.section_pixels(frame)
+    h, w = frame.atlas["annotation"].shape
+    k = _canvas_scale((h, w))
+    size = (w * k, h * k)
+    scale = engine.resize_map((w, h), size)
+    start = np.asarray(frame.placed_atlas_to_section, np.float64)
+    to_grid = (start @ np.linalg.inv(scale))[:2]
+    source = cv2.warpAffine(
+        stain,
+        to_grid,
+        size,
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=slide_colour(stain),
+    )
+    section_keep = (
+        None
+        if weights is None
+        else cv2.warpAffine(
+            weights,
+            to_grid,
+            size,
+            flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        >= 0.5
+    )
+    return _Canvas(
+        plate=picture,
+        damage=zone.astype(np.uint8),
+        source=source,
+        section_keep=section_keep,
+        scale=scale,
+        to_canvas=scale @ np.linalg.inv(start),
+        um_per_px=float(np.mean(frame.plane["px_um"])) / k,
+    )
 
 
 def _inputs(
-    frame: Any, plane_image: np.ndarray, on_grid: bool, weights: np.ndarray | None = None
-) -> dict[str, Any]:
+    frame: FitFrame,
+    plane_image: np.ndarray,
+    *,
+    weights: np.ndarray | None,
+    on_grid: bool,
+    smoothness_um: float,
+) -> _Pair:
     """The pair SPOmiAlign sees, on one canvas: over the atlas plane through the linear
-    placement, or (``on_grid``) over the fit grid through the section's deformation.
-    ``to_canvas`` takes fit-grid px to canvas px; ``from_canvas`` takes canvas px to the
-    grid of ``lookup`` (native atlas px, or with ``on_grid`` the fit grid, read through
-    ``applied`` to native atlas px). *weights* (a section mask on the fit grid) becomes
-    ``section_keep`` on the section's canvas, True where the weight is at least one half;
-    ``um_per_px`` is the atlas micrometres one canvas pixel spans."""
+    placement, or (``on_grid``) over the fit grid through the section's deformation. *weights*
+    (a section mask on the fit grid) becomes ``section_keep`` on the section's canvas, True where
+    the weight is at least one half."""
     labels = frame.atlas["annotation"]
     picture = _atlas_picture(plane_image, labels)
     if frame.excluded is not None:
         picture[frame.excluded] = 255
     zone = frame.damage_zone if frame.damage_zone is not None else np.zeros(labels.shape, bool)
-    stain = _blocks.section_pixels(frame)
-    plane_px = float(np.mean(frame.plane["px_um"]))
-    if on_grid:
-        applied = np.asarray(frame.applied_map, np.float32)
-        gh, gw = applied.shape[:2]
-        k = _canvas_scale((gh, gw))
-        size = (gw * k, gh * k)
-        picture = cv2.remap(
-            picture,
-            applied[..., 0],
-            applied[..., 1],
-            cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=(255, 255, 255),
-        )
-        zone = cv2.remap(
-            zone.astype(np.uint8),
-            applied[..., 0],
-            applied[..., 1],
-            cv2.INTER_NEAREST,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=0,
-        )
-        source = cv2.resize(stain, size, interpolation=cv2.INTER_LINEAR)
-        K = _scale(k)
-        to_canvas = K
-        placed = np.asarray(frame.placed_atlas_to_section, np.float64)
-        um_per_px = plane_px / float(np.sqrt(abs(np.linalg.det(placed[:2, :2])))) / k
-        section_keep = (
-            None
-            if weights is None
-            else cv2.resize(np.asarray(weights, np.float32), size, interpolation=cv2.INTER_LINEAR)
-            >= 0.5
-        )
-        extra: dict[str, Any] = {"applied": applied}
+    applied = None if frame.applied_map is None else np.asarray(frame.applied_map, np.float32)
+    if on_grid and applied is not None:
+        canvas = _grid_canvas(frame, applied, picture, zone, weights)
     else:
-        h, w = labels.shape
-        k = _canvas_scale((h, w))
-        size = (w * k, h * k)
-        K = _scale(k)
-        start = frame.placed_atlas_to_section
-        to_canvas = K @ np.linalg.inv(start)
-        source = cv2.warpAffine(
-            stain,
-            (start @ np.linalg.inv(K))[:2],
-            size,
-            flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=_slide_fill(stain),
-        )
-        um_per_px = plane_px / k
-        section_keep = (
-            None
-            if weights is None
-            else cv2.warpAffine(
-                np.asarray(weights, np.float32),
-                (start @ np.linalg.inv(K))[:2],
-                size,
-                flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
-                borderMode=cv2.BORDER_REPLICATE,
-            )
-            >= 0.5
-        )
-        extra = {"start": start}
-    target = cv2.resize(picture, size, interpolation=cv2.INTER_LINEAR)
-    keep = ~cv2.resize(np.asarray(zone, np.uint8), size, interpolation=cv2.INTER_NEAREST).astype(
-        bool
+        applied = None
+        canvas = _plane_canvas(frame, picture, zone, weights)
+    size = (canvas.source.shape[1], canvas.source.shape[0])
+    keep = ~cv2.resize(canvas.damage, size, interpolation=cv2.INTER_NEAREST).astype(bool)
+    work_um = canvas.um_per_px * float(np.mean([size[0] / WORK_W, size[1] / WORK_H]))
+    return _Pair(
+        target=cv2.resize(canvas.plate, size, interpolation=cv2.INTER_LINEAR),
+        source=canvas.source,
+        keep=keep,
+        section_keep=canvas.section_keep,
+        to_canvas=canvas.to_canvas,
+        from_canvas=np.linalg.inv(canvas.scale),
+        applied=applied,
+        um_per_px=canvas.um_per_px,
+        work_um=work_um,
+        smoothing_px=smoothness_um / work_um,
     )
-    return {
-        "target": target,
-        "source": source,
-        "keep": keep,
-        "K": K,
-        "to_canvas": to_canvas,
-        "from_canvas": np.linalg.inv(K),
-        "on_grid": on_grid,
-        "um_per_px": um_per_px,
-        "section_keep": section_keep,
-        "work_um": um_per_px * float(np.mean([size[0] / WORK_W, size[1] / WORK_H])),
-        **extra,
-    }
 
 
-def _engine(
-    config: dict[str, Any], mode: str, matches: int, pairs: list[dict[str, Any]]
-) -> engine.EngineRun:
+def _engine(options: Options, mode: str, matches: int, pairs: list[_Pair]) -> engine.EngineRun:
     """Run the engine on every section's pair in this process (one model load)."""
-    inputs = [
-        engine.EnginePair(
-            target=cast("npt.NDArray[np.uint8]", pair["target"]),
-            source=cast("npt.NDArray[np.uint8]", pair["source"]),
-            keep=cast("npt.NDArray[np.bool_]", pair["keep"]),
-            smoothing_px=cast(float, pair["smoothing_px"]),
-            section_keep=cast("npt.NDArray[np.bool_] | None", pair["section_keep"]),
-        )
-        for pair in pairs
-    ]
     absent = matching.weights_missing()
     try:
         return engine.fit_pairs(
-            inputs, mode=mode, top_k=matches, device_name=str(config.get("device") or "")
+            [pair.engine_pair() for pair in pairs],
+            mode=mode,
+            top_k=matches,
+            device_name=options.device,
         )
-    except Exception as error:
+    except ENGINE_FAILURES as error:
         missing = [name for name in matching.weights_missing() if name in absent]
         if missing:
             raise ToolError(
@@ -382,35 +565,15 @@ def gpu_words(waited_s: float, retries: int) -> dict[str, Any]:
     return out
 
 
-def _to_native(pair: dict[str, Any], canvas_xy: np.ndarray) -> np.ndarray:
+def _to_native(pair: _Pair, canvas_xy: np.ndarray) -> np.ndarray:
     """Target-canvas points (2 x N) as native atlas px (2 x N)."""
-    grid = (pair["from_canvas"] @ np.vstack([canvas_xy, np.ones(canvas_xy.shape[1])]))[:2]
-    if not pair["on_grid"]:
+    grid = (pair.from_canvas @ np.vstack([canvas_xy, np.ones(canvas_xy.shape[1])]))[:2]
+    if pair.applied is None:
         return grid
-    applied = pair["applied"]
-    n = grid.shape[1]
-    rows = -(-n // 4096)
-    pad = np.zeros((2, rows * 4096 - n), np.float32)
-    gx, gy = (
-        np.concatenate([grid[c].astype(np.float32), pad[c]]).reshape(rows, 4096) for c in range(2)
-    )
-    return np.stack(
-        [
-            cv2.remap(
-                np.ascontiguousarray(applied[..., c]),
-                gx,
-                gy,
-                cv2.INTER_LINEAR,
-                borderMode=cv2.BORDER_REPLICATE,
-            ).ravel()[:n]
-            for c in range(2)
-        ]
-    )
+    return sample_pixels(pair.applied, grid.T).T
 
 
-def _full_map(
-    frame: Any, pair: dict[str, Any], matrix: np.ndarray, residual: np.ndarray
-) -> np.ndarray:
+def _full_map(frame: FitFrame, pair: _Pair, matrix: np.ndarray, residual: np.ndarray) -> np.ndarray:
     """Native atlas px of every fit-grid pixel under SPOmiAlign's full map.
 
     A fit-grid pixel u sits at canvas px c = to_canvas u; SPOmiAlign takes c to
@@ -419,8 +582,9 @@ def _full_map(
     gh, gw = _blocks.section_pixels(frame).shape[:2]
     ys, xs = np.mgrid[0:gh, 0:gw]
     u = np.stack([xs.ravel(), ys.ravel(), np.ones(xs.size)]).astype(np.float64)
-    c = (pair["to_canvas"] @ u)[:2]
-    moved = _homog(matrix)[:2, :2] @ c + _homog(matrix)[:2, 2:3]
+    c = (pair.to_canvas @ u)[:2]
+    linear = engine.homogeneous(matrix)
+    moved = linear[:2, :2] @ c + linear[:2, 2:3]
     cx = c[0].reshape(gh, gw).astype(np.float32)
     cy = c[1].reshape(gh, gw).astype(np.float32)
     for axis in range(2):
@@ -435,19 +599,17 @@ def _full_map(
     return _to_native(pair, moved).T.reshape(gh, gw, 2)
 
 
-def _outline(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    out = image.copy()
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(out, contours, -1, (230, 30, 160), max(1, image.shape[1] // 600))
-    return out
-
-
-def _pairs_picture(pair: dict[str, Any], used: np.ndarray, dropped: np.ndarray, path: Path) -> None:
+def _pairs_picture(
+    pair: _Pair,
+    used: np.ndarray,
+    dropped: np.ndarray,
+    path: Path,
+) -> None:
     """The two canvases side by side, the most confident pairs as dots of one colour on both
     (coloured by where they sit on the section) and the pairs passed over in the damage zone
     as red crosses on the atlas (a file in the job, not sent)."""
-    left, right = pair["target"], pair["source"]
-    gap = 16
+    left, right = pair.target, pair.source
+    gap = MATCHES_PICTURE.gap_px
     image = Image.fromarray(
         np.concatenate([left, np.full((left.shape[0], gap, 3), 255, np.uint8), right], axis=1)
     )
@@ -455,33 +617,35 @@ def _pairs_picture(pair: dict[str, Any], used: np.ndarray, dropped: np.ndarray, 
     shift = left.shape[1] + gap
     r = max(3, left.shape[1] // 250)
     height = right.shape[0]
-    for ax, ay, sx, sy, _ in used[:DRAWN_PAIRS]:
+    shown = MATCHES_PICTURE.drawn_pairs
+    for ax, ay, sx, sy, _ in used[:shown]:
         hue = np.uint8(170 * sy / max(height, 1)), np.uint8(255), np.uint8(230)
         rgb = cv2.cvtColor(np.array([[hue]], np.uint8), cv2.COLOR_HSV2RGB)[0, 0]
         colour = tuple(int(v) for v in rgb)
         draw.ellipse([ax - r, ay - r, ax + r, ay + r], fill=colour, outline="black")
         draw.ellipse([sx + shift - r, sy - r, sx + shift + r, sy + r], fill=colour, outline="black")
+    cross = MATCHES_PICTURE.cross_colour
     for ax, ay, *_ in dropped:
-        draw.line([(ax - r, ay - r), (ax + r, ay + r)], fill=(220, 30, 30), width=2)
-        draw.line([(ax - r, ay + r), (ax + r, ay - r)], fill=(220, 30, 30), width=2)
+        draw.line([(ax - r, ay - r), (ax + r, ay + r)], fill=cross, width=2)
+        draw.line([(ax - r, ay + r), (ax + r, ay - r)], fill=cross, width=2)
     draw.text(
         (6, 6),
         f"atlas (left) and section (right) as SPOmiAlign saw them; the "
-        f"{min(DRAWN_PAIRS, len(used))} most confident of {len(used)} pairs, each a dot of "
+        f"{min(shown, len(used))} most confident of {len(used)} pairs, each a dot of "
         f"one colour on both; red crosses: "
         f"{len(dropped)} passed over (marked damage or the mask)",
         fill="black",
     )
-    image.thumbnail((2400, 2400))
+    edge = MATCHES_PICTURE.long_edge
+    image.thumbnail((edge, edge))
     image.save(path)
 
 
-def _files(
-    here: Path, pair: dict[str, Any], got: engine.EngineAnswer, settings: dict[str, Any]
-) -> None:
+def _files(here: Path, pair: _Pair, got: engine.EngineAnswer, settings: Mapping[str, Any]) -> None:
+    """Save the call's files for one section: the two canvases, the settings and the pairs."""
     here.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(_outline(pair["target"], ~pair["keep"])).save(here / "atlas.png")
-    Image.fromarray(pair["source"]).save(here / "section.png")
+    Image.fromarray(outlined(pair.target, ~pair.keep)).save(here / "atlas.png")
+    Image.fromarray(pair.source).save(here / "section.png")
     (here / "settings.json").write_text(
         json.dumps(settings, indent=1, default=str), encoding="utf-8", newline="\n"
     )
@@ -497,7 +661,7 @@ def _files(
     _pairs_picture(pair, used, dropped, here / "matches.png")
 
 
-def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, object] | None:
+def _refusal(view_of: SectionView, frame: FitFrame, mode: str) -> dict[str, object] | None:
     """Why the engine *mode* cannot start on this section, before the engine runs."""
     sid = view_of.id
     frozen = [prop for prop in WRITES[mode] if prop in view_of.frozen]
@@ -522,9 +686,252 @@ def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, object] | None:
     return None
 
 
+@dataclass(frozen=True)
+class _Call:
+    """Hold what every section of one ``spomialign`` call shares.
+
+    Parameters
+    ----------
+    mode
+        The engine's mode (``rigid``, ``affine``, ``warp`` or ``affine_warp``).
+    section_image, atlas_image, mask
+        The images and mask asked for.
+    smoothness_um
+        The warp's smoothing, um.
+    matches
+        How many of the most confident pairs are used.
+    view
+        Whether pictures are sent.
+    options
+        The plugin's options.
+    settings
+        The call's settings, as the reply and the deformation record them.
+    """
+
+    mode: str
+    section_image: str
+    atlas_image: str
+    mask: str
+    smoothness_um: float
+    matches: int
+    view: bool
+    options: Options
+    settings: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _Ready:
+    """Hold one section ready to match.
+
+    Parameters
+    ----------
+    sid
+        The section's filename.
+    frame
+        Its fit frame.
+    pair
+        The pair SPOmiAlign sees.
+    digest
+        Its registration's digest when the call began.
+    inputs
+        The ``inputs`` block of its reply.
+    resolved
+        The atlas image that was used.
+    """
+
+    sid: str
+    frame: FitFrame
+    pair: _Pair
+    digest: str
+    inputs: dict[str, Any]
+    resolved: str
+
+
+def _call(
+    options: Options,
+    fit: str,
+    rigid: bool,
+    section_image: str,
+    atlas_image: str,
+    mask: str,
+    smoothness_um: float,
+    matches: int,
+    view: bool,
+    sections: list[str],
+) -> _Call:
+    """Check a call's arguments and gather them."""
+    if fit not in FITS:
+        raise ToolError(RefusalCode.BAD_ARGUMENT, f"fit is one of {', '.join(FITS)}; got {fit!r}")
+    if rigid and fit != "transform":
+        raise ToolError(
+            RefusalCode.BAD_ARGUMENT,
+            "rigid fits the transform alone: SPOmiAlign's warp "
+            "follows an affine or the registration the section holds; give fit "
+            '"transform" with rigid, or leave rigid false',
+        )
+    if not sections:
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "name one to twenty sections")
+    if int(matches) < MIN_MATCHES:
+        raise ToolError(RefusalCode.BAD_ARGUMENT, f"matches is at least {MIN_MATCHES}")
+    if not float(smoothness_um) > 0:
+        raise ToolError(RefusalCode.BAD_ARGUMENT, "smoothness_um is above 0")
+    settings = {
+        "fit": fit,
+        "rigid": bool(rigid),
+        "section_image": section_image,
+        "atlas_image": atlas_image,
+        "mask": mask,
+        "smoothness_um": float(smoothness_um),
+        "matches": int(matches),
+    }
+    return _Call(
+        mode=mode_of(fit, bool(rigid)),
+        section_image=section_image,
+        atlas_image=atlas_image,
+        mask=mask,
+        smoothness_um=float(smoothness_um),
+        matches=int(matches),
+        view=view,
+        options=options,
+        settings=settings,
+    )
+
+
+def _read_sections(
+    ctx: ToolContext, call: _Call, sections: list[str]
+) -> tuple[list[dict[str, object]], list[_Ready]]:
+    """Read every section's pair; a section that cannot start has its refusal as a row."""
+    rows: list[dict[str, object]] = []
+    ready: list[_Ready] = []
+    for name in sections:
+        view_of = ctx.section(name)
+        frame = _blocks.frame_for(ctx, view_of.id, call.atlas_image, call.section_image)
+        plane_image, resolved = _blocks.atlas_plane(frame, call.atlas_image)
+        refused = _refusal(view_of, frame, call.mode)
+        if refused:
+            rows.append(refused)
+            continue
+        held = _blocks.section_mask(ctx, view_of.id, call.mask)
+        on_grid = call.mode == engine.WARP and frame.applied_map is not None
+        pair = _inputs(
+            frame,
+            plane_image,
+            weights=None if held is None else np.asarray(held.weights, np.float32),
+            on_grid=on_grid,
+            smoothness_um=call.smoothness_um,
+        )
+        inputs = _blocks.inputs_block(
+            ctx,
+            frame,
+            section_image=call.section_image,
+            atlas_image=call.atlas_image,
+            resolved=resolved,
+            mask=held,
+            brightness=BRIGHTNESS,
+        )
+        digest = ctx.section_inputs(view_of.id, deformation=on_grid)
+        ready.append(_Ready(view_of.id, frame, pair, digest, inputs, resolved))
+    return rows, ready
+
+
+def _land(
+    ctx: ToolContext,
+    call: _Call,
+    folder: Path,
+    section: _Ready,
+    got: engine.EngineAnswer,
+    wait_s: float,
+) -> tuple[dict[str, object], Image.Image | None]:
+    """Save one section's files, write its registration and give its row and picture."""
+    sid, pair, inputs = section.sid, section.pair, section.inputs
+    mode = call.mode
+    here = folder / Path(sid).stem
+    start = "the deformation it held" if pair.on_grid else "its linear placement"
+    by_mask = got.dropped_by_mask
+    in_damage = got.dropped - by_mask
+    _files(
+        here,
+        pair,
+        got,
+        {
+            **call.settings,
+            "inputs": inputs,
+            "atlas_image_resolved": section.resolved,
+            "smoothing_px": pair.smoothing_px,
+            "start": start,
+            "canvas_px": pair.target.shape[:2],
+            "device": call.options.device,
+            "pairs_used": got.pairs,
+            "pairs_dropped_in_damage": in_damage,
+            "pairs_dropped_by_mask": by_mask,
+        },
+    )
+    relative = _blocks.job_path(ctx, here)
+    warps = mode in (engine.WARP, engine.AFFINE_WARP)
+    matrix, residual = got.matrix, got.residual
+    if got.error or matrix is None or (warps and residual is None):
+        failed = ToolError(RefusalCode.FIT_FAILED, got.error)
+        return {**failed.payload(section_id=sid), "files": relative}, None
+    what = mode.replace("_", " and ") if mode != engine.WARP else f"warp on {start}"
+    note = (
+        f"SPOmiAlign {what}, atlas {section.resolved}, {got.pairs} pairs, "
+        f"{in_damage} in marked damage dropped"
+        + (f", {by_mask} outside the mask dropped" if call.mask != "none" else "")
+    )
+    engine_settings = {
+        "matcher": MATCHER,
+        "mode": mode,
+        "working_grid_px": [WORK_W, WORK_H],
+        "working_um": round(float(pair.work_um), 3),
+        "smoothness_um": call.smoothness_um,
+        "smoothing_sigma_px": round(float(pair.smoothing_px), 3),
+        "matches": call.matches,
+        "canvas_px": list(pair.target.shape[:2]),
+    }
+    row: dict[str, Any] = {
+        "id": sid,
+        "status": "ok",
+        "fitted": note,
+        "files": relative,
+        "inputs": inputs,
+        "estimated": None,
+        "engine_settings": engine_settings,
+        **gpu_words(wait_s, got.oom_retries),
+    }
+    if call.mask != "none":
+        row["mask_note"] = "approximated by dropping matches"
+    if mode != engine.WARP:
+        to_native = (pair.from_canvas @ engine.homogeneous(matrix) @ pair.to_canvas)[:2]
+        proposal = ctx.transform_from_matrix(sid, to_native, note=note)
+        written = ctx.set_transforms([proposal.row()], expect={sid: section.digest})
+        if sid not in written.written:
+            return {**written.rows[0], "id": sid}, None
+        row["transform"] = proposal.knobs
+    if warps and residual is not None:
+        native = _full_map(section.frame, pair, matrix, residual)
+        warp = ctx.deformation_from_map(
+            sid,
+            native,
+            note=note,
+            meta={"inputs": inputs, "estimated": None},
+            start="current" if pair.on_grid else "linear",
+            settings=call.settings,
+            engine_settings=engine_settings,
+            engine_version=ENGINE_VERSION,
+        )
+        written = ctx.set_deformations(
+            [warp.row()], expect={sid: section.digest} if mode == engine.WARP else None
+        )
+        if sid not in written.written:
+            return {**written.rows[0], "id": sid}, None
+        row.update(warp.summary)
+    picture = ctx.caption(ctx.overlay_picture(sid), f"{sid}: {note}") if call.view else None
+    return row, picture
+
+
 def _run(
     ctx: ToolContext,
-    config: dict[str, Any],
+    options: Options,
     sections: list[str],
     fit: str,
     rigid: bool,
@@ -535,169 +942,52 @@ def _run(
     matches: int,
     view: bool,
 ) -> ToolResult:
-    if fit not in FITS:
-        raise ToolError(RefusalCode.BAD_ARGUMENT, f"fit is one of {', '.join(FITS)}; got {fit!r}")
-    if rigid and fit != "transform":
-        raise ToolError(
-            RefusalCode.BAD_ARGUMENT,
-            "rigid fits the transform alone: SPOmiAlign's warp "
-            "follows an affine or the registration the section holds; give fit "
-            '"transform" with rigid, or leave rigid false',
-        )
-    mode = mode_of(fit, bool(rigid))
-    if not sections:
-        raise ToolError(RefusalCode.BAD_ARGUMENT, "name one to twenty sections")
-    if int(matches) < 3:
-        raise ToolError(RefusalCode.BAD_ARGUMENT, "matches is at least 3")
-    if not float(smoothness_um) > 0:
-        raise ToolError(RefusalCode.BAD_ARGUMENT, "smoothness_um is above 0")
-    matches, smoothness_um = int(matches), float(smoothness_um)
-    settings = {
-        "fit": fit,
-        "rigid": bool(rigid),
-        "section_image": section_image,
-        "atlas_image": atlas_image,
-        "mask": mask,
-        "smoothness_um": smoothness_um,
-        "matches": matches,
-    }
-    rows: list[dict[str, Any]] = []
-    ready: list[tuple[str, Any, dict[str, Any], str, dict[str, Any], str]] = []
-    for name in sections:
-        view_of = ctx.section(name)
-        frame = _blocks.frame_for(ctx, view_of.id, atlas_image, section_image)
-        plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
-        refused = _refusal(view_of, frame, mode)
-        if refused:
-            rows.append(refused)
-            continue
-        held = _blocks.section_mask(ctx, view_of.id, mask)
-        on_grid = mode == engine.WARP and frame.applied_map is not None
-        pair = _inputs(
-            frame,
-            plane_image,
-            on_grid,
-            None if held is None else np.asarray(held.weights, np.float32),
-        )
-        pair["smoothing_px"] = smoothness_um / pair["work_um"]
-        inputs = _blocks.inputs_block(
-            ctx,
-            frame,
-            section_image=section_image,
-            atlas_image=atlas_image,
-            resolved=resolved,
-            mask=held,
-            brightness="8-bit, Nissl rendered dark on white",
-        )
-        ready.append(
-            (
-                view_of.id,
-                frame,
-                pair,
-                ctx.section_inputs(view_of.id, deformation=on_grid),
-                inputs,
-                resolved,
-            )
-        )
+    call = _call(
+        options,
+        fit,
+        rigid,
+        section_image,
+        atlas_image,
+        mask,
+        smoothness_um,
+        matches,
+        view,
+        sections,
+    )
+    rows, ready = _read_sections(ctx, call, sections)
     if not ready:
-        return ToolResult({"rows": rows, "settings": settings})
-    folder = _blocks.call_folder(ctx, mode)
-    run = _engine(config, mode, matches, [item[2] for item in ready])
-    pictures = []
+        return ToolResult({"rows": rows, "settings": call.settings})
+    folder = _blocks.call_folder(ctx, call.mode)
+    run = _engine(options, call.mode, call.matches, [section.pair for section in ready])
+    pictures: list[Image.Image] = []
     with ctx.writing():
-        for (sid, frame, pair, digest, inputs, resolved), got in zip(
-            ready, run.answers, strict=True
-        ):
-            here = folder / Path(sid).stem
-            start = "the deformation it held" if pair["on_grid"] else "its linear placement"
-            by_mask = got.dropped_by_mask
-            in_damage = got.dropped - by_mask
-            _files(
-                here,
-                pair,
-                got,
-                {
-                    **settings,
-                    "inputs": inputs,
-                    "atlas_image_resolved": resolved,
-                    "smoothing_px": pair["smoothing_px"],
-                    "start": start,
-                    "canvas_px": pair["target"].shape[:2],
-                    "device": config.get("device") or "SPOmiAlign's choice",
-                    "pairs_used": got.pairs,
-                    "pairs_dropped_in_damage": in_damage,
-                    "pairs_dropped_by_mask": by_mask,
-                },
-            )
-            relative = _blocks.job_path(ctx, here)
-            if got.error or got.matrix is None:
-                failed = ToolError(RefusalCode.FIT_FAILED, got.error)
-                rows.append({**failed.payload(section_id=sid), "files": relative})
-                continue
-            what = mode.replace("_", " and ") if mode != engine.WARP else f"warp on {start}"
-            note = (
-                f"SPOmiAlign {what}, atlas {resolved}, {got.pairs} pairs, "
-                f"{in_damage} in marked damage dropped"
-                + (f", {by_mask} outside the mask dropped" if mask != "none" else "")
-            )
-            engine_settings = {
-                "matcher": MATCHER,
-                "mode": mode,
-                "working_grid_px": [WORK_W, WORK_H],
-                "working_um": round(float(pair["work_um"]), 3),
-                "smoothness_um": smoothness_um,
-                "smoothing_sigma_px": round(float(pair["smoothing_px"]), 3),
-                "matches": matches,
-                "canvas_px": list(pair["target"].shape[:2]),
-            }
-            row: dict[str, Any] = {
-                "id": sid,
-                "status": "ok",
-                "fitted": note,
-                "files": relative,
-                "inputs": inputs,
-                "estimated": None,
-                "engine_settings": engine_settings,
-                **gpu_words(run.gpu_wait_s, got.oom_retries),
-            }
-            if mask != "none":
-                row["mask_note"] = "approximated by dropping matches"
-            if mode != engine.WARP:
-                to_native = (pair["from_canvas"] @ _homog(got.matrix) @ pair["to_canvas"])[:2]
-                proposal = ctx.transform_from_matrix(sid, to_native, note=note)
-                written = ctx.set_transforms([proposal.row()], expect={sid: digest})
-                if sid not in written.written:
-                    rows.append({**written.rows[0], "id": sid})
-                    continue
-                row["transform"] = proposal.knobs
-            if mode in (engine.WARP, engine.AFFINE_WARP):
-                assert got.residual is not None
-                native = _full_map(frame, pair, got.matrix, got.residual)
-                warp = ctx.deformation_from_map(
-                    sid,
-                    native,
-                    note=note,
-                    meta={"sitk_max_px": got.sitk_max_px, "inputs": inputs, "estimated": None},
-                    start="current" if pair["on_grid"] else "linear",
-                    settings=settings,
-                    engine_settings=engine_settings,
-                    engine_version=ENGINE_VERSION,
-                )
-                written = ctx.set_deformations(
-                    [warp.row()], expect={sid: digest} if mode == engine.WARP else None
-                )
-                if sid not in written.written:
-                    rows.append({**written.rows[0], "id": sid})
-                    continue
-                row.update(warp.summary)
+        for section, got in zip(ready, run.answers, strict=True):
+            row, picture = _land(ctx, call, folder, section, got, run.gpu_wait_s)
             rows.append(row)
-            if view:
-                pictures.append(ctx.caption(ctx.overlay_picture(sid), f"{sid}: {note}"))
-    return ToolResult({"rows": rows, "settings": settings}, pictures)
+            if picture is not None:
+                pictures.append(picture)
+    return ToolResult({"rows": rows, "settings": call.settings}, pictures)
 
 
-def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
-    options = {**DEFAULTS, **(config or {})}
+def tools(config: Mapping[str, object] | None = None) -> list[ToolSpec]:
+    """Return the plugin's tool.
+
+    Parameters
+    ----------
+    config
+        The plugin's entry of ``plugin_config``; None gives the defaults.
+
+    Returns
+    -------
+    list of ToolSpec
+        ``spomialign``.
+
+    Raises
+    ------
+    PluginError
+        For an option the plugin does not take.
+    """
+    options = Options.from_config(config)
 
     def handler(
         ctx: ToolContext,

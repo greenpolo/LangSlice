@@ -114,7 +114,7 @@ no other tool's text names it.
   and height. With `view` off the reply ends with one sentence pointing to the positioning
   view of `look`; with it on, the positioning picture of the written sections or, with
   nothing written, drawn at the proposal and captioned "not written".
-- **Every call** (propose-only included) saves `plugins/deepslice_place/calls/<n>/`:
+- **Every call** (propose-only included) saves `plugins/deepslice_place/calls/<n>_place/`:
   `images/` (the images written), `engine/` (`final.json` and `own.json`, QUINT files of
   the final and the own anchorings with the section ids as filenames;
   `deepslice_stdout.log`, and `deepslice_error.log` with the traceback when DeepSlice

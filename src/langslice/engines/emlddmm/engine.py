@@ -3,80 +3,47 @@
 emlddmm (Apache-2.0) is vendored as ``langslice._vendor.emlddmm.emlddmm``:
 twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece, which repairs
 ``out_of_plane=False``, and 6ff62b0, which adds ``lock_slice_axis``; its
-header says what LangSlice changed to import it here. It is imported when a
-tool runs, never when the plugin loads. The plugin prepares every image and
-the stack's frame; this module only builds emlddmm's call, runs it and reads
-its result at the points the plugin asks for.
+header says what LangSlice changed to import it here (an energy callback and a
+print sink among them). It is imported when a tool runs, never when the plugin
+loads. The plugin prepares every image and the stack's frame; this module only
+builds emlddmm's call, runs it and reads its result at the points the plugin
+asks for.
 
-The inputs: ``J`` (slots x rows x cols: the sections on the stack grid, in
-[0, 1]), ``W0`` (the same shape: 1 where a section holds data, 0 on empty
-slots, outside the image and on marked damage), ``zs``, ``gy``, ``gx`` (the
-slot, row and column coordinates, um, the stack frame), ``R`` (3 x 3, rows:
-the stack's slot axis, row axis, column axis in atlas um) and ``c0`` (the
-atlas point at the stack's origin, um), ``slot`` (the slot index of each
-section), ``q`` (N x 2: stack (row, col) um where the map is read) with
-``q_n`` (the number of points of each section).
-
-``params``: ``atlas``, ``image`` (``template``, one of the atlas's additional
-references, or the borrowed Nissl), ``device``, ``dtype``, ``mode``
-(``stack``: the slots' planes locked; ``plane``: the plane free, no warp),
-``cfg`` (emlddmm's keyword arguments per scale, lists as the example's
-config file), ``sorting`` (``match_sd``, ``background_sd``, ``artifact_sd``,
-``background_mean``, ``artifact_mean``), ``up_vector`` (``plane``), ``warp``
-(read the 3-D warp too), ``mu`` (``muB``, and ``muA`` on a white slide).
-
-The result: ``A`` (4 x 4), ``A0``, ``A2d`` (slots x 3 x 3), ``WM`` / ``WB`` /
-``WA`` (the final sorting, half precision), ``Acut`` (sections x rows x
-cols: the atlas image under every stack pixel of each section, through the
-whole fit), ``X`` / ``L`` (N x 3: the atlas um at the points ``q``, with and
-without the warp), ``energy`` (iterations x [scale, iteration, total,
-mismatch, regularization]: emlddmm's own record) with ``energy_captured``
-(1 when it has one row per iteration run), ``settings`` (JSON: what emlddmm
-chose), ``log`` (what emlddmm printed), ``device``, ``peak_gpu_gb``,
-``seconds`` and ``gpu_wait_s``.
+:func:`run` takes a :class:`FitRequest` and gives a :class:`FitResult`. The
+request holds the stack (:class:`StackImages`: the sections on the stack
+grid, in [0, 1], and the weight, 1 where a section holds data, 0 on empty
+slots, outside the image and on marked damage), the stack's frame
+(:class:`StackFrame`), the atlas image (``atlas`` and ``atlas_image``: a
+BrainGlobe atlas and its ``template``, one of its additional references or the
+borrowed Nissl), the per-scale schedule (:class:`Schedule`), the sorting, and
+the points where each section's map is read. The mode is ``stack`` (the slots'
+planes locked) or ``plane`` (the plane free, no warp).
 """
 
 from __future__ import annotations
 
 import importlib
-import inspect
-import json
-import logging
-import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from types import FrameType
+from contextlib import AbstractContextManager
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol, cast, overload
 
 import numpy as np
 
-from langslice.engines._atlas_images import averaged_image
+from langslice.engines._atlas_average import averaged_image
 from langslice.engines._devices import on_gpu, resolve_device
+from langslice.engines._sorting import Sorting
 from langslice.plugin_api import gpu_turn
 
 if TYPE_CHECKING:
     import torch
 
 MODULE = "langslice._vendor.emlddmm.emlddmm"
-PLANE = "plane"
-SINGLE = "float32"
-SORTING = {
-    "match_sd": "sigmaM",
-    "background_sd": "sigmaB",
-    "artifact_sd": "sigmaA",
-    "background_mean": "muB",
-    "artifact_mean": "muA",
-}
-CALLER_DEPTH = 4
-FIT_FUNCTION = "emlddmm"
-
-Setting = (
-    str | bool | float | Sequence[float] | Mapping[str, float] | Mapping[str, Sequence[object]]
-)
-Output = np.ndarray | np.int32 | str | float
-
-_LOG = logging.getLogger(__name__)
+GB = 1e9
+Mode = Literal["stack", "plane"]
+ENERGY_COLUMNS = 5
+Array = np.ndarray
 
 
 class _Fit(Protocol):
@@ -98,28 +65,220 @@ class _Emlddmm(Protocol):
     """Name the parts of emlddmm this module uses (it ships no types)."""
 
     interp: Callable[..., torch.Tensor]
-    print: Callable[..., None]
 
     def emlddmm_multiscale(self, **_config: object) -> list[_Fit]: ...
 
     def v_to_phii(self, xv: list[torch.Tensor], v: torch.Tensor) -> torch.Tensor: ...
 
-
-class _Calls(threading.local):
-    """Hold what the fit running on this thread keeps."""
-
-    def __init__(self) -> None:
-        self.saved: list[list[list[float]]] | None = None
-        self.printed: list[str] | None = None
-
-
-_CALLS = _Calls()
-_INSTALL = threading.Lock()
+    def printing_to(self, lines: list[str]) -> AbstractContextManager[list[str]]: ...
 
 
 @dataclass(frozen=True)
-class _Stack:
-    """Hold the stack's frame as emlddmm fits it.
+class Schedule:
+    """Hold emlddmm's keyword arguments per scale (the coarse, middle and fine).
+
+    Parameters
+    ----------
+    iterations
+        The steps at each scale.
+    kernel_um
+        The width of the kernel that smooths the warp's velocity (``a``), um.
+    velocity_size_um
+        The velocity field's grid spacing (``dv``), um.
+    warp_start
+        The iteration the warp starts at (``v_start``); a number past the
+        steps leaves it off.
+    warp_step, affine_step, slice_step
+        The gradient-descent steps of the warp (``ev``), the stack's affine
+        (``eA``) and each slice's in-plane affine (``eA2d``).
+    warp_sigma
+        The warp's freedom (``sigmaR``).
+    down_atlas, down_stack
+        How much each scale downsamples the atlas and the stack, per axis.
+    local_contrast
+        The block of the contrast fit, in pixels per axis.
+    """
+
+    iterations: tuple[int, ...]
+    kernel_um: float
+    velocity_size_um: float
+    warp_start: int
+    warp_step: float
+    affine_step: float
+    slice_step: float
+    warp_sigma: float
+    down_atlas: tuple[tuple[int, int, int], ...] = ((4, 4, 4), (2, 2, 2), (1, 1, 1))
+    down_stack: tuple[tuple[int, int, int], ...] = ((1, 4, 4), (1, 2, 2), (1, 1, 1))
+    local_contrast: tuple[int, int, int] = (1, 16, 16)
+
+    def keywords(self) -> dict[str, list[object]]:
+        """Return emlddmm's per-scale keyword arguments, lists as its example config."""
+        return {
+            "downI": [list(scale) for scale in self.down_atlas],
+            "downJ": [list(scale) for scale in self.down_stack],
+            "n_iter": [int(steps) for steps in self.iterations],
+            "a": [float(self.kernel_um)],
+            "dv": [self.velocity_size_um],
+            "v_start": [self.warp_start],
+            "ev": [self.warp_step],
+            "eA": [self.affine_step],
+            "eA2d": [self.slice_step],
+            "local_contrast": [list(self.local_contrast)],
+            "sigmaR": [float(self.warp_sigma)],
+        }
+
+
+@dataclass(frozen=True)
+class StackImages:
+    """Hold the sections on the stack grid.
+
+    Parameters
+    ----------
+    images
+        The sections, ``(slots, rows, cols)``, in [0, 1].
+    weights
+        The weight of each pixel, the same shape.
+    depths_um
+        Each slot's coordinate along the slicing axis, um.
+    rows_um, cols_um
+        The grid's row and column coordinates, um (the stack frame).
+    """
+
+    images: np.ndarray
+    weights: np.ndarray
+    depths_um: Array
+    rows_um: Array
+    cols_um: Array
+
+
+@dataclass(frozen=True)
+class StackFrame:
+    """Hold where the stack stands in the atlas.
+
+    Parameters
+    ----------
+    rotation
+        ``(3, 3)``, rows: the stack's slot axis, row axis, column axis in
+        atlas um.
+    origin_um
+        The atlas point at the stack's origin, um.
+    slots
+        The slot index of each section.
+    """
+
+    rotation: Array
+    origin_um: Array
+    slots: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class FitRequest:
+    """Hold one emlddmm fit.
+
+    Parameters
+    ----------
+    atlas, atlas_image
+        The BrainGlobe atlas and the image of it fitted to.
+    stack
+        The sections on the stack grid.
+    frame
+        The stack's place in the atlas.
+    schedule
+        emlddmm's per-scale arguments.
+    sorting
+        The values set for the pixel classes (the rest are emlddmm's own).
+    white_slide
+        Whether the slide is white: the background mean is 1 and the artifact
+        mean 0; else the background mean is 0.
+    mode
+        ``stack`` (the slots' planes locked) or ``plane`` (the plane free).
+    up_vector
+        The plane's up direction, for ``plane``.
+    read_warp
+        Whether the 3-D warp is read as well as the affine.
+    points
+        Where each section's map is read, one ``(n, 2)`` array of stack
+        (row, col) um per section.
+    device
+        ``auto``, ``cpu``, ``cuda`` or a numbered GPU.
+    single_precision
+        Whether the fit runs at float32 rather than float64.
+    """
+
+    atlas: str
+    atlas_image: str
+    stack: StackImages
+    frame: StackFrame
+    schedule: Schedule
+    sorting: Sorting
+    white_slide: bool
+    mode: Mode
+    read_warp: bool
+    points: tuple[Array, ...]
+    device: str
+    single_precision: bool
+    up_vector: tuple[float, ...] | None = None
+
+
+@dataclass(frozen=True)
+class FitResult:
+    """Hold what an emlddmm fit gives back.
+
+    Parameters
+    ----------
+    affine, start_affine
+        The fitted and the starting affine of the stack (4 x 4).
+    slice_affines
+        Each slot's in-plane affine (slots x 3 x 3).
+    match_weights, background_weights, artifact_weights
+        The final sorting, ``(slots, rows, cols)``, half precision.
+    atlas_cut
+        The atlas image under every stack pixel of each section, through the
+        whole fit, ``(sections, rows, cols)``.
+    warped_um, linear_um
+        Per section, the atlas um at its points with and without the warp,
+        ``(n, 3)``.
+    energy
+        emlddmm's own record, ``(iterations, 5)``: scale, iteration, total,
+        mismatch, regularization.
+    energy_captured
+        Whether the record has one row per iteration run.
+    chosen
+        What emlddmm chose (its means and spreads) and the schedule it ran.
+    log
+        What emlddmm printed.
+    device
+        The device and precision the fit ran at.
+    peak_gpu_gb
+        The most GPU memory the fit held.
+    seconds
+        How long the call took.
+    gpu_wait_s
+        How long it waited for the GPU queue.
+    """
+
+    affine: Array
+    start_affine: Array
+    slice_affines: Array
+    match_weights: np.ndarray
+    background_weights: np.ndarray
+    artifact_weights: np.ndarray
+    atlas_cut: np.ndarray
+    warped_um: tuple[np.ndarray, ...]
+    linear_um: tuple[np.ndarray, ...]
+    energy: Array
+    energy_captured: bool
+    chosen: Mapping[str, object]
+    log: str
+    device: str
+    peak_gpu_gb: float
+    seconds: float
+    gpu_wait_s: float
+
+
+@dataclass(frozen=True)
+class _AtlasStack:
+    """Hold the atlas image and the stack's starting affine.
 
     Parameters
     ----------
@@ -134,174 +293,229 @@ class _Stack:
         The atlas image over its mean, with a leading channel axis.
     """
 
-    start: np.ndarray
-    centre: np.ndarray
-    axes: list[np.ndarray]
-    image: np.ndarray
+    start: Array
+    centre: Array
+    axes: list[Array]
+    image: Array
 
 
-def run(arrays: Mapping[str, np.ndarray], params: Mapping[str, Setting]) -> dict[str, Output]:
+@dataclass
+class _Record:
+    """Keep the energy rows a fit reports, one per iteration."""
+
+    rows: list[list[float]] = field(default_factory=list)
+    scale: int = -1
+
+    def __call__(self, iteration: int, row: Sequence[float]) -> None:
+        """Add one iteration's row; iteration 0 starts the next scale."""
+        if iteration == 0:
+            self.scale += 1
+        self.rows.append([float(self.scale), float(iteration), *row[:3]])
+
+    def array(self) -> Array:
+        """Lay the rows out as ``(iterations, 5)``."""
+        return np.asarray(self.rows, float).reshape(-1, ENERGY_COLUMNS)
+
+
+def run(request: FitRequest) -> FitResult:
     """Run one emlddmm fit on the stack the plugin prepared.
 
     Parameters
     ----------
-    arrays
-        The stack and the points to read (see the module text).
-    params
-        The fit's settings (see the module text).
+    request
+        The stack, the schedule and the points to read.
 
     Returns
     -------
-    dict of str to Output
-        The fit's results by name (see the module text).
+    FitResult
+        The fit's results.
     """
     import torch
 
     emlddmm = _emlddmm()
     started = time.monotonic()
-    device = resolve_device(str(params["device"]))
-    single = params["dtype"] == SINGLE
-    dtype = torch.float32 if single else torch.float64
+    device = resolve_device(request.device)
+    dtype = torch.float32 if request.single_precision else torch.float64
     precision = str(dtype).replace("torch.", "")
-    out: dict[str, Output] = {"device": f"{device} {precision}"}
-    stack = _stack(arrays, params)
-    cfg = _per_scale(params)
-    plane = params["mode"] == PLANE
-    grid = [np.asarray(arrays[key], np.float64) for key in ("zs", "gy", "gx")]
+    atlas = _atlas_stack(request)
+    schedule = request.schedule.keywords()
+    plane = request.mode == "plane"
+    stack = request.stack
+    grid = [stack.depths_um, stack.rows_um, stack.cols_um]
+    means: dict[str, object] = {"muB": [[float(request.white_slide)]]}
+    if request.white_slide:
+        means["muA"] = [[0.0]]
+    sorted_keywords: dict[str, object] = {
+        name: [[value]] for name, value in request.sorting.keywords().items()
+    }
     config: dict[str, object] = {
-        "I": stack.image,
-        "xI": [stack.axes],
-        "J": np.asarray(arrays["J"], np.float64)[None],
+        "I": atlas.image,
+        "xI": [atlas.axes],
+        "J": np.asarray(stack.images, np.float64)[None],
         "xJ": [grid],
-        "W0": np.asarray(arrays["W0"], np.float64),
+        "W0": np.asarray(stack.weights, np.float64),
         "device": device,
         "dtype": dtype,
-        **cast("Mapping[str, object]", params["mu"]),
-        **cfg,
+        **means,
+        **schedule,
+        **sorted_keywords,
         "lock_slice_axis": [not plane],
         "slice_matching": [True],
         "out_of_plane": [False],
-        "A": stack.start,
+        "A": atlas.start,
         "n_draw": 0,
         "full_outputs": True,
     }
-    if plane:
-        up = cast("Sequence[float]", params["up_vector"])
-        config["up_vector"] = [[float(v) for v in up]]
-    saved: list[list[list[float]]] = []
+    if request.up_vector is not None:
+        config["up_vector"] = [[float(v) for v in request.up_vector]]
+    energy = _Record()
+    config["energy_callback"] = energy
     printed: list[str] = []
-    _CALLS.saved, _CALLS.printed = saved, printed
-    try:
-        with gpu_turn(device) as turn:
-            out["gpu_wait_s"] = turn.waited_s
-            if on_gpu(device):
-                torch.cuda.reset_peak_memory_stats()
-            result = emlddmm.emlddmm_multiscale(**config)[-1]
-            out["peak_gpu_gb"] = 0.0
-            if on_gpu(device):
-                out["peak_gpu_gb"] = torch.cuda.max_memory_allocated() / 1e9
-    finally:
-        _CALLS.saved, _CALLS.printed = None, None
-    out.update(_read_map(emlddmm, result, arrays, stack, params))
-    energy = _energy(saved)
-    out["energy"] = energy
-    steps = sum(int(n) for n in cast("list[int]", cfg["n_iter"]))
-    out["energy_captured"] = np.int32(len(energy) == steps)
-    out["settings"] = _json(
-        {
-            "muA": result["muA"],
-            "muB": result["muB"],
-            "sigmaM": result["sigmaM"],
-            "sigmaB": result["sigmaB"],
-            "sigmaA": result["sigmaA"],
-            "cfg": cfg,
-        }
+    peak_gpu_gb = 0.0
+    with gpu_turn(device) as turn, emlddmm.printing_to(printed):
+        if on_gpu(device):
+            torch.cuda.reset_peak_memory_stats()
+        fit = emlddmm.emlddmm_multiscale(**config)[-1]
+        if on_gpu(device):
+            peak_gpu_gb = torch.cuda.max_memory_allocated() / GB
+    steps = sum(request.schedule.iterations)
+    return _read_fit(
+        emlddmm,
+        fit,
+        request,
+        atlas,
+        Readout(
+            energy=energy.array(),
+            energy_captured=len(energy.rows) == steps,
+            chosen_schedule=schedule,
+            log="".join(printed),
+            device=f"{device} {precision}",
+            peak_gpu_gb=peak_gpu_gb,
+            seconds=time.monotonic() - started,
+            gpu_wait_s=turn.waited_s,
+        ),
     )
-    out["log"] = "".join(printed)
-    out["seconds"] = time.monotonic() - started
-    return out
 
 
-def _stack(arrays: Mapping[str, np.ndarray], params: Mapping[str, Setting]) -> _Stack:
+@dataclass(frozen=True)
+class Readout:
+    """Hold what a fit reports about itself, beside its maps.
+
+    Parameters
+    ----------
+    energy
+        emlddmm's energy record, ``(iterations, 5)``.
+    energy_captured
+        Whether it has one row per iteration run.
+    chosen_schedule
+        The per-scale arguments emlddmm ran with.
+    log
+        What emlddmm printed.
+    device
+        The device and precision.
+    peak_gpu_gb
+        The most GPU memory the fit held.
+    seconds
+        How long the call took.
+    gpu_wait_s
+        How long it waited for the GPU queue.
+    """
+
+    energy: Array
+    energy_captured: bool
+    chosen_schedule: Mapping[str, object]
+    log: str
+    device: str
+    peak_gpu_gb: float
+    seconds: float
+    gpu_wait_s: float
+
+
+def _atlas_stack(request: FitRequest) -> _AtlasStack:
     """Read the atlas image and place the stack on it."""
-    atlas = averaged_image(str(params["atlas"]), str(params["image"]))
+    atlas = averaged_image(request.atlas, request.atlas_image)
     image = atlas.image[None].astype(np.float64)
     image /= max(float(np.mean(np.abs(image))), 1e-12)
-    centre = _numbers(atlas.centre)
-    axes = [axis - c for axis, c in zip(atlas.axes, centre, strict=True)]
-    rotation = np.asarray(arrays["R"], np.float64)
-    origin = np.asarray(arrays["c0"], np.float64)
+    centre = np.asarray(atlas.centre, np.float64)
+    axes = [axis - c for axis, c in zip(atlas.axes, _numbers(centre), strict=True)]
+    rotation = np.asarray(request.frame.rotation, np.float64)
+    origin = np.asarray(request.frame.origin_um, np.float64)
     start = np.eye(4)
     start[:3, :3] = rotation
-    start[:3, 3] = -rotation @ (origin - atlas.centre)
-    return _Stack(start, atlas.centre, axes, image)
+    start[:3, 3] = -rotation @ (origin - centre)
+    return _AtlasStack(start, centre, axes, image)
 
 
-def _per_scale(params: Mapping[str, Setting]) -> dict[str, list[object]]:
-    """Build emlddmm's keyword arguments per scale, sorting included."""
-    given = cast("Mapping[str, Sequence[object]]", params["cfg"])
-    cfg = {key: list(value) for key, value in given.items()}
-    sorting = cast("Mapping[str, float]", params["sorting"])
-    for key, name in SORTING.items():
-        if key in sorting:
-            cfg[name] = [[float(sorting[key])]]
-    return cfg
-
-
-def _read_map(
+def _read_fit(
     emlddmm: _Emlddmm,
-    result: _Fit,
-    arrays: Mapping[str, np.ndarray],
-    stack: _Stack,
-    params: Mapping[str, Setting],
-) -> dict[str, Output]:
+    fit: _Fit,
+    request: FitRequest,
+    atlas: _AtlasStack,
+    readout: Readout,
+) -> FitResult:
     """Read the fit at the stack's pixels and at the plugin's points."""
     import torch
 
-    cpu = torch.float64
-    affine = result["A"].detach().cpu().to(dtype=cpu)
-    locked = params["mode"] != PLANE
-    if locked and not torch.allclose(affine[0], torch.as_tensor(stack.start)[0]):
+    double = torch.float64
+    affine = fit["A"].detach().cpu().to(dtype=double)
+    if request.mode == "stack" and not torch.allclose(affine[0], torch.as_tensor(atlas.start)[0]):
         raise RuntimeError("the locked slice axis moved")
-    turns = result["A2d"].detach().cpu().to(dtype=cpu)
-    xv = [torch.as_tensor(x).detach().cpu().to(dtype=cpu) for x in result["xv"]]
-    velocity = torch.as_tensor(result["v"]).detach().cpu().to(dtype=cpu)
+    turns = fit["A2d"].detach().cpu().to(dtype=double)
+    xv = [torch.as_tensor(x).detach().cpu().to(dtype=double) for x in fit["xv"]]
+    velocity = torch.as_tensor(fit["v"]).detach().cpu().to(dtype=double)
     with torch.no_grad():
         inverse = emlddmm.v_to_phii(xv, velocity)
         identity = torch.stack(torch.meshgrid(xv, indexing="ij"))
     reader = _Reader(
         emlddmm,
-        _numbers(np.asarray(arrays["zs"], np.float64)),
+        _numbers(np.asarray(request.stack.depths_um, np.float64)),
         turns,
         affine.inverse(),
         (xv, inverse - identity),
     )
-    warp = bool(params["warp"])
-    slots = _integers(arrays["slot"])
-    out: dict[str, Output] = {"Acut": _atlas_cut(emlddmm, reader, arrays, stack, warp)}
-    queries = np.asarray(arrays["q"], np.float64)
-    counts = _integers(arrays["q_n"])
-    shift = torch.as_tensor(stack.centre, dtype=cpu)
-    warped: list[np.ndarray] = [np.zeros((0, 3), np.float32)]
-    linear: list[np.ndarray] = [np.zeros((0, 3), np.float32)]
-    first = 0
-    for slot, n in zip(slots, counts, strict=True):
-        part = queries[first : first + n]
-        first += n
-        if n:
-            warped.append((reader.atlas_um(part, slot, warp) + shift).numpy().astype(np.float32))
-            linear.append((reader.atlas_um(part, slot, False) + shift).numpy().astype(np.float32))
-    out["X"] = np.concatenate(warped, 0)
-    out["L"] = np.concatenate(linear, 0)
-    out["A"], out["A0"], out["A2d"] = (
-        affine.numpy(),
-        stack.start,
-        turns.numpy(),
+    shift = torch.as_tensor(atlas.centre, dtype=double)
+    warped: list[np.ndarray] = []
+    linear: list[np.ndarray] = []
+    for slot, points in zip(request.frame.slots, request.points, strict=True):
+        if len(points):
+            moved = reader.atlas_um(points, slot, request.read_warp) + shift
+            warped.append(moved.numpy().astype(np.float32))
+            straight = reader.atlas_um(points, slot, False) + shift
+            linear.append(straight.numpy().astype(np.float32))
+        else:
+            warped.append(np.zeros((0, 3), np.float32))
+            linear.append(np.zeros((0, 3), np.float32))
+    return FitResult(
+        affine=affine.numpy(),
+        start_affine=atlas.start,
+        slice_affines=turns.numpy(),
+        match_weights=_half(fit["WM"]),
+        background_weights=_half(fit["WB"]),
+        artifact_weights=_half(fit["WA"]),
+        atlas_cut=_atlas_cut(emlddmm, reader, request, atlas),
+        warped_um=tuple(warped),
+        linear_um=tuple(linear),
+        energy=readout.energy,
+        energy_captured=readout.energy_captured,
+        chosen=_chosen(fit, readout.chosen_schedule),
+        log=readout.log,
+        device=readout.device,
+        peak_gpu_gb=readout.peak_gpu_gb,
+        seconds=readout.seconds,
+        gpu_wait_s=readout.gpu_wait_s,
     )
-    out["WM"] = _half(result["WM"])
-    out["WB"] = _half(result["WB"])
-    out["WA"] = _half(result["WA"])
-    return out
+
+
+def _chosen(fit: _Fit, schedule: Mapping[str, object]) -> dict[str, object]:
+    """Write what emlddmm chose as plain values."""
+    return {
+        "muA": _plain(fit["muA"]),
+        "muB": _plain(fit["muB"]),
+        "sigmaM": _plain(fit["sigmaM"]),
+        "sigmaB": _plain(fit["sigmaB"]),
+        "sigmaA": _plain(fit["sigmaA"]),
+        "cfg": dict(schedule),
+    }
 
 
 def _half(weights: torch.Tensor) -> np.ndarray:
@@ -310,27 +524,22 @@ def _half(weights: torch.Tensor) -> np.ndarray:
 
 
 def _atlas_cut(
-    emlddmm: _Emlddmm,
-    reader: _Reader,
-    arrays: Mapping[str, np.ndarray],
-    stack: _Stack,
-    warp: bool,
+    emlddmm: _Emlddmm, reader: _Reader, request: FitRequest, atlas: _AtlasStack
 ) -> np.ndarray:
     """Sample the atlas image under every stack pixel of each section."""
     import torch
 
-    cpu = torch.float64
-    gy, gx = (np.asarray(arrays[key], np.float64) for key in ("gy", "gx"))
-    slots = _integers(arrays["slot"])
-    rows, cols = np.meshgrid(gy, gx, indexing="ij")
+    double = torch.float64
+    stack = request.stack
+    rows, cols = np.meshgrid(stack.rows_um, stack.cols_um, indexing="ij")
     pixels = np.stack([rows.ravel(), cols.ravel()], -1)
-    atlas = torch.as_tensor(stack.image, dtype=cpu)
-    axes = [torch.as_tensor(x, dtype=cpu) for x in stack.axes]
-    cut = np.zeros((len(slots), len(gy), len(gx)), np.float32)
-    for i, slot in enumerate(slots):
-        points = reader.atlas_um(pixels, slot, warp)
-        sampled = emlddmm.interp(axes, atlas, points.T.reshape(3, 1, 1, -1))
-        cut[i] = sampled.reshape(len(gy), len(gx)).numpy()
+    image = torch.as_tensor(atlas.image, dtype=double)
+    axes = [torch.as_tensor(x, dtype=double) for x in atlas.axes]
+    cut = np.zeros((len(request.frame.slots), len(stack.rows_um), len(stack.cols_um)), np.float32)
+    for i, slot in enumerate(request.frame.slots):
+        points = reader.atlas_um(pixels, slot, request.read_warp)
+        sampled = emlddmm.interp(axes, image, points.T.reshape(3, 1, 1, -1))
+        cut[i] = sampled.reshape(len(stack.rows_um), len(stack.cols_um)).numpy()
     return cut
 
 
@@ -368,7 +577,7 @@ class _Reader:
         self._inverse = inverse_affine
         self._warp = warp
 
-    def atlas_um(self, points: np.ndarray, slot: int, with_warp: bool) -> torch.Tensor:
+    def atlas_um(self, points: Array, slot: int, with_warp: bool) -> torch.Tensor:
         """Map stack (row, col) um on one slot to atlas um.
 
         Parameters
@@ -387,13 +596,13 @@ class _Reader:
         """
         import torch
 
-        cpu = torch.float64
+        double = torch.float64
         n = len(points)
         stacked = torch.stack(
             [
-                torch.full((n,), self._zs[slot], dtype=cpu),
-                torch.as_tensor(points[:, 0], dtype=cpu),
-                torch.as_tensor(points[:, 1], dtype=cpu),
+                torch.full((n,), self._zs[slot], dtype=double),
+                torch.as_tensor(points[:, 0], dtype=double),
+                torch.as_tensor(points[:, 1], dtype=double),
             ]
         )
         turn = self._turns[slot].inverse()
@@ -408,100 +617,8 @@ class _Reader:
 
 
 def _emlddmm() -> _Emlddmm:
-    """Import the vendored module, its ``interp`` and ``print`` hooked."""
-    module = cast("_Emlddmm", importlib.import_module(MODULE))
-    with _INSTALL:
-        if not isinstance(module.interp, _EnergyHook):
-            module.interp = _EnergyHook(module.interp)
-            module.print = _print
-    return module
-
-
-class _EnergyHook:
-    """Keep emlddmm's energy record without editing it.
-
-    ``Esave`` is a local list of ``emlddmm.emlddmm`` (total, mismatch and
-    regularization per iteration) that only its figures read; ``interp``
-    is a module function it calls every iteration, so this stand-in finds
-    the calling ``emlddmm`` frame and keeps a reference to that list, on
-    the thread's own record.
-
-    Parameters
-    ----------
-    interp
-        emlddmm's own ``interp``, which every call goes on to.
-    """
-
-    def __init__(self, interp: Callable[..., torch.Tensor]) -> None:
-        self._interp = interp
-
-    def __call__(self, *args: object, **kwargs: object) -> torch.Tensor:
-        """Note the caller's ``Esave``, then interpolate as emlddmm does.
-
-        Parameters
-        ----------
-        *args
-            emlddmm's positional arguments.
-        **kwargs
-            emlddmm's keyword arguments.
-
-        Returns
-        -------
-        torch.Tensor
-            What emlddmm's ``interp`` returns.
-        """
-        saved = _CALLS.saved
-        if saved is not None:
-            here = inspect.currentframe()
-            caller = None if here is None else here.f_back
-            energy = _caller_energy(caller)
-            if energy is not None and not any(energy is kept for kept in saved):
-                saved.append(energy)
-        return self._interp(*args, **kwargs)
-
-
-def _caller_energy(frame: FrameType | None) -> list[list[float]] | None:
-    """Find the ``Esave`` list of the ``emlddmm`` frame that called."""
-    for _ in range(CALLER_DEPTH):
-        if frame is None:
-            return None
-        if frame.f_code.co_name == FIT_FUNCTION:
-            energy = frame.f_locals.get("Esave")
-            if isinstance(energy, list):
-                return cast("list[list[float]]", energy)
-            return None
-        frame = frame.f_back
-    return None
-
-
-def _print(*args: object, sep: str = " ", end: str = "\n", **_options: object) -> None:
-    """Keep what emlddmm prints with the fit that printed it.
-
-    A thread with no fit here logs it instead.
-    """
-    line = sep.join(str(arg) for arg in args) + end
-    printed = _CALLS.printed
-    if printed is None:
-        _LOG.info("emlddmm: %s", line.rstrip())
-    else:
-        printed.append(line)
-
-
-def _energy(saved: list[list[list[float]]]) -> np.ndarray:
-    """Lay emlddmm's records out as rows, one per iteration.
-
-    Each row is [scale, iteration, total, mismatch, regularization].
-    """
-    rows: list[list[float]] = []
-    for scale, energy in enumerate(saved):
-        for i, row in enumerate(energy):
-            rows.append([scale, i, *[float(v) for v in row[:3]]])
-    return np.asarray(rows, float).reshape(-1, 5)
-
-
-def _json(value: Mapping[str, Setting | torch.Tensor]) -> str:
-    """Write emlddmm's records as JSON (tensors and arrays as lists)."""
-    return json.dumps(value, default=_plain)
+    """Import the vendored module."""
+    return cast("_Emlddmm", importlib.import_module(MODULE))
 
 
 def _plain(value: object) -> object:
@@ -517,8 +634,3 @@ def _plain(value: object) -> object:
 def _numbers(values: np.ndarray) -> list[float]:
     """Read a 1-D array as Python floats."""
     return cast("list[float]", np.asarray(values, np.float64).tolist())
-
-
-def _integers(values: np.ndarray) -> list[int]:
-    """Read a 1-D array as Python integers."""
-    return cast("list[int]", np.asarray(values, int).tolist())

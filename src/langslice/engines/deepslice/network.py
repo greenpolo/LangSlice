@@ -25,22 +25,18 @@ when a model is built, never when this module loads.
 
 from __future__ import annotations
 
-import hashlib
-import importlib
-import logging
-import shutil
-import urllib.request
 import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Protocol, cast
+from typing import Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
 from PIL import Image
 
-logger = logging.getLogger(__name__)
+from langslice.core.outside import untyped
+from langslice.engines._weights import fetch
 
 BUCKET = "https://data-proxy.ebrains.eu/api/v1/buckets/deepslice/weights"
 XCEPTION = (
@@ -55,7 +51,7 @@ SECONDARY = (
     "Synthetic_data_final.hdf5",
     "b85b7325158d117b2ac7559495c0b50dfcf3545aa29281a345f9ef1e33542e42",
 )
-CACHE_FOLDER = Path("~/.cache/langslice/deepslice")
+ENGINE = "deepslice"
 DOWNLOAD_TIMEOUT_S = 600
 SIDE_PX = 299
 GREY_WEIGHTS = (0.2125, 0.7154, 0.0721)
@@ -189,31 +185,7 @@ def fetch_weights(cache_folder: Path) -> Weights:
 def _fetched(folder: Path, file: tuple[str, str]) -> Path:
     """Return one weight file in the folder, fetching it when missing."""
     name, digest = file
-    path = folder / name
-    if path.is_file() and _sha256(path) == digest:
-        return path
-
-    url = f"{BUCKET}/{name}"
-    logger.info("Fetching DeepSlice's weights from %s", url)
-    folder.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(name + ".part")
-    opened = cast("IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S))
-    with opened as response, partial.open("wb") as out:
-        shutil.copyfileobj(response, out, 1 << 20)
-
-    fetched = _sha256(partial)
-    if fetched != digest:
-        partial.unlink()
-        raise ValueError(
-            f"the file fetched from {url} has SHA-256 {fetched}, not DeepSlice's {name} ({digest})"
-        )
-    partial.replace(path)
-    return path
-
-
-def _sha256(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+    return fetch(f"{BUCKET}/{name}", digest, folder / name, timeout_s=DOWNLOAD_TIMEOUT_S)
 
 
 def predict(images: Sequence[Path], weights: Weights, *, ensemble: bool) -> Prediction:
@@ -261,17 +233,15 @@ def predict(images: Sequence[Path], weights: Weights, *, ensemble: bool) -> Pred
 
 def _load_keras() -> _Keras:
     """Import tf_keras's model parts and h5py."""
-    applications = importlib.import_module("tf_keras.applications")
-    models = importlib.import_module("tf_keras.models")
-    layers = importlib.import_module("tf_keras.layers")
-    images = importlib.import_module("tf_keras.preprocessing.image")
-    h5py = importlib.import_module("h5py")
     return _Keras(
-        xception=cast("Callable[..., _Layer]", applications.Xception),
-        sequential=cast("Callable[[], _Model]", models.Sequential),
-        dense=cast("Callable[..., object]", layers.Dense),
-        image_generator=cast("Callable[..., object]", images.ImageDataGenerator),
-        open_h5=cast("Callable[[str, str], _File]", h5py.File),
+        xception=cast("Callable[..., _Layer]", untyped("tf_keras.applications", "Xception")),
+        sequential=cast("Callable[[], _Model]", untyped("tf_keras.models", "Sequential")),
+        dense=cast("Callable[..., object]", untyped("tf_keras.layers", "Dense")),
+        image_generator=cast(
+            "Callable[..., object]",
+            untyped("tf_keras.preprocessing.image", "ImageDataGenerator"),
+        ),
+        open_h5=cast("Callable[[str, str], _File]", untyped("h5py", "File")),
     )
 
 
@@ -317,8 +287,7 @@ def _weight_key(name: str) -> str:
 
 def _generator(keras: _Keras, images: Sequence[Path]) -> _Generator:
     """Return Keras's reader of the images, as DeepSlice builds it."""
-    pandas = importlib.import_module("pandas")
-    frame = cast("Callable[..., object]", pandas.DataFrame)(
+    frame = cast("Callable[..., object]", untyped("pandas", "DataFrame"))(
         {"Filenames": [str(path) for path in images]}
     )
     with warnings.catch_warnings():

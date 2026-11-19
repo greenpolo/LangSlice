@@ -12,13 +12,14 @@ transform is proposed, and what was written. ``refused``, ``clamped`` and
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from PIL import Image
 
+from langslice.core.geometry.affine import decompose_affine
+from langslice.engines._positioning import clamped_reply, rounded, view_note
 from langslice.engines.deepslice.engine import EngineRun
 from langslice.engines.deepslice.proposal import ProposalRow
 from langslice.engines.deepslice.writes import AnswerPart, PartChoice, Written
@@ -31,7 +32,6 @@ SEE_PROPOSAL = (
     "To see the stack at its current positions, use the positioning view of "
     "look; view true here draws the proposal."
 )
-SEE_WRITTEN = "The positioning view of look shows the sections at these positions."
 IDENTITY = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 COLUMNS = (
     "section",
@@ -157,24 +157,6 @@ class Answer:
         return rounded(pitch, 2), rounded(yaw, 2)
 
 
-def rounded(value: float | None, digits: int) -> float | None:
-    """Round a number for the reply.
-
-    Parameters
-    ----------
-    value
-        The number, or None.
-    digits
-        The decimals kept.
-
-    Returns
-    -------
-    float or None
-        The rounded number (``+ 0.0`` leaves no ``-0.0``), or None.
-    """
-    return None if value is None else round(float(value), digits) + 0.0
-
-
 def answered(answer: Answer, pictures: list[Image.Image], *, view_sentence: bool) -> ToolResult:
     """Word a call's reply.
 
@@ -208,13 +190,9 @@ def answered(answer: Answer, pictures: list[Image.Image], *, view_sentence: bool
     if answer.written.refused:
         reply["refused"] = answer.written.refused
     if answer.written.clamped:
-        reply["clamped"] = [
-            {"id": section, "asked_mm": requested_mm, "used_mm": used}
-            for section, requested_mm, used in answer.written.clamped
-        ]
+        reply["clamped"] = clamped_reply(answer.written.clamped)
     if view_sentence:
-        propose = answer.choice.propose_only
-        reply["view"] = SEE_PROPOSAL if propose else SEE_WRITTEN
+        reply["view"] = view_note(not answer.choice.propose_only, SEE_PROPOSAL)
     return ToolResult(reply, list(pictures))
 
 
@@ -334,31 +312,6 @@ def _outcome(answer: Answer, row: ProposalRow) -> str:
     return ", ".join(did) if did else "nothing"
 
 
-@dataclass(frozen=True)
-class _Knobs:
-    rotation_deg: float
-    scale_x: float
-    scale_y: float
-    tx: float
-    ty: float
-
-
-def _knobs(params: Sequence[float], width: int, height: int) -> _Knobs:
-    """Return six normalized numbers as rotation, scales and shifts.
-
-    In the pixel frame of a ``width`` x ``height`` render, as LangSlice's
-    ``decompose_affine``: the rotation counter-clockwise, the shifts as
-    shares of the width and height.
-    """
-    a, b, tx, c, d, ty = (float(value) for value in params)
-    b, c = b * width / height, c * height / width
-    sx = math.hypot(a, c)
-    if sx <= 0:
-        return _Knobs(0.0, sx, 0.0, tx, ty)
-    turn = math.degrees(math.atan2(-c, a))
-    return _Knobs(turn, sx, (a * d - b * c) / sx, tx, ty)
-
-
 def in_plane_change(
     params: Sequence[float], current: Sequence[float], width: int, height: int
 ) -> str:
@@ -379,12 +332,13 @@ def in_plane_change(
         The turn, the scales, and the shift as a share of the width and
         height.
     """
-    new = _knobs(params, width, height)
-    old = _knobs(current, width, height)
-    turn = new.rotation_deg - old.rotation_deg
-    sx = new.scale_x / old.scale_x if old.scale_x else 1.0
-    sy = new.scale_y / old.scale_y if old.scale_y else 1.0
-    dx, dy = new.tx - old.tx, new.ty - old.ty
+    new = decompose_affine(params, (width, height))
+    old = decompose_affine(current, (width, height))
+    turn = new["rotation_deg"] - old["rotation_deg"]
+    sx = new["scale_x"] / old["scale_x"] if old["scale_x"] else 1.0
+    sy = new["scale_y"] / old["scale_y"] if old["scale_y"] else 1.0
+    dx = new["translate_x_frac"] - old["translate_x_frac"]
+    dy = new["translate_y_frac"] - old["translate_y_frac"]
     way = "counter-clockwise" if turn >= 0 else "clockwise"
     across = "right" if dx >= 0 else "left"
     down = "down" if dy >= 0 else "up"

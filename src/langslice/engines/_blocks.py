@@ -1,4 +1,4 @@
-"""What the three in-tree engines share: the atlas image a call used, the section mask it was
+"""What the in-tree engines share: the atlas image a call used, the section mask it was
 given, and the ``inputs`` / ``estimated`` blocks every fit reply carries
 (``docs/developers/plugins.md``).
 
@@ -15,7 +15,8 @@ from typing import Any
 import cv2
 import numpy as np
 
-from langslice.plugin_api import RefusalCode, ToolContext, ToolError
+from langslice.core.sections.masks import MaskView
+from langslice.plugin_api import FitFrame, RefusalCode, ToolContext, ToolError
 
 NISSL = "nissl"
 BORROWED_NISSL = "ccfv3augmented_nissl"
@@ -60,7 +61,7 @@ def job_path(context: ToolContext, path: Path) -> str:
     return str(path)
 
 
-def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) -> Any:
+def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) -> FitFrame:
     """The section's fit frame with *section_image* (a section image by name) and
     *atlas_image*."""
     frame = ctx.fit_frame(sid, atlas=(atlas_image, "annotation"), image=section_image)
@@ -68,7 +69,7 @@ def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) 
     return frame
 
 
-def atlas_plane(frame: Any, asked: str) -> tuple[np.ndarray, str]:
+def atlas_plane(frame: FitFrame, asked: str) -> tuple[np.ndarray, str]:
     """The atlas image *asked* on *frame* and the name it resolved to ("nissl" is the atlas's
     Nissl, else its template)."""
     planes = frame.atlas
@@ -81,18 +82,15 @@ def atlas_plane(frame: Any, asked: str) -> tuple[np.ndarray, str]:
             RefusalCode.BAD_ARGUMENT,
             f"the atlas has no image {asked!r}; the job statement lists its images",
         )
-    resolved = dict(getattr(frame, "atlas_resolved", None) or {}).get(asked)
-    if resolved is None:
-        resolved = key if key != NISSL else getattr(frame, "atlas_image", NISSL)
-    return planes[key], str(resolved)
+    return planes[key], frame.atlas_resolved.get(asked) or key
 
 
-def section_pixels(frame: Any) -> np.ndarray:
+def section_pixels(frame: FitFrame) -> np.ndarray:
     """The section image the frame was asked for, on the fit grid (RGB, uint8)."""
     return np.asarray(frame.section_image, np.uint8)
 
 
-def section_mask(ctx: ToolContext, sid: str, mask: str) -> Any | None:
+def section_mask(ctx: ToolContext, sid: str, mask: str) -> MaskView | None:
     """The named mask of the section (``NOT_FOUND`` / ``STALE_INPUT`` refuse), or None for
     ``"none"``."""
     if mask == "none":
@@ -110,34 +108,27 @@ def refuse_mask(tool: str, mask: str, why: str) -> None:
         )
 
 
-def _margin_mm(frame: Any) -> float | None:
-    """The margin the damage zone adds around the marked regions (every engine here leaves the
-    zone out, as the native fits do), as the frame states it."""
-    margin = getattr(frame, "damage_margin_mm", None)
-    return None if margin is None else float(margin)
-
-
 def inputs_block(
     ctx: ToolContext,
-    frame: Any,
+    frame: FitFrame,
     *,
     section_image: str,
     atlas_image: str,
     resolved: str,
-    mask: Any | None,
+    mask: MaskView | None,
     brightness: str,
 ) -> dict[str, Any]:
     """The ``inputs`` block of one section: the section image (name, kind, file, digest), the
     atlas image (as asked and as resolved), the section mask, the atlas-side damage and what
     the engine does to brightness."""
-    reference = getattr(frame, "section_image_ref", None)
+    reference = frame.section_image_ref
     return {
         "section_image": dict(reference) if reference else {"name": section_image},
         "atlas_image": atlas_image,
         "atlas_image_resolved": resolved,
         **(
             {"atlas_image_note": note}
-            if atlas_image == NISSL and (note := getattr(frame, "atlas_image_note", None))
+            if atlas_image == NISSL and (note := frame.atlas_image_note)
             else {}
         ),
         "mask": {"name": "none", "kind": None, "stale": False, "earlier_registration": False}
@@ -146,11 +137,11 @@ def inputs_block(
             "name": mask.name,
             "kind": mask.kind,
             "stale": bool(mask.stale),
-            "earlier_registration": bool(getattr(mask, "earlier_registration", False)),
+            "earlier_registration": bool(mask.earlier_registration),
         },
         "damage": {
             "regions": list(ctx.section(frame.id).damaged_regions),
-            "margin_mm": _margin_mm(frame),
+            "margin_mm": frame.damage_margin_mm,
             "side": "atlas",
         },
         "brightness": brightness,

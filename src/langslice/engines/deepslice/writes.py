@@ -12,15 +12,15 @@ from __future__ import annotations
 import enum
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import cast
 
+from langslice.engines._positioning import Clamped, clamped_rows, row_errors
 from langslice.engines.deepslice.engine import EngineRun
 from langslice.engines.deepslice.proposal import (
     Plane,
     ProposalRow,
     in_plane_params,
 )
-from langslice.plugin_api import RefusalCode, ToolContext, WriteResult
+from langslice.plugin_api import ToolContext, WriteResult
 
 TRANSFORM_NOTE = "DeepSlice in-plane fit"
 NO_PIXEL_SIZE = "not written (no pixel size)"
@@ -89,7 +89,7 @@ class Written:
     refused
         A write refused whole, as ``CODE: message``; empty when none was.
     clamped
-        Each position the atlas range held: id, asked and used mm.
+        Each position the atlas range held.
     params
         The in-plane numbers read for each section (None without a pixel
         size).
@@ -101,7 +101,7 @@ class Written:
     transform_errors: dict[str, str] = field(default_factory=dict)
     angles_written: bool = False
     refused: str = ""
-    clamped: list[tuple[str, float, float]] = field(default_factory=list)
+    clamped: list[Clamped] = field(default_factory=list)
     params: dict[str, tuple[float, ...] | None] = field(default_factory=dict)
 
 
@@ -212,21 +212,11 @@ def _write_positions(
 
 def _positions_written(result: WriteResult, *, angles_written: bool) -> Written:
     """Return what a position write that was not refused whole did."""
-    rows = cast("list[dict[str, str | float]]", result.rows)
-    clamped = [
-        (
-            str(row["id"]),
-            float(row["clamped_from_mm"]),
-            float(row["position_mm"]),
-        )
-        for row in rows
-        if "clamped_from_mm" in row
-    ]
     return Written(
         positions=frozenset(result.written),
-        position_errors=_row_errors(result),
+        position_errors=row_errors(result),
         angles_written=angles_written,
-        clamped=clamped,
+        clamped=clamped_rows(result),
     )
 
 
@@ -260,16 +250,5 @@ def _write_transforms(
         written,
         params=params,
         transforms=frozenset(done.written),
-        transform_errors={**errors, **_row_errors(done)},
+        transform_errors={**errors, **row_errors(done)},
     )
-
-
-def _row_errors(result: WriteResult) -> dict[str, str]:
-    """Return each section a write left out, with its code."""
-    rows = cast("list[dict[str, str]]", result.rows)
-    landed = set(result.written)
-    return {
-        row["id"]: str(row.get("error", RefusalCode.PRECONDITION))
-        for row in rows
-        if row["id"] not in landed
-    }

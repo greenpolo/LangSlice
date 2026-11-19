@@ -24,8 +24,7 @@ below 2, TensorFlow below 2.20) do not reach LangSlice.
   head and the binary search (`brainways.model.siamese.siamese_model.SiameseModel.predict`).
 
 Needs torch (a core dependency of LangSlice), numpy and OpenCV; neither timm, albumentations nor
-huggingface_hub. A call where torch does not import is refused with `ENGINE_UNAVAILABLE`, naming
-`pip install "langslice[engines]"`.
+huggingface_hub. A call where torch does not import is refused with `ENGINE_UNAVAILABLE`.
 
 ## Use
 
@@ -36,7 +35,7 @@ It starts off: switch it on with `--enabled brainways_ap` (`enabled=["brainways_
 under `langslice.engines.brainways.plugin:tools`.
 Options
 (`--plugin-config 'langslice.engines.brainways.plugin:tools=JSON'`): `device` (`auto`, the GPU
-when torch sees one; `cuda`; `cpu`), `long_edge` (3072: the long edge in pixels of the one
+when torch sees one; `cpu`; `cuda`; a numbered GPU such as `cuda:1`), `long_edge` (3072: the long edge in pixels of the one
 channel handed to Brainways, which makes its own 1024-pixel thumbnail), `cache_folder` (where
 the weights are kept; default `~/.cache/langslice/brainways`). An unknown option fails the
 plugin's load.
@@ -63,7 +62,7 @@ of the SliceBench plugin it was moved from (`comparators/plugins/brainways/`).
   `position_mm`, `change_mm`, written), `channel`, and when they apply `refused`, `clamped`
   (`id`, `asked_mm`, `used_mm`) and, without a picture, one sentence pointing to the positioning
   view of `look`. No metric or confidence.
-- **Every call** saves `plugins/brainways_ap/calls/<n>/`: `images/` (the channel handed to the
+- **Every call** saves `plugins/brainways_ap/calls/<n>_ap/`: `images/` (the channel handed to the
   network, as PNGs), `settings.json` (arguments, channel used, device, GPU, model id, weights
   revision and SHA-256, torch version, timings) and `rows.json` (the table and each section's
   plane index `ap`, `position_mm`, `seconds`).
