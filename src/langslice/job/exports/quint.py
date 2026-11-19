@@ -68,7 +68,6 @@ def _on_allen_grid(atlas: dict[str, Any]) -> tuple[dict[str, Any], np.ndarray]:
     return {**atlas, "name": "allen_mouse_25um", "shape": list(_CCFV3_25UM_SHAPE)}, shift
 
 
-
 @dataclass
 class AnchoringVector:
     """Nine-element anchoring vector used by QuickNII / VisuAlign / Nutil."""
@@ -119,7 +118,6 @@ class QUINTExport:
     aligner: str = f"langslice_{__version__}"
 
 
-
 def _resolve_target(atlas_name: str) -> str:
     """Map a BrainGlobe atlas name to a ``.cutlas`` target identifier."""
     if atlas_name in _KNOWN_TARGETS:
@@ -127,8 +125,9 @@ def _resolve_target(atlas_name: str) -> str:
     return f"{atlas_name}.cutlas"
 
 
-def to_target_grid(anchoring: AnchoringVector, atlas_name: str,
-                   resolution_um: Sequence[float]) -> AnchoringVector:
+def to_target_grid(
+    anchoring: AnchoringVector, atlas_name: str, resolution_um: Sequence[float]
+) -> AnchoringVector:
     """*anchoring*, in the voxel space of the atlas *atlas_name* (voxels of
     *resolution_um*), in its QuickNII target's voxel space."""
     target = _TARGET_RESOLUTION_UM.get(_resolve_target(atlas_name))
@@ -174,8 +173,10 @@ def _quicknii_spaces(atlas: dict[str, Any]) -> tuple[Any, Any]:
     shape = [int(v) for v in atlas["shape"]]
     index = {_AXIS_OF_LETTER[letter]: axis for axis, letter in enumerate(orientation)}
     quicknii_shape = tuple(shape[index[name]] for name in ("ml", "ap", "dv"))
-    return (AnatomicalSpace(orientation, shape=tuple(shape)),
-            AnatomicalSpace(QUICKNII_ORIGIN, shape=quicknii_shape))
+    return (
+        AnatomicalSpace(orientation, shape=tuple(shape)),
+        AnatomicalSpace(QUICKNII_ORIGIN, shape=quicknii_shape),
+    )
 
 
 def atlas_um_to_quicknii_points(points_um: Any, atlas: dict[str, Any]) -> np.ndarray:
@@ -211,8 +212,9 @@ def quicknii_target(atlas_name: str) -> str:
     return _resolve_target(atlas_name)
 
 
-def from_target_grid(anchoring: Sequence[float], atlas_name: str,
-                     resolution_um: Sequence[float]) -> list[float]:
+def from_target_grid(
+    anchoring: Sequence[float], atlas_name: str, resolution_um: Sequence[float]
+) -> list[float]:
     """The inverse of :func:`to_target_grid`: nine anchoring numbers in the
     QuickNII target's voxel space, in the voxel space of the BrainGlobe atlas
     *atlas_name* (voxels of *resolution_um*). Not rounded."""
@@ -228,7 +230,10 @@ def from_target_grid(anchoring: Sequence[float], atlas_name: str,
 
 
 def anchoring_from_pixel_map(
-    pixel_to_atlas_um: Any, width: int, height: int, atlas: dict[str, Any],
+    pixel_to_atlas_um: Any,
+    width: int,
+    height: int,
+    atlas: dict[str, Any],
 ) -> AnchoringVector:
     """The QuickNII anchoring of an image of *width* x *height* pixels whose
     pixel ``[row, col, 1]`` (centres at integers) maps to atlas micrometres
@@ -239,8 +244,7 @@ def anchoring_from_pixel_map(
     corner = matrix @ np.array([-0.5, -0.5, 1.0])
     right = corner + matrix[:, 1] * float(width)
     down = corner + matrix[:, 0] * float(height)
-    o, top_right, bottom_left = atlas_um_to_quicknii_points(
-        np.stack([corner, right, down]), atlas)
+    o, top_right, bottom_left = atlas_um_to_quicknii_points(np.stack([corner, right, down]), atlas)
     u, v = top_right - o, bottom_left - o
     return AnchoringVector(*(round(float(value), 6) for value in (*o, *u, *v)))
 
@@ -340,8 +344,7 @@ def anchoring_pixel_map(
     old = np.asarray(source.to_list(), dtype=np.float64)
     new = np.asarray(target.to_list(), dtype=np.float64)
     new_axes = np.column_stack([new[3:6] / width, new[6:] / height])
-    old_affine = np.column_stack([old[3:6] / width, old[6:] / height,
-                                  old[:3] - new[:3]])
+    old_affine = np.column_stack([old[3:6] / width, old[6:] / height, old[:3] - new[:3]])
     change = np.linalg.pinv(new_axes) @ old_affine
     return np.vstack([change, [0.0, 0.0, 1.0]])
 
@@ -380,13 +383,13 @@ def markers_on_anchoring(
     change = anchoring_pixel_map(exact, anchoring, width, height)
     rows = np.asarray(markers, dtype=np.float64).reshape(-1, 4)
     if not len(rows):
-        corners = np.array([[0.0, 0.0, 1.0], [width, 0.0, 1.0],
-                            [0.0, height, 1.0], [width, height, 1.0]])
+        corners = np.array(
+            [[0.0, 0.0, 1.0], [width, 0.0, 1.0], [0.0, height, 1.0], [width, height, 1.0]]
+        )
         moved = corners @ change.T
         if np.abs(moved - corners).max() <= SHEAR_TOLERANCE_PX:
             return []
-        grid_x, grid_y = marker_grid((width, height),
-                                     divisions=SHEAR_MARKER_DIVISIONS)
+        grid_x, grid_y = marker_grid((width, height), divisions=SHEAR_MARKER_DIVISIONS)
         rows = np.column_stack([grid_x, grid_y, grid_x, grid_y])
     points = np.column_stack([rows[:, :2], np.ones(len(rows))])
     rows[:, :2] = (points @ change.T)[:, :2]
@@ -436,16 +439,23 @@ def job_export(
         size = cast("tuple[int, int]", (entry["width"], entry["height"]))
         exact = to_target_grid(
             anchoring_from_pixel_map(entry["pixel_to_atlas_um"], *size, atlas),
-            atlas_name, resolution)
+            atlas_name,
+            resolution,
+        )
         anchoring = perpendicular_anchoring(exact)
         markers: list[list[float]] = []
         if write_markers:
             given = cast("list[list[float]]", entry.get("markers") or [])
             markers = markers_on_anchoring(given, exact, anchoring, size)
         filename = cast("str", entry["filename"])
-        slices.append(SliceExport(
-            filename=os.path.basename(filename), anchoring=anchoring,
-            width=size[0], height=size[1], nr=cast("int", entry["nr"]),
-            markers=markers))
-    return export_to_dict(QUINTExport(target=_resolve_target(atlas_name),
-                                      slices=slices, name=name))
+        slices.append(
+            SliceExport(
+                filename=os.path.basename(filename),
+                anchoring=anchoring,
+                width=size[0],
+                height=size[1],
+                nr=cast("int", entry["nr"]),
+                markers=markers,
+            )
+        )
+    return export_to_dict(QUINTExport(target=_resolve_target(atlas_name), slices=slices, name=name))

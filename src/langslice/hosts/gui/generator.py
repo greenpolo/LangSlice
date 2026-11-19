@@ -111,9 +111,7 @@ INTEGRATIONS: tuple[Integration, ...] = (
         words="the QUINT tools (PyNutil, QuickNII, VisuAlign)",
     ),
     Integration(name="verso", label="VERSO", words="VERSO"),
-    Integration(
-        name="dmc-brainmap", label="DMC-BrainMap", words="DMC-BrainMap"
-    ),
+    Integration(name="dmc-brainmap", label="DMC-BrainMap", words="DMC-BrainMap"),
 )
 
 
@@ -130,8 +128,11 @@ TRACED_PROVIDER = "openai-oauth"
 
 def task_sets() -> list[list[str]]:
     """Every non-empty choice of tasks, each in :data:`ALL_TASKS` order."""
-    return [list(chosen) for size in range(1, len(ALL_TASKS) + 1)
-            for chosen in combinations(ALL_TASKS, size)]
+    return [
+        list(chosen)
+        for size in range(1, len(ALL_TASKS) + 1)
+        for chosen in combinations(ALL_TASKS, size)
+    ]
 
 
 def tools() -> list[dict[str, Any]]:
@@ -142,25 +143,30 @@ def tools() -> list[dict[str, Any]]:
     (comma-joined)
     whose runs have it (``ToolDef.when``)."""
     traced = NonlinearSpec(provider=TRACED_PROVIDER)
-    specs = [JobSpec(image_folder=".", tasks=tasks, nonlinear=traced)
-             for tasks in task_sets()]
+    specs = [JobSpec(image_folder=".", tasks=tasks, nonlinear=traced) for tasks in task_sets()]
     rows = []
     for entry in tool_table.catalog():
         held = tool_table.TOOLS.get(entry["name"])
         if held is not None and held.scripting:
             continue
-        options = [f"{entry['name']}{tool_table.OPTION_SEPARATOR}{option}"
-                   for option in entry["options"]]
-        rows.append({
-            "name": entry["name"], "group": entry["group"],
-            "label": tool_labels.label(entry["name"]),
-            "disableable": entry["disableable"], "needs": entry["needs"],
-            "image_model": held is not None and held.image_model,
-            "default_off": held is not None and held.default_off,
-            "options": [{"name": name, "label": tool_labels.label(name)} for name in options],
-            "runs_in": [",".join(spec.tasks) for spec in specs
-                        if held is None or held.when(spec)],
-        })
+        options = [
+            f"{entry['name']}{tool_table.OPTION_SEPARATOR}{option}" for option in entry["options"]
+        ]
+        rows.append(
+            {
+                "name": entry["name"],
+                "group": entry["group"],
+                "label": tool_labels.label(entry["name"]),
+                "disableable": entry["disableable"],
+                "needs": entry["needs"],
+                "image_model": held is not None and held.image_model,
+                "default_off": held is not None and held.default_off,
+                "options": [{"name": name, "label": tool_labels.label(name)} for name in options],
+                "runs_in": [
+                    ",".join(spec.tasks) for spec in specs if held is None or held.when(spec)
+                ],
+            }
+        )
     return rows
 
 
@@ -169,8 +175,9 @@ def frozen_off(*properties: str) -> list[str]:
     switches off in a run of every task
     (:func:`langslice.job.settings.tool_table.off_names`)."""
     plain = JobSpec(image_folder=".", tasks=list(ALL_TASKS)).switched_off
-    kept = JobSpec(image_folder=".", tasks=list(ALL_TASKS),
-                   frozen={"*": list(properties)}).switched_off
+    kept = JobSpec(
+        image_folder=".", tasks=list(ALL_TASKS), frozen={"*": list(properties)}
+    ).switched_off
     return [name for name in kept if name not in plain]
 
 
@@ -217,31 +224,47 @@ def image_models() -> list[ImageModelChoice]:
         label = CONNECTION_LABELS.get(name, (name, ""))[0]
         if no_model:
             label = NO_IMAGE_MODEL
-        rows.append(ImageModelChoice(
-            provider=name,
-            label=label,
-            default=name == default,
-            models=list(IMAGE_MODELS.get(name, ())),
-            default_model=image_registry.default_image_model(name),
-            connected=no_model or image_model_connected(name),
-        ))
+        rows.append(
+            ImageModelChoice(
+                provider=name,
+                label=label,
+                default=name == default,
+                models=list(IMAGE_MODELS.get(name, ())),
+                default_model=image_registry.default_image_model(name),
+                connected=no_model or image_model_connected(name),
+            )
+        )
     return rows
 
 
 def payload() -> dict[str, Any]:
     """Everything the generator page needs, as plain data (``GET generator``)."""
-    atlases = [{"name": name, "about": about, "species": species(name)}
-               for name, about in sorted(descriptions().items())]
+    atlases = [
+        {"name": name, "about": about, "species": species(name)}
+        for name, about in sorted(descriptions().items())
+    ]
     if not any(atlas["name"] == DEFAULT_ATLAS for atlas in atlases):
         atlases.insert(0, {"name": DEFAULT_ATLAS, "about": "", "species": species(DEFAULT_ATLAS)})
     groups = tool_table.GROUPS
     writers = tool_table.TASK_WRITERS
     return {
-        "tasks": [{"name": task, "label": tool_labels.TASK_LABELS[task],
-                   "about": tool_labels.TASK_ABOUT[task], "default": task in DEFAULT_TASKS}
-                  for task in ALL_TASKS],
-        "groups": [{"name": group, "label": tool_labels.GROUP_LABELS[group][0],
-                    "task": tool_labels.GROUP_LABELS[group][1]} for group in groups],
+        "tasks": [
+            {
+                "name": task,
+                "label": tool_labels.TASK_LABELS[task],
+                "about": tool_labels.TASK_ABOUT[task],
+                "default": task in DEFAULT_TASKS,
+            }
+            for task in ALL_TASKS
+        ],
+        "groups": [
+            {
+                "name": group,
+                "label": tool_labels.GROUP_LABELS[group][0],
+                "task": tool_labels.GROUP_LABELS[group][1],
+            }
+            for group in groups
+        ],
         "tools": tools(),
         "task_writers": {task: list(names) for task, names in writers.items()},
         "keep": KEEP,
@@ -254,7 +277,6 @@ def payload() -> dict[str, Any]:
         "image_models": [asdict(choice) for choice in image_models()],
         "integrations": [asdict(program) for program in INTEGRATIONS],
     }
-
 
 
 @dataclass(frozen=True)

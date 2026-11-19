@@ -81,10 +81,14 @@ PRICES: dict[str, dict[str, list[tuple[date, Rate]]]] = {
     },
     "gemini-api": {
         "gemini-4-argon": [(_ALWAYS, _r(2, 0.10, 10)), (date(2026, 12, 1), _r(4, 0.20, 20))],
-        "gemini-3.8-flash": [(_ALWAYS, _r(0.75, 0.075, 3.75)),
-                             (date(2027, 1, 1), _r(1.5, 0.15, 7.5))],
-        "gemini-3.6-flash": [(_ALWAYS, _r(0.75, 0.075, 3.75)),
-                             (date(2027, 1, 1), _r(1.5, 0.15, 7.5))],
+        "gemini-3.8-flash": [
+            (_ALWAYS, _r(0.75, 0.075, 3.75)),
+            (date(2027, 1, 1), _r(1.5, 0.15, 7.5)),
+        ],
+        "gemini-3.6-flash": [
+            (_ALWAYS, _r(0.75, 0.075, 3.75)),
+            (date(2027, 1, 1), _r(1.5, 0.15, 7.5)),
+        ],
         "gemini-3.5-flash-lite": [(_ALWAYS, _r(0.30, 0.03, 2.5))],
         "gemini-3.1-flash-lite": [(_ALWAYS, _r(0.25, 0.025, 1.5))],
         "gemini-3.1-pro-preview": [(_ALWAYS, _r(2, 0.20, 12))],
@@ -124,8 +128,9 @@ def lane_of(model: Any) -> tuple[str | None, str]:
     return None, name
 
 
-def rate_for(lane: str, model: str, *, today: date | None = None,
-             prompt_tokens: int = 0) -> Rate | None:
+def rate_for(
+    lane: str, model: str, *, today: date | None = None, prompt_tokens: int = 0
+) -> Rate | None:
     """The price of *model* on *lane*, or None when the table has none."""
     rows = PRICES.get(lane, {}).get(model)
     if not rows:
@@ -182,9 +187,14 @@ class SpendMonitor:
             warnings += self._dollars(prompt, cached, candidates, thoughts)
         elif self.lane is None and not self._unpriced_said:
             self._unpriced_said = True
-            warnings.append({"text": (
-                f"[spend] no price table for {self.model}: no dollar estimate for this "
-                "run (tokens are still logged)")})
+            warnings.append(
+                {
+                    "text": (
+                        f"[spend] no price table for {self.model}: no dollar estimate for this "
+                        "run (tokens are still logged)"
+                    )
+                }
+            )
         return warnings
 
     def _quota(self, quota: dict[str, Any]) -> list[dict[str, Any]]:
@@ -200,35 +210,52 @@ class SpendMonitor:
         while (self._quota_said + 1) * QUOTA_STEP <= used:
             self._quota_said += 1
             step = self._quota_said * QUOTA_STEP
-            out.append({"text": (
-                f"[spend] this run has used {used}% of the usage window "
-                f"(passed {step}%)"), "used_percent": used, "threshold": step})
+            out.append(
+                {
+                    "text": (
+                        f"[spend] this run has used {used}% of the usage window (passed {step}%)"
+                    ),
+                    "used_percent": used,
+                    "threshold": step,
+                }
+            )
         return out
 
-    def _dollars(self, prompt: int, cached: int, candidates: int,
-                 thoughts: int) -> list[dict[str, Any]]:
+    def _dollars(
+        self, prompt: int, cached: int, candidates: int, thoughts: int
+    ) -> list[dict[str, Any]]:
         assert self.lane is not None
         rate = rate_for(self.lane, self.model, today=self.today, prompt_tokens=prompt)
         if rate is None:
             if self._unpriced_said:
                 return []
             self._unpriced_said = True
-            return [{"text": (
-                f"[spend] no known price for {self.lane}/{self.model}: no dollar estimate "
-                "for this run (tokens are still logged)")}]
+            return [
+                {
+                    "text": (
+                        f"[spend] no known price for {self.lane}/{self.model}: no dollar estimate "
+                        "for this run (tokens are still logged)"
+                    )
+                }
+            ]
         self.priced = True
         output = candidates + (thoughts if self.lane in _THOUGHTS_SEPARATE else 0)
         plain = rate.cache_write if rate.cache_write is not None else rate.input
-        self.usd += ((prompt - cached) * plain + cached * rate.cached
-                     + output * rate.output) / 1e6
+        self.usd += ((prompt - cached) * plain + cached * rate.cached + output * rate.output) / 1e6
         out = []
         while self.usd >= self._next_usd:
             step = self._next_usd
             self._next_usd *= 2
-            out.append({"text": (
-                f"[spend] this run's estimated API cost is ${self.usd:.2f} "
-                f"(passed ${step:g}; {self.lane}/{self.model}, list prices)"),
-                "usd": round(self.usd, 4), "threshold": step})
+            out.append(
+                {
+                    "text": (
+                        f"[spend] this run's estimated API cost is ${self.usd:.2f} "
+                        f"(passed ${step:g}; {self.lane}/{self.model}, list prices)"
+                    ),
+                    "usd": round(self.usd, 4),
+                    "threshold": step,
+                }
+            )
         return out
 
     def summary(self) -> dict[str, Any]:
@@ -249,7 +276,8 @@ class SpendMonitor:
             "note": (
                 "usd_estimate is list prices times the reported tokens (output = "
                 "candidates, plus thinking tokens where the lane reports them apart); "
-                "quota_used_percent is the usage window's rise since this run's first reading"),
+                "quota_used_percent is the usage window's rise since this run's first reading"
+            ),
         }
 
     def line(self) -> str:

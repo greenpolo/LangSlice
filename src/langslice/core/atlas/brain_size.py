@@ -48,8 +48,13 @@ def annotated_volume_mm3(annotation: Any, resolution_um: Any) -> float:
 def brain_volume_mm3(atlas: Any) -> float:
     """*atlas*'s annotated volume (:func:`annotated_volume_mm3`), kept in the
     atlas disk cache (``core.atlas.disk_cache``) once measured."""
-    measured = cached_volume(atlas, "brain_volume_mm3", lambda: np.array(
-        [annotated_volume_mm3(atlas.annotation, atlas.resolution)], dtype=np.float64))
+    measured = cached_volume(
+        atlas,
+        "brain_volume_mm3",
+        lambda: np.array(
+            [annotated_volume_mm3(atlas.annotation, atlas.resolution)], dtype=np.float64
+        ),
+    )
     return float(measured[0])
 
 
@@ -66,13 +71,23 @@ def brain_scale(atlas: Any) -> float:
     """How many times the adult mouse brain's linear size *atlas*'s brain is
     (module text): 1.0 for the adult CCFv3 brain. Measured once per atlas."""
     metadata = getattr(atlas, "metadata", None)
-    key = (getattr(atlas, "atlas_name", None),
-           metadata.get("version") if isinstance(metadata, dict) else None,
-           tuple(float(r) for r in atlas.resolution), tuple(getattr(atlas, "shape", ()) or ()))
+    key = (
+        getattr(atlas, "atlas_name", None),
+        metadata.get("version") if isinstance(metadata, dict) else None,
+        tuple(float(r) for r in atlas.resolution),
+        tuple(getattr(atlas, "shape", ()) or ()),
+    )
     if key not in _scales:
         _scales[key] = scale_for_volume(brain_volume_mm3(atlas))
     return _scales[key]
 
 
-__all__ = ["REFERENCE_VOLUME_MM3", "SAMPLE_UM", "SCALE_STEP", "annotated_volume_mm3",
-           "brain_scale", "brain_volume_mm3", "scale_for_volume"]
+__all__ = [
+    "REFERENCE_VOLUME_MM3",
+    "SAMPLE_UM",
+    "SCALE_STEP",
+    "annotated_volume_mm3",
+    "brain_scale",
+    "brain_volume_mm3",
+    "scale_for_volume",
+]

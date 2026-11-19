@@ -33,7 +33,12 @@ from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
 PROPERTIES: tuple[str, ...] = (
-    "position", "angles", "orientation", "affine", "deformation", "damage",
+    "position",
+    "angles",
+    "orientation",
+    "affine",
+    "deformation",
+    "damage",
 )
 
 EVERY = "*"
@@ -67,8 +72,10 @@ def clean(value: Any) -> dict[str, list[str]]:
     ``ValueError`` naming what is wrong."""
     if value is None:
         return {}
-    shape = ('frozen must map a section filename, or "*" for every section, to a list '
-             f"of properties, any of {list(PROPERTIES)}")
+    shape = (
+        'frozen must map a section filename, or "*" for every section, to a list '
+        f"of properties, any of {list(PROPERTIES)}"
+    )
     if not isinstance(value, Mapping):
         raise ValueError(shape)
     out: dict[str, list[str]] = {}
@@ -76,12 +83,15 @@ def clean(value: Any) -> dict[str, list[str]]:
         if not isinstance(key, str) or not key:
             raise ValueError(shape)
         if not isinstance(names, (list, tuple)) or not all(isinstance(n, str) for n in names):
-            raise ValueError(f"frozen[{key!r}] must be a list of properties, any of "
-                             f"{list(PROPERTIES)}")
+            raise ValueError(
+                f"frozen[{key!r}] must be a list of properties, any of {list(PROPERTIES)}"
+            )
         strange = sorted({n for n in names if n not in PROPERTIES})
         if strange:
-            raise ValueError(f"frozen[{key!r}] names unknown properties {strange}; the "
-                             f"properties are {list(PROPERTIES)}")
+            raise ValueError(
+                f"frozen[{key!r}] names unknown properties {strange}; the "
+                f"properties are {list(PROPERTIES)}"
+            )
         if names:
             out[key] = list(_ordered(names))
     return out
@@ -97,8 +107,10 @@ def everywhere(frozen: Mapping[str, Collection[str]]) -> frozenset[str]:
     return frozenset(frozen.get(EVERY, ()))
 
 
-def sections_of(frozen: Mapping[str, Collection[str]], section_ids: Iterable[str],
-                ) -> dict[str, list[str]]:
+def sections_of(
+    frozen: Mapping[str, Collection[str]],
+    section_ids: Iterable[str],
+) -> dict[str, list[str]]:
     """``{section id: its frozen properties}`` for the sections of
     *section_ids* that have any, in that order."""
     out: dict[str, list[str]] = {}
@@ -109,14 +121,18 @@ def sections_of(frozen: Mapping[str, Collection[str]], section_ids: Iterable[str
     return out
 
 
-def unknown_names(frozen: Mapping[str, Collection[str]], section_ids: Collection[str],
-                  ) -> list[str]:
+def unknown_names(
+    frozen: Mapping[str, Collection[str]],
+    section_ids: Collection[str],
+) -> list[str]:
     """The filenames *frozen* names that are no section."""
     return sorted(name for name in frozen if name != EVERY and name not in section_ids)
 
 
-def groups(frozen: Mapping[str, Collection[str]], section_ids: list[str],
-           ) -> list[tuple[tuple[str, ...], list[str]]]:
+def groups(
+    frozen: Mapping[str, Collection[str]],
+    section_ids: list[str],
+) -> list[tuple[tuple[str, ...], list[str]]]:
     """The sections grouped by the properties frozen on them, in the order
     the groups first appear: ``[(properties, section ids)]``; sections with
     nothing frozen are left out."""
@@ -151,15 +167,16 @@ def statement(frozen: Mapping[str, Collection[str]], section_ids: list[str]) -> 
         clauses.append(f"{words(properties)} of {who}")
     if not clauses:
         return None
-    return ("- Frozen by the user: " + "; ".join(clauses) + ". These keep the values the "
-            "job gave them; a write that would change one is refused with FROZEN.")
+    return (
+        "- Frozen by the user: " + "; ".join(clauses) + ". These keep the values the "
+        "job gave them; a write that would change one is refused with FROZEN."
+    )
 
 
 def message(properties: Collection[str], ids: list[str], total: int) -> str:
     """The sentence of a refusal: what is frozen, on which sections."""
     who = "every section" if total and len(ids) == total else ", ".join(ids)
-    return (f"Frozen on {who}: {words(_ordered(properties))}. The job keeps the value it "
-            "gave there.")
+    return f"Frozen on {who}: {words(_ordered(properties))}. The job keeps the value it gave there."
 
 
 def derived(tasks_on: Collection[str], *, angles_free: bool) -> frozenset[str]:

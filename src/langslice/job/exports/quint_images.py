@@ -118,16 +118,10 @@ def write_copies(
     for name in previous:
         base = Path(name).name
         stale = folder / base
-        if (
-            base in keep
-            or stale.suffix.lower() != ".png"
-            or not stale.is_file()
-        ):
+        if base in keep or stale.suffix.lower() != ".png" or not stale.is_file():
             continue
         try:
             stale.unlink()
         except OSError:
-            logger.warning(
-                "Could not remove the old copy %s", stale, exc_info=True
-            )
+            logger.warning("Could not remove the old copy %s", stale, exc_info=True)
     return written

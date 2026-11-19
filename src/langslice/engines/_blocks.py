@@ -75,12 +75,12 @@ def atlas_plane(frame: Any, asked: str) -> tuple[np.ndarray, str]:
     key = asked if asked in planes else None
     if key is None and asked == NISSL:
         named = sorted(name for name in planes if "nissl" in name)
-        key = next((name for name in (BORROWED_NISSL, *named, "template") if name in planes),
-                   None)
+        key = next((name for name in (BORROWED_NISSL, *named, "template") if name in planes), None)
     if key is None:
-        raise ToolError(RefusalCode.BAD_ARGS,
-                        f"the atlas has no image {asked!r}; the job statement lists "
-                        "its images")
+        raise ToolError(
+            RefusalCode.BAD_ARGS,
+            f"the atlas has no image {asked!r}; the job statement lists its images",
+        )
     resolved = dict(getattr(frame, "atlas_resolved", None) or {}).get(asked)
     if resolved is None:
         resolved = key if key != NISSL else getattr(frame, "atlas_image", NISSL)
@@ -103,9 +103,11 @@ def section_mask(ctx: ToolContext, sid: str, mask: str) -> Any | None:
 def refuse_mask(tool: str, mask: str, why: str) -> None:
     """``MASK_UNSUPPORTED`` for an engine that takes no section mask."""
     if mask != "none":
-        raise ToolError(RefusalCode.MASK_UNSUPPORTED,
-                        f"{tool} {why}; mask is \"none\" for it. Engines "
-                        f"that take a section mask: {MASK_ENGINES}.")
+        raise ToolError(
+            RefusalCode.MASK_UNSUPPORTED,
+            f'{tool} {why}; mask is "none" for it. Engines '
+            f"that take a section mask: {MASK_ENGINES}.",
+        )
 
 
 def _margin_mm(frame: Any) -> float | None:
@@ -115,8 +117,16 @@ def _margin_mm(frame: Any) -> float | None:
     return None if margin is None else float(margin)
 
 
-def inputs_block(ctx: ToolContext, frame: Any, *, section_image: str, atlas_image: str,
-                 resolved: str, mask: Any | None, brightness: str) -> dict[str, Any]:
+def inputs_block(
+    ctx: ToolContext,
+    frame: Any,
+    *,
+    section_image: str,
+    atlas_image: str,
+    resolved: str,
+    mask: Any | None,
+    brightness: str,
+) -> dict[str, Any]:
     """The ``inputs`` block of one section: the section image (name, kind, file, digest), the
     atlas image (as asked and as resolved), the section mask, the atlas-side damage and what
     the engine does to brightness."""
@@ -125,14 +135,24 @@ def inputs_block(ctx: ToolContext, frame: Any, *, section_image: str, atlas_imag
         "section_image": dict(reference) if reference else {"name": section_image},
         "atlas_image": atlas_image,
         "atlas_image_resolved": resolved,
-        **({"atlas_image_note": note} if atlas_image == NISSL and (
-            note := getattr(frame, "atlas_image_note", None)) else {}),
+        **(
+            {"atlas_image_note": note}
+            if atlas_image == NISSL and (note := getattr(frame, "atlas_image_note", None))
+            else {}
+        ),
         "mask": {"name": "none", "kind": None, "stale": False, "earlier_registration": False}
-        if mask is None else {
-            "name": mask.name, "kind": mask.kind, "stale": bool(mask.stale),
-            "earlier_registration": bool(getattr(mask, "earlier_registration", False))},
-        "damage": {"regions": list(ctx.section(frame.id).damaged_regions),
-                   "margin_mm": _margin_mm(frame), "side": "atlas"},
+        if mask is None
+        else {
+            "name": mask.name,
+            "kind": mask.kind,
+            "stale": bool(mask.stale),
+            "earlier_registration": bool(getattr(mask, "earlier_registration", False)),
+        },
+        "damage": {
+            "regions": list(ctx.section(frame.id).damaged_regions),
+            "margin_mm": _margin_mm(frame),
+            "side": "atlas",
+        },
         "brightness": brightness,
     }
 

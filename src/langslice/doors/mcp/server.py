@@ -62,6 +62,7 @@ from langslice.tools.descriptions.door_text import (
     read_notes,
     review_lines,
 )
+from langslice.tools.descriptions.render import signed
 from langslice.tools.descriptions.statement import (
     StatementFacts,
     job_statement,
@@ -122,7 +123,6 @@ class Session:
             logger.warning("Could not finish the job in %s", self.job.folder, exc_info=True)
 
 
-
 def open_job(
     spec: JobSpec,
     atlas_loader: Callable[[str], Any] | None = None,
@@ -145,8 +145,15 @@ def open_job(
     write_card(job.layout)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = HostTrace(trace_dir, ctx.image_folder) if trace_dir else None
-    box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
-                      image_model_connected=not off, door="mcp")
+    box = build_tools(
+        job.state,
+        ctx,
+        spec,
+        job=job,
+        max_view_edge=CLAUDE_MAX_VIEW_EDGE,
+        image_model_connected=not off,
+        door="mcp",
+    )
     box.answers_crashes = True
     return Session(job, ctx, box, trace, image_model_off=off)
 
@@ -162,16 +169,22 @@ def mcp_statement(session: Session, *, scripting: str = "") -> str:
     if not session.pages:
         session.pages = opening_pages(session)
     facts = StatementFacts.from_run(
-        session.spec, session.state, session.ctx, tool_names=session.box.names,
-        max_resolution=session.box.max_view_edge)
+        session.spec,
+        session.state,
+        session.ctx,
+        tool_names=session.box.names,
+        max_resolution=session.box.max_view_edge,
+    )
     opening = opening_for_mcp(len(session.pages))
     if scripting:
         opening = [*opening, "", scripting]
-    review = review_lines(session.job.layout, session.state,
-                          session.spec.switched_off)
+    review = review_lines(session.job.layout, session.state, session.spec.switched_off)
     return job_statement(
-        facts, door="mcp", opening=opening,
-        notes=session.notes, image_model_off=session.image_model_off,
+        facts,
+        door="mcp",
+        opening=opening,
+        notes=session.notes,
+        image_model_off=session.image_model_off,
         review=review,
     )
 
@@ -191,13 +204,20 @@ def opened_reply(session: Session) -> list[ContentBlock]:
     opened, its sections, and the pages of its opening; arms the opening-read gate."""
     pages = arm_opening(session)
     shown = "page 1" if pages == 1 else f"pages 1 to {pages}"
-    return [TextContent(type="text", text=(
-        f"Job opened: {session.job.folder}. {len(session.state.in_order())} sections. "
-        f"The opening is show_stack {shown}: read every page before any write."))]
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"Job opened: {session.job.folder}. {len(session.state.in_order())} sections. "
+                f"The opening is show_stack {shown}: read every page before any write."
+            ),
+        )
+    ]
 
 
 def open_folder(
-    path: str, spec_for: Callable[[str], JobSpec],
+    path: str,
+    spec_for: Callable[[str], JobSpec],
     atlas_loader: Callable[[str], Any] | None,
 ) -> Session:
     """The job of the folder the host names: an image folder or its job
@@ -244,20 +264,24 @@ def host_tool(session: Session, tool: Callable[..., object]) -> Callable[..., An
         result = await to_thread.run_sync(serialized)
         blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
-            session.trace.write("tool_result", name=tool.__name__, args=kwargs,
-                            content=describe_blocks(blocks))
+            session.trace.write(
+                "tool_result", name=tool.__name__, args=kwargs, content=describe_blocks(blocks)
+            )
         return blocks
 
     run.__name__ = tool.__name__
     run.__doc__ = tool.__doc__
-    run.__signature__ = signature.replace(  # type: ignore[attr-defined]
-        parameters=parameters, return_annotation=list[ContentBlock]
+    return signed(
+        run, signature.replace(parameters=parameters, return_annotation=list[ContentBlock])
     )
-    return run
 
 
-def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
-                     trace: Callable[[], HostTrace | None] = lambda: None) -> None:
+def strict_arguments(
+    server: FastMCP,
+    name: str,
+    tool: Callable[..., Any],
+    trace: Callable[[], HostTrace | None] = lambda: None,
+) -> None:
     """Refuse unknown or misplaced arguments on the registered tool *name*.
 
     FastMCP validates arguments against a model built from the signature and
@@ -273,7 +297,7 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
     """
     from langslice.tools.arguments import argument_refusal, normalize_arguments
 
-    registered = server._tool_manager.get_tool(name)  # noqa: SLF001
+    registered = server._tool_manager.get_tool(name)
     if registered is None:
         return
     metadata = registered.fn_metadata
@@ -281,7 +305,9 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
 
     class Strict(base):
         async def call_fn_with_arg_validation(
-            self, fn: Callable[..., Any], fn_is_async: bool,
+            self,
+            fn: Callable[..., Any],
+            fn_is_async: bool,
             arguments_to_validate: dict[str, Any],
             arguments_to_pass_directly: dict[str, Any] | None,
         ) -> Any:
@@ -291,16 +317,17 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
                 blocks = result_blocks(refusal.payload())
                 held = trace()
                 if held is not None:
-                    held.write("tool_result", name=name, args=arguments,
-                               content=describe_blocks(blocks))
+                    held.write(
+                        "tool_result", name=name, args=arguments, content=describe_blocks(blocks)
+                    )
                 return blocks
             return await super().call_fn_with_arg_validation(
-                fn, fn_is_async, normalize_arguments(tool, arguments),
-                arguments_to_pass_directly)
+                fn, fn_is_async, normalize_arguments(tool, arguments), arguments_to_pass_directly
+            )
 
     registered.fn_metadata = Strict.model_construct(
-        **{field: getattr(metadata, field) for field in base.model_fields})
-
+        **{field: getattr(metadata, field) for field in base.model_fields}
+    )
 
 
 def build_server(
@@ -342,6 +369,7 @@ def build_server(
                 structured_output=False,
             )
             strict_arguments(server, tool.__name__, tool, lambda: session.trace)
+
         async def show_stack(page: int) -> list[ContentBlock]:
             """Read an opening-picture page (1-based); read every page before writes."""
             if not session.pages:
@@ -355,8 +383,9 @@ def build_server(
                 session.trace.write("show_stack", page=page, content=describe_blocks(blocks))
             return blocks
 
-        server.add_tool(show_stack, structured_output=False,
-                        annotations=ToolAnnotations(readOnlyHint=True))
+        server.add_tool(
+            show_stack, structured_output=False, annotations=ToolAnnotations(readOnlyHint=True)
+        )
         current["job"] = session
 
     async def start_job(
@@ -370,16 +399,15 @@ def build_server(
         """
         session = current.get("job")
         wanted = os.path.abspath(os.path.expanduser(image_folder)) if image_folder else None
-        if wanted is not None and (session is None or wanted not in (
-                session.ctx.image_folder, str(session.job.folder))):
-            session = await to_thread.run_sync(
-                partial(open_folder, wanted, spec_for, atlas_loader))
+        if wanted is not None and (
+            session is None or wanted not in (session.ctx.image_folder, str(session.job.folder))
+        ):
+            session = await to_thread.run_sync(partial(open_folder, wanted, spec_for, atlas_loader))
             install(session)
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
         if session is None:
-            refusal = Refused(
-                RefusalCode.NO_FOLDER, "Name a job: start_job(image_folder=...).")
+            refusal = Refused(RefusalCode.NO_FOLDER, "Name a job: start_job(image_folder=...).")
             reply = json.dumps(refusal.payload())
             return [TextContent(type="text", text=reply)]
         blocks = await to_thread.run_sync(opened_reply, session)
@@ -389,8 +417,7 @@ def build_server(
 
     server.add_tool(start_job, structured_output=False)
     if folder is not None:
-        install(open_folder(os.path.abspath(os.path.expanduser(folder)), spec_for,
-                            atlas_loader))
+        install(open_folder(os.path.abspath(os.path.expanduser(folder)), spec_for, atlas_loader))
     return server
 
 
@@ -423,19 +450,15 @@ def initialization_options(server: FastMCP) -> InitializationOptions:
     ``tools.listChanged``, so a host takes the tool list again when
     ``start_job`` installs a job's tools (``send_tool_list_changed``); a host
     ignores the notice from a server that does not advertise it."""
-    lowlevel = server._mcp_server  # pyright: ignore[reportPrivateUsage]
+    lowlevel = server._mcp_server
     return lowlevel.create_initialization_options(NotificationOptions(tools_changed=True))
 
 
-async def _run_stdio(
-    server: FastMCP, wire: FileIO, host_input: BinaryIO
-) -> None:
-    text = TextIOWrapper(wire, encoding="utf-8", newline="\n",
-                         write_through=True)
+async def _run_stdio(server: FastMCP, wire: FileIO, host_input: BinaryIO) -> None:
+    text = TextIOWrapper(wire, encoding="utf-8", newline="\n", write_through=True)
     out = anyio.wrap_file(text)
-    source = anyio.wrap_file(
-        TextIOWrapper(host_input, encoding="utf-8", errors="replace"))
+    source = anyio.wrap_file(TextIOWrapper(host_input, encoding="utf-8", errors="replace"))
     streams = stdio_server(stdin=source, stdout=out)
     async with streams as (read_stream, write_stream):
-        lowlevel = server._mcp_server  # pyright: ignore[reportPrivateUsage]
+        lowlevel = server._mcp_server
         await lowlevel.run(read_stream, write_stream, initialization_options(server))

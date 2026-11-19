@@ -50,13 +50,19 @@ FIT_EPS = 1e-3
 MARGIN = 3 * FIT_RADIUS
 MAX_READ_PIXELS = 48_000_000
 
-_ROTATIONS = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180,
-              270: Image.Transpose.ROTATE_90}
-
+_ROTATIONS = {
+    90: Image.Transpose.ROTATE_270,
+    180: Image.Transpose.ROTATE_180,
+    270: Image.Transpose.ROTATE_90,
+}
 
 
 def unoriented_points(
-    x: np.ndarray, y: np.ndarray, size: tuple[int, int], rotation_deg: int, flip: bool,
+    x: np.ndarray,
+    y: np.ndarray,
+    size: tuple[int, int],
+    rotation_deg: int,
+    flip: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Points of a render turned by *rotation_deg* (counter-clockwise, PIL's
     quarter turns) then flipped left-right, of *size* ``(width, height)``,
@@ -77,7 +83,10 @@ def unoriented_points(
 
 
 def unoriented_fractions(
-    fx: np.ndarray, fy: np.ndarray, rotation_deg: int, flip: bool,
+    fx: np.ndarray,
+    fy: np.ndarray,
+    rotation_deg: int,
+    flip: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """:func:`unoriented_points` for fractions of the picture (0..1 edge to edge)."""
     fx = np.asarray(fx, dtype=np.float64)
@@ -100,7 +109,6 @@ def unorient(image: Image.Image, rotation_deg: int, flip: bool) -> Image.Image:
         image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     turn = _ROTATIONS.get(int(rotation_deg) % 360)
     return image.transpose(turn) if turn is not None else image
-
 
 
 @dataclass(frozen=True)
@@ -145,8 +153,13 @@ def read_region(path: str | Path, box: tuple[int, int, int, int], step: int = 1)
     height, width = pages[0].shape[:2]
     x0, y0, x1, y1 = _clamped(box, (width, height))
     stride = _stride((x1 - x0) * (y1 - y0) * len(pages), step)
-    return Region(pages=[page[y0:y1:stride, x0:x1:stride] for page in pages],
-                  file_size=(width, height), origin=(x0, y0), stride=stride, downsample=1.0)
+    return Region(
+        pages=[page[y0:y1:stride, x0:x1:stride] for page in pages],
+        file_size=(width, height),
+        origin=(x0, y0),
+        stride=stride,
+        downsample=1.0,
+    )
 
 
 def _clamped(box: tuple[int, int, int, int], size: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -167,7 +180,9 @@ def _stride(pixels: int, step: int) -> int:
 
 
 def _read_tiff_region(
-    path: str | Path, box: tuple[int, int, int, int], step: int,
+    path: str | Path,
+    box: tuple[int, int, int, int],
+    step: int,
 ) -> Region | None:
     import tifffile
     import zarr
@@ -209,9 +224,9 @@ def _read_tiff_region(
                 pages = [np.asarray(array[rows, cols])]
         finally:
             store.close()
-    return Region(pages=pages, file_size=full, origin=(lx0, ly0), stride=stride,
-                  downsample=downsample)
-
+    return Region(
+        pages=pages, file_size=full, origin=(lx0, ly0), stride=stride, downsample=downsample
+    )
 
 
 def _mapped(page: np.ndarray, held: IntensityRange) -> np.ndarray:
@@ -225,7 +240,9 @@ def _mapped(page: np.ndarray, held: IntensityRange) -> np.ndarray:
 
 
 def window_planes(
-    pages: list[np.ndarray], names: tuple[str, ...], ranges: dict[str, IntensityRange],
+    pages: list[np.ndarray],
+    names: tuple[str, ...],
+    ranges: dict[str, IntensityRange],
 ) -> list[np.ndarray]:
     """The raw channels *names* of a window, ``0..1`` float32, read as
     :func:`langslice.core.sections.reading.channel_planes` reads the working
@@ -250,15 +267,20 @@ def window_planes(
     return planes
 
 
-
 def _box(image: np.ndarray, radius: int) -> np.ndarray:
     size = 2 * radius + 1
-    return cv2.boxFilter(np.ascontiguousarray(image, dtype=np.float32), -1, (size, size),
-                         normalize=True, borderType=cv2.BORDER_REFLECT)
+    return cv2.boxFilter(
+        np.ascontiguousarray(image, dtype=np.float32),
+        -1,
+        (size, size),
+        normalize=True,
+        borderType=cv2.BORDER_REFLECT,
+    )
 
 
-def fit_look(target: np.ndarray, guide: np.ndarray, *, radius: int = FIT_RADIUS,
-             eps: float = FIT_EPS) -> tuple[np.ndarray, np.ndarray]:
+def fit_look(
+    target: np.ndarray, guide: np.ndarray, *, radius: int = FIT_RADIUS, eps: float = FIT_EPS
+) -> tuple[np.ndarray, np.ndarray]:
     """``(offset (rows, cols, 3), gain (rows, cols, k, 3))``: *target* (the
     look, ``0..1``) as an offset plus a gain on *guide* (the k raw channels,
     ``0..1``) around every pixel, then averaged over the same windows (a
@@ -283,13 +305,19 @@ def fit_look(target: np.ndarray, guide: np.ndarray, *, radius: int = FIT_RADIUS,
     cross = np.empty((rows, cols, k, target.shape[2]), dtype=np.float32)
     for i in range(k):
         for c in range(target.shape[2]):
-            cross[..., i, c] = (_box(guide[..., i] * target[..., c], radius)
-                                - mean_g[..., i] * mean_t[..., c])
+            cross[..., i, c] = (
+                _box(guide[..., i] * target[..., c], radius) - mean_g[..., i] * mean_t[..., c]
+            )
     eye = np.eye(k, dtype=np.float32)
     gain = np.linalg.solve(cov + eps * eye, cross + eps * prior.astype(np.float32))
     offset = mean_t - np.einsum("rck,rckd->rcd", mean_g, gain)
-    gain = np.stack([np.stack([_box(gain[..., i, c], radius) for c in range(gain.shape[3])],
-                              axis=-1) for i in range(k)], axis=-2)
+    gain = np.stack(
+        [
+            np.stack([_box(gain[..., i, c], radius) for c in range(gain.shape[3])], axis=-1)
+            for i in range(k)
+        ],
+        axis=-2,
+    )
     offset = np.stack([_box(offset[..., c], radius) for c in range(offset.shape[2])], axis=-1)
     return offset.astype(np.float32), gain.astype(np.float32)
 
@@ -320,7 +348,11 @@ class NativePixels:
 
 
 def section_pixels(
-    ws: Workspace, record: Section, look: Look, x: np.ndarray, y: np.ndarray,
+    ws: Workspace,
+    record: Section,
+    look: Look,
+    x: np.ndarray,
+    y: np.ndarray,
 ) -> NativePixels:
     """The section's pixels at working-copy points ``(x, y)`` (arrays of the
     picture's shape; the working copy before its quarter turn and flip,
@@ -342,8 +374,13 @@ def section_pixels(
     by1 = min(height, int(math.ceil(y[inside].max())) + MARGIN + 1)
 
     names, planes = ws.section_channels(record.id)
-    guide = np.stack([_at_size(np.asarray(plane), (width, height))[by0:by1, bx0:bx1]
-                      for plane in planes], axis=-1).astype(np.float32) / 255.0
+    guide = (
+        np.stack(
+            [_at_size(np.asarray(plane), (width, height))[by0:by1, bx0:bx1] for plane in planes],
+            axis=-1,
+        ).astype(np.float32)
+        / 255.0
+    )
     target = working_look(ws, record, look)[by0:by1, bx0:bx1]
     offset, gain = fit_look(target, guide)
 
@@ -353,8 +390,12 @@ def section_pixels(
     px, py = (x + 0.5) * fx - 0.5, (y + 0.5) * fy - 0.5
     spacing = _spacing(px, py, inside)
     step = max(1, int(math.floor(spacing)))
-    box = (int(math.floor(bx0 * fx)) - 2, int(math.floor(by0 * fy)) - 2,
-           int(math.ceil(bx1 * fx)) + 2, int(math.ceil(by1 * fy)) + 2)
+    box = (
+        int(math.floor(bx0 * fx)) - 2,
+        int(math.floor(by0 * fy)) - 2,
+        int(math.ceil(bx1 * fx)) + 2,
+        int(math.ceil(by1 * fy)) + 2,
+    )
     region = read_region(path, box, step)
     raw = window_planes(region.pages, tuple(names), intensity_ranges(ws, record.id))
     rx, ry = region.to_read(px, py)
@@ -366,15 +407,30 @@ def section_pixels(
         rx = (rx + 0.5) * size[0] / float(cols) - 0.5
         ry = (ry + 0.5) * size[1] / float(rows) - 0.5
     mx, my = rx.astype(np.float32), ry.astype(np.float32)
-    fine = np.stack([cv2.remap(np.ascontiguousarray(plane, dtype=np.float32), mx, my,
-                               cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-                     for plane in raw], axis=-1)
+    fine = np.stack(
+        [
+            cv2.remap(
+                np.ascontiguousarray(plane, dtype=np.float32),
+                mx,
+                my,
+                cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_REPLICATE,
+            )
+            for plane in raw
+        ],
+        axis=-1,
+    )
 
     wx, wy = (x - bx0).astype(np.float32), (y - by0).astype(np.float32)
 
     def at_points(values: np.ndarray) -> np.ndarray:
-        return cv2.remap(np.ascontiguousarray(values, dtype=np.float32), wx, wy,
-                         cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        return cv2.remap(
+            np.ascontiguousarray(values, dtype=np.float32),
+            wx,
+            wy,
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
 
     k = guide.shape[2]
     out = np.stack([at_points(offset[..., c]) for c in range(3)], axis=-1)
@@ -386,7 +442,11 @@ def section_pixels(
 
 
 def framed_window(
-    ws: Workspace, record: Section, look: Look, window: tuple[float, ...], long_edge: int,
+    ws: Workspace,
+    record: Section,
+    look: Look,
+    window: tuple[float, ...],
+    long_edge: int,
 ) -> tuple[Image.Image, float]:
     """``(picture, enlarged)``: *window* (``[x0, y0, x1, y1]`` fractions of
     the section's whole picture, turned and flipped as it is shown)
@@ -396,8 +456,9 @@ def framed_window(
     source, _factor = ws.working_source(record.id)
     width, height = source.size
     x0, y0, x1, y1 = (float(v) for v in window)
-    corners_x, corners_y = unoriented_fractions(np.array([x0, x1]), np.array([y0, y1]),
-                                                record.rotation_deg, record.flip)
+    corners_x, corners_y = unoriented_fractions(
+        np.array([x0, x1]), np.array([y0, y1]), record.rotation_deg, record.flip
+    )
     file_w, file_h = _file_size(ws.image_path(record.id))
     native_w = abs(corners_x[1] - corners_x[0]) * file_w
     native_h = abs(corners_y[1] - corners_y[0]) * file_h
@@ -416,7 +477,8 @@ def framed_window(
     from langslice.core.geometry.affine import pixel_fraction_map
 
     image.info["pixel_to_file_fraction"] = (
-        orientation(record) @ pixel_fraction_map((cols, rows), (x0, y0, x1, y1))).tolist()
+        orientation(record) @ pixel_fraction_map((cols, rows), (x0, y0, x1, y1))
+    ).tolist()
     return image, found.enlarged
 
 
@@ -434,8 +496,10 @@ def _file_size(path: str) -> tuple[int, int]:
         with tifffile.TiffFile(path) as handle:
             if handle.series:
                 series = handle.series[0]
-                return (int(series.shape[series.axes.index("X")]),
-                        int(series.shape[series.axes.index("Y")]))
+                return (
+                    int(series.shape[series.axes.index("X")]),
+                    int(series.shape[series.axes.index("Y")]),
+                )
     with Image.open(path) as handle:
         return int(handle.size[0]), int(handle.size[1])
 
@@ -455,7 +519,17 @@ def _spacing(px: np.ndarray, py: np.ndarray, inside: np.ndarray) -> float:
 
 
 __all__ = [
-    "FIT_EPS", "FIT_RADIUS", "NativePixels", "Region", "fit_look", "framed_window", "read_region",
-    "section_pixels", "unorient", "unoriented_fractions", "unoriented_points",
-    "window_planes", "working_look",
+    "FIT_EPS",
+    "FIT_RADIUS",
+    "NativePixels",
+    "Region",
+    "fit_look",
+    "framed_window",
+    "read_region",
+    "section_pixels",
+    "unorient",
+    "unoriented_fractions",
+    "unoriented_points",
+    "window_planes",
+    "working_look",
 ]

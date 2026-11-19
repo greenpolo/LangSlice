@@ -38,8 +38,12 @@ _OFF = frozenset({"", "0", "off", "false", "no", "none"})
 CONNECTIONS: tuple[str, ...] = ("openai-oauth", "openai-api", "anthropic-api", "gemini-api")
 RUNS_IN: tuple[str, ...] = ("app", "langslice")
 REASONING: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
-_MODEL_PREFIX = {"openai-oauth": "openai-oauth/", "openai-api": "",
-                 "anthropic-api": "anthropic-api/", "gemini-api": "gemini-api/"}
+_MODEL_PREFIX = {
+    "openai-oauth": "openai-oauth/",
+    "openai-api": "",
+    "anthropic-api": "anthropic-api/",
+    "gemini-api": "gemini-api/",
+}
 
 
 def settings_file() -> Path | None:
@@ -75,7 +79,7 @@ def read() -> dict[str, Any]:
     if doc.get("runs_in") in RUNS_IN:
         out["runs_in"] = doc["runs_in"]
     agent = doc.get("agent")
-    for connection, entry in (agent.items() if isinstance(agent, dict) else ()):
+    for connection, entry in agent.items() if isinstance(agent, dict) else ():
         if connection not in CONNECTIONS or not isinstance(entry, dict):
             continue
         model = entry.get("model")
@@ -104,7 +108,8 @@ def write(settings: dict[str, Any]) -> dict[str, Any]:
             model = entry.get("model")
             clean["agent"][connection] = {
                 "model": model.strip() if isinstance(model, str) and model.strip() else None,
-                "reasoning": entry.get("reasoning") if entry.get("reasoning") in REASONING
+                "reasoning": entry.get("reasoning")
+                if entry.get("reasoning") in REASONING
                 else None,
             }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +136,7 @@ def model_string(connection: str, name: str) -> str:
 def model_name(connection: str, model: str) -> str:
     """A ``--model`` string of *connection* as its bare model id."""
     prefix = _MODEL_PREFIX[connection]
-    return model[len(prefix):] if prefix and model.startswith(prefix) else model
+    return model[len(prefix) :] if prefix and model.startswith(prefix) else model
 
 
 def agent_models() -> dict[str, dict[str, Any]]:
@@ -146,8 +151,7 @@ def agent_models() -> dict[str, dict[str, Any]]:
 
     oauth = [model_name("openai-oauth", m) for m in registry.OPENAI_OAUTH_AGENT_MODELS]
     oauth_default = model_name("openai-oauth", registry.OPENAI_OAUTH_DEFAULT_AGENT_MODEL)
-    out: dict[str, dict[str, Any]] = {
-        "openai-oauth": {"models": oauth, "default": oauth_default}}
+    out: dict[str, dict[str, Any]] = {"openai-oauth": {"models": oauth, "default": oauth_default}}
     for connection in ("openai-api", "anthropic-api", "gemini-api"):
         models = list(PRICES.get(connection, {}))
         default = oauth_default if connection == "openai-api" and oauth_default in models else None

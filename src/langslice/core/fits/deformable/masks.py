@@ -57,8 +57,9 @@ class Masks:
     damage_zone: np.ndarray
 
 
-def footprint_masks(placed: np.ndarray, excluded: np.ndarray, spacing_mm: float,
-                    scale: float = 1.0) -> Masks:
+def footprint_masks(
+    placed: np.ndarray, excluded: np.ndarray, spacing_mm: float, scale: float = 1.0
+) -> Masks:
     """The footprint masks of a fit whose placed atlas labels are *placed* and
     whose excluded pixels are *excluded* (both on the working grid), the
     margins times the brain *scale*."""
@@ -90,8 +91,11 @@ def em_parameters(scale: float = 1.0) -> dict[str, Any]:
     deformable cache key and of a stain fit's record."""
     return {
         "method": "three-class EM after emlddmm (Tward et al. 2025)",
-        "grid_um": EM_GRID_UM, "block_px": block_px(scale), "iterations": EM_ITERATIONS,
-        "ridge": EM_RIDGE, "sigma_scale": EM_SIGMA_SCALE,
+        "grid_um": EM_GRID_UM,
+        "block_px": block_px(scale),
+        "iterations": EM_ITERATIONS,
+        "ridge": EM_RIDGE,
+        "sigma_scale": EM_SIGMA_SCALE,
         "priors": list(EM_PRIORS),
         "background_distance_um": EM_BACKGROUND_DISTANCE_UM * scale,
         "match_threshold": EM_MATCH_THRESHOLD,
@@ -125,8 +129,12 @@ def _block_linear(J: np.ndarray, image: np.ndarray, weight: np.ndarray, block: i
 
 
 def em_weights(
-    J: np.ndarray, warped_atlas: np.ndarray, footprint: np.ndarray, spacing_mm: float,
-    scale: float = 1.0, sorting: dict[str, float] | None = None,
+    J: np.ndarray,
+    warped_atlas: np.ndarray,
+    footprint: np.ndarray,
+    spacing_mm: float,
+    scale: float = 1.0,
+    sorting: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Per-pixel class weights on the working grid.
 
@@ -151,8 +159,9 @@ def em_weights(
     k = max(spacing_mm * 1000.0 / EM_GRID_UM, 1e-3)
     small = (max(2, round(full[1] * k)), max(2, round(full[0] * k)))
     Jc = cv2.resize(J.astype(np.float32), small, interpolation=cv2.INTER_AREA).astype(np.float64)
-    Ic = cv2.resize(warped_atlas.astype(np.float32), small,
-                    interpolation=cv2.INTER_AREA).astype(np.float64)
+    Ic = cv2.resize(warped_atlas.astype(np.float32), small, interpolation=cv2.INTER_AREA).astype(
+        np.float64
+    )
     fp = cv2.resize(footprint.astype(np.float32), small, interpolation=cv2.INTER_AREA) > 0.5
     lo, hi = np.percentile(Ic, (0.5, 99.5))
     Ic = (Ic - lo) / max(float(hi - lo), 1e-6)
@@ -165,8 +174,12 @@ def em_weights(
         if not width > 0:
             raise ValueError(f"{name} must be above 0")
     r = max(1, round(EM_BACKGROUND_DISTANCE_UM * scale / EM_GRID_UM))
-    far = ~(cv2.dilate(fp.astype(np.uint8), cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0)
+    far = ~(
+        cv2.dilate(
+            fp.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)
+        )
+        > 0
+    )
     inside = Jc[fp] if fp.any() else Jc.ravel()
     if far.sum() > 200:
         muB = float(np.median(Jc[far]))
@@ -177,13 +190,15 @@ def em_weights(
     muA = given.get("artifact_mean", float(qlo if abs(qlo - muB) > abs(qhi - muB) else qhi))
     pM, pA, pB = EM_PRIORS
     WM = np.full(Jc.shape, pM)
+    WA = np.full(Jc.shape, pA)
+    WB = np.full(Jc.shape, pB)
     f = Jc
     block = block_px(scale)
     for _ in range(EM_ITERATIONS):
         f = _block_linear(Jc, Ic, WM, block)
-        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigmaM ** 2) / sigmaM
-        lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sigmaA ** 2) / sigmaA
-        lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sigmaB ** 2) / sigmaB
+        lM = pM * np.exp(-((Jc - f) ** 2) / 2 / sigmaM**2) / sigmaM
+        lA = pA * np.exp(-((Jc - muA) ** 2) / 2 / sigmaA**2) / sigmaA
+        lB = pB * np.exp(-((Jc - muB) ** 2) / 2 / sigmaB**2) / sigmaB
         total = lM + lA + lB
         total = total + total.max() * 1e-12
         WM, WA, WB = lM / total, lA / total, lB / total
@@ -192,7 +207,16 @@ def em_weights(
         return cv2.resize(a.astype(np.float32), (full[1], full[0]), interpolation=cv2.INTER_LINEAR)
 
     return {
-        "WM": up(WM), "WA": up(WA), "WB": up(WB), "predicted": up(f),
-        "params": {"muA": muA, "muB": muB, "sigmaM": sigmaM, "sigmaA": sigmaA, "sigmaB": sigmaB,
-                   "priors": list(EM_PRIORS)},
+        "WM": up(WM),
+        "WA": up(WA),
+        "WB": up(WB),
+        "predicted": up(f),
+        "params": {
+            "muA": muA,
+            "muB": muB,
+            "sigmaM": sigmaM,
+            "sigmaA": sigmaA,
+            "sigmaB": sigmaB,
+            "priors": list(EM_PRIORS),
+        },
     }

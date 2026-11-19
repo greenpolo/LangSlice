@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from langslice.tools.run import Run
 
 
-
 @dataclass(frozen=True)
 class SavedPicture:
     """A picture a script's context saved in the job folder: ``path`` (its
@@ -116,8 +115,12 @@ class ScriptContext(ToolContext):
             if outer:
                 self._pending = False
 
-    def _logged(self, properties: Sequence[str], run: Callable[[], WriteResult],
-                notes: Callable[[WriteResult], dict[str, str]] | None = None) -> WriteResult:
+    def _logged(
+        self,
+        properties: Sequence[str],
+        run: Callable[[], WriteResult],
+        notes: Callable[[WriteResult], dict[str, str]] | None = None,
+    ) -> WriteResult:
         """Run one write; a write that landed is a ``script_write`` event."""
         import sys
 
@@ -130,34 +133,60 @@ class ScriptContext(ToolContext):
                 self._pending = False
         if result.ok and result.written:
             self._run.job.layout.log_event(
-                "script_write", property=list(properties), sections=list(result.written),
+                "script_write",
+                property=list(properties),
+                sections=list(result.written),
                 notes=notes(result) if notes is not None else {},
-                argv0=str(sys.argv[0]) if sys.argv else "", call=self.call)
+                argv0=str(sys.argv[0]) if sys.argv else "",
+                call=self.call,
+            )
         return result
 
-    def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
-                             meta: Mapping[str, Any] | None = None, weights: Any = None,
-                             provenance: Mapping[str, Any] | None = None,
-                             start: str = "linear",
-                             settings: Mapping[str, Any] | None = None,
-                             engine_settings: Mapping[str, Any] | None = None,
-                             engine_version: str = "") -> DeformationProposal:
+    def deformation_from_map(
+        self,
+        section: object,
+        native_xy: Any,
+        *,
+        note: str = "",
+        meta: Mapping[str, Any] | None = None,
+        weights: Any = None,
+        provenance: Mapping[str, Any] | None = None,
+        start: str = "linear",
+        settings: Mapping[str, Any] | None = None,
+        engine_settings: Mapping[str, Any] | None = None,
+        engine_version: str = "",
+    ) -> DeformationProposal:
         self._begin()
-        return super().deformation_from_map(section, native_xy, note=note, meta=meta,
-                                            weights=weights, provenance=provenance, start=start,
-                                            settings=settings, engine_settings=engine_settings,
-                                            engine_version=engine_version)
+        return super().deformation_from_map(
+            section,
+            native_xy,
+            note=note,
+            meta=meta,
+            weights=weights,
+            provenance=provenance,
+            start=start,
+            settings=settings,
+            engine_settings=engine_settings,
+            engine_version=engine_version,
+        )
 
-    def set_positions(self, rows: Sequence[Mapping[str, Any]], *,
-                      cutting_angles: Mapping[str, float] | None = None,
-                      expect: Mapping[str, str] | None = None) -> WriteResult:
+    def set_positions(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        cutting_angles: Mapping[str, float] | None = None,
+        expect: Mapping[str, str] | None = None,
+    ) -> WriteResult:
         return self._logged(
             ["position", *(["angles"] if cutting_angles is not None else [])],
             lambda: super(ScriptContext, self).set_positions(
-                rows, cutting_angles=cutting_angles, expect=expect))
+                rows, cutting_angles=cutting_angles, expect=expect
+            ),
+        )
 
-    def set_transforms(self, rows: Sequence[Mapping[str, Any]], *,
-                       expect: Mapping[str, str] | None = None) -> WriteResult:
+    def set_transforms(
+        self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
+    ) -> WriteResult:
         def notes(result: WriteResult) -> dict[str, str]:
             out: dict[str, str] = {}
             for row in rows:
@@ -167,31 +196,49 @@ class ScriptContext(ToolContext):
                     out[record.id] = text
             return out
 
-        return self._logged(["affine"], lambda: super(ScriptContext, self).set_transforms(
-            rows, expect=expect), notes)
+        return self._logged(
+            ["affine"],
+            lambda: super(ScriptContext, self).set_transforms(rows, expect=expect),
+            notes,
+        )
 
-    def set_deformations(self, rows: Sequence[Mapping[str, Any]], *,
-                         expect: Mapping[str, str] | None = None) -> WriteResult:
+    def set_deformations(
+        self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
+    ) -> WriteResult:
         def notes(result: WriteResult) -> dict[str, str]:
             out: dict[str, str] = {}
             for row in rows:
                 record = self._run.state.resolve(row.get("id"))
                 held = row.get("deformation")
-                text = str(row.get("note") or (held._warp.step.get("note") if isinstance(
-                    held, DeformationProposal) else "") or "")
+                text = str(
+                    row.get("note")
+                    or (
+                        held._warp.step.get("note") if isinstance(held, DeformationProposal) else ""
+                    )
+                    or ""
+                )
                 if record is not None and record.id in result.written and text:
                     out[record.id] = text
             return out
 
-        return self._logged(["deformation"], lambda: super(ScriptContext, self)
-                            .set_deformations(rows, expect=expect), notes)
+        return self._logged(
+            ["deformation"],
+            lambda: super(ScriptContext, self).set_deformations(rows, expect=expect),
+            notes,
+        )
 
-    def mark_damage(self, rows: Sequence[Mapping[str, Any]], *,
-                    expect: Mapping[str, str] | None = None) -> WriteResult:
-        return self._logged(["damage"], lambda: super(ScriptContext, self).mark_damage(
-            rows, expect=expect), lambda result: {
-                str(row.get("id")): str(row.get("note")) for row in rows
-                if row.get("note") and str(row.get("id")) in result.written})
+    def mark_damage(
+        self, rows: Sequence[Mapping[str, Any]], *, expect: Mapping[str, str] | None = None
+    ) -> WriteResult:
+        return self._logged(
+            ["damage"],
+            lambda: super(ScriptContext, self).mark_damage(rows, expect=expect),
+            lambda result: {
+                str(row.get("id")): str(row.get("note"))
+                for row in rows
+                if row.get("note") and str(row.get("id")) in result.written
+            },
+        )
 
     def add_layer(self, section: object, layer: Any) -> Any:
         outer = self._depth == 0
@@ -204,12 +251,19 @@ class ScriptContext(ToolContext):
         import sys
 
         self._run.job.layout.log_event(
-            "script_write", property=["layer"], sections=[ref.section], notes={},
-            layer=ref.name, argv0=str(sys.argv[0]) if sys.argv else "", call=self.call)
+            "script_write",
+            property=["layer"],
+            sections=[ref.section],
+            notes={},
+            layer=ref.name,
+            argv0=str(sys.argv[0]) if sys.argv else "",
+            call=self.call,
+        )
         return ref
 
-    def preview_overlay(self, section: object, proposal: Mapping[str, Any], *,
-                        resolution: int | None = None) -> SavedPicture:
+    def preview_overlay(
+        self, section: object, proposal: Mapping[str, Any], *, resolution: int | None = None
+    ) -> SavedPicture:
         """The overlay ``look`` draws of the section (atlas borders drawn on
         the section) with *proposal* drawn and NOT written (as
         :meth:`overlay_picture` takes it: ``{"deformation": proposal or
@@ -225,13 +279,22 @@ class ScriptContext(ToolContext):
         from langslice.core.pictures.drawn import collecting, note, note_for
 
         if not proposal:
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            "a preview draws a proposal; job.look(mode='overlay', "
-                            "sections=[...]) draws the section as it stands")
+            raise ToolError(
+                RefusalCode.BAD_ARGS,
+                "a preview draws a proposal; job.look(mode='overlay', "
+                "sections=[...]) draws the section as it stands",
+            )
         record = self._record(section)
-        what = ("deformation" if proposal.get("deformation") is not None
-                else ", ".join(key for key in ("transform", "position_mm", "angles")
-                               if proposal.get(key) is not None) or "nothing")
+        what = (
+            "deformation"
+            if proposal.get("deformation") is not None
+            else ", ".join(
+                key
+                for key in ("transform", "position_mm", "angles")
+                if proposal.get(key) is not None
+            )
+            or "nothing"
+        )
         with collecting() as drawn:
             image = self.overlay_picture(record.id, proposal=proposal, resolution=resolution)
         held = note_for(image, drawn)
@@ -240,21 +303,29 @@ class ScriptContext(ToolContext):
         linear = what != "deformation" and held is not None and held.panel is not None
 
         def noted(shown_picture: Image.Image) -> None:
-            note(shown_picture, sections=(record.id,), mode="overlay",
-                 frame=held.frame if linear and held is not None else None,
-                 panel=replace(held.panel, size=shown_picture.size)
-                 if linear and held is not None and held.panel is not None else None,
-                 recipe={"renderer": "transport_snapshot", "args": {}, "proposal": what},
-                 caption=f"{text}: {held.caption}" if held is not None and held.caption
-                 else text,
-                 extra={"registrations": {}})
+            note(
+                shown_picture,
+                sections=(record.id,),
+                mode="overlay",
+                frame=held.frame if linear and held is not None else None,
+                panel=replace(held.panel, size=shown_picture.size)
+                if linear and held is not None and held.panel is not None
+                else None,
+                recipe={"renderer": "transport_snapshot", "args": {}, "proposal": what},
+                caption=f"{text}: {held.caption}" if held is not None and held.caption else text,
+                extra={"registrations": {}},
+            )
 
         return self._save([picture], noted, {"section": record.id, "proposal": what})[0]
 
-    def preview_positioning(self, proposal: Mapping[object, Mapping[str, Any]], *,
-                            sections: Sequence[object] | None = None,
-                            resolution: int | None = None,
-                            part: int | None = None) -> list[SavedPicture]:
+    def preview_positioning(
+        self,
+        proposal: Mapping[object, Mapping[str, Any]],
+        *,
+        sections: Sequence[object] | None = None,
+        resolution: int | None = None,
+        part: int | None = None,
+    ) -> list[SavedPicture]:
         """The positioning picture (``look`` mode ``positioning``) of
         *sections* (default: every section) with *proposal* ``{section:
         {"position_mm", "angles"}}`` drawn and NOT written
@@ -263,25 +334,42 @@ class ScriptContext(ToolContext):
         from langslice.core.pictures.drawn import note
 
         if not proposal:
-            raise ToolError(RefusalCode.BAD_ARGS,
-                            "a preview draws a proposal; job.look(mode="
-                            "'positioning') draws the stack as it stands")
-        names = [self._record(ref).id for ref in sections] if sections else [
-            view.id for view in self.sections()]
-        pictures = self.positioning_picture(names, proposal=proposal, resolution=resolution,
-                                            part=part)
+            raise ToolError(
+                RefusalCode.BAD_ARGS,
+                "a preview draws a proposal; job.look(mode="
+                "'positioning') draws the stack as it stands",
+            )
+        names = (
+            [self._record(ref).id for ref in sections]
+            if sections
+            else [view.id for view in self.sections()]
+        )
+        pictures = self.positioning_picture(
+            names, proposal=proposal, resolution=resolution, part=part
+        )
 
         def noted(shown_picture: Image.Image) -> None:
-            note(shown_picture, sections=tuple(names), mode="positioning",
-                 recipe={"renderer": "transport_snapshot", "args": {},
-                         "proposal": "positions and angles"},
-                 caption=PREVIEW_CAPTION.format(what="positions and angles"),
-                 extra={"registrations": {}})
+            note(
+                shown_picture,
+                sections=tuple(names),
+                mode="positioning",
+                recipe={
+                    "renderer": "transport_snapshot",
+                    "args": {},
+                    "proposal": "positions and angles",
+                },
+                caption=PREVIEW_CAPTION.format(what="positions and angles"),
+                extra={"registrations": {}},
+            )
 
         return self._save(pictures, noted, {"sections": names, "proposal": "positioning"})
 
-    def _save(self, pictures: Sequence[Image.Image], noted: Callable[[Image.Image], None],
-              arguments: dict[str, Any]) -> list[SavedPicture]:
+    def _save(
+        self,
+        pictures: Sequence[Image.Image],
+        noted: Callable[[Image.Image], None],
+        arguments: dict[str, Any],
+    ) -> list[SavedPicture]:
         """Save *pictures* as the job's numbered pictures, tool ``script``,
         each noted by *noted*; written before this returns."""
         from langslice.job.pictures import PICTURE_FILE, captured
@@ -295,6 +383,12 @@ class ScriptContext(ToolContext):
                 shown.show(list(pictures), arguments=to_jsonable(arguments), call_id=self.call)
         job.views.flush()
         captions = list(shown.captions) + [None] * len(pictures)
-        return [SavedPicture(path=item.folder / PICTURE_FILE, index=item.seq,
-                             caption=str(captions[index] or ""), image=picture)
-                for index, (item, picture) in enumerate(zip(saved, pictures, strict=False))]
+        return [
+            SavedPicture(
+                path=item.folder / PICTURE_FILE,
+                index=item.seq,
+                caption=str(captions[index] or ""),
+                image=picture,
+            )
+            for index, (item, picture) in enumerate(zip(saved, pictures, strict=False))
+        ]

@@ -50,8 +50,11 @@ def host_transform() -> StoredAffine:
     """The identity transform a section with a frozen affine and none supplied
     carries: the host's snapshot is already aligned in-plane."""
     return StoredAffine(
-        kind=HOST_TRANSFORM_KIND, params=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
-        physical=IDENTITY_PHYSICAL, mirrored=False)
+        kind=HOST_TRANSFORM_KIND,
+        params=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        physical=IDENTITY_PHYSICAL,
+        mirrored=False,
+    )
 
 
 def _section(state: Stack, key: str, name: object) -> Section:
@@ -122,8 +125,7 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
         pitch, yaw = stack_angles
         state.set_angles((pitch, yaw))
         state.notes.append(
-            f"inputs: cutting angles set by the host "
-            f"(pitch {pitch:.2f}, yaw {yaw:.2f})"
+            f"inputs: cutting angles set by the host (pitch {pitch:.2f}, yaw {yaw:.2f})"
         )
     if section_angles:
         for name, (pitch, yaw) in section_angles.items():
@@ -136,13 +138,16 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
     orientation = inputs.get("orientation") or {}
     if orientation:
         if not isinstance(orientation, dict):
-            raise ValueError("inputs.orientation must map section filenames to "
-                             "{flip, rotation_deg}")
+            raise ValueError(
+                "inputs.orientation must map section filenames to {flip, rotation_deg}"
+            )
         for name, value in orientation.items():
             record = _section(state, "orientation", cast("object", name))
             if not isinstance(value, dict) or set(value) - {"flip", "rotation_deg"}:
-                raise ValueError(f"inputs.orientation[{name!r}] must be "
-                                 "{flip: bool, rotation_deg: 0|90|180|270}")
+                raise ValueError(
+                    f"inputs.orientation[{name!r}] must be "
+                    "{flip: bool, rotation_deg: 0|90|180|270}"
+                )
             flip = value.get("flip")
             if flip is not None:
                 if not isinstance(flip, bool):
@@ -150,10 +155,15 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
                 record.flip = flip
             rotation = value.get("rotation_deg")
             if rotation is not None:
-                if isinstance(rotation, bool) or not isinstance(rotation, (int, float)) or (
-                        rotation % 360 not in ROTATIONS):
-                    raise ValueError(f"inputs.orientation[{name!r}].rotation_deg must be one "
-                                     f"of {list(ROTATIONS)}")
+                if (
+                    isinstance(rotation, bool)
+                    or not isinstance(rotation, (int, float))
+                    or (rotation % 360 not in ROTATIONS)
+                ):
+                    raise ValueError(
+                        f"inputs.orientation[{name!r}].rotation_deg must be one "
+                        f"of {list(ROTATIONS)}"
+                    )
                 record.rotation_deg = int(rotation % 360)
         state.notes.append(f"inputs: {len(orientation)} orientation(s) set by the host")
 
@@ -174,20 +184,25 @@ def apply_host_inputs(state: Stack, spec: JobSpec) -> None:
         if unknown:
             raise ValueError(f"frozen names sections that are not here: {unknown}")
         held = freeze.sections_of(frozen, [record.id for record in state.in_order()])
-        unsupplied = [name for name, props in held.items()
-                      if "position" in props and (rec := state.by_id(name)) is not None
-                      and rec.position_source != INPUT]
+        unsupplied = [
+            name
+            for name, props in held.items()
+            if "position" in props
+            and (rec := state.by_id(name)) is not None
+            and rec.position_source != INPUT
+        ]
         if unsupplied:
             raise ValueError(
                 f"frozen: the position of {unsupplied} is frozen, and a frozen position "
-                "must be supplied: supply it in inputs.positions")
+                "must be supplied: supply it in inputs.positions"
+            )
         for name, props in held.items():
             record = _section(state, "frozen", name)
             if "affine" in props and record.transform is None:
                 record.transform = host_transform()
         state.notes.append(
-            f"inputs: {len(held)} section(s) with a frozen property "
-            "(the agent may not change it)")
+            f"inputs: {len(held)} section(s) with a frozen property (the agent may not change it)"
+        )
 
 
 def _apply_damage(state: Stack, spec: JobSpec) -> None:
@@ -205,21 +220,17 @@ def _apply_damage(state: Stack, spec: JobSpec) -> None:
         record = _section(state, "damaged_regions", name)
         record.damaged_regions = normalized_entries(regions)
     if marks:
-        state.notes.append(
-            f"inputs: damage regions of {len(marks)} section(s) from the host")
+        state.notes.append(f"inputs: damage regions of {len(marks)} section(s) from the host")
 
     notes = cast("dict[object, object]", inputs.get("damaged") or {})
     for name, note in notes.items():
         record = _section(state, "damaged", name)
         record.damage_note = str(note or "")
     if notes:
-        state.notes.append(
-            f"inputs: {len(notes)} damage note(s) from the host")
+        state.notes.append(f"inputs: {len(notes)} damage note(s) from the host")
 
 
-def check_damaged_regions(
-    state: Stack, spec: JobSpec, workspace: Workspace
-) -> None:
+def check_damaged_regions(state: Stack, spec: JobSpec, workspace: Workspace) -> None:
     """Check the host's damage marks against the atlas and the placements.
 
     Every entry of ``inputs.damaged_regions`` must name a region of the
@@ -262,8 +273,9 @@ class InputsChanged(ValueError):
     old ones and drop the new without a word (:meth:`Job.open`)."""
 
 
-START_FRESH = ("start a fresh job instead (`--no-resume` on the command line, resume=False in "
-               "a spec)")
+START_FRESH = (
+    "start a fresh job instead (`--no-resume` on the command line, resume=False in a spec)"
+)
 
 
 def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:

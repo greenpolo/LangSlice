@@ -47,9 +47,12 @@ class Placement:
         matrix = np.asarray(self.atlas_to_section, dtype=np.float64)
         if matrix.shape == (2, 3):
             matrix = np.vstack([matrix, [0.0, 0.0, 1.0]])
-        if (matrix.shape != (3, 3) or not np.isfinite(matrix).all()
-                or not np.allclose(matrix[2], [0.0, 0.0, 1.0])
-                or abs(np.linalg.det(matrix[:2, :2])) < 1e-12):
+        if (
+            matrix.shape != (3, 3)
+            or not np.isfinite(matrix).all()
+            or not np.allclose(matrix[2], [0.0, 0.0, 1.0])
+            or abs(np.linalg.det(matrix[:2, :2])) < 1e-12
+        ):
             raise ValueError("atlas_to_section must be a finite invertible 3x3 affine")
         if not (np.isfinite(self.section_mm_per_px) and self.section_mm_per_px > 0):
             raise ValueError("section_mm_per_px must be positive and finite")
@@ -59,11 +62,14 @@ class Placement:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "atlas_name": self.atlas_name, "position_mm": float(self.position_mm),
-            "plane": self.plane, "pitch_deg": float(self.pitch_deg),
+            "atlas_name": self.atlas_name,
+            "position_mm": float(self.position_mm),
+            "plane": self.plane,
+            "pitch_deg": float(self.pitch_deg),
             "yaw_deg": float(self.yaw_deg),
             "atlas_to_section": self.atlas_to_section.tolist(),
-            "section_mm_per_px": float(self.section_mm_per_px), "source": self.source,
+            "section_mm_per_px": float(self.section_mm_per_px),
+            "source": self.source,
         }
 
     @classmethod
@@ -72,8 +78,10 @@ class Placement:
         if unknown:
             raise ValueError(f"Unknown placement key(s) {unknown}")
         return cls(
-            atlas_name=str(value["atlas_name"]), position_mm=float(value["position_mm"]),
-            plane=cast(Plane, value["plane"]), pitch_deg=float(value["pitch_deg"]),
+            atlas_name=str(value["atlas_name"]),
+            position_mm=float(value["position_mm"]),
+            plane=cast(Plane, value["plane"]),
+            pitch_deg=float(value["pitch_deg"]),
             yaw_deg=float(value["yaw_deg"]),
             atlas_to_section=np.asarray(value["atlas_to_section"], dtype=np.float64),
             section_mm_per_px=float(value["section_mm_per_px"]),
@@ -88,8 +96,11 @@ def placement_from_handoff(prepared: LinearRegistrationInput) -> Placement:
     section, not the acquisition TIFF).
     """
     return Placement(
-        atlas_name=prepared.atlas_name, position_mm=prepared.position_mm,
-        plane=prepared.plane, pitch_deg=prepared.pitch_deg, yaw_deg=prepared.yaw_deg,
+        atlas_name=prepared.atlas_name,
+        position_mm=prepared.position_mm,
+        plane=prepared.plane,
+        pitch_deg=prepared.pitch_deg,
+        yaw_deg=prepared.yaw_deg,
         atlas_to_section=prepared.atlas_to_slice,
         section_mm_per_px=float(prepared.metadata["section_um_per_px"]) / 1000.0,
         source=str(prepared.metadata.get("source", "linear_state")),
@@ -111,7 +122,10 @@ class WorkingGrid:
 
     @classmethod
     def for_section(
-        cls, section_size: tuple[int, int], section_mm_per_px: float, working_mm: float,
+        cls,
+        section_size: tuple[int, int],
+        section_mm_per_px: float,
+        working_mm: float,
     ) -> WorkingGrid:
         factor = min(1.0, section_mm_per_px / working_mm)
         width = max(8, int(round(section_size[0] * factor)))
@@ -120,8 +134,10 @@ class WorkingGrid:
 
     @property
     def spacing_mm(self) -> tuple[float, float]:
-        return (self.section_mm_per_px * self.section_size[0] / self.size[0],
-                self.section_mm_per_px * self.section_size[1] / self.size[1])
+        return (
+            self.section_mm_per_px * self.section_size[0] / self.size[0],
+            self.section_mm_per_px * self.section_size[1] / self.size[1],
+        )
 
     @property
     def origin_mm(self) -> tuple[float, float]:
@@ -143,15 +159,25 @@ class WorkingGrid:
         """Bilinearly interpolate a working-grid millimetre field onto the section grid."""
         if tuple(field_mm.shape[1::-1]) == self.section_size:
             return field_mm.astype(np.float32)
-        return np.stack([
-            cv2.resize(np.ascontiguousarray(field_mm[..., k], dtype=np.float32),
-                       self.section_size, interpolation=cv2.INTER_LINEAR)
-            for k in range(2)
-        ], axis=-1)
+        return np.stack(
+            [
+                cv2.resize(
+                    np.ascontiguousarray(field_mm[..., k], dtype=np.float32),
+                    self.section_size,
+                    interpolation=cv2.INTER_LINEAR,
+                )
+                for k in range(2)
+            ],
+            axis=-1,
+        )
 
 
 def warp_affine(
-    image: np.ndarray, matrix: np.ndarray, size: tuple[int, int], *, nearest: bool = False,
+    image: np.ndarray,
+    matrix: np.ndarray,
+    size: tuple[int, int],
+    *,
+    nearest: bool = False,
 ) -> np.ndarray:
     """Place a native atlas image with a 3x3 pixel-centre map (outside = 0).
 
@@ -159,17 +185,28 @@ def warp_affine(
     """
     if nearest:
         return cv2.warpAffine(
-            image.astype(np.float64), np.asarray(matrix)[:2], size,
-            flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+            image.astype(np.float64),
+            np.asarray(matrix)[:2],
+            size,
+            flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
         ).astype(image.dtype)
     return cv2.warpAffine(
-        image.astype(np.float32), np.asarray(matrix)[:2], size,
-        flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        image.astype(np.float32),
+        np.asarray(matrix)[:2],
+        size,
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     )
 
 
 def sample_native(
-    native: np.ndarray, coordinates: np.ndarray, *, nearest: bool = True,
+    native: np.ndarray,
+    coordinates: np.ndarray,
+    *,
+    nearest: bool = True,
 ) -> np.ndarray:
     """Sample a native atlas image at (H, W, 2) [x, y] native pixel coordinates.
 
@@ -185,6 +222,10 @@ def sample_native(
         result[inside] = native[iy[inside], ix[inside]]
         return result
     return cv2.remap(
-        native.astype(np.float32), x.astype(np.float32), y.astype(np.float32),
-        cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        native.astype(np.float32),
+        x.astype(np.float32),
+        y.astype(np.float32),
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     )

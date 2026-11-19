@@ -80,9 +80,7 @@ class NotesBefore:
     then: tuple[str, ...] = ()
 
     @classmethod
-    def between(
-        cls, before: Sequence[str], after: Sequence[str]
-    ) -> NotesBefore | None:
+    def between(cls, before: Sequence[str], after: Sequence[str]) -> NotesBefore | None:
         """Return what puts *after* back to *before*; None when they match.
 
         Parameters
@@ -190,9 +188,7 @@ class UndoStep:
         if fields.get("notes_before") is not None:
             change = as_object("notes_before", fields.get("notes_before"))
             then = list_at(change, "then")
-            notes = NotesBefore(
-                integer_at(change, "keep"), tuple(str(note) for note in then)
-            )
+            notes = NotesBefore(integer_at(change, "keep"), tuple(str(note) for note in then))
         return cls(
             step=integer_at(fields, "step"),
             by=text_at(fields, "by"),
@@ -316,9 +312,7 @@ class UndoFile:
             return self._unreadable(f"it does not read ({exc})")
         version = None if data is None else data.get(FORMAT_KEY)
         if data is None or version != UNDO_FORMAT_VERSION:
-            return self._unreadable(
-                f"its format is {version!r}, not {UNDO_FORMAT_VERSION}"
-            )
+            return self._unreadable(f"its format is {version!r}, not {UNDO_FORMAT_VERSION}")
         try:
             undo = [UndoStep.from_json(item) for item in list_at(data, "undo")]
             redo = [UndoStep.from_json(item) for item in list_at(data, "redo")]

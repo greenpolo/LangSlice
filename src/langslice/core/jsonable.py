@@ -10,16 +10,12 @@ sets) into those.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TypeAlias, Union, cast, overload
+from typing import TypeAlias, cast, overload
 
 import numpy as np
 
-JsonValue: TypeAlias = Union[  # noqa: UP007
-    None, bool, int, float, str, list["JsonValue"], dict[str, "JsonValue"]
-]
-Json: TypeAlias = Union[  # noqa: UP007
-    None, bool, int, float, str, Sequence["Json"], Mapping[str, "Json"]
-]
+JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+Json: TypeAlias = None | bool | int | float | str | Sequence["Json"] | Mapping[str, "Json"]
 JsonObject: TypeAlias = Mapping[str, Json]
 
 
@@ -35,9 +31,7 @@ def empty_object() -> JsonObject:
 
 
 @overload
-def to_jsonable(
-    value: Mapping[str, Json], *, strict: bool = False
-) -> dict[str, JsonValue]: ...
+def to_jsonable(value: Mapping[str, Json], *, strict: bool = False) -> dict[str, JsonValue]: ...
 @overload
 def to_jsonable(value: object, *, strict: bool = False) -> JsonValue: ...
 def to_jsonable(value: object, *, strict: bool = False) -> JsonValue:
@@ -75,17 +69,12 @@ def to_jsonable(value: object, *, strict: bool = False) -> JsonValue:
         return to_jsonable(nested, strict=strict)
     if isinstance(value, Mapping):
         mapping = cast("Mapping[object, object]", value)
-        return {
-            str(key): to_jsonable(item, strict=strict)
-            for key, item in mapping.items()
-        }
+        return {str(key): to_jsonable(item, strict=strict) for key, item in mapping.items()}
     if isinstance(value, (list, tuple)):
         items = cast("Sequence[object]", value)
         return [to_jsonable(item, strict=strict) for item in items]
     if strict:
-        raise TypeError(
-            f"Object of type {type(value).__name__} is not JSON serializable"
-        )
+        raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
     if isinstance(value, (set, frozenset)):
         members = cast("set[object]", value)
         return [to_jsonable(item) for item in sorted(members, key=str)]

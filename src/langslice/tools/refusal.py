@@ -27,21 +27,15 @@ def unknown_sections(state: Stack, refs: object) -> Refused:
     """``UNKNOWN_SLICE_IDS`` for *refs* that name no section: the refs, the
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.stack.stack.unknown_sections`)."""
-    return Refused(
-        RefusalCode.UNKNOWN_SLICE_IDS, **state_unknown_sections(state, refs)
-    )
+    return Refused(RefusalCode.UNKNOWN_SLICE_IDS, **state_unknown_sections(state, refs))
 
 
-def check_frozen(
-    job: Job, section_ids: Collection[str], *properties: str
-) -> None:
+def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> None:
     """Raise :class:`Refused` ``SECTION_BUSY`` when background work is running
     on any of *section_ids* (:meth:`~langslice.job.job.Job.busy_refusal`), else
     ``FROZEN`` when a write to *properties* of any of them would change what
     the job froze: the whole call refuses, nothing written."""
-    found = job.busy_refusal(section_ids) or job.frozen_refusal(
-        section_ids, *properties
-    )
+    found = job.busy_refusal(section_ids) or job.frozen_refusal(section_ids, *properties)
     if found is not None:
         raise found
 
@@ -68,15 +62,11 @@ def section_refusal(
         ``SECTION_BUSY`` (``work``, ``message``) or ``FROZEN``
         (``properties``, ``message``); None when the section may be written.
     """
-    refusal = job.busy_refusal([section_id]) or job.frozen_refusal(
-        [section_id], *properties
-    )
+    refusal = job.busy_refusal([section_id]) or job.frozen_refusal([section_id], *properties)
     if refusal is None:
         return None
     named = "work" if "work" in refusal.facts else "properties"
-    return Refused(
-        refusal.code, **{named: refusal.facts[named]}, message=refusal.message
-    )
+    return Refused(refusal.code, **{named: refusal.facts[named]}, message=refusal.message)
 
 
 def refused_row(section_id: str, refusal: Refused) -> Written:

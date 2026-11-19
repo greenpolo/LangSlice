@@ -222,8 +222,7 @@ class JobUndo(JobCheckpoint):
             row = self.histories.row(section_id, seq)
             if section is None or row is None:
                 logger.warning(
-                    "Undo: line %s of %s is not in its history; the "
-                    "section stays as it is",
+                    "Undo: line %s of %s is not in its history; the section stays as it is",
                     seq,
                     section_id,
                 )
@@ -233,9 +232,7 @@ class JobUndo(JobCheckpoint):
         if step.notes_before is not None:
             self.state.notes = step.notes_before.put_back(self.state.notes)
         back = self._record(before, self.actor, also=step)
-        return dataclasses.replace(
-            back, step=step.step, by=step.by, at=step.at
-        )
+        return dataclasses.replace(back, step=step.step, by=step.by, at=step.at)
 
     def _current_row(self, row: Row) -> JsonObject:
         """Return a line's section row at the current state format."""
@@ -287,19 +284,13 @@ class JobUndo(JobCheckpoint):
             notes_before=NotesBefore.between(then_state.notes, now_notes),
         )
 
-    def _stack_before(
-        self, before: JsonObject, also: UndoStep | None
-    ) -> dict[str, Json]:
+    def _stack_before(self, before: JsonObject, also: UndoStep | None) -> dict[str, Json]:
         """Return the stack fields but the notes that differ from *before*
         (and those *also* names), as *before* holds them.
         """
         fields = stack_fields(self.state)
         del fields[NOTES]
-        changed = {
-            key: before.get(key)
-            for key in fields
-            if before.get(key) != fields[key]
-        }
+        changed = {key: before.get(key) for key in fields if before.get(key) != fields[key]}
         if also is not None:
             changed.update({key: before.get(key) for key in also.stack_before})
         return changed
@@ -368,24 +359,16 @@ class JobUndo(JobCheckpoint):
         row_then = section_row(old_section)
         if head is not None and head.section == row_then and not unnumbered:
             return head
-        return self.histories.append(
-            then_state, old_section, step=step, by=HOST, numbered=replaced
-        )
+        return self.histories.append(then_state, old_section, step=step, by=HOST, numbered=replaced)
 
-    def _line_after(
-        self, section: Section, *, step: int, by: str, replaced: bool
-    ) -> None:
+    def _line_after(self, section: Section, *, step: int, by: str, replaced: bool) -> None:
         """Append the line a write left a section with.
 
         A registration it newly numbered is noted in :attr:`registered`.
         """
-        line = self.histories.append(
-            self.state, section, step=step, by=by, numbered=replaced
-        )
+        line = self.histories.append(self.state, section, step=step, by=by, numbered=replaced)
         if replaced and line.registration is not None:
-            self.registered.append(
-                (threading.get_ident(), section.id, line.registration)
-            )
+            self.registered.append((threading.get_ident(), section.id, line.registration))
 
     def number_registration(self, section: Section) -> int | None:
         """Return the number of the registration a section holds.
@@ -409,9 +392,7 @@ class JobUndo(JobCheckpoint):
         if registration_key(self.state, section) is None:
             return None
         last_write = max(self.next_step - 1, 0)
-        line = self.histories.append(
-            self.state, section, step=last_write, by=HOST, numbered=True
-        )
+        line = self.histories.append(self.state, section, step=last_write, by=HOST, numbered=True)
         return line.registration
 
     def record_opening(self) -> None:
@@ -420,9 +401,7 @@ class JobUndo(JobCheckpoint):
             return
         with self.lock.held():
             for section in self.state.slices:
-                self.histories.append(
-                    self.state, section, step=0, by=HOST, numbered=False
-                )
+                self.histories.append(self.state, section, step=0, by=HOST, numbered=False)
 
     def load_undo(self) -> None:
         """Read the undo steps on disk into the job (none unreadable)."""
@@ -434,9 +413,7 @@ class JobUndo(JobCheckpoint):
         if not self.persist:
             return
         with self.lock.held():
-            self.undo_file.save(
-                UndoLists(self.undo_stack, self.redo_stack, self.next_step)
-            )
+            self.undo_file.save(UndoLists(self.undo_stack, self.redo_stack, self.next_step))
         self._undo_stamp = file_stamp(self.undo_path)
 
     def sync(self) -> dict[str, Any] | None:

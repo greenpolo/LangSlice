@@ -38,7 +38,9 @@ OVERLAY_PALETTE: tuple[tuple[str, tuple[int, int, int]], ...] = (
     ("blue", (0, 96, 255)),
 )
 NAMED_COLORS: dict[str, tuple[int, int, int]] = {
-    "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
 }
 OVERLAY_STRETCH = (1.0, 99.5)
 TISSUE_WHITE_PERCENTILE = 95.0
@@ -63,9 +65,10 @@ def channel_colors(names: Any) -> list[tuple[str, str, tuple[int, int, int]]]:
 def colour_words(names: Sequence[str]) -> str:
     """The raw channels of an overlay in words: ``red + green + blue``, or
     ``DAPI cyan + GFP green`` for a channel not named after its colour."""
-    return " + ".join(name if name.lower() == word else f"{name} {word}"
-                      for name, word, _rgb in channel_colors(list(names)))
-
+    return " + ".join(
+        name if name.lower() == word else f"{name} {word}"
+        for name, word, _rgb in channel_colors(list(names))
+    )
 
 
 def intensity_ranges(ctx: Workspace, section_id: str) -> dict[str, IntensityRange]:
@@ -83,7 +86,6 @@ def intensity_ranges(ctx: Workspace, section_id: str) -> dict[str, IntensityRang
         cached = dict(zip(names, ranges, strict=False))
         ctx.intensity_cache[section_id] = cached
     return cached
-
 
 
 def auto_limits(planes: Sequence[np.ndarray]) -> list[tuple[float, float]]:
@@ -151,11 +153,16 @@ def composite(
     total = np.zeros((size[1], size[0], 3), dtype=np.float32)
     automatic = auto_limits([plane for _name, plane in planes])
     for (_name, plane), (_n, _word, rgb), (low, high) in zip(
-            planes, colours, automatic, strict=True):
+        planes, colours, automatic, strict=True
+    ):
         if high <= low:
             high = low + 1.0
         stretched = np.clip((plane - low) / (high - low), 0.0, 1.0)
-        shown = np.asarray(framed(Image.fromarray((stretched * 255.0).astype(np.uint8))),
-                           dtype=np.float32) / 255.0
+        shown = (
+            np.asarray(
+                framed(Image.fromarray((stretched * 255.0).astype(np.uint8))), dtype=np.float32
+            )
+            / 255.0
+        )
         total += shown[..., None] * np.asarray(rgb, dtype=np.float32)
     return Image.fromarray(np.clip(total, 0.0, 255.0).astype(np.uint8), mode="RGB")

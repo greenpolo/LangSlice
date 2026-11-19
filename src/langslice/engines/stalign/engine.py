@@ -58,23 +58,19 @@ class _Fit(Protocol):
     """Name the entries of STalign's result this module reads."""
 
     @overload
-    def __getitem__(
-        self, key: Literal["A", "v", "WM", "WB", "WA"]
-    ) -> torch.Tensor: ...
+    def __getitem__(self, key: Literal["A", "v", "WM", "WB", "WA"]) -> torch.Tensor: ...
 
     @overload
     def __getitem__(self, key: Literal["xv"]) -> list[torch.Tensor]: ...
 
     @overload
-    def __getitem__(
-        self, key: Literal["settings", "prefit"]
-    ) -> Mapping[str, Option]: ...
+    def __getitem__(self, key: Literal["settings", "prefit"]) -> Mapping[str, Option]: ...
 
 
 class _STalign(Protocol):
     """Name the functions of STalign this module calls (it ships no types)."""
 
-    def LDDMM(  # noqa: N802
+    def LDDMM(
         self,
         source_axes: list[np.ndarray],
         source: np.ndarray,
@@ -84,7 +80,7 @@ class _STalign(Protocol):
         **_options: object,
     ) -> _Fit: ...
 
-    def LDDMM_3D_to_slice(  # noqa: N802
+    def LDDMM_3D_to_slice(
         self,
         source_axes: list[np.ndarray],
         source: np.ndarray,
@@ -98,10 +94,10 @@ class _STalign(Protocol):
         self,
         xv: list[torch.Tensor],
         v: torch.Tensor,
-        A: torch.Tensor,  # noqa: N803
+        A: torch.Tensor,
         *,
         direction: str,
-        XJ: torch.Tensor,  # noqa: N803
+        XJ: torch.Tensor,
     ) -> torch.Tensor: ...
 
 
@@ -131,9 +127,7 @@ _RECORDS = _Records()
 _INSTALL = threading.Lock()
 
 
-def run(
-    arrays: Mapping[str, np.ndarray], params: Mapping[str, Option]
-) -> dict[str, Output]:
+def run(arrays: Mapping[str, np.ndarray], params: Mapping[str, Option]) -> dict[str, Output]:
     """Run one STalign call on the inputs the plugin prepared.
 
     Parameters
@@ -193,14 +187,12 @@ class _How:
 def _stalign() -> _STalign:
     """Import STalign, its end-of-fit figures replaced by the record."""
     module = importlib.import_module(PACKAGE)
-    figures = cast(
-        "_FiguresModule", importlib.import_module(f"{PACKAGE}._lddmm_common")
-    )
+    figures = cast("_FiguresModule", importlib.import_module(f"{PACKAGE}._lddmm_common"))
     with _INSTALL:
-        current = figures._Figures  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        current = figures._Figures
         if current is not _EnergyRecord:
             _EnergyRecord.figures = current
-            figures._Figures = _EnergyRecord  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            figures._Figures = _EnergyRecord
     return cast("_STalign", module)
 
 
@@ -349,9 +341,7 @@ def _plane(
             num_threads=how.threads,
             **options,
         )
-    prefit = {
-        key: value for key, value in result["prefit"].items() if key != "A"
-    }
+    prefit = {key: value for key, value in result["prefit"].items() if key != "A"}
     out["A"] = _plain(result["A"])
     out["prefit"] = _json(prefit)
     out["settings"] = _json(result["settings"])

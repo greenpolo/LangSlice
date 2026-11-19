@@ -29,9 +29,7 @@ def as_plane(text: str) -> Plane:
     for plane in PLANES:
         if text == plane:
             return plane
-    raise ValueError(
-        f"Unsupported plane {text!r}; expected one of {PLANES}"
-    )
+    raise ValueError(f"Unsupported plane {text!r}; expected one of {PLANES}")
 
 
 @dataclass(frozen=True)

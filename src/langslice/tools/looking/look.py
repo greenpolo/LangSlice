@@ -64,14 +64,18 @@ class Looked:
     sheets: list[dict[str, Any]] = field(default_factory=list)
 
 
-
 def _picture_id(name: str) -> int:
     return int(name.split("_", 1)[0])
 
 
 def save_pictures(
-    job: Job, workspace: Workspace, tool: str, drawn: Sequence[Any],
-    notes: list[tuple[Image.Image, PictureNote]], arguments: dict[str, Any], *,
+    job: Job,
+    workspace: Workspace,
+    tool: str,
+    drawn: Sequence[Any],
+    notes: list[tuple[Image.Image, PictureNote]],
+    arguments: dict[str, Any],
+    *,
     tiles: bool = False,
 ) -> list[dict[str, Any]]:
     """Save *drawn* (objects with ``image``, ``caption``, ``recipe``,
@@ -93,10 +97,17 @@ def save_pictures(
             held.caption = picture.caption
         items.append((picture.image, held))
     placed = any(has_frame(held) for _image, held in items)
-    names = job.views.save(tool=tool, pictures=items, arguments=arguments,
-                           atlas=workspace.atlas if placed else None, tiles=tiles)
-    return [{"id": _picture_id(name), "caption": picture.caption}
-            for name, picture in zip(names, drawn, strict=True)]
+    names = job.views.save(
+        tool=tool,
+        pictures=items,
+        arguments=arguments,
+        atlas=workspace.atlas if placed else None,
+        tiles=tiles,
+    )
+    return [
+        {"id": _picture_id(name), "caption": picture.caption}
+        for name, picture in zip(names, drawn, strict=True)
+    ]
 
 
 def split_shown(job: Job, drawn: Sequence[Any]) -> tuple[list[Any], list[Any]]:
@@ -118,18 +129,29 @@ def not_shown(pictures: Sequence[Any], mode: str, *, verb: str = "") -> list[dic
         args = (picture.recipe or {}).get("args") or {}
         sections = list(picture.sections) or list(args.get("sections") or [])
         positions = [float(v) for v in args.get("positions_mm") or []]
-        ask = {"mode": mode, **({"sections": sections} if sections else {}),
-               **({"positions_mm": positions} if positions else {})}
-        out.append({"mode": mode, "sections": sections, "positions_mm": positions,
-                    "caption": picture.caption,
-                    "how": (f"{verb} with {_words(ask)}" if verb else
-                            f"call again with {_words(ask)} (the other arguments as before)")})
+        ask = {
+            "mode": mode,
+            **({"sections": sections} if sections else {}),
+            **({"positions_mm": positions} if positions else {}),
+        }
+        out.append(
+            {
+                "mode": mode,
+                "sections": sections,
+                "positions_mm": positions,
+                "caption": picture.caption,
+                "how": (
+                    f"{verb} with {_words(ask)}"
+                    if verb
+                    else f"call again with {_words(ask)} (the other arguments as before)"
+                ),
+            }
+        )
     return out
 
 
 def _words(arguments: dict[str, Any]) -> str:
     return ", ".join(f"{key}={value!r}" for key, value in arguments.items())
-
 
 
 def _strings(value: Any, name: str) -> list[Any]:
@@ -221,9 +243,7 @@ def look_tool(
     return reply
 
 
-def requested_edge(
-    run: Run, resolution: float | None
-) -> tuple[int | None, str]:
+def requested_edge(run: Run, resolution: float | None) -> tuple[int | None, str]:
     """Return the long edge a tool's ``resolution`` asks for, and its note.
 
     Only a run whose caller sizes the pictures (image resolution ``auto``)
@@ -254,9 +274,7 @@ def requested_edge(
     try:
         return clamp_resolution(resolution, run.box.max_view_edge)
     except (TypeError, ValueError):
-        raise Refused(
-            RefusalCode.BAD_ARGS, "resolution is a whole number of pixels."
-        ) from None
+        raise Refused(RefusalCode.BAD_ARGS, "resolution is a whole number of pixels.") from None
 
 
 def look_pictures(
@@ -321,9 +339,13 @@ def look_pictures(
     state = job.state
     if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
         on = [name for name in looks.MODES if not job.spec.off(f"look:{name}")]
-        raise Refused(RefusalCode.OPTION_OFF, option=f"look:{mode}", modes=on,
-                      message=f"look mode {mode} is switched off for this job; the modes "
-                      f"are {', '.join(on)}.")
+        raise Refused(
+            RefusalCode.OPTION_OFF,
+            option=f"look:{mode}",
+            modes=on,
+            message=f"look mode {mode} is switched off for this job; the modes "
+            f"are {', '.join(on)}.",
+        )
     refs = _strings(sections, "sections")
     ids: list[str] = []
     unknown: list[Any] = []
@@ -341,13 +363,14 @@ def look_pictures(
     try:
         positions = tuple(float(v) for v in _strings(positions_mm, "positions_mm"))
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="positions_mm must be numbers.") from None
-    layers = None if atlas_layers is None else tuple(str(v) for v in _strings(
-        atlas_layers, "atlas_layers"))
+        raise Refused(RefusalCode.BAD_ARGS, message="positions_mm must be numbers.") from None
+    layers = (
+        None
+        if atlas_layers is None
+        else tuple(str(v) for v in _strings(atlas_layers, "atlas_layers"))
+    )
     if atlas_opacity is not None and not 0.0 <= float(atlas_opacity) <= 1.0:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="atlas_opacity is between 0 and 1.")
+        raise Refused(RefusalCode.BAD_ARGS, message="atlas_opacity is between 0 and 1.")
     edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
     named = tuple(str(v) for v in _strings(plugin_layers, "layers"))
     if named:
@@ -356,14 +379,21 @@ def look_pictures(
     if mask_names:
         _check_masks(job, str(mode), ids, mask_names)
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="depth is a whole number, 0 or more.")
+        raise Refused(RefusalCode.BAD_ARGS, message="depth is a whole number, 0 or more.")
     request = looks.LookRequest(
-        mode=str(mode), sections=tuple(ids), positions_mm=positions,
-        images=tuple(str(c) for c in _strings(images, "images")), atlas_layers=layers,
+        mode=str(mode),
+        sections=tuple(ids),
+        positions_mm=positions,
+        images=tuple(str(c) for c in _strings(images, "images")),
+        atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
-        warp=str(warp or "applied"), long_edge=edge, layers=named, masks=mask_names, depth=depth,
-        registrations=shown_under)
+        warp=str(warp or "applied"),
+        long_edge=edge,
+        layers=named,
+        masks=mask_names,
+        depth=depth,
+        registrations=shown_under,
+    )
     with collecting() as notes:
         drawn = looks.look(workspace, state, request, store=job.deformations)
     if shown_under:
@@ -376,14 +406,15 @@ def look_pictures(
     if registrations:
         arguments["registrations"] = {name: number for name, number, _held in shown_under}
     if sheet_edge:
-        return _sheet_reply(job, workspace, drawn, notes, request.mode, arguments,
-                            int(sheet_edge))
+        return _sheet_reply(job, workspace, drawn, notes, request.mode, arguments, int(sheet_edge))
     return _reply(job, workspace, LOOK_TOOL, drawn, notes, request.mode, arguments)
 
 
-
 def _under_registrations(
-    job: Job, mode: str, ids: list[str], registrations: Mapping[str, Any],
+    job: Job,
+    mode: str,
+    ids: list[str],
+    registrations: Mapping[str, Any],
 ) -> tuple[Any, list[str], tuple[tuple[str, int, bool], ...]]:
     """``(state, ids, shown)``: a copy of the job's state with each section
     *registrations* names under that registration of its own, the sections to
@@ -391,22 +422,23 @@ def _under_registrations(
     from langslice.tools.changing import registrations as ops_registrations
 
     if mode not in ("section", "overlay"):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="registrations are drawn in mode section or "
-                      "overlay.")
+        raise Refused(
+            RefusalCode.BAD_ARGS, message="registrations are drawn in mode section or overlay."
+        )
     if not isinstance(registrations, Mapping):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="registrations is {filename: number}.")
+        raise Refused(RefusalCode.BAD_ARGS, message="registrations is {filename: number}.")
     trial = copy.deepcopy(job.state)
     shown: list[tuple[str, int, bool]] = []
     for ref, number in registrations.items():
         given = cast("object", number)
         record, entry, held = ops_registrations.entry_for(job, ref, given)
         if ids and record.id not in ids:
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message=f"registrations names {record.id}, which is not "
-                          "among the sections to draw; add it to sections, or leave sections "
-                          "empty.")
+            raise Refused(
+                RefusalCode.BAD_ARGS,
+                message=f"registrations names {record.id}, which is not "
+                "among the sections to draw; add it to sections, or leave sections "
+                "empty.",
+            )
         copy_ = trial.by_id(record.id)
         assert copy_ is not None
         copy_.flip = entry.flip
@@ -423,68 +455,102 @@ def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequenc
     from langslice.core.pictures.plugin_layers import known_names
 
     if mode not in ("section", "overlay"):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="layers are drawn on pictures of mode section or "
-                      "overlay.")
+        raise Refused(
+            RefusalCode.BAD_ARGS, message="layers are drawn on pictures of mode section or overlay."
+        )
     held = known_names(job.state, ids)
     unknown = [name for name in names if name != "all" and name not in held]
     if unknown:
-        raise Refused(RefusalCode.UNKNOWN_PLUGIN_LAYER,
-                      unknown=unknown, layers=held,
-                      message=f"No drawn section has a layer named {', '.join(unknown)}; "
-                      f"the layers: {', '.join(held) or 'none'}.")
+        raise Refused(
+            RefusalCode.UNKNOWN_PLUGIN_LAYER,
+            unknown=unknown,
+            layers=held,
+            message=f"No drawn section has a layer named {', '.join(unknown)}; "
+            f"the layers: {', '.join(held) or 'none'}.",
+        )
 
 
 def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) -> None:
     if mode not in ("section", "overlay"):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="masks are outlined on pictures of mode section or "
-                      "overlay.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message="masks are outlined on pictures of mode section or overlay.",
+        )
     state = job.state
-    records = [r for r in (state.by_id(i) for i in ids) if r is not None] if ids \
-        else list(state.slices)
+    records = (
+        [r for r in (state.by_id(i) for i in ids) if r is not None] if ids else list(state.slices)
+    )
     held = sorted({name for record in records for name in record.masks})
     unknown = [name for name in names if name not in held]
     if unknown:
-        raise Refused(RefusalCode.UNKNOWN_MASK, unknown=unknown, masks=held,
-                      message=render(
-                          f"No drawn section has a mask named "
-                          f"{', '.join(unknown)}; the masks: "
-                          f"{', '.join(held) or 'none'}.[[?make_mask  Make "
-                          "one with make_mask.]]", job.spec.switched_off))
+        raise Refused(
+            RefusalCode.UNKNOWN_MASK,
+            unknown=unknown,
+            masks=held,
+            message=render(
+                f"No drawn section has a mask named "
+                f"{', '.join(unknown)}; the masks: "
+                f"{', '.join(held) or 'none'}.[[?make_mask  Make "
+                "one with make_mask.]]",
+                job.spec.switched_off,
+            ),
+        )
 
 
-def _layer_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],
-                 ) -> list[dict[str, Any]]:
+def _layer_notes(
+    shown: Sequence[looks.LookPicture],
+    entries: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """The layers each shown picture drew or could not draw, with its number."""
     out: list[dict[str, Any]] = []
     for picture, entry in zip(shown, entries, strict=False):
         for item in picture.extra.get("layers") or []:
-            out.append({"picture": entry["id"],
-                        "section": picture.sections[0] if picture.sections else "", **item})
+            out.append(
+                {
+                    "picture": entry["id"],
+                    "section": picture.sections[0] if picture.sections else "",
+                    **item,
+                }
+            )
     return out
 
 
-def _mask_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],
-                ) -> list[dict[str, Any]]:
+def _mask_notes(
+    shown: Sequence[looks.LookPicture],
+    entries: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """The masks each shown picture outlined or could not, with its number."""
     out: list[dict[str, Any]] = []
     for picture, entry in zip(shown, entries, strict=False):
         for item in picture.extra.get("masks") or []:
-            out.append({"picture": entry["id"],
-                        "section": picture.sections[0] if picture.sections else "", **item})
+            out.append(
+                {
+                    "picture": entry["id"],
+                    "section": picture.sections[0] if picture.sections else "",
+                    **item,
+                }
+            )
     return out
 
 
 def _reply(
-    job: Job, workspace: Workspace, tool: str, drawn: list[looks.LookPicture],
-    notes: list[tuple[Image.Image, PictureNote]], mode: str, arguments: dict[str, Any],
+    job: Job,
+    workspace: Workspace,
+    tool: str,
+    drawn: list[looks.LookPicture],
+    notes: list[tuple[Image.Image, PictureNote]],
+    mode: str,
+    arguments: dict[str, Any],
 ) -> Looked:
     shown, rest = split_shown(job, drawn)
     entries = save_pictures(job, workspace, tool, shown, notes, arguments)
-    return Looked(pictures=[picture.image for picture in shown], entries=entries,
-                  not_shown=not_shown(rest, mode), layers=_layer_notes(shown, entries),
-                  masks=_mask_notes(shown, entries))
+    return Looked(
+        pictures=[picture.image for picture in shown],
+        entries=entries,
+        not_shown=not_shown(rest, mode),
+        layers=_layer_notes(shown, entries),
+        masks=_mask_notes(shown, entries),
+    )
 
 
 SHEET_MODE = "sheet"
@@ -498,8 +564,12 @@ def _tile_label(picture: looks.LookPicture) -> str:
 
 
 def _sheet_reply(
-    job: Job, workspace: Workspace, drawn: list[looks.LookPicture],
-    notes: list[tuple[Image.Image, PictureNote]], mode: str, arguments: dict[str, Any],
+    job: Job,
+    workspace: Workspace,
+    drawn: list[looks.LookPicture],
+    notes: list[tuple[Image.Image, PictureNote]],
+    mode: str,
+    arguments: dict[str, Any],
     long_edge: int,
 ) -> Looked:
     """Every picture drawn saved as usual (as tiles), then shown tiled into
@@ -512,43 +582,80 @@ def _sheet_reply(
     items: list[tuple[Image.Image | bytes, PictureNote | None]] = []
     parts: list[list[dict[str, Any]]] = []
     for start in range(0, len(drawn), sheets.MAX_TILES):
-        part = list(zip(drawn[start:start + sheets.MAX_TILES],
-                        entries[start:start + sheets.MAX_TILES], strict=True))
+        part = list(
+            zip(
+                drawn[start : start + sheets.MAX_TILES],
+                entries[start : start + sheets.MAX_TILES],
+                strict=True,
+            )
+        )
         numbers = [entry["id"] for _picture, entry in part]
-        title = (f"sheet of pictures {', '.join(str(n) for n in numbers)}: each tile one "
-                 "picture, scaled down; zoom a box on a tile to draw that picture's box")
-        sheet = sheets.tile([sheets.Tile(picture.image, entry["id"], _tile_label(picture))
-                             for picture, entry in part], long_edge, title=title)
-        caption = (f"sheet of {len(part)} {mode} pictures, each scaled to "
-                   f"{sheet.scale:.2f} of its size: "
-                   + "; ".join(f"picture {entry['id']}: {picture.caption}"
-                               for picture, entry in part))
+        title = (
+            f"sheet of pictures {', '.join(str(n) for n in numbers)}: each tile one "
+            "picture, scaled down; zoom a box on a tile to draw that picture's box"
+        )
+        sheet = sheets.tile(
+            [
+                sheets.Tile(picture.image, entry["id"], _tile_label(picture))
+                for picture, entry in part
+            ],
+            long_edge,
+            title=title,
+        )
+        caption = (
+            f"sheet of {len(part)} {mode} pictures, each scaled to "
+            f"{sheet.scale:.2f} of its size: "
+            + "; ".join(f"picture {entry['id']}: {picture.caption}" for picture, entry in part)
+        )
         recipe = sheets.recipe(sheet)
-        held = PictureNote(sections=tuple(dict.fromkeys(
-            name for picture, _entry in part for name in picture.sections)),
-            mode=SHEET_MODE, recipe=recipe, caption=caption)
+        held = PictureNote(
+            sections=tuple(
+                dict.fromkeys(name for picture, _entry in part for name in picture.sections)
+            ),
+            mode=SHEET_MODE,
+            recipe=recipe,
+            caption=caption,
+        )
         items.append((sheet.image, held))
         parts.append([entry for _picture, entry in part])
-        made.append({"caption": caption, "tiles": [{"picture": tile["picture"], "box": tile["box"]}
-                                                   for tile in sheet.tiles]})
+        made.append(
+            {
+                "caption": caption,
+                "tiles": [{"picture": tile["picture"], "box": tile["box"]} for tile in sheet.tiles],
+            }
+        )
         images.append(sheet.image)
     names = job.views.save(tool=LOOK_TOOL, pictures=items, arguments={**arguments, "sheet": True})
     for name, sheet_entry, tiled in zip(names, made, parts, strict=True):
         sheet_entry["id"] = _picture_id(name)
         for entry in tiled:
             entry["sheet"] = sheet_entry["id"]
-    made = [{"id": entry.get("id", 0), "caption": entry["caption"], "tiles": entry["tiles"]}
-            for entry in made]
-    return Looked(pictures=images, entries=entries, layers=_layer_notes(drawn, entries),
-                  masks=_mask_notes(drawn, entries), sheets=made)
-
+    made = [
+        {"id": entry.get("id", 0), "caption": entry["caption"], "tiles": entry["tiles"]}
+        for entry in made
+    ]
+    return Looked(
+        pictures=images,
+        entries=entries,
+        layers=_layer_notes(drawn, entries),
+        masks=_mask_notes(drawn, entries),
+        sheets=made,
+    )
 
 
 def show_result(
-    job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
-    positions_mm: Sequence[float] = (), zooms: Mapping[str, Sequence[float]] | None = None,
-    highlight: Sequence[str] = (), resolution: int | None = None,
-    masks: Sequence[str] = (), images: Sequence[str] = (),
+    job: Job,
+    workspace: Workspace,
+    tool: str,
+    mode: str,
+    sections: Sequence[str],
+    *,
+    positions_mm: Sequence[float] = (),
+    zooms: Mapping[str, Sequence[float]] | None = None,
+    highlight: Sequence[str] = (),
+    resolution: int | None = None,
+    masks: Sequence[str] = (),
+    images: Sequence[str] = (),
 ) -> Looked:
     """The picture a change tool shows of what it wrote, drawn as ``look``
     draws *mode* and saved under *tool* (so it has a number, a caption and a
@@ -574,8 +681,11 @@ def show_result(
     edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
     with collecting() as notes:
         if mode == "positioning":
-            request = looks.LookRequest(mode=mode, sections=tuple(sections),
-                                        positions_mm=tuple(float(v) for v in positions_mm))
+            request = looks.LookRequest(
+                mode=mode,
+                sections=tuple(sections),
+                positions_mm=tuple(float(v) for v in positions_mm),
+            )
             try:
                 drawn = looks.look(workspace, state, request, store=job.deformations)
             except IMAGE_FAILURES as exc:
@@ -584,24 +694,39 @@ def show_result(
         else:
             for section in sections:
                 window = tuple(float(v) for v in windows.get(section) or ())
-                request = looks.LookRequest(mode=mode, sections=(section,), zoom=window,
-                                            highlight=tuple(str(v) for v in highlight),
-                                            long_edge=edge,
-                                            masks=tuple(str(v) for v in masks),
-                                            images=tuple(str(v) for v in images))
+                request = looks.LookRequest(
+                    mode=mode,
+                    sections=(section,),
+                    zoom=window,
+                    highlight=tuple(str(v) for v in highlight),
+                    long_edge=edge,
+                    masks=tuple(str(v) for v in masks),
+                    images=tuple(str(v) for v in images),
+                )
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
                 except IMAGE_FAILURES as exc:
                     code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
-                    failed.append({"id": section, "error": code,
-                                   "message": str(exc)})
+                    failed.append({"id": section, "error": code, "message": str(exc)})
     shown, rest = split_shown(job, drawn)
-    entries = save_pictures(job, workspace, tool, shown, notes,
-                            {"mode": mode, "sections": list(sections),
-                             **({"positions_mm": [float(v) for v in positions_mm]}
-                                if positions_mm else {})})
-    return Looked(pictures=[picture.image for picture in shown], entries=entries,
-                  not_shown=not_shown(rest, mode, verb=LOOK_TOOL), failed=failed)
+    entries = save_pictures(
+        job,
+        workspace,
+        tool,
+        shown,
+        notes,
+        {
+            "mode": mode,
+            "sections": list(sections),
+            **({"positions_mm": [float(v) for v in positions_mm]} if positions_mm else {}),
+        },
+    )
+    return Looked(
+        pictures=[picture.image for picture in shown],
+        entries=entries,
+        not_shown=not_shown(rest, mode, verb=LOOK_TOOL),
+        failed=failed,
+    )
 
 
 __all__ = [

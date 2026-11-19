@@ -48,7 +48,7 @@ from langslice.tools.pipeline import ToolBox, declared_tool
 from langslice.tools.run import Run
 
 if TYPE_CHECKING:
-    from langslice.doors.agent.engine import EngineContext
+    from langslice.doors.jobs import JobContext
 
 TOOL_BODIES: dict[str, Callable[..., object]] = {
     "look": look.look_tool,
@@ -89,15 +89,20 @@ def with_job_prompt(spec: JobSpec, image_model: ImageModel) -> ImageModel:
     if text is None or image_model.prompt == text:
         return image_model
     if image_model.prompt is not None:
-        raise ValueError("The image model's profile has a prompt of its own, and the job "
-                         "sets another (nonlinear.image_prompt); give only one")
+        raise ValueError(
+            "The image model's profile has a prompt of its own, and the job "
+            "sets another (nonlinear.image_prompt); give only one"
+        )
     from langslice.providers.profiles import image_model as profile
 
     return profile(image_model, prompt=text)
 
 
 def build_tools(
-    state: Stack, ctx: EngineContext, spec: JobSpec, *,
+    state: Stack,
+    ctx: JobContext,
+    spec: JobSpec,
+    *,
     job: Job | None = None,
     on_event: LiveCallback | None = None,
     max_view_edge: int | None = None,
@@ -163,24 +168,45 @@ def build_tools(
     if traces_on and image_model is not None:
         prompt = profile_prompt(image_model, state.plane)[0]
     variant = DescriptionFacts.from_spec(
-        spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
-        door=door, prompt=prompt, uncapped=scripting,
-        brain_scale=ctx.brain_scale)
-    box = ToolBox(job, variant, max_view_edge=int(max_view_edge or view_edge_limit(ctx)),
-                  verbs=verbs_for(spec), door=event_door or door,
-                  observers=tuple(observer for observer in (on_event, EventLog(
-                      job, event_door or door)) if observer is not None))
-    run = Run(job=job, workspace=ctx, spec=spec, box=box, level=level,
-              traces_on=traces_on, image_model=image_model)
+        spec,
+        auto=level == AUTO_RESOLUTION,
+        image_model=traces_on,
+        door=door,
+        prompt=prompt,
+        uncapped=scripting,
+        brain_scale=ctx.brain_scale,
+    )
+    box = ToolBox(
+        job,
+        variant,
+        max_view_edge=int(max_view_edge or view_edge_limit(ctx)),
+        verbs=verbs_for(spec),
+        door=event_door or door,
+        observers=tuple(
+            observer
+            for observer in (on_event, EventLog(job, event_door or door))
+            if observer is not None
+        ),
+    )
+    run = Run(
+        job=job,
+        workspace=ctx,
+        spec=spec,
+        box=box,
+        level=level,
+        traces_on=traces_on,
+        image_model=image_model,
+    )
     box.run = run
     bodies: dict[str, Callable[..., Any]] = {
-        name: functools.partial(body, run)
-        for name, body in TOOL_BODIES.items()
+        name: functools.partial(body, run) for name, body in TOOL_BODIES.items()
     }
     if variant.plugins:
         bodies.update(runtime.bodies(run, variant))
         box.plugins = provenance.records(variant)
         provenance.record(job, box.plugins)
-    box.tools = [declared_tool(name, bodies[name], box) for name in enabled(
-        spec, scripting=scripting, image_model=image_model_connected)]
+    box.tools = [
+        declared_tool(name, bodies[name], box)
+        for name in enabled(spec, scripting=scripting, image_model=image_model_connected)
+    ]
     return box

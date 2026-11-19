@@ -59,9 +59,7 @@ STAIN_FLOOR = 0.03
 STAIN_KNEE = 0.12
 
 
-def draw_paper_overlay(
-    opened: Opened, state: Stack, section: Section, edge: int
-) -> Image.Image:
+def draw_paper_overlay(opened: Opened, state: Stack, section: Section, edge: int) -> Image.Image:
     """Draw a section under its current registration, on paper.
 
     Parameters
@@ -90,9 +88,7 @@ def draw_paper_overlay(
     return paper(bare, lined=lined, brightfield=False)
 
 
-def draw_paper_thumb(
-    opened: Opened, section: Section, edge: int
-) -> Image.Image:
+def draw_paper_thumb(opened: Opened, section: Section, edge: int) -> Image.Image:
     """Draw a section alone, oriented, on paper.
 
     Parameters
@@ -142,11 +138,7 @@ def paper(
     paper_rgb = np.array(PAPER, np.float32)
     if brightfield:
         slide = rgb[~ground]
-        white = (
-            np.percentile(slide, SLIDE_LEVEL, axis=0)
-            if slide.size
-            else np.full(3, 255.0)
-        )
+        white = np.percentile(slide, SLIDE_LEVEL, axis=0) if slide.size else np.full(3, 255.0)
         balanced = np.clip(rgb / np.maximum(white, 1.0), 0, 1)
         stain = 1.0 - cast("npt.NDArray[np.float32]", np.min(balanced, axis=2))
         ramp = np.clip((stain - STAIN_FLOOR) / STAIN_KNEE, 0, 1)
@@ -168,9 +160,7 @@ def paper(
     if lined is not None:
         with_lines = np.asarray(lined.convert("RGB"), dtype=np.int16)
         plain = np.asarray(bare.convert("RGB"), dtype=np.int16)
-        change = cast(
-            "npt.NDArray[np.int16]", np.max(np.abs(with_lines - plain), axis=2)
-        )
+        change = cast("npt.NDArray[np.int16]", np.max(np.abs(with_lines - plain), axis=2))
         weight_of_line = LINE_STRENGTH * min(1.0, 0.45 + max(bare.size) / 1600)
         alpha = (np.clip(change / 110.0, 0, 1) * weight_of_line)[..., None]
         out = out * (1 - alpha) + np.array(LINE, np.float32) * alpha

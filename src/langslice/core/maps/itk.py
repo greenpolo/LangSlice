@@ -29,8 +29,7 @@ IMAGE_FORMATS = ("tif", "nii.gz", "nii", "mha", "nrrd")
 LINEAR_TOLERANCE_PX = 1e-3
 
 
-def write_image(path: str | os.PathLike[str], array: np.ndarray, *,
-                spacing: float = 1.0) -> Path:
+def write_image(path: str | os.PathLike[str], array: np.ndarray, *, spacing: float = 1.0) -> Path:
     """Write *array* (``(H, W)`` or ``(H, W, C)``) at *path*: a TIFF with
     tifffile (RGB stays RGB), any other suffix with SimpleITK on the grid
     (``spacing`` per pixel, origin 0, identity direction; a multi-channel
@@ -41,8 +40,9 @@ def write_image(path: str | os.PathLike[str], array: np.ndarray, *,
     if target.suffix.lower() in (".tif", ".tiff"):
         import tifffile
 
-        tifffile.imwrite(target, data, photometric="rgb" if data.ndim == 3 and
-                         data.shape[-1] == 3 else None)
+        tifffile.imwrite(
+            target, data, photometric="rgb" if data.ndim == 3 and data.shape[-1] == 3 else None
+        )
         return target
     import SimpleITK as sitk
 
@@ -71,9 +71,11 @@ def _transform(source: Any) -> Any:
             return sitk.ReadTransform(str(path))
         image = sitk.ReadImage(str(path))
     if image.GetNumberOfComponentsPerPixel() != 2 or image.GetDimension() != 2:
-        raise ValueError("a displacement field is a 2-D image of 2-vectors (dx, dy); got "
-                         f"{image.GetDimension()}-D with "
-                         f"{image.GetNumberOfComponentsPerPixel()} components")
+        raise ValueError(
+            "a displacement field is a 2-D image of 2-vectors (dx, dy); got "
+            f"{image.GetDimension()}-D with "
+            f"{image.GetNumberOfComponentsPerPixel()} components"
+        )
     return sitk.DisplacementFieldTransform(sitk.Cast(image, sitk.sitkVectorFloat64))
 
 
@@ -83,8 +85,13 @@ def _grid(size: tuple[int, int]) -> np.ndarray:
     return np.stack([xx, yy], axis=-1)
 
 
-def mapped_points(source: Any, size: tuple[int, int], *, spacing: float = 1.0,
-                  origin: Sequence[float] = (0.0, 0.0)) -> np.ndarray:
+def mapped_points(
+    source: Any,
+    size: tuple[int, int],
+    *,
+    spacing: float = 1.0,
+    origin: Sequence[float] = (0.0, 0.0),
+) -> np.ndarray:
     """Where *source* sends each pixel centre of a grid of *size* ``(width,
     height)``: ``(H, W, 2)`` ``[x, y]`` pixels of the same grid units
     (physical ``origin + pixel * spacing`` there and back). *source* is a
@@ -95,16 +102,22 @@ def mapped_points(source: Any, size: tuple[int, int], *, spacing: float = 1.0,
     if isinstance(source, np.ndarray):
         array = np.asarray(source, dtype=np.float64)
         if array.shape != (height, width, 2):
-            raise ValueError(f"a displacement array is (H, W, 2) = ({height}, {width}, 2); "
-                             f"got {array.shape}")
+            raise ValueError(
+                f"a displacement array is (H, W, 2) = ({height}, {width}, 2); got {array.shape}"
+            )
         return _grid((width, height)) + array
     import SimpleITK as sitk
 
     transform = _transform(source)
     start = [float(v) for v in origin]
     field = sitk.TransformToDisplacementField(
-        transform, sitk.sitkVectorFloat64, [width, height], start,
-        [float(spacing), float(spacing)], [1.0, 0.0, 0.0, 1.0])
+        transform,
+        sitk.sitkVectorFloat64,
+        [width, height],
+        start,
+        [float(spacing), float(spacing)],
+        [1.0, 0.0, 0.0, 1.0],
+    )
     offsets = sitk.GetArrayFromImage(field) / float(spacing)
     return _grid((width, height)) + offsets
 
@@ -119,24 +132,43 @@ def inverted(points: np.ndarray, *, iterations: int = 50) -> np.ndarray:
     displacement = np.asarray(points, dtype=np.float64) - _grid((width, height))
     image = sitk.GetImageFromArray(displacement, isVector=True)
     inverse = sitk.InvertDisplacementField(
-        image, maximumNumberOfIterations=int(iterations), maxErrorToleranceThreshold=0.01,
-        meanErrorToleranceThreshold=0.001, enforceBoundaryCondition=False)
+        image,
+        maximumNumberOfIterations=int(iterations),
+        maxErrorToleranceThreshold=0.01,
+        meanErrorToleranceThreshold=0.001,
+        enforceBoundaryCondition=False,
+    )
     return _grid((width, height)) + sitk.GetArrayFromImage(inverse)
 
 
-def linear_matrix(source: Any, size: tuple[int, int], *, spacing: float = 1.0,
-                  origin: Sequence[float] = (0.0, 0.0)) -> np.ndarray:
+def linear_matrix(
+    source: Any,
+    size: tuple[int, int],
+    *,
+    spacing: float = 1.0,
+    origin: Sequence[float] = (0.0, 0.0),
+) -> np.ndarray:
     """*source* (a transform file or ``sitk.Transform``) as a 3x3 affine on
     ``[x, y, 1]`` pixels of a grid of *size*; ``ValueError`` when it is not
     affine there (a deformable transform)."""
     transform = _transform(source)
     width, height = (int(v) for v in size)
-    probe = np.array([[0.0, 0.0], [width - 1.0, 0.0], [0.0, height - 1.0],
-                      [width - 1.0, height - 1.0], [(width - 1) / 2.0, (height - 1) / 2.0]])
+    probe = np.array(
+        [
+            [0.0, 0.0],
+            [width - 1.0, 0.0],
+            [0.0, height - 1.0],
+            [width - 1.0, height - 1.0],
+            [(width - 1) / 2.0, (height - 1) / 2.0],
+        ]
+    )
     start = np.asarray(origin, dtype=np.float64)
-    moved = np.array([
-        (np.asarray(transform.TransformPoint(tuple(start + p * spacing))) - start) / spacing
-        for p in probe])
+    moved = np.array(
+        [
+            (np.asarray(transform.TransformPoint(tuple(start + p * spacing))) - start) / spacing
+            for p in probe
+        ]
+    )
     ones = np.ones((len(probe), 1))
     solved, *_ = np.linalg.lstsq(np.hstack([probe, ones]), moved, rcond=None)
     matrix = np.vstack([solved.T, [0.0, 0.0, 1.0]])
@@ -145,5 +177,11 @@ def linear_matrix(source: Any, size: tuple[int, int], *, spacing: float = 1.0,
     return matrix
 
 
-__all__ = ["IMAGE_FORMATS", "TRANSFORM_SUFFIXES", "inverted", "linear_matrix",
-           "mapped_points", "write_image"]
+__all__ = [
+    "IMAGE_FORMATS",
+    "TRANSFORM_SUFFIXES",
+    "inverted",
+    "linear_matrix",
+    "mapped_points",
+    "write_image",
+]

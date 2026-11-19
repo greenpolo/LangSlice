@@ -47,8 +47,9 @@ def item_descriptor(item: dict[str, Any]) -> dict[str, Any]:
         result["content"] = [
             {
                 "index": index,
-                "type": part.get("type") if isinstance(part, dict)
-                and part.get("type") in _CONTENT_TYPES else "other",
+                "type": part.get("type")
+                if isinstance(part, dict) and part.get("type") in _CONTENT_TYPES
+                else "other",
                 "fingerprint": _digest(part),
             }
             for index, part in enumerate(parts)
@@ -72,16 +73,15 @@ def _left(total: int | None, parts: list[int | None]) -> int | None:
 
 
 def _residual(
-    total: dict[str, int | None], rows: list[dict[str, int | None]],
+    total: dict[str, int | None],
+    rows: list[dict[str, int | None]],
 ) -> dict[str, int | None]:
-    return {
-        key: _left(total[key], [row[key] for row in rows])
-        for key in COUNTERS
-    }
+    return {key: _left(total[key], [row[key] for row in rows]) for key in COUNTERS}
 
 
 def usage_diagnostics(
-    raw: Any, request: dict[str, Any] | None = None,
+    raw: Any,
+    request: dict[str, Any] | None = None,
     outputs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Allowlisted counts plus optional observational attribution, unknowns intact."""
@@ -90,12 +90,20 @@ def usage_diagnostics(
     details = details if isinstance(details, dict) else {}
     output_details = raw.get("output_tokens_details")
     output_details = output_details if isinstance(output_details, dict) else {}
-    totals = _counters({**raw, "cached_tokens": details.get("cached_tokens"),
-                        "cache_write_tokens": details.get("cache_write_tokens")})
+    totals = _counters(
+        {
+            **raw,
+            "cached_tokens": details.get("cached_tokens"),
+            "cache_write_tokens": details.get("cache_write_tokens"),
+        }
+    )
     result: dict[str, Any] = {
         "schema_version": 1,
-        "totals": {**totals, "reasoning_tokens": _count(output_details.get("reasoning_tokens")),
-                   "total_tokens": _count(raw.get("total_tokens"))},
+        "totals": {
+            **totals,
+            "reasoning_tokens": _count(output_details.get("reasoning_tokens")),
+            "total_tokens": _count(raw.get("total_tokens")),
+        },
     }
     if request is None:
         return result
@@ -113,10 +121,16 @@ def usage_diagnostics(
     items = []
     for identifier, data in incoming.items():
         row: dict[str, Any] = {"id_sha256": _digest(identifier), "tokens": _counters(data)}
-        matches = [index for index, item in enumerate(request["items"])
-                   if item.get("id_sha256") == row["id_sha256"]]
-        output_matches = [index for index, item in enumerate(outputs or [])
-                          if item.get("id_sha256") == row["id_sha256"]]
+        matches = [
+            index
+            for index, item in enumerate(request["items"])
+            if item.get("id_sha256") == row["id_sha256"]
+        ]
+        output_matches = [
+            index
+            for index, item in enumerate(outputs or [])
+            if item.get("id_sha256") == row["id_sha256"]
+        ]
         row["mapping"] = "unmapped"
         if len(matches) == 1 and not output_matches:
             row.update(mapping="exact_request_id", request_index=matches[0])
@@ -126,9 +140,14 @@ def usage_diagnostics(
             row["content"] = [_counters(part) for part in data["content"]]
             row["content_residual"] = _residual(row["tokens"], row["content"])
         items.append(row)
-    field_rows = [{"field": key if key in {"tools", "instructions"} else "other",
-                   "field_sha256": _digest(key), "tokens": _counters(data)}
-                  for key, data in fields.items()]
+    field_rows = [
+        {
+            "field": key if key in {"tools", "instructions"} else "other",
+            "field_sha256": _digest(key),
+            "tokens": _counters(data),
+        }
+        for key, data in fields.items()
+    ]
     residual = _residual(totals, [row["tokens"] for row in [*items, *field_rows]])
     result.update(
         attribution_status="observed_optional",

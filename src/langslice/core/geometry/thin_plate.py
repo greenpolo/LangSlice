@@ -82,23 +82,16 @@ class ThinPlateKernel:
         or ill-conditioned.
     """
 
-    def __init__(
-        self, source: ArrayLike, target: ArrayLike, *, max_points: int
-    ) -> None:
+    def __init__(self, source: ArrayLike, target: ArrayLike, *, max_points: int) -> None:
         source_mm, target_mm = _points(source), _points(target)
         count = len(source_mm)
         if source_mm.shape != target_mm.shape or not 4 <= count <= max_points:
-            raise ValueError(
-                f"Supply 4 to {max_points} corresponding source and "
-                "target landmarks"
-            )
+            raise ValueError(f"Supply 4 to {max_points} corresponding source and target landmarks")
 
         self.origin: FloatArray = _centre(source_mm)
         self.scale: float = _span(source_mm)
         if self.scale <= 0:
-            raise ValueError(
-                "Source landmarks must span a two-dimensional region"
-            )
+            raise ValueError("Source landmarks must span a two-dimensional region")
         self.source: FloatArray = (source_mm - self.origin) / self.scale
         self.target: FloatArray = (target_mm - self.origin) / self.scale
         _check_spread("Source", self.source)
@@ -128,17 +121,14 @@ class ThinPlateKernel:
 
     def _forward(self, points: FloatArray) -> FloatArray:
         kernel = _kernel(_squared(points, self.source))
-        return (
-            kernel @ self.weights + points @ self.affine[1:] + self.affine[:1]
-        )
+        return kernel @ self.weights + points @ self.affine[1:] + self.affine[:1]
 
     def _jacobian(self, points: FloatArray) -> FloatArray:
         radial = _log(_squared(points, self.source))
         radial += 1.0
         sums = radial @ self.gradient_weights
         columns = [
-            points[:, axis, None] * sums[:, :2]
-            - sums[:, 2 + 2 * axis : 4 + 2 * axis]
+            points[:, axis, None] * sums[:, :2] - sums[:, 2 + 2 * axis : 4 + 2 * axis]
             for axis in (0, 1)
         ]
         return np.stack(columns, axis=-1) + self.affine[1:].T
@@ -189,9 +179,7 @@ def _check_spread(label: str, points: FloatArray) -> None:
     squared = _squared(points, points)
     np.fill_diagonal(squared, np.inf)
     if np.min(squared) < 1e-12:
-        raise ValueError(
-            f"{label} landmarks must be distinct and well separated"
-        )
+        raise ValueError(f"{label} landmarks must be distinct and well separated")
     singular = np.linalg.svd(points - _centre(points), compute_uv=False)
     if singular[-1] < singular[0] * 1e-6:
         raise ValueError(f"{label} landmarks must not be collinear")

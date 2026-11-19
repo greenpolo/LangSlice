@@ -105,11 +105,13 @@ def _endpoint(
             RefusalCode.BAD_ARGS, message=f"{here}: an endpoint needs picture, x and y in pixels."
         ) from None
     if point.get("picture") != seq or isinstance(point.get("picture"), bool):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"{here}: picture is a whole saved picture number.")
+        raise Refused(
+            RefusalCode.BAD_ARGS, message=f"{here}: picture is a whole saved picture number."
+        )
     if set(point) - {"picture", "x", "y"}:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"{here}: an endpoint accepts picture, x and y only.")
+        raise Refused(
+            RefusalCode.BAD_ARGS, message=f"{here}: an endpoint accepts picture, x and y only."
+        )
     picture = job.views.lookup(seq)
     if picture is None:
         raise Refused(
@@ -117,10 +119,15 @@ def _endpoint(
             picture=seq,
             message=render(
                 f"{here}: there is no saved picture {seq}"
-                + (f" (the newest is {newest.seq})" if (newest := job.views.latest(
-                    exclude_tool=None)) else "")
+                + (
+                    f" (the newest is {newest.seq})"
+                    if (newest := job.views.latest(exclude_tool=None))
+                    else ""
+                )
                 + ". Use the picture number a look[[?zoom  or zoom]] "
-                "reply gave.", job.spec.switched_off),
+                "reply gave.",
+                job.spec.switched_off,
+            ),
         )
     recipe = picture.recipe or {}
     frame = source_frame(recipe)
@@ -137,8 +144,11 @@ def _endpoint(
                 f"{here}: picture {seq} has no {role} geometry for {record.id}"
                 + (f" (it has it for {', '.join(others)})" if others else "")
                 + "; use a picture "
-                + ("of this section's atlas plane or an overlay of it" if role == "atlas"
-                   else "of this section or an overlay of it")
+                + (
+                    "of this section's atlas plane or an overlay of it"
+                    if role == "atlas"
+                    else "of this section or an overlay of it"
+                )
                 + f" drawn with look (sections=[{record.id!r}])."
             ),
         )
@@ -228,16 +238,18 @@ def _atlas_regions(
         return {}
     annotation = plane_annotation(workspace, plane)
     structures = structure_table(workspace.atlas)
-    return {item.id: region_words(structures, label_at(annotation,
-                                                       item.atlas_native_xy) or 0)
-            for item in items}
+    return {
+        item.id: region_words(structures, label_at(annotation, item.atlas_native_xy) or 0)
+        for item in items
+    }
 
 
 INSIDE_MARGIN_PX = 1.5
 
 
-def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
-                    placed: Sequence[tuple[str, Pair]]) -> None:
+def _refuse_outside(
+    job: Job, workspace: Workspace, plane: dict[str, Any], placed: Sequence[tuple[str, Pair]]
+) -> None:
     """Refuse the call (``ATLAS_ENDPOINT_OUTSIDE``, nothing written) when an
     atlas endpoint of *placed* (``(label, pair)``) lies outside the atlas on
     *plane*, naming for each the nearest point inside it in the numbers it
@@ -249,26 +261,34 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
     if not placed:
         return
     annotation = plane_annotation(workspace, plane)
-    outside = [(label, pair) for label, pair in placed
-               if not label_at(annotation, pair.atlas_native_xy)]
+    outside = [
+        (label, pair) for label, pair in placed if not label_at(annotation, pair.atlas_native_xy)
+    ]
     if not outside:
         return
     inside = annotation != 0
     depth = np.asarray(distance_transform_edt(inside))
     deep = depth >= INSIDE_MARGIN_PX
     target = deep if deep.any() else inside
-    nearest = np.asarray(distance_transform_edt(~target, return_distances=False,
-                                                return_indices=True))
+    nearest = np.asarray(
+        distance_transform_edt(~target, return_distances=False, return_indices=True)
+    )
     sentences = []
     for label, pair in outside:
         endpoint = pair.atlas
         seq = endpoint.picture
         x, y = endpoint.pixel_xy
-        sentence = (f"{label}, atlas endpoint: the point ({x:g}, {y:g}) in picture {seq} is "
-                    "outside the atlas, where no brain is drawn, so it would pair empty atlas "
-                    "with the tissue")
-        c, r = (int(np.clip(np.rint(v), 0, n - 1)) for v, n in zip(
-            pair.atlas_native_xy, (annotation.shape[1], annotation.shape[0]), strict=True))
+        sentence = (
+            f"{label}, atlas endpoint: the point ({x:g}, {y:g}) in picture {seq} is "
+            "outside the atlas, where no brain is drawn, so it would pair empty atlas "
+            "with the tissue"
+        )
+        c, r = (
+            int(np.clip(np.rint(v), 0, n - 1))
+            for v, n in zip(
+                pair.atlas_native_xy, (annotation.shape[1], annotation.shape[0]), strict=True
+            )
+        )
         if target.any():
             row, col = int(nearest[0][r, c]), int(nearest[1][r, c])
             matrix = np.asarray(endpoint.geometry["pixel_to_native"], dtype=float)
@@ -278,15 +298,15 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
             frame = source_frame((picture.recipe or {}) if picture is not None else None)
             if frame is not None:
                 px, py = (float(v) for v in frame.to_source([px, py]))
-            sentence += (f"; the nearest point inside it is ({px:.0f}, {py:.0f}) in picture "
-                         f"{seq}")
+            sentence += f"; the nearest point inside it is ({px:.0f}, {py:.0f}) in picture {seq}"
         sentences.append(sentence + ".")
     raise Refused(
         RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
         pairs=[label for label, _pair in outside],
         message=" ".join(sentences) + " Nothing was written. For a pair on "
         "the outline, put the atlas endpoint on the drawn border or just "
-        "inside it.")
+        "inside it.",
+    )
 
 
 def _listing(job: Job, record: Section) -> list[dict[str, Any]]:
@@ -299,16 +319,19 @@ def _listing(job: Job, record: Section) -> list[dict[str, Any]]:
         row: dict[str, Any] = {"id": pair.id}
         for role, endpoint in (("atlas", pair.atlas), ("section", pair.section)):
             x, y = endpoint.pixel_xy
-            row[role] = {"picture": endpoint.picture, "x": round(x, 1),
-                         "y": round(y, 1)}
+            row[role] = {"picture": endpoint.picture, "x": round(x, 1), "y": round(y, 1)}
         row["state"] = states[pair.id]
         rows.append(row)
     return rows
 
 
 def _edited_pair(
-    job: Job, section: Section, previous: Pair | None, pair_id: str,
-    edit: JsonObject, label: str,
+    job: Job,
+    section: Section,
+    previous: Pair | None,
+    pair_id: str,
+    edit: JsonObject,
+    label: str,
 ) -> Pair:
     """Return pair *pair_id* after *edit* (a new pair without *previous*).
 
@@ -328,14 +351,23 @@ def _edited_pair(
     if "atlas" in edit:
         plane = geometry.plane_context(job.state, section)
     item = Pair(
-        id=pair_id, atlas=atlas_end, atlas_native_xy=atlas_end.canonical_xy,
-        section=section_end, section_fraction_xy=section_end.canonical_xy,
-        plane=plane, stale=False)
+        id=pair_id,
+        atlas=atlas_end,
+        atlas_native_xy=atlas_end.canonical_xy,
+        section=section_end,
+        section_fraction_xy=section_end.canonical_xy,
+        plane=plane,
+        stale=False,
+    )
     if previous is not None:
         item = replace(
-            previous, atlas=item.atlas, atlas_native_xy=item.atlas_native_xy,
-            section=item.section, section_fraction_xy=item.section_fraction_xy,
-            plane=plane)
+            previous,
+            atlas=item.atlas,
+            atlas_native_xy=item.atlas_native_xy,
+            section=item.section,
+            section_fraction_xy=item.section_fraction_xy,
+            plane=plane,
+        )
     return replace(item, stale=geometry.stale(job.state, section, item))
 
 
@@ -363,18 +395,17 @@ class LandmarksEdited:
             (pairs per state), ``landmarks`` and ``warp``; the empty ones
             left out.
         """
-        reply: dict[str, Any] = {
-            "status": "ok", "section": self.section, "written": self.written}
+        reply: dict[str, Any] = {"status": "ok", "section": self.section, "written": self.written}
         if self.listing:
-            reply["note"] = ("No pairs or delete given: this is the listing; "
-                             "nothing was written.")
+            reply["note"] = "No pairs or delete given: this is the listing; nothing was written."
         reply["changed"] = list(self.changed)
         if self.atlas_endpoint_regions:
             reply["atlas_endpoint_regions"] = self.atlas_endpoint_regions
         reply["deleted"] = list(self.deleted)
         states = [row["state"] for row in self.landmarks]
         reply["counts"] = {"total": len(states)} | {
-            kind: states.count(kind) for kind in _PAIR_STATES}
+            kind: states.count(kind) for kind in _PAIR_STATES
+        }
         reply["landmarks"] = list(self.landmarks)
         if self.warp:
             reply["warp"] = self.warp
@@ -420,15 +451,15 @@ def set_landmarks(
     if len(set(delete)) != len(delete) or len({p.get("id") for p in pairs if p.get("id")}) != sum(
         bool(p.get("id")) for p in pairs
     ):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="A pair ID may be edited or deleted only once per batch.")
+        raise Refused(
+            RefusalCode.BAD_ARGS, message="A pair ID may be edited or deleted only once per batch."
+        )
     changed: list[str] = []
     placed: list[Pair] = []
     labels: list[str] = []
     deleted = list(by_id) if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f'delete ["{DELETE_ALL}"] stands alone.')
+        raise Refused(RefusalCode.BAD_ARGS, message=f'delete ["{DELETE_ALL}"] stands alone.')
     for pair_id in deleted:
         if pair_id not in by_id:
             raise Refused(
@@ -458,8 +489,9 @@ def set_landmarks(
                 message=f"{label}: pair entries accept id, atlas and section only.",
             )
         if not any(role in edit for role in ("atlas", "section")):
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message=f"{label}: an edit needs at least one endpoint.")
+            raise Refused(
+                RefusalCode.BAD_ARGS, message=f"{label}: an edit needs at least one endpoint."
+            )
         previous = by_id.get(pair_id)
         if not previous and (not edit.get("atlas") or not edit.get("section")):
             raise Refused(
@@ -475,8 +507,12 @@ def set_landmarks(
             labels.append(label)
         by_id[pair_id] = item
         changed.append(pair_id)
-    _refuse_outside(job, workspace, geometry.plane_context(job.state, record),
-                    list(zip(labels, placed, strict=True)))
+    _refuse_outside(
+        job,
+        workspace,
+        geometry.plane_context(job.state, record),
+        list(zip(labels, placed, strict=True)),
+    )
     current = Landmarks(next_id=next_id, pairs=tuple(by_id.values()))
     before = job.snapshot()
     written = bool(pairs or delete) and record.landmarks != current
@@ -484,12 +520,17 @@ def set_landmarks(
         record.landmarks = current
         job.commit(before)
     return LandmarksEdited(
-        section=record.id, written=written, listing=not (pairs or delete),
-        changed=tuple(changed), deleted=tuple(deleted),
+        section=record.id,
+        written=written,
+        listing=not (pairs or delete),
+        changed=tuple(changed),
+        deleted=tuple(deleted),
         atlas_endpoint_regions=_atlas_regions(
-            workspace, geometry.plane_context(job.state, record), placed),
+            workspace, geometry.plane_context(job.state, record), placed
+        ),
         landmarks=_listing(job, record),
-        warp=geometry.warp_report(job.state, record))
+        warp=geometry.warp_report(job.state, record),
+    )
 
 
 MAX_PAIR_PICTURES = 4
@@ -526,7 +567,8 @@ def set_landmarks_tool(
             "picture per pair for at most four. Nothing was written. Send "
             f"the same {len(pairs)} pairs again with view false (no pair "
             "pictures; the pairs are listed in the reply), or send them in "
-            "calls of four or fewer.")
+            "calls of four or fewer.",
+        )
     edited = set_landmarks(job, workspace, section, pairs, delete)
     result = edited.reply()
     if not run.shows(view) or not edited.changed:
@@ -538,11 +580,11 @@ def set_landmarks_tool(
     try:
         with collecting() as notes:
             pictures = [
-                pair_picture(workspace, job.state, record, pair,
-                             store=job.deformations)
-                for pair in saved if pair.id in edited.changed]
-        entries = save_pictures(
-            job, workspace, "set_landmarks", pictures, notes, {})
+                pair_picture(workspace, job.state, record, pair, store=job.deformations)
+                for pair in saved
+                if pair.id in edited.changed
+            ]
+        entries = save_pictures(job, workspace, "set_landmarks", pictures, notes, {})
         looked = Looked(pictures=[p.image for p in pictures], entries=entries)
         return pictured(result, looked)
     except IMAGE_FAILURES as exc:

@@ -89,21 +89,24 @@ def failure_message(text: str, path: str | Path | None, label: str = "") -> str:
     whole = str(text or "").strip() or "no error text"
     first = whole.splitlines()[0].strip()
     if len(first) > FAILURE_CHARS:
-        first = first[:FAILURE_CHARS - 3].rstrip() + "..."
+        first = first[: FAILURE_CHARS - 3].rstrip() + "..."
     kept = False
     if path is not None:
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             with open(path, "a", encoding="utf-8", newline="\n") as stream:
-                stream.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {label or 'failed'}\n"
-                             f"{whole}\n")
+                stream.write(
+                    f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {label or 'failed'}\n{whole}\n"
+                )
             kept = True
         except OSError:
             kept = False
     words = first
     if "out of memory" in whole.lower():
-        words += (". The GPU ran out of memory, most likely while another fit held it; "
-                  "running the call again fits it from the start")
+        words += (
+            ". The GPU ran out of memory, most likely while another fit held it; "
+            "running the call again fits it from the start"
+        )
     if kept:
         words += ". logs/engine.log holds the whole error"
     return words + ("" if words.endswith(".") else ".")

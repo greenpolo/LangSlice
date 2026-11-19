@@ -24,7 +24,6 @@ ALLOWED = (
     r"(connectors|packaging|src/langslice/engines)/([^/]+/)?README\.md",
     r"(connectors/[^/]+|src/langslice)/skills/[^/]+/SKILL\.md",
     r"connectors/[^/]+/agents/[^/]+\.md",
-    r"tests/snapshots/agent_text/[^/]+\.md",
 )
 
 
@@ -32,11 +31,16 @@ def test_every_markdown_file_is_of_an_allowed_kind() -> None:
     try:
         listed = subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.md"],
-            cwd=ROOT, capture_output=True, text=True, check=True).stdout.split("\n")
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split("\n")
     except (OSError, subprocess.CalledProcessError):
         pytest.skip("not a git checkout")
     allowed = re.compile("|".join(f"(?:{pattern})" for pattern in ALLOWED))
     stray = [path for path in listed if path and not allowed.fullmatch(path)]
     assert not stray, (
         f"Markdown files of no allowed kind: {stray}. Delete them, or have the "
-        "owner add their kind to ALLOWED in tests/test_markdown_files.py.")
+        "owner add their kind to ALLOWED in tests/test_markdown_files.py."
+    )

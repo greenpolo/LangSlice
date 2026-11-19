@@ -44,9 +44,9 @@ tool.
 from __future__ import annotations
 
 import atexit
-import concurrent.futures.thread  # noqa: F401
 import contextlib
 import contextvars
+import importlib
 import json
 import logging
 import queue
@@ -82,7 +82,8 @@ _NAME_PART = re.compile(r"[^a-zA-Z0-9_]+")
 
 _STORES: weakref.WeakSet[ViewStore] = weakref.WeakSet()
 _CAPTURES: contextvars.ContextVar[tuple[list[Saved], ...]] = contextvars.ContextVar(
-    "langslice_view_captures", default=())
+    "langslice_view_captures", default=()
+)
 
 
 @dataclass(frozen=True)
@@ -102,11 +103,15 @@ class Saved:
         """``(path, kind)`` of every file the picture's folder will hold:
         ``view`` (the JPEG; ``tile`` for a sheet's tile), ``view_json``, for a
         placement or deformable-fit picture ``labels`` and ``borders``."""
-        listed = [(self.folder / PICTURE_FILE, self.view_kind),
-                  (self.folder / VIEW_FILE, "view_json")]
+        listed = [
+            (self.folder / PICTURE_FILE, self.view_kind),
+            (self.folder / VIEW_FILE, "view_json"),
+        ]
         if self.layers:
-            listed += [(self.folder / LABELS_FILE, "labels"), (self.folder / BORDERS_FILE,
-                                                               "borders")]
+            listed += [
+                (self.folder / LABELS_FILE, "labels"),
+                (self.folder / BORDERS_FILE, "borders"),
+            ]
         return listed
 
 
@@ -131,15 +136,23 @@ class PictureRecord:
     @classmethod
     def from_entry(cls, entry: dict[str, Any]) -> PictureRecord:
         step = entry.get("step")
-        return cls(seq=int(entry["seq"]), name=str(entry.get("name", "")),
-                   tool=str(entry.get("tool", "")), call=int(entry.get("call", 0)),
-                   path=str(entry.get("path", "")),
-                   sections=tuple(entry.get("sections") or ()), mode=entry.get("mode"),
-                   layers=bool(entry.get("layers")), caption=entry.get("caption"),
-                   step=int(step) if step is not None else None,
-                   recipe=entry.get("recipe"),
-                   registrations={str(k): int(v) for k, v in
-                                  (entry.get("registrations") or {}).items()})
+        return cls(
+            seq=int(entry["seq"]),
+            name=str(entry.get("name", "")),
+            tool=str(entry.get("tool", "")),
+            call=int(entry.get("call", 0)),
+            path=str(entry.get("path", "")),
+            sections=tuple(entry.get("sections") or ()),
+            mode=entry.get("mode"),
+            layers=bool(entry.get("layers")),
+            caption=entry.get("caption"),
+            step=int(step) if step is not None else None,
+            recipe=entry.get("recipe"),
+            registrations={str(k): int(v) for k, v in (entry.get("registrations") or {}).items()},
+        )
+
+
+importlib.import_module("concurrent.futures.thread")
 
 
 def _newest(records: Iterable[PictureRecord], exclude_tool: str | None) -> PictureRecord | None:
@@ -164,9 +177,14 @@ def artifacts(saved: Iterable[Saved], tool: str) -> tuple[list[dict[str, Any]], 
         label = ", ".join(picture.sections) + (f" ({picture.mode})" if picture.mode else "")
         for path, kind in picture.files():
             if path.exists():
-                listed.append({"path": str(path), "kind": kind, "index": picture.index,
-                               **({"label": label or tool} if kind in ("view", "tile")
-                                  else {})})
+                listed.append(
+                    {
+                        "path": str(path),
+                        "kind": kind,
+                        "index": picture.index,
+                        **({"label": label or tool} if kind in ("view", "tile") else {}),
+                    }
+                )
             elif kind == "view":
                 warnings.append(f"picture not saved: {path}")
     return listed, warnings
@@ -175,8 +193,9 @@ def artifacts(saved: Iterable[Saved], tool: str) -> tuple[list[dict[str, Any]], 
 def has_frame(note: PictureNote | None) -> bool:
     """Whether a picture's note carries a frame its layers are drawn from: a
     placement picture's canvas, or a deformable-fit picture's record."""
-    return note is not None and ((note.panel is not None and note.frame is not None)
-                                 or note.warp is not None)
+    return note is not None and (
+        (note.panel is not None and note.frame is not None) or note.warp is not None
+    )
 
 
 @contextlib.contextmanager
@@ -223,8 +242,11 @@ atexit.register(flush_all)
 
 
 def _items(
-    seq: int, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
-    step: int | None, recipes: list[dict[str, Any] | None] | None,
+    seq: int,
+    tool: str,
+    pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
+    step: int | None,
+    recipes: list[dict[str, Any] | None] | None,
     captions: list[str | None] | None,
 ) -> list[_Picture]:
     """The numbered pictures of one call, the first numbered *seq*. A recipe
@@ -239,8 +261,18 @@ def _items(
             recipe = recipes[index]
         if caption is None and captions is not None and index < len(captions):
             caption = captions[index]
-        items.append(_Picture(seq + index, view_name(seq + index, tool, mode), index, image,
-                              held, step, recipe, caption))
+        items.append(
+            _Picture(
+                seq + index,
+                view_name(seq + index, tool, mode),
+                index,
+                image,
+                held,
+                step,
+                recipe,
+                caption,
+            )
+        )
     return items
 
 
@@ -287,8 +319,9 @@ class Shown:
     numbers: list[int] = field(default_factory=list)
     captions: list[str | None] = field(default_factory=list)
 
-    def show(self, pictures: Iterable[Image.Image], *, arguments: Any = None,
-             call_id: str | None = None) -> None:
+    def show(
+        self, pictures: Iterable[Image.Image], *, arguments: Any = None, call_id: str | None = None
+    ) -> None:
         """Record the pictures the door sends (and the call they answer)."""
         self.pictures.extend(pictures)
         self.arguments = arguments
@@ -368,10 +401,17 @@ class ViewStore:
             lock.release()
 
     def save(
-        self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
-        arguments: Any = None, call_id: str | None = None, atlas: Any = None,
-        step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
-        captions: list[str | None] | None = None, tiles: bool = False,
+        self,
+        *,
+        tool: str,
+        pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
+        arguments: Any = None,
+        call_id: str | None = None,
+        atlas: Any = None,
+        step: int | None = None,
+        recipes: list[dict[str, Any] | None] | None = None,
+        captions: list[str | None] | None = None,
+        tiles: bool = False,
     ) -> list[str]:
         """Queue one call's pictures (in the order the model received them).
 
@@ -397,19 +437,24 @@ class ViewStore:
             seq += len(items)
             for capture in _CAPTURES.get():
                 capture.extend(
-                    Saved(self._folder(item.note, item.name), item.name,
-                          has_frame(item.note) and atlas is not None,
-                          sections=tuple(item.note.sections) if item.note else (),
-                          mode=item.note.mode if item.note else None, index=item.index,
-                          seq=item.seq, view_kind="tile" if tiles else "view")
-                    for item in items)
+                    Saved(
+                        self._folder(item.note, item.name),
+                        item.name,
+                        has_frame(item.note) and atlas is not None,
+                        sections=tuple(item.note.sections) if item.note else (),
+                        mode=item.note.mode if item.note else None,
+                        index=item.index,
+                        seq=item.seq,
+                        view_kind="tile" if tiles else "view",
+                    )
+                    for item in items
+                )
             self._seq, self._call = seq, call
             self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))
             if not self._running:
                 self._running = True
                 _STORES.add(self)
-                threading.Thread(target=self._work, name="langslice-views",
-                                 daemon=True).start()
+                threading.Thread(target=self._work, name="langslice-views", daemon=True).start()
         return [item.name for item in items]
 
     def _registrations(self, note: PictureNote | None) -> dict[str, int] | None:
@@ -465,7 +510,10 @@ class ViewStore:
 
     @contextlib.contextmanager
     def shown(
-        self, tool: str, *, atlas_of: Callable[[], Any] | None = None,
+        self,
+        tool: str,
+        *,
+        atlas_of: Callable[[], Any] | None = None,
     ) -> Iterator[Shown]:
         """Save the pictures a door shows from this block, with their layers.
 
@@ -486,9 +534,13 @@ class ViewStore:
         noted = [(picture, note_for(picture, notes)) for picture in call.pictures]
         placed = any(has_frame(held) for _p, held in noted)
         try:
-            call.names = self.save(tool=tool, pictures=list(noted), arguments=call.arguments,
-                                   call_id=call.call_id,
-                                   atlas=atlas_of() if placed and atlas_of is not None else None)
+            call.names = self.save(
+                tool=tool,
+                pictures=list(noted),
+                arguments=call.arguments,
+                call_id=call.call_id,
+                atlas=atlas_of() if placed and atlas_of is not None else None,
+            )
             call.numbers = [int(name.split("_", 1)[0]) for name in call.names]
             call.captions = [held.caption if held is not None else None for _p, held in noted]
         except Exception:
@@ -510,8 +562,7 @@ class ViewStore:
             try:
                 self._write_call(item)
             except Exception:
-                logger.warning("Could not save the pictures of a %s call", item.tool,
-                               exc_info=True)
+                logger.warning("Could not save the pictures of a %s call", item.tool, exc_info=True)
             finally:
                 self._queue.task_done()
 
@@ -539,8 +590,7 @@ class ViewStore:
         note = picture.note
         folder = self._folder(note, picture.name)
         folder.mkdir(parents=True, exist_ok=True)
-        data = (picture.image if isinstance(picture.image, bytes)
-                else encode_jpeg(picture.image))
+        data = picture.image if isinstance(picture.image, bytes) else encode_jpeg(picture.image)
         (folder / PICTURE_FILE).write_bytes(data)
         if isinstance(picture.image, bytes):
             from io import BytesIO
@@ -551,11 +601,17 @@ class ViewStore:
             size = list(picture.image.size)
         record: dict[str, Any] = {
             "format_version": VIEW_FORMAT_VERSION,
-            "seq": picture.seq, "name": picture.name, "tool": call.tool,
-            "call": call.call, "call_id": call.call_id,
-            "index": picture.index, "of": len(call.pictures),
+            "seq": picture.seq,
+            "name": picture.name,
+            "tool": call.tool,
+            "call": call.call,
+            "call_id": call.call_id,
+            "index": picture.index,
+            "of": len(call.pictures),
             "arguments": call.arguments,
-            "caption": picture.caption, "step": picture.step, "recipe": picture.recipe,
+            "caption": picture.caption,
+            "step": picture.step,
+            "recipe": picture.recipe,
             "registrations": picture.registrations,
             "sections": list(note.sections) if note is not None else [],
             "mode": note.mode if note is not None else None,
@@ -573,17 +629,29 @@ class ViewStore:
                 labels, borders, frame = picture_layers(call.atlas, note)
             tifffile.imwrite(folder / LABELS_FILE, labels, compression="zlib")
             Image.fromarray(np.ascontiguousarray(borders)).save(
-                folder / BORDERS_FILE, format="PNG", optimize=True)
+                folder / BORDERS_FILE, format="PNG", optimize=True
+            )
             record["layers"] = {"labels": LABELS_FILE, "borders": BORDERS_FILE}
             record["frame"] = frame
         text = json.dumps(record, indent=1, default=str) + "\n"
         (folder / VIEW_FILE).write_text(text, encoding="utf-8", newline="\n")
-        entry = {"seq": picture.seq, "name": picture.name,
-                 "path": self.layout.relative(folder), "tool": call.tool, "call": call.call,
-                 "sections": record["sections"], "mode": record["mode"],
-                 "layers": bool(record["layers"])}
-        entry.update({key: record[key] for key in ("caption", "step", "recipe", "registrations")
-                      if record[key] is not None})
+        entry = {
+            "seq": picture.seq,
+            "name": picture.name,
+            "path": self.layout.relative(folder),
+            "tool": call.tool,
+            "call": call.call,
+            "sections": record["sections"],
+            "mode": record["mode"],
+            "layers": bool(record["layers"]),
+        }
+        entry.update(
+            {
+                key: record[key]
+                for key in ("caption", "step", "recipe", "registrations")
+                if record[key] is not None
+            }
+        )
         return json.dumps(entry) + "\n"
 
 
@@ -603,10 +671,17 @@ class DiscardedViews(ViewStore):
         self._memory: list[PictureRecord] = []
 
     def save(
-        self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
-        arguments: Any = None, call_id: str | None = None, atlas: Any = None,
-        step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
-        captions: list[str | None] | None = None, tiles: bool = False,
+        self,
+        *,
+        tool: str,
+        pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
+        arguments: Any = None,
+        call_id: str | None = None,
+        atlas: Any = None,
+        step: int | None = None,
+        recipes: list[dict[str, Any] | None] | None = None,
+        captions: list[str | None] | None = None,
+        tiles: bool = False,
     ) -> list[str]:
         del tiles
         if not pictures:
@@ -619,11 +694,21 @@ class DiscardedViews(ViewStore):
             items = _items(first, tool, pictures, step, recipes, captions)
             for item in items:
                 held = item.note
-                self._memory.append(PictureRecord(
-                    seq=item.seq, name=item.name, tool=tool, call=call, path="",
-                    sections=tuple(held.sections) if held else (),
-                    mode=held.mode if held else None, caption=item.caption,
-                    step=item.step, recipe=item.recipe, image=item.image))
+                self._memory.append(
+                    PictureRecord(
+                        seq=item.seq,
+                        name=item.name,
+                        tool=tool,
+                        call=call,
+                        path="",
+                        sections=tuple(held.sections) if held else (),
+                        mode=held.mode if held else None,
+                        caption=item.caption,
+                        step=item.step,
+                        recipe=item.recipe,
+                        image=item.image,
+                    )
+                )
             for at in range(max(0, len(self._memory) - self.KEPT_PICTURES)):
                 old = self._memory[at]
                 if old.image is not None:

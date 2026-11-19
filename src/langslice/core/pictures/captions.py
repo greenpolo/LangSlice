@@ -104,8 +104,7 @@ def wrap_caption(text: str, font: Any, width: int) -> str:
             else:
                 line = candidate.lstrip() or None
             while line is not None and not fits(line):
-                cut = max(1, max((k for k in range(1, len(line) + 1) if fits(line[:k])),
-                                 default=1))
+                cut = max(1, max((k for k in range(1, len(line) + 1) if fits(line[:k])), default=1))
                 out.append(line[:cut])
                 line = line[cut:] or None
         if line is not None and line.strip():
@@ -135,7 +134,4 @@ def _draw_scale_bar(canvas: np.ndarray, um_per_px: float, dark: bool) -> None:
     thickness = max(1, round(min(height, width) / 400))
     x0, y0 = 12, height - 14
     cv2.rectangle(canvas, (x0, y0), (x0 + length, y0 + thickness), color, -1)
-    cv2.putText(
-        canvas, "1 mm", (x0, y0 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA
-    )
-
+    cv2.putText(canvas, "1 mm", (x0, y0 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)

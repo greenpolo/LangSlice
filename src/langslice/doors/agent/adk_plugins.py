@@ -120,7 +120,11 @@ class StrictArgumentsPlugin(BasePlugin):
         super().__init__(name)
 
     async def before_tool_callback(
-        self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any,
+        self,
+        *,
+        tool: Any,
+        tool_args: dict[str, Any],
+        tool_context: Any,
     ) -> dict[str, Any] | None:
         del tool_context
         func = getattr(tool, "func", None)
@@ -130,7 +134,7 @@ class StrictArgumentsPlugin(BasePlugin):
 
         arguments = dict(tool_args or {})
         try:
-            refusal = argument_refusal(func, arguments)  # pyright: ignore[reportAny]
+            refusal = argument_refusal(func, arguments)
         except (TypeError, ValueError):
             return None
         return None if refusal is None else refusal.payload()
@@ -210,6 +214,7 @@ class RequestCapturePlugin(BasePlugin):
         self.run_label = run_label
         self._counter = 0
         import uuid as _uuid
+
         self._instance = _uuid.uuid4().hex[:8]
 
     async def before_model_callback(
@@ -231,6 +236,5 @@ class RequestCapturePlugin(BasePlugin):
             ],
         }
         path = self.capture_dir / f"{self.run_label}_{self._instance}_{self._counter:03d}.json"
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8",
-            newline="\n")
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8", newline="\n")
         return None

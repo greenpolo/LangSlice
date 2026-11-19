@@ -100,8 +100,7 @@ def _close_open() -> None:
         try:
             opened.close()
         except Exception:
-            logger.warning("Could not close the job %s at exit", opened.job.folder,
-                           exc_info=True)
+            logger.warning("Could not close the job %s at exit", opened.job.folder, exc_info=True)
     _OPEN.clear()
 
 
@@ -145,10 +144,12 @@ class JobHandle:
 
         if name in verbs_for(self._opened.spec):
             spec = self._opened.spec
-            raise AttributeError(f"This job's settings have no {name!r} (tasks "
-                                 f"{spec.tasks}"
-                                 + (f", disabled {spec.disabled}" if spec.disabled else "")
-                                 + "); see .verbs")
+            raise AttributeError(
+                f"This job's settings have no {name!r} (tasks "
+                f"{spec.tasks}"
+                + (f", disabled {spec.disabled}" if spec.disabled else "")
+                + "); see .verbs"
+            )
         raise AttributeError(name)
 
     def __dir__(self) -> list[str]:
@@ -220,8 +221,9 @@ class JobHandle:
         (:class:`langslice.core.refusal.Refused`, a ``ValueError``)."""
         from langslice.tools.bookkeeping.exports import section_maps
 
-        return section_maps(self._opened.job, self._opened.ctx, section,
-                            full_resolution=full_resolution)
+        return section_maps(
+            self._opened.job, self._opened.ctx, section, full_resolution=full_resolution
+        )
 
     def export_stack(self) -> list[str]:
         """Write what ``submit`` writes after its step, without submitting: the
@@ -233,7 +235,10 @@ class JobHandle:
         return [path for path, _kind in export_stack(self._opened.job, self._opened.ctx).files]
 
     def export_dmc_brainmap(
-        self, *, channel: str = "dapi", section_image: str = "preprocessed",
+        self,
+        *,
+        channel: str = "dapi",
+        section_image: str = "preprocessed",
     ) -> DmcExported:
         """Write the job as a DMC-BrainMap animal folder.
 
@@ -258,13 +263,13 @@ class JobHandle:
             written without their deformation.
         """
         return export_dmc_brainmap(
-            self._opened.job, self._opened.ctx,
-            channel=channel, section_image=section_image,
+            self._opened.job,
+            self._opened.ctx,
+            channel=channel,
+            section_image=section_image,
         )
 
-    def export_abba(
-        self, *, warps: bool = True, landmarks: int = 1089
-    ) -> AbbaExported:
+    def export_abba(self, *, warps: bool = True, landmarks: int = 1089) -> AbbaExported:
         """Write the job as an ABBA project file.
 
         The file is ``exports/<image folder>.abba``, which ABBA 0.25 opens
@@ -289,7 +294,9 @@ class JobHandle:
             distance from the deformation.
         """
         return export_abba(
-            self._opened.job, self._opened.ctx, warps=warps,
+            self._opened.job,
+            self._opened.ctx,
+            warps=warps,
             landmarks=landmarks,
         )
 
@@ -309,8 +316,7 @@ class JobHandle:
         job.views.flush()
         before = {work.id for work in job.background.all() if work.delivered}
         reply = with_notices(job, {"status": "ok"})
-        done = [work for work in job.background.all()
-                if work.delivered and work.id not in before]
+        done = [work for work in job.background.all() if work.delivered and work.id not in before]
         reply.setdefault("background", [])
         reply["work"] = [work.summary() for work in done]
         reply["running"] = [work.id for work in job.background.running()]
@@ -349,8 +355,12 @@ def profile_record(model: ImageModel) -> dict[str, Any]:
     """What ``job.json`` records of the image model a job was made with."""
     import hashlib
 
-    record: dict[str, Any] = {"provider": model.provider, "model": model.model,
-                              "profile": model.profile, "tested": bool(model.tested)}
+    record: dict[str, Any] = {
+        "provider": model.provider,
+        "model": model.model,
+        "profile": model.profile,
+        "tested": bool(model.tested),
+    }
     if model.prompt is not None:
         record["prompt_sha256"] = hashlib.sha256(model.prompt.encode("utf-8")).hexdigest()
     if model.photograph_first is not None:
@@ -360,12 +370,15 @@ def profile_record(model: ImageModel) -> dict[str, Any]:
 
 def _check_model_fits(spec: JobSpec, model: ImageModel | None) -> None:
     if model is not None and not spec.nonlinear.uses_image_model:
-        raise ValueError("This job runs without an image model (nonlinear provider 'none'); "
-                         "create it with image_model= to trace borders")
+        raise ValueError(
+            "This job runs without an image model (nonlinear provider 'none'); "
+            "create it with image_model= to trace borders"
+        )
 
 
 def open_job(
-    folder: str | os.PathLike[str], *,
+    folder: str | os.PathLike[str],
+    *,
     image_model: Any = None,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
@@ -389,8 +402,10 @@ def open_job(
         held = (read_job_file(opened.job.layout) or {}).get(IMAGE_MODEL_KEY) or {}
         if model is None and held and not held.get("tested", True):
             opened.traces_off = True
-            opened.ctx.progress(f"[job] made with the untested image-model profile "
-                                f"{held.get('profile')!r}: pass image_model= to trace borders")
+            opened.ctx.progress(
+                f"[job] made with the untested image-model profile "
+                f"{held.get('profile')!r}: pass image_model= to trace borders"
+            )
         return JobHandle(opened)
     except BaseException:
         opened.close()
@@ -407,12 +422,17 @@ def _transform(name: str, value: Any) -> dict[str, Any]:
     try:
         params = [float(item) for item in value]
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"transforms[{name!r}] must be six numbers [a, b, tx, c, d, ty] "
-                         "or a transform dictionary") from exc
+        raise ValueError(
+            f"transforms[{name!r}] must be six numbers [a, b, tx, c, d, ty] "
+            "or a transform dictionary"
+        ) from exc
     if len(params) != 6 or not all(math.isfinite(item) for item in params):
         raise ValueError(f"transforms[{name!r}] must be six finite numbers [a, b, tx, c, d, ty]")
-    return {"kind": "interactive", "params": params,
-            "mirrored": params[0] * params[4] - params[1] * params[3] < 0}
+    return {
+        "kind": "interactive",
+        "params": params,
+        "mirrored": params[0] * params[4] - params[1] * params[3] < 0,
+    }
 
 
 def _angles(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -510,8 +530,7 @@ def create_job(
 
     if "fresh" in settings:
         if resume is not None:
-            raise TypeError("create_job takes resume= or its old spelling "
-                            "fresh=, not both")
+            raise TypeError("create_job takes resume= or its old spelling fresh=, not both")
         resume = not settings.pop("fresh")
     resume = True if resume is None else resume
     load_credentials()
@@ -521,18 +540,29 @@ def create_job(
 
         refs = as_refs(plugins)
         if isinstance(images, JobSpec):
-            raise ValueError("create_job takes a JobSpec as it is: set plugins on the spec "
-                             "instead")
+            raise ValueError("create_job takes a JobSpec as it is: set plugins on the spec instead")
         settings["plugins"] = [*list(settings.get("plugins") or ()), *refs]
     if isinstance(images, JobSpec):
-        given = {name: value for name, value in {
-            "positions": positions, "transforms": transforms, "angles": angles,
-            "orientation": orientation, "pixel_size_um": pixel_size_um, "inputs": inputs,
-            "tasks": tasks, "job_dir": job_dir,
-            "registration": registration}.items() if value is not None}
+        given = {
+            name: value
+            for name, value in {
+                "positions": positions,
+                "transforms": transforms,
+                "angles": angles,
+                "orientation": orientation,
+                "pixel_size_um": pixel_size_um,
+                "inputs": inputs,
+                "tasks": tasks,
+                "job_dir": job_dir,
+                "registration": registration,
+            }.items()
+            if value is not None
+        }
         if given or settings or not resume:
-            raise ValueError("create_job takes a JobSpec as it is: set "
-                             f"{sorted({*given, *settings})} on the spec instead")
+            raise ValueError(
+                "create_job takes a JobSpec as it is: set "
+                f"{sorted({*given, *settings})} on the spec instead"
+            )
         spec = images
     else:
         folder = Path(os.path.abspath(os.path.expanduser(os.fspath(images))))
@@ -540,42 +570,55 @@ def create_job(
         if positions:
             supplied["positions"] = {str(name): float(mm) for name, mm in positions.items()}
         if transforms:
-            supplied["transforms"] = {str(name): _transform(str(name), value)
-                                      for name, value in transforms.items()}
+            supplied["transforms"] = {
+                str(name): _transform(str(name), value) for name, value in transforms.items()
+            }
         if angles:
             supplied["angles"] = _angles(angles)
         if orientation:
-            supplied["orientation"] = {str(name): dict(value)
-                                       for name, value in orientation.items()}
+            supplied["orientation"] = {
+                str(name): dict(value) for name, value in orientation.items()
+            }
         if pixel_size_um is not None:
-            supplied["pixel_size_um"] = (dict(pixel_size_um) if isinstance(pixel_size_um, Mapping)
-                                         else pixel_size_um)
+            supplied["pixel_size_um"] = (
+                dict(pixel_size_um) if isinstance(pixel_size_um, Mapping) else pixel_size_um
+            )
         if registration is not None:
             clashes = sorted(key for key in REGISTRATION_EXCLUDES if supplied.get(key))
             if clashes:
-                raise ValueError(f"registration= supplies every section's placement; "
-                                 f"it cannot be combined with {clashes}")
+                raise ValueError(
+                    f"registration= supplies every section's placement; "
+                    f"it cannot be combined with {clashes}"
+                )
         nonlinear = dict(settings.pop("nonlinear", None) or {})
         if model is not None:
             nonlinear.update(provider=model.provider, image_model=model.model)
         else:
             nonlinear.setdefault("provider", "none")
-        spec = JobSpec.from_dict({
-            "atlas": atlas, "plane": plane, "debrief": False, **settings,
-            "image_folder": str(folder),
-            "tasks": list(tasks) if tasks is not None else ["nonlinear"]
-            if registration is not None else default_tasks(
-                folder, supplied.get("transforms") or {}),
-            "nonlinear": nonlinear, "inputs": supplied,
-            "job_dir": None if job_dir is None else os.path.abspath(
-                os.path.expanduser(os.fspath(job_dir))),
-            "resume": resume,
-        })
+        spec = JobSpec.from_dict(
+            {
+                "atlas": atlas,
+                "plane": plane,
+                "debrief": False,
+                **settings,
+                "image_folder": str(folder),
+                "tasks": list(tasks)
+                if tasks is not None
+                else ["nonlinear"]
+                if registration is not None
+                else default_tasks(folder, supplied.get("transforms") or {}),
+                "nonlinear": nonlinear,
+                "inputs": supplied,
+                "job_dir": None
+                if job_dir is None
+                else os.path.abspath(os.path.expanduser(os.fspath(job_dir))),
+                "resume": resume,
+            }
+        )
     _check_model_fits(spec, model)
     imported: dict[str, Any] | None = None
     if registration is not None:
-        spec, imported = with_registration(spec, registration, atlas_loader=atlas_loader,
-                                           emit=emit)
+        spec, imported = with_registration(spec, registration, atlas_loader=atlas_loader, emit=emit)
     opened = create(spec, atlas_loader=atlas_loader, emit=emit, image_model=model)
     try:
         if model is not None:

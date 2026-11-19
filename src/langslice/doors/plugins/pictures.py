@@ -40,8 +40,13 @@ def _no_registration(image: Image.Image) -> None:
 class ContextPictures(ContextProposals):
     """Draw a section's pictures, with a proposal or as they stand."""
 
-    def overlay_picture(self, section: object, *, proposal: Mapping[str, Any] | None = None,
-                        resolution: int | None = None) -> Image.Image:
+    def overlay_picture(
+        self,
+        section: object,
+        *,
+        proposal: Mapping[str, Any] | None = None,
+        resolution: int | None = None,
+    ) -> Image.Image:
         """The overlay ``look`` draws of the section (borders on the section,
         captioned), as it stands, or with a *proposal* not yet written:
         ``{"transform": record or params, "position_mm": mm, "angles":
@@ -57,15 +62,18 @@ class ContextPictures(ContextProposals):
         store = self._run.job.deformations
         if proposal and proposal.get("deformation") is not None:
             if set(proposal) - {"deformation"}:
-                raise ToolError(RefusalCode.BAD_ARGS,
-                                "a deformation proposal is drawn on the "
-                                "section's current placement: give it alone")
+                raise ToolError(
+                    RefusalCode.BAD_ARGS,
+                    "a deformation proposal is drawn on the "
+                    "section's current placement: give it alone",
+                )
             warped = proposal["deformation"]
             if not isinstance(warped, DeformationProposal):
                 warped = self.deformation_from_map(record.id, warped)
             elif warped.id != record.id:
-                raise ToolError(RefusalCode.BAD_ARGS,
-                                f"the proposal is {warped.id}'s, not {record.id}'s")
+                raise ToolError(
+                    RefusalCode.BAD_ARGS, f"the proposal is {warped.id}'s, not {record.id}'s"
+                )
             store = self._proposal_store(warped)
             state = copy.deepcopy(state)
             held = state.by_id(record.id)
@@ -98,18 +106,21 @@ class ContextPictures(ContextProposals):
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="overlay", sections=(record.id,), long_edge=edge)
         try:
-            drawn = looks.look(self._run.workspace, state, request,
-                               store=store)
+            drawn = looks.look(self._run.workspace, state, request, store=store)
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         if proposal:
             _no_registration(drawn[0].image)
         return drawn[0].image
 
-    def positioning_picture(self, ids: Sequence[object], *,
-                            proposal: Mapping[object, Mapping[str, Any]] | None = None,
-                            resolution: int | None = None, part: int | None = None,
-                            ) -> list[Image.Image]:
+    def positioning_picture(
+        self,
+        ids: Sequence[object],
+        *,
+        proposal: Mapping[object, Mapping[str, Any]] | None = None,
+        resolution: int | None = None,
+        part: int | None = None,
+    ) -> list[Image.Image]:
         """The positioning picture ``position_sections`` shows (``look`` mode
         ``positioning``: the sections in order beside the atlas planes at
         their positions, captioned), as it stands, or with a *proposal* not
@@ -126,9 +137,9 @@ class ContextPictures(ContextProposals):
         from langslice.tools.changing.positions import distinct_positions
 
         if self._run.spec.off("look:positioning"):
-            raise ToolError(RefusalCode.POSITIONING_OFF,
-                            "the positioning picture is switched off for "
-                            "this job")
+            raise ToolError(
+                RefusalCode.POSITIONING_OFF, "the positioning picture is switched off for this job"
+            )
         names = [self._record(ref).id for ref in ids]
         state = self._run.state
         if proposal:
@@ -138,9 +149,11 @@ class ContextPictures(ContextProposals):
                 assert held is not None
                 unknown = set(change) - {"position_mm", "angles"}
                 if unknown:
-                    raise ToolError(RefusalCode.BAD_ARGS,
-                                    "a positioning proposal gives position_mm and/or "
-                                    f"angles per section; got {sorted(unknown)}")
+                    raise ToolError(
+                        RefusalCode.BAD_ARGS,
+                        "a positioning proposal gives position_mm and/or "
+                        f"angles per section; got {sorted(unknown)}",
+                    )
                 if change.get("position_mm") is not None:
                     held.position_mm = float(change["position_mm"])
                 if change.get("angles") is not None:
@@ -150,20 +163,27 @@ class ContextPictures(ContextProposals):
         records = [state.by_id(name) for name in names]
         positions = distinct_positions([r.position_mm for r in records if r is not None])
         edge = int(resolution) if resolution else None
-        request = looks.LookRequest(mode="positioning", sections=tuple(names),
-                                    positions_mm=tuple(positions), long_edge=edge,
-                                    part=part)
+        request = looks.LookRequest(
+            mode="positioning",
+            sections=tuple(names),
+            positions_mm=tuple(positions),
+            long_edge=edge,
+            part=part,
+        )
         try:
-            drawn = looks.look(self._run.workspace, state, request,
-                               store=self._run.job.deformations)
+            drawn = looks.look(
+                self._run.workspace, state, request, store=self._run.job.deformations
+            )
         except Refused as refusal:
             raise as_tool_error(refusal) from refusal
         images = [picture.image for picture in drawn]
         if proposal:
             for image in images:
                 _no_registration(image)
-            images = [self.caption(image, "proposal: positions and angles drawn as proposed, "
-                                   "NOT written") for image in images]
+            images = [
+                self.caption(image, "proposal: positions and angles drawn as proposed, NOT written")
+                for image in images
+            ]
         return images
 
     def _proposal_store(self, proposal: DeformationProposal) -> Any:
@@ -177,8 +197,7 @@ class ContextPictures(ContextProposals):
         return store
 
     @staticmethod
-    def caption(image: Image.Image, text: str, *,
-                sections: Sequence[object] = ()) -> Image.Image:
+    def caption(image: Image.Image, text: str, *, sections: Sequence[object] = ()) -> Image.Image:
         """*image* with *text* in a caption band below it (pictures reach a
         model as bare attachments: what they show is said in the picture, and in the
         caption its entry in the reply's ``pictures`` carries). The captioned
@@ -192,7 +211,8 @@ class ContextPictures(ContextProposals):
 
         drawn = note_of(image)
         shown = tuple(str(name) for name in sections) or (
-            tuple(drawn.sections) if drawn is not None else ())
+            tuple(drawn.sections) if drawn is not None else ()
+        )
         fields: dict[str, Any] = {"caption": text}
         if shown:
             fields["sections"] = shown

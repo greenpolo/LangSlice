@@ -48,17 +48,15 @@ def command(layout: JobLayout, positional: list[str]) -> Envelope:
     """``env``, ``env install PACKAGE ...`` or ``env remove`` on the job in *layout*."""
     action, packages = (positional[0], positional[1:]) if positional else ("", [])
     removing = action == "remove" and not packages
-    if not removing and (action not in ("", "install")
-                         or (action == "install" and not packages)):
+    if not removing and (action not in ("", "install") or (action == "install" and not packages)):
         return Envelope.failure(
-            RefusalCode.BAD_ARGS,
-            "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`.")
+            RefusalCode.BAD_ARGS, "env takes nothing, `install PACKAGE [PACKAGE ...]` or `remove`."
+        )
     try:
         if removing:
             removed = remove(layout)
             requirements = str(layout.folder / REQUIREMENTS)
-            return Envelope(result={"removed": removed,
-                                    "requirements": requirements})
+            return Envelope(result={"removed": removed, "requirements": requirements})
         built = ensure(layout)
         if packages:
             install(layout, packages)
@@ -100,13 +98,17 @@ def _make(layout: JobLayout) -> bool:
     if python_of(folder).exists():
         return False
     uv = shutil.which("uv")
-    command = ([uv, "venv", "--quiet", "--python", sys.executable, str(folder)] if uv
-               else [sys.executable, "-m", "venv", str(folder)])
-    subprocess.run(command, check=True, capture_output=True,
-                   stdin=subprocess.DEVNULL)
+    command = (
+        [uv, "venv", "--quiet", "--python", sys.executable, str(folder)]
+        if uv
+        else [sys.executable, "-m", "venv", str(folder)]
+    )
+    subprocess.run(command, check=True, capture_output=True, stdin=subprocess.DEVNULL)
     (_site_packages(folder) / PARENT_PTH).write_text(
         "".join(f"import site; site.addsitedir({str(path)!r})\n" for path in _parent_sites()),
-        encoding="utf-8", newline="\n")
+        encoding="utf-8",
+        newline="\n",
+    )
     requirements = layout.folder / REQUIREMENTS
     if requirements.is_file() and requirements.read_text(encoding="utf-8").strip():
         _pip(folder, ["-r", str(requirements)])
@@ -154,8 +156,11 @@ def write_requirements(layout: JobLayout) -> None:
         return
     path = layout.folder / REQUIREMENTS
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(f"{name}=={version}\n" for name, version in packages),
-                    encoding="utf-8", newline="\n")
+    path.write_text(
+        "".join(f"{name}=={version}\n" for name, version in packages),
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def describe(layout: JobLayout) -> dict[str, Any]:
@@ -197,14 +202,23 @@ def install_command(layout: JobLayout) -> str:
 def _pip(folder: Path, arguments: list[str]) -> None:
     python = python_of(folder)
     uv = shutil.which("uv")
-    command = ([uv, "pip", "install", "--quiet", "--python", str(python), *arguments] if uv
-               else [str(python), "-m", "pip", "install", "--quiet", *arguments])
-    done = subprocess.run(command, capture_output=True, encoding="utf-8",
-                          errors="replace", timeout=INSTALL_TIMEOUT_S,
-                          stdin=subprocess.DEVNULL)
+    command = (
+        [uv, "pip", "install", "--quiet", "--python", str(python), *arguments]
+        if uv
+        else [str(python), "-m", "pip", "install", "--quiet", *arguments]
+    )
+    done = subprocess.run(
+        command,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=INSTALL_TIMEOUT_S,
+        stdin=subprocess.DEVNULL,
+    )
     if done.returncode != 0:
         raise subprocess.SubprocessError(
-            (done.stderr or done.stdout).strip()[-4000:] or "the install failed")
+            (done.stderr or done.stdout).strip()[-4000:] or "the install failed"
+        )
 
 
 def _site_packages(folder: Path) -> Path:
@@ -255,14 +269,18 @@ def python(folder: str, rest: list[str]) -> int:
     except NoJob as exc:
         return emit(Envelope.failure(RefusalCode.NO_JOB, str(exc)))
     if not rest or rest[0].startswith("-"):
-        return emit(Envelope.failure(
-            RefusalCode.BAD_ARGS, f"python takes a script and its arguments: {PYTHON_USAGE} "
-            "(no interpreter options).", verb="python"))
+        return emit(
+            Envelope.failure(
+                RefusalCode.BAD_ARGS,
+                f"python takes a script and its arguments: {PYTHON_USAGE} "
+                "(no interpreter options).",
+                verb="python",
+            )
+        )
     try:
         ensure(layout)
     except (OSError, subprocess.SubprocessError) as exc:
-        return emit(Envelope.failure(RefusalCode.ENV_FAILED,
-                                     str(exc), verb="python"))
+        return emit(Envelope.failure(RefusalCode.ENV_FAILED, str(exc), verb="python"))
     rest = [script_path(layout, rest[0]), *rest[1:]]
     log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest)})
     interpreter = python_of(env_dir(layout))

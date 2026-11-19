@@ -39,8 +39,13 @@ class Caller:
     @classmethod
     def of_tool(cls, tool: ToolSpec) -> Caller:
         """A plugin tool's call."""
-        return cls(name=tool.name, label=f"plugin:{tool.name}", kind=tool.kind,
-                   writes=tuple(tool.writes), version=tool.version)
+        return cls(
+            name=tool.name,
+            label=f"plugin:{tool.name}",
+            kind=tool.kind,
+            writes=tuple(tool.writes),
+            version=tool.version,
+        )
 
     @classmethod
     def script(cls) -> Caller:
@@ -48,9 +53,16 @@ class Caller:
         recorded as ``script``; no folder of its own (a script keeps its
         files in ``scripts/`` and ``scratch/``) and no background work (the
         script is the computation)."""
-        return cls(name=SCRIPT_CALLER, label=SCRIPT_CALLER, kind="write",
-                   writes=tuple(freeze.PROPERTIES), work_dir=False, in_tool_call=False,
-                   merge_calls=False, background=False)
+        return cls(
+            name=SCRIPT_CALLER,
+            label=SCRIPT_CALLER,
+            kind="write",
+            writes=tuple(freeze.PROPERTIES),
+            work_dir=False,
+            in_tool_call=False,
+            merge_calls=False,
+            background=False,
+        )
 
     @property
     def is_script(self) -> bool:
@@ -63,7 +75,20 @@ class Caller:
         if self.is_script:
             import sys
 
-            return {"script": {"call": call, "note": note, "meta": meta,
-                               "argv0": str(sys.argv[0]) if sys.argv else ""}}
-        return {"plugin": {"tool": self.name, "call": call, "version": self.version,
-                           "note": note, "meta": meta}}
+            return {
+                "script": {
+                    "call": call,
+                    "note": note,
+                    "meta": meta,
+                    "argv0": str(sys.argv[0]) if sys.argv else "",
+                }
+            }
+        return {
+            "plugin": {
+                "tool": self.name,
+                "call": call,
+                "version": self.version,
+                "note": note,
+                "meta": meta,
+            }
+        }

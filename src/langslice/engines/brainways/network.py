@@ -65,9 +65,7 @@ class Device(enum.StrEnum):
 REPOSITORY = "brainways/siamese"
 REVISION = "a0f3b1957b59b2ca2c02f7d094725c6dcb77783d"
 MODEL_ID = "5redxpw6"
-WEIGHTS_SHA256 = (
-    "a3835674e54dac85b4a89533405a8ad7a90ca6f862599423c58747871689f0fd"
-)
+WEIGHTS_SHA256 = "a3835674e54dac85b4a89533405a8ad7a90ca6f862599423c58747871689f0fd"
 DEFAULT_CACHE = Path("~/.cache/langslice/brainways")
 DOWNLOAD_TIMEOUT_S = 120
 AP_LIMITS = {"whs_sd_rat_39um": (122, 800)}
@@ -247,15 +245,11 @@ def fetch_weights(cache_folder: Path) -> Path:
         return path
 
     endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
-    url = (
-        f"{endpoint}/{REPOSITORY}/resolve/{REVISION}/{MODEL_ID}/state_dict.pt"
-    )
+    url = f"{endpoint}/{REPOSITORY}/resolve/{REVISION}/{MODEL_ID}/state_dict.pt"
     logger.info("Fetching Brainways' weights from %s", url)
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_suffix(".part")
-    opened = cast(
-        "IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S)
-    )
+    opened = cast("IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S))
     with opened as response, partial.open("wb") as out:
         shutil.copyfileobj(response, out, 1 << 20)
 
@@ -466,9 +460,7 @@ def embed(network: Network, image: npt.NDArray[np.float32]) -> torch.Tensor:
         return functional.adaptive_avg_pool2d(features, 1).flatten(1)
 
 
-def relative_position(
-    network: Network, section: torch.Tensor, plane: torch.Tensor
-) -> float:
+def relative_position(network: Network, section: torch.Tensor, plane: torch.Tensor) -> float:
     """Say whether a section lies before or after an atlas plane.
 
     Parameters
@@ -535,14 +527,10 @@ def _conv(
 
     kernel = weight.shape[-1]
     if stride == 1:
-        return functional.conv2d(
-            x, weight, bias, 1, (kernel - 1) // 2, 1, groups
-        )
+        return functional.conv2d(x, weight, bias, 1, (kernel - 1) // 2, 1, groups)
     pad_h = _same_padding(x.shape[-2], kernel, stride)
     pad_w = _same_padding(x.shape[-1], kernel, stride)
-    padded = functional.pad(
-        x, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2)
-    )
+    padded = functional.pad(x, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2))
     return functional.conv2d(padded, weight, bias, stride, 0, 1, groups)
 
 
@@ -557,12 +545,8 @@ def _bn(
 ) -> torch.Tensor:
     from torch.nn import functional
 
-    mean, var, scale, shift = (
-        weights[f"{prefix}.{part}"] for part in BN_PARTS
-    )
-    return functional.batch_norm(
-        x, mean, var, scale, shift, False, BN_MOMENTUM, BN_EPS
-    )
+    mean, var, scale, shift = (weights[f"{prefix}.{part}"] for part in BN_PARTS)
+    return functional.batch_norm(x, mean, var, scale, shift, False, BN_MOMENTUM, BN_EPS)
 
 
 def _bn_act(
@@ -643,9 +627,7 @@ def _inverted_block(
     return out
 
 
-def _squeeze_excite(
-    weights: dict[str, torch.Tensor], prefix: str, x: torch.Tensor
-) -> torch.Tensor:
+def _squeeze_excite(weights: dict[str, torch.Tensor], prefix: str, x: torch.Tensor) -> torch.Tensor:
     import torch
     from torch.nn import functional
 

@@ -83,7 +83,6 @@ SECTION_DOT_COLOR = (240, 240, 240)
 ATLAS_LINE_COLOR = (200, 185, 70)
 
 
-
 @dataclass(frozen=True)
 class SectionEntry:
     """One section as :func:`plan` takes it."""
@@ -107,7 +106,9 @@ def _even(count: int, parts: int) -> list[int]:
 
 
 def split(
-    positions: Sequence[float], atlas_mm: Sequence[float], per_picture: int = PER_PICTURE,
+    positions: Sequence[float],
+    atlas_mm: Sequence[float],
+    per_picture: int = PER_PICTURE,
 ) -> list[tuple[list[int], list[int]]]:
     """The pictures of a call: ``(section indices, atlas indices)`` each.
 
@@ -137,13 +138,14 @@ def split(
         s_sizes, a_sizes = _even(len(sections), pieces), _even(len(atlas), pieces)
         s0 = a0 = 0
         for s_size, a_size in zip(s_sizes, a_sizes, strict=True):
-            out.append((sections[s0:s0 + s_size], atlas[a0:a0 + a_size]))
+            out.append((sections[s0 : s0 + s_size], atlas[a0 : a0 + a_size]))
             s0, a0 = s0 + s_size, a0 + a_size
     return out
 
 
-def ruler_range(values: Sequence[float], bounds: tuple[float, float],
-                brain_scale: float = 1.0) -> tuple[float, float]:
+def ruler_range(
+    values: Sequence[float], bounds: tuple[float, float], brain_scale: float = 1.0
+) -> tuple[float, float]:
     """The ruler segment for the positions *values*: their span plus a
     margin (:data:`RULER_MARGIN_SHARE`, at least :data:`RULER_MIN_MARGIN_MM`),
     at least :data:`RULER_MIN_SPAN_MM` long (both times *brain_scale*), kept
@@ -164,7 +166,6 @@ def ruler_range(values: Sequence[float], bounds: tuple[float, float],
     if hi > ceiling:
         lo, hi = lo - (hi - ceiling), ceiling
     return max(lo, floor), min(hi, ceiling)
-
 
 
 @dataclass(frozen=True)
@@ -239,14 +240,14 @@ _LABEL_STEPS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
 def _steps(px_per_mm: float, small_px: int) -> tuple[float, float]:
     """``(label step, tick step)`` in mm: labels at least seven digits apart,
     ticks halfway between labels when there is room."""
-    label = next((step for step in _LABEL_STEPS if step * px_per_mm >= 7 * small_px),
-                 _LABEL_STEPS[-1])
+    label = next(
+        (step for step in _LABEL_STEPS if step * px_per_mm >= 7 * small_px), _LABEL_STEPS[-1]
+    )
     tick = label / 2.0 if label / 2.0 * px_per_mm >= 10 else label
     return label, tick
 
 
-def _spread(wanted: Sequence[float], widths: Sequence[float], lo: float, hi: float
-            ) -> list[float]:
+def _spread(wanted: Sequence[float], widths: Sequence[float], lo: float, hi: float) -> list[float]:
     """Centres as near *wanted* (ascending) as boxes of *widths*, *GAP*
     apart and inside ``[lo, hi]``, allow, order kept."""
     xs = [float(x) for x in wanted]
@@ -254,8 +255,11 @@ def _spread(wanted: Sequence[float], widths: Sequence[float], lo: float, hi: flo
         floor = lo + width / 2.0 if k == 0 else xs[k - 1] + (widths[k - 1] + width) / 2.0 + GAP
         xs[k] = max(xs[k], floor)
     for k in range(len(xs) - 1, -1, -1):
-        ceiling = (hi - widths[k] / 2.0 if k == len(xs) - 1
-                   else xs[k + 1] - (widths[k + 1] + widths[k]) / 2.0 - GAP)
+        ceiling = (
+            hi - widths[k] / 2.0
+            if k == len(xs) - 1
+            else xs[k + 1] - (widths[k + 1] + widths[k]) / 2.0 - GAP
+        )
         xs[k] = min(xs[k], ceiling)
     return xs
 
@@ -284,8 +288,7 @@ def plan(
     """
     ordered = position_order(sections)
     marks = sorted(atlas, key=lambda item: item[0])
-    pieces = split([entry.position_mm for entry in ordered], [mm for mm, _e in marks],
-                   per_picture)
+    pieces = split([entry.position_mm for entry in ordered], [mm for mm, _e in marks], per_picture)
     count = max([max(len(s), len(a), 1) for s, a in pieces] or [1])
     room = max_width - 2 * MARGIN - (count - 1) * GAP
     tile = int(max(1, min(int(tile_edge), room // count)))
@@ -294,19 +297,39 @@ def plan(
     inner = max(count * tile + (count - 1) * GAP, MIN_WIDTH - 2 * MARGIN)
     out: list[Layout] = []
     for part, (indices, atlas_indices) in enumerate(pieces):
-        out.append(_layout(
-            [ordered[k] for k in indices], [marks[k] for k in atlas_indices],
-            bounds=range_mm, tile=tile, inner=inner, um_per_px=um_per_px, part=part,
-            parts=len(pieces), first=indices[0] + 1 if indices else 0,
-            last=indices[-1] + 1 if indices else 0, total=len(ordered),
-            brain_scale=brain_scale))
+        out.append(
+            _layout(
+                [ordered[k] for k in indices],
+                [marks[k] for k in atlas_indices],
+                bounds=range_mm,
+                tile=tile,
+                inner=inner,
+                um_per_px=um_per_px,
+                part=part,
+                parts=len(pieces),
+                first=indices[0] + 1 if indices else 0,
+                last=indices[-1] + 1 if indices else 0,
+                total=len(ordered),
+                brain_scale=brain_scale,
+            )
+        )
     return out
 
 
 def _layout(
-    sections: Sequence[SectionEntry], atlas: Sequence[tuple[float, tuple[float, float]]], *,
-    bounds: tuple[float, float], tile: int, inner: int, um_per_px: float, part: int, parts: int,
-    first: int, last: int, total: int, brain_scale: float = 1.0,
+    sections: Sequence[SectionEntry],
+    atlas: Sequence[tuple[float, tuple[float, float]]],
+    *,
+    bounds: tuple[float, float],
+    tile: int,
+    inner: int,
+    um_per_px: float,
+    part: int,
+    parts: int,
+    first: int,
+    last: int,
+    total: int,
+    brain_scale: float = 1.0,
 ) -> Layout:
     """One picture: *sections* in position order, *atlas* sorted."""
     width = inner + 2 * MARGIN
@@ -333,16 +356,30 @@ def _layout(
     atlas_slots: list[Slot] = []
     if atlas:
         sizes = [(e[0] / um_per_px, e[1] / um_per_px) for _mm, e in atlas]
-        texts = [_first_fitting((f"atlas {mm:.2f} mm", f"{mm:.2f} mm", f"{mm:.1f}"),
-                                font_px, max(float(tile), w)) for (mm, _e), (w, _h)
-                 in zip(atlas, sizes, strict=True)]
-        boxes = [max(w, float(_font(font_px).getlength(t))) for (w, _h), t
-                 in zip(sizes, texts, strict=True)]
+        texts = [
+            _first_fitting(
+                (f"atlas {mm:.2f} mm", f"{mm:.2f} mm", f"{mm:.1f}"), font_px, max(float(tile), w)
+            )
+            for (mm, _e), (w, _h) in zip(atlas, sizes, strict=True)
+        ]
+        boxes = [
+            max(w, float(_font(font_px).getlength(t)))
+            for (w, _h), t in zip(sizes, texts, strict=True)
+        ]
         xs = _spread([x_at(mm) for mm, _e in atlas], boxes, x0, x1)
         bottom = y + label_h + max(h for _w, h in sizes)
         for (mm, _e), (w, h), x, text in zip(atlas, sizes, xs, texts, strict=True):
-            atlas_slots.append(Slot(key=f"{mm:g}", centre_x=x, top=bottom - h, width=w,
-                                    height=h, position_mm=float(mm), label=(text,)))
+            atlas_slots.append(
+                Slot(
+                    key=f"{mm:g}",
+                    centre_x=x,
+                    top=bottom - h,
+                    width=w,
+                    height=h,
+                    position_mm=float(mm),
+                    label=(text,),
+                )
+            )
         y = bottom + ATLAS_LINK_PX
     else:
         y += 6
@@ -355,21 +392,44 @@ def _layout(
     for entry, x in zip(sections, centres(len(sections)), strict=True):
         w, h = entry.extent_um[0] / um_per_px, entry.extent_um[1] / um_per_px
         where = (f"{entry.position_mm:.2f} mm", f"{entry.position_mm:.2f}")
-        label = (_first_fitting(entry.labels, font_px, room(len(sections))),
-                 _first_fitting(where, font_px, room(len(sections))))
-        section_slots.append(Slot(key=entry.id, centre_x=x, top=top, width=w, height=h,
-                                  position_mm=entry.position_mm, label=label))
+        label = (
+            _first_fitting(entry.labels, font_px, room(len(sections))),
+            _first_fitting(where, font_px, room(len(sections))),
+        )
+        section_slots.append(
+            Slot(
+                key=entry.id,
+                centre_x=x,
+                top=top,
+                width=w,
+                height=h,
+                position_mm=entry.position_mm,
+                label=label,
+            )
+        )
     tallest = max((slot.height for slot in section_slots), default=0.0)
     section_label_y = top + tallest + 4
     height = section_label_y + (2 * (font_px + 4) if section_slots else 0) + PAD
     return Layout(
-        width=int(width), height=int(math.ceil(height)), um_per_px=float(um_per_px),
-        tile=tile, font_px=font_px, small_px=small_px,
-        ruler=(x0, x1, float(ruler_y)), range_mm=(lo, hi),
-        atlas=tuple(atlas_slots), sections=tuple(section_slots),
-        label_step_mm=label_step, tick_step_mm=tick_step,
-        atlas_label_y=atlas_label_y, section_label_y=section_label_y,
-        part=part, parts=parts, first=first, last=last, total=total,
+        width=int(width),
+        height=int(math.ceil(height)),
+        um_per_px=float(um_per_px),
+        tile=tile,
+        font_px=font_px,
+        small_px=small_px,
+        ruler=(x0, x1, float(ruler_y)),
+        range_mm=(lo, hi),
+        atlas=tuple(atlas_slots),
+        sections=tuple(section_slots),
+        label_step_mm=label_step,
+        tick_step_mm=tick_step,
+        atlas_label_y=atlas_label_y,
+        section_label_y=section_label_y,
+        part=part,
+        parts=parts,
+        first=first,
+        last=last,
+        total=total,
     )
 
 
@@ -378,8 +438,12 @@ def visible(layout: Layout, window: Sequence[float] | None) -> tuple[list[Slot],
     picture; empty: all)."""
     if not window:
         return list(layout.sections), list(layout.atlas)
-    x0, y0, x1, y1 = (window[0] * layout.width, window[1] * layout.height,
-                      window[2] * layout.width, window[3] * layout.height)
+    x0, y0, x1, y1 = (
+        window[0] * layout.width,
+        window[1] * layout.height,
+        window[2] * layout.width,
+        window[3] * layout.height,
+    )
 
     def meets(slot: Slot) -> bool:
         a, b, c, d = slot.box
@@ -416,18 +480,19 @@ def paint(
     cx0, cy0, cx1, cy1 = zoom_box(list(window) if window else [], full)
     out = Image.new("RGB", (cx1 - cx0, cy1 - cy0), BACKGROUND)
 
-    def X(v: float) -> float:  # noqa: N802
+    def X(v: float) -> float:
         return v * s - cx0
 
-    def Y(v: float) -> float:  # noqa: N802
+    def Y(v: float) -> float:
         return v * s - cy0
 
     shown_sections, shown_atlas = visible(layout, window)
     um = layout.um_per_px / s
     for slot in shown_atlas:
         tile = draw_atlas(slot.position_mm, um).convert("RGB")
-        out.paste(tile, (round(X(slot.centre_x) - tile.width / 2.0),
-                         round(Y(slot.bottom) - tile.height)))
+        out.paste(
+            tile, (round(X(slot.centre_x) - tile.width / 2.0), round(Y(slot.bottom) - tile.height))
+        )
     for slot in shown_sections:
         tile = draw_section(slot.key, um).convert("RGB")
         out.paste(tile, (round(X(slot.centre_x) - tile.width / 2.0), round(Y(slot.top))))
@@ -436,8 +501,7 @@ def paint(
     thin = max(1, round(2 * s))
     x0, x1, ry = layout.ruler
     lo, hi = layout.range_mm
-    cv2.line(canvas, _pt(X(x0), Y(ry)), _pt(X(x1), Y(ry)), RULER_COLOR, thin, cv2.LINE_AA,
-             _SHIFT)
+    cv2.line(canvas, _pt(X(x0), Y(ry)), _pt(X(x1), Y(ry)), RULER_COLOR, thin, cv2.LINE_AA, _SHIFT)
     ticks: list[tuple[float, bool]] = []
     step = layout.tick_step_mm
     k = math.ceil(lo / step - 1e-9)
@@ -447,23 +511,57 @@ def paint(
         ticks.append((mm, major))
         length = (6 if major else 3) * s
         x = X(layout.x_at(mm))
-        cv2.line(canvas, _pt(x, Y(ry) - length), _pt(x, Y(ry) + length), RULER_COLOR, thin,
-                 cv2.LINE_AA, _SHIFT)
+        cv2.line(
+            canvas,
+            _pt(x, Y(ry) - length),
+            _pt(x, Y(ry) + length),
+            RULER_COLOR,
+            thin,
+            cv2.LINE_AA,
+            _SHIFT,
+        )
         k += 1
     for slot in layout.atlas:
         x = X(layout.x_at(slot.position_mm))
-        cv2.line(canvas, _pt(X(slot.centre_x), Y(slot.bottom) + 2 * s), _pt(x, Y(ry) - 5 * s),
-                 ATLAS_LINE_COLOR, thin, cv2.LINE_AA, _SHIFT)
+        cv2.line(
+            canvas,
+            _pt(X(slot.centre_x), Y(slot.bottom) + 2 * s),
+            _pt(x, Y(ry) - 5 * s),
+            ATLAS_LINE_COLOR,
+            thin,
+            cv2.LINE_AA,
+            _SHIFT,
+        )
         size = 4.5 * s
-        triangle = np.array([_pt(x - size, Y(ry) - 1.6 * size), _pt(x + size, Y(ry) - 1.6 * size),
-                             _pt(x, Y(ry) - 1)], dtype=np.int32)
+        triangle = np.array(
+            [
+                _pt(x - size, Y(ry) - 1.6 * size),
+                _pt(x + size, Y(ry) - 1.6 * size),
+                _pt(x, Y(ry) - 1),
+            ],
+            dtype=np.int32,
+        )
         cv2.fillPoly(canvas, [triangle], ATLAS_LINE_COLOR, cv2.LINE_AA, _SHIFT)
     for slot in layout.sections:
         x = X(layout.x_at(slot.position_mm))
-        cv2.line(canvas, _pt(X(slot.centre_x), Y(slot.top) - 3 * s), _pt(x, Y(ry)),
-                 SECTION_LINE_COLOR, thin, cv2.LINE_AA, _SHIFT)
-        cv2.circle(canvas, _pt(x, Y(ry)), round(3.0 * s * (1 << _SHIFT)), SECTION_DOT_COLOR,
-                   -1, cv2.LINE_AA, _SHIFT)
+        cv2.line(
+            canvas,
+            _pt(X(slot.centre_x), Y(slot.top) - 3 * s),
+            _pt(x, Y(ry)),
+            SECTION_LINE_COLOR,
+            thin,
+            cv2.LINE_AA,
+            _SHIFT,
+        )
+        cv2.circle(
+            canvas,
+            _pt(x, Y(ry)),
+            round(3.0 * s * (1 << _SHIFT)),
+            SECTION_DOT_COLOR,
+            -1,
+            cv2.LINE_AA,
+            _SHIFT,
+        )
     out = Image.fromarray(canvas, mode="RGB")
 
     draw = ImageDraw.Draw(out)
@@ -473,25 +571,38 @@ def paint(
     for mm in majors:
         number = f"{mm:g}"
         text = number + (" mm" if mm == majors[-1] else "")
-        left = min(X(layout.x_at(mm)) - float(small.getlength(number)) / 2.0,
-                   X(layout.width - 6) - float(small.getlength(text)))
-        draw.text((left, Y(ry) + 8 * s), text, fill=TICK_TEXT_COLOR, font=small,
-                  stroke_width=max(1, round(2 * s)), stroke_fill=BACKGROUND)
+        left = min(
+            X(layout.x_at(mm)) - float(small.getlength(number)) / 2.0,
+            X(layout.width - 6) - float(small.getlength(text)),
+        )
+        draw.text(
+            (left, Y(ry) + 8 * s),
+            text,
+            fill=TICK_TEXT_COLOR,
+            font=small,
+            stroke_width=max(1, round(2 * s)),
+            stroke_fill=BACKGROUND,
+        )
     for slot in layout.atlas:
-        _centred(draw, slot.label[0], X(slot.centre_x), Y(layout.atlas_label_y), font,
-                 TEXT_COLOR)
+        _centred(draw, slot.label[0], X(slot.centre_x), Y(layout.atlas_label_y), font, TEXT_COLOR)
     line_h = (layout.font_px + 4) * s
     for slot in layout.sections:
         for row, text in enumerate(slot.label):
-            _centred(draw, text, X(slot.centre_x), Y(layout.section_label_y) + row * line_h,
-                     font, TEXT_COLOR)
+            _centred(
+                draw,
+                text,
+                X(slot.centre_x),
+                Y(layout.section_label_y) + row * line_h,
+                font,
+                TEXT_COLOR,
+            )
     return out
 
 
-def _centred(draw: ImageDraw.ImageDraw, text: str, x: float, y: float, font: Any,
-             color: tuple[int, int, int]) -> None:
+def _centred(
+    draw: ImageDraw.ImageDraw, text: str, x: float, y: float, font: Any, color: tuple[int, int, int]
+) -> None:
     draw.text((x - float(font.getlength(text)) / 2.0, y), text, fill=color, font=font)
-
 
 
 @dataclass(frozen=True)
@@ -510,7 +621,9 @@ class Positioned:
 
 
 def section_extent(
-    ws: Workspace, state: Stack, record: Section,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
 ) -> tuple[tuple[float, float], float, float]:
     """``((width, height) um, working um/px, finest um/px)`` of *record*'s
     whole picture as its placement draws it
@@ -518,12 +631,18 @@ def section_extent(
     working_um = section_um_per_px(ws, state, record)
     whole = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     per_px = framed_um_per_px(ws, record, working_um, long_edge=PREVIEW_LONG_EDGE)
-    return ((whole.width * per_px, whole.height * per_px), working_um,
-            finest_um_per_px(ws, record, working_um))
+    return (
+        (whole.width * per_px, whole.height * per_px),
+        working_um,
+        finest_um_per_px(ws, record, working_um),
+    )
 
 
 def atlas_extent(
-    ws: Workspace, state: Stack, position_mm: float, angles: Angles,
+    ws: Workspace,
+    state: Stack,
+    position_mm: float,
+    angles: Angles,
 ) -> tuple[float, float]:
     """``(width, height)`` micrometres of the anatomy-framed atlas plane."""
     picture = atlas_section(ws, state, position_mm, frame=True, angles=angles)
@@ -578,14 +697,22 @@ def positioning_pictures(
     for record in ordered:
         extent, working[record.id], finest[record.id] = section_extent(ws, state, record)
         entries[record.id] = SectionEntry(
-            id=record.id, labels=label_candidates(record),
+            id=record.id,
+            labels=label_candidates(record),
             position_mm=record.position_mm,
-            extent_um=extent)
+            extent_um=extent,
+        )
     atlas = [(float(mm), atlas_extent(ws, state, float(mm), angles)) for mm in positions_mm]
-    layouts = plan(list(entries.values()), atlas, range_mm=ws.position_range,
-                   tile_edge=tile_edge, max_width=max_width,
-                   finest_um=max(finest.values(), default=0.0),
-                   per_picture=per_picture or PER_PICTURE, brain_scale=ws.brain_scale)
+    layouts = plan(
+        list(entries.values()),
+        atlas,
+        range_mm=ws.position_range,
+        tile_edge=tile_edge,
+        max_width=max_width,
+        finest_um=max(finest.values(), default=0.0),
+        per_picture=per_picture or PER_PICTURE,
+        brain_scale=ws.brain_scale,
+    )
     frame = tuple(float(v) for v in window) if window else ()
     if part is not None:
         if not 0 <= int(part) < len(layouts):
@@ -597,12 +724,19 @@ def positioning_pictures(
     def draw_section(section_id: str, um_per_px: float) -> Image.Image:
         record = by_id[section_id]
         edge = max(64, math.ceil(max(entries[section_id].extent_um) / um_per_px) + 2)
-        return section_at(ws, record, um_per_px, working_um=working[section_id],
-                          long_edge=edge, look=look_of(record))
+        return section_at(
+            ws,
+            record,
+            um_per_px,
+            working_um=working[section_id],
+            long_edge=edge,
+            look=look_of(record),
+        )
 
     def draw_atlas(position_mm: float, um_per_px: float) -> Image.Image:
-        return framed_atlas(ws, state, position_mm, atlas_options, um_per_px=um_per_px,
-                            angles=angles)
+        return framed_atlas(
+            ws, state, position_mm, atlas_options, um_per_px=um_per_px, angles=angles
+        )
 
     out: list[Positioned] = []
     for layout in chosen:
@@ -613,26 +747,52 @@ def positioning_pictures(
             target = float(zoom_edge or max(layout.width, layout.height))
             wanted = target / max(box_w, box_h, 1.0)
             seen, _atlas_seen = visible(layout, frame)
-            detail = (layout.um_per_px / max(finest[slot.key] for slot in seen) if seen
-                      else layout.um_per_px / atlas_um_per_px(ws.atlas))
+            detail = (
+                layout.um_per_px / max(finest[slot.key] for slot in seen)
+                if seen
+                else layout.um_per_px / atlas_um_per_px(ws.atlas)
+            )
             scale = max(1.0, min(wanted, max(detail, 1.0) * ATLAS_UPSAMPLE))
             enlarged = scale / max(detail, 1.0)
-        picture = paint(layout, draw_section=draw_section, draw_atlas=draw_atlas, scale=scale,
-                        window=frame)
-        text = positioning_caption(ws, layout, angles=angles,
-                                   median=state.drawn_at_median(angles), shown=shown,
-                                   atlas_name=atlas_options.atlas_name(),
-                                   um_per_px=layout.um_per_px / scale,
-                                   zoom=scale if frame else None, enlarged=enlarged)
-        out.append(Positioned(image=caption(picture, text), caption=text, layout=layout,
-                              scale=scale, window=frame, um_per_px=layout.um_per_px / scale,
-                              content=picture.size))
+        picture = paint(
+            layout, draw_section=draw_section, draw_atlas=draw_atlas, scale=scale, window=frame
+        )
+        text = positioning_caption(
+            ws,
+            layout,
+            angles=angles,
+            median=state.drawn_at_median(angles),
+            shown=shown,
+            atlas_name=atlas_options.atlas_name(),
+            um_per_px=layout.um_per_px / scale,
+            zoom=scale if frame else None,
+            enlarged=enlarged,
+        )
+        out.append(
+            Positioned(
+                image=caption(picture, text),
+                caption=text,
+                layout=layout,
+                scale=scale,
+                window=frame,
+                um_per_px=layout.um_per_px / scale,
+                content=picture.size,
+            )
+        )
     return out
 
 
 def positioning_caption(
-    ws: Workspace, layout: Layout, *, angles: Angles, shown: str, atlas_name: str,
-    um_per_px: float, zoom: float | None = None, enlarged: float = 1.0, median: bool = False,
+    ws: Workspace,
+    layout: Layout,
+    *,
+    angles: Angles,
+    shown: str,
+    atlas_name: str,
+    um_per_px: float,
+    zoom: float | None = None,
+    enlarged: float = 1.0,
+    median: bool = False,
 ) -> str:
     """The caption burned under a positioning picture; *enlarged*: how far
     a zoom shows its thumbnails past their source pixels."""
@@ -648,22 +808,27 @@ def positioning_caption(
     count = len(layout.sections)
     if count:
         if layout.parts > 1:
-            ends = layout.sections[0].key + ("" if count == 1 else
-                                             f" to {layout.sections[-1].key}")
+            ends = layout.sections[0].key + ("" if count == 1 else f" to {layout.sections[-1].key}")
             which = f"{count} of the {layout.total} sections ({ends})"
         else:
             which = f"{count} section{'s' if count != 1 else ''}"
         placed = [slot.position_mm for slot in layout.sections]
-        span = (f" at {placed[0]:.2f} mm" if min(placed) == max(placed) else
-                f", {min(placed):.2f}-{max(placed):.2f} mm")
-        parts.append(f"{head}: {which} below in position order{span}"
-                     f"{f', {shown}' if shown else ''}")
+        span = (
+            f" at {placed[0]:.2f} mm"
+            if min(placed) == max(placed)
+            else f", {min(placed):.2f}-{max(placed):.2f} mm"
+        )
+        parts.append(
+            f"{head}: {which} below in position order{span}{f', {shown}' if shown else ''}"
+        )
     else:
         parts.append(f"{head}: no sections")
     if layout.atlas:
         name = "" if atlas_name == "template" else f" ({atlas_name})"
-        parts.append(f"atlas{name} above at {len(layout.atlas)} position"
-                     f"{'s' if len(layout.atlas) != 1 else ''}")
+        parts.append(
+            f"atlas{name} above at {len(layout.atlas)} position"
+            f"{'s' if len(layout.atlas) != 1 else ''}"
+        )
     lo, hi = layout.range_mm
     ruler = f"ruler {lo:.1f}-{hi:.1f} mm from {low} (left) to {high}"
     if median:
@@ -672,13 +837,27 @@ def positioning_caption(
     else:
         parts.append(ruler + view_angles_label(angles, median=False))
     uncalibrated = [slot.key for slot in layout.sections if ws.calibration(slot.key)[0] is None]
-    parts.append(f"all at {um_per_px:.1f} um/px"
-                 + (f" (uncalibrated: {', '.join(uncalibrated)})" if uncalibrated else ""))
+    parts.append(
+        f"all at {um_per_px:.1f} um/px"
+        + (f" (uncalibrated: {', '.join(uncalibrated)})" if uncalibrated else "")
+    )
     return "; ".join(parts)
 
 
 __all__ = [
-    "ATLAS_UPSAMPLE", "Layout", "PER_PICTURE", "POSITIONING_MAX_WIDTH", "Positioned",
-    "SectionEntry", "Slot", "paint", "plan", "position_order", "positioning_caption",
-    "positioning_pictures", "ruler_range", "split", "visible",
+    "ATLAS_UPSAMPLE",
+    "Layout",
+    "PER_PICTURE",
+    "POSITIONING_MAX_WIDTH",
+    "Positioned",
+    "SectionEntry",
+    "Slot",
+    "paint",
+    "plan",
+    "position_order",
+    "positioning_caption",
+    "positioning_pictures",
+    "ruler_range",
+    "split",
+    "visible",
 ]

@@ -52,9 +52,7 @@ def retried(operation: Callable[[], Result]) -> Result:
         time.sleep(RETRY_POLL_S)
 
 
-def replace_file(
-    source: str | os.PathLike[str], target: str | os.PathLike[str]
-) -> None:
+def replace_file(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
     """Rename *source* over *target*, retried while another process has it.
 
     Parameters

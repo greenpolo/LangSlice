@@ -104,9 +104,7 @@ def list_files_tool(run: Run, path: str, glob: str) -> dict[str, object]:
     return {"status": "ok", "text": done.text}
 
 
-def search_files_tool(
-    run: Run, query: str, path: str, glob: str
-) -> dict[str, object]:
+def search_files_tool(run: Run, query: str, path: str, glob: str) -> dict[str, object]:
     """Search the job's text files; return the ``search_files`` reply.
 
     Parameters
@@ -123,15 +121,11 @@ def search_files_tool(
         ``status`` and the matches' ``text``.
     """
     run.job.views.flush()
-    done = search_folder(
-        run.job, str(query or ""), str(path or "."), str(glob or "")
-    )
+    done = search_folder(run.job, str(query or ""), str(path or "."), str(glob or ""))
     return {"status": "ok", "text": done.text}
 
 
-def read_file_tool(
-    run: Run, path: str, offset: int, limit: int
-) -> dict[str, object]:
+def read_file_tool(run: Run, path: str, offset: int, limit: int) -> dict[str, object]:
     """Read a file of the job; return the ``read_file`` reply.
 
     Parameters
@@ -150,15 +144,11 @@ def read_file_tool(
     """
     run.job.views.flush()
     try:
-        done = read_folder_file(
-            run.job, str(path or ""), int(offset or 0), int(limit or 400)
-        )
+        done = read_folder_file(run.job, str(path or ""), int(offset or 0), int(limit or 400))
     except Refused:
         raise
     except (TypeError, ValueError):
-        raise Refused(
-            RefusalCode.BAD_ARGS, "offset and limit are whole numbers."
-        ) from None
+        raise Refused(RefusalCode.BAD_ARGS, "offset and limit are whole numbers.") from None
     reply: dict[str, object] = {"status": "ok", "text": done.text}
     if done.picture is not None:
         reply["picture"] = done.picture
@@ -187,8 +177,9 @@ def list_folder(job: Job, path: str = ".", glob: str = "") -> Listing:
     start = browse.resolve(_folder(job), path)
     entries, hidden = browse.list_entries(_folder(job), start, str(glob or ""))
     shown = browse.relative(_folder(job), start)
-    rows = [f"{e.path}/" if e.kind == "dir" else f"{e.path}  {e.kind}, {_size(e.size)}"
-            for e in entries]
+    rows = [
+        f"{e.path}/" if e.kind == "dir" else f"{e.path}  {e.kind}, {_size(e.size)}" for e in entries
+    ]
     if not rows:
         rows = ["(nothing)"]
     if hidden:
@@ -211,8 +202,10 @@ def search_folder(job: Job, query: str, path: str = ".", glob: str = "") -> Foun
     lines, hidden, files = browse.search(_folder(job), start, str(query), str(glob or ""))
     rows = list(lines) or [f"No match in {files} file(s)."]
     if hidden:
-        rows.append(f"... {hidden} more match(es) not shown (narrow the path or the glob, "
-                    "or make the query more specific)")
+        rows.append(
+            f"... {hidden} more match(es) not shown (narrow the path or the glob, "
+            "or make the query more specific)"
+        )
     return Found(tuple(lines), hidden, "\n".join(rows))
 
 
@@ -233,8 +226,11 @@ def _picture_record(job: Job, real: Path) -> PictureRecord | None:
 
 def _record_text(record: PictureRecord) -> list[str]:
     lines = [f"Picture {record.seq}: {record.name or record.tool}"]
-    lines.append(f"tool: {record.tool}" + (f", mode: {record.mode}" if record.mode else "")
-                 + f", call {record.call}")
+    lines.append(
+        f"tool: {record.tool}"
+        + (f", mode: {record.mode}" if record.mode else "")
+        + f", call {record.call}"
+    )
     if record.sections:
         lines.append("sections: " + ", ".join(record.sections))
     if record.caption:
@@ -266,8 +262,9 @@ def _look_arguments(record: PictureRecord) -> dict[str, Any] | None:
     if args.get("warp") not in (None, "applied"):
         out["warp"] = args["warp"]
     if args.get("registrations"):
-        out["registrations"] = {str(name): int(number)
-                                for name, number, _held in args["registrations"]}
+        out["registrations"] = {
+            str(name): int(number) for name, number, _held in args["registrations"]
+        }
     return out
 
 
@@ -277,16 +274,26 @@ def _see_again(record: PictureRecord, off: Collection[str]) -> str:
     else the ``look`` call that draws its view again, else nothing."""
     redraw = _look_arguments(record)
     zoomed = bool(((record.recipe or {}).get("args") or {}).get("zoom"))
-    with_look = "" if redraw is None else (
-        f"[[?look:{redraw['mode']} To draw its view again, call look with {{call}} "
-        f"(it draws the stack as it is now{', and the whole picture, unzoomed' if zoomed else ''}"
-        ").]]")
-    text = render(f"[[?zoom To see it again, call zoom with picture {record.seq} and a box "
-                  "over the part to see (a box as large as the picture shows all of it)."
-                  f"||{with_look}]]", off)
+    unzoomed = ", and the whole picture, unzoomed" if zoomed else ""
+    with_look = (
+        ""
+        if redraw is None
+        else (
+            f"[[?look:{redraw['mode']} To draw its view again, call look with {{call}} "
+            f"(it draws the stack as it is now{unzoomed}"
+            ").]]"
+        )
+    )
+    text = render(
+        f"[[?zoom To see it again, call zoom with picture {record.seq} and a box "
+        "over the part to see (a box as large as the picture shows all of it)."
+        f"||{with_look}]]",
+        off,
+    )
     if redraw is not None:
-        text = text.replace("{call}", ", ".join(f"{key}={value!r}"
-                                                for key, value in redraw.items()))
+        text = text.replace(
+            "{call}", ", ".join(f"{key}={value!r}" for key, value in redraw.items())
+        )
     return text
 
 
@@ -314,33 +321,47 @@ def read_folder_file(
     real = browse.resolve(_folder(job), path)
     shown = browse.relative(_folder(job), real)
     if real.is_dir():
-        raise Refused(RefusalCode.BAD_PATH, message=f"'{shown}' is a folder"
-                      + ("." if job.spec.off("list_files") else "; list it with list_files."))
+        raise Refused(
+            RefusalCode.BAD_PATH,
+            message=f"'{shown}' is a folder"
+            + ("." if job.spec.off("list_files") else "; list it with list_files."),
+        )
     kind = browse.kind_of(real)
     if kind == "picture":
         record = _picture_record(job, real)
         facts = f"{_dimensions(real)}, {_size(real.stat().st_size)}"
         if record is None:
-            return FileText(shown, kind, f"{shown} is a picture file ({facts}) with no entry in "
-                            "the picture index. Pixels are not returned by this tool.")
-        body = [f"{shown} is a picture file ({facts}); pixels are not returned here.",
-                *_record_text(record)]
+            return FileText(
+                shown,
+                kind,
+                f"{shown} is a picture file ({facts}) with no entry in "
+                "the picture index. Pixels are not returned by this tool.",
+            )
+        body = [
+            f"{shown} is a picture file ({facts}); pixels are not returned here.",
+            *_record_text(record),
+        ]
         again = _see_again(record, job.spec.switched_off)
         if again:
             body.append(again)
         return FileText(shown, kind, "\n".join(body), picture=record.seq)
     if kind == "binary":
-        return FileText(shown, kind, f"{shown} is a binary file ({_size(real.stat().st_size)}); "
-                        "its contents are not shown.")
+        return FileText(
+            shown,
+            kind,
+            f"{shown} is a binary file ({_size(real.stat().st_size)}); its contents are not shown.",
+        )
     try:
         numbered, total, more = browse.read_lines(real, offset, limit)
     except OSError as error:
-        raise Refused(RefusalCode.BAD_PATH,
-                      message=f"'{shown}' cannot be read: {error}") from error
+        raise Refused(RefusalCode.BAD_PATH, message=f"'{shown}' cannot be read: {error}") from error
     start = max(0, int(offset))
     if not numbered:
-        text = (f"{shown} has {total} line(s); nothing at offset {start}." if total
-                else f"{shown} is empty.")
+        text = (
+            f"{shown} has {total} line(s); nothing at offset {start}."
+            if total
+            else f"{shown} is empty."
+        )
         return FileText(shown, kind, text, total_lines=total)
     first = start + 1
     last = start + len(numbered)

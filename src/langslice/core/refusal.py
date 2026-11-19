@@ -195,7 +195,7 @@ class Refused(ValueError):
         code: str,
         message: str = "",
         /,
-        **facts: Any,  # pyright: ignore[reportAny]
+        **facts: Any,
     ) -> None:
         told: dict[str, object] = {"message": message} if message else {}
         told.update(facts)

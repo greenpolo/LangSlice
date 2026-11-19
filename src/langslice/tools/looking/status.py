@@ -56,9 +56,7 @@ def status_tool(run: Run) -> dict[str, object]:
     job = run.job
     reply: dict[str, object] = {"status": "ok", **run.rows()}
     reply["raw_channels"] = raw_channels(run)
-    reply["section_images"] = section_images.summary(
-        job.state, run.workspace.settings
-    )
+    reply["section_images"] = section_images.summary(job.state, run.workspace.settings)
     running = [work.summary() for work in job.background.running()]
     if running:
         reply["background_running"] = running
@@ -82,25 +80,26 @@ def stack_status(job: Job) -> StackStatus:
         if row["id"] in job.host_damaged:
             row["damage_by_user"] = True
         record = state.by_id(row["id"])
-        number = (job.histories.registration_number(state, record)
-                  if record is not None else None)
+        number = job.histories.registration_number(state, record) if record is not None else None
         if number is not None:
             row["registration"] = number
-    return StackStatus(rows=rows, cutting_angles_deg=stack_angles_entry(state),
-                       interval_breaks=break_ids(state))
+    return StackStatus(
+        rows=rows, cutting_angles_deg=stack_angles_entry(state), interval_breaks=break_ids(state)
+    )
 
 
 def raw_channels(run: Run) -> list[str] | dict[str, list[str]]:
     """The raw channels for ``status``: one list when every section shares
     them, else ``{filename: [names]}``."""
-    named = {record.id: section_images.raw_names(run.workspace, record.id)
-             for record in run.job.state.in_order()}
+    named = {
+        record.id: section_images.raw_names(run.workspace, record.id)
+        for record in run.job.state.in_order()
+    }
     distinct = {tuple(names) for names in named.values()}
     return list(next(iter(distinct))) if len(distinct) == 1 else named
 
 
-DEFORMABLE_FITS = ("fireants_syn", "trace_borders", "stalign_lddmm",
-                   "spomialign", "emlddmm_stack")
+DEFORMABLE_FITS = ("fireants_syn", "trace_borders", "stalign_lddmm", "spomialign", "emlddmm_stack")
 
 
 def can_change(run: Run) -> list[str]:
@@ -120,8 +119,10 @@ def can_change(run: Run) -> list[str]:
         if has("interactive_transform"):
             by_hand: list[str] = []
             if "orientation" not in frozen:
-                by_hand.append("orientation" + ("" if spec.off("interactive_transform:flip")
-                                                else " and mirroring"))
+                by_hand.append(
+                    "orientation"
+                    + ("" if spec.off("interactive_transform:flip") else " and mirroring")
+                )
             if "affine" not in frozen:
                 by_hand.append("in-plane transforms")
             out.append(" and ".join(by_hand) + " by hand")
@@ -130,8 +131,11 @@ def can_change(run: Run) -> list[str]:
     if has("mark_damage"):
         out.append("damaged regions")
     if spec.has("nonlinear"):
-        fits = [name for name in DEFORMABLE_FITS
-                if has(name) and (name != "trace_borders" or run.traces_on)]
+        fits = [
+            name
+            for name in DEFORMABLE_FITS
+            if has(name) and (name != "trace_borders" or run.traces_on)
+        ]
         if has("set_landmarks") and has("landmark_triangulation"):
             fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")
         out.append("deformations" + (f" ({', '.join(fits)})" if fits else ""))
@@ -139,8 +143,11 @@ def can_change(run: Run) -> list[str]:
         out.append("the section images the pictures and fits read (make_image)")
     if has("make_mask"):
         out.append("masks for the fits")
-    added = [name for name, tool in tools_for(spec).items()
-             if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)]
+    added = [
+        name
+        for name, tool in tools_for(spec).items()
+        if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)
+    ]
     if added:
         out.append(f"whatever the plugin tools change ({', '.join(added)})")
     return out

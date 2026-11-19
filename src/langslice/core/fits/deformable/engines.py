@@ -23,6 +23,7 @@ sampler gets a fixed seed.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import importlib.metadata
 import inspect
 import io
@@ -122,8 +123,9 @@ def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
     installed or fails, and for any other engine (Elastix fits affines only:
     :func:`run_elastix_affine`)."""
     if settings.engine != "fireants":
-        raise ValueError(f"No deformable fit with {settings.engine!r}: the deformable "
-                         "engine is SyN (FireANTs)")
+        raise ValueError(
+            f"No deformable fit with {settings.engine!r}: the deformable engine is SyN (FireANTs)"
+        )
     return _run_fireants(inputs, settings, settings.metric)
 
 
@@ -166,13 +168,18 @@ def import_fireants() -> Any:
     _IMPORTING.acquire()
     try:
         import torch
-        for name in ("fireants", "fireants.registration.optimizers.adam",
-                     "fireants.interpolator", "fireants.registration.abstract",
-                     "fireants.io.image"):
+
+        for name in (
+            "fireants",
+            "fireants.registration.optimizers.adam",
+            "fireants.interpolator",
+            "fireants.registration.abstract",
+            "fireants.io.image",
+        ):
             logging.getLogger(name).setLevel(logging.ERROR)
         with contextlib.redirect_stdout(io.StringIO()), _windows_fcntl():
-            from fireants.registration.syn import SyNRegistration  # noqa: F401
-    except ImportError as exc:  # pragma: no cover
+            importlib.import_module("fireants.registration.syn")
+    except ImportError as exc:
         raise RuntimeError(
             "The deformable engine needs FireANTs and torch, LangSlice dependencies "
             "(reinstall LangSlice)"
@@ -233,16 +240,12 @@ def _deterministic(device: str) -> Generator[None, None, None]:
             torch.backends.cudnn.benchmark = False
             if device == "cpu":
                 torch.set_num_threads(FIT_THREADS)
-            seed = cast(
-                "Callable[[int], object]", untyped("torch", "manual_seed")
-            )
+            seed = cast("Callable[[int], object]", untyped("torch", "manual_seed"))
             seed(RANDOM_SEED)
         settings.running += 1
     try:
         with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=".*does not have a deterministic"
-            )
+            warnings.filterwarnings("ignore", message=".*does not have a deterministic")
             yield
     finally:
         with _TORCH_LOCK:
@@ -274,7 +277,11 @@ def _own_stream(device: str) -> Generator[None, None, None]:
 
 
 def _channel_loss(
-    torch: Any, terms: list[tuple[str, float]], kernel_px: int, *, balanced: bool = False,
+    torch: Any,
+    terms: list[tuple[str, float]],
+    kernel_px: int,
+    *,
+    balanced: bool = False,
 ) -> Any:
     """ANTs' multivariate metric on FireANTs' images: one metric per channel
     (``terms``: metric name and weight, in channel order), weights normalized,
@@ -333,8 +340,9 @@ def _channel_loss(
                     gy, gx = torch.gradient(image, dim=(2, 3))
                     length += ((d * gx) ** 2 + (d * gy) ** 2).sum(dim=(0, 2, 3))
                 length = length.sqrt()
-                scale = torch.where(length > 1e-12, 1.0 / length.clamp(min=1e-12),
-                                    torch.zeros_like(length))
+                scale = torch.where(
+                    length > 1e-12, 1.0 / length.clamp(min=1e-12), torch.zeros_like(length)
+                )
             return (weights.to(p.device, p.dtype) * scale * values).sum()
 
     if balanced:
@@ -346,14 +354,15 @@ def _channel_loss(
             area = mask.sum() + 1e-8
             loss = pred.new_zeros(())
             for k, (metric, weight) in enumerate(terms):
-                p, t = pred[:, k:k + 1], target[:, k:k + 1]
+                p, t = pred[:, k : k + 1], target[:, k : k + 1]
                 if metric == "local_correlation":
                     value = correlation(p, t, mask)
                 elif metric == "mean_squares":
                     value = ((p - t) ** 2 * mask).sum() / area
                 else:
-                    value = information(torch.cat([p, mask], 1),
-                                        torch.cat([t, torch.ones_like(mask)], 1))
+                    value = information(
+                        torch.cat([p, mask], 1), torch.cat([t, torch.ones_like(mask)], 1)
+                    )
                 loss = loss + (weight / total_weight) * value
             return loss
 
@@ -400,8 +409,9 @@ def _invert(torch: Any, displacement: Any) -> Any:
     base = F.affine_grid(eye, list(u.shape), align_corners=True)
     v = -displacement
     for _ in range(INVERSE_ITERATIONS):
-        sampled = F.grid_sample(u, base + v, mode="bilinear", padding_mode="border",
-                                align_corners=True).permute(0, 2, 3, 1)
+        sampled = F.grid_sample(
+            u, base + v, mode="bilinear", padding_mode="border", align_corners=True
+        ).permute(0, 2, 3, 1)
         v = v + INVERSE_RELAXATION * (-sampled - v)
     return v
 
@@ -423,8 +433,9 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     learning_rate = TRACED_LEARNING_RATE if traced else FIREANTS_LEARNING_RATE
     scale = float(inputs.brain_scale)
     update_sigma_mm = settings.smoothness_um / 1000.0 * scale
-    total_sigma_mm = (update_sigma_mm * TOTAL_SIGMA_FRACTION
-                      * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0))
+    total_sigma_mm = (
+        update_sigma_mm * TOTAL_SIGMA_FRACTION * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0)
+    )
     grad_sigma = update_sigma_mm / voxel_mm
     warp_sigma = total_sigma_mm / voxel_mm
     radius = max(1, int(inputs.correlation_radius_px))
@@ -437,8 +448,9 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         terms.append((metric, float(inputs.edge_weight)))
         fixed_channels.append(inputs.fixed_edges)
         moving_channels.append(inputs.moving_edges)
-    for f, m, w in zip(inputs.fixed_labels, inputs.moving_labels, inputs.label_weights,
-                       strict=True):
+    for f, m, w in zip(
+        inputs.fixed_labels, inputs.moving_labels, inputs.label_weights, strict=True
+    ):
         terms.append(("mean_squares", float(w)))
         fixed_channels.append(f)
         moving_channels.append(m)
@@ -451,7 +463,7 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         return BatchedImages([Image(itk, device=device, dtype=torch.float32)])
 
     levels = len(level.iterations)
-    scales = [FIREANTS_SHRINK ** k for k in range(levels - 1, -1, -1)]
+    scales = [FIREANTS_SHRINK**k for k in range(levels - 1, -1, -1)]
     height, width = inputs.fixed.shape
     waited_s, retries = 0.0, 0
     for attempt in range(OOM_RETRIES + 1):
@@ -465,14 +477,19 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
                 fixed = image(fixed_channels, inputs.fixed_mask)
                 moving = image(moving_channels, inputs.moving_mask)
                 registration: Any = SyNRegistration(
-                    scales=scales, iterations=list(level.iterations),
-                    fixed_images=fixed, moving_images=moving,
+                    scales=scales,
+                    iterations=list(level.iterations),
+                    fixed_images=fixed,
+                    moving_images=moving,
                     loss_type="masked_custom",
                     custom_loss=_channel_loss(torch, terms, 2 * radius + 1, balanced=traced),
-                    optimizer="SGD", optimizer_lr=learning_rate,
+                    optimizer="SGD",
+                    optimizer_lr=learning_rate,
                     optimizer_params=_sgd_options(),
-                    smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
-                    progress_bar=False, dtype=torch.float32,
+                    smooth_grad_sigma=grad_sigma,
+                    smooth_warp_sigma=warp_sigma,
+                    progress_bar=False,
+                    dtype=torch.float32,
                 )
                 for half in (registration.fwd_warp, registration.rev_warp):
                     half.optimizer.__class__ = _global_step_sgd()
@@ -482,8 +499,13 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
                     reverse_warp = registration.rev_warp.get_warp().detach()
                     forward = compose_warp(forward_warp, _invert(torch, reverse_warp))
                     inverse = compose_warp(reverse_warp, _invert(torch, forward_warp))
-                to_mm = np.array([(width - 1) / 2.0 * inputs.spacing_mm[0],
-                                  (height - 1) / 2.0 * inputs.spacing_mm[1]], dtype=np.float64)
+                to_mm = np.array(
+                    [
+                        (width - 1) / 2.0 * inputs.spacing_mm[0],
+                        (height - 1) / 2.0 * inputs.spacing_mm[1],
+                    ],
+                    dtype=np.float64,
+                )
                 forward_mm = forward[0].detach().cpu().double().numpy() * to_mm
                 inverse_mm = inverse[0].detach().cpu().double().numpy() * to_mm
                 del registration, fixed, moving
@@ -496,19 +518,28 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
             torch.cuda.empty_cache()
             retries += 1
             time.sleep(OOM_WAIT_S * (attempt + 1))
+    else:
+        raise RuntimeError("the fit ran out of GPU memory on every attempt")
     options: dict[str, Any] = {
-        "metric": metric, "loss_terms": [list(t) for t in terms],
-        "scales": scales, "iterations": list(level.iterations),
-        "optimizer": "SGD, ANTs' step rule", "optimizer_lr": learning_rate,
-        "smooth_grad_sigma_px": grad_sigma, "smooth_warp_sigma_px": warp_sigma,
-        "update_sigma_mm": update_sigma_mm, "total_sigma_mm": total_sigma_mm,
+        "metric": metric,
+        "loss_terms": [list(t) for t in terms],
+        "scales": scales,
+        "iterations": list(level.iterations),
+        "optimizer": "SGD, ANTs' step rule",
+        "optimizer_lr": learning_rate,
+        "smooth_grad_sigma_px": grad_sigma,
+        "smooth_warp_sigma_px": warp_sigma,
+        "update_sigma_mm": update_sigma_mm,
+        "total_sigma_mm": total_sigma_mm,
         "brain_scale": scale,
         "balanced_channels": traced,
         "edge_channel": edges,
         "edge_weight": float(inputs.edge_weight) if edges else 0.0,
         "label_channels": len(inputs.fixed_labels),
         "label_weights": [float(w) for w in inputs.label_weights],
-        "device": device, "random_seed": RANDOM_SEED, "deterministic": True,
+        "device": device,
+        "random_seed": RANDOM_SEED,
+        "deterministic": True,
     }
     if metric == "local_correlation":
         options["cc_kernel_px"] = 2 * radius + 1
@@ -522,7 +553,8 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         native_parameters={"SyNRegistration": options},
         runtime_s=time.perf_counter() - start,
         engine_version=f"fireants {FIREANTS_VERSION} (torch {torch.__version__}, {device})",
-        gpu_wait_s=waited_s, oom_retries=retries,
+        gpu_wait_s=waited_s,
+        oom_retries=retries,
     )
 
 
@@ -576,8 +608,10 @@ def _elastix_register(
 
 def _parameter_maps(transform: ParameterObject) -> list[dict[str, list[str]]]:
     return [
-        {key: list(transform.GetParameterMap(i)[key])
-         for key in transform.GetParameterMap(i).keys()}
+        {
+            key: list(transform.GetParameterMap(i)[key])
+            for key in transform.GetParameterMap(i).keys()
+        }
         for i in range(transform.GetNumberOfParameterMaps())
     ]
 
@@ -692,8 +726,12 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     extra_pairs: list[tuple[Image, Image]] = []
     if edges:
         assert inputs.fixed_edges is not None and inputs.moving_edges is not None
-        extra_pairs = [(_elastix_image(inputs.fixed_edges, inputs),
-                        _elastix_image(inputs.moving_edges, inputs))]
+        extra_pairs = [
+            (
+                _elastix_image(inputs.fixed_edges, inputs),
+                _elastix_image(inputs.moving_edges, inputs),
+            )
+        ]
     _moving, transform = _elastix_register(inputs, parameter_object, extra_pairs)
     maps = _parameter_maps(transform)
     final = maps[-1]
@@ -712,9 +750,14 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
         raise RuntimeError("Elastix returned a non-finite or singular affine")
     return AffineResult(
         matrix_mm=matrix,
-        native_parameters={"requested": requested, "transform_parameter_maps": maps,
-                           "metric": ELASTIX_STAIN_METRIC, "edge_channel": edges,
-                           "threads": FIT_THREADS, "random_seed": RANDOM_SEED},
+        native_parameters={
+            "requested": requested,
+            "transform_parameter_maps": maps,
+            "metric": ELASTIX_STAIN_METRIC,
+            "edge_channel": edges,
+            "threads": FIT_THREADS,
+            "random_seed": RANDOM_SEED,
+        },
         runtime_s=time.perf_counter() - start,
         engine_version=f"itk-elastix (itk {itk.__version__})",
     )

@@ -37,16 +37,26 @@ def records(facts: DescriptionFacts) -> list[dict[str, Any]]:
         tools = []
         for tool in plugin.tools:
             declared = declaration(tool.name, facts)
-            tools.append({
-                "name": tool.name, "kind": tool.kind, "group": tool.group, "task": tool.task,
-                "writes": list(tool.writes), "long": tool.long, "limits": dict(tool.limits),
-                "version": tool.version,
-                **({"atlases": list(tool.atlases)} if tool.atlases else {}),
-                **({"planes": list(tool.planes)} if tool.planes else {}),
-                **({"meta": dict(tool.meta)} if tool.meta else {}),
-                "declaration": {"name": tool.name, "description": declared.doc,
-                                "arguments": arguments_schema(tool.name, facts)},
-            })
+            tools.append(
+                {
+                    "name": tool.name,
+                    "kind": tool.kind,
+                    "group": tool.group,
+                    "task": tool.task,
+                    "writes": list(tool.writes),
+                    "long": tool.long,
+                    "limits": dict(tool.limits),
+                    "version": tool.version,
+                    **({"atlases": list(tool.atlases)} if tool.atlases else {}),
+                    **({"planes": list(tool.planes)} if tool.planes else {}),
+                    **({"meta": dict(tool.meta)} if tool.meta else {}),
+                    "declaration": {
+                        "name": tool.name,
+                        "description": declared.doc,
+                        "arguments": arguments_schema(tool.name, facts),
+                    },
+                }
+            )
         out.append({**plugin.provenance, "tools": tools})
     return out
 
@@ -63,8 +73,16 @@ def record(job: Job, held: list[dict[str, Any]]) -> None:
         if (read_job_file(job.layout) or {}).get(KEY) == held:
             return
         write_job_file(job.layout, **{KEY: held})
-        job.layout.log_event("plugins", plugins=[
-            {"ref": item["ref"], "sources": item.get("sources"),
-             "tools": [tool["name"] for tool in item["tools"]]} for item in held])
+        job.layout.log_event(
+            "plugins",
+            plugins=[
+                {
+                    "ref": item["ref"],
+                    "sources": item.get("sources"),
+                    "tools": [tool["name"] for tool in item["tools"]],
+                }
+                for item in held
+            ],
+        )
     except Exception:
         logger.warning("Could not record the plugins' provenance", exc_info=True)

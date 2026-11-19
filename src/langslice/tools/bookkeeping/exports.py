@@ -87,8 +87,11 @@ class Exported:
     seconds: float = 0.0
 
 
-def _warp(job: Job, state: Stack, record: Section,
-          ) -> tuple[DeformableRecord | None, str | None]:
+def _warp(
+    job: Job,
+    state: Stack,
+    record: Section,
+) -> tuple[DeformableRecord | None, str | None]:
     """The section's applied deformation record (None: linear) and its
     stored folder; ``ValueError`` when one is applied but cannot be read."""
     from langslice.job.exports.public_files import applied_deformation
@@ -102,15 +105,21 @@ def _warp(job: Job, state: Stack, record: Section,
     return loaded, held.record or None
 
 
-def applied_record(job: Job, state: Stack, record: Section,
-                   ) -> DeformableRecord | None:
+def applied_record(
+    job: Job,
+    state: Stack,
+    record: Section,
+) -> DeformableRecord | None:
     """The section's applied deformation record (None: linear);
     ``ValueError`` when one is applied but cannot be read."""
     return _warp(job, state, record)[0]
 
 
 def export_maps(
-    job: Job, workspace: Workspace, ids: Sequence[str] | None = None, *,
+    job: Job,
+    workspace: Workspace,
+    ids: Sequence[str] | None = None,
+    *,
     full_resolution: bool = False,
 ) -> Exported:
     """Write the maps of *ids* (every section when None or empty) and the
@@ -184,17 +193,27 @@ def export_maps(
             continue
         with job.writing():
             current = job.state.by_id(record.id)
-            if current is None or section_inputs(job.state, current,
-                                                 deformation=True) != computed_from:
-                skipped.append({"id": record.id,
-                                "reason": f"{RefusalCode.STALE_INPUT}: the section "
-                                "changed while its maps were computed; export it again"})
+            if (
+                current is None
+                or section_inputs(job.state, current, deformation=True) != computed_from
+            ):
+                skipped.append(
+                    {
+                        "id": record.id,
+                        "reason": f"{RefusalCode.STALE_INPUT}: the section "
+                        "changed while its maps were computed; export it again",
+                    }
+                )
                 continue
             entry = formats.section_entry(job.state, workspace, layout, current, facts)
             try:
                 written = formats.write_section_maps(
-                    layout, maps, atlas, parameters_digest=entry["parameters_digest"],
-                    deformation_record=stored)
+                    layout,
+                    maps,
+                    atlas,
+                    parameters_digest=entry["parameters_digest"],
+                    deformation_record=stored,
+                )
             except (OSError, ValueError) as exc:
                 logger.warning("Could not write the maps of %s", record.id, exc_info=True)
                 skipped.append({"id": record.id, "reason": str(exc)})
@@ -208,12 +227,19 @@ def export_maps(
             files += _write_exports(job, workspace, facts)
     else:
         files += _copy_paths(state, exports_dir)
-        files += [(str(exports_dir / formats.QUICKNII_FILE), "quicknii"),
-                  (str(exports_dir / formats.VISUALIGN_FILE), "visualign"),
-                  (str(layout.folder / "registration.json"), "registration")]
-    return Exported(files=files, sections=done, skipped=skipped,
-                    full_resolution=bool(full_resolution), written=persist,
-                    seconds=time.perf_counter() - started)
+        files += [
+            (str(exports_dir / formats.QUICKNII_FILE), "quicknii"),
+            (str(exports_dir / formats.VISUALIGN_FILE), "visualign"),
+            (str(layout.folder / "registration.json"), "registration"),
+        ]
+    return Exported(
+        files=files,
+        sections=done,
+        skipped=skipped,
+        full_resolution=bool(full_resolution),
+        written=persist,
+        seconds=time.perf_counter() - started,
+    )
 
 
 def _copy_paths(state: Stack, exports_dir: Path) -> list[tuple[str, str]]:
@@ -267,15 +293,18 @@ def export_stack(job: Job, workspace: Workspace) -> Exported:
         except (OSError, ValueError) as exc:
             logger.warning("Could not export the trace reply of %s: %s", record.id, exc)
             continue
-        files += _export_trace(job, workspace, state, record,
-                               (int(size[0]), int(size[1])), False)
+        files += _export_trace(job, workspace, state, record, (int(size[0]), int(size[1])), False)
     with job.writing():
         files += _write_exports(job, workspace, atlas_facts(workspace.atlas))
     return Exported(files=files, seconds=time.perf_counter() - started)
 
 
 def section_maps(
-    job: Job, workspace: Workspace, section: str, *, full_resolution: bool = False,
+    job: Job,
+    workspace: Workspace,
+    section: str,
+    *,
+    full_resolution: bool = False,
 ) -> SectionMaps:
     """One section's maps as :func:`export_maps` writes them, in memory and
     written nowhere (:class:`langslice.core.maps.section_maps.SectionMaps`:
@@ -312,8 +341,12 @@ def _completed_trace(section: Section) -> BorderTrace | None:
 
 
 def _export_trace(
-    job: Job, workspace: Workspace, state: Stack, record: Section,
-    grid_size: tuple[int, int], full_resolution: bool,
+    job: Job,
+    workspace: Workspace,
+    state: Stack,
+    record: Section,
+    grid_size: tuple[int, int],
+    full_resolution: bool,
 ) -> list[tuple[str, str]]:
     """Write the section's trace reply on its maps' grid
     (``exports/traces/<name>.npz``,
@@ -338,23 +371,30 @@ def _export_trace(
     try:
         file_size = render_sizes(workspace, record.id).file_size
         borders, reply, grid_from_canvas = reply_on_grid(
-            layout.resolve(artifact_dir), file_size, grid_size)
-        current = held.geometry_fingerprint == correction_fingerprint(
-            state, workspace, record.id)
+            layout.resolve(artifact_dir), file_size, grid_size
+        )
+        current = held.geometry_fingerprint == correction_fingerprint(state, workspace, record.id)
     except (OSError, ValueError, KeyError) as exc:
         logger.warning("Could not export the trace reply of %s: %s", record.id, exc)
         return []
     info = {
-        "section": record.id, "grid_size": [int(grid_size[0]), int(grid_size[1])],
+        "section": record.id,
+        "grid_size": [int(grid_size[0]), int(grid_size[1])],
         "full_resolution": bool(full_resolution),
         "frame": "the image file as stored (no rotation or flip applied), resized to "
-                 "grid_size; the grid of the section's maps",
-        "grid_from_canvas": grid_from_canvas.tolist(), "artifact_dir": artifact_dir,
-        "attempt": held.attempt, "provider": held.provider,
-        "model": held.model, "prompt_edited": bool(held.prompt_edited),
+        "grid_size; the grid of the section's maps",
+        "grid_from_canvas": grid_from_canvas.tolist(),
+        "artifact_dir": artifact_dir,
+        "attempt": held.attempt,
+        "provider": held.provider,
+        "model": held.model,
+        "prompt_edited": bool(held.prompt_edited),
         **({"profile": held.profile, "untested": True} if held.untested else {}),
-        **{key: list(value) for key, value in (("include", held.include),
-                                               ("exclude", held.exclude)) if value},
+        **{
+            key: list(value)
+            for key, value in (("include", held.include), ("exclude", held.exclude))
+            if value
+        },
         "placement_current": bool(current),
         "written_by": f"LangSlice {langslice.__version__}",
     }
@@ -371,16 +411,20 @@ def _export_trace(
     return [(str(written), "trace_reply")]
 
 
-def _section_maps(workspace: Workspace, frame: Any, warp: DeformableRecord | None,
-                  full_resolution: bool) -> Any:
+def _section_maps(
+    workspace: Workspace, frame: Any, warp: DeformableRecord | None, full_resolution: bool
+) -> Any:
     """The section's maps (looked up on the core module at call time)."""
     from langslice.core.maps import section_maps as maps
 
     return maps.section_maps(workspace, frame, warp, full_resolution=full_resolution)
 
 
-def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
-                   ) -> list[tuple[str, str]]:
+def _write_exports(
+    job: Job,
+    workspace: Workspace,
+    facts: dict[str, Any],
+) -> list[tuple[str, str]]:
     """The stack's exports (every placed section, whatever the call named)
     and ``registration.json``, from the job's state as it stands. Call it
     under the job lock."""
@@ -410,13 +454,18 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
             continue
         number = numbers[record.id]
         copy_name = copy_filename(record.id, number)
-        rows.append({"filename": copy_name, "nr": number,
-                     "width": frame.file_size[0], "height": frame.file_size[1],
-                     "pixel_to_atlas_um": frame.pixel_to_atlas_um(),
-                     "markers": markers})
+        rows.append(
+            {
+                "filename": copy_name,
+                "nr": number,
+                "width": frame.file_size[0],
+                "height": frame.file_size[1],
+                "pixel_to_atlas_um": frame.pixel_to_atlas_um(),
+                "markers": markers,
+            }
+        )
         try:
-            copies.append((copy_name,
-                           image_plane(workspace, record, PREPROCESSED)))
+            copies.append((copy_name, image_plane(workspace, record, PREPROCESSED)))
         except (OSError, ValueError):
             logger.warning("No image copy of %s", record.id, exc_info=True)
 
@@ -428,8 +477,10 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
             files += [(str(path), "quint_image") for path in written]
         except OSError:
             logger.warning("Could not write the QUINT image copies", exc_info=True)
-        for name, kind, with_markers in ((QUICKNII_FILE, "quicknii", False),
-                                         (VISUALIGN_FILE, "visualign", True)):
+        for name, kind, with_markers in (
+            (QUICKNII_FILE, "quicknii", False),
+            (VISUALIGN_FILE, "visualign", True),
+        ):
             path = exports_dir / name
             try:
                 document = job_export(rows, facts, write_markers=with_markers)
@@ -444,8 +495,10 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
     if any(record.layers for record in state.slices):
         from langslice.job.plugin_store import export_layers
 
-        files += [(str(layout.resolve(relative)), "plugin_layer")
-                  for relative in export_layers(layout, state)]
+        files += [
+            (str(layout.resolve(relative)), "plugin_layer")
+            for relative in export_layers(layout, state)
+        ]
     return files
 
 
@@ -466,9 +519,7 @@ def _section_numbers(state: Stack) -> dict[str, int]:
     return dict(zip(ids, section_numbers(ids), strict=True))
 
 
-def export_maps_tool(
-    run: Run, sections: Sequence[str], full_resolution: bool
-) -> dict[str, Any]:
+def export_maps_tool(run: Run, sections: Sequence[str], full_resolution: bool) -> dict[str, Any]:
     """Run the ``export_maps`` verb: write the maps and exports, answer.
 
     Parameters
@@ -486,16 +537,20 @@ def export_maps_tool(
         section named was skipped), the sections written and skipped, the
         files written, and the time it took.
     """
-    done = export_maps(run.job, run.workspace, as_list(sections),
-                       full_resolution=bool(full_resolution))
+    done = export_maps(
+        run.job, run.workspace, as_list(sections), full_resolution=bool(full_resolution)
+    )
     exported = bool(done.sections or not done.skipped)
     status = "ok" if exported else "error"
     result: dict[str, Any] = {"status": status}
     if not exported:
         result["error"] = RefusalCode.NOTHING_EXPORTED
     result.update(
-        written=done.sections, skipped=done.skipped,
-        full_resolution=done.full_resolution, files_written=done.written,
+        written=done.sections,
+        skipped=done.skipped,
+        full_resolution=done.full_resolution,
+        files_written=done.written,
         files=[{"path": path, "kind": kind} for path, kind in done.files],
-        seconds=round(done.seconds, 2))
+        seconds=round(done.seconds, 2),
+    )
     return result

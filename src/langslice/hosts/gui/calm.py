@@ -114,9 +114,7 @@ def main_channel(names: list[str]) -> str:
     return "blue" if "blue" in names else names[0]
 
 
-def draw_calm_overlay(
-    opened: Opened, state: Stack, section: Section, edge: int
-) -> Image.Image:
+def draw_calm_overlay(opened: Opened, state: Stack, section: Section, edge: int) -> Image.Image:
     """Draw a section under its current registration, quiet.
 
     Parameters
@@ -144,9 +142,7 @@ def draw_calm_overlay(
         long_edge=edge,
         atlas_layers=(),
     )
-    bare = content(
-        look(opened.workspace, state, request, store=opened.store)[0]
-    )
+    bare = content(look(opened.workspace, state, request, store=opened.store)[0])
     lined = content(
         look(
             opened.workspace,
@@ -163,9 +159,7 @@ def draw_calm_overlay(
     return calm(bare, lined=lined)
 
 
-def draw_calm_thumb(
-    opened: Opened, section: Section, edge: int
-) -> Image.Image:
+def draw_calm_thumb(opened: Opened, section: Section, edge: int) -> Image.Image:
     """Draw a section alone, oriented, from its main stain, quiet.
 
     Parameters
@@ -183,15 +177,11 @@ def draw_calm_thumb(
         The section turned and flipped as it is kept, on the stage.
     """
     channel = main_channel(raw_names(opened.workspace, section.id))
-    picture = render_slice(
-        opened.workspace, section, long_edge=edge, look={"image": channel}
-    )
+    picture = render_slice(opened.workspace, section, long_edge=edge, look={"image": channel})
     return calm(picture)
 
 
-def calm(
-    bare: Image.Image, *, lined: Image.Image | None = None
-) -> Image.Image:
+def calm(bare: Image.Image, *, lined: Image.Image | None = None) -> Image.Image:
     """Make one channel's picture quiet, with its borders when given.
 
     Parameters
@@ -210,9 +200,7 @@ def calm(
     if is_brightfield(bare):
         scanned = grey > UNSCANNED
         white = float(np.percentile(grey[scanned], SLIDE_LEVEL))
-        grey = np.where(scanned, np.clip(white - grey, 0, 255), 0.0).astype(
-            np.float32
-        )
+        grey = np.where(scanned, np.clip(white - grey, 0, 255), 0.0).astype(np.float32)
     mask = tissue_mask(grey)
     mask[scale_bar(grey)] = 0.0
     inside = grey[mask > 0.5]
@@ -227,9 +215,7 @@ def calm(
     if lined is not None:
         with_lines = np.asarray(lined.convert("RGB"), dtype=np.int16)
         plain = np.asarray(bare.convert("RGB"), dtype=np.int16)
-        change = cast(
-            "npt.NDArray[np.int16]", np.max(np.abs(with_lines - plain), axis=2)
-        )
+        change = cast("npt.NDArray[np.int16]", np.max(np.abs(with_lines - plain), axis=2))
         strength = LINE_STRENGTH * min(1.0, 0.45 + max(bare.size) / 1600)
         alpha = (np.clip(change / 110.0, 0, 1) * strength)[..., None]
         rgb = rgb * (1 - alpha) + np.array(LINE, np.float32) * alpha
@@ -256,9 +242,7 @@ def is_brightfield(picture: Image.Image) -> bool:
         return False
     padded = np.pad(scanned, SLIDE_RIM)
     core = np.asarray(cv2.erode(padded, disk(SLIDE_RIM)), dtype=np.uint8)
-    rim = (scanned > 0) & (
-        core[SLIDE_RIM:-SLIDE_RIM, SLIDE_RIM:-SLIDE_RIM] < 1
-    )
+    rim = (scanned > 0) & (core[SLIDE_RIM:-SLIDE_RIM, SLIDE_RIM:-SLIDE_RIM] < 1)
     return (
         float(np.median(grey[scanned > 0])) > BRIGHT_SLIDE
         and float(np.median(grey[rim])) > BRIGHT_SLIDE
@@ -286,9 +270,7 @@ def scale_bar(grey: npt.NDArray[np.float32]) -> tuple[slice, slice]:
     length = int(np.argmin(bright)) if not bright.all() else bright.size
     if length < MIN_BAR:
         return slice(0, 0), slice(0, 0)
-    return slice(max(0, row - BAR_LABEL), height), slice(
-        0, BAR_LEFT + max(length, 34) + 6
-    )
+    return slice(max(0, row - BAR_LABEL), height), slice(0, BAR_LEFT + max(length, 34) + 6)
 
 
 def tissue_mask(grey: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
@@ -310,9 +292,7 @@ def tissue_mask(grey: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     if scale < 1.0:
         size = (max(1, round(width * scale)), max(1, round(height * scale)))
         small = np.asarray(
-            Image.fromarray(grey.astype(np.uint8)).resize(
-                size, Image.Resampling.BILINEAR
-            )
+            Image.fromarray(grey.astype(np.uint8)).resize(size, Image.Resampling.BILINEAR)
         ).astype(np.float32)
     image = GetImageFromArray(small)
     wide = 5.0 * scale + 1.0
@@ -323,19 +303,11 @@ def tissue_mask(grey: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     fine = GetArrayFromImage(SmoothingRecursiveGaussian(image, [1.0, 1.0]))
     spread = 4.0 * scale + 1.0
     texture = GetArrayFromImage(
-        SmoothingRecursiveGaussian(
-            GetImageFromArray(np.abs(small - fine)), [spread, spread]
-        )
+        SmoothingRecursiveGaussian(GetImageFromArray(np.abs(small - fine)), [spread, spread])
     )
-    level = (
-        max(0.6, 0.12 * float(np.median(texture[bright])))
-        if bright.any()
-        else 0.6
-    )
+    level = max(0.6, 0.12 * float(np.median(texture[bright]))) if bright.any() else 0.6
     binary = (bright & (texture > level)).astype(np.uint8)
-    _, labels, stats, _ = cv2.connectedComponentsWithStats(
-        binary, connectivity=8
-    )
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
     areas = np.asarray(stats, dtype=np.int64)[:, cv2.CC_STAT_AREA]
     large = areas >= max(4, int(small.size * 0.004))
     large[0] = False
@@ -347,9 +319,7 @@ def tissue_mask(grey: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
         bright,
         scan_edge(small),
     )
-    keep = np.asarray(
-        cv2.morphologyEx(keep, cv2.MORPH_CLOSE, disk(3)), dtype=np.uint8
-    )
+    keep = np.asarray(cv2.morphologyEx(keep, cv2.MORPH_CLOSE, disk(3)), dtype=np.uint8)
     keep = fill_holes(keep)
     keep = np.asarray(cv2.dilate(keep, disk(2)), dtype=np.uint8)
     weight = Image.fromarray(keep * 255)
@@ -412,12 +382,10 @@ def without_debris(
     blurred = sharp < DEBRIS_BLUR * focus
     keep = without_threads(without_edge_glow(keep, edge, blurred), edge)
     keep = main_and_parts(keep, sharp, focus, edge)
-    glare = (
-        bright & (sharp < GLARE_SHARP * focus) & (smooth > GLARE_BRIGHT * glow)
-    ).astype(np.uint8)
-    count, patches, stats, _ = cv2.connectedComponentsWithStats(
-        glare, connectivity=8
+    glare = (bright & (sharp < GLARE_SHARP * focus) & (smooth > GLARE_BRIGHT * glow)).astype(
+        np.uint8
     )
+    count, patches, stats, _ = cv2.connectedComponentsWithStats(glare, connectivity=8)
     sizes = cast(
         "list[int]",
         np.asarray(stats, dtype=np.int64)[:, cv2.CC_STAT_AREA].tolist(),
@@ -433,9 +401,7 @@ def without_debris(
         ring = reach & ~core
         beside = ring & ~tissue
         apart = np.count_nonzero(beside) / max(1, np.count_nonzero(ring))
-        halo = np.count_nonzero(beside & bright) / max(
-            1, np.count_nonzero(beside)
-        )
+        halo = np.count_nonzero(beside & bright) / max(1, np.count_nonzero(beside))
         if apart > GLARE_APART or (apart > GLARE_OUT and halo > GLARE_HALO):
             keep[reach] = 0
     return keep
@@ -468,9 +434,7 @@ def main_and_parts(
     np.ndarray
         The mask without those pieces.
     """
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(
-        mask, connectivity=8
-    )
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     if count <= 2:
         return mask
     marks = np.asarray(labels, dtype=np.int64)
@@ -523,18 +487,14 @@ def without_edge_glow(
         The mask without that glow.
     """
     soft = ((mask > 0) & blurred).astype(np.uint8)
-    count, labels, _, _ = cv2.connectedComponentsWithStats(
-        soft, connectivity=8
-    )
+    count, labels, _, _ = cv2.connectedComponentsWithStats(soft, connectivity=8)
     marks = np.asarray(labels, dtype=np.int64)
     at_edge = cast("list[int]", np.unique(marks[edge]).tolist())
     dropped = np.zeros(count, np.bool_)
     dropped[at_edge] = True
     dropped[0] = False
     glow = cv2.dilate(dropped[marks].astype(np.uint8), disk(EDGE_GLOW_RIM))
-    return np.where(np.asarray(glow, dtype=np.uint8) > 0, 0, mask).astype(
-        np.uint8
-    )
+    return np.where(np.asarray(glow, dtype=np.uint8) > 0, 0, mask).astype(np.uint8)
 
 
 def without_threads(
@@ -557,14 +517,10 @@ def without_threads(
     np.ndarray
         The mask without those threads.
     """
-    thick = np.asarray(
-        cv2.morphologyEx(mask, cv2.MORPH_OPEN, disk(THREAD)), dtype=np.uint8
-    )
+    thick = np.asarray(cv2.morphologyEx(mask, cv2.MORPH_OPEN, disk(THREAD)), dtype=np.uint8)
     foot = np.asarray(cv2.dilate(thick, disk(THREAD_FRINGE)), dtype=np.uint8)
     thin = ((mask > 0) & (foot < 1)).astype(np.uint8)
-    count, labels, _, _ = cv2.connectedComponentsWithStats(
-        thin, connectivity=8
-    )
+    count, labels, _, _ = cv2.connectedComponentsWithStats(thin, connectivity=8)
     marks = np.asarray(labels, dtype=np.int64)
     at_edge = cast("list[int]", np.unique(marks[edge]).tolist())
     dropped = np.zeros(count, np.bool_)
@@ -592,9 +548,7 @@ def scan_edge(picture: npt.NDArray[np.float32]) -> npt.NDArray[np.bool_]:
     frame = np.ones(picture.shape, np.bool_)
     frame[1:-1, 1:-1] = False
     black = (picture <= UNSCANNED).astype(np.uint8)
-    count, labels, _, _ = cv2.connectedComponentsWithStats(
-        black, connectivity=8
-    )
+    count, labels, _, _ = cv2.connectedComponentsWithStats(black, connectivity=8)
     marks = np.asarray(labels, dtype=np.int64)
     outside = cast("list[int]", np.unique(marks[frame]).tolist())
     around = np.zeros(count, np.bool_)

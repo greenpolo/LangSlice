@@ -15,7 +15,6 @@ class AmbiguousMatch(ValueError):
     """The file's entries cannot be matched to the job's sections one to one."""
 
 
-
 def base_name(filename: str) -> str:
     """The last path component of *filename* (``/`` and ``\\`` both separate)."""
     return re.split(r"[\\/]", filename)[-1]
@@ -56,8 +55,10 @@ RULES = (
 )
 
 
-def match_sections(names: Sequence[str], section_ids: Iterable[str],
-                   ) -> dict[int, tuple[str, str]]:
+def match_sections(
+    names: Sequence[str],
+    section_ids: Iterable[str],
+) -> dict[int, tuple[str, str]]:
     """Entry index -> ``(section id, rule)`` (see the module text for the
     rules). :class:`AmbiguousMatch` when an entry matches two sections under
     its rule, or two entries match one section."""
@@ -76,6 +77,8 @@ def match_sections(names: Sequence[str], section_ids: Iterable[str],
         taken.setdefault(sid, []).append(names[index])
     doubles = {sid: found for sid, found in taken.items() if len(found) > 1}
     if doubles:
-        raise AmbiguousMatch("several entries match one section: " + "; ".join(
-            f"{sid}: {found}" for sid, found in sorted(doubles.items())))
+        raise AmbiguousMatch(
+            "several entries match one section: "
+            + "; ".join(f"{sid}: {found}" for sid, found in sorted(doubles.items()))
+        )
     return matched

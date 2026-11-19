@@ -60,7 +60,8 @@ def resolve_structures(atlas: Any, names: Iterable[str | int]) -> frozenset[int]
 
 
 def resolve_entries(
-    atlas: Any, entries: Iterable[str | int],
+    atlas: Any,
+    entries: Iterable[str | int],
 ) -> list[tuple[str, str | None, frozenset[int]]]:
     """``(region, side, ids with descendants)`` per entry; unknown names or sides refused.
 
@@ -71,18 +72,23 @@ def resolve_entries(
 
     parsed = [split_side(entry) for entry in entries]
     resolve_structures(atlas, [region for region, _side in parsed])
-    return [(region, side, with_descendants(atlas, resolve_structures(atlas, [region])))
-            for region, side in parsed]
+    return [
+        (region, side, with_descendants(atlas, resolve_structures(atlas, [region])))
+        for region, side in parsed
+    ]
 
 
 def whole_region_ids(atlas: Any, entries: Iterable[str | int]) -> frozenset[int]:
     """Ids (with descendants) of the entries that name no side: both hemispheres."""
-    return frozenset().union(*(
-        ids for _region, side, ids in resolve_entries(atlas, entries) if side is None))
+    return frozenset().union(
+        *(ids for _region, side, ids in resolve_entries(atlas, entries) if side is None)
+    )
 
 
 def regions_mask(
-    atlas: Any, labels: np.ndarray, entries: Iterable[str | int],
+    atlas: Any,
+    labels: np.ndarray,
+    entries: Iterable[str | int],
     left: np.ndarray | None = None,
 ) -> np.ndarray:
     """Pixels of *labels* (native plane) covered by *entries*, sides included.
@@ -100,21 +106,32 @@ def regions_mask(
 
 
 def placement_left(
-    atlas: Any, placement: Placement, entries: Iterable[str | int],
+    atlas: Any,
+    placement: Placement,
+    entries: Iterable[str | int],
 ) -> np.ndarray | None:
     """The placement's displayed-left native pixels, when an entry names a side."""
     from langslice.core.atlas.sides import has_sides, native_left
 
     if not has_sides(list(entries)):
         return None
-    return native_left(atlas, placement.position_mm, placement.plane, placement.pitch_deg,
-                       placement.yaw_deg, placement.atlas_to_section)
+    return native_left(
+        atlas,
+        placement.position_mm,
+        placement.plane,
+        placement.pitch_deg,
+        placement.yaw_deg,
+        placement.atlas_to_section,
+    )
 
 
 def ventricle_ids(atlas: Any) -> frozenset[int]:
     """The ventricular system (``VS`` and descendants); empty when the atlas has no ``VS``."""
-    roots = {sid for sid, r in structure_table(atlas).items()
-             if str(r.get("acronym", "")) in VENTRICLE_ACRONYMS}
+    roots = {
+        sid
+        for sid, r in structure_table(atlas).items()
+        if str(r.get("acronym", "")) in VENTRICLE_ACRONYMS
+    }
     return with_descendants(atlas, roots)
 
 
@@ -126,10 +143,15 @@ def structure_acronyms(atlas: Any, ids: Iterable[int]) -> dict[int, str]:
 
 def native_labels(atlas: Any, placement: Placement) -> np.ndarray:
     """Leaf annotation ids on the placement's native plane grid."""
-    labels = np.asarray(annotation_slice(
-        atlas, placement.position_mm, plane=placement.plane,
-        pitch_deg=placement.pitch_deg, yaw_deg=placement.yaw_deg,
-    ))
+    labels = np.asarray(
+        annotation_slice(
+            atlas,
+            placement.position_mm,
+            plane=placement.plane,
+            pitch_deg=placement.pitch_deg,
+            yaw_deg=placement.yaw_deg,
+        )
+    )
     if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
         raise ValueError("Atlas annotation must be a two-dimensional integer label map")
     return labels
@@ -139,21 +161,26 @@ def native_intensity(atlas: Any, placement: Placement, kind: str) -> np.ndarray:
     """The atlas image *kind* (one of :func:`langslice.core.atlas.images.atlas_images`)
     on the native plane grid, float32."""
     if kind not in atlas_images(atlas):
-        raise ValueError(f"Not an image of this atlas: {kind!r}; its images: "
-                         f"{', '.join(atlas_images(atlas))}")
+        raise ValueError(
+            f"Not an image of this atlas: {kind!r}; its images: {', '.join(atlas_images(atlas))}"
+        )
     if placement.pitch_deg or placement.yaw_deg:
         from langslice.core.geometry.oblique import sample_oblique_plane
 
         return sample_oblique_plane(
-            atlas, placement.position_mm, placement.plane,
-            placement.pitch_deg, placement.yaw_deg, volume=kind, order=1,
+            atlas,
+            placement.position_mm,
+            placement.plane,
+            placement.pitch_deg,
+            placement.yaw_deg,
+            volume=kind,
+            order=1,
         )
     from langslice.core.geometry.oblique import plane_index_coordinates
 
     coords = plane_index_coordinates(atlas, placement.position_mm, placement.plane)
     index = np.rint(coords).astype(np.intp)
-    return np.asarray(atlas_volume(atlas, kind)[index[0], index[1], index[2]],
-                      dtype=np.float32)
+    return np.asarray(atlas_volume(atlas, kind)[index[0], index[1], index[2]], dtype=np.float32)
 
 
 def normalize_intensity(image: np.ndarray, region: np.ndarray) -> np.ndarray:
@@ -203,7 +230,10 @@ def placed_atlas_image(
         source = labels_at(labels, atlas, MODEL_DEPTH) if kind == "borders_merged" else labels
         source = np.where(keep, source, 0)
         coverage = placed_border_coverage(
-            source, atlas_to_working, working_size, width_px=1.0,
+            source,
+            atlas_to_working,
+            working_size,
+            width_px=1.0,
             supersample=BORDER_SUPERSAMPLE,
         )
         return soft_lines(coverage >= BORDER_COVERAGE_THRESHOLD, softening_px)

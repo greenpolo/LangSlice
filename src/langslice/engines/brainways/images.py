@@ -39,9 +39,7 @@ HISTOGRAM_BINS = 1024
 INPUT_PX = 224
 PERCENTILES = np.array((0.1, 99.8), dtype=np.float32)
 MEAN = np.multiply((0.485, 0.456, 0.406), 255.0, dtype=np.float32)
-DENOMINATOR = np.reciprocal(
-    np.multiply((0.229, 0.224, 0.225), 255.0, dtype=np.float32)
-)
+DENOMINATOR = np.reciprocal(np.multiply((0.229, 0.224, 0.225), 255.0, dtype=np.float32))
 
 
 def section_thumbnail(
@@ -69,9 +67,7 @@ def section_thumbnail(
     return _stretch_to_uint8(image)
 
 
-def resize_size(
-    input_hw: tuple[int, int], output_hw: tuple[int, int]
-) -> tuple[int, int]:
+def resize_size(input_hw: tuple[int, int], output_hw: tuple[int, int]) -> tuple[int, int]:
     """Fit a size into another, keeping its aspect (``get_resize_size``).
 
     Parameters
@@ -90,9 +86,7 @@ def resize_size(
     return round(input_hw[0] / factor), round(input_hw[1] / factor)
 
 
-def _resize_image(
-    image: npt.NDArray[np.uint8], size: tuple[int, int]
-) -> npt.NDArray[np.uint8]:
+def _resize_image(image: npt.NDArray[np.uint8], size: tuple[int, int]) -> npt.NDArray[np.uint8]:
     height, width = _height_width(image)
     output = resize_size((height, width), size)
     if output <= (height, width):
@@ -129,14 +123,10 @@ def _contrast_limits(image: npt.NDArray[np.uint8]) -> tuple[float, float]:
     if hist[-1] > hist[-2]:
         hist, bounds = hist[:-1], bounds[:-1]
     saturated = float(sum(hist)) * SATURATION
-    return _low_limit(hist, bounds, saturated), _high_limit(
-        hist, bounds, saturated
-    )
+    return _low_limit(hist, bounds, saturated), _high_limit(hist, bounds, saturated)
 
 
-def _low_limit(
-    hist: list[int], bounds: list[float], saturated: float
-) -> float:
+def _low_limit(hist: list[int], bounds: list[float], saturated: float) -> float:
     count = saturated
     for index in range(len(hist) - 1):
         if count < hist[index]:
@@ -146,9 +136,7 @@ def _low_limit(
     return bounds[0]
 
 
-def _high_limit(
-    hist: list[int], bounds: list[float], saturated: float
-) -> float:
+def _high_limit(hist: list[int], bounds: list[float], saturated: float) -> float:
     count = saturated
     for index in range(len(hist) - 1, -1, -1):
         if count < hist[index]:
@@ -223,9 +211,7 @@ def _normalized(levels: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     return np.asarray(scaled, dtype=np.float32)
 
 
-def _percentiles(
-    image: npt.NDArray[np.float64], *, float32: bool
-) -> tuple[float, float]:
+def _percentiles(image: npt.NDArray[np.float64], *, float32: bool) -> tuple[float, float]:
     values = np.sort(image, axis=None)
     quantiles = PERCENTILES / np.float32(100)
     index = np.float32(values.size - 1) * quantiles

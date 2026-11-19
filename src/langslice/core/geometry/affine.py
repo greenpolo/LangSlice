@@ -47,15 +47,18 @@ def pixel_center_map(
     the nonlinear canvas and the deformable working grid all use it.
     """
     sx, sy = target_size[0] / source_size[0], target_size[1] / source_size[1]
-    return np.array([
-        [sx, 0.0, offset[0] + (sx - 1.0) / 2.0],
-        [0.0, sy, offset[1] + (sy - 1.0) / 2.0],
-        [0.0, 0.0, 1.0],
-    ])
+    return np.array(
+        [
+            [sx, 0.0, offset[0] + (sx - 1.0) / 2.0],
+            [0.0, sy, offset[1] + (sy - 1.0) / 2.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
 
 def pixel_fraction_map(
-    size: tuple[int, int], box: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0),
+    size: tuple[int, int],
+    box: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0),
 ) -> np.ndarray:
     """3x3 map from the pixel centres of a *size* image onto fractions of the
     *box* (x0, y0, x1, y1) it shows: pixel ``x`` sits at
@@ -116,10 +119,13 @@ def affine_matrix(
     if shear:
         b += cos_t * shear * scale_x
         d -= sin_t * shear * scale_x
-    return np.array([
-        [a, b, cx - (a * cx + b * cy) + translate_x * width],
-        [c, d, cy - (c * cx + d * cy) + translate_y * height],
-    ], dtype=np.float64)
+    return np.array(
+        [
+            [a, b, cx - (a * cx + b * cy) + translate_x * width],
+            [c, d, cy - (c * cx + d * cy) + translate_y * height],
+        ],
+        dtype=np.float64,
+    )
 
 
 def physical_affine_matrix(
@@ -205,9 +211,7 @@ def normalized_physical_affine(
     )
 
 
-def decompose_affine(
-    params_or_matrix: Any, size: tuple[int, int] | None = None
-) -> dict[str, Any]:
+def decompose_affine(params_or_matrix: Any, size: tuple[int, int] | None = None) -> dict[str, Any]:
     """A 2x3 affine as the numbers a human reads: rotation, scale, shear, shift.
 
     Accepts either the normalized 6-vector ``[a, b, tx, c, d, ty]`` or a 2x3

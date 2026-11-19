@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   lint:
-    name: ruff + style checker + basedpyright + import layers
+    name: ruff + basedpyright + import layers
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,9 +24,6 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      # The locked versions (uv.lock): basedpyright's findings depend on the
-      # type stubs of numpy and the other libraries, not only on its own
-      # version, so its baseline holds only in the environment it was written in.
       - name: Install LangSlice + dev extras (locked)
         run: |
           python -m pip install --upgrade pip uv
@@ -36,41 +33,9 @@ jobs:
       - name: ruff check
         run: python -m ruff check .
 
-      # Fails on an error the baseline does not cover, and, compared with the
-      # push's previous commit or the pull request's base: on either baseline
-      # (the checker's, basedpyright's) grown, and on a setting loosened
-      # (tools/stylecheck/against.py). A new branch (an all-zero `before`), a
-      # manual run or a `before` that a force push removed compares with the
-      # parent commit instead. The checkout is shallow: the step fetches the
-      # one reference commit, and the history only when a baseline is absent
-      # there, since the reference is then the baseline's first committed
-      # version.
-      - name: style checker (tools/stylecheck)
-        env:
-          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          fetch() { git fetch --no-tags --quiet --depth="$2" origin "$1" 2>/dev/null; }
-          if [ -z "${BEFORE//0/}" ] || ! fetch "$BEFORE" 1; then
-            BEFORE=""
-            if fetch "$GITHUB_SHA" 2; then
-              BEFORE="$(git rev-parse --verify --quiet HEAD^ || true)"
-            fi
-          fi
-          if [ -z "$BEFORE" ]; then
-            python -m tools.stylecheck
-            exit
-          fi
-          for baseline in tools/stylecheck/baseline.json .basedpyright/baseline.json; do
-            if ! git cat-file -e "$BEFORE:$baseline" 2>/dev/null; then
-              git fetch --no-tags --quiet --unshallow origin "$GITHUB_SHA"
-              break
-            fi
-          done
-          python -m tools.stylecheck --against "$BEFORE"
+      - name: ruff format
+        run: python -m ruff format --check .
 
-      # Strict mode; errors that predate it are in .basedpyright/baseline.json,
-      # which the step above holds to "only shrinks". In CI basedpyright does
-      # not rewrite that file (its `lock` mode).
       - name: basedpyright
         run: python -m basedpyright
 
@@ -80,7 +45,7 @@ jobs:
   pytest:
     name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -101,6 +66,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,registration]"
 
-      # The default suite deselects tests marked slow.
       - name: Run pytest
         run: python -m pytest

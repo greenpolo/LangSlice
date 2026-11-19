@@ -121,9 +121,7 @@ class _Model(Protocol):
 
     def add(self, layer: object) -> None: ...
 
-    def predict(
-        self, x: object, *, steps: int, verbose: int
-    ) -> npt.NDArray[np.float32]: ...
+    def predict(self, x: object, *, steps: int, verbose: int) -> npt.NDArray[np.float32]: ...
 
 
 class _Node(Protocol):
@@ -199,9 +197,7 @@ def _fetched(folder: Path, file: tuple[str, str]) -> Path:
     logger.info("Fetching DeepSlice's weights from %s", url)
     folder.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(name + ".part")
-    opened = cast(
-        "IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S)
-    )
+    opened = cast("IO[bytes]", urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S))
     with opened as response, partial.open("wb") as out:
         shutil.copyfileobj(response, out, 1 << 20)
 
@@ -209,8 +205,7 @@ def _fetched(folder: Path, file: tuple[str, str]) -> Path:
     if fetched != digest:
         partial.unlink()
         raise ValueError(
-            f"the file fetched from {url} has SHA-256 {fetched}, not "
-            f"DeepSlice's {name} ({digest})"
+            f"the file fetched from {url} has SHA-256 {fetched}, not DeepSlice's {name} ({digest})"
         )
     partial.replace(path)
     return path
@@ -221,9 +216,7 @@ def _sha256(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def predict(
-    images: Sequence[Path], weights: Weights, *, ensemble: bool
-) -> Prediction:
+def predict(images: Sequence[Path], weights: Weights, *, ensemble: bool) -> Prediction:
     """Answer one QuickNII anchoring per image with DeepSlice's network.
 
     The model is built anew for the call, in Keras's current session
@@ -277,9 +270,7 @@ def _load_keras() -> _Keras:
         xception=cast("Callable[..., _Layer]", applications.Xception),
         sequential=cast("Callable[[], _Model]", models.Sequential),
         dense=cast("Callable[..., object]", layers.Dense),
-        image_generator=cast(
-            "Callable[..., object]", images.ImageDataGenerator
-        ),
+        image_generator=cast("Callable[..., object]", images.ImageDataGenerator),
         open_h5=cast("Callable[[str, str], _File]", h5py.File),
     )
 

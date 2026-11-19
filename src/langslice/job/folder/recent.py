@@ -39,16 +39,18 @@ def recent_file() -> Path | None:
     return Path(value).expanduser()
 
 
-def remember(folder: str | os.PathLike[str], image_folder: str | os.PathLike[str] | None,
-             atlas: str | None) -> None:
+def remember(
+    folder: str | os.PathLike[str], image_folder: str | os.PathLike[str] | None, atlas: str | None
+) -> None:
     """Append the job *folder* to the list (absolute paths, an ISO time)."""
     path = recent_file()
     if path is None:
         return
     record = {
         "folder": os.path.abspath(os.fspath(folder)),
-        "image_folder": (os.path.abspath(os.fspath(image_folder))
-                         if image_folder is not None else None),
+        "image_folder": (
+            os.path.abspath(os.fspath(image_folder)) if image_folder is not None else None
+        ),
         "atlas": atlas,
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
     }

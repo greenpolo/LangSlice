@@ -82,15 +82,10 @@ KEPT_SOURCES = 8
 KEPT_PLANES = 16
 KEPT_RENDERS = 64
 KEPT_JOBS = 3
-NO_STATE = (
-    "This job has no state this LangSlice reads yet, so there is nothing "
-    "to draw."
-)
+NO_STATE = "This job has no state this LangSlice reads yet, so there is nothing to draw."
 ATLAS_FAILED = "The atlas {atlas} could not be loaded: {reason}"
 DRAWING_FAILED = "The picture could not be drawn: {reason}"
-BUSY = (
-    "The picture is still being drawn; it will be ready on the next request."
-)
+BUSY = "The picture is still being drawn; it will be ready on the next request."
 
 _K = TypeVar("_K")
 _Key = tuple[str, str, int, str]
@@ -233,9 +228,7 @@ def thumb_key(state: Stack, section_id: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:KEY_DIGITS]
 
 
-def atlas_positions(
-    min_mm: float, max_mm: float, step_mm: float
-) -> tuple[float, ...]:
+def atlas_positions(min_mm: float, max_mm: float, step_mm: float) -> tuple[float, ...]:
     """Place the strip's atlas thumbnails along the axis.
 
     Parameters
@@ -343,9 +336,7 @@ class JobRenderer:
         """
         opened = self._open()
         state = self._stack()
-        thumbs = tuple(
-            AtlasThumb(k, mm) for k, mm in enumerate(opened.positions_mm)
-        )
+        thumbs = tuple(AtlasThumb(k, mm) for k, mm in enumerate(opened.positions_mm))
         if state is None:
             return Strip(opened.axis, opened.step_mm, thumbs, "", ())
         sections = tuple(
@@ -361,13 +352,9 @@ class JobRenderer:
         )
         angles = state.view_angles
         words = view_angles_label(angles, median=state.drawn_at_median(angles))
-        return Strip(
-            opened.axis, opened.step_mm, thumbs, words.strip(), sections
-        )
+        return Strip(opened.axis, opened.step_mm, thumbs, words.strip(), sections)
 
-    def overlay(
-        self, section_id: str, edge: int, *, style: Style = Style.RAW
-    ) -> bytes:
+    def overlay(self, section_id: str, edge: int, *, style: Style = Style.RAW) -> bytes:
         """Draw a section under its current registration.
 
         Parameters
@@ -411,9 +398,7 @@ class JobRenderer:
         still = self._still(render_key, section_id, key[3])
         return self._picture(key, opened, draw, current=still)
 
-    def thumb(
-        self, section_id: str, edge: int, *, style: Style = Style.RAW
-    ) -> bytes:
+    def thumb(self, section_id: str, edge: int, *, style: Style = Style.RAW) -> bytes:
         """Draw a section's thumbnail: its raw channels, oriented.
 
         Parameters
@@ -536,9 +521,7 @@ class JobRenderer:
         state = self._state()
         thickness_um = opened.workspace.spec.position.thickness_um
         with self._drawing:
-            return job_space(
-                opened.workspace, state, thickness_um=thickness_um
-            )
+            return job_space(opened.workspace, state, thickness_um=thickness_um)
 
     def release(self) -> None:
         """Let go of the workspace and pictures until the next drawing."""
@@ -656,9 +639,7 @@ class RenderPool:
         self._renderers: OrderedDict[Path, JobRenderer] = OrderedDict()
         self._lock = threading.Lock()
 
-    def renderer(
-        self, folder: Path, stack: Callable[[], Stack | None]
-    ) -> JobRenderer:
+    def renderer(self, folder: Path, stack: Callable[[], Stack | None]) -> JobRenderer:
         """Return the renderer of one job, made on first use.
 
         Parameters
@@ -713,17 +694,13 @@ def _open_job(
     except (NoJob, OSError, ValueError) as exc:
         raise RenderError(str(exc)) from exc
     layout = workspace.layout
-    store = RecordStore(
-        root=layout.sections_dir, folder_of=layout.deformable_dir
-    )
+    store = RecordStore(root=layout.sections_dir, folder_of=layout.deformable_dir)
     try:
         min_mm, max_mm = workspace.position_range
         low, high = workspace.axis_ends
         step_mm = strip_step(min_mm, max_mm, workspace.brain_scale)
     except Exception as exc:
-        raise RenderError(
-            ATLAS_FAILED.format(atlas=spec.atlas, reason=exc)
-        ) from exc
+        raise RenderError(ATLAS_FAILED.format(atlas=spec.atlas, reason=exc)) from exc
     axis = Axis(low, high, round(min_mm, 4), round(max_mm, 4))
     positions = atlas_positions(min_mm, max_mm, step_mm)
     return _Opened(workspace, store, axis, step_mm, positions, stamp)

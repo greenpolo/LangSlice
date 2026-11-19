@@ -95,7 +95,6 @@ class MaskView:
     earlier_registration: bool = False
 
 
-
 def registration_parts(state: Stack, section: Section) -> dict[str, Any]:
     """What ``tools.stale.section_inputs`` and :func:`registration_digest` both
     digest: the linear placement, the made images (their digests) and the
@@ -112,8 +111,7 @@ def registration_digest(state: Stack, section: Section) -> str:
     its made images, its damage marks and its applied deformation. The same
     content as ``tools.stale.section_inputs(..., deformation=True)``, which a
     mask stores at creation (core cannot import ops)."""
-    held = {**registration_parts(state, section),
-            "deformation": section.deformation_key}
+    held = {**registration_parts(state, section), "deformation": section.deformation_key}
     text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -139,11 +137,15 @@ def made_earlier(state: Stack, section: Section, entry: MaskRef) -> bool:
 def mask_rows(state: Stack, section: Section) -> list[dict[str, Any]]:
     """``[{name, kind, stale, earlier_registration}]`` of *section*'s masks
     (the status rows)."""
-    return [{"name": name, "kind": entry.kind,
-             "stale": is_stale(state, section, entry),
-             "earlier_registration": made_earlier(state, section, entry)}
-            for name, entry in section.masks.items()]
-
+    return [
+        {
+            "name": name,
+            "kind": entry.kind,
+            "stale": is_stale(state, section, entry),
+            "earlier_registration": made_earlier(state, section, entry),
+        }
+        for name, entry in section.masks.items()
+    ]
 
 
 def _gray(image: np.ndarray) -> np.ndarray:
@@ -156,8 +158,14 @@ def _gray(image: np.ndarray) -> np.ndarray:
 
 
 def em_sorting(
-    ws: Workspace, state: Stack, record: Section, store: RecordStore, *,
-    section_image: np.ndarray, atlas_image: str, params: dict[str, float],
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    store: RecordStore,
+    *,
+    section_image: np.ndarray,
+    atlas_image: str,
+    params: dict[str, float],
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """The EM sorting of *record*'s section against *atlas_image* at its CURRENT
     registration: ``(WM, facts)``, WM the float32 P(match) on the fit grid and
@@ -197,8 +205,9 @@ def em_sorting(
     else:
         yy, xx = np.indices((height, width), dtype=np.float64)
         inverse = np.linalg.inv(placement.atlas_to_section)
-        coordinates = np.stack([inverse[k, 0] * xx + inverse[k, 1] * yy + inverse[k, 2]
-                                for k in range(2)], axis=-1)
+        coordinates = np.stack(
+            [inverse[k, 0] * xx + inverse[k, 1] * yy + inverse[k, 2] for k in range(2)], axis=-1
+        )
     placed_image = sample_native(native.astype(np.float32), coordinates, nearest=False)
     placed_labels = sample_native(labels, coordinates)
 
@@ -207,18 +216,25 @@ def em_sorting(
     working = WorkingGrid.for_section((width, height), mm, WORKING_UM * scale / 1000.0)
     spacing = float(np.mean(working.spacing_mm))
     weights = em_weights(
-        working.to_working(section), working.to_working(placed_image),
+        working.to_working(section),
+        working.to_working(placed_image),
         working.to_working(footprint.astype(np.uint8), nearest=True) > 0,
-        spacing, scale, dict(params) or None)
+        spacing,
+        scale,
+        dict(params) or None,
+    )
     match = cv2.resize(weights["WM"], (width, height), interpolation=cv2.INTER_LINEAR)
     match = np.clip(match, 0.0, 1.0).astype(np.float32)
     used = weights["params"]
-    left_out = (float((match[footprint] < EM_MATCH_THRESHOLD).mean())
-                if footprint.any() else 0.0)
+    left_out = float((match[footprint] < EM_MATCH_THRESHOLD).mean()) if footprint.any() else 0.0
     facts = {
-        "params": {"match_sd": float(used["sigmaM"]), "background_sd": float(used["sigmaB"]),
-                   "artifact_sd": float(used["sigmaA"]),
-                   "background_mean": float(used["muB"]), "artifact_mean": float(used["muA"])},
+        "params": {
+            "match_sd": float(used["sigmaM"]),
+            "background_sd": float(used["sigmaB"]),
+            "artifact_sd": float(used["sigmaA"]),
+            "background_mean": float(used["muB"]),
+            "artifact_mean": float(used["muA"]),
+        },
         "left_out": left_out,
     }
     return match, facts
@@ -234,7 +250,6 @@ def fit_weights(store: RecordStore, state: Stack, record: Section) -> np.ndarray
     return np.asarray(held.weights, dtype=np.float32)
 
 
-
 def _file_for(layout: _Layout, section: Section, name: str) -> Path:
     folder = layout.masks_dir(section.id)
     path = folder / f"{name}.npz"
@@ -246,7 +261,11 @@ def _file_for(layout: _Layout, section: Section, name: str) -> Path:
 
 
 def write_mask(
-    layout: _Layout, section: Section, name: str, weights: np.ndarray, facts: MaskRef,
+    layout: _Layout,
+    section: Section,
+    name: str,
+    weights: np.ndarray,
+    facts: MaskRef,
 ) -> MaskRef:
     """Save *weights* as *section*'s mask *name* and return its state entry
     (also set as ``section.masks[name]``): *facts* with the file written.
@@ -255,8 +274,10 @@ def write_mask(
     creation), ``registration`` (:func:`registration_digest` at creation) and
     ``left_out``. ``ValueError`` for a bad name, kind or weights."""
     if not NAME_PATTERN.match(name) or name in RESERVED_NAMES:
-        raise ValueError(f"A mask name is letters, digits, - and _ (up to 40, not "
-                         f"{', '.join(RESERVED_NAMES)}); got {name!r}")
+        raise ValueError(
+            f"A mask name is letters, digits, - and _ (up to 40, not "
+            f"{', '.join(RESERVED_NAMES)}); got {name!r}"
+        )
     kind = facts.kind
     if kind not in KINDS:
         raise ValueError(f"A mask kind is one of {list(KINDS)}; got {kind!r}")
@@ -268,9 +289,12 @@ def write_mask(
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.stem}.partial.npz")
     try:
-        np.savez_compressed(temporary, weights=stored,
-                            grid=np.array([stored.shape[1], stored.shape[0]]),
-                            made=np.array(datetime.now(UTC).isoformat()))
+        np.savez_compressed(
+            temporary,
+            weights=stored,
+            grid=np.array([stored.shape[1], stored.shape[0]]),
+            made=np.array(datetime.now(UTC).isoformat()),
+        )
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -290,14 +314,18 @@ def read_mask(layout: _Layout, state: Stack, section: Section, name: str) -> Mas
             weights = np.asarray(data["weights"], dtype=np.float32)
     except (OSError, KeyError, ValueError) as exc:
         raise ValueError(f"{section.id}'s mask {name!r} cannot be read ({path}): {exc}") from exc
-    return MaskView(name=name, kind=entry.kind, weights=weights,
-                    stale=is_stale(state, section, entry), params=dict(entry.params),
-                    earlier_registration=made_earlier(state, section, entry),
-                    left_out=float(entry.left_out))
+    return MaskView(
+        name=name,
+        kind=entry.kind,
+        weights=weights,
+        stale=is_stale(state, section, entry),
+        params=dict(entry.params),
+        earlier_registration=made_earlier(state, section, entry),
+        left_out=float(entry.left_out),
+    )
 
 
 def section_weights(mask: MaskView | None) -> np.ndarray | None:
     """The weights a fit takes (``prepare_fit(section_weights=)``): the mask's,
     or None for no mask."""
     return None if mask is None else mask.weights
-

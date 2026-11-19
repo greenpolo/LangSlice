@@ -113,7 +113,6 @@ def build_context(
     )
 
 
-
 def build_seed_message(state: Stack, ctx: EngineContext, job: str) -> types.Content:
     """The first message: *job* (the job statement and the user's notes), the
     stack as ABBA-style strips (:mod:`langslice.core.pictures.opening`), the
@@ -128,8 +127,11 @@ def save_opening(box: ToolBox, seed: types.Content) -> list[str]:
     return the saved pictures' paths (written in the background)."""
     from langslice.job.pictures import PICTURE_FILE, captured
 
-    pictures = [part.inline_data.data for part in seed.parts or []
-                if part.inline_data is not None and part.inline_data.data]
+    pictures = [
+        part.inline_data.data
+        for part in seed.parts or []
+        if part.inline_data is not None and part.inline_data.data
+    ]
     try:
         with captured() as saved:
             box.job.views.save(tool="opening", pictures=[(data, None) for data in pictures])
@@ -164,8 +166,7 @@ def background_message(job: Job) -> list[Any] | None:
     finished = job.background.notices()
     if not finished:
         return None
-    items: list[Any] = ["Background work finished:\n" + "\n".join(
-        work.notice for work in finished)]
+    items: list[Any] = ["Background work finished:\n" + "\n".join(work.notice for work in finished)]
     for work in finished:
         for number, image in zip(work.pictures, work.images, strict=False):
             items += [f"picture {number} ({work.id})", image]
@@ -182,10 +183,9 @@ async def run_session(
 ) -> tuple[int, int]:
     """Drive the one stack session; return ``(tool_calls, turns)``."""
     facts = StatementFacts.from_run(
-        spec, state, ctx, tool_names=box.names,
-        max_resolution=box.max_view_edge)
-    statement = job_statement(facts, door=AGENT_DOOR,
-                              notes=read_notes(box.job.layout))
+        spec, state, ctx, tool_names=box.names, max_resolution=box.max_view_edge
+    )
+    statement = job_statement(facts, door=AGENT_DOOR, notes=read_notes(box.job.layout))
     agent = build_agent(
         model=ctx.model,
         name="linear_stack",

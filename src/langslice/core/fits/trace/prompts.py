@@ -106,6 +106,7 @@ def border_correction_tool_prompt(plane: Plane = "coronal", provider: str | None
     place of this text. Sentence audit: ``core/fits/trace/CLAUDE.md``.
     """
     return (
-        _for_plane(_SUPPLIED_GPT, plane) if _is_gpt_twin(provider)
+        _for_plane(_SUPPLIED_GPT, plane)
+        if _is_gpt_twin(provider)
         else border_refinement_prompt(plane)
     )

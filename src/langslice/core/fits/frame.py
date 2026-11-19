@@ -97,8 +97,7 @@ def linear_placement_matrix(
         raise ValueError("The written affine is singular") from exc
     if not np.isfinite(inverse).all():
         raise ValueError("The written affine cannot be inverted to finite coordinates")
-    geometry = canvas_geometry(image_size, um_per_px, atlas, position_mm, plane,
-                               pitch_deg, yaw_deg)
+    geometry = canvas_geometry(image_size, um_per_px, atlas, position_mm, plane, pitch_deg, yaw_deg)
     atlas_to_slice = inverse @ geometry.atlas_to_section_frame()
     if not np.isfinite(atlas_to_slice).all():
         raise ValueError("Atlas placement produced non-finite coordinates")
@@ -141,8 +140,7 @@ def params_after_grid_step(
     """
     size = (int(working_size[0]), int(working_size[1]))
     to_image = np.asarray(working_to_image, dtype=np.float64)
-    start = np.vstack(
-        [denormalized_affine(list(start_params), size), [0.0, 0.0, 1.0]])
+    start = np.vstack([denormalized_affine(list(start_params), size), [0.0, 0.0, 1.0]])
     on_working = np.linalg.inv(to_image) @ np.asarray(step, np.float64)
     return normalized_affine((start @ on_working @ to_image)[:2], size)
 
@@ -192,8 +190,7 @@ def prepare_linear_registration(
         params = transform.params
     if orientation is not None:
         expected = {"flip": section.flip, "rotation_deg": section.rotation_deg}
-        if any(key in orientation and orientation[key] != value
-               for key, value in expected.items()):
+        if any(key in orientation and orientation[key] != value for key, value in expected.items()):
             raise ValueError("The written affine has a different section orientation")
     if state.atlas != ctx.settings.atlas or state.plane != ctx.settings.plane:
         raise ValueError("State and rendering context disagree about the atlas or plane")
@@ -213,8 +210,11 @@ def prepare_linear_registration(
     with Image.open(ctx.image_path(section.id)) as source_image:
         original_size = list(source_image.size)
 
-    working = (image if long_edge == PREVIEW_LONG_EDGE
-               else render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE))
+    working = (
+        image
+        if long_edge == PREVIEW_LONG_EDGE
+        else render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
+    )
     um_work, source = canvas_um_per_px(ctx, section, long_edge=PREVIEW_LONG_EDGE)
     if um_work is None:
         from langslice.core.fits.affine import calibrate
@@ -228,16 +228,28 @@ def prepare_linear_registration(
 
     plane = state.plane
     atlas_to_working, geometry = linear_placement_matrix(
-        working.size, um_work, ctx.atlas, float(section.position_mm), plane,
-        section.pitch_deg, section.yaw_deg, six)
+        working.size,
+        um_work,
+        ctx.atlas,
+        float(section.position_mm),
+        plane,
+        section.pitch_deg,
+        section.yaw_deg,
+        six,
+    )
     working_to_image = pixel_center_map(working.size, image.size)
     atlas_to_slice = working_to_image @ atlas_to_working
     return LinearRegistrationInput(
-        image=image.copy(), atlas_to_slice=atlas_to_slice, atlas_name=state.atlas,
-        position_mm=float(section.position_mm), plane=plane,
-        pitch_deg=section.pitch_deg, yaw_deg=section.yaw_deg,
+        image=image.copy(),
+        atlas_to_slice=atlas_to_slice,
+        atlas_name=state.atlas,
+        position_mm=float(section.position_mm),
+        plane=plane,
+        pitch_deg=section.pitch_deg,
+        yaw_deg=section.yaw_deg,
         metadata={
-            "source": "linear_state", "section_id": section.id,
+            "source": "linear_state",
+            "section_id": section.id,
             "orientation": {"rotation_deg": section.rotation_deg, "flip": section.flip},
             "orientation_snapshot_checked": orientation is not None,
             "preprocess": ctx.settings.preprocess,
@@ -245,13 +257,15 @@ def prepare_linear_registration(
             "image_size": list(image.size),
             "image_frame": "oriented rendered section; not acquisition image pixels",
             "source_image_size": original_size,
-            "section_um_per_px": float(um_per_px), "calibration_source": source,
+            "section_um_per_px": float(um_per_px),
+            "calibration_source": source,
             "linear_params": six.tolist(),
             "atlas_to_slice": atlas_to_slice.tolist(),
             "working_size": list(working.size),
             "working_to_image": working_to_image.tolist(),
             "atlas_grid_size": list(geometry.annotation.shape[::-1]),
-            "image_axes": "native", "atlas_mirror_lr": False,
+            "image_axes": "native",
+            "atlas_mirror_lr": False,
         },
         working_size=(int(working.size[0]), int(working.size[1])),
         working_to_image=working_to_image,
@@ -272,16 +286,29 @@ def correction_fingerprint(state: Stack, ctx: Workspace, section_id: str) -> str
     source = Path(ctx.image_path(section.id)).resolve()
     stat = source.stat()
     nonlinear = dict(ctx.settings.trace_settings)
-    return digest({
-        "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
-        "section_id": section.id, "atlas": state.atlas, "plane": state.plane,
-        "position_mm": section.position_mm,
-        "angles": angles_to_json(section.angles),
-        "flip": section.flip, "rotation_deg": section.rotation_deg,
-        "transform": affine_fields(section.transform, (
-            "params", "calibration", "orientation", "stale",
-        )),
-        "preprocess": ctx.settings.preprocess,
-        "pixel_size_um": ctx.settings.supplied_pixel_size,
-        "nonlinear": nonlinear,
-    })
+    return digest(
+        {
+            "source": str(source),
+            "source_size": stat.st_size,
+            "source_mtime": stat.st_mtime_ns,
+            "section_id": section.id,
+            "atlas": state.atlas,
+            "plane": state.plane,
+            "position_mm": section.position_mm,
+            "angles": angles_to_json(section.angles),
+            "flip": section.flip,
+            "rotation_deg": section.rotation_deg,
+            "transform": affine_fields(
+                section.transform,
+                (
+                    "params",
+                    "calibration",
+                    "orientation",
+                    "stale",
+                ),
+            ),
+            "preprocess": ctx.settings.preprocess,
+            "pixel_size_um": ctx.settings.supplied_pixel_size,
+            "nonlinear": nonlinear,
+        }
+    )

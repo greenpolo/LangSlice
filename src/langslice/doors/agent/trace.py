@@ -103,9 +103,15 @@ def _describe_parts(parts: Any) -> list[dict[str, Any]]:
 class SessionTrace:
     """Append-only JSONL record of one linear agent session."""
 
-    def __init__(self, trace_dir: str | Path, run_label: str, *, agent: Any,
-                 plugins: list[dict[str, Any]] | None = None,
-                 mirror_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        trace_dir: str | Path,
+        run_label: str,
+        *,
+        agent: Any,
+        plugins: list[dict[str, Any]] | None = None,
+        mirror_dir: str | Path | None = None,
+    ) -> None:
         self._steps = 0
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in run_label)
         self.path = Path(trace_dir) / f"{safe}_{uuid.uuid4().hex[:8]}.jsonl"
@@ -113,15 +119,17 @@ class SessionTrace:
         if mirror_dir is not None and not _same_folder(Path(mirror_dir), Path(trace_dir)):
             self.paths.append(Path(mirror_dir) / self.path.name)
         instruction = getattr(agent, "instruction", "")
-        self._write({
-            "kind": "session",
-            "run_label": run_label,
-            "agent": getattr(agent, "name", ""),
-            "model": _model_name(getattr(agent, "model", "")),
-            "system_instruction": (
-                instruction if isinstance(instruction, str) else "<dynamic instruction>"
-            ),
-        })
+        self._write(
+            {
+                "kind": "session",
+                "run_label": run_label,
+                "agent": getattr(agent, "name", ""),
+                "model": _model_name(getattr(agent, "model", "")),
+                "system_instruction": (
+                    instruction if isinstance(instruction, str) else "<dynamic instruction>"
+                ),
+            }
+        )
         if plugins:
             self._write({"kind": "plugins", "plugins": plugins})
 
@@ -165,10 +173,12 @@ class SessionTrace:
                 continue
             call = getattr(part, "function_call", None)
             if call is not None:
-                calls.append({
-                    "name": getattr(call, "name", None),
-                    "args": dict(getattr(call, "args", None) or {}),
-                })
+                calls.append(
+                    {
+                        "name": getattr(call, "name", None),
+                        "args": dict(getattr(call, "args", None) or {}),
+                    }
+                )
                 continue
             part_text = getattr(part, "text", None)
             if isinstance(part_text, str) and part_text:
@@ -249,13 +259,16 @@ def _same_folder(a: Path, b: Path) -> bool:
         return a.absolute() == b.absolute()
 
 
-def open_trace(run_label: str, *, agent: Any,
-               plugins: list[dict[str, Any]] | None = None,
-               mirror_dir: str | Path | None = None) -> SessionTrace | None:
+def open_trace(
+    run_label: str,
+    *,
+    agent: Any,
+    plugins: list[dict[str, Any]] | None = None,
+    mirror_dir: str | Path | None = None,
+) -> SessionTrace | None:
     """A trace for this session, or ``None`` when tracing is off; written to
     *mirror_dir* too (the job folder's ``trace/``) when that is another folder."""
     trace_dir = env_value(TRACE_DIR_ENV)
     if trace_dir is None:
         return None
-    return SessionTrace(trace_dir, run_label, agent=agent, plugins=plugins,
-                        mirror_dir=mirror_dir)
+    return SessionTrace(trace_dir, run_label, agent=agent, plugins=plugins, mirror_dir=mirror_dir)

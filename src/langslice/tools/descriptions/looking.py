@@ -193,10 +193,7 @@ with its number, caption and its tiles' pictures and boxes) and
 )
 
 ZOOM = ToolDescription(
-    summary=(
-        "Zoom into a pixel box or one atlas region of an earlier picture. "
-        "Writes nothing."
-    ),
+    summary=("Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing."),
     body=(
         """\
 The new picture is as large as the earlier one. In a picture of a
@@ -278,10 +275,7 @@ tiles, and that tile's own picture is zoomed.""",
 )
 
 MAKE_IMAGE = ToolDescription(
-    summary=(
-        "Make, replace or delete a named section image, from the section's "
-        "other images."
-    ),
+    summary=("Make, replace or delete a named section image, from the section's other images."),
     body=(
         """\
 A section image is a grayscale picture of a section that look draws and
@@ -377,18 +371,13 @@ image]].""",
             capped="""\
 up to 4 of the sections (spread over the stack when none are
 named)""",
-            uncapped=(
-                "each of the sections (the whole stack when none are named)"
-            ),
+            uncapped=("each of the sections (the whole stack when none are named)"),
         ),
     },
 )
 
 GREP_ATLAS = ToolDescription(
-    summary=(
-        "Look regions up in the atlas hierarchy by acronym, name or id. Text "
-        "only."
-    ),
+    summary=("Look regions up in the atlas hierarchy by acronym, name or id. Text only."),
     body=(
         """\
 When you recognize a structure in the tissue, find its atlas name \
@@ -484,10 +473,7 @@ the named regions that have no pixel in that plane.""",
 )
 
 STATUS = ToolDescription(
-    summary=(
-        "The stack as it stands, and what this run lets you change. Writes "
-        "nothing."
-    ),
+    summary=("The stack as it stands, and what this run lets you change. Writes nothing."),
     returns="""\
 One row per section in stack order: filename, position, distance
 to the next placed section, flip and quarter turn, transform (kind,
@@ -533,10 +519,7 @@ with the number left out.""",
 )
 
 SEARCH_FILES = ToolDescription(
-    summary=(
-        "Search the job folder's text files for lines that match. Writes "
-        "nothing."
-    ),
+    summary=("Search the job folder's text files for lines that match. Writes nothing."),
     arguments={
         "query": Argument(
             str,
@@ -562,10 +545,7 @@ Pictures and binary files are not searched.""",
 )
 
 READ_FILE = ToolDescription(
-    summary=(
-        "Read a text file of the job folder, with line numbers. Writes "
-        "nothing."
-    ),
+    summary=("Read a text file of the job folder, with line numbers. Writes nothing."),
     body=(
         """\
 A picture file is answered with its entry in the picture index (its
@@ -596,8 +576,7 @@ offset to continue from.""",
 
 REVIEW_COMMENTS = ToolDescription(
     summary=(
-        "Read the comments a person left on sections in the LangSlice "
-        "window. Writes nothing."
+        "Read the comments a person left on sections in the LangSlice window. Writes nothing."
     ),
     body=(
         """\

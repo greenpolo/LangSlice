@@ -82,9 +82,7 @@ def draw_fits(
         assert applied is not None
         record = fit.grid.record
         include, exclude = fit_regions(fit)
-        fit_style = replace(
-            style, highlight=style.highlight or include, marked=exclude
-        )
+        fit_style = replace(style, highlight=style.highlight or include, marked=exclude)
         coverage = drawn_border_coverage(
             outcome,
             workspace.atlas,
@@ -174,18 +172,13 @@ def _trace_pictures(
     traces: list[Written] = []
     pictures: list[Image.Image] = []
     failed: list[dict[str, str]] = []
-    where = {
-        fitted.fit.grid.record.id: fitted.fit.grid.record
-        for fitted in done.fitted
-    }
+    where = {fitted.fit.grid.record.id: fitted.fit.grid.record for fitted in done.fitted}
     for section_id, (image, lines) in done.traced.items():
         record = where.get(section_id)
         try:
             picture = _trace_picture(section_id, image, lines, style, record)
         except Exception as exc:
-            logger.warning(
-                "trace picture failed for %s", section_id, exc_info=True
-            )
+            logger.warning("trace picture failed for %s", section_id, exc_info=True)
             failed.append({"id": section_id, "message": str(exc)})
             continue
         index = start + len(pictures)
@@ -208,9 +201,7 @@ def _indexed(
     return out
 
 
-def _fit_title(
-    fitted: Fitted, include: Sequence[str], exclude: Sequence[str]
-) -> str:
+def _fit_title(fitted: Fitted, include: Sequence[str], exclude: Sequence[str]) -> str:
     """Return a fit picture's title.
 
     The section, the engine and smoothness, then what was fitted against
@@ -222,9 +213,7 @@ def _fit_title(
         f"smoothness {fit.choice.smoothness_um:g} um"
     )
     start = "current" if fit.previous is not None else "linear"
-    detail_line = (
-        f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
-    )
+    detail_line = f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
     if include:
         detail_line += f", include {','.join(include)}"
     if exclude:
@@ -249,13 +238,8 @@ def _trace_picture(
     at = ""
     if section is not None:
         at = f", at {section.position_mm:.2f} mm"
-    caption = (
-        f"{section_id} trace_borders: the image model's traced lines drawn "
-        f"on the section{at}"
-    )
-    return pictures_drawn.note(
-        picture, sections=(section_id,), mode="trace", caption=caption
-    )
+    caption = f"{section_id} trace_borders: the image model's traced lines drawn on the section{at}"
+    return pictures_drawn.note(picture, sections=(section_id,), mode="trace", caption=caption)
 
 
 _FIT_SECTION_WORDS = {
@@ -299,10 +283,6 @@ def fit_caption(
             if include
             else ""
         )
-        + (
-            f"; left out (second colour): {', '.join(exclude)}"
-            if exclude
-            else ""
-        )
+        + (f"; left out (second colour): {', '.join(exclude)}" if exclude else "")
         + (f"; {facts}" if facts else "")
     )

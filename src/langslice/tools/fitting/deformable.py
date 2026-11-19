@@ -76,6 +76,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass(frozen=True)
 class Fitted:
     """One fit that produced a record, for the door to draw: its row, the
@@ -109,7 +110,6 @@ class DeformableFit:
     settings: dict[str, Any] = field(default_factory=dict)
 
 
-
 def damage_margin_mm(workspace: Workspace) -> float:
     """The margin every native fit leaves around the marked damage regions, in
     millimetres at the atlas's brain size."""
@@ -119,9 +119,17 @@ def damage_margin_mm(workspace: Workspace) -> float:
 
 
 def inputs_block(
-    state: Stack, workspace: Workspace, record: Section, *, section_image: str,
-    atlas_image: str, mask: str, damage: Sequence[str], restrict_to: Sequence[str] = (),
-    brightness: str = NATIVE_BRIGHTNESS, resolved: str | None = None,
+    state: Stack,
+    workspace: Workspace,
+    record: Section,
+    *,
+    section_image: str,
+    atlas_image: str,
+    mask: str,
+    damage: Sequence[str],
+    restrict_to: Sequence[str] = (),
+    brightness: str = NATIVE_BRIGHTNESS,
+    resolved: str | None = None,
 ) -> InputsBlock:
     """What one native fit of *record* read, named: the section image (name,
     kind, file, digest), the atlas image as asked and as resolved, the section mask
@@ -138,9 +146,12 @@ def inputs_block(
         section_image=images_.read_image(workspace, record, section_image).payload(),
         atlas_image=atlas_image,
         atlas_image_resolved=resolved or resolve_image(workspace.atlas, atlas_image),
-        mask=held, damage=damage_block(list(damage), damage_margin_mm(workspace)),
-        restrict_to=list(restrict_to), brightness=brightness,
-        atlas_image_note=nissl_note(workspace.atlas, atlas_image))
+        mask=held,
+        damage=damage_block(list(damage), damage_margin_mm(workspace)),
+        restrict_to=list(restrict_to),
+        brightness=brightness,
+        atlas_image_note=nissl_note(workspace.atlas, atlas_image),
+    )
 
 
 def estimated_block(record: deformation.DeformableRecord) -> EstimatedBlock | None:
@@ -152,10 +163,15 @@ def estimated_block(record: deformation.DeformableRecord) -> EstimatedBlock | No
         return None
     footprint = np.asarray(record.footprint, dtype=bool)
     sorted_out = np.asarray(weights, dtype=np.float32) < 0.5
-    inside = sorted_out[footprint] if footprint.shape == sorted_out.shape and footprint.any() \
+    inside = (
+        sorted_out[footprint]
+        if footprint.shape == sorted_out.shape and footprint.any()
         else sorted_out.ravel()
-    return EstimatedBlock(sorting="saved with the deformation; make_mask source fit",
-                          left_out_fraction=round(float(inside.mean()), 4) if inside.size else 0.0)
+    )
+    return EstimatedBlock(
+        sorting="saved with the deformation; make_mask source fit",
+        left_out_fraction=round(float(inside.mean()), 4) if inside.size else 0.0,
+    )
 
 
 def resolved_atlas_image(workspace: Workspace, atlas_image: str) -> str:
@@ -174,12 +190,17 @@ def resolved_atlas_image(workspace: Workspace, atlas_image: str) -> str:
     str
         The atlas's own image name.
     """
-    return resolve_image(workspace.atlas, atlas_image) if atlas_image not in (
-        deformation.FIT_BORDERS,) else atlas_image
+    return (
+        resolve_image(workspace.atlas, atlas_image)
+        if atlas_image not in (deformation.FIT_BORDERS,)
+        else atlas_image
+    )
 
 
 def traced_regions(
-    record: Section, include: tuple[str, ...], exclude: tuple[str, ...],
+    record: Section,
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The regions a traced fit uses: the call's own, completed by the trace's.
 
@@ -198,8 +219,10 @@ def traced_regions(
 
 def fit_regions(fit: deformation.Job) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(include, exclude)`` one fit ran with, as region entries."""
-    return (tuple(str(name) for name in fit.settings.structures),
-            tuple(str(name) for name in fit.settings.exclude))
+    return (
+        tuple(str(name) for name in fit.settings.structures),
+        tuple(str(name) for name in fit.settings.exclude),
+    )
 
 
 GPU_WAIT_SHOWN_S = 1.0
@@ -217,9 +240,11 @@ def gpu_rows(engine: Mapping[str, Any]) -> dict[str, Any]:
     retries = int(engine.get("oom_retries") or 0)
     if retries:
         times = "once" if retries == 1 else f"{retries} times"
-        out["retried"] = (f"The GPU ran out of memory {times} (another process held it); "
-                          "the fit waited and ran again from the start, so this result is "
-                          "whole.")
+        out["retried"] = (
+            f"The GPU ran out of memory {times} (another process held it); "
+            "the fit waited and ran again from the start, so this result is "
+            "whole."
+        )
     return out
 
 
@@ -288,29 +313,45 @@ def fit_deformable(
         except ValueError:
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current, unreadable = None, True
-        if unreadable or (current is None and held is not None
-                          and held.linear_key == deformation.linear_key(state, record)):
+        if unreadable or (
+            current is None
+            and held is not None
+            and held.linear_key == deformation.linear_key(state, record)
+        ):
             folder = None if held is None else held.record
-            rows.append(DeformableRow(record.id, refusal=Refused(
-                RefusalCode.DEFORMATION_UNREADABLE,
-                "The section's applied deformation record cannot be read "
-                f"({folder}); it is not replaced by a fit from the "
-                "linear placement. Put the section back on another "
-                "registration, or undo the step that applied it.")))
+            rows.append(
+                DeformableRow(
+                    record.id,
+                    refusal=Refused(
+                        RefusalCode.DEFORMATION_UNREADABLE,
+                        "The section's applied deformation record cannot be read "
+                        f"({folder}); it is not replaced by a fit from the "
+                        "linear placement. Put the section back on another "
+                        "registration, or undo the step that applied it.",
+                    ),
+                )
+            )
             continue
         own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
         expected[record.id] = section_inputs(
-            state, record, deformation=own_start == deformation.FitStart.CURRENT,
-            trace=traced_choice)
+            state,
+            record,
+            deformation=own_start == deformation.FitStart.CURRENT,
+            trace=traced_choice,
+        )
         try:
             grid = deformation.fit_grid(state, workspace, record)
         except Refused as refusal:
             rows.append(DeformableRow(record.id, refusal=refusal))
             continue
         except (ValueError, OSError) as exc:
-            rows.append(DeformableRow(record.id, refusal=Refused(
-                RefusalCode.INVALID_LINEAR_PLACEMENT, message=str(exc))))
+            rows.append(
+                DeformableRow(
+                    record.id,
+                    refusal=Refused(RefusalCode.INVALID_LINEAR_PLACEMENT, message=str(exc)),
+                )
+            )
             continue
         previous = current
         previous_key = None
@@ -326,13 +367,21 @@ def fit_deformable(
             continue
         try:
             image, identity = deformation.section_image(
-                workspace, state, grid,
-                images_.PREPROCESSED if traced_choice else choice.fit_section)
+                workspace,
+                state,
+                grid,
+                images_.PREPROCESSED if traced_choice else choice.fit_section,
+            )
             lines = None
             if traced_choice:
                 lines, trace = deformation.traced_lines(
-                    state, workspace, grid, running=running,
-                    waited_s=deformation.TRACE_WAIT_S, root=job.folder)
+                    state,
+                    workspace,
+                    grid,
+                    running=running,
+                    waited_s=deformation.TRACE_WAIT_S,
+                    root=job.folder,
+                )
                 identity = {**identity, "trace": trace}
                 traced.setdefault(record.id, (image, lines))
             settings = choice.settings(*regions, brain_scale=workspace.brain_scale)
@@ -347,22 +396,44 @@ def fit_deformable(
             continue
         held_mask = record.masks.get(choice.mask)
         key = deformation.cache_key(
-            state, grid, settings, identity, previous_key, workspace.brain_scale,
-            mask_identity=None if held_mask is None else {
-                "file": held_mask.file, "kind": held_mask.kind})
+            state,
+            grid,
+            settings,
+            identity,
+            previous_key,
+            workspace.brain_scale,
+            mask_identity=None
+            if held_mask is None
+            else {"file": held_mask.file, "kind": held_mask.kind},
+        )
         cached = store.get(record.id, key)
-        jobs.append(deformation.Job(
-            grid=grid, choice=choice, settings=settings, key=key,
-            image_identity=identity, previous=previous, image=image, lines=lines,
-            result=cached, cached=cached is not None, section_weights=weights,
-        ))
+        jobs.append(
+            deformation.Job(
+                grid=grid,
+                choice=choice,
+                settings=settings,
+                key=key,
+                image_identity=identity,
+                previous=previous,
+                image=image,
+                lines=lines,
+                result=cached,
+                cached=cached is not None,
+                section_weights=weights,
+            )
+        )
         if not traced_choice:
             blocks[len(jobs) - 1] = inputs_block(
-                state, workspace, record, section_image=choice.fit_section,
-                atlas_image=choice.fit_atlas, mask=choice.mask,
+                state,
+                workspace,
+                record,
+                section_image=choice.fit_section,
+                atlas_image=choice.fit_atlas,
+                mask=choice.mask,
                 damage=[str(name) for name in own[1]],
                 restrict_to=[str(name) for name in restrict_to],
-                resolved=resolved_atlas_image(workspace, choice.fit_atlas))
+                resolved=resolved_atlas_image(workspace, choice.fit_atlas),
+            )
         added = None
         if regions != own:
             added = {"include": list(regions[0]), "exclude": list(regions[1])}
@@ -373,17 +444,31 @@ def fit_deformable(
 
     with job.writing():
         before = job.snapshot()
-        done = _apply(job, rows, queued, jobs, expected=expected, starts=starts,
-                      blocks=blocks, brain_scale=workspace.brain_scale)
+        done = _apply(
+            job,
+            rows,
+            queued,
+            jobs,
+            expected=expected,
+            starts=starts,
+            blocks=blocks,
+            brain_scale=workspace.brain_scale,
+        )
         if done.written:
             job.commit(before)
     return replace(done, traced=traced)
 
 
 def _apply(
-    job: Job, rows: list[DeformableRow], queued: Mapping[int, int],
-    jobs: list[deformation.Job], *, expected: dict[str, str], starts: dict[str, str],
-    blocks: Mapping[int, InputsBlock], brain_scale: float = 1.0,
+    job: Job,
+    rows: list[DeformableRow],
+    queued: Mapping[int, int],
+    jobs: list[deformation.Job],
+    *,
+    expected: dict[str, str],
+    starts: dict[str, str],
+    blocks: Mapping[int, InputsBlock],
+    brain_scale: float = 1.0,
 ) -> DeformableFit:
     """Every queued fit's row (its engine numbers at the atlas's
     *brain_scale*; *queued* gives each row's job) and, under the job's lock,
@@ -401,8 +486,10 @@ def _apply(
         rows[at] = row
         if not isinstance(outcome, deformation.DeformableRecord):
             message = failure_message(
-                str(getattr(outcome, "error", "no result")), job.engine_log,
-                f"the fit of {fit.grid.record.id} failed")
+                str(getattr(outcome, "error", "no result")),
+                job.engine_log,
+                f"the fit of {fit.grid.record.id} failed",
+            )
             rows[at] = replace(row, refusal=Refused(RefusalCode.FIT_FAILED, message=message))
             continue
         store.put(fit.key, outcome)
@@ -410,16 +497,24 @@ def _apply(
         record = fit.grid.record
         start = starts[record.id]
         now = state.by_id(record.id)
-        if now is None or section_inputs(
-                state, now, deformation=start == deformation.FitStart.CURRENT,
-                trace=fit.choice.fit_section == deformation.TRACED_BORDERS) != expected[record.id]:
+        if (
+            now is None
+            or section_inputs(
+                state,
+                now,
+                deformation=start == deformation.FitStart.CURRENT,
+                trace=fit.choice.fit_section == deformation.TRACED_BORDERS,
+            )
+            != expected[record.id]
+        ):
             rows[at] = replace(row, refusal=stale_refusal())
             continue
         record = now
         linear = deformation.linear_key(state, record)
         include, exclude = fit_regions(fit)
         outcome.provenance = deformation.provenance(
-            fit.grid, fit.choice, include, exclude, start, fit.image_identity, linear)
+            fit.grid, fit.choice, include, exclude, start, fit.image_identity, linear
+        )
         estimated = None
         if block is not None:
             estimated = estimated_block(outcome)
@@ -432,47 +527,69 @@ def _apply(
         if not fit.cached:
             queue = gpu_rows(outcome.engine)
         runtime_s = cast("float", outcome.engine.get("runtime_s", 0.0))
-        row = replace(row, applied=AppliedFit(
-            engine_settings=deformation.engine_settings(fit.settings, brain_scale),
-            numbers=numbers, runtime_s=round(float(runtime_s), 1),
-            cached=fit.cached, gpu=queue, inputs=block, estimated=estimated))
+        row = replace(
+            row,
+            applied=AppliedFit(
+                engine_settings=deformation.engine_settings(fit.settings, brain_scale),
+                numbers=numbers,
+                runtime_s=round(float(runtime_s), 1),
+                cached=fit.cached,
+                gpu=queue,
+                inputs=block,
+                estimated=estimated,
+            ),
+        )
         rows[at] = row
         held = record.deformation
         try:
             folder = store.save(record.id, fit.key, outcome)
         except OSError as exc:
-            refusal = Refused(RefusalCode.RECORD_WRITE_FAILED,
-                              message=str(exc))
+            refusal = Refused(RefusalCode.RECORD_WRITE_FAILED, message=str(exc))
             rows[at] = replace(row, refusal=refusal)
             continue
         traced_fit = fit.choice.fit_section == deformation.TRACED_BORDERS
         step: dict[str, Any] = {
             "method": "trace_borders" if traced_fit else "fireants_syn",
-            "start": start, **fit.choice.echo(),
-            **({} if traced_fit else {"metric": fit.settings.stain_metric,
-                                      "edges": bool(fit.settings.stain_edges),
-                                      "detail": fit.settings.detail}),
-            "include": list(include), "exclude": list(exclude)}
+            "start": start,
+            **fit.choice.echo(),
+            **(
+                {}
+                if traced_fit
+                else {
+                    "metric": fit.settings.stain_metric,
+                    "edges": bool(fit.settings.stain_edges),
+                    "detail": fit.settings.detail,
+                }
+            ),
+            "include": list(include),
+            "exclude": list(exclude),
+        }
         traced = fit.image_identity.get("trace")
         if traced:
             step["trace"] = traced
         record.deformation = deformation.reference(
-            folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
-            step=step, previous=held, numbers=numbers,
+            folder=job.layout.relative(folder),
+            key=fit.key,
+            linear=linear,
+            record=outcome,
+            step=step,
+            previous=held,
+            numbers=numbers,
         )
         written.append(record.id)
         row = replace(row, steps=len(record.deformation.steps or ()))
         rows[at] = row
-        fitted.append(Fitted(row=row, fit=fit, outcome=outcome,
-                             folder=job.layout.relative(folder)))
+        fitted.append(Fitted(row=row, fit=fit, outcome=outcome, folder=job.layout.relative(folder)))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
 
 
 METRICS = ("mutual_information", "local_correlation")
 DETAILS = ("coarse", "standard", "fine")
 MAX_FIREANTS_SYN_SECTIONS = 20
-SECTION_CAP_REASON = ("every fitted section is held in memory (about 170 MB) until the call "
-                      "writes them all as one undo step")
+SECTION_CAP_REASON = (
+    "every fitted section is held in memory (about 170 MB) until the call "
+    "writes them all as one undo step"
+)
 
 
 def engine_ready() -> bool:
@@ -494,8 +611,7 @@ def refuse_without_engine() -> None:
     """Refuse ``ENGINE_MISSING`` (nothing done) when the deformable engine does
     not import."""
     if not engine_ready():
-        raise Refused(RefusalCode.ENGINE_MISSING,
-                      message=deformation.ENGINE_MISSING + ".")
+        raise Refused(RefusalCode.ENGINE_MISSING, message=deformation.ENGINE_MISSING + ".")
 
 
 def fireants_syn(
@@ -547,23 +663,24 @@ def fireants_syn(
 
     refs = list(sections or [])
     if not refs:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="Name the sections to fit.")
+        raise Refused(RefusalCode.BAD_ARGS, message="Name the sections to fit.")
     kind = check_atlas_image(workspace, atlas_image)
     metric_name = str(metric or "mutual_information").strip()
     if metric_name not in METRICS:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"metric is one of {list(METRICS)}.")
+        raise Refused(RefusalCode.BAD_ARGS, message=f"metric is one of {list(METRICS)}.")
     level = str(detail or "standard").strip().lower()
     if level not in DETAILS:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"detail is one of {list(DETAILS)}.")
+        raise Refused(RefusalCode.BAD_ARGS, message=f"detail is one of {list(DETAILS)}.")
     low, high = SMOOTHNESS_BOUNDS_UM
-    if isinstance(smoothness_um, bool) or not isinstance(smoothness_um, (int, float)) or not (
-            low <= smoothness_um <= high):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"smoothness_um is a number of micrometres from "
-                      f"{low:g} to {high:g}.")
+    if (
+        isinstance(smoothness_um, bool)
+        or not isinstance(smoothness_um, (int, float))
+        or not (low <= smoothness_um <= high)
+    ):
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message=f"smoothness_um is a number of micrometres from {low:g} to {high:g}.",
+        )
     refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
     records: list[Section] = []
@@ -577,17 +694,38 @@ def fireants_syn(
     if unknown:
         raise unknown_sections(job.state, unknown)
     image = refuse_unknown_inputs(job, workspace, records, section_image, mask)
-    choice = deformation.Choice(fit_section=image, fit_atlas=kind,
-                                smoothness_um=float(smoothness_um), mask=_mask_label(mask))
+    choice = deformation.Choice(
+        fit_section=image,
+        fit_atlas=kind,
+        smoothness_um=float(smoothness_um),
+        mask=_mask_label(mask),
+    )
     done = fit_deformable(
-        job, workspace, records, choice, restrict_to=regions,
-        overrides={"stain_metric": metric_name, "stain_edges": bool(edges),
-                   **({} if level == "standard" else {"detail": level})})
-    return replace(done, settings={
-        "section_image": image, "atlas_image": kind,
-        "atlas_image_resolved": resolved_atlas_image(workspace, kind), "mask": choice.mask,
-        "restrict_to": list(regions), "smoothness_um": float(smoothness_um),
-        "metric": metric_name, "edges": bool(edges), "detail": level})
+        job,
+        workspace,
+        records,
+        choice,
+        restrict_to=regions,
+        overrides={
+            "stain_metric": metric_name,
+            "stain_edges": bool(edges),
+            **({} if level == "standard" else {"detail": level}),
+        },
+    )
+    return replace(
+        done,
+        settings={
+            "section_image": image,
+            "atlas_image": kind,
+            "atlas_image_resolved": resolved_atlas_image(workspace, kind),
+            "mask": choice.mask,
+            "restrict_to": list(regions),
+            "smoothness_um": float(smoothness_um),
+            "metric": metric_name,
+            "edges": bool(edges),
+            "detail": level,
+        },
+    )
 
 
 def _mask_label(mask: object) -> str:
@@ -595,7 +733,10 @@ def _mask_label(mask: object) -> str:
 
 
 def refuse_unknown_inputs(
-    job: Job, workspace: Workspace, records: Sequence[Section], section_image: object,
+    job: Job,
+    workspace: Workspace,
+    records: Sequence[Section],
+    section_image: object,
     mask: object,
 ) -> str:
     """The section image a fit reads, after checking every one of *records* has
@@ -607,11 +748,16 @@ def refuse_unknown_inputs(
         lacking = [record.id for record in records if label not in record.masks]
         if lacking:
             named = ", ".join(lacking)
-            raise Refused(RefusalCode.UNKNOWN_MASK, sections=lacking,
-                          message=render(
-                              f"No mask {label!r} on {named}[[?make_mask ; "
-                              "make it with make_mask||; status lists each "
-                              "section's masks]].", job.spec.switched_off))
+            raise Refused(
+                RefusalCode.UNKNOWN_MASK,
+                sections=lacking,
+                message=render(
+                    f"No mask {label!r} on {named}[[?make_mask ; "
+                    "make it with make_mask||; status lists each "
+                    "section's masks]].",
+                    job.spec.switched_off,
+                ),
+            )
     return image
 
 
@@ -670,7 +816,6 @@ def nothing_fitted(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
     return {"error": code, "message": message}
 
 
-
 def fireants_syn_tool(
     run: Run,
     sections: Sequence[str],
@@ -705,12 +850,25 @@ def fireants_syn_tool(
     """
     job, workspace = run.job, run.workspace
     check_section_count(
-        job, "fireants_syn", len(as_list(sections)),
-        cap=MAX_FIREANTS_SYN_SECTIONS, reason=SECTION_CAP_REASON)
+        job,
+        "fireants_syn",
+        len(as_list(sections)),
+        cap=MAX_FIREANTS_SYN_SECTIONS,
+        reason=SECTION_CAP_REASON,
+    )
     done = fireants_syn(
-        job, workspace, as_list(sections), restrict_to=as_list(restrict_to),
-        section_image=section_image, atlas_image=atlas_image, mask=mask,
-        smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
+        job,
+        workspace,
+        as_list(sections),
+        restrict_to=as_list(restrict_to),
+        section_image=section_image,
+        atlas_image=atlas_image,
+        mask=mask,
+        smoothness_um=smoothness_um,
+        metric=metric,
+        edges=edges,
+        detail=detail,
+    )
     fitted = [row.id for row in done.rows if row.refusal is None]
     rows = [deformable_row_to_json(row) for row in done.rows]
     result: dict[str, Any] = {"status": "ok" if fitted else "error"}
@@ -726,8 +884,15 @@ def fireants_syn_tool(
     regions = region_entries(workspace, job.state, as_list(restrict_to))
     zooms = _region_zooms(run, fitted, regions)
     shown = show_result(
-        job, workspace, "fireants_syn", "overlay", fitted, zooms=zooms,
-        highlight=regions, images=drawn_image(section_image))
+        job,
+        workspace,
+        "fireants_syn",
+        "overlay",
+        fitted,
+        zooms=zooms,
+        highlight=regions,
+        images=drawn_image(section_image),
+    )
     return pictured(result, shown)
 
 

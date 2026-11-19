@@ -35,11 +35,7 @@ def plane_angles(state: Stack, angles: Angles | None) -> Angles:
     differ). The rule every atlas-plane picture takes its plane by: a
     section's own angles for a picture of that section, the stack's view
     angles for one without."""
-    return (
-        state.stack_angles
-        if angles is None
-        else (float(angles[0]), float(angles[1]))
-    )
+    return state.stack_angles if angles is None else (float(angles[0]), float(angles[1]))
 
 
 def initial_positions(
@@ -80,9 +76,7 @@ def initial_positions(
     start = (low + high - (count - 1) * spacing) / 2.0
     if start_mm is not None:
         start = float(start_mm)
-    return [
-        min(max(start + index * spacing, low), high) for index in range(count)
-    ]
+    return [min(max(start + index * spacing, low), high) for index in range(count)]
 
 
 @dataclass
@@ -216,9 +210,7 @@ class Stack:
             return self.stack_angles
         pitches = [section.pitch_deg for section in self.slices]
         yaws = [section.yaw_deg for section in self.slices]
-        return float(statistics.median(pitches)), float(
-            statistics.median(yaws)
-        )
+        return float(statistics.median(pitches)), float(statistics.median(yaws))
 
     def drawn_at_median(self, angles: Angles) -> bool:
         """Return whether a picture at *angles* is at the median plane.
@@ -318,8 +310,7 @@ def filename_stem(name: str) -> str:
 def break_ids(state: Stack) -> list[str]:
     """The interval breaks as the filenames of the sections after each gap
     (stored as corrected indices, ``Stack.interval_breaks``)."""
-    by_index = {
-        section.index_corrected: section.id for section in state.slices}
+    by_index = {section.index_corrected: section.id for section in state.slices}
     return [by_index[index] for index in state.interval_breaks if index in by_index]
 
 
@@ -333,17 +324,28 @@ def unknown_sections(state: Stack, refs: object) -> dict[str, Any]:
     names = sorted(section.id for section in state.slices)
     listed = names[:NAMES_LISTED]
     numbers = [ref for ref in unknown if ref.strip().lstrip("-").isdigit()]
-    shared = [ref for ref in unknown
-              if sum(filename_stem(name) == ref.strip() for name in names) > 1]
-    words = [f"No section is named {', '.join(repr(ref) for ref in unknown)}. Sections are "
-             "named by filename (or the filename without its extension, when no other "
-             "section shares it)."]
+    shared = [
+        ref for ref in unknown if sum(filename_stem(name) == ref.strip() for name in names) > 1
+    ]
+    words = [
+        f"No section is named {', '.join(repr(ref) for ref in unknown)}. Sections are "
+        "named by filename (or the filename without its extension, when no other "
+        "section shares it)."
+    ]
     if numbers:
         words.append("Sections have no numbers to name them by.")
     if shared:
-        words.append(f"{', '.join(repr(ref) for ref in shared)}: more than one file has "
-                     "this name without its extension; give the whole filename.")
-    words.append("Filenames: " + ", ".join(listed)
-                 + (f" and {len(names) - len(listed)} more (status lists every section)."
-                    if len(names) > len(listed) else "."))
+        words.append(
+            f"{', '.join(repr(ref) for ref in shared)}: more than one file has "
+            "this name without its extension; give the whole filename."
+        )
+    words.append(
+        "Filenames: "
+        + ", ".join(listed)
+        + (
+            f" and {len(names) - len(listed)} more (status lists every section)."
+            if len(names) > len(listed)
+            else "."
+        )
+    )
     return {"unknown": unknown, "filenames": listed, "message": " ".join(words)}

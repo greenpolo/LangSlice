@@ -18,10 +18,7 @@ from langslice.tools.descriptions.description import (
 LANDMARK_MOVE_UM = 400.0
 
 SET_LANDMARKS = ToolDescription(
-    summary=(
-        "Add, update or delete persistent corresponding landmarks. Does not "
-        "apply a warp."
-    ),
+    summary=("Add, update or delete persistent corresponding landmarks. Does not apply a warp."),
     body=(
         """\
 When a piece of tissue lies away from its place in the atlas outline (a
@@ -121,9 +118,7 @@ set as it stands.""",
 )
 
 LANDMARK_TRIANGULATION = ToolDescription(
-    summary=(
-        "Apply this section's saved landmark set as a piecewise affine warp."
-    ),
+    summary=("Apply this section's saved landmark set as a piecewise affine warp."),
     body=(
         """\
 Requires at least three corresponding pairs, with coverage across the full

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ATLAS_NAME = "allen_mouse_25um"
 
+
 class _AtlasLike(Protocol):
     atlas_name: str
     orientation: str
@@ -52,8 +53,10 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
             from brainglobe_atlasapi import config as bg_config
 
             bg_dir = bg_config.get_brainglobe_dir()
-            if not (list(bg_dir.glob(f"{atlas_name}_v*")) or list(
-                    bg_dir.glob(f"brainglobe-atlasapi/atlases/{atlas_name}/*/manifest.json"))):
+            if not (
+                list(bg_dir.glob(f"{atlas_name}_v*"))
+                or list(bg_dir.glob(f"brainglobe-atlasapi/atlases/{atlas_name}/*/manifest.json"))
+            ):
                 raise FileNotFoundError(
                     f"atlas not present in local cache {bg_dir} "
                     f"(offline mode; GIN download skipped)"
@@ -65,7 +68,7 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
                 if skip_latest
                 else brain_globe_atlas(atlas_name)
             )
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         raise ValueError(f"Atlas '{atlas_name}' not found or failed to load: {exc}") from exc
     return atlas
 
@@ -82,9 +85,7 @@ def _n_slices_for_plane(atlas: _AtlasLike, plane: Plane) -> int:
     return context.shape[axis]
 
 
-def position_mm_to_index(
-    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
-) -> int:
+def position_mm_to_index(atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal") -> int:
     """Convert a physical position (mm) to an array index along the slice-normal axis."""
     res_mm = _resolution_mm_for_plane(atlas, plane)
     n_slices = _n_slices_for_plane(atlas, plane)
@@ -99,25 +100,19 @@ def position_mm_to_index(
     return idx
 
 
-def index_to_position_mm(
-    atlas: _AtlasLike, idx: int, *, plane: Plane = "coronal"
-) -> float:
+def index_to_position_mm(atlas: _AtlasLike, idx: int, *, plane: Plane = "coronal") -> float:
     """Convert an array index along the slice-normal axis to a physical position (mm)."""
     return idx * _resolution_mm_for_plane(atlas, plane)
 
 
-def get_position_range_mm(
-    atlas: _AtlasLike, *, plane: Plane = "coronal"
-) -> tuple[float, float]:
+def get_position_range_mm(atlas: _AtlasLike, *, plane: Plane = "coronal") -> tuple[float, float]:
     """Return (min_mm, max_mm) along the given slicing plane's normal axis."""
     res_mm = _resolution_mm_for_plane(atlas, plane)
     n_slices = _n_slices_for_plane(atlas, plane)
     return 0.0, (n_slices - 1) * res_mm
 
 
-def _resolve_idx_axis(
-    atlas: _AtlasLike, position_mm: float, plane: Plane
-) -> tuple[int, int]:
+def _resolve_idx_axis(atlas: _AtlasLike, position_mm: float, plane: Plane) -> tuple[int, int]:
     """Resolve the slice index and slice-normal axis for a position/plane pair."""
     idx = position_mm_to_index(atlas, position_mm, plane=plane)
     axis = slice_axis_index(atlas_space_context(atlas), plane)
@@ -220,4 +215,3 @@ def get_root_mask(
         target_size, resample=Image.Resampling.NEAREST
     )
     return np.asarray(mask_img, dtype=np.uint8)
-

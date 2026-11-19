@@ -50,13 +50,27 @@ Written = dict[str, JsonValue]
 
 
 PHYSICAL_KEYS = (
-    "rotation_deg", "scale_x", "scale_y", "translate_x_mm", "translate_y_mm",
-    "shear", "pivot",
-)  # fmt: skip
+    "rotation_deg",
+    "scale_x",
+    "scale_y",
+    "translate_x_mm",
+    "translate_y_mm",
+    "shear",
+    "pivot",
+)
 AFFINE_KEYS = (
-    "kind", "params", "physical", "calibration", "mirrored", "note",
-    "in_plane", "regions", "fit_atlas", "orientation", "stale",
-)  # fmt: skip
+    "kind",
+    "params",
+    "physical",
+    "calibration",
+    "mirrored",
+    "note",
+    "in_plane",
+    "regions",
+    "fit_atlas",
+    "orientation",
+    "stale",
+)
 
 
 def physical_to_json(physical: PhysicalAffine) -> Written:
@@ -247,11 +261,20 @@ def affine_from_json(data: JsonObject) -> StoredAffine:
 
 
 DEFORMATION_KEYS = (
-    "keep_linear", "record", "key", "linear_key", "steps", "summary",
-    "inverse_source", "landmark_revision", "landmark_pairs",
-    "landmark_folds", "landmark_holds", "landmark_baseline_key",
+    "keep_linear",
+    "record",
+    "key",
+    "linear_key",
+    "steps",
+    "summary",
+    "inverse_source",
+    "landmark_revision",
+    "landmark_pairs",
+    "landmark_folds",
+    "landmark_holds",
+    "landmark_baseline_key",
     "landmark_baseline_steps",
-)  # fmt: skip
+)
 
 
 def deformation_to_json(deformation: DeformationRef) -> Written:
@@ -355,12 +378,29 @@ def deformation_from_json(data: JsonObject) -> DeformationRef:
 
 
 TRACE_KEYS = (
-    "id", "geometry_fingerprint", "prompt_edited", "provider", "model",
-    "profile", "untested", "include", "exclude", "output_kind",
-    "fit_performed", "artifact_dir", "artifact_paths", "cached", "attempt",
-    "raw_received", "status", "route", "raw_size", "model_border_pixels",
-    "error", "message",
-)  # fmt: skip
+    "id",
+    "geometry_fingerprint",
+    "prompt_edited",
+    "provider",
+    "model",
+    "profile",
+    "untested",
+    "include",
+    "exclude",
+    "output_kind",
+    "fit_performed",
+    "artifact_dir",
+    "artifact_paths",
+    "cached",
+    "attempt",
+    "raw_received",
+    "status",
+    "route",
+    "raw_size",
+    "model_border_pixels",
+    "error",
+    "message",
+)
 
 
 def trace_to_json(trace: BorderTrace) -> Written:
@@ -447,9 +487,7 @@ def trace_from_json(data: JsonObject) -> BorderTrace:
         raw_received=optional_at(data, "raw_received", flag_at),
         route=optional_at(data, "route", text_at),
         raw_size=optional_at(data, "raw_size", _size),
-        model_border_pixels=optional_at(
-            data, "model_border_pixels", integer_at
-        ),
+        model_border_pixels=optional_at(data, "model_border_pixels", integer_at),
         error=optional_at(data, "error", text_at),
         message=optional_at(data, "message", text_at),
         extra=other_keys(data, TRACE_KEYS),
@@ -458,9 +496,15 @@ def trace_from_json(data: JsonObject) -> BorderTrace:
 
 IMAGE_KEYS = ("source", "file", "digest", "made")
 MASK_KEYS = (
-    "kind", "section_image", "atlas_image", "params", "inputs",
-    "registration", "file", "left_out",
-)  # fmt: skip
+    "kind",
+    "section_image",
+    "atlas_image",
+    "params",
+    "inputs",
+    "registration",
+    "file",
+    "left_out",
+)
 LAYER_KEYS = ("id", "name", "kind", "frame", "file", "tool", "call", "created")
 
 

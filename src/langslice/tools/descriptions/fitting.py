@@ -24,9 +24,7 @@ FitMetric = Literal["mutual_information", "local_correlation"]
 FitDetail = Literal["coarse", "standard", "fine"]
 
 ELASTIX_AFFINE = ToolDescription(
-    summary=(
-        "Fit sections' in-plane affine transforms automatically with elastix."
-    ),
+    summary=("Fit sections' in-plane affine transforms automatically with elastix."),
     body=(
         """\
 For a few sections at a time. Elastix refines each section's current
@@ -124,10 +122,7 @@ part of the section.""",
 )
 
 FIREANTS_SYN = ToolDescription(
-    summary=(
-        "Fit the atlas onto sections with FireANTs SyN, on their current "
-        "registration."
-    ),
+    summary=("Fit the atlas onto sections with FireANTs SyN, on their current registration."),
     body=(
         """\
 This is ANTs SyN (symmetric normalization; Avants et al. 2008, Medical Image
@@ -255,16 +250,13 @@ the
 picture is zoomed to them when they cover a small part of the
 section.""",
     slots={
-        "landmark_move": Distance(
-            LANDMARK_MOVE_UM, "about {} um", mouse_words="about\n400 um"
-        ),
+        "landmark_move": Distance(LANDMARK_MOVE_UM, "about {} um", mouse_words="about\n400 um"),
     },
 )
 
 TRACE_BORDERS = ToolDescription(
     summary=(
-        "Trace the atlas borders onto a section with the image model, then "
-        "fit it with FireANTs."
+        "Trace the atlas borders onto a section with the image model, then fit it with FireANTs."
     ),
     body=(
         """\

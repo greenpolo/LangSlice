@@ -29,7 +29,11 @@ OUTLINE_AREA_LIMITS = (0.5, 2.0)
 
 
 def model_extent(
-    lines: np.ndarray, placed_area_px: int, mm_per_px: float, *, brain_scale: float = 1.0,
+    lines: np.ndarray,
+    placed_area_px: int,
+    mm_per_px: float,
+    *,
+    brain_scale: float = 1.0,
 ) -> tuple[np.ndarray | None, float]:
     """(extent, area ratio): everything the model's outermost line encloses.
 
@@ -42,8 +46,12 @@ def model_extent(
     lines = np.asarray(lines, dtype=bool)
     radius = max(1, round(OUTLINE_GAP_CLOSING_MM * brain_scale / mm_per_px))
     padded = np.pad(lines, radius)
-    closed = np.asarray(ndi.binary_closing(padded, iterations=radius),
-                        dtype=bool)[radius:-radius, radius:-radius] | lines
+    closed = (
+        np.asarray(ndi.binary_closing(padded, iterations=radius), dtype=bool)[
+            radius:-radius, radius:-radius
+        ]
+        | lines
+    )
     extent = np.asarray(ndi.binary_fill_holes(closed), dtype=bool)
     ratio = float(extent.sum()) / float(max(placed_area_px, 1))
     low, high = OUTLINE_AREA_LIMITS
@@ -51,7 +59,11 @@ def model_extent(
 
 
 def named_regions(
-    lines: np.ndarray, placed: np.ndarray, tissue: np.ndarray, mm_per_px: float, *,
+    lines: np.ndarray,
+    placed: np.ndarray,
+    tissue: np.ndarray,
+    mm_per_px: float,
+    *,
     brain_scale: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
     """(labels, unnamed, report) for the areas the model's lines enclose.
@@ -69,7 +81,7 @@ def named_regions(
     if lines.shape != placed.shape or tissue.shape != placed.shape:
         raise ValueError("Lines, placed labels and tissue must share one grid")
     radius = max(1, round(LINE_GAP_CLOSING_MM * brain_scale / mm_per_px))
-    small_loop_mm2 = SMALL_LOOP_MM2 * brain_scale ** 2
+    small_loop_mm2 = SMALL_LOOP_MM2 * brain_scale**2
     wall = np.asarray(ndi.binary_closing(lines, iterations=radius), dtype=bool) | lines
     wall = np.asarray(ndi.binary_dilation(wall), dtype=bool)
     cells, count = cast(tuple[np.ndarray, int], ndi.label(~wall & tissue))
@@ -86,19 +98,28 @@ def named_regions(
         reasons = []
         if winner == 0 or purity < MIN_NAME_PURITY:
             reasons.append("no_placed_overlap")
-        elif (area_px[cell] * mm_per_px ** 2 < small_loop_mm2 and purity > SMALL_LOOP_PURITY
-              and area_px[cell] / region_sizes[winner] < SMALL_LOOP_SHARE):
+        elif (
+            area_px[cell] * mm_per_px**2 < small_loop_mm2
+            and purity > SMALL_LOOP_PURITY
+            and area_px[cell] / region_sizes[winner] < SMALL_LOOP_SHARE
+        ):
             reasons.append("small_loop_inside_one_region")
         named[cell] = not reasons
         lut[cell] = winner if not reasons else 0
-        report.append({
-            "area": cell, "region_id": winner if not reasons else 0,
-            "area_mm2": float(area_px[cell] * mm_per_px ** 2),
-            "overlap_fraction": purity, "dropped": reasons,
-        })
+        report.append(
+            {
+                "area": cell,
+                "region_id": winner if not reasons else 0,
+                "area_mm2": float(area_px[cell] * mm_per_px**2),
+                "overlap_fraction": purity,
+                "dropped": reasons,
+            }
+        )
     _joint_names(cells, count, placed, area_px, named, lut, report)
-    nearest = np.asarray(ndi.distance_transform_edt(
-        cells == 0, return_distances=False, return_indices=True), dtype=int)
+    nearest = np.asarray(
+        ndi.distance_transform_edt(cells == 0, return_distances=False, return_indices=True),
+        dtype=int,
+    )
     filled = cells[tuple(nearest)]
     labels = np.where(tissue, lut[filled], 0).astype(placed.dtype)
     unnamed = tissue & ~named[filled]
@@ -116,8 +137,13 @@ def _cell_masks(cells: np.ndarray, count: int):
 
 
 def _joint_names(
-    cells: np.ndarray, count: int, placed: np.ndarray, area_px: np.ndarray,
-    named: np.ndarray, lut: np.ndarray, report: list[dict[str, Any]],
+    cells: np.ndarray,
+    count: int,
+    placed: np.ndarray,
+    area_px: np.ndarray,
+    named: np.ndarray,
+    lut: np.ndarray,
+    report: list[dict[str, Any]],
 ) -> None:
     """Assign names one-to-one by overlap normalized by both sizes (Hungarian)."""
     components = []

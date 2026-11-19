@@ -326,9 +326,7 @@ def _save_pictures(call: ToolCall) -> Generator[None]:
             except TypeError:
                 arguments = dict(call.kwargs)
             context = arguments.pop("tool_context", None)
-            shown.show(
-                pictures, arguments=plain(arguments), call_id=call_id(context)
-            )
+            shown.show(pictures, arguments=plain(arguments), call_id=call_id(context))
     reply = call.reply
     if shown.numbers and isinstance(reply, dict):
         captions = shown.captions or [None] * len(shown.numbers)
@@ -435,9 +433,7 @@ def run_call(call: ToolCall) -> object:
     return call.reply
 
 
-def declared_tool(
-    name: str, body: Callable[..., object], box: ToolBox
-) -> Callable[..., object]:
+def declared_tool(name: str, body: Callable[..., object], box: ToolBox) -> Callable[..., object]:
     """Return a tool body as a declared tool whose calls run the pipeline.
 
     Parameters
@@ -510,19 +506,13 @@ def registrations_named(job: Job, reply: object, mark: int) -> object:
             if isinstance(row, dict):
                 columns = cast("dict[str, object]", row)
                 in_rows[columns.get("id")] = columns.get("registration")
-    named = {
-        section: number
-        for section, number in left.items()
-        if in_rows.get(section) != number
-    }
+    named = {section: number for section, number in left.items() if in_rows.get(section) != number}
     if named:
         fields["registration"] = named
     return fields
 
 
-def with_notices(
-    job: Job, result: dict[str, Any], *, among: int | None = None
-) -> dict[str, Any]:
+def with_notices(job: Job, result: dict[str, Any], *, among: int | None = None) -> dict[str, Any]:
     """*result* opened with the notices of the background work finished
     since they were last handed out (with *among*, of the first *among*
     pieces started only), the work's pictures after its own."""
@@ -533,9 +523,7 @@ def with_notices(
     listed = list(result.get("pictures") or [])
     for work in finished:
         captions = list(work.captions) + [""] * len(work.pictures)
-        for number, image, text in zip(
-            work.pictures, work.images, captions, strict=False
-        ):
+        for number, image, text in zip(work.pictures, work.images, captions, strict=False):
             media.append(image)
             listed.append(
                 {
@@ -557,9 +545,7 @@ def with_notices(
     return out
 
 
-def work_pictures(
-    job: Job, reply: object, *, start: int
-) -> list[dict[str, object]]:
+def work_pictures(job: Job, reply: object, *, start: int) -> list[dict[str, object]]:
     """Return the saved pictures of the background work a reply announces.
 
     Parameters

@@ -14,6 +14,7 @@ tools on top are the same toolbox the agent and MCP doors use
 
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,7 +22,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.workspace import Workspace, log_progress
-from langslice.doors import plugins as _plugins  # noqa: F401
 from langslice.doors.reference_card import write_card
 from langslice.job.folder.layout import (
     JobLayout,
@@ -41,6 +41,8 @@ if TYPE_CHECKING:
 OPEN_MAX_VIEW_EDGE = 1 << 15
 
 VIEWER_KEY = "viewer"
+
+importlib.import_module("langslice.doors.plugins")
 
 
 def job_viewer(layout: JobLayout) -> str:
@@ -117,7 +119,9 @@ class JobContext(Workspace):
 
 
 def context(
-    spec: JobSpec, job_folder: str | os.PathLike[str], *,
+    spec: JobSpec,
+    job_folder: str | os.PathLike[str],
+    *,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
 ) -> JobContext:
@@ -127,11 +131,13 @@ def context(
     if atlas_loader is not None:
         kwargs["atlas_loader"] = atlas_loader
     return JobContext(
-        settings=spec.image_settings(), spec=spec,
+        settings=spec.image_settings(),
+        spec=spec,
         image_folder=os.path.abspath(spec.image_folder),
         job_folder=str(folder),
         results_path=spec.out or str(JobLayout(folder).results_file),
-        emit=emit or log_progress, **kwargs,
+        emit=emit or log_progress,
+        **kwargs,
     )
 
 
@@ -143,9 +149,11 @@ def find(path: str | os.PathLike[str]) -> Path:
     for folder in (given, job_folder_for(given)):
         if (folder / "job.json").is_file() and (folder / "state.json").is_file():
             return folder
-    raise NoJob(f"No LangSlice job in {given} (neither a job folder nor an image folder "
-                "with one beside it). A job made with init --job-dir is in that folder: "
-                "name it instead of the images.")
+    raise NoJob(
+        f"No LangSlice job in {given} (neither a job folder nor an image folder "
+        "with one beside it). A job made with init --job-dir is in that folder: "
+        "name it instead of the images."
+    )
 
 
 def read_spec(job_folder: Path) -> JobSpec:
@@ -166,7 +174,8 @@ def read_spec(job_folder: Path) -> JobSpec:
             f"The images of the job in {job_folder} are not in {images} any more. If they "
             "moved, reattach the job from their new folder: langslice-job NEW_IMAGE_FOLDER "
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
-            "<images>/langslice).")
+            "<images>/langslice)."
+        )
     data["image_folder"] = str(images)
     kept, _removed = without_removed_settings(data)
     try:
@@ -225,13 +234,19 @@ class Opened:
             from langslice.core.pictures.sizes import AUTO_RESOLUTION
             from langslice.doors.tools.toolbox import build_tools
 
-            self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
-                                    job=self.job, max_view_edge=self.max_view_edge,
-                                    level=AUTO_RESOLUTION, scripting=True,
-                                    image_model=self.image_model,
-                                    image_model_connected=self.image_model_connected,
-                                    door=self.door,
-                                    event_door="library" if self.door == "agent" else self.door)
+            self._box = build_tools(
+                self.job.state,
+                self.ctx,
+                self.spec,
+                job=self.job,
+                max_view_edge=self.max_view_edge,
+                level=AUTO_RESOLUTION,
+                scripting=True,
+                image_model=self.image_model,
+                image_model_connected=self.image_model_connected,
+                door=self.door,
+                event_door="library" if self.door == "agent" else self.door,
+            )
         return self._box
 
     def listed_verbs(self) -> list[str]:
@@ -245,7 +260,8 @@ class Opened:
 
 
 def open_folder(
-    path: str | os.PathLike[str], *,
+    path: str | os.PathLike[str],
+    *,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
     persist: bool = True,
@@ -269,12 +285,14 @@ def open_folder(
     job = Job.load(spec, ctx, folder=folder, results_path=ctx.results_path, persist=persist)
     if persist:
         write_card(job.layout)
-    return Opened(job, ctx, image_model, door=door,
-                  viewer=job_viewer(job.layout) if door == "cli" else None)
+    return Opened(
+        job, ctx, image_model, door=door, viewer=job_viewer(job.layout) if door == "cli" else None
+    )
 
 
 def create(
-    spec: JobSpec, *,
+    spec: JobSpec,
+    *,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
     image_model: ImageModel | None = None,
@@ -285,14 +303,16 @@ def create(
     ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
     with its reference card.
     *image_model* and *door* as in :func:`open_folder`."""
-    folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
-                                          emit=emit or log_progress)
+    folder, _fallback = locate_job_folder(
+        spec.image_folder, spec.job_dir, emit=emit or log_progress
+    )
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
     ctx.spec = job.spec
     write_card(job.layout)
-    return Opened(job, ctx, image_model, door=door,
-                  viewer=job_viewer(job.layout) if door == "cli" else None)
+    return Opened(
+        job, ctx, image_model, door=door, viewer=job_viewer(job.layout) if door == "cli" else None
+    )
 
 
 REGISTRATION_EXCLUDES = ("positions", "transforms", "angles", "orientation")
@@ -321,8 +341,10 @@ def with_registration(
 
     clashes = [key for key in REGISTRATION_EXCLUDES if (spec.inputs or {}).get(key)]
     if clashes:
-        raise ValueError(f"A registration file supplies the {', '.join(clashes)}; give "
-                         "either the file or those inputs, not both")
+        raise ValueError(
+            f"A registration file supplies the {', '.join(clashes)}; give "
+            "either the file or those inputs, not both"
+        )
     path = Path(os.path.abspath(os.path.expanduser(os.fspath(registration))))
     if not path.is_file():
         raise ValueError(f"No registration file at {path}")

@@ -35,14 +35,20 @@ from langslice.job.settings.schema import (
 )
 
 INPUT_KEYS: tuple[str, ...] = (
-    "order", "positions", "angles", "orientation", "transforms", "damaged",
-    "damaged_regions", "pixel_size_um", "channel_names",
+    "order",
+    "positions",
+    "angles",
+    "orientation",
+    "transforms",
+    "damaged",
+    "damaged_regions",
+    "pixel_size_um",
+    "channel_names",
 )
 
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
 
-NO_TRANSFORM = ("A written affine transform is required: give the section a "
-                "transform first")
+NO_TRANSFORM = "A written affine transform is required: give the section a transform first"
 NO_TRANSFORM_LINEAR_OFF = (
     "A written affine transform is required, and Linear is off for this job, "
     "so nothing here writes one. Supply the in-plane transforms with the job "
@@ -90,8 +96,10 @@ def supplied_angles(
     if value is None or value == {}:
         return None, {}
     if not isinstance(value, dict):
-        raise ValueError("inputs.angles must be {pitch, yaw} for the whole stack, or "
-                         "{filename: {pitch, yaw}} per section")
+        raise ValueError(
+            "inputs.angles must be {pitch, yaw} for the whole stack, or "
+            "{filename: {pitch, yaw}} per section"
+        )
     nested = [key for key, item in value.items() if isinstance(item, dict)]
     if not nested:
         return _angle_pair(value, "inputs.angles"), {}
@@ -100,9 +108,11 @@ def supplied_angles(
         raise ValueError(
             f"inputs.angles mixes the stack-wide form ({flat}) with per-section "
             "entries; give either {pitch, yaw} for the whole stack or "
-            "{filename: {pitch, yaw}} for each section")
-    return None, {str(name): _angle_pair(item, f"inputs.angles[{name!r}]")
-                  for name, item in value.items()}
+            "{filename: {pitch, yaw}} for each section"
+        )
+    return None, {
+        str(name): _angle_pair(item, f"inputs.angles[{name!r}]") for name, item in value.items()
+    }
 
 
 def _micrometres(value: Any, where: str) -> float:
@@ -128,8 +138,10 @@ def supplied_pixel_sizes(value: Any) -> tuple[float | None, dict[str, float]]:
     if value is None or value == {}:
         return None, {}
     if isinstance(value, dict):
-        return None, {str(name): _micrometres(um, f"inputs.pixel_size_um[{name!r}]")
-                      for name, um in value.items()}
+        return None, {
+            str(name): _micrometres(um, f"inputs.pixel_size_um[{name!r}]")
+            for name, um in value.items()
+        }
     return _micrometres(value, "inputs.pixel_size_um"), {}
 
 
@@ -159,13 +171,12 @@ class PositionSpec:
     def __post_init__(self) -> None:
         for name in ("thickness_um", "interval_um"):
             value = getattr(self, name)
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int)
-                                      or value <= 0):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            ):
                 raise ValueError(f"{name} must be a positive integer in micrometres or null")
         if self.start_mm is not None and not _finite_number(self.start_mm):
-            raise ValueError(
-                "start_mm must be a number of atlas millimetres or null"
-            )
+            raise ValueError("start_mm must be a number of atlas millimetres or null")
         if self.strict_interval and self.interval_um is None:
             raise ValueError("strict_interval requires a supplied interval_um")
 
@@ -181,8 +192,11 @@ class TransformSpec:
 
     def __post_init__(self) -> None:
         value = self.max_parallel
-        if (not isinstance(value, int) or isinstance(value, bool)
-                or not 1 <= value <= MAX_PARALLEL_TRANSFORMS):
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 1 <= value <= MAX_PARALLEL_TRANSFORMS
+        ):
             raise ValueError(
                 f"transform.max_parallel must be an integer from 1 to "
                 f"{MAX_PARALLEL_TRANSFORMS}; got {value!r}"
@@ -222,15 +236,14 @@ class NonlinearSpec:
 
         accepted = (*CANONICAL_PROVIDERS, CUSTOM_PROVIDER)
         if canonical_provider(str(self.provider or "")) not in accepted:
-            raise ValueError(
-                f"nonlinear.provider must be one of {accepted}; got {self.provider!r}"
-            )
+            raise ValueError(f"nonlinear.provider must be one of {accepted}; got {self.provider!r}")
         if self.image_prompt is not None:
             if not isinstance(self.image_prompt, str) or not self.image_prompt.strip():
                 raise ValueError("nonlinear.image_prompt must be non-empty text or null")
             if not self.uses_image_model:
-                raise ValueError("nonlinear.image_prompt needs an image model; the "
-                                 "nonlinear provider is 'none'")
+                raise ValueError(
+                    "nonlinear.image_prompt needs an image model; the nonlinear provider is 'none'"
+                )
             self.image_prompt = self.image_prompt.strip()
 
     @property
@@ -241,9 +254,7 @@ class NonlinearSpec:
         return canonical_provider(str(self.provider or "")) != "none"
 
 
-def supplied_damaged_regions(
-    value: object, plane: str
-) -> dict[str, list[str]]:
+def supplied_damaged_regions(value: object, plane: str) -> dict[str, list[str]]:
     """Read ``inputs.damaged_regions``: ``{filename: [region entry, ...]}``.
 
     The host's damage marks per section: atlas region acronyms or ids, each
@@ -346,29 +357,43 @@ class JobSpec:
             marks = self.inputs.get("damaged_regions")
             supplied_damaged_regions(marks, self.plane)
         if not isinstance(self.disabled, (list, tuple)) or not all(
-                isinstance(name, str) for name in self.disabled):
+            isinstance(name, str) for name in self.disabled
+        ):
             raise ValueError("disabled must be a list of tool and option names")
         self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
         if not isinstance(self.plugins, (list, tuple)) or not all(
-                isinstance(ref, str) and ref.strip() for ref in self.plugins):
+            isinstance(ref, str) and ref.strip() for ref in self.plugins
+        ):
             raise ValueError("plugins must be a list of module:factory references")
         self.plugins = list(dict.fromkeys(ref.strip() for ref in self.plugins))
         named = [ref for ref in self.plugins if ref in tool_table.ENGINES]
         if named:
             self.plugins = [ref for ref in self.plugins if ref not in named]
-            self.enabled = list(dict.fromkeys([*self.enabled, *(
-                tool.name for tool in tool_table.TOOLS.values()
-                if tool.default_off and tool.engine in named
-                and tool.name not in self.disabled)]))
+            self.enabled = list(
+                dict.fromkeys(
+                    [
+                        *self.enabled,
+                        *(
+                            tool.name
+                            for tool in tool_table.TOOLS.values()
+                            if tool.default_off
+                            and tool.engine in named
+                            and tool.name not in self.disabled
+                        ),
+                    ]
+                )
+            )
         given = cast("object", self.enabled)
         if not isinstance(given, (list, tuple)) or not all(
-                isinstance(name, str) for name in cast("list[object]", given)):
+            isinstance(name, str) for name in cast("list[object]", given)
+        ):
             raise ValueError("enabled must be a list of tool names")
-        self.enabled = list(
-            dict.fromkeys(name.strip() for name in self.enabled))
-        if (self.nonlinear.uses_image_model
-                and "trace_borders" not in self.disabled
-                and "trace_borders" not in self.enabled):
+        self.enabled = list(dict.fromkeys(name.strip() for name in self.enabled))
+        if (
+            self.nonlinear.uses_image_model
+            and "trace_borders" not in self.disabled
+            and "trace_borders" not in self.enabled
+        ):
             self.enabled.append("trace_borders")
         reason = tool_table.check_enabled(self.enabled)
         if reason is not None:
@@ -377,8 +402,9 @@ class JobSpec:
         if both:
             raise ValueError(f"{both} are in both enabled and disabled")
         if not isinstance(self.plugin_config, dict) or not all(
-                isinstance(ref, str) and isinstance(item, dict)
-                for ref, item in self.plugin_config.items()):
+            isinstance(ref, str) and isinstance(item, dict)
+            for ref, item in self.plugin_config.items()
+        ):
             raise ValueError("plugin_config must map a plugin reference to an options object")
         known = {*self.plugins, *tool_table.ENGINES}
         stray = sorted(set(self.plugin_config) - known)
@@ -386,18 +412,22 @@ class JobSpec:
             raise ValueError(
                 f"plugin_config names {stray}, which are no plugin of this "
                 "job and no engine of LangSlice "
-                f"({', '.join(tool_table.ENGINES)})")
+                f"({', '.join(tool_table.ENGINES)})"
+            )
         if self.plugins:
             tool_table.tools_for(self)
         self.frozen = freeze.clean(self.frozen)
         supplied = (self.inputs or {}).get("positions") or {}
-        unsupplied = sorted(name for name, held in self.frozen.items()
-                            if name != freeze.EVERY and "position" in held
-                            and name not in supplied)
+        unsupplied = sorted(
+            name
+            for name, held in self.frozen.items()
+            if name != freeze.EVERY and "position" in held and name not in supplied
+        )
         if unsupplied:
             raise ValueError(
                 f"frozen: the position of {unsupplied} is frozen, and a position has no "
-                "default: supply it in inputs.positions")
+                "default: supply it in inputs.positions"
+            )
         reason = tool_table.refusal(self)
         if reason is not None:
             raise ValueError(reason)
@@ -407,7 +437,8 @@ class JobSpec:
         of its properties frozen on every section (``frozen["*"]``): a task
         with nothing left to write is off."""
         return task in self.tasks and not (
-            set(freeze.TASK_PROPERTIES[task]) <= freeze.everywhere(self.frozen))
+            set(freeze.TASK_PROPERTIES[task]) <= freeze.everywhere(self.frozen)
+        )
 
     @property
     def active_tasks(self) -> list[str]:
@@ -421,7 +452,8 @@ class JobSpec:
         cutting angles stay free in a run whose Linear task may set them
         (``transform.angles``)."""
         return freeze.everywhere(self.frozen) | freeze.derived(
-            self.active_tasks, angles_free=bool(self.has("transform") and self.transform.angles))
+            self.active_tasks, angles_free=bool(self.has("transform") and self.transform.angles)
+        )
 
     def frozen_for(self, section_id: str) -> frozenset[str]:
         """The properties frozen on one section: its own, ``frozen["*"]``
@@ -541,13 +573,17 @@ class JobSpec:
         }
         top, sections = spec_keys()
         unknown = [name for name in data if name not in top]
-        unknown += [f"{name}.{key}" for name in nested
-                    for key in (data.get(name) or {}) if key not in sections[name]]
+        unknown += [
+            f"{name}.{key}"
+            for name in nested
+            for key in (data.get(name) or {})
+            if key not in sections[name]
+        ]
         if unknown:
             raise ValueError(f"Unknown job setting(s) {sorted(unknown)}")
         kwargs: dict[str, Any] = {
-            name: _filled(nested[name], cast("object", value))
-            if name in nested else value
-            for name, value in data.items()}
+            name: _filled(nested[name], cast("object", value)) if name in nested else value
+            for name, value in data.items()
+        }
         enabled = cast("list[str]", kwargs.pop("enabled", []))
         return cls(**kwargs, enabled=enabled)

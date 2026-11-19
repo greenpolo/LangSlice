@@ -16,8 +16,7 @@ class Reply(dict[str, Any]):
 
     images: list[Any]
 
-    def __init__(self, body: Mapping[str, Any] | None = None,
-                 images: Sequence[Any] = ()) -> None:
+    def __init__(self, body: Mapping[str, Any] | None = None, images: Sequence[Any] = ()) -> None:
         super().__init__(body or {})
         self.images = list(images)
 

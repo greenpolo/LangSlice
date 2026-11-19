@@ -120,9 +120,7 @@ class Section:
     caveats: list[str] = field(default_factory=list[str])
     angles: Angles = FLAT
 
-    def set_position(
-        self, position_mm: float, *, source: PositionSource = WRITTEN
-    ) -> None:
+    def set_position(self, position_mm: float, *, source: PositionSource = WRITTEN) -> None:
         """Set the section's position and who set it.
 
         Parameters

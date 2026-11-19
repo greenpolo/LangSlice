@@ -53,11 +53,14 @@ def look_token(ctx: Workspace, record: Section, look: Look) -> str:
 
 
 def render_cache_key(
-    ctx: Workspace, record: Section, *, long_edge: int, look: Look = None,
+    ctx: Workspace,
+    record: Section,
+    *,
+    long_edge: int,
+    look: Look = None,
 ) -> tuple[str, bool, int, int, str]:
     """The key a render is cached under: the section plus everything it shows."""
-    return (record.id, record.flip, record.rotation_deg, long_edge,
-            look_token(ctx, record, look))
+    return (record.id, record.flip, record.rotation_deg, long_edge, look_token(ctx, record, look))
 
 
 def render_slice(
@@ -105,7 +108,8 @@ def render_slice(
     from langslice.core.geometry.affine import pixel_fraction_map
 
     prepped.info["pixel_to_file_fraction"] = (
-        orientation(record) @ pixel_fraction_map(prepped.size)).tolist()
+        orientation(record) @ pixel_fraction_map(prepped.size)
+    ).tolist()
     ctx.render_cache[key] = prepped
     return prepped
 
@@ -116,7 +120,10 @@ def _gray(plane: Any) -> Image.Image:
 
 
 def _look_image(
-    ctx: Workspace, record: Section, look: dict[str, Any], size: tuple[int, int],
+    ctx: Workspace,
+    record: Section,
+    look: dict[str, Any],
+    size: tuple[int, int],
 ) -> Image.Image:
     """*look* (resolved, :func:`drawn_look`) drawn unoriented at *size*, RGB."""
 
@@ -129,9 +136,10 @@ def _look_image(
         image, _factor = read_working_image(ctx.image_path(record.id))
         return framed(image.convert("RGB"))
     if "overlay" in look:
-        shown = [(str(name), np.asarray(images.raw_plane(ctx, record.id, str(name)),
-                                        dtype=np.float32))
-                 for name in look["overlay"]]
+        shown = [
+            (str(name), np.asarray(images.raw_plane(ctx, record.id, str(name)), dtype=np.float32))
+            for name in look["overlay"]
+        ]
         return channels.composite(shown, framed=framed, size=size)
     return framed(_gray(images.image_plane(ctx, record, str(look["image"]))))
 
@@ -158,8 +166,13 @@ def canvas_um_per_px(
 
 
 def shown_section(
-    ctx: Workspace, record: Section, section: Image.Image, um_per_px: float,
-    look: Look = None, *, long_edge: int = PREVIEW_LONG_EDGE,
+    ctx: Workspace,
+    record: Section,
+    section: Image.Image,
+    um_per_px: float,
+    look: Look = None,
+    *,
+    long_edge: int = PREVIEW_LONG_EDGE,
 ) -> tuple[Image.Image, float, tuple[float, float]]:
     """The render a PICTURE of *section* is drawn from, *long_edge* at most.
 

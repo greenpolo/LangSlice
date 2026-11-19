@@ -127,9 +127,7 @@ def submit(
         try:
             exported = export_stack(job, workspace)
         except Exception:
-            logger.warning(
-                "Could not write the exports at submit", exc_info=True
-            )
+            logger.warning("Could not write the exports at submit", exc_info=True)
     return Submitted(
         summary=summary_text,
         notes=clean_notes,

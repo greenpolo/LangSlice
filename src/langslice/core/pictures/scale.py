@@ -54,7 +54,10 @@ def stored_scale(section: Section) -> float:
 
 
 def section_um_per_px(
-    ws: Workspace, state: Stack, record: Section, um_per_px: float | None = None,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    um_per_px: float | None = None,
 ) -> float:
     """Micrometres per pixel of the section's working frame as its placement
     pictures draw it: *um_per_px* (None:
@@ -67,7 +70,12 @@ def section_um_per_px(
 
 
 def framed_um_per_px(
-    ws: Workspace, record: Section, working_um: float, *, long_edge: int, look: Look = None,
+    ws: Workspace,
+    record: Section,
+    working_um: float,
+    *,
+    long_edge: int,
+    look: Look = None,
 ) -> float:
     """Micrometres per pixel of the render at *long_edge*, given
     *working_um*, that of the working frame."""
@@ -81,12 +89,15 @@ def framed_um_per_px(
 def section_extent_um(ws: Workspace, record: Section, working_um: float) -> float:
     """The long edge of the whole section picture, in micrometres."""
     picture = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
-    return max(picture.size) * framed_um_per_px(ws, record, working_um,
-                                                long_edge=PREVIEW_LONG_EDGE)
+    return max(picture.size) * framed_um_per_px(ws, record, working_um, long_edge=PREVIEW_LONG_EDGE)
 
 
 def atlas_extent_um(
-    ws: Workspace, state: Stack, position_mm: float, *, angles: Angles | None = None,
+    ws: Workspace,
+    state: Stack,
+    position_mm: float,
+    *,
+    angles: Angles | None = None,
 ) -> float:
     """The long edge of the anatomy-framed atlas plane at *position_mm*, in micrometres."""
     picture = atlas_section(ws, state, position_mm, frame=True, angles=angles)
@@ -106,13 +117,17 @@ def pair_um_per_px(extents_um: Any, long_edge: int, *, finest: float = 0.0) -> f
     """The one scale at which the largest of *extents_um* (long edges in
     micrometres) fills *long_edge* pixels, never finer than *finest* (the
     section's own pixels: a small snapshot is not upsampled)."""
-    return max(max(float(value) for value in extents_um) / max(1, int(long_edge)),
-               float(finest))
+    return max(max(float(value) for value in extents_um) / max(1, int(long_edge)), float(finest))
 
 
 def pair_scale(
-    ws: Workspace, state: Stack, record: Section, position_mm: float, long_edge: int,
-    *, um_per_px: float | None = None,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    position_mm: float,
+    long_edge: int,
+    *,
+    um_per_px: float | None = None,
 ) -> tuple[float, float]:
     """``(picture um/px, working um/px)`` of *record* drawn with the atlas at
     *position_mm* (its own angles): the larger of the two panels at
@@ -120,16 +135,24 @@ def pair_scale(
     holds it (None: :func:`section_um_per_px` calibrates)."""
     working_um = section_um_per_px(ws, state, record, um_per_px)
     shown = pair_um_per_px(
-        (section_extent_um(ws, record, working_um),
-         atlas_extent_um(ws, state, position_mm, angles=record.angles)),
-        long_edge, finest=finest_um_per_px(ws, record, working_um),
+        (
+            section_extent_um(ws, record, working_um),
+            atlas_extent_um(ws, state, position_mm, angles=record.angles),
+        ),
+        long_edge,
+        finest=finest_um_per_px(ws, record, working_um),
     )
     return shown, working_um
 
 
 def section_at(
-    ws: Workspace, record: Section, um_per_px: float, *, working_um: float,
-    long_edge: int, look: Look = None,
+    ws: Workspace,
+    record: Section,
+    um_per_px: float,
+    *,
+    working_um: float,
+    long_edge: int,
+    look: Look = None,
 ) -> Image.Image:
     """The whole section picture at exactly *um_per_px*.
 
@@ -144,8 +167,12 @@ def section_at(
 
 
 def atlas_at(
-    ws: Workspace, state: Stack, position_mm: float, um_per_px: float,
-    *, angles: Angles | None = None,
+    ws: Workspace,
+    state: Stack,
+    position_mm: float,
+    um_per_px: float,
+    *,
+    angles: Angles | None = None,
 ) -> Image.Image:
     """The atlas template plane at *position_mm*, anatomy-framed, at exactly *um_per_px*."""
     picture = atlas_section(ws, state, position_mm, frame=True, angles=angles)
@@ -164,7 +191,15 @@ def resized(picture: Image.Image, factor: float) -> Image.Image:
 
 
 __all__ = [
-    "atlas_at", "atlas_extent_um", "finest_um_per_px", "framed_um_per_px",
-    "pair_scale", "pair_um_per_px", "resized", "section_at",
-    "section_extent_um", "section_um_per_px", "stored_scale",
+    "atlas_at",
+    "atlas_extent_um",
+    "finest_um_per_px",
+    "framed_um_per_px",
+    "pair_scale",
+    "pair_um_per_px",
+    "resized",
+    "section_at",
+    "section_extent_um",
+    "section_um_per_px",
+    "stored_scale",
 ]

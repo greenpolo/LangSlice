@@ -42,9 +42,7 @@ class _Atlas(Protocol):
 class _AtlasApi(Protocol):
     """Name BrainGlobe's atlas class (its names are typed as a closed set)."""
 
-    def BrainGlobeAtlas(  # noqa: N802
-        self, atlas_name: str, /, *, check_latest: bool
-    ) -> _Atlas: ...
+    def BrainGlobeAtlas(self, atlas_name: str, /, *, check_latest: bool) -> _Atlas: ...
 
 
 class _Ndimage(Protocol):
@@ -190,9 +188,7 @@ def _block_mean(data: np.ndarray, factors: list[int]) -> np.ndarray:
     return means
 
 
-def _borrowed_nissl(
-    source: _Atlas, steps: list[float], factors: list[int]
-) -> np.ndarray:
+def _borrowed_nissl(source: _Atlas, steps: list[float], factors: list[int]) -> np.ndarray:
     """Build the borrowed Nissl as LangSlice does, block-averaged.
 
     The augmented template is resampled (linear, voxel centres, its AP

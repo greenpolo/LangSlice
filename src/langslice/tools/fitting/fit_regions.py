@@ -34,9 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def region_entries(
-    workspace: Workspace, state: Stack, entries: Any
-) -> tuple[str, ...]:
+def region_entries(workspace: Workspace, state: Stack, entries: Any) -> tuple[str, ...]:
     """*entries* (region acronyms, names or ids, ``"CTX:left"`` for one side)
     checked against the atlas and normalized. Refused: ``BAD_ARGS`` (not a
     list of names, or a side that does not exist), ``UNKNOWN_REGIONS``,
@@ -55,9 +53,7 @@ def region_entries(
         try:
             resolve_entries(workspace.atlas, names)
         except ValueError as exc:
-            raise Refused(
-                RefusalCode.UNKNOWN_REGIONS, message=str(exc)
-            ) from exc
+            raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from exc
         if state.plane == "sagittal" and has_sides(names):
             raise Refused(
                 RefusalCode.NO_SIDES,
@@ -98,9 +94,7 @@ def region_box(
         return None
     try:
         names = [split_side(name)[0] for name in regions]
-        geometry = stage(
-            workspace, state, record, dict(KNOB_DEFAULTS), "canvas"
-        ).geometry
+        geometry = stage(workspace, state, record, dict(KNOB_DEFAULTS), "canvas").geometry
         mask = regions_mask(workspace.atlas, geometry.annotation, names)
     except IMAGE_FAILURES as exc:
         logger.warning("region box failed for %s: %s", record.id, exc)

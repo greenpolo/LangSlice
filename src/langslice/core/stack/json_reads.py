@@ -60,9 +60,7 @@ def text_at(data: JsonObject, key: str) -> str:
     return value
 
 
-def optional_at(
-    data: JsonObject, key: str, read: Callable[[JsonObject, str], _T]
-) -> _T | None:
+def optional_at(data: JsonObject, key: str, read: Callable[[JsonObject, str], _T]) -> _T | None:
     """Return a value read with a reader, or None when the key is absent.
 
     Parameters
@@ -323,6 +321,4 @@ def set_items(items: Iterable[tuple[str, Json]]) -> dict[str, JsonValue]:
     dict
         Each key whose value is not None, with its value as JSON.
     """
-    return {
-        key: to_jsonable(value) for key, value in items if value is not None
-    }
+    return {key: to_jsonable(value) for key, value in items if value is not None}

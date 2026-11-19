@@ -87,15 +87,9 @@ class RestoredMany:
 
 
 def _where(position_mm: float | None, angles: Angles) -> str:
-    place = (
-        "no position"
-        if position_mm is None
-        else f"{round(float(position_mm), 3)} mm"
-    )
+    place = "no position" if position_mm is None else f"{round(float(position_mm), 3)} mm"
     pitch, yaw = float(angles[0]), float(angles[1])
-    return place + (
-        f", pitch {pitch:g} deg, yaw {yaw:g} deg" if pitch or yaw else ""
-    )
+    return place + (f", pitch {pitch:g} deg, yaw {yaw:g} deg" if pitch or yaw else "")
 
 
 def _elsewhere(state: Stack, section: Section, entry: Row) -> str | None:
@@ -216,9 +210,7 @@ def listing(job: Job, section: str) -> Listed:
 
 
 def _unknown(job: Job, record: Section, number: object) -> Refused:
-    numbers = [
-        entry.registration for entry in job.histories.registrations(record.id)
-    ]
+    numbers = [entry.registration for entry in job.histories.registrations(record.id)]
     listed = (
         f"its registrations are {', '.join(str(n) for n in numbers)}"
         if numbers
@@ -245,15 +237,12 @@ def _number(section: Section, number: object) -> int:
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         raise Refused(
             RefusalCode.BAD_ARGS,
-            message=f"{section.id}: a registration is a number from 1; "
-            f"got {number!r}.",
+            message=f"{section.id}: a registration is a number from 1; got {number!r}.",
         )
     return number
 
 
-def entry_for(
-    job: Job, section: object, number: object
-) -> tuple[Section, Row, int | None]:
+def entry_for(job: Job, section: object, number: object) -> tuple[Section, Row, int | None]:
     """``(record, entry, held)``: registration *number* of *section* as it
     can be drawn on the section as it stands (what ``look`` draws a section
     under without writing it), and the number the section holds. Refused:
@@ -294,9 +283,7 @@ def _check_entry(job: Job, record: Section, entry: Row) -> None:
     deformation = entry.deformation
     if (
         deformation is not None
-        and not (
-            job.layout.resolve(deformation.record or "") / "record.json"
-        ).is_file()
+        and not (job.layout.resolve(deformation.record or "") / "record.json").is_file()
     ):
         raise Refused(
             RefusalCode.DEFORMATION_UNREADABLE,
@@ -317,9 +304,7 @@ def _restore_one(job: Job, record: Section, number: object) -> Restored:
         raise _unknown(job, record, number)
     restored = cast("int", entry.registration)
     if held == restored:
-        return Restored(
-            id=record.id, registration=restored, replaced=held, written=False
-        )
+        return Restored(id=record.id, registration=restored, replaced=held, written=False)
     changes: list[str] = []
     if (record.flip, record.rotation_deg) != (entry.flip, entry.rotation_deg):
         changes.append("orientation")
@@ -330,19 +315,13 @@ def _restore_one(job: Job, record: Section, number: object) -> Restored:
         changes.append("deformation")
     check_frozen(job, [record.id], *changes)
     _check_entry(job, record, entry)
-    set_head(
-        record, {key: entry.section.get(key) for key in REGISTRATION_KEYS}
-    )
-    return Restored(
-        id=record.id, registration=restored, replaced=held, written=True
-    )
+    set_head(record, {key: entry.section.get(key) for key in REGISTRATION_KEYS})
+    return Restored(id=record.id, registration=restored, replaced=held, written=True)
 
 
 def _record_key(registration: JsonObject | None) -> str | None:
     """Return the record key of a registration's deformation, or None."""
-    deformation = (
-        None if registration is None else registration.get("deformation")
-    )
+    deformation = None if registration is None else registration.get("deformation")
     if not isinstance(deformation, Mapping):
         return None
     key = deformation.get("key")
@@ -361,8 +340,7 @@ def restore(job: Job, sections: Any) -> RestoredMany:
     ``DUPLICATE_SLICE_IDS``, ``UNKNOWN_SLICE_IDS``."""
     entries = list(sections or [])
     if not entries or not all(
-        isinstance(e, dict) and set(e) == {"id", "registration"}
-        for e in entries
+        isinstance(e, dict) and set(e) == {"id", "registration"} for e in entries
     ):
         raise Refused(
             RefusalCode.BAD_ARGS,

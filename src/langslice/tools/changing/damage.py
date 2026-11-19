@@ -64,11 +64,7 @@ class DamageRegions:
 def _user_note(job: Job, record: Section) -> str:
     """The note the host gave with its mark ("" for none, or no mark)."""
     marks = (job.spec.inputs or {}).get("damaged") or {}
-    return (
-        str(marks.get(record.id) or "").strip()
-        if record.id in job.host_damaged
-        else ""
-    )
+    return str(marks.get(record.id) or "").strip() if record.id in job.host_damaged else ""
 
 
 def _joined_note(user: str, agent: str) -> str:
@@ -172,9 +168,7 @@ def mark_damage(
     return DamageRegions(**result, pictures=drawn, render_failed=failed)
 
 
-def mark_damage_tool(
-    run: Run, section: str, regions: list[str], note: str
-) -> dict[str, Any]:
+def mark_damage_tool(run: Run, section: str, regions: list[str], note: str) -> dict[str, Any]:
     """Run the ``mark_damage`` tool: write, answer, picture.
 
     Parameters

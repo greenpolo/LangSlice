@@ -557,48 +557,6 @@ The in-tree engines load the same way on every door, for every job that has
 one of their tools.
 A plugin keeps its files under `plugins/<tool>/` of the job (`ctx.work_dir()`).
 
-## The MCP adapter
-
-`langslice.doors.plugins.mcp_adapter:tools` is a plugin that makes LangSlice a client of
-an MCP server on this machine. Its options (`plugin_config`) name the server,
-by command LangSlice starts or by a streamable-HTTP URL, and the **allow-list**
-of its tools; only those are offered, each as `<server>__<tool>` (characters
-other than letters, digits and underscores in the remote name become `_`),
-with the server's description and input schema as its declaration. Several
-servers can be given as `{"servers": [...]}`.
-
-```json
-{"server": "napari",
- "command": ["python", "-m", "my_napari_server"],
- "timeout_s": 120,
- "tools": {
-   "add_points": {
-     "kind": "write",
-     "inputs": {"image_path": {"send": "section_image", "section": "section"}},
-     "fixed": {"viewer": "main"},
-     "results": [{"to": "layer", "section": "section", "from": "points",
-                  "kind": "points", "frame": "section_px", "name": "napari_points"}]
-   }}}
-```
-
-| Option | Meaning |
-|---|---|
-| `kind` | `read` or `write` (default `write` when `results` is given, else `read`); also `group`, `task`, `long`, `limits`, `needs`, `version` as in `ToolSpec` |
-| `inputs` | Arguments LangSlice fills instead of the model: `{"arg": {"send": "section_image" or "placement", "section": <argument naming the section>}}`. `section_image` writes a PNG under `plugins/<tool>/inputs/` and sends its path (`"inline": true`: the image as base64); `placement` sends the section's position, angles, orientation and transform. The argument that names the section is added to the declaration when the server has none of that name |
-| `fixed` | Arguments always sent with a fixed value |
-| `results` | How the answer (its structured content, or its text read as JSON) reaches the job: `{"to": "layer", "from": path, "kind": "points" or "lines", "frame":, "name":, "section":}`, `{"to": "transform", "from": path}` (six numbers), `{"to": "position", "from": path}` (millimetres); `from` is a dotted path into the answer |
-
-The server's text, structured data and images are in the reply. The remote tool
-cannot touch job state: it receives only what `inputs` gives it and its answer
-reaches the job only through `results`, via the same context writes as any
-plugin (frozen properties, undo, `registration.json`). The server's
-descriptions are text from outside the project: they are shown as given (with
-`[[` made `[ [` so they cannot act as a rendering mark), recorded verbatim in
-the provenance (`meta.remote_description`, `meta.remote_input_schema`), and
-cannot change the job's settings or the tools offered. The connection is kept
-for the life of the process, so a stateful server (a viewer) keeps its state
-between calls.
-
 ## Errors a plugin tool can reply
 
 | Code | Meaning |

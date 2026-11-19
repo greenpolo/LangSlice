@@ -7,6 +7,7 @@ import hashlib
 import http.server
 import json
 import secrets
+import sys
 import threading
 import time
 import urllib.parse
@@ -114,7 +115,9 @@ def _write_creds(creds: Creds) -> None:
                 "last_refresh": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
             indent=2,
-        ), encoding="utf-8", newline="\n"
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     path.chmod(0o600)
 
@@ -181,27 +184,23 @@ def _pkce() -> tuple[str, str]:
 
 def _callback_handler(result: dict[str, str]) -> type[http.server.BaseHTTPRequestHandler]:
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
             if not parsed.path.startswith("/auth/callback"):
                 self.send_response(404)
                 self.end_headers()
                 return
-            result.update(
-                {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
-            )
+            result.update({k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()})
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             message = (
-                "Signed in. You can close this tab."
-                if "code" in result
-                else "Sign-in failed."
+                "Signed in. You can close this tab." if "code" in result else "Sign-in failed."
             )
             self.wfile.write(f"<html><body><h2>{message}</h2></body></html>".encode())
 
-        def log_message(self, *args: object) -> None:
-            pass
+        def log_message(self, format: str, *args: object) -> None:
+            """Keep the sign-in exchange out of the terminal."""
 
     return Handler
 
@@ -219,19 +218,23 @@ def login(
     """
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(16)
-    url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(
-        {
-            "response_type": "code",
-            "client_id": CLIENT_ID,
-            "redirect_uri": _REDIRECT_URI,
-            "scope": _LOGIN_SCOPE,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-            "id_token_add_organizations": "true",
-            "codex_cli_simplified_flow": "true",
-            "state": state,
-            "originator": ORIGINATOR,
-        }
+    url = (
+        AUTHORIZE_URL
+        + "?"
+        + urllib.parse.urlencode(
+            {
+                "response_type": "code",
+                "client_id": CLIENT_ID,
+                "redirect_uri": _REDIRECT_URI,
+                "scope": _LOGIN_SCOPE,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "id_token_add_organizations": "true",
+                "codex_cli_simplified_flow": "true",
+                "state": state,
+                "originator": ORIGINATOR,
+            }
+        )
     )
 
     result: dict[str, str] = {}
@@ -241,8 +244,9 @@ def login(
         if on_url is not None:
             on_url(url)
         else:
-            print("Opening browser to sign in with ChatGPT...")
-            print(f"If it doesn't open, visit:\n  {url}")
+            sys.stdout.write(
+                f"Opening browser to sign in with ChatGPT...\nIf it doesn't open, visit:\n  {url}\n"
+            )
         if open_browser:
             try:
                 webbrowser.open(url)

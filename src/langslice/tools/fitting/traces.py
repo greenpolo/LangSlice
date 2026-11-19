@@ -59,8 +59,10 @@ class TraceStarted:
     landed: bool = False
 
 
-_STALE_MESSAGE = ("The section's placement changed while the image call was prepared; "
-                  "nothing was started or written for it.")
+_STALE_MESSAGE = (
+    "The section's placement changed while the image call was prepared; "
+    "nothing was started or written for it."
+)
 
 
 def _trace_json(section: Section) -> dict[str, JsonValue]:
@@ -97,29 +99,38 @@ def _start_trace(
     try:
         current = handoff.correction_fingerprint(job.state, workspace, section_id)
         if job.image_job_running(section_id, current):
-            return TraceStarted(id=section_id, running=True,
-                                record=_trace_json(record))
+            return TraceStarted(id=section_id, running=True, record=_trace_json(record))
         kept, dropped = exclusions(record, chosen)
         result, call = registration_tool.start_correction(
-            job.state, workspace, section_id, prompt=prompt, image_model=image_model,
-            calls_dir=job.layout.border_trace_dir(section_id), include=kept, exclude=dropped)
+            job.state,
+            workspace,
+            section_id,
+            prompt=prompt,
+            image_model=image_model,
+            calls_dir=job.layout.border_trace_dir(section_id),
+            include=kept,
+            exclude=dropped,
+        )
     except Refused as refusal:
         facts = {"id": section_id, **refusal.facts}
         raise Refused(refusal.code, **facts) from refusal
     except ValueError as exc:
-        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
-                      id=section_id, message=str(exc)) from exc
+        raise Refused(
+            RefusalCode.INVALID_LINEAR_PLACEMENT, id=section_id, message=str(exc)
+        ) from exc
     except OSError as exc:
-        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR,
-                      id=section_id, message=str(exc)) from exc
+        raise Refused(RefusalCode.BORDER_TRACE_IO_ERROR, id=section_id, message=str(exc)) from exc
     with job.writing():
         before = job.snapshot()
         now = job.state.by_id(section_id)
         fingerprint = result["geometry_fingerprint"]
-        if now is None or handoff.correction_fingerprint(
-                job.state, workspace, section_id) != fingerprint:
-            raise Refused(RefusalCode.STALE_INPUT, id=section_id,
-                          message=_STALE_MESSAGE + " Call it again.")
+        if (
+            now is None
+            or handoff.correction_fingerprint(job.state, workspace, section_id) != fingerprint
+        ):
+            raise Refused(
+                RefusalCode.STALE_INPUT, id=section_id, message=_STALE_MESSAGE + " Call it again."
+            )
         if call is not None:
             job.start_image_job(section_id, fingerprint, call, workers=workers)
         portable = job.portable(result)
@@ -131,8 +142,9 @@ def _start_trace(
 
 
 TRACE_WORK = "trace_borders"
-TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
-                               smoothness_um=80.0)
+TRACE_FIT = deformation.Choice(
+    fit_section=deformation.TRACED_BORDERS, fit_atlas="borders", smoothness_um=80.0
+)
 _STALE_CODES = (
     RefusalCode.STALE_INPUT,
     RefusalCode.TRACE_STALE,
@@ -198,10 +210,16 @@ def trace_borders(
         raise unknown_sections(job.state, [str(ref)])
     held = job.background.running_for(record.id, TRACE_WORK)
     if held is not None:
-        return TraceStarted(id=record.id, running=True, work=held.id,
-                            record=_trace_json(record))
-    started = _start_trace(job, workspace, record.id, image_model=image_model, prompt=prompt,
-                           chosen=regions, workers=workers)
+        return TraceStarted(id=record.id, running=True, work=held.id, record=_trace_json(record))
+    started = _start_trace(
+        job,
+        workspace,
+        record.id,
+        image_model=image_model,
+        prompt=prompt,
+        chosen=regions,
+        workers=workers,
+    )
     now = job.state.by_id(record.id) or record
     if not started.started and _landed(job, now):
         return replace(started, landed=True)
@@ -209,8 +227,7 @@ def trace_borders(
     section_id = record.id
 
     def land() -> Landed:
-        return land_trace(job, workspace, section_id, expected, regions=regions,
-                          options=options)
+        return land_trace(job, workspace, section_id, expected, regions=regions, options=options)
 
     work = job.background.start(TRACE_WORK, (section_id,), land)
     return replace(started, work=work.id)
@@ -236,22 +253,39 @@ def land_trace(
     state = job.state
     record = state.by_id(section_id)
     if record is None:
-        return Landed(status=FAILED, text=f"{section_id} is no longer in the stack; nothing "
-                      "was applied.",
-                      result={"error": RefusalCode.UNKNOWN_SLICE_IDS})
+        return Landed(
+            status=FAILED,
+            text=f"{section_id} is no longer in the stack; nothing was applied.",
+            result={"error": RefusalCode.UNKNOWN_SLICE_IDS},
+        )
     held = record.border_trace
     form = _trace_json(record)
-    trace = {key: form[key] for key in ("status", "attempt", "cached", "prompt_edited",
-                                        "include", "exclude", "error", "message")
-             if key in form}
+    trace = {
+        key: form[key]
+        for key in (
+            "status",
+            "attempt",
+            "cached",
+            "prompt_edited",
+            "include",
+            "exclude",
+            "error",
+            "message",
+        )
+        if key in form
+    }
     if held is not None and held.status == "error":
         reason = held.message or held.error or "no image"
-        return Landed(status=FAILED, text=f"the image model's call failed ({reason}); "
-                      "nothing was applied.",
-                      result={"error": RefusalCode.TRACE_FAILED,
-                              "trace": trace})
-    if (section_inputs(state, record, deformation=True) != expected
-            or held is None or held.status != "ok"):
+        return Landed(
+            status=FAILED,
+            text=f"the image model's call failed ({reason}); nothing was applied.",
+            result={"error": RefusalCode.TRACE_FAILED, "trace": trace},
+        )
+    if (
+        section_inputs(state, record, deformation=True) != expected
+        or held is None
+        or held.status != "ok"
+    ):
         return _stale(trace)
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions)
     if options is not None:
@@ -263,23 +297,30 @@ def land_trace(
         assert refusal is not None
         if refusal.code in _STALE_CODES:
             return _stale(trace)
-        return Landed(status=FAILED, text=f"the fit of the traced borders failed "
-                      f"({refusal.code}: {refusal.message}); nothing was applied.",
-                      result={"error": refusal.code, "row": row, "trace": trace})
+        return Landed(
+            status=FAILED,
+            text=f"the fit of the traced borders failed "
+            f"({refusal.code}: {refusal.message}); nothing was applied.",
+            result={"error": refusal.code, "row": row, "trace": trace},
+        )
     summary = fitted.applied.numbers
     moved = cast("dict[str, object]", summary.get("displacement_mm") or {})
-    built_on = ("its previous deformation" if fitted.steps > 1
-                else "its linear placement")
-    facts = (f"Displacement median {moved.get('median')} mm, max {moved.get('max')} mm; "
-             f"fold fraction {summary.get('fold_fraction')}"
-             + (f"; flags {deformation.flag_words(dict(summary))}"
-                if summary.get("flags") else "") + ".")
-    text = ("the trace landed and FireANTs fitted the traced borders (80 um smoothness"
-            + (f", restricted to {', '.join(regions)}" if regions else "")
-            + f") on top of {built_on}. The deformation is applied as its own undo "
-            "step: undo removes it while it is the latest step. " + facts)
-    return Landed(status=DONE, text=text, pictures=list(done.pictures),
-                  result={"row": row, "trace": trace})
+    built_on = "its previous deformation" if fitted.steps > 1 else "its linear placement"
+    facts = (
+        f"Displacement median {moved.get('median')} mm, max {moved.get('max')} mm; "
+        f"fold fraction {summary.get('fold_fraction')}"
+        + (f"; flags {deformation.flag_words(dict(summary))}" if summary.get("flags") else "")
+        + "."
+    )
+    text = (
+        "the trace landed and FireANTs fitted the traced borders (80 um smoothness"
+        + (f", restricted to {', '.join(regions)}" if regions else "")
+        + f") on top of {built_on}. The deformation is applied as its own undo "
+        "step: undo removes it while it is the latest step. " + facts
+    )
+    return Landed(
+        status=DONE, text=text, pictures=list(done.pictures), result={"row": row, "trace": trace}
+    )
 
 
 def _landed(job: Job, section: Section) -> bool:
@@ -301,15 +342,25 @@ def _landed(job: Job, section: Section) -> bool:
 
 
 def _stale(trace: dict[str, Any]) -> Landed:
-    return Landed(status=FAILED,
-                  text=f"{RefusalCode.STALE_INPUT}: the section's placement, section "
-                  "images, damage, deformation or trace changed before the trace landed; "
-                  "nothing was applied. Run trace_borders again.",
-                  result={"error": RefusalCode.STALE_INPUT, "trace": trace})
+    return Landed(
+        status=FAILED,
+        text=f"{RefusalCode.STALE_INPUT}: the section's placement, section "
+        "images, damage, deformation or trace changed before the trace landed; "
+        "nothing was applied. Run trace_borders again.",
+        result={"error": RefusalCode.STALE_INPUT, "trace": trace},
+    )
 
 
-_REPLY_TRACE_KEYS = ("status", "error", "message", "cached", "prompt_edited",
-                     "attempt", "include", "exclude")
+_REPLY_TRACE_KEYS = (
+    "status",
+    "error",
+    "message",
+    "cached",
+    "prompt_edited",
+    "attempt",
+    "include",
+    "exclude",
+)
 
 
 def trace_borders_tool(
@@ -335,23 +386,41 @@ def trace_borders_tool(
     assert run.image_model is not None
     options = default_options("borders", long_edge=picture_edge(run.workspace))
     done = trace_borders(
-        run.job, run.workspace, section, image_model=run.image_model,
-        prompt=str(prompt or ""), restrict_to=as_list(restrict_to),
-        options=options)
-    trace = {key: done.record[key] for key in _REPLY_TRACE_KEYS
-             if key in done.record}
+        run.job,
+        run.workspace,
+        section,
+        image_model=run.image_model,
+        prompt=str(prompt or ""),
+        restrict_to=as_list(restrict_to),
+        options=options,
+    )
+    trace = {key: done.record[key] for key in _REPLY_TRACE_KEYS if key in done.record}
     if done.running:
-        return {"status": "running", "id": done.id, "work": done.work,
-                "message": f"This section's trace is already running as work "
-                f"{done.work}; its notice comes when it finishes."}
+        return {
+            "status": "running",
+            "id": done.id,
+            "work": done.work,
+            "message": f"This section's trace is already running as work "
+            f"{done.work}; its notice comes when it finishes.",
+        }
     if done.landed:
-        return {"status": "ok", "id": done.id, "landed": True, "trace": trace,
-                "message": "This trace has already been fitted: the section's "
-                "deformation holds its fit, so nothing was fitted again."}
+        return {
+            "status": "ok",
+            "id": done.id,
+            "landed": True,
+            "trace": trace,
+            "message": "This trace has already been fitted: the section's "
+            "deformation holds its fit, so nothing was fitted again.",
+        }
     reused = ""
     if not done.started:
         reused = " (the saved answer at this placement and region choice is reused)"
-    return {"status": "started", "id": done.id, "work": done.work, "trace": trace,
-            "message": f"Started in the background as work {done.work}{reused}. "
-            "Carry on; its notice comes at the head of a later reply, and "
-            "submit waits for it."}
+    return {
+        "status": "started",
+        "id": done.id,
+        "work": done.work,
+        "trace": trace,
+        "message": f"Started in the background as work {done.work}{reused}. "
+        "Carry on; its notice comes at the head of a later reply, and "
+        "submit waits for it.",
+    }

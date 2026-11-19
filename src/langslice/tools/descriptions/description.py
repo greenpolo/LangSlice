@@ -117,11 +117,7 @@ class DescriptionFacts:
             prompt = _job_prompt(spec)
 
         plugins = tuple(of_spec(spec))
-        absent = frozenset(
-            name
-            for name, tool in tools_for(spec).items()
-            if not tool.when(spec)
-        )
+        absent = frozenset(name for name, tool in tools_for(spec).items() if not tool.when(spec))
         if uncapped is None:
             uncapped = door == CLI_DOOR
         return cls(
@@ -143,9 +139,7 @@ def _job_prompt(spec: JobSpec) -> str:
     if own is not None:
         return own.replace(PLANE_PLACEHOLDER, spec.plane)
     plane = as_plane(spec.plane)
-    return border_correction_tool_prompt(
-        plane, provider=spec.nonlinear.provider
-    )
+    return border_correction_tool_prompt(plane, provider=spec.nonlinear.provider)
 
 
 @dataclass(frozen=True)
@@ -199,9 +193,7 @@ class ToolDescription:
 
     summary: str
     body: tuple[str, ...] = ()
-    arguments: Mapping[str, Argument] = field(
-        default_factory=dict[str, Argument]
-    )
+    arguments: Mapping[str, Argument] = field(default_factory=dict[str, Argument])
     returns: str = ""
     prompt_heading: str = ""
     slots: Mapping[str, Slot] = field(default_factory=dict[str, Slot])

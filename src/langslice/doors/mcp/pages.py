@@ -49,16 +49,12 @@ def image_block(image: Image.Image | bytes) -> ImageContent:
 def blocks_of(items: list[Item]) -> list[ContentBlock]:
     """Texts and JPEG bytes (``reply.Item``) as MCP blocks."""
     return [
-        TextContent(type="text", text=item)
-        if isinstance(item, str)
-        else image_block(item)
+        TextContent(type="text", text=item) if isinstance(item, str) else image_block(item)
         for item in items
     ]
 
 
-def result_blocks(
-    result: Any, *, job: Job | None = None
-) -> list[ContentBlock]:
+def result_blocks(result: Any, *, job: Job | None = None) -> list[ContentBlock]:
     """A toolbox result as MCP content: its JSON, then its media in order.
 
     The tools return plain pictures (PIL images, captions burned in) and lines
@@ -74,9 +70,7 @@ def result_blocks(
         body = dict(result)
         listed = body.pop(TOOL_MEDIA_PARTS_KEY, None)
         if isinstance(listed, list):
-            media = [
-                item for item in listed if isinstance(item, (str, Image.Image))
-            ]
+            media = [item for item in listed if isinstance(item, (str, Image.Image))]
             body["images_attached"] = len(media)
         elif listed is not None:
             body[TOOL_MEDIA_PARTS_KEY] = listed
@@ -92,27 +86,19 @@ def result_blocks(
     if shrunk is not None:
         if job is not None and isinstance(body, dict):
             refs = body.get("pictures") or []
-            indexes = [
-                i for i, item in enumerate(fitted) if isinstance(item, bytes)
-            ]
+            indexes = [i for i, item in enumerate(fitted) if isinstance(item, bytes)]
             replacements: dict[int, int] = {}
             for ref, index in zip(refs, indexes, strict=False):
                 old = job.views.lookup(ref["id"])
                 if old is None:
-                    raise ValueError(
-                        f"Returned picture {ref['id']} is not saved"
-                    )
+                    raise ValueError(f"Returned picture {ref['id']} is not saved")
                 original, delivered = items[index], fitted[index]
-                assert isinstance(original, bytes) and isinstance(
-                    delivered, bytes
-                )
+                assert isinstance(original, bytes) and isinstance(delivered, bytes)
                 with (
                     Image.open(BytesIO(original)) as source,
                     Image.open(BytesIO(delivered)) as target,
                 ):
-                    recipe = resized_recipe(
-                        old.recipe, source.size, target.size
-                    )
+                    recipe = resized_recipe(old.recipe, source.size, target.size)
                 held = PictureNote(
                     sections=old.sections,
                     mode=old.mode,
@@ -131,8 +117,7 @@ def result_blocks(
                 entries: list[dict[str, Any]],
             ) -> list[dict[str, Any]]:
                 return [
-                    {**entry, "id": replacements.get(entry["id"], entry["id"])}
-                    for entry in entries
+                    {**entry, "id": replacements.get(entry["id"], entry["id"])} for entry in entries
                 ]
 
             if refs:
@@ -145,11 +130,7 @@ def result_blocks(
                     for one in body["results"]
                 ]
             fitted[0] = json.dumps(body, default=str)
-        fitted.append(
-            shrunk_note(
-                sum(isinstance(item, bytes) for item in fitted), shrunk
-            )
-        )
+        fitted.append(shrunk_note(sum(isinstance(item, bytes) for item in fitted), shrunk))
     return blocks_of(fitted)
 
 
@@ -184,24 +165,16 @@ def opening_pages(session: Session) -> list[list[ContentBlock]]:
         limit=CLAUDE_IMAGE_LIMIT,
         max_bytes=strip_bytes(PAGE_BYTES),
     )
-    encoded: list[Item] = [
-        item if isinstance(item, str) else encode_jpeg(item) for item in items
-    ]
+    encoded: list[Item] = [item if isinstance(item, str) else encode_jpeg(item) for item in items]
     return [blocks_of(page) for page in paged(encoded, PAGE_BYTES)]
 
 
-def save_page(
-    session: Session, page: int, blocks: list[ContentBlock]
-) -> list[str]:
+def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> list[str]:
     """Save the page's pictures in the job folder, as the bytes the host got;
     return their paths (written in the background)."""
     from langslice.job.pictures import PICTURE_FILE, captured
 
-    pictures = [
-        base64.b64decode(block.data)
-        for block in blocks
-        if isinstance(block, ImageContent)
-    ]
+    pictures = [base64.b64decode(block.data) for block in blocks if isinstance(block, ImageContent)]
     try:
         with captured() as saved:
             session.job.views.save(

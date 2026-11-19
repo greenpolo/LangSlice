@@ -83,12 +83,16 @@ from langslice.job.folder.layout import JobLayout
 from langslice.job.review import ReviewError, add_comment, remove_comment
 
 STATIC = Path(__file__).with_name("static")
-STATIC_NAME = re.compile(
-    r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt|ico)")
-STATIC_TYPES = {"html": "text/html; charset=utf-8", "css": "text/css",
-                "js": "text/javascript", "woff2": "font/woff2",
-                "svg": "image/svg+xml", "txt": "text/plain; charset=utf-8",
-                "ico": "image/x-icon"}
+STATIC_NAME = re.compile(r"[a-z0-9][a-z0-9.-]*\.(html|css|js|woff2|svg|txt|ico)")
+STATIC_TYPES = {
+    "html": "text/html; charset=utf-8",
+    "css": "text/css",
+    "js": "text/javascript",
+    "woff2": "font/woff2",
+    "svg": "image/svg+xml",
+    "txt": "text/plain; charset=utf-8",
+    "ico": "image/x-icon",
+}
 MAX_BODY = 16 * 1024
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
 _COMMENTS = re.compile(r"jobs/(\d+)/comments")
@@ -103,15 +107,15 @@ _ATLAS = re.compile(r"jobs/(\d+)/render/atlas/(\d+)")
 _EXPORT = re.compile(r"jobs/(\d+)/export(/reveal)?")
 Answer = int | tuple[bytes, str] | tuple[bytes, str, int]
 _Route = Callable[[JobWatcher, re.Match[str], dict[str, list[str]]], Answer]
-_SECTION_PICTURES = {"overlay": JobRenderer.overlay,
-                     "thumb": JobRenderer.thumb}
+_SECTION_PICTURES = {"overlay": JobRenderer.overlay, "thumb": JobRenderer.thumb}
 HEADERS = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": (
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; "
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"),
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    ),
 }
 
 
@@ -158,10 +162,15 @@ class GuiServer:
     makes one on BrainGlobe's atlases).
     """
 
-    def __init__(self, jobs: JobList, *, port: int = 0,
-                 settings: Settings | None = None,
-                 renders: RenderPool | None = None,
-                 exports: Exports | None = None) -> None:
+    def __init__(
+        self,
+        jobs: JobList,
+        *,
+        port: int = 0,
+        settings: Settings | None = None,
+        renders: RenderPool | None = None,
+        exports: Exports | None = None,
+    ) -> None:
         self.jobs = jobs
         self.exports = _exports(exports)
         self.settings = settings if settings is not None else Settings()
@@ -170,10 +179,15 @@ class GuiServer:
         self._comments: dict[Path, CommentWatch] = {}
         self._comments_lock = threading.Lock()
         self._routes: tuple[tuple[re.Pattern[str], _Route], ...] = (
-            (_SNAPSHOT, self._snapshot), (_PICTURE, self._picture),
-            (_STRIP, self._strip), (_SPACE, self._space),
-            (_SHELL, self._shell), (_RENDER, self._render),
-            (_ATLAS, self._atlas), (_EXPORT, self._export_state))
+            (_SNAPSHOT, self._snapshot),
+            (_PICTURE, self._picture),
+            (_STRIP, self._strip),
+            (_SPACE, self._space),
+            (_SHELL, self._shell),
+            (_RENDER, self._render),
+            (_ATLAS, self._atlas),
+            (_EXPORT, self._export_state),
+        )
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -183,17 +197,17 @@ class GuiServer:
             def _refuse(self) -> None:
                 self.send_error(405)
 
-            do_PUT = do_DELETE = do_PATCH = _refuse  # noqa: N815
+            do_PUT = do_DELETE = do_PATCH = _refuse
 
             def do_HEAD(self) -> None:
                 self.send_error(405)
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
                     length = -1
-                body = (self.rfile.read(length) if 0 <= length <= MAX_BODY else None)
+                body = self.rfile.read(length) if 0 <= length <= MAX_BODY else None
                 self._send(owner.post(self.path, self.headers, body))
 
             def do_GET(self) -> None:
@@ -203,8 +217,7 @@ class GuiServer:
                 if isinstance(answer, int):
                     self.send_error(answer)
                     return
-                body, mime, code = (answer if len(answer) == 3
-                                    else (answer[0], answer[1], 200))
+                body, mime, code = answer if len(answer) == 3 else (answer[0], answer[1], 200)
                 self.send_response(code)
                 self.send_header("Content-Type", mime)
                 self.send_header("Content-Length", str(len(body)))
@@ -228,17 +241,15 @@ class GuiServer:
         prefix = f"/{self.token}/"
         if host != f"127.0.0.1:{self.port}" or not parsed.path.startswith(prefix):
             return 404
-        resource = parsed.path[len(prefix):]
+        resource = parsed.path[len(prefix) :]
         try:
             query = parse_qs(parsed.query)
-            if resource == "" or (STATIC_NAME.fullmatch(resource)
-                                  and resource != "index.html"):
+            if resource == "" or (STATIC_NAME.fullmatch(resource) and resource != "index.html"):
                 name = resource or "index.html"
                 kind = STATIC_TYPES[name.rsplit(".", 1)[1]]
                 return (STATIC / name).read_bytes(), kind
             if resource == "jobs":
-                return self._json({"jobs": self.jobs.listing(),
-                                   "home": str(Path.home())})
+                return self._json({"jobs": self.jobs.listing(), "home": str(Path.home())})
             if resource == "generator":
                 return self._generator(query)
             if resource == "settings":
@@ -264,60 +275,70 @@ class GuiServer:
             return route(watcher, match, query)
         return 404
 
-    def _snapshot(self, watcher: JobWatcher, _match: re.Match[str],
-                  query: dict[str, list[str]]) -> Answer:
+    def _snapshot(
+        self, watcher: JobWatcher, _match: re.Match[str], query: dict[str, list[str]]
+    ) -> Answer:
         data = watcher.snapshot(
-            since=_int(query, "since", 0), generation=_int(query, "gen", 0),
-            state_version=_int(query, "sv", -1))
+            since=_int(query, "since", 0),
+            generation=_int(query, "gen", 0),
+            state_version=_int(query, "sv", -1),
+        )
         rows = self._comment_rows(watcher)
         data["comments"] = [asdict(row) for row in rows]
         return self._json(data)
 
-    def _picture(self, watcher: JobWatcher, match: re.Match[str],
-                 _query: dict[str, list[str]]) -> Answer:
+    def _picture(
+        self, watcher: JobWatcher, match: re.Match[str], _query: dict[str, list[str]]
+    ) -> Answer:
         path = watcher.picture(int(match[2]))
         if path is None:
             return 404
         return path.read_bytes(), "image/jpeg"
 
-    def _strip(self, watcher: JobWatcher, _match: re.Match[str],
-               _query: dict[str, list[str]]) -> Answer:
+    def _strip(
+        self, watcher: JobWatcher, _match: re.Match[str], _query: dict[str, list[str]]
+    ) -> Answer:
         try:
             return self._json(asdict(self._renderer(watcher).strip()))
         except RenderError as exc:
             return self._error(exc, 409)
 
-    def _space(self, watcher: JobWatcher, _match: re.Match[str],
-               _query: dict[str, list[str]]) -> Answer:
+    def _space(
+        self, watcher: JobWatcher, _match: re.Match[str], _query: dict[str, list[str]]
+    ) -> Answer:
         try:
             return self._json(asdict(self._renderer(watcher).space()))
         except RenderError as exc:
             return self._error(exc, 409)
 
-    def _shell(self, watcher: JobWatcher, _match: re.Match[str],
-               _query: dict[str, list[str]]) -> Answer:
+    def _shell(
+        self, watcher: JobWatcher, _match: re.Match[str], _query: dict[str, list[str]]
+    ) -> Answer:
         try:
             return self._json(asdict(self._renderer(watcher).shell()))
         except RenderError as exc:
             return self._error(exc, 409)
 
-    def _render(self, watcher: JobWatcher, match: re.Match[str],
-                query: dict[str, list[str]]) -> Answer:
+    def _render(
+        self, watcher: JobWatcher, match: re.Match[str], query: dict[str, list[str]]
+    ) -> Answer:
         """Draw a section's overlay or thumbnail, named by its filename."""
         draw = _SECTION_PICTURES[match[2]]
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
-        return self._jpeg(partial(
-            draw, self._renderer(watcher), unquote(match[3]), edge,
-            style=_style(query)))
+        return self._jpeg(
+            partial(draw, self._renderer(watcher), unquote(match[3]), edge, style=_style(query))
+        )
 
-    def _atlas(self, watcher: JobWatcher, match: re.Match[str],
-               query: dict[str, list[str]]) -> Answer:
+    def _atlas(
+        self, watcher: JobWatcher, match: re.Match[str], query: dict[str, list[str]]
+    ) -> Answer:
         renderer = self._renderer(watcher)
         edge = edge_px(_int(query, "edge", DEFAULT_EDGE_PX))
         return self._jpeg(partial(renderer.atlas_thumb, int(match[2]), edge))
 
-    def _export_state(self, watcher: JobWatcher, match: re.Match[str],
-                      _query: dict[str, list[str]]) -> Answer:
+    def _export_state(
+        self, watcher: JobWatcher, match: re.Match[str], _query: dict[str, list[str]]
+    ) -> Answer:
         if match[2]:
             return 405
         return self._json(asdict(self.exports.state(watcher.folder)))
@@ -334,13 +355,9 @@ class GuiServer:
                 return self._json({"opened": True})
             fields = cast("dict[str, object]", request)
             kind = fields.get("format") if isinstance(request, dict) else None
-            count = (
-                fields.get("landmarks") if isinstance(request, dict) else None
-            )
+            count = fields.get("landmarks") if isinstance(request, dict) else None
             landmarks = count if isinstance(count, int) else MAX_POINTS
-            started = self.exports.start(
-                watcher.folder, str(kind), landmarks=landmarks
-            )
+            started = self.exports.start(watcher.folder, str(kind), landmarks=landmarks)
             return self._json(asdict(started))
         except (ExportError, OSError) as exc:
             return (*self._json({"error": str(exc)}), 400)
@@ -367,9 +384,7 @@ class GuiServer:
         body, mime = self._json({"error": str(error)})
         return body, mime, code
 
-    def _generator(
-        self, query: dict[str, list[str]]
-    ) -> int | tuple[bytes, str]:
+    def _generator(self, query: dict[str, list[str]]) -> int | tuple[bytes, str]:
         """Answer ``generator``, with a listed job's form for ``job=<n>``.
 
         The prompt generator's choices; with ``job=<n>``, also ``prefill``:
@@ -385,8 +400,9 @@ class GuiServer:
             data["prefill"] = asdict(form) if form is not None else None
         return self._json(data)
 
-    def post(self, raw_path: str, headers: Any,
-             body: bytes | None) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
+    def post(
+        self, raw_path: str, headers: Any, body: bytes | None
+    ) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
         """A POST to a Settings or Export resource: the token, the ``Host``, an
         ``Origin`` of this server (a page of another site cannot send one),
         ``Sec-Fetch-Site`` same-origin when sent, a JSON body of at most
@@ -395,16 +411,18 @@ class GuiServer:
         parsed = urlsplit(raw_path)
         prefix = f"/{self.token}/"
         origin = f"http://127.0.0.1:{self.port}"
-        if (headers.get("Host", "") != f"127.0.0.1:{self.port}"
-                or not parsed.path.startswith(prefix)):
+        if headers.get("Host", "") != f"127.0.0.1:{self.port}" or not parsed.path.startswith(
+            prefix
+        ):
             return 404
-        resource = parsed.path[len(prefix):]
+        resource = parsed.path[len(prefix) :]
         comments = _COMMENTS.fullmatch(resource)
-        if (resource not in POSTS and comments is None
-                and _EXPORT.fullmatch(resource) is None):
+        if resource not in POSTS and comments is None and _EXPORT.fullmatch(resource) is None:
             return 405
-        if (headers.get("Origin") != origin
-                or headers.get("Sec-Fetch-Site", "same-origin") != "same-origin"):
+        if (
+            headers.get("Origin") != origin
+            or headers.get("Sec-Fetch-Site", "same-origin") != "same-origin"
+        ):
             return 403
         if not (headers.get("Content-Type") or "").startswith("application/json"):
             return 415
@@ -424,8 +442,10 @@ class GuiServer:
         except SettingsError as exc:
             return (*self._json({"error": str(exc)}), 400)
         except OSError:
-            return (*self._json({"error": "The settings could not be saved in ~/.langslice/."}),
-                    500)
+            return (
+                *self._json({"error": "The settings could not be saved in ~/.langslice/."}),
+                500,
+            )
 
     def _comment(
         self, index: int, request: object
@@ -450,8 +470,7 @@ class GuiServer:
                 raise ReviewError(NO_SECTIONS)
             else:
                 section = str(fields.get("section") or "")
-                add_comment(layout, stack, section, fields.get("box"),
-                            fields.get("text"))
+                add_comment(layout, stack, section, fields.get("box"), fields.get("text"))
         except ReviewError as exc:
             return (*self._json({"error": str(exc)}), 400)
         except OSError:
@@ -465,8 +484,7 @@ class GuiServer:
         The file is read again only when it or the job's state changed.
         """
         with self._comments_lock:
-            watch = self._comments.setdefault(
-                watcher.folder, CommentWatch(watcher.folder))
+            watch = self._comments.setdefault(watcher.folder, CommentWatch(watcher.folder))
             return watch.rows(watcher.current_stack(), watcher.state_version)
 
     @staticmethod
@@ -475,8 +493,10 @@ class GuiServer:
 
     def start(self) -> None:
         self.thread = threading.Thread(
-            target=lambda: self.http.serve_forever(poll_interval=0.1), daemon=True,
-            name="langslice-gui")
+            target=lambda: self.http.serve_forever(poll_interval=0.1),
+            daemon=True,
+            name="langslice-gui",
+        )
         self.thread.start()
 
     def close(self) -> None:

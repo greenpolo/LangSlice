@@ -47,9 +47,7 @@ SIGNATURE_FAILURES = (
 )
 
 
-def check_tool(
-    tool: object, *, taken: Sequence[str] = (), engine: str = ""
-) -> str | None:
+def check_tool(tool: object, *, taken: Sequence[str] = (), engine: str = "") -> str | None:
     """One line saying why *tool* is no valid :class:`ToolSpec`, or None.
     *taken* are the names of the other plugin tools of the same job;
     *engine* is the in-tree engine being loaded, whose tools are the rows
@@ -78,13 +76,10 @@ def check_tool(
     if tool.kind not in ("read", "write"):
         return f"{where}: kind is read or write; got {tool.kind!r}"
     if tool.group not in GROUPS:
-        return (
-            f"{where}: group is one of {', '.join(GROUPS)}; got {tool.group!r}"
-        )
+        return f"{where}: group is one of {', '.join(GROUPS)}; got {tool.group!r}"
     if tool.task is not None and tool.task not in (*TASKS, ANGLES):
         return (
-            f"{where}: unknown task {tool.task!r}; the tasks are {', '.join(TASKS)} "
-            f"(or {ANGLES!r})"
+            f"{where}: unknown task {tool.task!r}; the tasks are {', '.join(TASKS)} (or {ANGLES!r})"
         )
     if not callable(tool.handler):
         return f"{where}: the handler is not callable"
@@ -108,17 +103,13 @@ def check_tool(
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             return f"{where}: limit {key!r} is a positive whole number"
     for group in tool.needs:
-        if not group or not all(
-            isinstance(item, str) and item for item in group
-        ):
+        if not group or not all(isinstance(item, str) and item for item in group):
             return f"{where}: needs is a tuple of non-empty tuples of names"
     if isinstance(tool.atlases, str) or not all(
         isinstance(item, str) and item for item in tool.atlases
     ):
         return f"{where}: atlases is a tuple of non-empty name patterns"
-    if isinstance(tool.planes, str) or any(
-        item not in PLANES for item in tool.planes
-    ):
+    if isinstance(tool.planes, str) or any(item not in PLANES for item in tool.planes):
         return f"{where}: planes are among {', '.join(PLANES)}; got {tuple(tool.planes)!r}"
     return None
 
@@ -127,8 +118,7 @@ def offered_on(tool: ToolSpec, atlas: str, plane: str) -> bool:
     """Whether *tool* is offered on a job with atlas name *atlas* and section
     *plane* (``ToolSpec.atlases`` and ``planes``)."""
     return (
-        not tool.atlases
-        or any(fnmatch.fnmatchcase(atlas, pattern) for pattern in tool.atlases)
+        not tool.atlases or any(fnmatch.fnmatchcase(atlas, pattern) for pattern in tool.atlases)
     ) and (not tool.planes or plane in tool.planes)
 
 
@@ -138,11 +128,7 @@ def not_offered(spec: Any) -> list[str]:
     tools: list[ToolSpec] = []
     for plugin in added(cast("object", spec)):
         tools.extend(plugin.tools)
-    return [
-        tool.name
-        for tool in tools
-        if not offered_on(tool, str(spec.atlas), str(spec.plane))
-    ]
+    return [tool.name for tool in tools if not offered_on(tool, str(spec.atlas), str(spec.plane))]
 
 
 def tool_def(tool: ToolSpec) -> ToolDef:
@@ -220,15 +206,11 @@ def register(plugin: LoadedPlugin) -> LoadedPlugin:
 def forget(ref: str) -> None:
     """Drop every plugin loaded under *ref* (a reload starts from the source).
     Test support: it lets a test simulate a new process; no code calls it."""
-    for key in [
-        key for key in _LOADED if key == ref or key.startswith(ref + "#")
-    ]:
+    for key in [key for key in _LOADED if key == ref or key.startswith(ref + "#")]:
         del _LOADED[key]
 
 
-def loaded(
-    refs: Sequence[str], configs: Mapping[str, Any] | None = None
-) -> list[LoadedPlugin]:
+def loaded(refs: Sequence[str], configs: Mapping[str, Any] | None = None) -> list[LoadedPlugin]:
     """The plugins named by *refs* (with the options *configs* gives each),
     loading the ones not loaded yet (:class:`PluginError` when one cannot be,
     or when two tools share a name)."""
@@ -247,8 +229,7 @@ def loaded(
         for tool in plugin.tools:
             if tool.name in names:
                 raise PluginError(
-                    f"tool {tool.name!r} is added by both {names[tool.name]} "
-                    f"and {ref}"
+                    f"tool {tool.name!r} is added by both {names[tool.name]} and {ref}"
                 )
             names[tool.name] = ref
         out.append(plugin)
@@ -299,17 +280,11 @@ def of_spec(spec: Any) -> list[LoadedPlugin]:
 def tool_defs(spec: Any) -> dict[str, ToolDef]:
     """The :class:`ToolDef` of every tool the ``plugins`` of *spec* add."""
     return {
-        tool.name: tool_def(tool)
-        for plugin in added(cast("object", spec))
-        for tool in plugin.tools
+        tool.name: tool_def(tool) for plugin in added(cast("object", spec)) for tool in plugin.tools
     }
 
 
 def tool_specs(spec: Any) -> dict[str, tuple[LoadedPlugin, ToolSpec]]:
     """Every engine and plugin tool of *spec*, with what it came from."""
     sources = engines(spec) if spec is None else of_spec(spec)
-    return {
-        tool.name: (plugin, tool)
-        for plugin in sources
-        for tool in plugin.tools
-    }
+    return {tool.name: (plugin, tool) for plugin in sources for tool in plugin.tools}

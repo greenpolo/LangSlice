@@ -19,9 +19,16 @@ REPO = Path(__file__).resolve().parents[1]
 
 def test_import_layer_contracts_hold():
     done = subprocess.run(
-        [sys.executable, "-c",
-         "import sys; from importlinter.cli import lint_imports; "
-         "sys.exit(lint_imports(config_filename='pyproject.toml', no_cache=True, no_logo=True))"],
-        capture_output=True, text=True, timeout=600, check=False, cwd=REPO,
+        [
+            sys.executable,
+            "-c",
+            "import sys; from importlinter.cli import lint_imports; "
+            "sys.exit(lint_imports(config_filename='pyproject.toml', no_cache=True, no_logo=True))",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+        cwd=REPO,
     )
     assert done.returncode == 0, done.stdout[-6000:] + done.stderr[-3000:]

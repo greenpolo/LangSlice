@@ -109,9 +109,7 @@ def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     try:
         values = {key: float(value) for key, value in given.items()}
     except (TypeError, ValueError) as exc:
-        raise Refused(
-            RefusalCode.BAD_ARGS, message="sorting values are numbers."
-        ) from exc
+        raise Refused(RefusalCode.BAD_ARGS, message="sorting values are numbers.") from exc
     for key, value in values.items():
         if not np.isfinite(value) or value < 0:
             raise Refused(
@@ -180,9 +178,7 @@ def make_mask(
             raise Refused(
                 RefusalCode.UNKNOWN_MASK,
                 message=f"no section named holds a mask {label!r}.",
-                masks=sorted(
-                    {mask for section in targets for mask in section.masks}
-                ),
+                masks=sorted({mask for section in targets for mask in section.masks}),
             )
         before = job.snapshot()
         for section in holding:
@@ -195,17 +191,13 @@ def make_mask(
         )
     kind = str(source or "em").strip().lower()
     if kind not in SOURCES:
-        raise Refused(
-            RefusalCode.BAD_ARGS, message=f"source is one of {list(SOURCES)}."
-        )
+        raise Refused(RefusalCode.BAD_ARGS, message=f"source is one of {list(SOURCES)}.")
     params = _check_sorting(sorting)
     image = str(section_image or PREPROCESSED).strip()
     resolved = ""
     if kind == "em":
         try:
-            resolved = resolve_image(
-                workspace.atlas, str(atlas_image or "nissl")
-            )
+            resolved = resolve_image(workspace.atlas, str(atlas_image or "nissl"))
         except ValueError as exc:
             raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
         check_image(job, workspace, targets, image)
@@ -249,31 +241,19 @@ def _from_fit(job: Job, section: Section, name: str) -> MaskRef:
     if job.deformations.current(job.state, section) is None:
         raise Refused(
             RefusalCode.NO_DEFORMATION,
-            message=f"{section.id} holds no deformation, so there "
-            "is no fit sorting to copy.",
+            message=f"{section.id} holds no deformation, so there is no fit sorting to copy.",
         )
     weights = fit_weights(job.deformations, job.state, section)
     if weights is None:
         raise Refused(
             RefusalCode.NO_SORTING,
-            message=f"{section.id}'s deformation saved no sorting (its "
-            "engine estimated none).",
+            message=f"{section.id}'s deformation saved no sorting (its engine estimated none).",
         )
     held = job.deformations.current(job.state, section)
-    atlas = (
-        held.settings.atlas_image
-        if held is not None and held.settings is not None
-        else ""
-    )
-    footprint = (
-        np.asarray(held.footprint, dtype=bool) if held is not None else None
-    )
+    atlas = held.settings.atlas_image if held is not None and held.settings is not None else ""
+    footprint = np.asarray(held.footprint, dtype=bool) if held is not None else None
     inside = weights < 0.5
-    if (
-        footprint is not None
-        and footprint.shape == inside.shape
-        and footprint.any()
-    ):
+    if footprint is not None and footprint.shape == inside.shape and footprint.any():
         inside = inside[footprint]
     left_out = 0.0
     if inside.size:
@@ -317,9 +297,7 @@ def _from_em(
             message=f"{section.id}: {exc}",
         ) from exc
     try:
-        image, _identity = deformation.section_image(
-            workspace, job.state, grid, section_image
-        )
+        image, _identity = deformation.section_image(workspace, job.state, grid, section_image)
         pixels = np.asarray(image.convert("L"), dtype=np.float32) / 255.0
         weights, facts = em_sorting(
             workspace,
@@ -418,9 +396,7 @@ def stale_mask(job: Job, section_id: str, name: str) -> str:
     )
 
 
-def section_weights(
-    job: Job, section: Section, name: str
-) -> np.ndarray | None:
+def section_weights(job: Job, section: Section, name: str) -> np.ndarray | None:
     """The weights the fit *name* names reads on *section*, a float array on
     its
     fit grid; None for ``"none"``. Refused: ``UNKNOWN_MASK``, ``STALE_MASK``

@@ -36,8 +36,7 @@ from langslice.core.space import Plane
 
 WORKING_MARGIN = 0.12
 
-SectionDetail = Callable[[np.ndarray, np.ndarray],
-                         "tuple[np.ndarray, np.ndarray, float] | None"]
+SectionDetail = Callable[[np.ndarray, np.ndarray], "tuple[np.ndarray, np.ndarray, float] | None"]
 
 
 @dataclass(frozen=True)
@@ -62,8 +61,10 @@ class CanvasGeometry:
         canvas less the section's offset)."""
         sx, sy = self.section_offset
         ax, ay = self.atlas_offset
-        return np.array([[self.atlas_scale, 0.0, ax - sx],
-                         [0.0, self.atlas_scale, ay - sy], [0.0, 0.0, 1.0]], dtype=np.float64)
+        return np.array(
+            [[self.atlas_scale, 0.0, ax - sx], [0.0, self.atlas_scale, ay - sy], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
 
 
 def canvas_geometry(
@@ -90,9 +91,7 @@ def canvas_geometry(
     loop needs it: the atlas runs out of frame otherwise and every x/y move
     has to fit inside the tissue's own bounding box.
     """
-    ann = annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-    )
+    ann = annotation_slice(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     scale = atlas_um_per_px(atlas) / float(section_um_per_px)
     ys, xs = np.nonzero(ann)
     if ys.size:
@@ -119,6 +118,7 @@ def canvas_geometry(
 
 VIEW_MODES = ("overlay", "section", "template")
 
+
 def _background_color(section: Image.Image) -> tuple[int, int, int]:
     """The section's own border color, so padding does not read as anatomy."""
     arr = np.asarray(section.convert("RGB"), dtype=np.uint8)
@@ -133,6 +133,7 @@ def _shift(offset: tuple[float, float]) -> np.ndarray:
 
 def _as_3x3(matrix: np.ndarray) -> np.ndarray:
     return np.vstack([np.asarray(matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
+
 
 AUTO_BORDER_COLOR = "auto"
 
@@ -154,7 +155,8 @@ def border_words(core: str) -> str:
 
 def _lab(rgb: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(np.ascontiguousarray(rgb, dtype=np.uint8), cv2.COLOR_RGB2LAB).astype(
-        np.float64)
+        np.float64
+    )
 
 
 def pick_border_core(rgb: np.ndarray, coverage: np.ndarray) -> str:
@@ -179,16 +181,21 @@ def pick_border_core(rgb: np.ndarray, coverage: np.ndarray) -> str:
 def validate_border_thickness(thickness: float) -> float:
     """*thickness* in 0.25..8 output-image pixels, or a ``ValueError``."""
     if (
-        isinstance(thickness, bool) or not isinstance(thickness, (int, float))
-        or not math.isfinite(thickness) or not 0.25 <= thickness <= 8
+        isinstance(thickness, bool)
+        or not isinstance(thickness, (int, float))
+        or not math.isfinite(thickness)
+        or not 0.25 <= thickness <= 8
     ):
         raise ValueError("border_thickness must be a number from 0.25 to 8 output pixels")
     return float(thickness)
 
 
 def resolve_border_color(
-    color: str, thickness: float, *,
-    rgb: np.ndarray | None = None, coverage: np.ndarray | None = None,
+    color: str,
+    thickness: float,
+    *,
+    rgb: np.ndarray | None = None,
+    coverage: np.ndarray | None = None,
 ) -> tuple[str, float]:
     """``(core, thickness)``: the core colour (``black`` or ``white``) and a
     validated thickness. :data:`AUTO_BORDER_COLOR` picks the core from *rgb*
@@ -208,7 +215,12 @@ def resolve_border_color(
 
 
 def composite_cased(
-    base: np.ndarray, core: str, *, casing: np.ndarray, line: np.ndarray, alpha: float = 1.0,
+    base: np.ndarray,
+    core: str,
+    *,
+    casing: np.ndarray,
+    line: np.ndarray,
+    alpha: float = 1.0,
 ) -> np.ndarray:
     """*base* (float, rows x cols x 3) with a cased line laid on it: the
     casing coverage in the casing colour, then the core coverage in the core
@@ -243,10 +255,10 @@ def _draw_polys(
     """
     kwargs = {"scale": scale, "offset": offset, "origin": origin, "factor": factor}
     line = line_coverage(canvas.shape[:2], polys, thickness=thickness, **kwargs)
-    casing = line_coverage(
-        canvas.shape[:2], polys, thickness=thickness + 2 * CASING_PX, **kwargs)
-    blended = composite_cased(canvas.astype(np.float32), core, casing=casing, line=line,
-                              alpha=alpha)
+    casing = line_coverage(canvas.shape[:2], polys, thickness=thickness + 2 * CASING_PX, **kwargs)
+    blended = composite_cased(
+        canvas.astype(np.float32), core, casing=casing, line=line, alpha=alpha
+    )
     canvas[:] = np.rint(blended).astype(np.uint8)
 
 
@@ -274,23 +286,40 @@ def line_coverage(
     for poly in polys:
         points = np.round(
             ((poly * scale + np.asarray(offset, dtype=np.float64)) - (ox, oy))
-            * factor * supersample * 16.0
+            * factor
+            * supersample
+            * 16.0
         ).astype(np.int32)
         cv2.polylines(
-            target, [points], True, 255,
-            max(1, round(thickness * supersample)), cv2.LINE_AA, 4,
+            target,
+            [points],
+            True,
+            255,
+            max(1, round(thickness * supersample)),
+            cv2.LINE_AA,
+            4,
         )
-    return cv2.resize(
-        target, (cols, rows), interpolation=cv2.INTER_AREA,
-    ).astype(np.float32) / 255.0
+    return (
+        cv2.resize(
+            target,
+            (cols, rows),
+            interpolation=cv2.INTER_AREA,
+        ).astype(np.float32)
+        / 255.0
+    )
 
 
 REGION_CONTEXT_ALPHA = 0.35
 
 
 def regions_left(
-    atlas: Any, regions: Any, position_mm: float, plane: Plane,
-    pitch_deg: float, yaw_deg: float, native_to_display: np.ndarray,
+    atlas: Any,
+    regions: Any,
+    position_mm: float,
+    plane: Plane,
+    pitch_deg: float,
+    yaw_deg: float,
+    native_to_display: np.ndarray,
 ) -> np.ndarray | None:
     """Native pixels on the picture's left when a region names a side, else None.
 
@@ -306,7 +335,9 @@ def regions_left(
 
 
 def region_polys(
-    annotation: np.ndarray, regions: Any, left: np.ndarray | None = None,
+    annotation: np.ndarray,
+    regions: Any,
+    left: np.ndarray | None = None,
 ) -> list[np.ndarray]:
     """Smoothed outlines of each highlighted region, in atlas-native pixels.
 
@@ -355,8 +386,12 @@ def _template_patch(
     *picture* is the atlas image on the native plane grid; None is the atlas
     reference template.
     """
-    template = picture if picture is not None else get_reference_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+    template = (
+        picture
+        if picture is not None
+        else get_reference_slice(
+            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+        )
     )
     rows, cols = geometry.annotation.shape[:2]
     if template.size != (cols, rows):
@@ -391,9 +426,7 @@ def _blend_template(
         return
     window = canvas[y0 : y0 + patch.shape[0], x0 : x0 + patch.shape[1]]
     lit = patch.max(axis=2) > 0
-    window[lit] = (
-        window[lit] * (1.0 - opacity) + patch[lit] * opacity
-    ).astype(np.uint8)
+    window[lit] = (window[lit] * (1.0 - opacity) + patch[lit] * opacity).astype(np.uint8)
 
 
 def zoom_box(zoom: list[float] | None, size: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -480,8 +513,11 @@ def placement_matrices(
         section_matrix = physical_affine_matrix(
             size=section_size,
             um_per_px=um_per_px,
-            pivot=pivot_in_section if pivot_in_section is not None
-            else None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
+            pivot=pivot_in_section
+            if pivot_in_section is not None
+            else None
+            if pivot is None
+            else (pivot[0] - ox, pivot[1] - oy),
             **params,
         )
     matrix = (_shift((ox, oy)) @ _as_3x3(section_matrix) @ _shift((-ox, -oy)))[:2]
@@ -619,8 +655,12 @@ def physical_views(
     canvas.paste(section.convert("RGB"), geometry.section_offset)
 
     section_matrix, matrix = placement_matrices(
-        section.size, geometry.um_per_px, geometry.section_offset, params,
-        pivot=pivot, pivot_in_section=pivot_in_section,
+        section.size,
+        geometry.um_per_px,
+        geometry.section_offset,
+        params,
+        pivot=pivot,
+        pivot_in_section=pivot_in_section,
     )
     warped = cv2.warpAffine(
         np.asarray(canvas, dtype=np.uint8),
@@ -633,17 +673,26 @@ def physical_views(
     dark = is_dark_background(section)
     layer = str(outlines or "all").strip().lower()
     atlas_lines = (
-        [] if layer == "none"
-        else region_outlines(atlas, position_mm, depth=depth, plane=plane, pitch_deg=pitch_deg,
-                             yaw_deg=yaw_deg)
+        []
+        if layer == "none"
+        else region_outlines(
+            atlas, position_mm, depth=depth, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+        )
     )
 
     highlighted: list[np.ndarray] = []
     sides_note = ""
     if regions:
         linear = _as_3x3(section_matrix)[:2, :2]
-        sides = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
-                             np.linalg.inv(linear) * geometry.atlas_scale)
+        sides = regions_left(
+            atlas,
+            regions,
+            position_mm,
+            plane,
+            pitch_deg,
+            yaw_deg,
+            np.linalg.inv(linear) * geometry.atlas_scale,
+        )
         highlighted = region_polys(geometry.annotation, regions, sides)
         if sides is not None and np.linalg.det(linear) < 0:
             sides_note = " (the section's sides; this placement mirrors it)"
@@ -652,7 +701,14 @@ def physical_views(
     def _template_canvas() -> np.ndarray:
         plate = np.zeros_like(warped)
         _blend_template(
-            plate, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry, opacity=1.0,
+            plate,
+            atlas,
+            position_mm,
+            plane,
+            pitch_deg,
+            yaw_deg,
+            geometry,
+            opacity=1.0,
             picture=atlas_picture,
         )
         return plate
@@ -688,21 +744,31 @@ def physical_views(
     drawn_polys = (list(atlas_lines) if lines else []) + list(highlighted)
     coverage = (
         line_coverage(
-            panels[0][0].shape[:2], drawn_polys, thickness=max(float(border_thickness), 1.0),
-            scale=geometry.atlas_scale, offset=geometry.atlas_offset,
+            panels[0][0].shape[:2],
+            drawn_polys,
+            thickness=max(float(border_thickness), 1.0),
+            scale=geometry.atlas_scale,
+            offset=geometry.atlas_offset,
         )
-        if drawn_polys else None
+        if drawn_polys
+        else None
     )
     line_color, line_width = resolve_border_color(
-        border_color, border_thickness, rgb=np.asarray(panels[0][0]), coverage=coverage,
+        border_color,
+        border_thickness,
+        rgb=np.asarray(panels[0][0]),
+        coverage=coverage,
     )
 
     knobs = matrix_label if isinstance(params, np.ndarray) else knob_words(params)
 
     edge = None
     if long_edge is not None:
-        edge = (max(1, int(long_edge)) if zoomed else
-                max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1]))))
+        edge = (
+            max(1, int(long_edge))
+            if zoomed
+            else max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1])))
+        )
     images: list[Image.Image] = []
     for panel, head in panels:
         screen, factor = _to_screen(panel, box, edge)
@@ -715,16 +781,26 @@ def physical_views(
                     _blend_screen(screen, _template_canvas(), box, edge, opacity)
         if lines:
             _draw_polys(
-                screen, atlas_lines, line_color, thickness=line_width,
-                scale=geometry.atlas_scale, offset=geometry.atlas_offset,
-                origin=box[:2], factor=factor,
+                screen,
+                atlas_lines,
+                line_color,
+                thickness=line_width,
+                scale=geometry.atlas_scale,
+                offset=geometry.atlas_offset,
+                origin=box[:2],
+                factor=factor,
                 alpha=REGION_CONTEXT_ALPHA if regions else 1.0,
             )
         if highlighted:
             _draw_polys(
-                screen, highlighted, line_color, thickness=line_width * HIGHLIGHT_WIDTH,
-                scale=geometry.atlas_scale, offset=geometry.atlas_offset,
-                origin=box[:2], factor=factor,
+                screen,
+                highlighted,
+                line_color,
+                thickness=line_width * HIGHLIGHT_WIDTH,
+                scale=geometry.atlas_scale,
+                offset=geometry.atlas_offset,
+                origin=box[:2],
+                factor=factor,
             )
         _draw_scale_bar(screen, geometry.um_per_px / factor, dark)
         text = (
@@ -732,30 +808,40 @@ def physical_views(
             f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
         ).strip()
         if mode != "overlay" or zoomed or abs(float(factor) - 1.0) > 0.02:
-            where = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
-                     if zoom_pixels else "")
+            where = f"  zoom {[round(float(v)) for v in zoom_pixels]} px" if zoom_pixels else ""
             text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"
             if from_file is not None:
                 text += "  section from its image file" + (
-                    f" (file pixels enlarged x{from_file:.1f})" if from_file > 1.05 else "")
+                    f" (file pixels enlarged x{from_file:.1f})" if from_file > 1.05 else ""
+                )
             elif factor > 1.05:
                 text += f" (canvas pixels enlarged x{factor:.1f})"
         if regions:
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
-        labelled = caption(Image.fromarray(screen, mode="RGB"), text,
-                           min_width=edge if zoomed and edge is not None else 0)
+        labelled = caption(
+            Image.fromarray(screen, mode="RGB"),
+            text,
+            min_width=edge if zoomed and edge is not None else 0,
+        )
         if drawn_polys:
             labelled.info["border_word"] = border_words(line_color)
         if panel_frames is not None:
-            panel_frames.append(PanelFrame(
-                size=labelled.size,
-                content_box=(0, 0, screen.shape[1], screen.shape[0]),
-                crop_box=box, factor=float(factor), geometry=geometry,
-                section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
-                lines=tuple(atlas_lines) if lines else (),
-                highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
-                from_file=from_file, border_color=line_color if drawn_polys else None,
-            ))
+            panel_frames.append(
+                PanelFrame(
+                    size=labelled.size,
+                    content_box=(0, 0, screen.shape[1], screen.shape[0]),
+                    crop_box=box,
+                    factor=float(factor),
+                    geometry=geometry,
+                    section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
+                    lines=tuple(atlas_lines) if lines else (),
+                    highlighted=tuple(highlighted),
+                    line_width=float(line_width),
+                    mode=mode,
+                    from_file=from_file,
+                    border_color=line_color if drawn_polys else None,
+                )
+            )
         images.append(labelled)
     return images
 
@@ -767,8 +853,7 @@ def knob_words(params: Any, sep: str = "  ") -> str:
     parts = [
         f"rot {float(params['rotation_deg']):.1f}",
         f"scale {float(params['scale_x']):.3f}/{float(params['scale_y']):.3f}",
-        f"shift {float(params['translate_x_mm']):+.2f}/"
-        f"{float(params['translate_y_mm']):+.2f} mm",
+        f"shift {float(params['translate_x_mm']):+.2f}/{float(params['translate_y_mm']):+.2f} mm",
     ]
     if params.get("shear"):
         parts.append(f"shear {float(params['shear']):+.3f}")
@@ -776,8 +861,12 @@ def knob_words(params: Any, sep: str = "  ") -> str:
 
 
 def _detailed_screen(
-    bare: np.ndarray, box: tuple[int, int, int, int], edge: int | None, matrix: np.ndarray,
-    offset: tuple[int, int], detail: SectionDetail,
+    bare: np.ndarray,
+    box: tuple[int, int, int, int],
+    edge: int | None,
+    matrix: np.ndarray,
+    offset: tuple[int, int],
+    detail: SectionDetail,
 ) -> tuple[np.ndarray, float] | None:
     """The zoom of *bare* (the section alone on the canvas) with the
     section's pixels from *detail* wherever it has them, and how far they
@@ -800,7 +889,10 @@ def _detailed_screen(
 
 
 def _blend_screen(
-    screen: np.ndarray, plate: np.ndarray, box: tuple[int, int, int, int], edge: int | None,
+    screen: np.ndarray,
+    plate: np.ndarray,
+    box: tuple[int, int, int, int],
+    edge: int | None,
     opacity: float,
 ) -> None:
     """The atlas image *plate* (zero where it has none) blended under
@@ -808,6 +900,5 @@ def _blend_screen(
     shown, _factor = _to_screen(plate, box, edge)
     x0, y0, x1, y1 = box
     lit = (plate[y0:y1, x0:x1].max(axis=2) > 0).astype(np.uint8)
-    lit = cv2.resize(lit, (screen.shape[1], screen.shape[0]),
-                     interpolation=cv2.INTER_NEAREST) > 0
+    lit = cv2.resize(lit, (screen.shape[1], screen.shape[0]), interpolation=cv2.INTER_NEAREST) > 0
     screen[lit] = (screen[lit] * (1.0 - opacity) + shown[lit] * opacity).astype(np.uint8)

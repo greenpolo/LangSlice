@@ -69,9 +69,7 @@ class _Picture:
     boxes: dict[str, list[int]]
 
 
-def review_pictures(
-    job: Job, workspace: Workspace, *, long_edge: int | None = None
-) -> Reviewed:
+def review_pictures(job: Job, workspace: Workspace, *, long_edge: int | None = None) -> Reviewed:
     """Read the job's review comments and draw the open ones.
 
     Parameters
@@ -147,9 +145,7 @@ def _outlined(
 ) -> _Picture:
     record = state.by_id(section)
     assert record is not None
-    request = looks.LookRequest(
-        mode="overlay", sections=(section,), long_edge=long_edge
-    )
+    request = looks.LookRequest(mode="overlay", sections=(section,), long_edge=long_edge)
     picture = looks.look(workspace, state, request, store=job.deformations)[0]
     width, height = cast("list[int]", picture.recipe["shown"])
     boxes = [(f"#{c.id}", _corners(c.box)) for c in marked]
@@ -165,9 +161,7 @@ def _saved(
     pictures: list[_Picture],
     notes: list[tuple[Image.Image, PictureNote]],
 ) -> Reviewed:
-    kept, rest = cast(
-        "tuple[list[_Picture], list[_Picture]]", split_shown(job, pictures)
-    )
+    kept, rest = cast("tuple[list[_Picture], list[_Picture]]", split_shown(job, pictures))
     looks_kept = [p.picture for p in kept]
     entries = save_pictures(job, workspace, REVIEW_TOOL, looks_kept, notes, {})
     numbers: dict[str, tuple[int, list[int]]] = {}
@@ -183,9 +177,7 @@ def _saved(
     return Reviewed(rows=numbered_rows, looked=looked)
 
 
-def _numbered(
-    row: ReviewRow, number: tuple[int, list[int]] | None
-) -> ReviewRow:
+def _numbered(row: ReviewRow, number: tuple[int, list[int]] | None) -> ReviewRow:
     if number is None:
         return row
     return replace(row, picture=number[0], box_px=number[1])

@@ -17,22 +17,23 @@ from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import compact_rows
+from langslice.core.workspace import Workspace
 from langslice.job.job import Job
 from langslice.job.settings.spec import JobSpec
 from langslice.tools.looking.status import stack_status
 
 if TYPE_CHECKING:
     from langslice.core.fits.trace.request import ImageModel
-    from langslice.doors.agent.engine import EngineContext
     from langslice.tools.looking.look import Looked
     from langslice.tools.pipeline import ToolBox
+
 
 @dataclass
 class Run:
     """One run, as every tool body sees it."""
 
     job: Job
-    workspace: EngineContext
+    workspace: Workspace
     spec: JobSpec
     box: ToolBox
     level: str
@@ -62,19 +63,23 @@ class Run:
     def rows(self) -> dict[str, Any]:
         """The whole status table, the cutting angles and the interval breaks."""
         table = stack_status(self.job)
-        return {"rows": compact_rows(table.rows),
-                "cutting_angles_deg": table.cutting_angles_deg,
-                "interval_breaks": table.interval_breaks}
+        return {
+            "rows": compact_rows(table.rows),
+            "cutting_angles_deg": table.cutting_angles_deg,
+            "interval_breaks": table.interval_breaks,
+        }
 
     def changed(self, touched: Sequence[str]) -> dict[str, Any]:
         """The status rows of the sections a write touched, and nothing else
         (``status`` is the whole table, one call away)."""
         wanted = set(touched)
         table = stack_status(self.job)
-        return {"changed": compact_rows([row for row in table.rows if row["id"] in wanted]),
-                "n_sections": len(self.state.slices),
-                "cutting_angles_deg": table.cutting_angles_deg,
-                "interval_breaks": table.interval_breaks}
+        return {
+            "changed": compact_rows([row for row in table.rows if row["id"] in wanted]),
+            "n_sections": len(self.state.slices),
+            "cutting_angles_deg": table.cutting_angles_deg,
+            "interval_breaks": table.interval_breaks,
+        }
 
     def answered(self, *touched: str) -> dict[str, Any]:
         """A write's answer: ``ok`` and the rows it changed."""
@@ -91,6 +96,7 @@ class Run:
             elif all(held.id != record.id for held in known):
                 known.append(record)
         return known, unknown
+
 
 def pictured(result: dict[str, Any], looked: Looked) -> dict[str, Any]:
     """*result* with the pictures ``tools/looking/look.py`` drew and saved:

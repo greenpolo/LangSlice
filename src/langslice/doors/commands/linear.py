@@ -5,6 +5,7 @@ FOLDER init``; the flags are :mod:`langslice.doors.commands.flags`)."""
 from __future__ import annotations
 
 import argparse
+import importlib
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
@@ -12,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.stack.section import INITIAL
 from langslice.doors import credentials
-from langslice.doors import plugins as _plugins  # noqa: F401
 from langslice.doors.agent_cli.background import DETACHED
 from langslice.doors.commands.flags import add_flags
 from langslice.job.settings.schema import CLI_TASKS, REGISTRATION_TASKS
@@ -21,11 +21,17 @@ if TYPE_CHECKING:
     from langslice.job.settings.spec import JobSpec
 
 REGISTRATION_CLASHES = {
-    "positions": "--positions", "transforms": "--transforms",
-    "orientation": "--orientation", "pitch": "--pitch", "yaw": "--yaw",
+    "positions": "--positions",
+    "transforms": "--transforms",
+    "orientation": "--orientation",
+    "pitch": "--pitch",
+    "yaw": "--yaw",
     "section_angles": "--section-angles",
     "transform_angles": "--transform-angles",
 }
+
+importlib.import_module("langslice.doors.plugins")
+
 
 def add_run_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
@@ -89,8 +95,7 @@ def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | No
     try:
         return json.loads(value)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{flag}: neither an existing JSON file nor inline JSON ({exc})"
-                         ) from exc
+        raise ValueError(f"{flag}: neither an existing JSON file nor inline JSON ({exc})") from exc
 
 
 def read_text_arg(value: str | None, flag: str) -> str | None:
@@ -116,7 +121,9 @@ def apply_trace_dir(args: argparse.Namespace) -> None:
 
 
 def build_linear_spec(
-    args: argparse.Namespace, image_folder: str, *,
+    args: argparse.Namespace,
+    image_folder: str,
+    *,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
 ) -> JobSpec:
@@ -133,7 +140,9 @@ def build_linear_spec(
 
 
 def build_job_spec(
-    args: argparse.Namespace, image_folder: str, *,
+    args: argparse.Namespace,
+    image_folder: str,
+    *,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
 ) -> tuple[JobSpec, dict[str, Any] | None]:
@@ -162,14 +171,22 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
 
     registration = getattr(args, "registration", None)
     if registration:
-        given = [flag for name, flag in REGISTRATION_CLASHES.items()
-                 if getattr(args, name, None) not in (None, False)]
+        given = [
+            flag
+            for name, flag in REGISTRATION_CLASHES.items()
+            if getattr(args, name, None) not in (None, False)
+        ]
         if given:
-            raise ValueError(f"--registration supplies every section's position, cutting "
-                             f"angles, orientation and transform; it cannot be combined "
-                             f"with {', '.join(given)}")
-    tasks = args.tasks if args.tasks is not None else (
-        REGISTRATION_TASKS if registration else CLI_TASKS)
+            raise ValueError(
+                f"--registration supplies every section's position, cutting "
+                f"angles, orientation and transform; it cannot be combined "
+                f"with {', '.join(given)}"
+            )
+    tasks = (
+        args.tasks
+        if args.tasks is not None
+        else (REGISTRATION_TASKS if registration else CLI_TASKS)
+    )
 
     inputs: dict[str, object] = {}
     positions = load_json_arg(args.positions, "--positions")
@@ -181,8 +198,11 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     transforms = load_json_arg(args.transforms, "--transforms")
     if transforms is not None:
         inputs["transforms"] = transforms
-    for key, flag in (("orientation", "--orientation"), ("damaged", "--damaged"),
-                      ("damaged_regions", "--damaged-regions")):
+    for key, flag in (
+        ("orientation", "--orientation"),
+        ("damaged", "--damaged"),
+        ("damaged_regions", "--damaged-regions"),
+    ):
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value
@@ -193,12 +213,14 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     section_angles = load_json_arg(getattr(args, "section_angles", None), "--section-angles")
     if section_angles is not None:
         if "angles" in inputs:
-            raise ValueError("--section-angles gives each section its own plane; it cannot "
-                             "be combined with the stack-wide --pitch/--yaw")
+            raise ValueError(
+                "--section-angles gives each section its own plane; it cannot "
+                "be combined with the stack-wide --pitch/--yaw"
+            )
         if not isinstance(section_angles, dict) or not all(
-                isinstance(value, dict) for value in section_angles.values()):
-            raise ValueError('--section-angles must map filenames to {"pitch": deg, '
-                             '"yaw": deg}')
+            isinstance(value, dict) for value in section_angles.values()
+        ):
+            raise ValueError('--section-angles must map filenames to {"pitch": deg, "yaw": deg}')
         inputs["angles"] = section_angles
 
     frozen: Any = load_json_arg(getattr(args, "frozen", None), "--frozen")
@@ -216,27 +238,30 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
             thickness_um=getattr(args, "position_thickness_um", None),
             interval_um=getattr(args, "position_interval_um", None),
             start_mm=getattr(args, "position_start_mm", None),
-            strict_interval=bool(
-                getattr(args, "position_strict_interval", False)),
+            strict_interval=bool(getattr(args, "position_strict_interval", False)),
             playbook=bool(getattr(args, "position_playbook", False)),
             notes=getattr(args, "position_notes", ""),
         ),
         transform=TransformSpec(
             angles=bool(getattr(args, "transform_angles", False)),
             hemisphere_cue=getattr(args, "transform_hemisphere_cue", ""),
-            notes=getattr(args, "transform_notes", "")),
-        disabled=[name.strip() for item in getattr(args, "disabled", []) for name in item.split(",")
-                  if name.strip()],
+            notes=getattr(args, "transform_notes", ""),
+        ),
+        disabled=[
+            name.strip()
+            for item in getattr(args, "disabled", [])
+            for name in item.split(",")
+            if name.strip()
+        ],
         enabled=_names(getattr(args, "enabled", [])),
         nonlinear=NonlinearSpec(
             provider=_image_provider(args),
             image_model=getattr(args, "nonlinear_image_model", None),
-            require_deformation=bool(
-                getattr(args, "nonlinear_require_deformation", False)),
+            require_deformation=bool(getattr(args, "nonlinear_require_deformation", False)),
             notes=getattr(args, "nonlinear_notes", ""),
             image_prompt=read_text_arg(
-                getattr(args, "nonlinear_image_prompt", None),
-                "--nonlinear-image-prompt"),
+                getattr(args, "nonlinear_image_prompt", None), "--nonlinear-image-prompt"
+            ),
         ),
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),
@@ -252,7 +277,8 @@ NO_SAVED_IMAGE_MODEL = (
     "--enabled trace_borders needs an image model, and this computer has no "
     "saved OpenAI sign-in or key: sign in or save a key in the LangSlice "
     "window's Settings (langslice gui), or name one with "
-    "--nonlinear-provider")
+    "--nonlinear-provider"
+)
 
 
 def _image_provider(args: argparse.Namespace) -> str:
@@ -309,12 +335,10 @@ def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
     ``--plugin-config`` options): the plugins are loaded, so a plugin
     that cannot be loaded, or whose tools clash, is a ``ValueError`` here."""
     named: list[str] = getattr(args, "plugins", [])
-    refs = [ref.strip() for item in named for ref in item.split(",")
-            if ref.strip()]
+    refs = [ref.strip() for item in named for ref in item.split(",") if ref.strip()]
     if not refs:
         if getattr(args, "plugin_config", []):
-            raise ValueError(
-                "--plugin-config needs the --plugins it configures")
+            raise ValueError("--plugin-config needs the --plugins it configures")
         return spec
     import dataclasses
 
@@ -322,14 +346,16 @@ def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
     for item in getattr(args, "plugin_config", []):
         ref, equals, value = item.partition("=")
         if not equals or ref.strip() not in refs:
-            raise ValueError(f"--plugin-config {item[:40]!r}: expected "
-                             "MODULE:FACTORY=JSON of a --plugins")
+            raise ValueError(
+                f"--plugin-config {item[:40]!r}: expected MODULE:FACTORY=JSON of a --plugins"
+            )
         loaded = load_json_arg(value, "--plugin-config")
         if not isinstance(loaded, dict):
             raise ValueError("--plugin-config options are a JSON object")
         configs[ref.strip()] = loaded
-    return dataclasses.replace(spec, plugins=[*spec.plugins, *refs],
-                               plugin_config={**spec.plugin_config, **configs})
+    return dataclasses.replace(
+        spec, plugins=[*spec.plugins, *refs], plugin_config={**spec.plugin_config, **configs}
+    )
 
 
 def open_gui(spec: Any) -> None:
@@ -342,14 +368,16 @@ def open_gui(spec: Any) -> None:
     from langslice.job.folder.layout import locate_job_folder
 
     folder, _ = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
-    command = [sys.executable, "-c", "from langslice.cli import main; main()", "gui",
-               str(folder)]
+    command = [sys.executable, "-c", "from langslice.cli import main; main()", "gui", str(folder)]
     try:
-        subprocess.Popen(command, stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL,
-                         creationflags=DETACHED.creationflags,
-                         start_new_session=DETACHED.start_new_session)
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=DETACHED.creationflags,
+            start_new_session=DETACHED.start_new_session,
+        )
     except OSError as exc:
         print(f"The LangSlice window could not be started: {exc}")
 
@@ -382,9 +410,11 @@ def run_linear(args: argparse.Namespace) -> None:
     apply_trace_dir(args)
     chosen = apply_saved_agent_choice(args)
     if chosen:
-        print(f"Model: {args.model}"
-              + (f"  Reasoning: {args.reasoning}" if args.reasoning else "")
-              + " (from the LangSlice window's Settings)")
+        print(
+            f"Model: {args.model}"
+            + (f"  Reasoning: {args.reasoning}" if args.reasoning else "")
+            + " (from the LangSlice window's Settings)"
+        )
     try:
         spec = with_tool_plugins(build_linear_spec(args, args.image_folder), args)
     except ValueError as exc:
@@ -400,10 +430,16 @@ def run_linear(args: argparse.Namespace) -> None:
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
-    interval = (f"{spec.position.interval_um}um"
-                if spec.position.interval_um is not None else "not supplied")
-    thickness = (f"{spec.position.thickness_um}um"
-                 if spec.position.thickness_um is not None else "not supplied")
+    interval = (
+        f"{spec.position.interval_um}um"
+        if spec.position.interval_um is not None
+        else "not supplied"
+    )
+    thickness = (
+        f"{spec.position.thickness_um}um"
+        if spec.position.thickness_um is not None
+        else "not supplied"
+    )
     print(f"Interval: {interval}  Thickness: {thickness}")
     print(f"Folder: {spec.image_folder}  Resume: {spec.resume}")
     if os.environ.get(TRACE_DIR_ENV):
@@ -416,8 +452,10 @@ def run_linear(args: argparse.Namespace) -> None:
     transformed = [s for s in state.slices if s.transform is not None]
     print()
     print("Linear run complete" if state.submitted else "Linear run ended without a submission")
-    print(f"  Sections: {len(state.slices)}  Positioned: {len(positioned)}  "
-          f"Transformed: {len(transformed)}")
+    print(
+        f"  Sections: {len(state.slices)}  Positioned: {len(positioned)}  "
+        f"Transformed: {len(transformed)}"
+    )
     if state.debrief:
         print("\nAgent debrief (what it reached for that was not there):")
         print(textwrap.indent(state.debrief, "  "))

@@ -106,9 +106,13 @@ def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.n
         hit = _filtered_cache.get(key)
         if hit is None:
             name = f"{kind}_spline{int(order)}" + (
-                f"_step{int(downsample)}" if int(downsample) > 1 else "")
-            hit = cached_volume(atlas, name, lambda: _spline_filter_threaded(
-                _scaled_volume(atlas, kind, downsample)[0], order))
+                f"_step{int(downsample)}" if int(downsample) > 1 else ""
+            )
+            hit = cached_volume(
+                atlas,
+                name,
+                lambda: _spline_filter_threaded(_scaled_volume(atlas, kind, downsample)[0], order),
+            )
             _filtered_cache[key] = hit
             while len(_filtered_cache) > FILTERED_CACHE_SIZE:
                 del _filtered_cache[next(iter(_filtered_cache))]
@@ -136,13 +140,15 @@ def _spline_filter_threaded(vol: np.ndarray, order: int) -> np.ndarray:
             across = 1 if axis == 0 else 0
             bounds = np.linspace(0, out.shape[across], workers + 1).astype(int)
 
-            def run(index: int, axis: int = axis, across: int = across,
-                    bounds: np.ndarray = bounds) -> None:
+            def run(
+                index: int, axis: int = axis, across: int = across, bounds: np.ndarray = bounds
+            ) -> None:
                 slab: list[slice] = [slice(None)] * out.ndim
                 slab[across] = slice(int(bounds[index]), int(bounds[index + 1]))
                 view = out[tuple(slab)]
-                spline_filter1d(view, order=order, axis=axis, mode="constant",
-                                output=cast(Any, view))
+                spline_filter1d(
+                    view, order=order, axis=axis, mode="constant", output=cast(Any, view)
+                )
 
             list(pool.map(run, range(workers)))
     return out
@@ -232,8 +238,7 @@ def _plane_coordinates(
     (:func:`_plane_basis`)."""
     _normal_axis, row_axis, col_axis = axes
     height, width = shape[row_axis], shape[col_axis]
-    centre, step_row, step_col = _plane_basis(
-        shape, res_mm, axes, normal_index, pitch_deg, yaw_deg)
+    centre, step_row, step_col = _plane_basis(shape, res_mm, axes, normal_index, pitch_deg, yaw_deg)
 
     rows = (np.arange(height, dtype=np.float64) - (height - 1) / 2.0)[:, None]
     cols = (np.arange(width, dtype=np.float64) - (width - 1) / 2.0)[None, :]
@@ -261,9 +266,7 @@ def plane_index_coordinates(
     """
     normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
     context = atlas_space_context(atlas)
-    res_mm = cast(
-        "tuple[float, float, float]", tuple(r / 1000.0 for r in context.resolution_um)
-    )
+    res_mm = cast("tuple[float, float, float]", tuple(r / 1000.0 for r in context.resolution_um))
     if pitch_deg or yaw_deg:
         normal_index = position_mm / res_mm[normal_axis]
     else:
@@ -271,8 +274,12 @@ def plane_index_coordinates(
 
         normal_index = float(position_mm_to_index(atlas, position_mm, plane=plane))
     coords = _plane_coordinates(
-        context.shape, res_mm, (normal_axis, row_axis, col_axis),
-        normal_index, pitch_deg, yaw_deg,
+        context.shape,
+        res_mm,
+        (normal_axis, row_axis, col_axis),
+        normal_index,
+        pitch_deg,
+        yaw_deg,
     )
     if plane in {"sagittal", "horizontal"}:
         coords = np.swapaxes(coords, 1, 2)
@@ -297,9 +304,7 @@ def plane_index_affine(
     """
     normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
     context = atlas_space_context(atlas)
-    res_mm = cast(
-        "tuple[float, float, float]", tuple(r / 1000.0 for r in context.resolution_um)
-    )
+    res_mm = cast("tuple[float, float, float]", tuple(r / 1000.0 for r in context.resolution_um))
     if pitch_deg or yaw_deg:
         normal_index = position_mm / res_mm[normal_axis]
     else:
@@ -308,9 +313,11 @@ def plane_index_affine(
         normal_index = float(position_mm_to_index(atlas, position_mm, plane=plane))
     shape = context.shape
     centre, step_row, step_col = _plane_basis(
-        shape, res_mm, (normal_axis, row_axis, col_axis), normal_index, pitch_deg, yaw_deg)
-    origin = (centre - (shape[row_axis] - 1) / 2.0 * step_row
-              - (shape[col_axis] - 1) / 2.0 * step_col)
+        shape, res_mm, (normal_axis, row_axis, col_axis), normal_index, pitch_deg, yaw_deg
+    )
+    origin = (
+        centre - (shape[row_axis] - 1) / 2.0 * step_row - (shape[col_axis] - 1) / 2.0 * step_col
+    )
     if plane in {"sagittal", "horizontal"}:
         step_row, step_col = step_col, step_row
     return np.column_stack([step_row, step_col, origin])
@@ -367,14 +374,31 @@ def sample_oblique_plane(
         step = max(1, int(downsample))
         vol = np.ascontiguousarray(np.asarray(volume)[::step, ::step, ::step], dtype=np.float32)
         prefilter = True
-    sampled = _sample_plane(atlas, vol, downsample, position_mm, plane, pitch_deg, yaw_deg,
-                            order=order, prefilter=prefilter)
+    sampled = _sample_plane(
+        atlas,
+        vol,
+        downsample,
+        position_mm,
+        plane,
+        pitch_deg,
+        yaw_deg,
+        order=order,
+        prefilter=prefilter,
+    )
     return np.asarray(sampled, dtype=np.float32)
 
 
 def _sample_plane(
-    atlas: Any, vol: np.ndarray, downsample: int, position_mm: float, plane: Plane,
-    pitch_deg: float, yaw_deg: float, *, order: int, prefilter: bool,
+    atlas: Any,
+    vol: np.ndarray,
+    downsample: int,
+    position_mm: float,
+    plane: Plane,
+    pitch_deg: float,
+    yaw_deg: float,
+    *,
+    order: int,
+    prefilter: bool,
 ) -> np.ndarray:
     """*vol* (the atlas strided by *downsample*) sampled on the plane, in
     display orientation, in *vol*'s own sample type."""
@@ -385,9 +409,9 @@ def _sample_plane(
         tuple(r / 1000.0 * step for r in atlas_space_context(atlas).resolution_um),
     )
     coords = _plane_coordinates(
-        vol.shape, res_mm, axes, position_mm / res_mm[axes[0]], pitch_deg, yaw_deg)
-    return orient_slice_for_display(
-        _sample(vol, coords, order=order, prefilter=prefilter), plane)
+        vol.shape, res_mm, axes, position_mm / res_mm[axes[0]], pitch_deg, yaw_deg
+    )
+    return orient_slice_for_display(_sample(vol, coords, order=order, prefilter=prefilter), plane)
 
 
 SAMPLE_SPLIT_PIXELS = 1 << 17
@@ -402,7 +426,8 @@ def _sample_pool() -> ThreadPoolExecutor:
     if pool is None:
         _sample_pools.clear()
         pool = _sample_pools.setdefault(
-            pid, ThreadPoolExecutor(FILTER_THREADS, thread_name_prefix="oblique-sample"))
+            pid, ThreadPoolExecutor(FILTER_THREADS, thread_name_prefix="oblique-sample")
+        )
     return pool
 
 
@@ -411,9 +436,11 @@ def _sample(vol: np.ndarray, coords: np.ndarray, *, order: int, prefilter: bool)
     prefilter=prefilter)``, the same values, a large plane in row bands on
     several threads (each pixel is sampled on its own; scipy releases the
     GIL while it samples)."""
+
     def band(rows: slice) -> np.ndarray:
-        return map_coordinates(vol, coords[:, rows], order=order, mode="constant", cval=0.0,
-                               prefilter=prefilter)
+        return map_coordinates(
+            vol, coords[:, rows], order=order, mode="constant", cval=0.0, prefilter=prefilter
+        )
 
     height = coords.shape[1]
     if (prefilter and order > 1) or coords[0].size < SAMPLE_SPLIT_PIXELS or height < 2:
@@ -439,8 +466,9 @@ def _compact_annotation(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
         hit = _annotation_index_cache.get(key)
         if hit is not None:
             return hit
-        ids = cached_volume(atlas, "annotation_ids",
-                            lambda: np.unique(np.asarray(atlas.annotation)))
+        ids = cached_volume(
+            atlas, "annotation_ids", lambda: np.unique(np.asarray(atlas.annotation))
+        )
 
         def dense() -> np.ndarray:
             dtype = np.uint16 if len(ids) <= np.iinfo(np.uint16).max + 1 else np.uint32
@@ -473,19 +501,31 @@ def sample_oblique_annotation(
     indices first makes every sampled value round-trip exactly.
     """
     ids, index_volume = _compact_annotation(atlas)
-    key = _atlas_key(_annotation_plane_cache, atlas, float(position_mm), str(plane),
-                     float(pitch_deg), float(yaw_deg), int(downsample))
+    key = _atlas_key(
+        _annotation_plane_cache,
+        atlas,
+        float(position_mm),
+        str(plane),
+        float(pitch_deg),
+        float(yaw_deg),
+        int(downsample),
+    )
     with _annotation_lock:
         index = _annotation_plane_cache.get(key)
         if index is not None:
             _annotation_plane_cache.move_to_end(key)
     if index is None:
         step = max(1, int(downsample))
-        vol = index_volume if step == 1 else np.ascontiguousarray(
-            index_volume[::step, ::step, ::step])
-        index = np.ascontiguousarray(_sample_plane(
-            atlas, vol, step, position_mm, plane, pitch_deg, yaw_deg,
-            order=0, prefilter=False))
+        vol = (
+            index_volume
+            if step == 1
+            else np.ascontiguousarray(index_volume[::step, ::step, ::step])
+        )
+        index = np.ascontiguousarray(
+            _sample_plane(
+                atlas, vol, step, position_mm, plane, pitch_deg, yaw_deg, order=0, prefilter=False
+            )
+        )
         with _annotation_lock:
             _annotation_plane_cache[key] = index
             while len(_annotation_plane_cache) > ANNOTATION_PLANE_CACHE_SIZE:

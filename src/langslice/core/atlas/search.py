@@ -15,13 +15,17 @@ GREP_ATLAS_LIMIT = 40
 
 
 def plane_structure_ids(
-    state: Any, ctx: Any, position_mm: float, angles: tuple[float, float],
+    state: Any,
+    ctx: Any,
+    position_mm: float,
+    angles: tuple[float, float],
 ) -> set[int]:
     """Annotation ids present in the atlas plane at a placement and *angles*
     (``(pitch, yaw)``: the section's own)."""
     pitch, yaw = angles
-    labels = annotation_slice(ctx.atlas, position_mm, plane=cast(Plane, state.plane),
-                              pitch_deg=pitch, yaw_deg=yaw)
+    labels = annotation_slice(
+        ctx.atlas, position_mm, plane=cast(Plane, state.plane), pitch_deg=pitch, yaw_deg=yaw
+    )
     return {int(v) for v in np.unique(labels)}
 
 

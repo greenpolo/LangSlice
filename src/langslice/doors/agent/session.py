@@ -22,6 +22,7 @@ from google.adk.agents import LlmAgent
 from google.adk.agents._streaming_mode import StreamingMode
 from google.adk.agents.run_config import RunConfig
 from google.adk.apps.app import App
+from google.adk.models.base_llm import BaseLlm
 from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.plugins.context_filter_plugin import ContextFilterPlugin
 from google.adk.runners import InMemoryRunner
@@ -65,25 +66,22 @@ def build_plugins(run_label: str) -> list[BasePlugin]:
     return plugins
 
 
-def _with_reasoning(model: str | object, reasoning: str | None) -> str | object:
+def _with_reasoning(model: str | BaseLlm, reasoning: str | None) -> str | BaseLlm:
     """Set a resolved model's reasoning effort, when it has one to set.
 
-    Providers that expose the knob carry a ``reasoning_effort`` field (the
-    OAuth ``OpenAIOAuthLlm`` is a pydantic model, hence ``model_copy``); every
-    other backend is left exactly as it was.
+    Providers that expose the knob carry a ``reasoning_effort`` field; every
+    ADK model is a pydantic model, so the copy carries the new value. A model
+    named by a plain string and a backend without the field are left as
+    they were.
     """
-    if not reasoning or not hasattr(model, "reasoning_effort"):
+    if not reasoning or isinstance(model, str) or not hasattr(model, "reasoning_effort"):
         return model
-    copier = getattr(model, "model_copy", None)
-    if callable(copier):
-        return copier(update={"reasoning_effort": reasoning})
-    object.__setattr__(model, "reasoning_effort", reasoning)
-    return model
+    return model.model_copy(update={"reasoning_effort": reasoning})
 
 
 def build_agent(
     *,
-    model: str | object,
+    model: str | BaseLlm,
     name: str,
     instruction: str,
     tools: list[Any],
@@ -99,7 +97,7 @@ def build_agent(
         "http_options": default_http_options(),
     }
     return LlmAgent(
-        model=_with_reasoning(resolve_adk_model(model), reasoning),  # type: ignore[arg-type]
+        model=_with_reasoning(resolve_adk_model(model), reasoning),
         name=name,
         instruction=instruction,
         tools=tools,
@@ -270,9 +268,11 @@ async def run_agent_session(
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
         saw_tool_call = False
-        async with aclosing(runner.run_async(
-            user_id=_USER_ID, session_id=run_label, new_message=message, run_config=run_config
-        )) as events:
+        async with aclosing(
+            runner.run_async(
+                user_id=_USER_ID, session_id=run_label, new_message=message, run_config=run_config
+            )
+        ) as events:
             async for event in events:
                 if trace is not None:
                     trace.event(event, turn=turns)
@@ -321,14 +321,16 @@ async def run_agent_session(
             trace.nudge(debrief, turn=turns + 1)
         answer: list[str] = []
         try:
-            async with aclosing(runner.run_async(
-                user_id=_USER_ID,
-                session_id=run_label,
-                new_message=types.Content(
-                    role="user", parts=[types.Part.from_text(text=debrief)]
-                ),
-                run_config=run_config,
-            )) as events:
+            async with aclosing(
+                runner.run_async(
+                    user_id=_USER_ID,
+                    session_id=run_label,
+                    new_message=types.Content(
+                        role="user", parts=[types.Part.from_text(text=debrief)]
+                    ),
+                    run_config=run_config,
+                )
+            ) as events:
                 async for event in events:
                     if trace is not None:
                         trace.event(event, turn=turns + 1)

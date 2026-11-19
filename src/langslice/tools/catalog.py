@@ -100,6 +100,7 @@ class Verb:
         (:func:`enabled` with ``image_model`` False)."""
         return self.tool.image_model
 
+
 _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "look": look.look_pictures,
     "zoom": zoom.zoom_picture,
@@ -134,14 +135,16 @@ _LIMITS: dict[str, dict[str, int]] = {
 
 _OWN = {name for name, tool in TOOLS.items() if not tool.engine}
 if set(_FUNCTIONS) != _OWN:
-    raise RuntimeError("the registry and the tool table name different "
-                       f"tools: {sorted(set(_FUNCTIONS) ^ _OWN)}")
+    raise RuntimeError(
+        f"the registry and the tool table name different tools: {sorted(set(_FUNCTIONS) ^ _OWN)}"
+    )
 
 VERBS: dict[str, Verb] = {
-    name: Verb(name, _FUNCTIONS[name], tool.kind, tool.group, tool,
-               limits=_LIMITS.get(name, {}))
-    for name, tool in TOOLS.items() if not tool.engine
+    name: Verb(name, _FUNCTIONS[name], tool.kind, tool.group, tool, limits=_LIMITS.get(name, {}))
+    for name, tool in TOOLS.items()
+    if not tool.engine
 }
+
 
 def verbs_for(spec: Any = None) -> dict[str, Verb]:
     """Every verb a job of *spec* can have: :data:`VERBS`, then one verb per
@@ -150,10 +153,20 @@ def verbs_for(spec: Any = None) -> dict[str, Verb]:
     engine's."""
     from langslice.job import plugins
 
-    return {**VERBS, **{
-        name: Verb(name, tool.handler, tool.kind, tool.group, plugins.tool_def(tool),
-                   limits=dict(tool.limits))
-        for name, (_plugin, tool) in plugins.tool_specs(spec).items()}}
+    return {
+        **VERBS,
+        **{
+            name: Verb(
+                name,
+                tool.handler,
+                tool.kind,
+                tool.group,
+                plugins.tool_def(tool),
+                limits=dict(tool.limits),
+            )
+            for name, (_plugin, tool) in plugins.tool_specs(spec).items()
+        },
+    }
 
 
 def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
@@ -166,6 +179,10 @@ def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> 
     *image_model* False: the door cannot reach the spec's image model (MCP
     with none connected), so the verbs that call it (``Verb.image_model``)
     are left out."""
-    return [name for name, tool in tools_for(spec).items()
-            if tool.is_on(spec) and (scripting or not tool.scripting)
-            and (image_model or not tool.image_model)]
+    return [
+        name
+        for name, tool in tools_for(spec).items()
+        if tool.is_on(spec)
+        and (scripting or not tool.scripting)
+        and (image_model or not tool.image_model)
+    ]

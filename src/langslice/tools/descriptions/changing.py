@@ -24,10 +24,7 @@ from langslice.tools.descriptions.description import (
 MaskSource = Literal["em", "fit"]
 
 POSITION_SECTIONS = ToolDescription(
-    summary=(
-        "Set where sections sit along the slicing axis, and the stack's "
-        "cutting angles."
-    ),
+    summary=("Set where sections sit along the slicing axis, and the stack's cutting angles."),
     body=(
         """\
 Positions are atlas millimetres along the slicing axis; a value outside
@@ -144,10 +141,7 @@ under its new transform with the atlas borders on it.""",
 )
 
 MARK_DAMAGE = ToolDescription(
-    summary=(
-        "Mark the atlas regions a section has lost, so that every fit leaves "
-        "them out."
-    ),
+    summary=("Mark the atlas regions a section has lost, so that every fit leaves them out."),
     body=(
         """\
 Mark the regions whose tissue is missing from the section, or lies folded
@@ -199,10 +193,7 @@ the same regions on the atlas, to check both at once.""",
 )
 
 MAKE_MASK = ToolDescription(
-    summary=(
-        "Make, replace or delete a named mask of sections: which tissue a fit "
-        "compares."
-    ),
+    summary=("Make, replace or delete a named mask of sections: which tissue a fit compares."),
     body=(
         """\
 A mask holds a weight from 0 to 1 for each pixel of a section; a fit

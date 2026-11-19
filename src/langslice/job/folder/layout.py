@@ -93,8 +93,7 @@ JOB_FORMAT_VERSION = 1
 FORMAT_KEY = "format_version"
 
 _UNSAFE = re.compile(r"[\x00-\x1f/\\:*?\"<>|]")
-_RESERVED = re.compile(r"CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³]",
-                       re.IGNORECASE)
+_RESERVED = re.compile(r"CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³]", re.IGNORECASE)
 
 
 def job_folder_for(image_folder: str | os.PathLike[str]) -> Path:
@@ -150,11 +149,12 @@ def locate_job_folder(
     root = Path(root) if root is not None else index.default_root()
     job_id = job_id or index.folder_id(images)
     target = root / job_id
-    fallback = {"image_folder": str(images),
-                "reason": f"{folder} cannot be created or written"}
+    fallback = {"image_folder": str(images), "reason": f"{folder} cannot be created or written"}
     if emit is not None:
-        emit(f"[job] {folder} cannot be created or written; the job folder is {target} "
-             f"(job id {job_id})")
+        emit(
+            f"[job] {folder} cannot be created or written; the job folder is {target} "
+            f"(job id {job_id})"
+        )
     if register:
         held = index.lookup(root, job_id)
         if held is None or held.get("job_folder") != str(target) or "fallback" not in held:
@@ -184,8 +184,11 @@ def held_image_folder(folder: Path, held: dict[str, Any]) -> Path | None:
     """
     value = held.get("image_folder")
     if not isinstance(value, str) or not value:
-        value = (held.get("spec") or {}).get("image_folder") if isinstance(
-            held.get("spec"), dict) else None
+        value = (
+            (held.get("spec") or {}).get("image_folder")
+            if isinstance(held.get("spec"), dict)
+            else None
+        )
         if not isinstance(value, str) or not value:
             return None
     path = Path(value)
@@ -213,7 +216,8 @@ def check_owner(layout: JobLayout) -> None:
     if os.path.realpath(owner) != os.path.realpath(layout.image_folder):
         raise ValueError(
             f"{layout.folder} already holds the job of {owner}, not of {layout.image_folder}. "
-            "Choose another job folder (--job-dir) for this one.")
+            "Choose another job folder (--job-dir) for this one."
+        )
 
 
 def _safe(name: str) -> str:
@@ -464,22 +468,25 @@ class JobLayout:
 
     def ensure(self) -> None:
         """Create the job folder and its fixed subfolders."""
-        for folder in (self.folder, self.history_dir, self.sections_dir, self.views_dir,
-                       self.exports_dir, self.logs_dir):
+        for folder in (
+            self.folder,
+            self.history_dir,
+            self.sections_dir,
+            self.views_dir,
+            self.exports_dir,
+            self.logs_dir,
+        ):
             folder.mkdir(parents=True, exist_ok=True)
 
     def log_event(self, kind: str, **fields: Any) -> None:
         """Append one line to ``logs/events.jsonl``; a failure is not fatal."""
         try:
             self.logs_dir.mkdir(parents=True, exist_ok=True)
-            record = {"kind": kind, **fields,
-                      "at": datetime.now(UTC).isoformat(timespec="seconds")}
-            with (self.logs_dir / EVENTS_FILE).open("a", encoding="utf-8",
-                newline="\n") as handle:
+            record = {"kind": kind, **fields, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+            with (self.logs_dir / EVENTS_FILE).open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write(json.dumps(record, default=str) + "\n")
         except OSError:
             pass
-
 
 
 def read_job_file(layout: JobLayout) -> dict[str, Any] | None:
@@ -500,7 +507,8 @@ def read_job_file(layout: JobLayout) -> dict[str, Any] | None:
     if version > JOB_FORMAT_VERSION:
         raise ValueError(
             f"This job folder was written by a newer LangSlice (format {version}; this "
-            f"version reads up to {JOB_FORMAT_VERSION}). Update LangSlice to open it.")
+            f"version reads up to {JOB_FORMAT_VERSION}). Update LangSlice to open it."
+        )
     return data
 
 

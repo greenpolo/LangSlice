@@ -132,7 +132,6 @@ class RegistrationFile:
     notes: list[str] = field(default_factory=list)
 
 
-
 def _number(value: Any) -> float | None:
     try:
         number = float(value)
@@ -186,13 +185,25 @@ def _quint_json(path: str, data: dict[str, Any]) -> RegistrationFile:
         if not isinstance(row, dict):
             continue
         anchoring, problem = _anchoring(row.get("anchoring"))
-        entries.append(RegistrationEntry(
-            filename=str(row.get("filename", "")), nr=_nr(row.get("nr")),
-            size=_size(row.get("width"), row.get("height")), anchoring=anchoring,
-            markers=_markers(row.get("markers")), problem=problem))
+        entries.append(
+            RegistrationEntry(
+                filename=str(row.get("filename", "")),
+                nr=_nr(row.get("nr")),
+                size=_size(row.get("width"), row.get("height")),
+                anchoring=anchoring,
+                markers=_markers(row.get("markers")),
+                problem=problem,
+            )
+        )
     kind = "visualign-json" if any(entry.markers for entry in entries) else "quicknii-json"
-    return RegistrationFile(path=path, format=kind, target=_text(data.get("target")),
-                            aligner=_text(data.get("aligner")), atlas=None, entries=entries)
+    return RegistrationFile(
+        path=path,
+        format=kind,
+        target=_text(data.get("target")),
+        aligner=_text(data.get("aligner")),
+        atlas=None,
+        entries=entries,
+    )
 
 
 def _text(value: Any) -> str | None:
@@ -206,21 +217,31 @@ def _registration_json(path: str, data: dict[str, Any]) -> RegistrationFile:
         matrix = section.get("pixel_to_atlas_um")
         size = image.get("size")
         problem = section.get("problem") if matrix is None else None
-        entries.append(RegistrationEntry(
-            filename=str(section.get("id", "")), nr=_order_nr(section.get("order")),
-            size=None if not size else (int(size[0]), int(size[1])),
-            pixel_to_atlas_um=None if matrix is None else np.asarray(matrix, dtype=np.float64),
-            problem=None if matrix is not None else str(problem or "no placement")))
+        entries.append(
+            RegistrationEntry(
+                filename=str(section.get("id", "")),
+                nr=_order_nr(section.get("order")),
+                size=None if not size else (int(size[0]), int(size[1])),
+                pixel_to_atlas_um=None if matrix is None else np.asarray(matrix, dtype=np.float64),
+                problem=None if matrix is not None else str(problem or "no placement"),
+            )
+        )
     atlas = data.get("atlas") if isinstance(data.get("atlas"), dict) else None
-    return RegistrationFile(path=path, format="langslice-registration", target=None,
-                            aligner=_text(data.get("written_by")), atlas=atlas,
-                            entries=entries)
+    return RegistrationFile(
+        path=path,
+        format="langslice-registration",
+        target=None,
+        aligner=_text(data.get("written_by")),
+        atlas=atlas,
+        entries=entries,
+    )
 
 
 def _anchoring_from_text(text: str) -> tuple[tuple[float, ...] | None, str | None]:
     values = dict(part.split("=", 1) for part in text.split("&") if "=" in part)
-    return _anchoring([values.get(key) for key in ANCHORING_KEYS]
-                      if set(ANCHORING_KEYS) <= set(values) else None)
+    return _anchoring(
+        [values.get(key) for key in ANCHORING_KEYS] if set(ANCHORING_KEYS) <= set(values) else None
+    )
 
 
 def _quicknii_xml(path: str, raw: str) -> RegistrationFile:
@@ -231,14 +252,23 @@ def _quicknii_xml(path: str, raw: str) -> RegistrationFile:
     entries = []
     for element in root.iter("slice"):
         anchoring, problem = _anchoring_from_text(element.get("anchoring", ""))
-        entries.append(RegistrationEntry(
-            filename=element.get("filename", ""), nr=_nr(element.get("nr")),
-            size=_size(element.get("width"), element.get("height")), anchoring=anchoring,
-            problem=problem))
-    return RegistrationFile(path=path, format="quicknii-xml",
-                            target=root.get("target") or _declared(raw, "target"),
-                            aligner=root.get("aligner") or _declared(raw, "aligner"),
-                            atlas=None, entries=entries)
+        entries.append(
+            RegistrationEntry(
+                filename=element.get("filename", ""),
+                nr=_nr(element.get("nr")),
+                size=_size(element.get("width"), element.get("height")),
+                anchoring=anchoring,
+                problem=problem,
+            )
+        )
+    return RegistrationFile(
+        path=path,
+        format="quicknii-xml",
+        target=root.get("target") or _declared(raw, "target"),
+        aligner=root.get("aligner") or _declared(raw, "aligner"),
+        atlas=None,
+        entries=entries,
+    )
 
 
 def _declared(raw: str, name: str) -> str | None:
@@ -249,23 +279,35 @@ def _declared(raw: str, name: str) -> str | None:
 def _deepslice_csv(path: str, raw: str) -> RegistrationFile:
     reader = csv.DictReader(io.StringIO(raw))
     columns = set(reader.fieldnames or [])
-    name_key = next((key for key in ("Filenames", "filename", "Filename") if key in columns),
-                    None)
+    name_key = next((key for key in ("Filenames", "filename", "Filename") if key in columns), None)
     if name_key is None or not set(ANCHORING_KEYS) <= columns:
-        raise ValueError(f"{path}: not a DeepSlice CSV (needs Filenames and "
-                         f"{', '.join(ANCHORING_KEYS)})")
+        raise ValueError(
+            f"{path}: not a DeepSlice CSV (needs Filenames and {', '.join(ANCHORING_KEYS)})"
+        )
     entries = []
     for row in reader:
         anchoring, problem = _anchoring([row.get(key) for key in ANCHORING_KEYS])
-        entries.append(RegistrationEntry(
-            filename=str(row.get(name_key) or ""), nr=_nr(row.get("nr")),
-            size=_size(row.get("width"), row.get("height")), anchoring=anchoring,
-            problem=problem))
+        entries.append(
+            RegistrationEntry(
+                filename=str(row.get(name_key) or ""),
+                nr=_nr(row.get("nr")),
+                size=_size(row.get("width"), row.get("height")),
+                anchoring=anchoring,
+                problem=problem,
+            )
+        )
     return RegistrationFile(
-        path=path, format="deepslice-csv", target=None, aligner=None, atlas=None,
+        path=path,
+        format="deepslice-csv",
+        target=None,
+        aligner=None,
+        atlas=None,
         entries=entries,
-        notes=["A DeepSlice CSV names no target; read as DeepSlice's mouse target "
-               f"{DEEPSLICE_DEFAULT_TARGET}"])
+        notes=[
+            "A DeepSlice CSV names no target; read as DeepSlice's mouse target "
+            f"{DEEPSLICE_DEFAULT_TARGET}"
+        ],
+    )
 
 
 def read_registration(path: str | os.PathLike[str]) -> RegistrationFile:
@@ -282,10 +324,15 @@ def read_registration(path: str | os.PathLike[str]) -> RegistrationFile:
         data = json.loads(raw)
     except ValueError as exc:
         raise ValueError(f"{text_path}: not JSON, XML or CSV") from exc
-    if isinstance(data, dict) and isinstance(data.get("sections"), list) \
-            and "format_version" in data:
+    if (
+        isinstance(data, dict)
+        and isinstance(data.get("sections"), list)
+        and "format_version" in data
+    ):
         return _registration_json(text_path, data)
     if isinstance(data, dict) and isinstance(data.get("slices"), list):
         return _quint_json(text_path, data)
-    raise ValueError(f"{text_path}: neither a QUINT (QuickNII/VisuAlign/DeepSlice) JSON "
-                     "nor a LangSlice registration.json")
+    raise ValueError(
+        f"{text_path}: neither a QUINT (QuickNII/VisuAlign/DeepSlice) JSON "
+        "nor a LangSlice registration.json"
+    )

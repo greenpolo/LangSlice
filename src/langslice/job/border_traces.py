@@ -21,7 +21,10 @@ from langslice.job.steps.undo import JobUndo
 
 
 def _job_result(
-    section_id: str, fingerprint: str, future: Future[dict[str, Any]], timeout: float | None,
+    section_id: str,
+    fingerprint: str,
+    future: Future[dict[str, Any]],
+    timeout: float | None,
 ) -> dict[str, Any]:
     """A correction job's result; an exception becomes an error result.
 
@@ -44,12 +47,15 @@ def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -
     """Record a finished correction on a section still waiting for it."""
     section = state.by_id(section_id)
     held = None if section is None else section.border_trace
-    if (section is not None and held is not None and held.status == "running"
-            and held.geometry_fingerprint == fingerprint):
+    if (
+        section is not None
+        and held is not None
+        and held.status == "running"
+        and held.geometry_fingerprint == fingerprint
+    ):
         section.border_trace = trace_from_json(result)
         return True
     return False
-
 
 
 class JobBorderTraces(JobUndo):
@@ -76,7 +82,11 @@ class JobBorderTraces(JobUndo):
         return self.background.gives_way if in_worker() else None
 
     def start_image_job(
-        self, section_id: str, fingerprint: str, job: Callable[[], dict[str, Any]], *,
+        self,
+        section_id: str,
+        fingerprint: str,
+        job: Callable[[], dict[str, Any]],
+        *,
         workers: int,
     ) -> None:
         """Run one border trace in the background."""
@@ -105,15 +115,18 @@ class JobBorderTraces(JobUndo):
         """
         running = list(self.image_jobs.items())
         results = [
-            (section_id, fingerprint,
-             self.portable(_job_result(section_id, fingerprint, future, None)))
-            for section_id, (fingerprint, future) in running]
+            (
+                section_id,
+                fingerprint,
+                self.portable(_job_result(section_id, fingerprint, future, None)),
+            )
+            for section_id, (fingerprint, future) in running
+        ]
         changed = False
         if results:
             with self.writing():
                 for section_id, fingerprint, result in results:
-                    changed |= _land(self.state, section_id, fingerprint,
-                                     result)
+                    changed |= _land(self.state, section_id, fingerprint, result)
                 if changed:
                     self.checkpoint()
                 for section_id, call in running:
@@ -140,8 +153,9 @@ class JobBorderTraces(JobUndo):
             return True
         fingerprint, future = running
         try:
-            result = _job_result(section_id, fingerprint, future,
-                                 None if timeout is None else max(0.0, timeout))
+            result = _job_result(
+                section_id, fingerprint, future, None if timeout is None else max(0.0, timeout)
+            )
         except TimeoutError:
             return False
         with self.writing():

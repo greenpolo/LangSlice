@@ -74,8 +74,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
         job folder's ``scripts/`` and ``scratch/``."""
         if not self._caller.work_dir:
             raise _not_for_scripts(
-                "a script keeps its files in the job folder's scripts/ "
-                "and scratch/"
+                "a script keeps its files in the job folder's scripts/ and scratch/"
             )
         path = self._run.job.layout.plugin_dir(self._caller.name)
         path.mkdir(parents=True, exist_ok=True)
@@ -109,8 +108,7 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
 
         if not self._caller.background:
             raise _not_for_scripts(
-                "a script runs its own computation: compute, then write "
-                "with expect="
+                "a script runs its own computation: compute, then write with expect="
             )
         job = self._run.job
         ids = [self._record(section).id for section in sections]
@@ -130,14 +128,10 @@ class ToolContext(ContextFits, ContextWrites, ContextPictures):
                 status=DONE,
                 text=str(reply.pop("notice", "") or "done."),
                 pictures=[
-                    item
-                    if isinstance(item, Image.Image)
-                    else Image.fromarray(np.asarray(item))
+                    item if isinstance(item, Image.Image) else Image.fromarray(np.asarray(item))
                     for item in result.pictures
                 ],
                 result=to_jsonable(reply),
             )
 
-        return job.background.start(
-            caller.name, ids, landing, wait_for_images=False
-        ).id
+        return job.background.start(caller.name, ids, landing, wait_for_images=False).id

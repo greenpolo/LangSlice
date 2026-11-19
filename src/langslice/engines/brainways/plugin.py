@@ -83,9 +83,7 @@ class Options:
     cache_folder: str = ""
 
     @classmethod
-    def from_configs(
-        cls, configs: Sequence[Mapping[str, str | int]]
-    ) -> Options:
+    def from_configs(cls, configs: Sequence[Mapping[str, str | int]]) -> Options:
         """Read the options a job's ``plugin_config`` gives.
 
         Parameters
@@ -110,14 +108,11 @@ class Options:
         unknown = sorted(set(given) - set(OPTIONS))
         if unknown:
             raise ValueError(
-                f"brainways_ap takes the options {', '.join(OPTIONS)}; "
-                f"got {', '.join(unknown)}"
+                f"brainways_ap takes the options {', '.join(OPTIONS)}; got {', '.join(unknown)}"
             )
         device = str(given.get("device", Device.AUTO))
         if device not in tuple(Device):
-            raise ValueError(
-                f"device is one of {', '.join(Device)}; got {device!r}"
-            )
+            raise ValueError(f"device is one of {', '.join(Device)}; got {device!r}")
         return cls(
             device=Device(device),
             long_edge=int(given.get("long_edge", cls.long_edge)),
@@ -227,9 +222,12 @@ class CallRecord:
     timings_s: dict[str, float]
 
 
+EVERY_SECTION: list[str] = []
+
+
 def brainways_ap(
     *,
-    sections: list[str] = [],  # noqa: B006
+    sections: list[str] = EVERY_SECTION,
     channel: str = "",
     write: list[str] | None = None,
     view: bool = False,
@@ -323,9 +321,7 @@ def run_brainways_ap(
     started = time.monotonic()
     device, net = _network(options)
     load_s = time.monotonic() - started
-    engine = Engine(
-        options, net, network.AtlasEmbeddings(net, reference), folder
-    )
+    engine = Engine(options, net, network.AtlasEmbeddings(net, reference), folder)
     proposals = [_propose(context, engine, sid, chosen[sid]) for sid in run]
     proposals.sort(key=lambda row: (row.position_mm, row.id))
 
@@ -345,8 +341,7 @@ def run_brainways_ap(
     clamped = _clamped(result)
     if clamped:
         reply["clamped"] = [
-            {"id": row.id, "asked_mm": row.proposed_mm, "used_mm": row.used_mm}
-            for row in clamped
+            {"id": row.id, "asked_mm": row.proposed_mm, "used_mm": row.used_mm} for row in clamped
         ]
     if not view and _positioning_on(context):
         reply["view"] = _view_note(written)
@@ -386,24 +381,18 @@ def _write_positions(
 ) -> WriteResult | None:
     if propose_only:
         return None
-    rows = [
-        {"id": row.id, "position_mm": row.position_mm} for row in proposals
-    ]
+    rows = [{"id": row.id, "position_mm": row.position_mm} for row in proposals]
     with context.writing():
         return context.set_positions(rows)
 
 
-def _sections_to_run(
-    context: ToolContext, sections: Sequence[str] | None
-) -> list[str]:
+def _sections_to_run(context: ToolContext, sections: Sequence[str] | None) -> list[str]:
     if sections:
         run = [context.section(name).id for name in sections]
     else:
         run = [view.id for view in context.sections()]
     if len(set(run)) != len(run):
-        raise ToolError(
-            RefusalCode.BAD_ARGS, "a section is named twice in sections"
-        )
+        raise ToolError(RefusalCode.BAD_ARGS, "a section is named twice in sections")
     return run
 
 
@@ -414,8 +403,7 @@ def _propose_only(write: Sequence[str] | None) -> bool:
     if unknown:
         raise ToolError(
             RefusalCode.BAD_ARGS,
-            f'write takes a list: ["positions"] or empty (writes nothing); '
-            f"got {unknown}",
+            f'write takes a list: ["positions"] or empty (writes nothing); got {unknown}',
         )
     return not write
 
@@ -427,8 +415,7 @@ def _channel_for(context: ToolContext, sid: str, channel: str) -> str:
     if channel and channel not in names:
         raise ToolError(
             RefusalCode.BAD_ARGS,
-            f"{sid} has no channel {channel!r}; its channels: "
-            f"{', '.join(names)}",
+            f"{sid} has no channel {channel!r}; its channels: {', '.join(names)}",
         )
     return channel or names[0]
 
@@ -481,13 +468,9 @@ def _network(options: Options) -> tuple[Device, network.Network]:
     return device, net
 
 
-def _propose(
-    context: ToolContext, engine: Engine, sid: str, channel: str
-) -> Proposal:
+def _propose(context: ToolContext, engine: Engine, sid: str, channel: str) -> Proposal:
     started = time.monotonic()
-    raster = context.section_raster(
-        sid, level=engine.options.long_edge, raw=True, images=[channel]
-    )
+    raster = context.section_raster(sid, level=engine.options.long_edge, raw=True, images=[channel])
     pixels = np.asarray(raster.array, np.uint8)[:, :, 0]
     name = sid if sid.lower().endswith(".png") else sid + ".png"
     path = engine.folder / "images" / name
@@ -586,10 +569,7 @@ def _positioning_on(context: ToolContext) -> bool:
 
 def _view_note(written: set[str]) -> str:
     if written:
-        return (
-            "The positioning view of look shows the sections at these "
-            "positions."
-        )
+        return "The positioning view of look shows the sections at these positions."
     return (
         "view true here draws the proposal; the positioning view of look "
         "shows the sections at their current positions."
@@ -611,9 +591,7 @@ def _pictures(
     proposal: dict[object, Mapping[str, object]] = {
         row.id: {"position_mm": row.position_mm} for row in proposals
     }
-    return context.positioning_picture(
-        [row.id for row in proposals], proposal=proposal
-    )
+    return context.positioning_picture([row.id for row in proposals], proposal=proposal)
 
 
 def _save_call(
@@ -639,9 +617,7 @@ def _save_call(
         "rows": table,
         "proposal": [asdict(row) for row in proposals],
     }
-    (folder / "rows.json").write_text(
-        json.dumps(rows, indent=1), encoding="utf-8", newline="\n"
-    )
+    (folder / "rows.json").write_text(json.dumps(rows, indent=1), encoding="utf-8", newline="\n")
 
 
 def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:

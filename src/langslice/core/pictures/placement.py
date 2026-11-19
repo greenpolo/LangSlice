@@ -71,11 +71,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 IDENTITY_KNOBS: dict[str, float] = {
-    "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-    "translate_x_mm": 0.0, "translate_y_mm": 0.0,
+    "rotation_deg": 0.0,
+    "scale_x": 1.0,
+    "scale_y": 1.0,
+    "translate_x_mm": 0.0,
+    "translate_y_mm": 0.0,
 }
 WARPED_PLACEMENT_MODES = ("overlay", "section")
-
 
 
 @dataclass(frozen=True)
@@ -121,13 +123,14 @@ class Canvas:
 
 
 def canvas_label(
-    label: str, options: DisplayOptions, state: Stack | None = None,
+    label: str,
+    options: DisplayOptions,
+    state: Stack | None = None,
 ) -> str:
     """A physical picture's caption head: what of the section (with *state*,
     the raw channels' display properties), and any atlas under it."""
     under = ""
-    if (options.atlas_images and options.atlas_opacity > 0
-            and MODE_RULES[options.mode].opacity):
+    if options.atlas_images and options.atlas_opacity > 0 and MODE_RULES[options.mode].opacity:
         under = f"  atlas {options.atlas_name()} under at {options.atlas_opacity:g}"
     return label + options.section_tag(state) + under
 
@@ -168,20 +171,38 @@ def draw_canvas(
         from dataclasses import replace
 
         whole = draw_canvas(
-            ws, state, record, section, um_per_px, position, params,
-            replace(options, zoom=()), mode=mode, pivot=pivot,
-            section_offset=section_offset, label=label, long_edge=long_edge,
-            matrix_label=matrix_label, warp_record=warp_record,
+            ws,
+            state,
+            record,
+            section,
+            um_per_px,
+            position,
+            params,
+            replace(options, zoom=()),
+            mode=mode,
+            pivot=pivot,
+            section_offset=section_offset,
+            label=label,
+            long_edge=long_edge,
+            matrix_label=matrix_label,
+            warp_record=warp_record,
         )
         x0, y0, x1, y1 = whole.panels[0].content_box
         window = options.window((x1 - x0, y1 - y0))
-    span = (min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
-            if window else 1.0)
+    span = (
+        min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
+        if window
+        else 1.0
+    )
     render_edge = int(math.ceil(edge / span))
     if render_edge > PREVIEW_LONG_EDGE:
         render_edge = min(render_edge, max(ws.working_source(record.id)[0].size))
     shown, shown_um, (fx, fy) = shown_section(
-        ws, record, section, um_per_px, options.look(state, record),
+        ws,
+        record,
+        section,
+        um_per_px,
+        options.look(state, record),
         long_edge=render_edge,
     )
     in_section: tuple[float, float] | None = None
@@ -192,13 +213,25 @@ def draw_canvas(
             ox, oy = section_offset
             in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
     frame = CanvasFrame(
-        section_id=record.id, section=shown, um_per_px=shown_um, position_mm=position,
-        plane=state.plane, pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, params=params,
-        pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-        warp=warp_record, zoom=window, long_edge=edge,
+        section_id=record.id,
+        section=shown,
+        um_per_px=shown_um,
+        position_mm=position,
+        plane=state.plane,
+        pitch_deg=record.pitch_deg,
+        yaw_deg=record.yaw_deg,
+        params=params,
+        pivot=pivot if in_section is None else None,
+        pivot_in_section=in_section,
+        warp=warp_record,
+        zoom=window,
+        long_edge=edge,
     )
-    detail = (_file_detail(ws, record, options.look(state, record), shown.size, warp_record)
-              if window else None)
+    detail = (
+        _file_detail(ws, record, options.look(state, record), shown.size, warp_record)
+        if window
+        else None
+    )
     if warp_record is not None:
         from langslice.core.fits.deformable import warp_section_image
 
@@ -206,31 +239,57 @@ def draw_canvas(
     panels: list[PanelFrame] = []
     drawn_mode = mode or options.mode
     images = physical_views(
-        shown, shown_um, ws.atlas, position, state.plane,
-        record.pitch_deg, record.yaw_deg, params,
-        mode=drawn_mode, zoom=window, zoom_pixels=options.zoom,
-        atlas_opacity=options.atlas_opacity, outlines=options.layer, depth=options.depth,
-        border_color=options.border_color, border_thickness=options.border_thickness,
-        pivot=frame.pivot, pivot_in_section=in_section,
+        shown,
+        shown_um,
+        ws.atlas,
+        position,
+        state.plane,
+        record.pitch_deg,
+        record.yaw_deg,
+        params,
+        mode=drawn_mode,
+        zoom=window,
+        zoom_pixels=options.zoom,
+        atlas_opacity=options.atlas_opacity,
+        outlines=options.layer,
+        depth=options.depth,
+        border_color=options.border_color,
+        border_thickness=options.border_thickness,
+        pivot=frame.pivot,
+        pivot_in_section=in_section,
         label=canvas_label(label or record.id, options, state)
-        + ("  uncalibrated" if ws.calibration(record.id)[0] is None else ""), long_edge=edge,
-        atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position,
-                                          angles=record.angles),
-        atlas_name=options.atlas_name(), regions=options.regions,
-        matrix_label=matrix_label, template_lines=options.borders, panel_frames=panels,
+        + ("  uncalibrated" if ws.calibration(record.id)[0] is None else ""),
+        long_edge=edge,
+        atlas_picture=atlas_image_picture(
+            ws, state, options.atlas_channels, position, angles=record.angles
+        ),
+        atlas_name=options.atlas_name(),
+        regions=options.regions,
+        matrix_label=matrix_label,
+        template_lines=options.borders,
+        panel_frames=panels,
         detail=detail,
     )
     applied = None
     if warp_record is not None and record.deformation is not None:
         applied = record.deformation.record
     for image, panel in zip(images, panels, strict=True):
-        note(image, sections=(record.id,), mode=drawn_mode, frame=frame, panel=panel,
-             deformation=applied)
+        note(
+            image,
+            sections=(record.id,),
+            mode=drawn_mode,
+            frame=frame,
+            panel=panel,
+            deformation=applied,
+        )
     return Canvas(images=images, frame=frame, panels=panels)
 
 
 def _file_detail(
-    ws: Workspace, record: Section, look: Look, size: tuple[int, int],
+    ws: Workspace,
+    record: Section,
+    look: Look,
+    size: tuple[int, int],
     warp_record: DeformableRecord | None,
 ) -> SectionDetail:
     """A zoom's section pixels from the image file
@@ -249,23 +308,24 @@ def _file_detail(
 
                 x, y = warp_source_points(warp_record, size, x, y)
             ux, uy = native.unoriented_points(x, y, size, record.rotation_deg, record.flip)
-            width, height = ((size[1], size[0]) if int(record.rotation_deg) % 180
-                             else size)
+            width, height = (size[1], size[0]) if int(record.rotation_deg) % 180 else size
             source, _factor = ws.working_source(record.id)
             wx = (ux + 0.5) * source.size[0] / float(width) - 0.5
             wy = (uy + 0.5) * source.size[1] / float(height) - 0.5
             found = native.section_pixels(ws, record, look, wx, wy)
         except Exception:
-            logger.warning("zoom of %s: the image file could not be read; drawn from its "
-                           "working copy", record.id, exc_info=True)
+            logger.warning(
+                "zoom of %s: the image file could not be read; drawn from its working copy",
+                record.id,
+                exc_info=True,
+            )
             return None
         return found.rgb, found.inside, found.enlarged
 
     return detail
 
 
-def transform_words(section: Section, kind: str, *, warp: bool = False,
-                    index: bool = False) -> str:
+def transform_words(section: Section, kind: str, *, warp: bool = False, index: bool = False) -> str:
     """The placement a picture of *section* is drawn under, for its caption:
     the transform's kind and, for a stored one, its knobs
     (:func:`langslice.core.pictures.canvas.knob_words`; in parentheses for the
@@ -277,8 +337,7 @@ def transform_words(section: Section, kind: str, *, warp: bool = False,
     if kind != "identity" and transform is not None and transform.physical is not None:
         knobs = physical_to_json(transform.physical)
     if knobs and all(key in knobs for key in IDENTITY_KNOBS):
-        words += (f" ({knob_words(knobs, ', ')})" if index
-                  else f" {knob_words(knobs)}")
+        words += f" ({knob_words(knobs, ', ')})" if index else f" {knob_words(knobs)}"
     return words + (" + deformation" if warp else "")
 
 
@@ -286,12 +345,14 @@ def orientation_words(record: Section) -> str:
     """The section's quarter turn and mirror for a caption (`` turned 90
     flipped``), empty when it has neither."""
     words = (f" turned {record.rotation_deg}" if record.rotation_deg else "") + (
-        " flipped" if record.flip else "")
+        " flipped" if record.flip else ""
+    )
     return words
 
 
 def stored_placement(
-    section: Section, rendered: Image.Image,
+    section: Section,
+    rendered: Image.Image,
 ) -> tuple[Any, str]:
     """``(params or matrix, kind)`` of the section's in-plane transform.
 
@@ -301,13 +362,14 @@ def stored_placement(
     """
     transform = section.transform
     if transform is not None and len(transform.params) == 6:
-        return (denormalized_affine(transform.params, rendered.size),
-                transform.kind or "stored")
+        return (denormalized_affine(transform.params, rendered.size), transform.kind or "stored")
     return dict(IDENTITY_KNOBS), "identity"
 
 
 def current_warp(
-    store: RecordStore, state: Stack, section: Section,
+    store: RecordStore,
+    state: Stack,
+    section: Section,
 ) -> DeformableRecord | None:
     """The section's applied deformation record from *store* (a
     :class:`~langslice.core.fits.deformation.RecordStore`), or None (none held,
@@ -319,7 +381,6 @@ def current_warp(
     except Exception:
         logger.warning("Deformation record unreadable for %s", section.id, exc_info=True)
         return None
-
 
 
 @dataclass
@@ -363,12 +424,23 @@ def placement_pictures(
     section, um_per_px, source = working[record.id]
     row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
     params, kind = stored_placement(record, section)
-    warp = (current_warp(store, state, record)
-            if store is not None and options.deformation == "applied"
-            and position == record.position_mm and options.mode in WARPED_PLACEMENT_MODES
-            else None)
+    warp = (
+        current_warp(store, state, record)
+        if store is not None
+        and options.deformation == "applied"
+        and position == record.position_mm
+        and options.mode in WARPED_PLACEMENT_MODES
+        else None
+    )
     canvas = draw_canvas(
-        ws, state, record, section, um_per_px, position, params, options,
+        ws,
+        state,
+        record,
+        section,
+        um_per_px,
+        position,
+        params,
+        options,
         label=f"{record.id}{orientation_words(record)}{label_note} vs atlas {position:.2f} mm",
         matrix_label=transform_words(record, kind, warp=warp is not None),
         warp_record=warp,
@@ -377,12 +449,14 @@ def placement_pictures(
     row["transform_words"] = transform_words(record, kind, index=True)
     if warp is not None:
         row["deformation_drawn"] = True
-    elif (options.mode in WARPED_PLACEMENT_MODES and record.deformation
-          and position == record.position_mm
-          and options.deformation == "applied"):
+    elif (
+        options.mode in WARPED_PLACEMENT_MODES
+        and record.deformation
+        and position == record.position_mm
+        and options.deformation == "applied"
+    ):
         row["deformation_drawn"] = False
     return Placed(images=canvas.images, row=row, canvas=canvas)
-
 
 
 @dataclass(frozen=True)
@@ -428,7 +502,11 @@ class Staged:
 
 
 def stage(
-    ws: Workspace, state: Stack, record: Section, params: dict[str, float], pivot: object,
+    ws: Workspace,
+    state: Stack,
+    record: Section,
+    params: dict[str, float],
+    pivot: object,
 ) -> Staged:
     """*record* with the knobs *params*, its working
     frame, calibration and canvas, and *pivot* ("canvas" or ``[fx, fy]``
@@ -451,8 +529,7 @@ def stage(
         )
     except Exception as exc:
         logger.warning("transform: atlas render failed for %s: %s", record.id, exc)
-        raise Refused(RefusalCode.ATLAS_RENDER_FAILED,
-                      message=str(exc)) from exc
+        raise Refused(RefusalCode.ATLAS_RENDER_FAILED, message=str(exc)) from exc
     try:
         point = pivot_on_canvas(pivot, geometry)
     except ValueError as exc:

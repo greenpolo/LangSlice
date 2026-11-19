@@ -102,18 +102,26 @@ class ImportedPlacement:
             "physical": self.placement.physical(),
             "in_plane": parts,
             "mirrored": mirrored,
-            "calibration": {"section_um_per_px": self.placement.render_um_per_px,
-                            "source": self.pixel_size_source},
+            "calibration": {
+                "section_um_per_px": self.placement.render_um_per_px,
+                "source": self.pixel_size_source,
+            },
             "note": f"imported from {self.source_filename}",
         }
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "section_id": self.section_id, "source_filename": self.source_filename,
-            "match": self.match, "nr": self.nr, **self.placement.to_dict(),
-            "pixel_size_um": self.pixel_size_um, "pixel_size_source": self.pixel_size_source,
-            "pixel_to_atlas_um": self.pixel_to_atlas_um.tolist(), "markers": self.markers,
-            "markers_raw": self.markers_raw, "problems": list(self.problems),
+            "section_id": self.section_id,
+            "source_filename": self.source_filename,
+            "match": self.match,
+            "nr": self.nr,
+            **self.placement.to_dict(),
+            "pixel_size_um": self.pixel_size_um,
+            "pixel_size_source": self.pixel_size_source,
+            "pixel_to_atlas_um": self.pixel_to_atlas_um.tolist(),
+            "markers": self.markers,
+            "markers_raw": self.markers_raw,
+            "problems": list(self.problems),
         }
 
 
@@ -131,29 +139,36 @@ class ImportResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "path": self.source.path, "format": self.source.format,
-            "target": self.source.target, "aligner": self.source.aligner,
+            "path": self.source.path,
+            "format": self.source.format,
+            "target": self.source.target,
+            "aligner": self.source.aligner,
             "notes": list(self.source.notes),
             "placements": [placement.to_dict() for placement in self.placements],
-            "unmatched": list(self.unmatched), "missing": list(self.missing),
-            "refused": dict(self.refused), "pixel_size_um": self.pixel_size_um,
+            "unmatched": list(self.unmatched),
+            "missing": list(self.missing),
+            "refused": dict(self.refused),
+            "pixel_size_um": self.pixel_size_um,
             "pixel_size_source": self.pixel_size_source,
         }
 
 
-
-def _fraction_map_from_anchoring(anchoring: Sequence[float], atlas: dict[str, Any],
-                                 ) -> np.ndarray:
+def _fraction_map_from_anchoring(
+    anchoring: Sequence[float],
+    atlas: dict[str, Any],
+) -> np.ndarray:
     """3x3: ``[fy, fx, 1]`` (fractions of the image's height and width from
     its top-left corner) -> atlas micrometres, for an anchoring already on
     the atlas's own voxel grid."""
-    o, u, v = (np.asarray(anchoring[i:i + 3], dtype=np.float64) for i in (0, 3, 6))
+    o, u, v = (np.asarray(anchoring[i : i + 3], dtype=np.float64) for i in (0, 3, 6))
     corner, right, down = quicknii_points_to_atlas_um(np.stack([o, o + u, o + v]), atlas)
     return np.column_stack([down - corner, right - corner, corner])
 
 
-def _fraction_map_from_pixels(pixel_to_atlas_um: np.ndarray, size: tuple[int, int],
-                              ) -> np.ndarray:
+def _fraction_map_from_pixels(
+    pixel_to_atlas_um: np.ndarray,
+    size: tuple[int, int],
+) -> np.ndarray:
     width, height = float(size[0]), float(size[1])
     to_pixels = np.array([[height, 0.0, -0.5], [0.0, width, -0.5], [0.0, 0.0, 1.0]])
     return np.asarray(pixel_to_atlas_um, dtype=np.float64) @ to_pixels
@@ -163,13 +178,15 @@ def pixel_map_on(fraction_map: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     """The fraction map on the pixels of an image of *size* (width, height):
     ``[row, col, 1]`` (centres at integers) -> atlas micrometres."""
     width, height = float(size[0]), float(size[1])
-    to_fractions = np.array([[1.0 / height, 0.0, 0.5 / height],
-                             [0.0, 1.0 / width, 0.5 / width], [0.0, 0.0, 1.0]])
+    to_fractions = np.array(
+        [[1.0 / height, 0.0, 0.5 / height], [0.0, 1.0 / width, 0.5 / width], [0.0, 0.0, 1.0]]
+    )
     return fraction_map @ to_fractions
 
 
-def _entry_fraction_map(source: RegistrationFile, entry: RegistrationEntry,
-                        atlas: dict[str, Any], target: str | None) -> np.ndarray:
+def _entry_fraction_map(
+    source: RegistrationFile, entry: RegistrationEntry, atlas: dict[str, Any], target: str | None
+) -> np.ndarray:
     """The entry's placement as a fraction map in the job atlas's micrometres
     (``ValueError`` when it cannot be read into that atlas)."""
     job_target = quicknii_target(str(atlas["name"]))
@@ -183,25 +200,33 @@ def _entry_fraction_map(source: RegistrationFile, entry: RegistrationEntry,
             raise ValueError("registration.json does not describe its atlas")
         held_target = quicknii_target(str(held["name"]))
         if held_target != job_target:
-            raise ValueError(f"registered to {held['name']}, which has no common QuickNII "
-                             f"target with the job's atlas {atlas['name']}")
+            raise ValueError(
+                f"registered to {held['name']}, which has no common QuickNII "
+                f"target with the job's atlas {atlas['name']}"
+            )
         vector = to_target_grid(
-            anchoring_from_pixel_map(entry.pixel_to_atlas_um, entry.size[0], entry.size[1],
-                                     held), str(held["name"]), held["resolution_um"])
+            anchoring_from_pixel_map(entry.pixel_to_atlas_um, entry.size[0], entry.size[1], held),
+            str(held["name"]),
+            held["resolution_um"],
+        )
         anchoring: Sequence[float] = vector.to_list()
     else:
         if entry.anchoring is None:
             raise ValueError(entry.problem or "no anchoring")
         if target is not None and target != job_target:
-            raise ValueError(f"registered to the target {target}; the job's atlas "
-                             f"{atlas['name']} is exported to {job_target}")
+            raise ValueError(
+                f"registered to the target {target}; the job's atlas "
+                f"{atlas['name']} is exported to {job_target}"
+            )
         anchoring = entry.anchoring
     on_grid = from_target_grid(anchoring, str(atlas["name"]), atlas["resolution_um"])
     return _fraction_map_from_anchoring(on_grid, atlas)
 
 
-def _scaled_markers(entry: RegistrationEntry, file_size: tuple[int, int],
-                    ) -> list[list[float]] | None:
+def _scaled_markers(
+    entry: RegistrationEntry,
+    file_size: tuple[int, int],
+) -> list[list[float]] | None:
     if not entry.markers:
         return None
     if entry.size is None:
@@ -244,8 +269,7 @@ def import_placements(
         raise ValueError(f"registered_on is 'file' or 'oriented'; got {registered_on!r}")
     held = source if isinstance(source, RegistrationFile) else read_registration(source)
     if section_ids is None:
-        section_ids = [os.path.basename(path)
-                       for path in discover_slices(workspace.image_folder)]
+        section_ids = [os.path.basename(path) for path in discover_slices(workspace.image_folder)]
     ids = list(section_ids)
     names = [entry.filename for entry in held.entries]
     matched = match_sections(names, ids)
@@ -253,7 +277,8 @@ def import_placements(
     atlas = atlas_facts(atlas_object)
     plane = workspace.settings.plane
     file_target = held.target or (
-        DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None)
+        DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None
+    )
 
     refused: dict[str, str] = {}
     prepared: list[tuple[int, str, str, Any, np.ndarray, list[str]]] = []
@@ -266,10 +291,16 @@ def import_placements(
         except (OSError, ValueError) as exc:
             refused[section_id] = str(exc)
             continue
-        turn = (orientations or {}).get(section_id, (0, False)) if registered_on == "oriented" \
+        turn = (
+            (orientations or {}).get(section_id, (0, False))
+            if registered_on == "oriented"
             else (0, False)
-        shown = (sizes.file_size[1], sizes.file_size[0]) if int(turn[0]) % 180 == 90 \
+        )
+        shown = (
+            (sizes.file_size[1], sizes.file_size[0])
+            if int(turn[0]) % 180 == 90
             else sizes.file_size
+        )
         if entry.size is not None:
             registered = entry.size[0] / float(entry.size[1])
             here = shown[0] / float(shown[1])
@@ -277,11 +308,16 @@ def import_placements(
                 problems.append(
                     f"registered on a {entry.size[0]} x {entry.size[1]} image, the file is "
                     f"{shown[0]} x {shown[1]}: placed by the same "
-                    "fractions of width and height")
+                    "fractions of width and height"
+                )
         matrix = pixel_map_on(fractions, shown)
         if registered_on == "oriented":
-            matrix = matrix @ SWAP @ orientation_matrix(sizes.file_size, int(turn[0]),
-                                                        bool(turn[1])) @ SWAP
+            matrix = (
+                matrix
+                @ SWAP
+                @ orientation_matrix(sizes.file_size, int(turn[0]), bool(turn[1]))
+                @ SWAP
+            )
         prepared.append((index, section_id, rule, sizes, matrix, problems))
 
     implied = [implied_pixel_size_um(matrix) for *_rest, matrix, _p in prepared]
@@ -291,11 +327,7 @@ def import_placements(
     if known and all(value is not None for value, _source in known.values()):
         sources = {source for _value, source in known.values()}
         stack_source = sources.pop() if len(sources) == 1 else "file"
-        values = {
-            float(value)
-            for value, _source in known.values()
-            if value is not None
-        }
+        values = {float(value) for value, _source in known.values() if value is not None}
         stack_size = values.pop() if len(values) == 1 else None
 
     placements: list[ImportedPlacement] = []
@@ -307,36 +339,55 @@ def import_placements(
             value, source_name = stack_size, "imported"
         try:
             placement = placement_from_pixel_map(
-                matrix, atlas=atlas_object, plane=plane, sizes=sizes,
+                matrix,
+                atlas=atlas_object,
+                plane=plane,
+                sizes=sizes,
                 file_um_per_px=float(value),
                 orientation=(orientations or {}).get(section_id),
-                at=(planes or {}).get(section_id))
+                at=(planes or {}).get(section_id),
+            )
         except ValueError as exc:
             refused[section_id] = str(exc)
             continue
         if placement.out_of_plane_um > 1e-3:
             problems.append(
                 f"drawn {placement.out_of_plane_um:.2f} um from the registered plane (a flat "
-                "plane is drawn at the nearest voxel)")
+                "plane is drawn at the nearest voxel)"
+            )
         markers = _scaled_markers(entry, sizes.file_size)
         if entry.markers and markers is None:
             problems.append("VisuAlign markers without the registered image size: kept raw")
-        placements.append(ImportedPlacement(
-            section_id=section_id, source_filename=entry.filename, match=rule, nr=entry.nr,
-            placement=placement, pixel_size_um=float(value), pixel_size_source=source_name,
-            pixel_to_atlas_um=matrix, markers=markers, markers_raw=list(entry.markers),
-            problems=problems))
+        placements.append(
+            ImportedPlacement(
+                section_id=section_id,
+                source_filename=entry.filename,
+                match=rule,
+                nr=entry.nr,
+                placement=placement,
+                pixel_size_um=float(value),
+                pixel_size_source=source_name,
+                pixel_to_atlas_um=matrix,
+                markers=markers,
+                markers_raw=list(entry.markers),
+                problems=problems,
+            )
+        )
     return ImportResult(
-        source=held, placements=placements,
+        source=held,
+        placements=placements,
         unmatched=[name for index, name in enumerate(names) if index not in matched],
         missing=[sid for sid in ids if sid not in {s for s, _r in matched.values()}],
-        refused=refused, pixel_size_um=stack_size, pixel_size_source=stack_source,
+        refused=refused,
+        pixel_size_um=stack_size,
+        pixel_size_source=stack_source,
     )
 
 
 MARKERS_NOT_IMPORTED = (
     "The file's VisuAlign nonlinear markers ({count} section(s)) were not imported: "
-    "only its linear registration is. LangSlice's nonlinear step replaces them.")
+    "only its linear registration is. LangSlice's nonlinear step replaces them."
+)
 
 
 @dataclass(frozen=True)
@@ -387,39 +438,50 @@ def registration_inputs(
     host_size = bool(workspace.settings.supplied_pixel_size)
     pixel_size: float | None = None
     overridden: list[str] = []
-    if not host_size and result.pixel_size_source == "imported" \
-            and result.pixel_size_um is not None:
+    if (
+        not host_size
+        and result.pixel_size_source == "imported"
+        and result.pixel_size_um is not None
+    ):
         pixel_size = float(result.pixel_size_um)
-        overridden = [p.section_id for p in result.placements
-                      if p.pixel_size_source != "imported"]
+        overridden = [p.section_id for p in result.placements if p.pixel_size_source != "imported"]
         if overridden:
             fixed = replace(
-                workspace.settings, supplied_pixel_size=pixel_size,
-                stack_pixel_size_um=pixel_size, file_pixel_sizes_um={})
-            again = Plain(settings=fixed, image_folder=workspace.image_folder,
-                          emit=workspace.emit, atlas_loader=workspace.atlas_loader)
+                workspace.settings,
+                supplied_pixel_size=pixel_size,
+                stack_pixel_size_um=pixel_size,
+                file_pixel_sizes_um={},
+            )
+            again = Plain(
+                settings=fixed,
+                image_folder=workspace.image_folder,
+                emit=workspace.emit,
+                atlas_loader=workspace.atlas_loader,
+            )
             result = import_placements(held, again)
     if not result.placements:
         reasons = "; ".join(f"{name}: {why}" for name, why in result.refused.items())
         raise ValueError(
             f"No section could be placed from {held.path} ({held.format}): "
-            + (reasons or "no entry names a section image here "
-               f"(entries: {result.unmatched[:5]})"))
+            + (reasons or f"no entry names a section image here (entries: {result.unmatched[:5]})")
+        )
 
     placements = result.placements
     pitches = [p.pitch_deg for p in placements]
     yaws = [p.yaw_deg for p in placements]
-    if max(pitches) - min(pitches) <= ANGLE_EPSILON_DEG \
-            and max(yaws) - min(yaws) <= ANGLE_EPSILON_DEG:
-        angles: dict[str, Any] = {"pitch": float(np.median(pitches)),
-                                  "yaw": float(np.median(yaws))}
+    if (
+        max(pitches) - min(pitches) <= ANGLE_EPSILON_DEG
+        and max(yaws) - min(yaws) <= ANGLE_EPSILON_DEG
+    ):
+        angles: dict[str, Any] = {"pitch": float(np.median(pitches)), "yaw": float(np.median(yaws))}
     else:
         angles = {p.section_id: {"pitch": p.pitch_deg, "yaw": p.yaw_deg} for p in placements}
     inputs: dict[str, Any] = {
         "positions": {p.section_id: p.position_mm for p in placements},
         "angles": angles,
-        "orientation": {p.section_id: {"flip": p.flip, "rotation_deg": p.rotation_deg}
-                        for p in placements},
+        "orientation": {
+            p.section_id: {"flip": p.flip, "rotation_deg": p.rotation_deg} for p in placements
+        },
         "transforms": {p.section_id: p.transform() for p in placements},
     }
     if pixel_size is not None:
@@ -429,11 +491,13 @@ def registration_inputs(
     if result.unmatched:
         warnings.append(
             f"{_plural(len(result.unmatched), 'entry', 'entries')} in the file match no "
-            f"section image and were ignored: {result.unmatched}")
+            f"section image and were ignored: {result.unmatched}"
+        )
     if result.missing:
         warnings.append(
             f"{_plural(len(result.missing), 'section has', 'sections have')} no entry in "
-            f"the file and no placement: {result.missing}")
+            f"the file and no placement: {result.missing}"
+        )
     for section_id, why in result.refused.items():
         warnings.append(f"{section_id}: not imported ({why})")
     for placement in placements:
@@ -446,18 +510,29 @@ def registration_inputs(
             f"No pixel size was given{' for every file' if overridden else ''}: the job "
             f"maps the sections at {pixel_size:.6g} um per pixel, the size the imported "
             "registration implies (the placements hold at it)."
-            + (f" The files' own sizes of {overridden} are replaced by it." if overridden
-               else ""))
+            + (f" The files' own sizes of {overridden} are replaced by it." if overridden else "")
+        )
     report = {
-        "path": held.path, "format": held.format, "target": held.target or (
-            DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None),
+        "path": held.path,
+        "format": held.format,
+        "target": held.target
+        or (DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None),
         "aligner": held.aligner,
-        "sections": [{
-            "id": p.section_id, "entry": p.source_filename, "match": p.match,
-            "position_mm": p.position_mm, "pitch_deg": p.pitch_deg, "yaw_deg": p.yaw_deg,
-            "rotation_deg": p.rotation_deg, "flip": p.flip,
-        } for p in placements],
-        "unmatched": list(result.unmatched), "missing": list(result.missing),
+        "sections": [
+            {
+                "id": p.section_id,
+                "entry": p.source_filename,
+                "match": p.match,
+                "position_mm": p.position_mm,
+                "pitch_deg": p.pitch_deg,
+                "yaw_deg": p.yaw_deg,
+                "rotation_deg": p.rotation_deg,
+                "flip": p.flip,
+            }
+            for p in placements
+        ],
+        "unmatched": list(result.unmatched),
+        "missing": list(result.missing),
         "refused": dict(result.refused),
         "pixel_size_um": pixel_size if pixel_size is not None else result.pixel_size_um,
         "pixel_size_source": "imported" if pixel_size is not None else result.pixel_size_source,

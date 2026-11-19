@@ -48,8 +48,8 @@ def step_settings(step: JsonObject) -> dict[str, Any]:
     if isinstance(given, Mapping):
         return dict(given)
     out: dict[str, Any] = {
-        _STEP_NAMES.get(key, key): value for key, value in step.items()
-        if key not in _STEP_FACTS}
+        _STEP_NAMES.get(key, key): value for key, value in step.items() if key not in _STEP_FACTS
+    }
     include = step.get("include")
     if include and isinstance(include, Sequence):
         out["restrict_to"] = list(include)
@@ -66,8 +66,11 @@ def deformation_entry(deformation: DeformationRef | None) -> dict[str, Any] | No
     steps = deformation.steps
     if not steps:
         return {"method": "unknown", "steps": [], "settings": {}}
-    return {"method": step_method(steps[-1]), "steps": [step_method(s) for s in steps],
-            "settings": step_settings(steps[-1])}
+    return {
+        "method": step_method(steps[-1]),
+        "steps": [step_method(s) for s in steps],
+        "settings": step_settings(steps[-1]),
+    }
 
 
 def transform_entry(transform: StoredAffine | None) -> dict[str, Any] | None:
@@ -147,12 +150,27 @@ def status_rows(state: Stack) -> list[dict[str, Any]]:
                 "damaged_regions": list(section.damaged_regions),
                 "damage_note": section.damage_note,
                 "transform": transform_entry(section.transform),
-                **({"deformation": deformation_entry(section.deformation)}
-                   if section.deformation else {}),
+                **(
+                    {"deformation": deformation_entry(section.deformation)}
+                    if section.deformation
+                    else {}
+                ),
                 **({"landmarks": counts} if (counts := landmark_counts(state, section)) else {}),
-                **({"layers": [{"name": ref.name, "kind": ref.kind,
-                                "frame": ref.frame, "tool": ref.tool}
-                               for ref in section.layers]} if section.layers else {}),
+                **(
+                    {
+                        "layers": [
+                            {
+                                "name": ref.name,
+                                "kind": ref.kind,
+                                "frame": ref.frame,
+                                "tool": ref.tool,
+                            }
+                            for ref in section.layers
+                        ]
+                    }
+                    if section.layers
+                    else {}
+                ),
                 **({"masks": mask_rows(state, section)} if section.masks else {}),
                 "caveats": list(section.caveats),
             }
@@ -161,14 +179,30 @@ def status_rows(state: Stack) -> list[dict[str, Any]]:
 
 
 ROW_FIELDS: tuple[str, ...] = (
-    "id", "position_mm", "position_source", "delta_to_next_mm", "flip",
+    "id",
+    "position_mm",
+    "position_source",
+    "delta_to_next_mm",
+    "flip",
     "rotation_deg",
-    "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
-    "deformation", "landmarks", "caveats",
-    "frozen", "damage_by_user", "registration",
+    "cutting_angles_deg",
+    "damaged",
+    "damaged_regions",
+    "damage_note",
+    "transform",
+    "deformation",
+    "landmarks",
+    "caveats",
+    "frozen",
+    "damage_by_user",
+    "registration",
 )
-ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "frozen": [],
-                                "damage_by_user": False}
+ROW_DEFAULTS: dict[str, Any] = {
+    "caveats": [],
+    "damaged_regions": [],
+    "frozen": [],
+    "damage_by_user": False,
+}
 ROW_KEYS: tuple[str, ...] = ("rows", "changed")
 
 
@@ -179,14 +213,17 @@ def uniform_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     read any field of any row (the last section's ``delta_to_next_mm`` is
     null, not missing)."""
     extra = list(dict.fromkeys(key for row in rows for key in row if key not in ROW_FIELDS))
+
     def filled(row: dict[str, Any], key: str) -> Any:
         if key in row:
             return row[key]
         default = ROW_DEFAULTS.get(key)
         return list(default) if isinstance(default, list) else default
 
-    return [{**{key: filled(row, key) for key in ROW_FIELDS},
-             **{key: row.get(key) for key in extra}} for row in rows]
+    return [
+        {**{key: filled(row, key) for key in ROW_FIELDS}, **{key: row.get(key) for key in extra}}
+        for row in rows
+    ]
 
 
 def with_uniform_rows(reply: Any) -> Any:
@@ -195,8 +232,10 @@ def with_uniform_rows(reply: Any) -> Any:
     reads (the agent CLI, the library)."""
     if not isinstance(reply, dict):
         return reply
-    return {key: uniform_rows(value) if key in ROW_KEYS and _status_rows(value) else value
-            for key, value in reply.items()}
+    return {
+        key: uniform_rows(value) if key in ROW_KEYS and _status_rows(value) else value
+        for key, value in reply.items()
+    }
 
 
 def _status_rows(value: Any) -> bool:
@@ -205,7 +244,8 @@ def _status_rows(value: Any) -> bool:
     not)."""
     fields = {*ROW_FIELDS, "layers", "masks"}
     return isinstance(value, list) and all(
-        isinstance(row, dict) and set(row) <= fields for row in value)
+        isinstance(row, dict) and set(row) <= fields for row in value
+    )
 
 
 def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -215,10 +255,7 @@ def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     would be a large share of the text a model pays for. Absent means null;
     ``status_text`` keeps the full rows.
     """
-    return [
-        {k: v for k, v in row.items() if v is not None and v != [] and v != ""}
-        for row in rows
-    ]
+    return [{k: v for k, v in row.items() if v is not None and v != [] and v != ""} for row in rows]
 
 
 def status_text(state: Stack) -> str:
@@ -241,9 +278,7 @@ def status_text(state: Stack) -> str:
         position = f"{row['position_mm']:.3f} mm"
         if row["position_source"] == INITIAL:
             position += " (initial)"
-        delta = (
-            "-" if row["delta_to_next_mm"] is None else f"{row['delta_to_next_mm']:.3f}"
-        )
+        delta = "-" if row["delta_to_next_mm"] is None else f"{row['delta_to_next_mm']:.3f}"
         transform = ""
         held = row["transform"]
         if held:

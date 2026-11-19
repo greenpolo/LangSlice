@@ -20,8 +20,7 @@ def add_note(job: Job, text: str) -> list[str]:
     if not cleaned:
         raise Refused(
             RefusalCode.BAD_ARGS,
-            "A note is a line of text; this one is empty, so "
-            "nothing was written.",
+            "A note is a line of text; this one is empty, so nothing was written.",
         )
     before = job.snapshot()
     job.state.notes.append(cleaned)

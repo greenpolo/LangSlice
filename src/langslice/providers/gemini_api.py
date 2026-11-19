@@ -67,8 +67,7 @@ def get_backend() -> str:
     """The authentication backend for the google-genai client."""
     backend = read_env("LANGSLICE_GENAI_BACKEND")
     if backend is None:
-        return _BACKEND_VERTEX_ADC if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") \
-            else _BACKEND_AI_STUDIO
+        return _BACKEND_VERTEX_ADC if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") else _BACKEND_AI_STUDIO
     normalized = backend.lower()
     if normalized not in _VALID_BACKENDS:
         allowed = ", ".join(sorted(_VALID_BACKENDS))
@@ -141,10 +140,12 @@ def get_client() -> GenAIClientProtocol:
     elif backend == _BACKEND_VERTEX_API_KEY:
         _client_instance = client_cls(vertexai=True, api_key=get_api_key())
     else:
-        logger.info("Using Vertex ADC auth (project=%s, location=%s)",
-                    _vertex_project(), _vertex_location())
-        _client_instance = client_cls(vertexai=True, project=_vertex_project(),
-                                      location=_vertex_location())
+        logger.info(
+            "Using Vertex ADC auth (project=%s, location=%s)", _vertex_project(), _vertex_location()
+        )
+        _client_instance = client_cls(
+            vertexai=True, project=_vertex_project(), location=_vertex_location()
+        )
     return _client_instance
 
 

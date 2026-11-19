@@ -164,9 +164,7 @@ def check_atlas(name: str, orientation: str, plane: str) -> None:
         Saying what ABBA cannot open.
     """
     if name not in ABBA_ATLASES or orientation not in ABBA_ORIENTATIONS:
-        raise ValueError(
-            f"ABBA's Allen CCFv3 atlas cannot hold a registration to {name}"
-        )
+        raise ValueError(f"ABBA's Allen CCFv3 atlas cannot hold a registration to {name}")
     if plane not in ABBA_PLANES:
         raise ValueError(f"ABBA opens coronal sections only, not {plane}")
 
@@ -176,9 +174,7 @@ def _planar(matrix: np.ndarray) -> np.ndarray:
     return np.vstack([matrix[:2], [0.0, 0.0, 1.0]])
 
 
-def abba_placement(
-    frame: SectionFrame, rotation_x: float, rotation_y: float
-) -> AbbaPlacement:
+def abba_placement(frame: SectionFrame, rotation_x: float, rotation_y: float) -> AbbaPlacement:
     """Carry a section's linear placement into ABBA's world.
 
     Parameters

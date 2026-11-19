@@ -81,14 +81,15 @@ def grep_atlas_tool(
     dict
         ``status`` and what :func:`search_regions` finds.
     """
-    matches = search_regions(
-        run.job, run.workspace, query, section, as_list(points)
-    )
+    matches = search_regions(run.job, run.workspace, query, section, as_list(points))
     return {"status": "ok", **matches}
 
 
 def search_regions(
-    job: Job, workspace: Workspace, query: str = "", section: object = "",
+    job: Job,
+    workspace: Workspace,
+    query: str = "",
+    section: object = "",
     points: Sequence[Mapping[str, float]] = (),
 ) -> dict[str, Any]:
     """Regions whose acronym or name matches *query*
@@ -108,8 +109,7 @@ def search_regions(
     """
     text = str(query).strip()
     if not text and not points:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="Empty query: give a query, points, or both.")
+        raise Refused(RefusalCode.BAD_ARGS, message="Empty query: give a query, points, or both.")
     found = region_at_points(job, workspace, points) if points else None
     if not text:
         return {"points": found}
@@ -122,16 +122,14 @@ def search_regions(
 def _grep_regions(job: Job, workspace: Workspace, text: str, section: object) -> dict[str, Any]:
     entries = list(structure_table(workspace.atlas).values())
     if not entries:
-        raise Refused(RefusalCode.NO_STRUCTURES,
-                      message="This atlas has no region hierarchy.")
+        raise Refused(RefusalCode.NO_STRUCTURES, message="This atlas has no region hierarchy.")
     state = job.state
     present: set[int] | None = None
     if section != "":
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [section])
-        present = plane_structure_ids(state, workspace, record.position_mm,
-                                      record.angles)
+        present = plane_structure_ids(state, workspace, record.position_mm, record.angles)
     rows, total = grep_structures(entries, text, present, limit=GREP_ATLAS_LIMIT)
     result: dict[str, Any] = {"query": text, "matches": total, "rows": rows}
     if total > len(rows):
@@ -159,9 +157,13 @@ def plane_annotation(workspace: Workspace, plane: dict[str, Any]) -> np.ndarray:
     from langslice.core.atlas.borders import annotation_slice
 
     angles = plane.get("angles") or [0, 0]
-    return annotation_slice(workspace.atlas, float(plane["position_mm"]),
-                            plane=plane["plane"], pitch_deg=float(angles[0]),
-                            yaw_deg=float(angles[1]))
+    return annotation_slice(
+        workspace.atlas,
+        float(plane["position_mm"]),
+        plane=plane["plane"],
+        pitch_deg=float(angles[0]),
+        yaw_deg=float(angles[1]),
+    )
 
 
 def label_at(annotation: np.ndarray, native_xy: Sequence[float] | np.ndarray) -> int | None:
@@ -192,8 +194,9 @@ def _chain(table: dict[int, Any], region_id: int) -> list[str]:
     return out[:MAX_CHAIN]
 
 
-def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[str, float]]
-                     ) -> list[dict[str, Any]]:
+def region_at_points(
+    job: Job, workspace: Workspace, points: Sequence[Mapping[str, float]]
+) -> list[dict[str, Any]]:
     """The atlas region drawn at each of *points* (``{picture, x, y}``) of saved
     pictures, one row each: ``region`` (acronym, name, id) and ``within`` (the
     regions containing it, nearest first), or ``region`` null with the reason
@@ -207,16 +210,19 @@ def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[st
 
     structures = structure_table(workspace.atlas)
     if not structures:
-        raise Refused(RefusalCode.NO_STRUCTURES,
-                      message="This atlas has no region hierarchy.")
-    if (isinstance(points, (str, bytes)) or not isinstance(points, Sequence)
-            or any(not isinstance(p, dict) for p in points)):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="points is a list of {picture, x, y} objects.")
+        raise Refused(RefusalCode.NO_STRUCTURES, message="This atlas has no region hierarchy.")
+    if (
+        isinstance(points, (str, bytes))
+        or not isinstance(points, Sequence)
+        or any(not isinstance(p, dict) for p in points)
+    ):
+        raise Refused(RefusalCode.BAD_ARGS, message="points is a list of {picture, x, y} objects.")
     if len(points) > MAX_POINTS:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message=f"At most {MAX_POINTS} points per call; you sent "
-                      f"{len(points)}. Send them in calls of {MAX_POINTS} or fewer.")
+        raise Refused(
+            RefusalCode.BAD_ARGS,
+            message=f"At most {MAX_POINTS} points per call; you sent "
+            f"{len(points)}. Send them in calls of {MAX_POINTS} or fewer.",
+        )
     job.views.flush()
     layers: dict[int, Any] = {}
     rows: list[dict[str, Any]] = []
@@ -225,19 +231,27 @@ def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[st
         try:
             seq, x, y = int(point["picture"]), float(point["x"]), float(point["y"])
         except (KeyError, TypeError, ValueError):
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message=f"{here}: a point needs picture (a saved picture "
-                          "number), x and y in pixels.") from None
+            raise Refused(
+                RefusalCode.BAD_ARGS,
+                message=f"{here}: a point needs picture (a saved picture "
+                "number), x and y in pixels.",
+            ) from None
         if set(point) - {"picture", "x", "y"} or isinstance(point["picture"], bool):
-            raise Refused(RefusalCode.BAD_ARGS,
-                          message=f"{here}: a point is picture, x and y only.")
+            raise Refused(
+                RefusalCode.BAD_ARGS, message=f"{here}: a point is picture, x and y only."
+            )
         record = job.views.lookup(seq)
         if record is None:
-            raise Refused(RefusalCode.UNKNOWN_PICTURE, picture=seq,
-                          message=render(
-                              f"{here}: there is no saved picture {seq}. Use "
-                              "the picture number a look[[?zoom  or zoom]] "
-                              "reply gave.", job.spec.switched_off))
+            raise Refused(
+                RefusalCode.UNKNOWN_PICTURE,
+                picture=seq,
+                message=render(
+                    f"{here}: there is no saved picture {seq}. Use "
+                    "the picture number a look[[?zoom  or zoom]] "
+                    "reply gave.",
+                    job.spec.switched_off,
+                ),
+            )
         recipe = record.recipe or {}
         row: dict[str, Any] = {"picture": seq, "x": x, "y": y}
         if recipe.get("renderer") == zooms.CROP_RENDERER:
@@ -253,14 +267,24 @@ def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[st
         label = None
         if labels is not None:
             r, c = int(np.rint(py)), int(np.rint(px))
-            on_image = 0 <= r < labels.shape[0] and 0 <= c < labels.shape[1] and (
-                not panels or any(b[0] <= px < b[2] and b[1] <= py < b[3]
-                                  for b in (p["bounds"] for p in panels)))
+            on_image = (
+                0 <= r < labels.shape[0]
+                and 0 <= c < labels.shape[1]
+                and (
+                    not panels
+                    or any(
+                        b[0] <= px < b[2] and b[1] <= py < b[3]
+                        for b in (p["bounds"] for p in panels)
+                    )
+                )
+            )
             label = int(labels[r, c]) if on_image else None
             if not on_image:
                 row["region"] = None
-                row["note"] = (f"({x:g}, {y:g}) is outside the image content of picture {seq} "
-                               "(a caption, a margin or off the picture).")
+                row["note"] = (
+                    f"({x:g}, {y:g}) is outside the image content of picture {seq} "
+                    "(a caption, a margin or off the picture)."
+                )
         else:
             label = _plane_label(workspace, recipe, px, py, seq, record.mode)
         if "region" not in row:
@@ -271,15 +295,19 @@ def region_at_points(job: Job, workspace: Workspace, points: Sequence[Mapping[st
             elif entry is None:
                 row["region"] = {"id": label}
             else:
-                row["region"] = {"acronym": str(entry["acronym"]), "name": str(entry["name"]),
-                                 "id": int(label)}
+                row["region"] = {
+                    "acronym": str(entry["acronym"]),
+                    "name": str(entry["name"]),
+                    "id": int(label),
+                }
                 row["within"] = _chain(structures, int(label))
         rows.append(row)
     return rows
 
 
-def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: float,
-                 seq: int, mode: str | None) -> int | None:
+def _plane_label(
+    workspace: Workspace, recipe: dict[str, Any], px: float, py: float, seq: int, mode: str | None
+) -> int | None:
     """The annotation id at picture pixel (*px*, *py*) of an atlas picture drawn
     for a section (its endpoint panel gives the plane's pixels); refused for a
     picture that draws no atlas or no section's plane."""
@@ -290,21 +318,23 @@ def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: fl
     if not panels or not held:
         sectionless = mode == "section"
         raise Refused(
-            RefusalCode.NO_ATLAS_IN_PICTURE, picture=seq,
+            RefusalCode.NO_ATLAS_IN_PICTURE,
+            picture=seq,
             message=(
                 f"Picture {seq} shows the section alone, with no atlas drawn on it, so no "
                 "region is drawn at its points. Use an overlay picture of the section (its "
                 "atlas is drawn on it), or an atlas picture drawn for the section."
-                if sectionless else
-                f"Picture {seq} has no atlas plane tied to a section, so no region is drawn "
+                if sectionless
+                else f"Picture {seq} has no atlas plane tied to a section, so no region is drawn "
                 "at its points. Use an overlay picture of the section, or an atlas picture "
-                "drawn for the section."))
+                "drawn for the section."
+            ),
+        )
     panel = panels[0]
     native = transform(panel["pixel_to_native"], [px, py])
     label = label_at(plane_annotation(workspace, held), native)
     inside = all(b[0] <= px < b[2] and b[1] <= py < b[3] for b in [panel["bounds"]])
     return label if inside else None
-
 
 
 @dataclass(frozen=True)
@@ -320,8 +350,11 @@ class RegionsView:
     clamped: list[tuple[float, float]] = field(default_factory=list)
 
 
-def _resolved(workspace: Workspace, state: Stack, regions: object,
-              ) -> list[tuple[str, frozenset[int]]]:
+def _resolved(
+    workspace: Workspace,
+    state: Stack,
+    regions: object,
+) -> list[tuple[str, frozenset[int]]]:
     """``(name as asked, ids with descendants)`` per region. Refused:
     ``BAD_ARGS``, ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``."""
     from langslice.core.atlas.sides import has_sides
@@ -329,26 +362,25 @@ def _resolved(workspace: Workspace, state: Stack, regions: object,
     from langslice.core.sections.damage import normalized_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="regions is a list of acronyms, names or ids.")
+        raise Refused(RefusalCode.BAD_ARGS, message="regions is a list of acronyms, names or ids.")
     try:
         names = normalized_entries(str(entry) for entry in regions)
     except ValueError as exc:
         raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     if not names:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="Name at least one region.")
+        raise Refused(RefusalCode.BAD_ARGS, message="Name at least one region.")
     if not structure_table(workspace.atlas):
-        raise Refused(RefusalCode.NO_STRUCTURES,
-                      message="This atlas has no region hierarchy.")
+        raise Refused(RefusalCode.NO_STRUCTURES, message="This atlas has no region hierarchy.")
     try:
         found = resolve_entries(workspace.atlas, names)
     except ValueError as exc:
         raise Refused(RefusalCode.UNKNOWN_REGIONS, message=str(exc)) from exc
     if state.plane == "sagittal" and has_sides(names):
-        raise Refused(RefusalCode.NO_SIDES,
-                      message="A sagittal section lies within one hemisphere, so a "
-                      "region cannot be limited to one side.")
+        raise Refused(
+            RefusalCode.NO_SIDES,
+            message="A sagittal section lies within one hemisphere, so a "
+            "region cannot be limited to one side.",
+        )
     return [(name, ids) for name, (_region, _side, ids) in zip(names, found, strict=True)]
 
 
@@ -359,15 +391,24 @@ def _zoom_pixels(window: Sequence[float], size: tuple[float, float]) -> tuple[fl
 
 
 def _region_picture(
-    workspace: Workspace, state: Stack, regions: list[tuple[str, frozenset[int]]],
-    position_mm: float, long_edge: int, angles: Angles, *, window: Sequence[float] = (),
-    base: tuple[int, int] | None = None, base_um: float | None = None,
+    workspace: Workspace,
+    state: Stack,
+    regions: list[tuple[str, frozenset[int]]],
+    position_mm: float,
+    long_edge: int,
+    angles: Angles,
+    *,
+    window: Sequence[float] = (),
+    base: tuple[int, int] | None = None,
+    base_um: float | None = None,
 ) -> looks.LookPicture:
     """The atlas template at *position_mm* and the stack's view *angles*, the
     only *regions* outlined; at *window* (fractions of the
     unzoomed picture) when given."""
-    options = replace(default_options("template", atlas_channels=("template",),
-                                      long_edge=long_edge), regions=tuple(regions))
+    options = replace(
+        default_options("template", atlas_channels=("template",), long_edge=long_edge),
+        regions=tuple(regions),
+    )
     voxel = atlas_um_per_px(workspace.atlas)
     if base is None or base_um is None:
         whole = framed_atlas(workspace, state, position_mm, options, angles=angles)
@@ -379,38 +420,61 @@ def _region_picture(
         um = max(base_um * extent / long_edge, voxel / ATLAS_UPSAMPLE)
         at_um = (base[0] * base_um / um, base[1] * base_um / um)
         options = replace(options, zoom=_zoom_pixels(window, at_um))
-        picture = framed_atlas(workspace, state, position_mm, options, angles=angles,
-                               um_per_px=um)
+        picture = framed_atlas(workspace, state, position_mm, options, angles=angles, um_per_px=um)
         tag = f"zoom x{max(picture.size) / max(extent, 1e-9):.1f}  "
     else:
         picture = framed_atlas(workspace, state, position_mm, options, angles=angles)
         um = base_um
     names = ", ".join(name for name, _ids in regions)
     median = state.drawn_at_median(angles)
-    plane = (view_angles_label(angles, median=True) if median
-             else f"{angles_label(angles)} (the stack's cutting angles)")
+    plane = (
+        view_angles_label(angles, median=True)
+        if median
+        else f"{angles_label(angles)} (the stack's cutting angles)"
+    )
     border_word = picture.info.get("border_word")
-    text = (f"atlas at {position_mm:.2f} mm{plane}; "
-            f"{um:.1f} um/px; regions highlighted: {names}"
-            + (f"; borders {border_word}" if border_word else ""))
-    image = caption(picture, tag + atlas_caption(state, position_mm, options, angles=angles,
-                                                  median=median))
-    args = {"mode": "atlas", "regions": [name for name, _ids in regions],
-            "positions_mm": [float(position_mm)], "long_edge": int(long_edge),
-            "zoom": [float(v) for v in window]}
-    recipe = {"renderer": REGIONS_RENDERER, "args": args,
-              "state": looks.snapshot(state, [], view_angles=True),
-              "base": [int(base[0]), int(base[1])],
-              "shown": [int(picture.width), int(picture.height)], "um_per_px": round(um, 4)}
-    note(image, mode="atlas", recipe=recipe, caption=text,
-         extra={"position_mm": float(position_mm)})
-    return looks.LookPicture(image=image, caption=text, recipe=recipe, sections=(), mode="atlas",
-                             um_per_px=um, extra={"position_mm": float(position_mm)})
+    text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; regions highlighted: {names}" + (
+        f"; borders {border_word}" if border_word else ""
+    )
+    image = caption(
+        picture, tag + atlas_caption(state, position_mm, options, angles=angles, median=median)
+    )
+    args = {
+        "mode": "atlas",
+        "regions": [name for name, _ids in regions],
+        "positions_mm": [float(position_mm)],
+        "long_edge": int(long_edge),
+        "zoom": [float(v) for v in window],
+    }
+    recipe = {
+        "renderer": REGIONS_RENDERER,
+        "args": args,
+        "state": looks.snapshot(state, [], view_angles=True),
+        "base": [int(base[0]), int(base[1])],
+        "shown": [int(picture.width), int(picture.height)],
+        "um_per_px": round(um, 4),
+    }
+    note(
+        image, mode="atlas", recipe=recipe, caption=text, extra={"position_mm": float(position_mm)}
+    )
+    return looks.LookPicture(
+        image=image,
+        caption=text,
+        recipe=recipe,
+        sections=(),
+        mode="atlas",
+        um_per_px=um,
+        extra={"position_mm": float(position_mm)},
+    )
 
 
 def _redraw_regions(
-    recipe: dict[str, Any], window: Sequence[float], workspace: Workspace, state: Stack,
-    store: RecordStore | None, zoom_edge: int | None,
+    recipe: dict[str, Any],
+    window: Sequence[float],
+    workspace: Workspace,
+    state: Stack,
+    store: RecordStore | None,
+    zoom_edge: int | None,
 ) -> looks.LookPicture:
     """:func:`langslice.core.pictures.zoom.redraw`'s redrawer for a
     ``grep_atlas_view``
@@ -424,16 +488,26 @@ def _redraw_regions(
     base_um = None
     if um is not None and base and shown:
         earlier = args.get("zoom") or []
-        extent = (max((earlier[2] - earlier[0]) * base[0], (earlier[3] - earlier[1]) * base[1])
-                  if earlier else max(shown))
+        extent = (
+            max((earlier[2] - earlier[0]) * base[0], (earlier[3] - earlier[1]) * base[1])
+            if earlier
+            else max(shown)
+        )
         base_um = float(um) * extent / max(max(shown), 1)
     given: object = cast("object", args["regions"])
     regions = _resolved(workspace, drawn, given)
     position = float(args["positions_mm"][0])
     picture = _region_picture(
-        workspace, drawn, regions, position, int(args.get("long_edge") or picture_edge(workspace)),
-        (float(angles[0]), float(angles[1])) if angles else drawn.view_angles, window=window,
-        base=(int(base[0]), int(base[1])) if base else None, base_um=base_um)
+        workspace,
+        drawn,
+        regions,
+        position,
+        int(args.get("long_edge") or picture_edge(workspace)),
+        (float(angles[0]), float(angles[1])) if angles else drawn.view_angles,
+        window=window,
+        base=(int(base[0]), int(base[1])) if base else None,
+        base_um=base_um,
+    )
     return replace(picture, stale=stale)
 
 
@@ -459,16 +533,13 @@ def grep_atlas_view_tool(
         The regions drawn, the ones absent from each plane, the positions
         moved into the atlas range, and the pictures with their numbers.
     """
-    done = draw_regions(
-        run.job, run.workspace, as_list(regions), as_list(positions_mm)
-    )
+    done = draw_regions(run.job, run.workspace, as_list(regions), as_list(positions_mm))
     reply: dict[str, object] = {"status": "ok", "regions": done.regions}
     if done.regions_not_in_plane:
         reply["regions_not_in_plane"] = done.regions_not_in_plane
     if done.clamped:
         reply["clamped"] = [
-            {"asked_mm": round(given, 3), "used_mm": round(used, 3)}
-            for given, used in done.clamped
+            {"asked_mm": round(given, 3), "used_mm": round(used, 3)} for given, used in done.clamped
         ]
     reply["pictures"] = list(done.entries)
     if done.not_shown:
@@ -478,7 +549,10 @@ def grep_atlas_view_tool(
 
 
 def draw_regions(
-    job: Job, workspace: Workspace, regions: Sequence[str], positions_mm: Sequence[float],
+    job: Job,
+    workspace: Workspace,
+    regions: Sequence[str],
+    positions_mm: Sequence[float],
 ) -> RegionsView:
     """The atlas template at each of *positions_mm* (clamped into the atlas
     range), at the stack's cutting angles (``Stack.view_angles``), with
@@ -495,36 +569,38 @@ def draw_regions(
     state = job.state
     resolved = _resolved(workspace, state, regions)
     if isinstance(positions_mm, (str, bytes)) or not isinstance(positions_mm, Sequence):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="positions_mm is a list of numbers.")
+        raise Refused(RefusalCode.BAD_ARGS, message="positions_mm is a list of numbers.")
     try:
         asked = [float(v) for v in positions_mm]
     except (TypeError, ValueError):
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="positions_mm must be numbers.") from None
+        raise Refused(RefusalCode.BAD_ARGS, message="positions_mm must be numbers.") from None
     if not asked:
-        raise Refused(RefusalCode.BAD_ARGS,
-                      message="Give at least one position.")
+        raise Refused(RefusalCode.BAD_ARGS, message="Give at least one position.")
     low, high = workspace.position_range
     used = [min(max(v, low), high) for v in asked]
     angles = state.view_angles
     edge = picture_edge(workspace)
     with collecting() as notes:
-        drawn = [_region_picture(workspace, state, resolved, mm, edge, angles)
-                 for mm in used]
+        drawn = [_region_picture(workspace, state, resolved, mm, edge, angles) for mm in used]
     shown, rest = split_shown(job, drawn)
     names = [name for name, _ids in resolved]
-    entries = save_pictures(job, workspace, "grep_atlas_view", shown, notes,
-                            {"regions": names, "positions_mm": asked})
-    options = replace(default_options("template", atlas_channels=("template", "borders")),
-                      regions=tuple(resolved))
+    entries = save_pictures(
+        job, workspace, "grep_atlas_view", shown, notes, {"regions": names, "positions_mm": asked}
+    )
+    options = replace(
+        default_options("template", atlas_channels=("template", "borders")), regions=tuple(resolved)
+    )
     absent: dict[str, list[str]] = {}
-    for mm in used[:len(shown)]:
+    for mm in used[: len(shown)]:
         present = regions_in_plane(workspace, state, mm, options, angles=angles)
         missing = [name for name in names if name not in present]
         if missing:
             absent[f"{mm:.2f}"] = missing
     return RegionsView(
-        pictures=[picture.image for picture in shown], entries=entries,
-        not_shown=not_shown(rest, "atlas"), regions=names, regions_not_in_plane=absent,
-        clamped=[(a, u) for a, u in zip(asked, used, strict=True) if a != u])
+        pictures=[picture.image for picture in shown],
+        entries=entries,
+        not_shown=not_shown(rest, "atlas"),
+        regions=names,
+        regions_not_in_plane=absent,
+        clamped=[(a, u) for a, u in zip(asked, used, strict=True) if a != u],
+    )

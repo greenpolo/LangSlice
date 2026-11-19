@@ -77,8 +77,11 @@ def tile(tiles: Sequence[Tile], long_edge: int, *, title: str) -> Sheet:
     cell_w = max(picture.image.width for picture in tiles)
     cell_h = max(picture.image.height for picture in tiles)
     columns, rows = grid(len(tiles), cell_w / max(cell_h + HEADER_PX, 1))
-    scale = min(1.0, (long_edge - (columns + 1) * GAP_PX) / max(columns * cell_w, 1),
-                (long_edge - (rows + 1) * GAP_PX - rows * HEADER_PX) / max(rows * cell_h, 1))
+    scale = min(
+        1.0,
+        (long_edge - (columns + 1) * GAP_PX) / max(columns * cell_w, 1),
+        (long_edge - (rows + 1) * GAP_PX - rows * HEADER_PX) / max(rows * cell_h, 1),
+    )
     scale = max(scale, 0.05)
     width = int(round(columns * cell_w * scale)) + (columns + 1) * GAP_PX
     height = int(round(rows * cell_h * scale)) + rows * HEADER_PX + (rows + 1) * GAP_PX
@@ -90,23 +93,35 @@ def tile(tiles: Sequence[Tile], long_edge: int, *, title: str) -> Sheet:
         column, row = index % columns, index // columns
         x0 = GAP_PX + column * (int(round(cell_w * scale)) + GAP_PX)
         y0 = GAP_PX + row * (int(round(cell_h * scale)) + HEADER_PX + GAP_PX)
-        size = (max(1, int(round(picture.image.width * scale))),
-                max(1, int(round(picture.image.height * scale))))
+        size = (
+            max(1, int(round(picture.image.width * scale))),
+            max(1, int(round(picture.image.height * scale))),
+        )
         shrunk = picture.image.convert("RGB").resize(size, Image.Resampling.LANCZOS)
-        header = wrap_caption(f"picture {picture.number}  {picture.label}", font,
-                              int(round(cell_w * scale)) - 4).split("\n")[0]
+        header = wrap_caption(
+            f"picture {picture.number}  {picture.label}", font, int(round(cell_w * scale)) - 4
+        ).split("\n")[0]
         draw.text((x0 + 2, y0 + 3), header, fill=(255, 255, 255), font=font)
         top = y0 + HEADER_PX
         sheet.paste(shrunk, (x0, top))
-        boxes.append({"picture": picture.number, "box": [x0, top, x0 + size[0], top + size[1]],
-                      "size": [picture.image.width, picture.image.height]})
+        boxes.append(
+            {
+                "picture": picture.number,
+                "box": [x0, top, x0 + size[0], top + size[1]],
+                "size": [picture.image.width, picture.image.height],
+            }
+        )
     return Sheet(image=caption(sheet, title), tiles=boxes, scale=scale)
 
 
 def recipe(made: Sheet) -> dict[str, Any]:
     """The sheet's recipe: its tiles, so a zoom reads the picture under a box."""
-    return {"renderer": RENDERER, "tiles": made.tiles, "scale": round(made.scale, 4),
-            "shown": [made.image.width, made.image.height]}
+    return {
+        "renderer": RENDERER,
+        "tiles": made.tiles,
+        "scale": round(made.scale, 4),
+        "shown": [made.image.width, made.image.height],
+    }
 
 
 def tile_under(recipe_: dict[str, Any], box: Sequence[float]) -> dict[str, Any] | None:
@@ -131,11 +146,26 @@ def to_tile(held: dict[str, Any], box: Sequence[float]) -> list[float]:
     width, height = held["size"]
     sx = width / max(x1 - x0, 1)
     sy = height / max(y1 - y0, 1)
-    out = [(max(box[0], x0) - x0) * sx, (max(box[1], y0) - y0) * sy,
-           (min(box[2], x1) - x0) * sx, (min(box[3], y1) - y0) * sy]
-    return [round(min(max(v, 0.0), limit), 1)
-            for v, limit in zip(out, (width, height, width, height), strict=True)]
+    out = [
+        (max(box[0], x0) - x0) * sx,
+        (max(box[1], y0) - y0) * sy,
+        (min(box[2], x1) - x0) * sx,
+        (min(box[3], y1) - y0) * sy,
+    ]
+    return [
+        round(min(max(v, 0.0), limit), 1)
+        for v, limit in zip(out, (width, height, width, height), strict=True)
+    ]
 
 
-__all__ = ["MAX_TILES", "RENDERER", "Sheet", "Tile", "grid", "recipe", "tile", "tile_under",
-           "to_tile"]
+__all__ = [
+    "MAX_TILES",
+    "RENDERER",
+    "Sheet",
+    "Tile",
+    "grid",
+    "recipe",
+    "tile",
+    "tile_under",
+    "to_tile",
+]

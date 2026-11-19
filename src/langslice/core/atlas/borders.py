@@ -58,9 +58,7 @@ def annotation_slice(
 
         return sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
     idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
-    return orient_slice_for_display(
-        np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
-    )
+    return orient_slice_for_display(np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane)
 
 
 def atlas_um_per_px(atlas: Any) -> float:
@@ -107,7 +105,8 @@ COARSE_STEP = 8
 
 
 def supersampled_positions(
-    size: tuple[int, int], supersample: int,
+    size: tuple[int, int],
+    supersample: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Image-pixel ``(x, y)`` of every pixel centre of the *supersample*-times
     finer grid over a *size* image, float32: fine pixel ``(i, j)`` sits at
@@ -121,8 +120,11 @@ def supersampled_positions(
 
 
 def smooth_owner_map(
-    labels: np.ndarray, native_x: np.ndarray, native_y: np.ndarray,
-    *, smoothing_px: float,
+    labels: np.ndarray,
+    native_x: np.ndarray,
+    native_y: np.ndarray,
+    *,
+    smoothing_px: float,
 ) -> np.ndarray:
     """Region of each fine pixel: the one whose blurred indicator covers it most.
 
@@ -142,16 +144,22 @@ def smooth_owner_map(
             box = (0, width, 0, height)
         else:
             ys, xs = np.nonzero(mask)
-            box = (max(xs.min() - pad, 0), min(xs.max() + pad + 1, width),
-                   max(ys.min() - pad, 0), min(ys.max() + pad + 1, height))
+            box = (
+                max(xs.min() - pad, 0),
+                min(xs.max() + pad + 1, width),
+                max(ys.min() - pad, 0),
+                min(ys.max() + pad + 1, height),
+            )
         x0, x1, y0, y1 = box
         indicator = mask[y0:y1, x0:x1].astype(np.float32)
         if smoothing_px > 0:
             indicator = cv2.GaussianBlur(
-                indicator, (0, 0), smoothing_px,
-                borderType=cv2.BORDER_REPLICATE if region == 0 else cv2.BORDER_CONSTANT)
-        near = ((coarse_x >= x0 - 1) & (coarse_x <= x1) & (coarse_y >= y0 - 1)
-                & (coarse_y <= y1))
+                indicator,
+                (0, 0),
+                smoothing_px,
+                borderType=cv2.BORDER_REPLICATE if region == 0 else cv2.BORDER_CONSTANT,
+            )
+        near = (coarse_x >= x0 - 1) & (coarse_x <= x1) & (coarse_y >= y0 - 1) & (coarse_y <= y1)
         rows, cols = np.nonzero(near.any(axis=1))[0], np.nonzero(near.any(axis=0))[0]
         if rows.size == 0 or cols.size == 0:
             continue
@@ -160,9 +168,12 @@ def smooth_owner_map(
         c0 = max(int(cols[0]) * COARSE_STEP - COARSE_STEP, 0)
         c1 = min(int(cols[-1]) * COARSE_STEP + 2 * COARSE_STEP, native_x.shape[1])
         cover = cv2.remap(
-            indicator, np.ascontiguousarray(native_x[r0:r1, c0:c1] - np.float32(x0)),
+            indicator,
+            np.ascontiguousarray(native_x[r0:r1, c0:c1] - np.float32(x0)),
             np.ascontiguousarray(native_y[r0:r1, c0:c1] - np.float32(y0)),
-            cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=float(region == 0),
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=float(region == 0),
         )
         view_best = best[r0:r1, c0:c1]
         wins = cover > view_best
@@ -191,14 +202,18 @@ def region_boundaries(labels: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.nd
 
 
 def stroke_boundaries(
-    edges: np.ndarray, size: tuple[int, int], supersample: int, width_px: float,
+    edges: np.ndarray,
+    size: tuple[int, int],
+    supersample: int,
+    width_px: float,
 ) -> np.ndarray:
     """Coverage in [0, 1] on a *size* image of *edges*, a boolean mask on the
     *supersample*-times finer grid: widened to *width_px* image pixels and
     area-averaged down, so the lines are antialiased."""
     radius = max(0.5, width_px * supersample / 2.0)
     kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (2 * int(np.ceil(radius)) + 1,) * 2,
+        cv2.MORPH_ELLIPSE,
+        (2 * int(np.ceil(radius)) + 1,) * 2,
     )
     stroke = cv2.dilate(edges.astype(np.uint8) * 255, kernel)
     coverage = cv2.resize(stroke, size, interpolation=cv2.INTER_AREA)
@@ -260,8 +275,9 @@ def _on_pixel_edges(contour: np.ndarray, mask: np.ndarray) -> np.ndarray:
     tangent = np.roll(points, -1, axis=0) - np.roll(points, 1, axis=0)
     normal = np.stack([tangent[:, 1], -tangent[:, 0]], axis=1)
     length = np.hypot(normal[:, 0], normal[:, 1])
-    normal = np.divide(normal, length[:, None], out=np.zeros_like(normal),
-                       where=length[:, None] > 0)
+    normal = np.divide(
+        normal, length[:, None], out=np.zeros_like(normal), where=length[:, None] > 0
+    )
     rows, cols = mask.shape
     probe = np.rint(points + normal).astype(np.int64)
     inside = mask[np.clip(probe[:, 1], 0, rows - 1), np.clip(probe[:, 0], 0, cols - 1)] > 0
@@ -297,8 +313,7 @@ def region_contours(
         contours, _ = cv2.findContours(sub, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
         offset = np.array([cols.start - 1, rows.start - 1], dtype=np.float64)
         polys = [
-            _smooth_closed(_on_pixel_edges(contour.reshape(-1, 2), sub) + offset,
-                           smooth_window)
+            _smooth_closed(_on_pixel_edges(contour.reshape(-1, 2), sub) + offset, smooth_window)
             for contour in contours
             if cv2.contourArea(contour) >= min_area_px
         ]
@@ -320,9 +335,7 @@ def region_outlines(
 ) -> list[np.ndarray]:
     """Polylines of every region at ontology *depth*
     (:func:`~langslice.core.atlas.levels.labels_at`), in atlas-native pixels."""
-    labels = annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-    )
+    labels = annotation_slice(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     contours = region_contours(
         labels_at(labels, atlas, depth), smooth_window=smooth_window, min_area_px=min_area_px
     )

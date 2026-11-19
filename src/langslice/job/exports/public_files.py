@@ -74,8 +74,11 @@ QUICKNII_FILE = "quicknii.json"
 VISUALIGN_FILE = "visualign.json"
 TRACES_DIR = "traces"
 SECTION_FILES: dict[str, str] = {
-    "coords": COORDS_FILE, "labels": LABELS_FILE, "labels_fiji": LABELS_FIJI_FILE,
-    "labels_csv": LABELS_CSV_FILE, "residual": RESIDUAL_FILE,
+    "coords": COORDS_FILE,
+    "labels": LABELS_FILE,
+    "labels_fiji": LABELS_FIJI_FILE,
+    "labels_csv": LABELS_CSV_FILE,
+    "residual": RESIDUAL_FILE,
     "maps": MAPS_FILE,
 }
 CONVENTION = (
@@ -108,16 +111,25 @@ def source() -> dict[str, Any]:
     def git(*args: str) -> str | None:
         try:
             done = subprocess.run(
-                ["git", "-C", str(root), *args], capture_output=True,
-                stdin=subprocess.DEVNULL, text=True, timeout=10, check=True)
+                ["git", "-C", str(root), *args],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                timeout=10,
+                check=True,
+            )
         except (OSError, subprocess.SubprocessError):
             return None
         return done.stdout.strip()
 
     commit = git("rev-parse", "HEAD")
     status = git("status", "--porcelain", "--untracked-files=no") if commit else None
-    return {"version": langslice.__version__, "commit": commit,
-            "uncommitted_changes": bool(status) if status is not None else None}
+    return {
+        "version": langslice.__version__,
+        "commit": commit,
+        "uncommitted_changes": bool(status) if status is not None else None,
+    }
+
 
 def digest(value: Any) -> str:
     """SHA-256 of a JSON value (sorted keys)."""
@@ -134,8 +146,11 @@ def applied_deformation(state: Stack, section: Section) -> DeformationRef | None
     return held
 
 
-def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
-               ) -> dict[str, Any]:
+def parameters(
+    state: Stack,
+    record: Section,
+    atlas: dict[str, Any] | None,
+) -> dict[str, Any]:
     """The section's registration parameters in public units (the truth, as
     ``state.json`` holds it)."""
     transform = record.transform
@@ -144,9 +159,13 @@ def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
     if held is None:
         deformation = None
     else:
-        deformation = {"kind": "residual", "record": held.record,
-                       "key": held.key, "steps": to_jsonable(held.steps or ()),
-                       "inverse_source": held.inverse_source}
+        deformation = {
+            "kind": "residual",
+            "record": held.record,
+            "key": held.key,
+            "steps": to_jsonable(held.steps or ()),
+            "inverse_source": held.inverse_source,
+        }
     position = record.position_mm
     affine: dict[str, Any] | None = None
     if transform is not None:
@@ -158,13 +177,15 @@ def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
             "params": list(transform.params),
             "params_convention": (
                 "normalized 2x3 [a, b, tx, c, d, ty] on the oriented section render: "
-                "x as a fraction of its width, y of its height (langslice.core.affine)"),
+                "x as a fraction of its width, y of its height (langslice.core.affine)"
+            ),
             "physical": physical,
             "mirrored": bool(transform.mirrored),
         }
     return {
-        "atlas": None if atlas is None else {"name": atlas.get("name"),
-                                             "version": atlas.get("version")},
+        "atlas": None
+        if atlas is None
+        else {"name": atlas.get("name"), "version": atlas.get("version")},
         "plane": {
             "name": state.plane,
             "position_mm": position,
@@ -173,9 +194,11 @@ def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
             "pitch_deg": record.pitch_deg,
             "yaw_deg": record.yaw_deg,
         },
-        "orientation": {"rotation_deg": int(record.rotation_deg), "flip": bool(record.flip),
-                        "order": "rotate (counter-clockwise quarter turns) first, then "
-                                 "flip left-right"},
+        "orientation": {
+            "rotation_deg": int(record.rotation_deg),
+            "flip": bool(record.flip),
+            "order": "rotate (counter-clockwise quarter turns) first, then flip left-right",
+        },
         "affine": affine,
         "deformation": deformation,
         "damaged": bool(record.damaged),
@@ -184,7 +207,10 @@ def parameters(state: Stack, record: Section, atlas: dict[str, Any] | None,
 
 
 def section_entry(
-    state: Stack, workspace: Workspace | None, layout: JobLayout, record: Section,
+    state: Stack,
+    workspace: Workspace | None,
+    layout: JobLayout,
+    record: Section,
     atlas: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """One section of ``registration.json``."""
@@ -214,22 +240,36 @@ def section_entry(
             problem = str(exc)
         else:
             problem = scale_problem(frame)
-    entry["image"] = None if frame is None else {
-        "file": record.id, "size": list(frame.file_size),
-        "pixel_size_um": frame.file_um_per_px, "pixel_size_source": frame.calibration_source,
-    }
+    entry["image"] = (
+        None
+        if frame is None
+        else {
+            "file": record.id,
+            "size": list(frame.file_size),
+            "pixel_size_um": frame.file_um_per_px,
+            "pixel_size_source": frame.calibration_source,
+        }
+    )
     entry["pixel_to_atlas_um"] = None if frame is None else frame.pixel_to_atlas_um().tolist()
     entry["mapping"] = None
     if frame is not None:
-        entry["mapping"] = "linear" if record.transform else "linear (identity in-plane: " \
-                                                            "no transform written)"
-    if frame is not None and entry["parameters"]["deformation"] is not None \
-            and entry["parameters"]["deformation"]["kind"] == "residual":
+        entry["mapping"] = (
+            "linear" if record.transform else "linear (identity in-plane: no transform written)"
+        )
+    if (
+        frame is not None
+        and entry["parameters"]["deformation"] is not None
+        and entry["parameters"]["deformation"]["kind"] == "residual"
+    ):
         entry["mapping"] = "linear + residual"
     entry["problem"] = problem
-    entry["parameters_digest"] = digest({"parameters": entry["parameters"],
-                                         "matrix": entry["pixel_to_atlas_um"],
-                                         "image": entry["image"]})
+    entry["parameters_digest"] = digest(
+        {
+            "parameters": entry["parameters"],
+            "matrix": entry["pixel_to_atlas_um"],
+            "image": entry["image"],
+        }
+    )
     entry["maps"] = maps_status(layout, record.id, entry["parameters_digest"])
     return entry
 
@@ -241,8 +281,11 @@ def maps_status(layout: JobLayout, section_id: str, current: str) -> dict[str, A
         held = json.loads((folder / MAPS_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    files = {kind: layout.relative(folder / name) for kind, name in SECTION_FILES.items()
-             if (folder / name).exists()}
+    files = {
+        kind: layout.relative(folder / name)
+        for kind, name in SECTION_FILES.items()
+        if (folder / name).exists()
+    }
     return {
         "files": files,
         "grid_size": held.get("grid_size"),
@@ -253,7 +296,9 @@ def maps_status(layout: JobLayout, section_id: str, current: str) -> dict[str, A
 
 
 def registration_document(
-    state: Stack, workspace: Workspace | None, layout: JobLayout,
+    state: Stack,
+    workspace: Workspace | None,
+    layout: JobLayout,
 ) -> dict[str, Any]:
     """``registration.json`` for *state* (see the module text)."""
     atlas: dict[str, Any] | None = None
@@ -264,9 +309,11 @@ def registration_document(
             atlas = atlas_facts(workspace.atlas)
         except Exception:
             logger.warning("registration.json: the atlas could not be read", exc_info=True)
-    exports = {kind: layout.relative(layout.exports_dir / name)
-               for kind, name in (("quicknii", QUICKNII_FILE), ("visualign", VISUALIGN_FILE))
-               if (layout.exports_dir / name).exists()}
+    exports = {
+        kind: layout.relative(layout.exports_dir / name)
+        for kind, name in (("quicknii", QUICKNII_FILE), ("visualign", VISUALIGN_FILE))
+        if (layout.exports_dir / name).exists()
+    }
     return {
         "format_version": REGISTRATION_FORMAT_VERSION,
         "written_by": f"LangSlice {langslice.__version__}",
@@ -275,13 +322,18 @@ def registration_document(
         "convention": CONVENTION,
         "atlas": atlas if atlas is not None else {"name": state.atlas},
         "plane": state.plane,
-        "cutting_angles_deg": (None if state.mixed_angles else
-                               dict(zip(("pitch", "yaw"), state.stack_angles, strict=True))),
-        "image_folder": _image_folder(layout, workspace.image_folder if workspace is not None
-                                      else state.image_folder),
+        "cutting_angles_deg": (
+            None
+            if state.mixed_angles
+            else dict(zip(("pitch", "yaw"), state.stack_angles, strict=True))
+        ),
+        "image_folder": _image_folder(
+            layout, workspace.image_folder if workspace is not None else state.image_folder
+        ),
         "submitted": bool(state.submitted),
-        "sections": [section_entry(state, workspace, layout, record, atlas)
-                     for record in state.in_order()],
+        "sections": [
+            section_entry(state, workspace, layout, record, atlas) for record in state.in_order()
+        ],
         "exports": exports,
     }
 
@@ -298,7 +350,9 @@ def _image_folder(layout: JobLayout, images: str) -> str:
 
 
 def write_registration(
-    layout: JobLayout, state: Stack, workspace: Workspace | None,
+    layout: JobLayout,
+    state: Stack,
+    workspace: Workspace | None,
 ) -> Path | None:
     """Write ``registration.json`` atomically; never raises (None on failure)."""
     path = layout.folder / REGISTRATION_FILE
@@ -310,7 +364,6 @@ def write_registration(
     return path
 
 
-
 FLOAT_COMPRESSION = "zlib"
 
 
@@ -318,8 +371,9 @@ def _imagej_resolution(um_per_px: float) -> dict[str, Any]:
     return {"resolution": (1.0 / um_per_px, 1.0 / um_per_px)}
 
 
-def write_float_channels(path: Path, planes: np.ndarray, names: Iterable[str],
-                         um_per_px: float, info: dict[str, Any]) -> None:
+def write_float_channels(
+    path: Path, planes: np.ndarray, names: Iterable[str], um_per_px: float, info: dict[str, Any]
+) -> None:
     """An ImageJ hyperstack of float32 channels ``(channels, rows, cols)``,
     calibrated in micrometres, *info* as JSON in its Info property."""
     import tifffile
@@ -331,14 +385,24 @@ def write_float_channels(path: Path, planes: np.ndarray, names: Iterable[str],
         low, high = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
         ranges += [low, high if high > low else low + 1.0]
     tifffile.imwrite(
-        path, data, imagej=True, compression=FLOAT_COMPRESSION, **_imagej_resolution(um_per_px),
-        metadata={"axes": "CYX", "unit": "um", "Labels": list(names), "Ranges": tuple(ranges),
-                  "Info": json.dumps(info)},
+        path,
+        data,
+        imagej=True,
+        compression=FLOAT_COMPRESSION,
+        **_imagej_resolution(um_per_px),
+        metadata={
+            "axes": "CYX",
+            "unit": "um",
+            "Labels": list(names),
+            "Ranges": tuple(ranges),
+            "Info": json.dumps(info),
+        },
     )
 
 
-def write_labels(folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float,
-                 info: dict[str, Any]) -> list[tuple[Path, str]]:
+def write_labels(
+    folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float, info: dict[str, Any]
+) -> list[tuple[Path, str]]:
     """``labels.tif`` (uint32 atlas ids), ``labels_fiji.tif`` (uint16 dense
     index, with an ImageJ lookup table giving indexes 1-255 their atlas
     colours) and ``labels.csv`` (index, id, acronym, name, r, g, b, every
@@ -360,31 +424,60 @@ def write_labels(folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float,
     for index, uid in enumerate(int(v) for v in ids):
         entry = rows.get(uid, {})
         rgb = entry.get("rgb_triplet") or (255, 255, 255)
-        table.append((index + 1, uid, str(entry.get("acronym", uid)),
-                      str(entry.get("name", uid)), int(rgb[0]), int(rgb[1]), int(rgb[2])))
-    tifffile.imwrite(folder / LABELS_FILE, labels.astype(np.uint32), compression="zlib",
-                     predictor=True, description=json.dumps(info))
+        table.append(
+            (
+                index + 1,
+                uid,
+                str(entry.get("acronym", uid)),
+                str(entry.get("name", uid)),
+                int(rgb[0]),
+                int(rgb[1]),
+                int(rgb[2]),
+            )
+        )
+    tifffile.imwrite(
+        folder / LABELS_FILE,
+        labels.astype(np.uint32),
+        compression="zlib",
+        predictor=True,
+        description=json.dumps(info),
+    )
     lut = np.zeros((3, 256), dtype=np.uint8)
     for index, _uid, _acronym, _name, red, green, blue in table:
         if index < 256:
             lut[:, index] = (red, green, blue)
     tifffile.imwrite(
-        folder / LABELS_FIJI_FILE, dense, imagej=True, compression="zlib",
+        folder / LABELS_FIJI_FILE,
+        dense,
+        imagej=True,
+        compression="zlib",
         **_imagej_resolution(um_per_px),
-        metadata={"axes": "YX", "unit": "um", "mode": "color", "LUTs": [lut],
-                  "Ranges": (0.0, 255.0),
-                  "Info": json.dumps({**info, "index": "labels.csv: index -> atlas id"})},
+        metadata={
+            "axes": "YX",
+            "unit": "um",
+            "mode": "color",
+            "LUTs": [lut],
+            "Ranges": (0.0, 255.0),
+            "Info": json.dumps({**info, "index": "labels.csv: index -> atlas id"}),
+        },
     )
     with (folder / LABELS_CSV_FILE).open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["index", "id", "acronym", "name", "r", "g", "b"])
         writer.writerows(table)
-    return [(folder / LABELS_FILE, "labels"), (folder / LABELS_FIJI_FILE, "labels_fiji"),
-            (folder / LABELS_CSV_FILE, "labels_csv")]
+    return [
+        (folder / LABELS_FILE, "labels"),
+        (folder / LABELS_FIJI_FILE, "labels_fiji"),
+        (folder / LABELS_CSV_FILE, "labels_csv"),
+    ]
 
 
 def write_section_maps(
-    layout: JobLayout, maps: SectionMaps, atlas: Any, *, parameters_digest: str,
+    layout: JobLayout,
+    maps: SectionMaps,
+    atlas: Any,
+    *,
+    parameters_digest: str,
     deformation_record: str | None,
 ) -> list[tuple[Path, str]]:
     """Write one section's maps (see the module text); return ``(path, kind)``
@@ -393,34 +486,58 @@ def write_section_maps(
     folder = layout.section_dir(maps.section_id)
     folder.mkdir(parents=True, exist_ok=True)
     info = {
-        "section": maps.section_id, "grid_size": list(maps.grid_size),
-        "full_resolution": maps.full_resolution, "um_per_px": maps.um_per_px,
+        "section": maps.section_id,
+        "grid_size": list(maps.grid_size),
+        "full_resolution": maps.full_resolution,
+        "um_per_px": maps.um_per_px,
         "pixel_to_atlas_um": maps.pixel_to_atlas_um.tolist(),
-        "parameters_digest": parameters_digest, "written_by": f"LangSlice {langslice.__version__}",
+        "parameters_digest": parameters_digest,
+        "written_by": f"LangSlice {langslice.__version__}",
     }
     written: list[tuple[Path, str]] = []
-    write_float_channels(folder / COORDS_FILE, np.moveaxis(maps.coords, -1, 0),
-                         ("axis0_um", "axis1_um", "axis2_um"), maps.um_per_px,
-                         {**info, "content": "atlas micrometres per pixel, NaN outside the "
-                                             "atlas"})
+    write_float_channels(
+        folder / COORDS_FILE,
+        np.moveaxis(maps.coords, -1, 0),
+        ("axis0_um", "axis1_um", "axis2_um"),
+        maps.um_per_px,
+        {**info, "content": "atlas micrometres per pixel, NaN outside the atlas"},
+    )
     written.append((folder / COORDS_FILE, "coords"))
-    written += write_labels(folder, maps.labels, atlas, maps.um_per_px,
-                            {**info, "content": "atlas ids per pixel, 0 outside the atlas"})
+    written += write_labels(
+        folder,
+        maps.labels,
+        atlas,
+        maps.um_per_px,
+        {**info, "content": "atlas ids per pixel, 0 outside the atlas"},
+    )
     residual_path = folder / RESIDUAL_FILE
     if maps.residual is not None:
-        write_float_channels(residual_path, np.moveaxis(maps.residual, -1, 0),
-                             ("d_row_px", "d_col_px"), maps.um_per_px,
-                             {**info, "content": "displacement (drow, dcol) in grid pixels: "
-                                                 "atlas_um = pixel_to_atlas_um @ [row + drow, "
-                                                 "col + dcol, 1]",
-                              "deformation_record": deformation_record})
+        write_float_channels(
+            residual_path,
+            np.moveaxis(maps.residual, -1, 0),
+            ("d_row_px", "d_col_px"),
+            maps.um_per_px,
+            {
+                **info,
+                "content": "displacement (drow, dcol) in grid pixels: "
+                "atlas_um = pixel_to_atlas_um @ [row + drow, "
+                "col + dcol, 1]",
+                "deformation_record": deformation_record,
+            },
+        )
         written.append((residual_path, "residual"))
     elif residual_path.exists():
         residual_path.unlink()
-    record = {"format_version": MAPS_FORMAT_VERSION, **info,
-              "deformation_record": deformation_record,
-              "files": {kind: name for kind, name in SECTION_FILES.items()
-                        if kind != "maps" and (folder / name).exists()}}
+    record = {
+        "format_version": MAPS_FORMAT_VERSION,
+        **info,
+        "deformation_record": deformation_record,
+        "files": {
+            kind: name
+            for kind, name in SECTION_FILES.items()
+            if kind != "maps" and (folder / name).exists()
+        },
+    }
     write_json_atomic(str(folder / MAPS_FILE), record)
     written.append((folder / MAPS_FILE, "maps"))
     return written
@@ -432,7 +549,10 @@ def trace_reply_path(layout: JobLayout, section_id: str) -> Path:
 
 
 def write_trace_reply(
-    layout: JobLayout, section_id: str, borders: np.ndarray, reply: np.ndarray,
+    layout: JobLayout,
+    section_id: str,
+    borders: np.ndarray,
+    reply: np.ndarray,
     info: dict[str, Any],
 ) -> Path:
     """Write one section's trace reply (``docs/reference/file_formats.md``): ``borders``
@@ -441,9 +561,12 @@ def write_trace_reply(
     path = trace_reply_path(layout, section_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.stem + ".tmp.npz")
-    np.savez_compressed(temporary, borders=np.asarray(borders, dtype=bool),
-                        reply=np.asarray(reply, dtype=np.uint8),
-                        info=np.array(json.dumps(info, sort_keys=True)))
+    np.savez_compressed(
+        temporary,
+        borders=np.asarray(borders, dtype=bool),
+        reply=np.asarray(reply, dtype=np.uint8),
+        info=np.array(json.dumps(info, sort_keys=True)),
+    )
     replace_file(temporary, path)
     return path
 
@@ -495,8 +618,11 @@ def derived_files(layout: JobLayout, state: Stack) -> list[tuple[Path, str]]:
     found += [(path, "quint_image") for path in copies if path.is_file()]
     for record in state.in_order():
         folder = layout.section_dir(record.id)
-        found += [(folder / name, kind) for kind, name in SECTION_FILES.items()
-                  if (folder / name).exists()]
+        found += [
+            (folder / name, kind)
+            for kind, name in SECTION_FILES.items()
+            if (folder / name).exists()
+        ]
         trace = trace_reply_path(layout, record.id)
         if trace.exists():
             found.append((trace, "trace_reply"))
@@ -511,8 +637,17 @@ def write_landmarks(layout: JobLayout, state: Stack) -> None:
         path = layout.section_dir(section.id) / "landmarks.json"
         if section.landmarks is None and not path.exists():
             continue
-        pairs = [{**pair_to_json(pair), "stale": stale(state, section, pair)}
-                 for pair in section_pairs(section)]
-        write_json_atomic(str(path), {"format_version": 1, "section": section.id, "next_id": 1,
-                                      **landmarks_to_json(section.landmarks),
-                                      "pairs": pairs})
+        pairs = [
+            {**pair_to_json(pair), "stale": stale(state, section, pair)}
+            for pair in section_pairs(section)
+        ]
+        write_json_atomic(
+            str(path),
+            {
+                "format_version": 1,
+                "section": section.id,
+                "next_id": 1,
+                **landmarks_to_json(section.landmarks),
+                "pairs": pairs,
+            },
+        )

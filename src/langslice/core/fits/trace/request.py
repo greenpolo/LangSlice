@@ -42,9 +42,7 @@ class GeneratedSegmentation:
 class ImageCall(Protocol):
     """Make one image edit: the request in, one image out."""
 
-    def __call__(
-        self, request: BorderTraceRequest, /
-    ) -> GeneratedSegmentation:
+    def __call__(self, request: BorderTraceRequest, /) -> GeneratedSegmentation:
         """Edit the section image as the request says.
 
         Parameters

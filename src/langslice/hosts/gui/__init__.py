@@ -16,8 +16,14 @@ from pathlib import Path
 LINGER_S = 5.0
 
 
-def serve(folders: list[Path], *, port: int = 0, window: bool = True,
-          tab: str = "viewer", say: Callable[[str], None] = print) -> None:
+def serve(
+    folders: list[Path],
+    *,
+    port: int = 0,
+    window: bool = True,
+    tab: str = "viewer",
+    say: Callable[[str], None] = print,
+) -> None:
     """Serve the GUI for *folders* and the recent jobs until Ctrl-C, or until
     its app window has been closed for ``LINGER_S``; the window opens on
     *tab* (:data:`.window.TABS`). A port that cannot be served ends with
@@ -34,8 +40,9 @@ def serve(folders: list[Path], *, port: int = 0, window: bool = True,
     except OSError as exc:
         in_use = port_in_use(exc)
         reason = "is in use" if in_use else f"cannot be used ({exc.strerror})"
-        raise SystemExit(f"Port {port} {reason}: choose another with --port, "
-                         "or leave --port out.") from None
+        raise SystemExit(
+            f"Port {port} {reason}: choose another with --port, or leave --port out."
+        ) from None
     server.start()
     address = start_address(server.url, tab, folders=bool(folders))
     say(f"LangSlice GUI at {address}")

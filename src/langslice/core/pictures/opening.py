@@ -88,8 +88,9 @@ def tile_label(record: Section) -> str:
     return record.id + (f" [{', '.join(flags)}]" if flags else "")
 
 
-def pair_tiles(ctx: Workspace, state: Stack, record: Section, position_mm: float,
-               tile: int) -> tuple[Image.Image, Image.Image]:
+def pair_tiles(
+    ctx: Workspace, state: Stack, record: Section, position_mm: float, tile: int
+) -> tuple[Image.Image, Image.Image]:
     """``(section, atlas)``: *record* and the atlas at *position_mm* at its
     own angles (the whole section image, the atlas framed to its anatomy), at
     ONE micrometres per pixel, the larger
@@ -98,8 +99,10 @@ def pair_tiles(ctx: Workspace, state: Stack, record: Section, position_mm: float
     section reads at its true size against the atlas, and a small plane (an
     olfactory bulb) is drawn large when its section is small too."""
     shown, working = pair_scale(ctx, state, record, position_mm, tile)
-    return (section_at(ctx, record, shown, working_um=working, long_edge=tile),
-            atlas_at(ctx, state, position_mm, shown, angles=record.angles))
+    return (
+        section_at(ctx, record, shown, working_um=working, long_edge=tile),
+        atlas_at(ctx, state, position_mm, shown, angles=record.angles),
+    )
 
 
 def _cell(image: Image.Image | None, label: str, width: int) -> Image.Image:
@@ -120,8 +123,10 @@ def _cell(image: Image.Image | None, label: str, width: int) -> Image.Image:
 def compose_strip(columns: Sequence[Sequence[Image.Image]], tile: int) -> Image.Image:
     """Columns of cells (top to bottom) side by side, separators between."""
     rows = max(len(column) for column in columns)
-    heights = [max((column[r].height for column in columns if len(column) > r), default=0)
-               for r in range(rows)]
+    heights = [
+        max((column[r].height for column in columns if len(column) > r), default=0)
+        for r in range(rows)
+    ]
     width = len(columns) * tile + (len(columns) - 1) * COLUMN_GAP
     height = sum(heights) + (rows - 1) * ROW_GAP
     out = Image.new("RGB", (width, height), (0, 0, 0))
@@ -145,8 +150,13 @@ def jpeg_bytes(image: Image.Image) -> int:
     return len(encode_jpeg(image))
 
 
-def pack_strips(columns: Sequence[Sequence[Image.Image]], tile: int, count: int,
-                budget: int, max_bytes: int | None = None) -> list[tuple[int, Image.Image]]:
+def pack_strips(
+    columns: Sequence[Sequence[Image.Image]],
+    tile: int,
+    count: int,
+    budget: int,
+    max_bytes: int | None = None,
+) -> list[tuple[int, Image.Image]]:
     """Columns into strips of at most *count*, each within *budget* patches
     and, with *max_bytes*, within that many bytes as the doors encode it (a
     host that caps a reply's size: the MCP door's pages).
@@ -156,9 +166,11 @@ def pack_strips(columns: Sequence[Sequence[Image.Image]], tile: int, count: int,
     always one strip, whatever it costs), so no strip is shrunk after it is
     drawn: every tile keeps the level's opening size.
     """
+
     def over(strip: Image.Image) -> bool:
         return patches(strip.size) > budget or (
-            max_bytes is not None and jpeg_bytes(strip) > max_bytes)
+            max_bytes is not None and jpeg_bytes(strip) > max_bytes
+        )
 
     strips: list[tuple[int, Image.Image]] = []
     start = 0
@@ -183,7 +195,10 @@ def _angles(state: Stack) -> str:
 
 
 def opening_items(
-    state: Stack, ctx: Workspace, *, limit: tuple[int, int] = DEFAULT_IMAGE_LIMIT,
+    state: Stack,
+    ctx: Workspace,
+    *,
+    limit: tuple[int, int] = DEFAULT_IMAGE_LIMIT,
     max_bytes: int | None = None,
 ) -> list[str | Image.Image]:
     """The stack's opening as strips, each preceded by a short text: texts and
@@ -203,16 +218,21 @@ def opening_items(
     def column(record: Section) -> list[Image.Image]:
         position = record.position_mm
         section, atlas = pair_tiles(ctx, state, record, position, tile)
-        return [_cell(section, tile_label(record), tile),
-                _cell(atlas, f"atlas {position:.2f} mm", tile)]
+        return [
+            _cell(section, tile_label(record), tile),
+            _cell(atlas, f"atlas {position:.2f} mm", tile),
+        ]
 
     columns = [column(record) for record in ordered[:1]]
     with ThreadPoolExecutor(OPENING_THREADS) as pool:
         columns += pool.map(column, ordered[1:])
     strips = pack_strips(columns, tile, count, budget, max_bytes)
 
-    planes = ("at that section's own cutting angles (they differ between sections)"
-              if state.mixed_angles else f"at the stack's cutting angles{_angles(state)}")
+    planes = (
+        "at that section's own cutting angles (they differ between sections)"
+        if state.mixed_angles
+        else f"at the stack's cutting angles{_angles(state)}"
+    )
     beneath = (
         " Beneath each section is the atlas at that section's current position "
         f"{planes}, labelled 'atlas <position> mm'."
@@ -223,20 +243,20 @@ def opening_items(
             f" {initial} of the {len(ordered)} sections are still at their initial "
             "position (the job's start and spacing), set by no one."
         )
-    items: list[str | Image.Image] = [(
-        f"The {len(ordered)} sections of the stack follow in {len(strips)} "
-        f"strip{'s' if len(strips) != 1 else ''}, in their current order, "
-        "left to right and strip after strip. Each section is labelled "
-        "by its filename above it and drawn with any rotation and flip "
-        f"already applied.{beneath}"
-    )]
+    items: list[str | Image.Image] = [
+        (
+            f"The {len(ordered)} sections of the stack follow in {len(strips)} "
+            f"strip{'s' if len(strips) != 1 else ''}, in their current order, "
+            "left to right and strip after strip. Each section is labelled "
+            "by its filename above it and drawn with any rotation and flip "
+            f"already applied.{beneath}"
+        )
+    ]
     bounds = [start for start, _strip in strips] + [len(ordered)]
     for number, (start, strip) in enumerate(strips):
-        members = ordered[start:bounds[number + 1]]
+        members = ordered[start : bounds[number + 1]]
         items.append(
-            f"Strip {number + 1} of {len(strips)}: "
-            + ", ".join(record.id for record in members)
+            f"Strip {number + 1} of {len(strips)}: " + ", ".join(record.id for record in members)
         )
         items.append(strip)
     return items
-

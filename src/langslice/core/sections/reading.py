@@ -119,7 +119,9 @@ WORKING_MAX_EDGE = 3072
 
 
 def read_working_image(
-    path: str | Path, min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
+    path: str | Path,
+    min_edge: int = WORKING_MIN_EDGE,
+    max_edge: int = WORKING_MAX_EDGE,
 ) -> tuple[Image.Image, float]:
     """``(8-bit RGB image, file pixels per image pixel)`` for one section file.
 
@@ -302,7 +304,8 @@ def host_preprocess(
     if mode not in (None, HOST_PREPROCESS_AUTO):
         raise ValueError(
             f"A host's channel blend must be {{'mode': 'auto'}}; got {settings!r}. "
-            "Open the job with host_preprocessing set to it, or to null.")
+            "Open the job with host_preprocessing set to it, or to null."
+        )
     if len(pages) == 1:
         return adaptive_preprocess(_page_image(pages[0]))
 
@@ -330,9 +333,10 @@ def coverage_weights(channels: list[np.ndarray]) -> list[float]:
     return weights
 
 
-
 def read_working_pages(
-    path: str | Path, min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
+    path: str | Path,
+    min_edge: int = WORKING_MIN_EDGE,
+    max_edge: int = WORKING_MAX_EDGE,
 ) -> tuple[list[np.ndarray], float]:
     """``(pages, file pixels per page pixel)`` of one section file, working size.
 
@@ -353,8 +357,12 @@ def read_working_pages(
     with tifffile.TiffFile(path) as handle:
         series = handle.series[0] if handle.series else None
         levels = list(series.levels) if series is not None else []
-        if (series is not None and len(levels) > 1 and len(series.axes) == 3
-                and series.axes.endswith("YX")):
+        if (
+            series is not None
+            and len(levels) > 1
+            and len(series.axes) == 3
+            and series.axes.endswith("YX")
+        ):
             full_width = int(levels[0].shape[-1])
             chosen = levels[0]
             for level in levels[1:]:
@@ -370,8 +378,11 @@ def read_working_pages(
 
 
 def working_size(
-    path: str | Path, *, pages: bool = False,
-    min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
+    path: str | Path,
+    *,
+    pages: bool = False,
+    min_edge: int = WORKING_MIN_EDGE,
+    max_edge: int = WORKING_MAX_EDGE,
 ) -> tuple[tuple[int, int], float] | None:
     """``((width, height), file pixels per working pixel)`` of a file's working
     copy, read from its header: nothing is decoded.
@@ -425,7 +436,9 @@ def _tiff_level_size(path: str | Path, min_edge: int) -> tuple[tuple[int, int] |
 
 
 def _pages_working_size(
-    path: str | Path, min_edge: int, max_edge: int,
+    path: str | Path,
+    min_edge: int,
+    max_edge: int,
 ) -> tuple[tuple[int, int], float]:
     """:func:`read_working_pages`' page size for a multi-page file, from the header."""
     import tifffile
@@ -433,8 +446,12 @@ def _pages_working_size(
     with tifffile.TiffFile(path) as handle:
         series = handle.series[0] if handle.series else None
         levels = list(series.levels) if series is not None else []
-        if (series is not None and len(levels) > 1 and len(series.axes) == 3
-                and series.axes.endswith("YX")):
+        if (
+            series is not None
+            and len(levels) > 1
+            and len(series.axes) == 3
+            and series.axes.endswith("YX")
+        ):
             full_width = int(levels[0].shape[-1])
             chosen = levels[0]
             for level in levels[1:]:
@@ -466,7 +483,8 @@ RGB_CHANNEL_NAMES = ("red", "green", "blue")
 
 
 def channel_planes(
-    pages: list[np.ndarray], names: list[str] | None = None,
+    pages: list[np.ndarray],
+    names: list[str] | None = None,
 ) -> tuple[tuple[str, ...], list[np.ndarray]]:
     """``(names, 8-bit 2D planes)``: the raw channels of one section.
 
@@ -515,8 +533,9 @@ class IntensityRange:
         return self.low + np.asarray(value, dtype=np.float64) / 255.0 * (self.high - self.low)
 
 
-def _intensity_range(dtype: np.dtype, low: float, high: float,
-                     observed: tuple[float, float] | None = None) -> IntensityRange:
+def _intensity_range(
+    dtype: np.dtype, low: float, high: float, observed: tuple[float, float] | None = None
+) -> IntensityRange:
     if dtype == np.bool_:
         span = (0.0, 1.0)
     elif dtype.kind in "ui":
@@ -554,7 +573,8 @@ def _pil_range(image: Image.Image) -> IntensityRange:
 
 
 def working_intensity_ranges(
-    path: str | Path, min_edge: int = WORKING_MIN_EDGE,
+    path: str | Path,
+    min_edge: int = WORKING_MIN_EDGE,
 ) -> list[IntensityRange]:
     """One :class:`IntensityRange` per page :func:`read_working_pages` reads.
 
@@ -569,8 +589,11 @@ def working_intensity_ranges(
 
             with tifffile.TiffFile(path) as handle:
                 series = handle.series[0] if handle.series else None
-                if (series is not None and series.axes in ("YX", "YXS")
-                        and series.dtype in (np.uint8, np.uint16)):
+                if (
+                    series is not None
+                    and series.axes in ("YX", "YXS")
+                    and series.dtype in (np.uint8, np.uint16)
+                ):
                     levels = list(series.levels)
                     chosen = levels[0]
                     for level in levels[1:]:
@@ -586,8 +609,12 @@ def working_intensity_ranges(
     with tifffile.TiffFile(path) as handle:
         series = handle.series[0] if handle.series else None
         levels = list(series.levels) if series is not None else []
-        if (series is not None and len(levels) > 1 and len(series.axes) == 3
-                and series.axes.endswith("YX")):
+        if (
+            series is not None
+            and len(levels) > 1
+            and len(series.axes) == 3
+            and series.axes.endswith("YX")
+        ):
             chosen = levels[0]
             for level in levels[1:]:
                 if max(level.shape[-2], level.shape[-1]) >= min_edge:
@@ -668,7 +695,10 @@ def custom_appearance(
     ]
     tiles = max(1, int(clahe_tiles))
     return _blend_channels(
-        used, weights, clahe_clip=clahe_clip if clahe_clip > 0 else None, tile=(tiles, tiles),
+        used,
+        weights,
+        clahe_clip=clahe_clip if clahe_clip > 0 else None,
+        tile=(tiles, tiles),
     )
 
 
@@ -723,8 +753,10 @@ def prepared_size(
     scale_factor = min(1.0, pixel_scale, edge_scale)
     if scale_factor >= 0.999999:
         return width, height
-    return (max(1, int(math.floor(width * scale_factor))),
-            max(1, int(math.floor(height * scale_factor))))
+    return (
+        max(1, int(math.floor(width * scale_factor))),
+        max(1, int(math.floor(height * scale_factor))),
+    )
 
 
 def prepare_image_for_vlm(

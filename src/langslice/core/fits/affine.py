@@ -67,8 +67,11 @@ def calibrate(
     if known is not None:
         return known, source
     plane = annotation_slice(
-        ctx.atlas, record.position_mm, plane=state.plane,
-        pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
+        ctx.atlas,
+        record.position_mm,
+        plane=state.plane,
+        pitch_deg=record.pitch_deg,
+        yaw_deg=record.yaw_deg,
     )
     return plane.shape[1] * atlas_um_per_px(ctx.atlas) / float(section.width), "uncalibrated"
 
@@ -125,17 +128,21 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
         mask &= ~prepared.excluded_mask
     ys, xs = np.nonzero(mask)
     span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
-    if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN ** 2:
+    if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN**2:
         raise Refused(
             RefusalCode.REGION_TOO_SMALL,
             "Region is too small for elastix. Select a larger region"
             "[[?interactive_transform  or use interactive_transform]]; no fit was run. "
-            f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.")
+            f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.",
+        )
 
 
 def elastix_settings(
-    include: Sequence[str] = (), exclude: Sequence[str] = (),
-    atlas_image: str = ELASTIX_ATLAS_IMAGE, brain_scale: float = 1.0, edges: bool = True,
+    include: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+    atlas_image: str = ELASTIX_ATLAS_IMAGE,
+    brain_scale: float = 1.0,
+    edges: bool = True,
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
@@ -152,10 +159,14 @@ def elastix_settings(
     from langslice.core.fits.deformable.settings import neighbourhood_um_for
 
     return FitSettings(
-        engine="elastix", detail=ELASTIX_DETAIL,
+        engine="elastix",
+        detail=ELASTIX_DETAIL,
         atlas_image=atlas_image,
-        section_image="stain", stain_metric="mutual_information", stain_edges=bool(edges),
-        exclude=tuple(exclude), structures=tuple(include),
+        section_image="stain",
+        stain_metric="mutual_information",
+        stain_edges=bool(edges),
+        exclude=tuple(exclude),
+        structures=tuple(include),
         neighbourhood_um=neighbourhood_um_for(brain_scale),
     )
 
@@ -216,9 +227,12 @@ def elastix_affine(
     grid = deformation.fit_grid(state, ctx, record, params=start)
     image, look = deformation.section_image(ctx, state, grid, section_image)
     prepared = prepare_fit(
-        image, ctx.atlas, grid.placement,
+        image,
+        ctx.atlas,
+        grid.placement,
         elastix_settings(include, exclude, atlas_image, ctx.brain_scale, edges),
-        section_weights=section_weights)
+        section_weights=section_weights,
+    )
     _check_elastix_region(prepared, ctx.atlas, include)
     assert prepared.inputs is not None
     result = fit_elastix_affine(prepared.inputs)
@@ -226,20 +240,31 @@ def elastix_affine(
     to_mm = np.diag([mm, mm, 1.0])
     step = np.linalg.inv(to_mm) @ result.matrix_mm @ to_mm
     params = grid.params_after(start, step)
-    fitted = replace(grid.placement,
-                     atlas_to_section=np.linalg.inv(step) @ grid.placement.atlas_to_section)
+    fitted = replace(
+        grid.placement, atlas_to_section=np.linalg.inv(step) @ grid.placement.atlas_to_section
+    )
     footprint = float((prepared.native != 0).sum())
-    kept = footprint - (float((prepared.excluded_mask & (prepared.native != 0)).sum())
-                        if prepared.excluded_mask is not None else 0.0)
+    kept = footprint - (
+        float((prepared.excluded_mask & (prepared.native != 0)).sum())
+        if prepared.excluded_mask is not None
+        else 0.0
+    )
     report: dict[str, Any] = {
-        "include": list(include), "exclude": list(exclude),
+        "include": list(include),
+        "exclude": list(exclude),
         "atlas_kept_fraction": round(kept / footprint, 3) if footprint else 0.0,
     }
     return ElastixFit(
-        params=params, start_params=start,
-        report=report, placement=fitted,
-        engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
-                "section_image": look, "native_parameters": result.native_parameters},
+        params=params,
+        start_params=start,
+        report=report,
+        placement=fitted,
+        engine={
+            "version": result.engine_version,
+            "runtime_s": round(result.runtime_s, 2),
+            "section_image": look,
+            "native_parameters": result.native_parameters,
+        },
     )
 
 
@@ -265,8 +290,7 @@ def fit_elastix(
     """
     rendered = render_slice(ctx, section, long_edge=PREVIEW_LONG_EDGE)
     stored = None if section.transform is None else section.transform.params
-    start = (list(stored) if stored is not None and len(stored) == 6
-             else list(IDENTITY_PARAMS))
+    start = list(stored) if stored is not None and len(stored) == 6 else list(IDENTITY_PARAMS)
     um_per_px, source = calibrate(state, ctx, section, rendered)
     try:
         geometry = canvas_geometry(
@@ -278,10 +302,18 @@ def fit_elastix(
             section.pitch_deg,
             section.yaw_deg,
         )
-        fit = elastix_affine(state, ctx, section, start,
-                             include=include, exclude=exclude, atlas_image=atlas_image,
-                             section_image=section_image, edges=edges,
-                             section_weights=section_weights)
+        fit = elastix_affine(
+            state,
+            ctx,
+            section,
+            start,
+            include=include,
+            exclude=exclude,
+            atlas_image=atlas_image,
+            section_image=section_image,
+            edges=edges,
+            section_weights=section_weights,
+        )
     except Refused as refusal:
         return Refused(refusal.code, id=section.id, message=refusal.message)
     except ENGINE_FAILURES as exc:
@@ -295,9 +327,7 @@ def fit_elastix(
     on_canvas = _conjugate(in_section, geometry.section_offset)
     params = normalized_affine(in_section, rendered.size)
     width, height = geometry.size
-    knobs = physical_params(
-        on_canvas, pivot=(width / 2.0, height / 2.0), um_per_px=um_per_px
-    )
+    knobs = physical_params(on_canvas, pivot=(width / 2.0, height / 2.0), um_per_px=um_per_px)
     parts = decompose_affine(params)
     regions = fit.report if include or exclude else None
     return FittedAffine(
@@ -313,12 +343,9 @@ def fit_elastix(
             pivot=(0.5, 0.5),
         ),
         mirrored=bool(cast("object", parts["mirrored"])),
-        calibration=Calibration(
-            section_um_per_px=round(um_per_px, 4), source=source
-        ),
+        calibration=Calibration(section_um_per_px=round(um_per_px, 4), source=source),
         regions=regions,
     )
-
 
 
 def physical_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]:

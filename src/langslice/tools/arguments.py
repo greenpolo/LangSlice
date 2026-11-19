@@ -142,7 +142,6 @@ class LandmarkPair(TypedDict, total=False):
     section: LandmarkPoint
 
 
-
 def _typed_dict(annotation: Any) -> tuple[Any, bool] | None:
     """``(typed dict, is a list of them)`` for an annotation, else None."""
     if is_typeddict(annotation):
@@ -170,9 +169,12 @@ def parameters(func: Callable[..., Any]) -> dict[str, Any]:
     ADK's ``tool_context`` is the framework's, never the model's.
     """
     signature = inspect.signature(func, eval_str=True)
-    return {name: parameter.annotation for name, parameter in signature.parameters.items()
-            if name != "tool_context"
-            and parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)}
+    return {
+        name: parameter.annotation
+        for name, parameter in signature.parameters.items()
+        if name != "tool_context"
+        and parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+    }
 
 
 def _note(key: str, typed: Any, params: dict[str, Any], *, top_level: bool) -> str:
@@ -199,8 +201,9 @@ def _text_typed(annotation: Any) -> bool:
 
 
 def _text_list_typed(annotation: Any) -> bool:
-    return (typing.get_origin(annotation) in (list, tuple)
-            and typing.get_args(annotation)[:1] == (str,))
+    return typing.get_origin(annotation) in (list, tuple) and typing.get_args(annotation)[:1] == (
+        str,
+    )
 
 
 def _without_nulls(value: Any) -> Any:
@@ -261,16 +264,28 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refus
     stray = [key for key in args if key not in params and key != "tool_context"]
     if stray:
         notes = [text for key in stray if (text := _note(key, None, params, top_level=True))]
-        problems.append({"argument": "(top level)", "unknown": stray,
-                         "accepted": list(params), **({"notes": notes} if notes else {})})
+        problems.append(
+            {
+                "argument": "(top level)",
+                "unknown": stray,
+                "accepted": list(params),
+                **({"notes": notes} if notes else {}),
+            }
+        )
+
     def check_value(name: str, annotation: Any, values: Any) -> None:
         found = _typed_dict(annotation)
         if found is None:
             return
         typed, many = found
         accepted = _keys(typed)
-        items = (list(enumerate(values)) if many and isinstance(values, (list, tuple))
-                 else [(None, values)] if not many else [])
+        items = (
+            list(enumerate(values))
+            if many and isinstance(values, (list, tuple))
+            else [(None, values)]
+            if not many
+            else []
+        )
         for index, value in items:
             if not isinstance(value, Mapping):
                 continue
@@ -281,13 +296,18 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refus
             unknown = [key for key in value if key not in accepted]
             if not unknown:
                 continue
-            notes = [text for key in unknown
-                     if (text := _note(key, typed, params, top_level=False))]
-            problems.append({
-                "argument": location,
-                "unknown": unknown, "accepted": accepted,
-                **({"notes": notes} if notes else {}),
-            })
+            notes = [
+                text for key in unknown if (text := _note(key, typed, params, top_level=False))
+            ]
+            problems.append(
+                {
+                    "argument": location,
+                    "unknown": unknown,
+                    "accepted": accepted,
+                    **({"notes": notes} if notes else {}),
+                }
+            )
+
     for name, annotation in params.items():
         if name in args:
             check_value(name, annotation, args[name])
@@ -300,5 +320,9 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> Refus
         + ("".join(f" {text}" for text in problem.get("notes", [])))
         for problem in problems
     )
-    return Refused(RefusalCode.UNKNOWN_ARGUMENTS, tool=name, problems=problems,
-                   message=f"{name}: {message} Nothing was done.")
+    return Refused(
+        RefusalCode.UNKNOWN_ARGUMENTS,
+        tool=name,
+        problems=problems,
+        message=f"{name}: {message} Nothing was done.",
+    )

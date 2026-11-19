@@ -33,7 +33,7 @@ USAGE = "usage: python -m langslice.hosts.gui.app URL [WIDTH HEIGHT]"
 
 
 class _Handle(Protocol):
-    def ToInt64(self) -> int: ...  # noqa: N802
+    def ToInt64(self) -> int: ...
 
 
 class _Native(Protocol):
@@ -54,7 +54,7 @@ class _Window(Protocol):
 
 
 class _Webview(Protocol):
-    def create_window(  # noqa: PLR0913
+    def create_window(
         self,
         title: str,
         url: str,
@@ -69,13 +69,11 @@ class _Webview(Protocol):
 
 
 class _Shell(Protocol):
-    def SetCurrentProcessExplicitAppUserModelID(  # noqa: N802
-        self, app_id: str
-    ) -> int: ...
+    def SetCurrentProcessExplicitAppUserModelID(self, app_id: str) -> int: ...
 
 
 class _Dwm(Protocol):
-    def DwmSetWindowAttribute(  # noqa: N802
+    def DwmSetWindowAttribute(
         self, window: int, attribute: int, value: object, size: int
     ) -> int: ...
 

@@ -25,7 +25,11 @@ from langslice.core.stack.stack import Stack
 
 
 def section_inputs(
-    state: Stack, record: Section, *, deformation: bool = False, trace: bool = False,
+    state: Stack,
+    record: Section,
+    *,
+    deformation: bool = False,
+    trace: bool = False,
 ) -> str:
     """A digest of what a fit of *record* reads: its linear placement
     (position, plane, cutting angles, flip, rotation, transform), its made
@@ -40,14 +44,14 @@ def section_inputs(
         held["deformation"] = record.deformation_key
     if trace:
         correction = record.border_trace
-        held["trace"] = dict.fromkeys(
-            ("status", "geometry_fingerprint", "artifact_dir", "attempt"))
+        held["trace"] = dict.fromkeys(("status", "geometry_fingerprint", "artifact_dir", "attempt"))
         if correction is not None:
             held["trace"] = {
                 "status": correction.status,
                 "geometry_fingerprint": correction.geometry_fingerprint,
                 "artifact_dir": correction.artifact_dir,
-                "attempt": correction.attempt}
+                "attempt": correction.attempt,
+            }
     text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -63,4 +67,5 @@ def stale_refusal() -> Refused:
     return Refused(
         RefusalCode.STALE_INPUT,
         "This section's placement, images or deformation changed while the "
-        "fit ran; nothing was written for it. Run the fit again.")
+        "fit ran; nothing was written for it. Run the fit again.",
+    )

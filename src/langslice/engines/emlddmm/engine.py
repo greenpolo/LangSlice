@@ -72,12 +72,7 @@ CALLER_DEPTH = 4
 FIT_FUNCTION = "emlddmm"
 
 Setting = (
-    str
-    | bool
-    | float
-    | Sequence[float]
-    | Mapping[str, float]
-    | Mapping[str, Sequence[object]]
+    str | bool | float | Sequence[float] | Mapping[str, float] | Mapping[str, Sequence[object]]
 )
 Output = np.ndarray | np.int32 | str | float
 
@@ -88,9 +83,7 @@ class _Fit(Protocol):
     """Name the entries of an emlddmm result this module reads."""
 
     @overload
-    def __getitem__(
-        self, key: Literal["A", "A2d", "v", "WM", "WB", "WA"]
-    ) -> torch.Tensor: ...
+    def __getitem__(self, key: Literal["A", "A2d", "v", "WM", "WB", "WA"]) -> torch.Tensor: ...
 
     @overload
     def __getitem__(self, key: Literal["xv"]) -> list[torch.Tensor]: ...
@@ -109,9 +102,7 @@ class _Emlddmm(Protocol):
 
     def emlddmm_multiscale(self, **_config: object) -> list[_Fit]: ...
 
-    def v_to_phii(
-        self, xv: list[torch.Tensor], v: torch.Tensor
-    ) -> torch.Tensor: ...
+    def v_to_phii(self, xv: list[torch.Tensor], v: torch.Tensor) -> torch.Tensor: ...
 
 
 class _Calls(threading.local):
@@ -149,9 +140,7 @@ class _Stack:
     image: np.ndarray
 
 
-def run(
-    arrays: Mapping[str, np.ndarray], params: Mapping[str, Setting]
-) -> dict[str, Output]:
+def run(arrays: Mapping[str, np.ndarray], params: Mapping[str, Setting]) -> dict[str, Output]:
     """Run one emlddmm fit on the stack the plugin prepared.
 
     Parameters
@@ -233,9 +222,7 @@ def run(
     return out
 
 
-def _stack(
-    arrays: Mapping[str, np.ndarray], params: Mapping[str, Setting]
-) -> _Stack:
+def _stack(arrays: Mapping[str, np.ndarray], params: Mapping[str, Setting]) -> _Stack:
     """Read the atlas image and place the stack on it."""
     atlas = averaged_image(str(params["atlas"]), str(params["image"]))
     image = atlas.image[None].astype(np.float64)
@@ -274,14 +261,10 @@ def _read_map(
     cpu = torch.float64
     affine = result["A"].detach().cpu().to(dtype=cpu)
     locked = params["mode"] != PLANE
-    if locked and not torch.allclose(
-        affine[0], torch.as_tensor(stack.start)[0]
-    ):
+    if locked and not torch.allclose(affine[0], torch.as_tensor(stack.start)[0]):
         raise RuntimeError("the locked slice axis moved")
     turns = result["A2d"].detach().cpu().to(dtype=cpu)
-    xv = [
-        torch.as_tensor(x).detach().cpu().to(dtype=cpu) for x in result["xv"]
-    ]
+    xv = [torch.as_tensor(x).detach().cpu().to(dtype=cpu) for x in result["xv"]]
     velocity = torch.as_tensor(result["v"]).detach().cpu().to(dtype=cpu)
     with torch.no_grad():
         inverse = emlddmm.v_to_phii(xv, velocity)
@@ -295,9 +278,7 @@ def _read_map(
     )
     warp = bool(params["warp"])
     slots = _integers(arrays["slot"])
-    out: dict[str, Output] = {
-        "Acut": _atlas_cut(emlddmm, reader, arrays, stack, warp)
-    }
+    out: dict[str, Output] = {"Acut": _atlas_cut(emlddmm, reader, arrays, stack, warp)}
     queries = np.asarray(arrays["q"], np.float64)
     counts = _integers(arrays["q_n"])
     shift = torch.as_tensor(stack.centre, dtype=cpu)
@@ -308,16 +289,8 @@ def _read_map(
         part = queries[first : first + n]
         first += n
         if n:
-            warped.append(
-                (reader.atlas_um(part, slot, warp) + shift)
-                .numpy()
-                .astype(np.float32)
-            )
-            linear.append(
-                (reader.atlas_um(part, slot, False) + shift)
-                .numpy()
-                .astype(np.float32)
-            )
+            warped.append((reader.atlas_um(part, slot, warp) + shift).numpy().astype(np.float32))
+            linear.append((reader.atlas_um(part, slot, False) + shift).numpy().astype(np.float32))
     out["X"] = np.concatenate(warped, 0)
     out["L"] = np.concatenate(linear, 0)
     out["A"], out["A0"], out["A2d"] = (
@@ -395,9 +368,7 @@ class _Reader:
         self._inverse = inverse_affine
         self._warp = warp
 
-    def atlas_um(
-        self, points: np.ndarray, slot: int, with_warp: bool
-    ) -> torch.Tensor:
+    def atlas_um(self, points: np.ndarray, slot: int, with_warp: bool) -> torch.Tensor:
         """Map stack (row, col) um on one slot to atlas um.
 
         Parameters
@@ -431,9 +402,7 @@ class _Reader:
         if with_warp:
             axes, displacement = self._warp
             with torch.no_grad():
-                moved = self._emlddmm.interp(
-                    axes, displacement, atlas.reshape(3, 1, 1, -1)
-                )
+                moved = self._emlddmm.interp(axes, displacement, atlas.reshape(3, 1, 1, -1))
             atlas = moved.reshape(3, -1) + atlas
         return atlas.T
 
@@ -486,9 +455,7 @@ class _EnergyHook:
             here = inspect.currentframe()
             caller = None if here is None else here.f_back
             energy = _caller_energy(caller)
-            if energy is not None and not any(
-                energy is kept for kept in saved
-            ):
+            if energy is not None and not any(energy is kept for kept in saved):
                 saved.append(energy)
         return self._interp(*args, **kwargs)
 
@@ -507,9 +474,7 @@ def _caller_energy(frame: FrameType | None) -> list[list[float]] | None:
     return None
 
 
-def _print(
-    *args: object, sep: str = " ", end: str = "\n", **_options: object
-) -> None:
+def _print(*args: object, sep: str = " ", end: str = "\n", **_options: object) -> None:
     """Keep what emlddmm prints with the fit that printed it.
 
     A thread with no fit here logs it instead.

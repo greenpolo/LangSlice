@@ -192,13 +192,9 @@ def _read(
             section: {"position_mm": position, "angles": angles}
             for section, (position, angles) in planes.items()
         }
-    read = context.read_registration(
-        path, sections=ids, at=at, registered_on="oriented"
-    )
+    read = context.read_registration(path, sections=ids, at=at, registered_on="oriented")
 
-    rows = cast(
-        "list[dict[str, float | str | list[float] | None]]", read["placements"]
-    )
+    rows = cast("list[dict[str, float | str | list[float] | None]]", read["placements"])
     by_id: dict[str, Placement] = {}
     for row in rows:
         params = cast("list[float] | None", row["params"])
