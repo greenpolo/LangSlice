@@ -41,7 +41,7 @@ open job closed for it at exit, while threads can still start
 
 A method of the script's own goes into the job through :attr:`JobHandle.context`
 (:class:`ScriptContext`): the context a tool plugin's handler gets
-(:class:`langslice.doors.plugins.context.ToolContext`), its writes recorded as
+(:class:`langslice.plugins.context.ToolContext`), its writes recorded as
 ``script``, each outermost write one undo step, every read synced first, and
 two pictures of its own: a proposal drawn and saved, not written.
 
@@ -526,7 +526,7 @@ def create_job(
     load_credentials()
     model = as_image_model(image_model)
     if plugins is not None:
-        from langslice.doors.plugins import as_refs
+        from langslice.plugins import as_refs
 
         refs = as_refs(plugins)
         if isinstance(images, JobSpec):

@@ -5,9 +5,9 @@ It is a tool of every job (its row of the tool table names
 it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``device`` (``auto``: the GPU at float32 when there is
 one, else the CPU at float64), ``threads``. STalign (GPL-3.0, vendored as
-``langslice_vendor.stalign``) runs in LangSlice's process: ``engine.py``
-imports it when a tool runs. This module imports only
-``langslice.plugin_api`` and the engines' own modules.
+``langslice._vendor.stalign``) runs in LangSlice's process: ``engine.py``
+imports it when a tool runs. Its declaration is its rows of
+the tool table (``langslice.plugins.declared``).
 
 Two tools:
 
@@ -59,6 +59,7 @@ from langslice.plugin_api import (
     flag_words,
     map_sections,
 )
+from langslice.plugins.declared import engine_tool
 
 logger = logging.getLogger(__name__)
 
@@ -991,29 +992,19 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
         return _plane_search(ctx, options, sections, section_image, atlas_image, view)
 
     return [
-        ToolSpec(
+        engine_tool(
             "stalign_lddmm",
             stalign_lddmm,
             lddmm,
             description=_lddmm_description,
-            kind="write",
-            group="Nonlinear",
-            task="nonlinear",
-            writes=("affine", "deformation"),
-            long=True,
-            limits={"sections": 20},
             version="1",
             meta=meta,
         ),
-        ToolSpec(
+        engine_tool(
             "stalign_plane_search",
             stalign_plane_search,
             plane,
             description=_plane_search_description,
-            kind="read",
-            group="Positioning",
-            task="angles",
-            limits={"sections": 8},
             version="1",
             meta=meta,
         ),

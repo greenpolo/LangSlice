@@ -26,7 +26,7 @@ from langslice.core.stack.affine import (
     StoredAffine,
 )
 from langslice.core.stack.deformation import DeformationRef
-from langslice.doors.plugins.frames import ContextFrames
+from langslice.plugins.frames import ContextFrames
 
 if TYPE_CHECKING:
     from langslice.core.fits.deformation import Grid

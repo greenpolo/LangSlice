@@ -39,9 +39,9 @@ from PIL import Image
 from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import ToolError, ToolResult
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.doors.plugins.fits import ContextFits
-from langslice.doors.plugins.pictures import ContextPictures
-from langslice.doors.plugins.writes import ContextWrites
+from langslice.plugins.fits import ContextFits
+from langslice.plugins.pictures import ContextPictures
+from langslice.plugins.writes import ContextWrites
 
 
 def _not_for_scripts(what: str) -> ToolError:

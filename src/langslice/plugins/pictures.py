@@ -17,7 +17,7 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.stack.affine import StoredAffine
-from langslice.doors.plugins.proposals import (
+from langslice.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
     TransformProposal,

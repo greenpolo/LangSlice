@@ -64,6 +64,7 @@ from langslice.plugin_api import (
     ToolsOn,
     ToolSpec,
 )
+from langslice.plugins.declared import engine_tool
 
 OPTIONS = ("ensemble", "long_edge", "cache_folder")
 ConfigValue = bool | int | float | str
@@ -253,17 +254,11 @@ def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
         "ensemble": options.ensemble,
     }
     return [
-        ToolSpec(
+        engine_tool(
             "deepslice_place",
             deepslice_place,
             Handler(options),
             description=_deepslice_description,
-            kind="write",
-            group="Positioning",
-            task="angles",
-            writes=("position", "angles", "affine"),
-            atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
-            planes=("coronal",),
             version="1",
             meta=meta,
         )

@@ -22,12 +22,12 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.jsonable import to_jsonable
+from langslice.core.pictures.media_keys import TOOL_MEDIA_PARTS_KEY
 from langslice.core.plugins import ToolResult, ToolSpec
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.doors.plugins.caller import Caller
-from langslice.doors.plugins.context import ToolContext
-from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.job import plugins as core
+from langslice.plugins.caller import Caller
+from langslice.plugins.context import ToolContext
 from langslice.tools.descriptions.description import DescriptionFacts
 from langslice.tools.descriptions.render import context_parameter, declaration, signed
 

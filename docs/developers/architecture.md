@@ -6,21 +6,22 @@ job and the same operations. Package `CLAUDE.md` files (with identical
 
 ## Layers
 
-Dependencies flow downward: `hosts` → `doors` → `tools` → `job` → `core`.
-`providers` sits beside the layers and imports `core` only; `engines` (the
-in-tree engines' tools) sits beside `hosts` and imports the plugin API only.
-Import-linter enforces the boundaries without exceptions.
+Dependencies flow downward: `hosts` → `doors` → `engines` → `plugins` →
+`tools` → `job` → `core`. `providers` sits beside the layers and imports
+`core` only. Import-linter enforces the boundaries without exceptions.
 
 | Package | Responsibility |
 |---|---|
 | `core` | The science and the stack's shapes: the stack and section state (`stack/`), geometry, atlas access, the section files and images (`sections/`), pictures, the registration methods and engines (`fits/`), maps; of a job's settings it reads only the few the workspace carries (`ImageSettings`) |
 | `job` | Job folder, checkpoint, undo history, inputs, submit gates and exports; the job's settings (`settings/`: the form `JobSpec`, the table of every setting, what is frozen, the tool table, the tools a job has on) and the registry of loaded plugins |
 | `tools` | Operations on a job; `catalog.py` lists tools, task conditions and call limits; the shared declarations and the job statement (`descriptions/`) |
+| `plugins` | The tool-plugin machinery: loads plugins, gives each handler its context, builds a plugin tool's body and provenance |
+| `engines` | The in-tree engines' tools (DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm), written against the plugin machinery |
 | `doors` | The ways in: native agent tools, the built-in ADK agent (`agent/`), MCP, the agent CLI, the `langslice` command and the Python library |
 | `hosts` | The LangSlice window (`langslice gui`) |
 | `providers` | Model access, beside the layers; receives no task logic |
 
-`core`, `job` and `tools` import no provider or model SDK. Image models are
+`core`, `job`, `tools`, `plugins` and `engines` import no provider or model SDK. Image models are
 passed in as arguments.
 
 A call that cannot be done raises one exception, `Refused` (`core/refusal.py`),
@@ -55,14 +56,16 @@ available otherwise. Model-facing text that names a tool or an option is
 built for the job's tools (`ToolsOn`, `job/settings/tools_on.py`). See [tools and options](../reference/tools.md).
 
 The in-tree engines' tools are rows of the tool table
-(`ToolDef.engine`) whose declaration and handler live in `engines/`, written
-against the [plugin API](plugins.md) and loaded for a run that has one of
-them. A job can also load tools of the user's own: `JobSpec.plugins` names
+(`ToolDef.engine`), which are the one declaration of each tool; its handler
+lives in `engines/`, which builds the `ToolSpec` from the row
+(`plugins/declared.py`), is written against the [plugin API](plugins.md) and
+is loaded for a run that has one of them. Code copied from other labs
+(STalign, emlddmm) is `src/langslice/_vendor/`, kept as published. A job can also load tools of the user's own: `JobSpec.plugins` names
 modules whose tools join the toolbox. `core/plugins.py` holds the plugin types and
 `job/plugins.py` the declaration checks and the registry of loaded plugins,
 which `job/settings/tool_table.py` (`tools_for(spec)`) and
 `tools/catalog.py` (`verbs_for(spec)`) merge with the native tables for that
-spec; `doors/plugins/` loads them, gives each handler a context that writes
+spec; `plugins/` loads them, gives each handler a context that writes
 through the same operations, and builds their declarations and provenance. The native tables are unchanged, and a job without plugins has
 none of this in any declaration, reply or picture.
 

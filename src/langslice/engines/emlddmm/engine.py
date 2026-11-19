@@ -1,6 +1,6 @@
 """Call emlddmm in LangSlice's process, for the plugin (``plugin.py``).
 
-emlddmm (Apache-2.0) is vendored as ``langslice_vendor.emlddmm.emlddmm``:
+emlddmm (Apache-2.0) is vendored as ``langslice._vendor.emlddmm.emlddmm``:
 twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece, which repairs
 ``out_of_plane=False``, and 6ff62b0, which adds ``lock_slice_axis``; its
 header says what LangSlice changed to import it here. It is imported when a
@@ -58,7 +58,7 @@ from langslice.plugin_api import gpu_turn
 if TYPE_CHECKING:
     import torch
 
-MODULE = "langslice_vendor.emlddmm.emlddmm"
+MODULE = "langslice._vendor.emlddmm.emlddmm"
 PLANE = "plane"
 SINGLE = "float32"
 SORTING = {

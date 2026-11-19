@@ -1,7 +1,7 @@
 """The reads of a plugin context: sections, their images and layers.
 
 :class:`ContextReads` is the base of
-:class:`langslice.doors.plugins.context.ToolContext`: it holds the run, the
+:class:`langslice.plugins.context.ToolContext`: it holds the run, the
 caller and the call, finds a section by filename, and reads what the job
 holds of it (:class:`SectionView`, the images by name, a
 :class:`SectionRaster`, the layers).
@@ -22,8 +22,8 @@ from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.space import Plane
 from langslice.core.stack.section import Section
-from langslice.doors.plugins.caller import Caller
 from langslice.job.settings import frozen as freeze
+from langslice.plugins.caller import Caller
 from langslice.tools.refusal import unknown_sections
 from langslice.tools.stale import section_inputs
 

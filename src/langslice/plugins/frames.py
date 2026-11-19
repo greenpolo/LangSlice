@@ -17,7 +17,7 @@ import numpy as np
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.stack.section import Section
-from langslice.doors.plugins.reads import ContextReads
+from langslice.plugins.reads import ContextReads
 from langslice.tools.stale import section_inputs
 
 

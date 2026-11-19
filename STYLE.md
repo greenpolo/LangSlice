@@ -25,7 +25,7 @@ class GlareFilter:
     surround_ring_px: int = 6
 ```
 
-- Code copied from other labs (`src/langslice_vendor`) stays as published.
+- Code copied from other labs (`src/langslice/_vendor`) stays as published.
 
 ## Design before rules
 

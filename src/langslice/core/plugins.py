@@ -69,7 +69,7 @@ class ToolSpec:
     of the run's ``ToolsOn``, which names a tool only where the job has it on),
     else the stub's docstring, written like the native tools' declarations;
     ``handler`` is called as ``handler(ctx,
-    **arguments)`` with a :class:`langslice.doors.plugins.ToolContext` and
+    **arguments)`` with a :class:`langslice.plugins.ToolContext` and
     returns a :class:`ToolResult`. A ``write`` tool writes section properties
     only through the context, and only those named in ``writes``.
     """

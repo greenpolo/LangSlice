@@ -16,9 +16,13 @@ it when it is made. The text a tool appears in is built for the job's tools
 (:class:`langslice.job.settings.tools_on.ToolsOn`).
 
 The in-tree engines' tools (DeepSlice, Brainways, STalign, SPOmiAlign,
-emlddmm) are rows of this table like every other: ``engine`` names the
-engine that holds the tool's declaration and handler, ``atlases`` and
-``planes`` the jobs it is offered on. A tool with
+emlddmm) are rows of this table like every other, and the one place their
+declaration is written: ``engine`` names the engine that holds the tool's
+handler, ``tasks`` the tasks it serves (from which ``when`` is made),
+``limits`` its per-call caps, ``atlases`` and ``planes`` the jobs it is
+offered on. The engine builds its :class:`~langslice.core.plugins.ToolSpec`
+from the row (:func:`langslice.plugins.declared.engine_tool`), so the table
+is available without importing any engine. A tool with
 ``default_off`` is off unless the job's ``enabled`` list
 (:attr:`langslice.job.settings.spec.JobSpec.enabled`) names it.
 
@@ -33,7 +37,7 @@ from __future__ import annotations
 
 import fnmatch
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Protocol, cast
 
@@ -45,6 +49,9 @@ def positions_on(spec: Any) -> bool:
     """Whether a run has ``position_sections``: the Positioning task, or the
     stack's cutting angles left to the agent (``transform.angles``)."""
     return bool(spec.has("position") or (spec.has("transform") and spec.transform.angles))
+
+
+ANGLES = "angles"
 
 
 def _always(_spec: Any) -> bool:
@@ -65,6 +72,28 @@ def _has_any(tasks: tuple[str, ...], spec: _Tasks) -> bool:
 def _task_on(*tasks: str) -> Callable[[_Tasks], bool]:
     """Return the switch of a tool that any of *tasks* turns on."""
     return partial(_has_any, tasks)
+
+
+def _tasks_on(tasks: tuple[str, ...]) -> Callable[[Any], bool]:
+    """Return the switch of a tool that serves *tasks* (none: every job;
+    :data:`ANGLES`: the jobs that have ``position_sections``)."""
+    if not tasks:
+        return _always
+    if tasks == (ANGLES,):
+        return positions_on
+    return _task_on(*tasks)
+
+
+def _engine_tool(
+    name: str,
+    kind: Kind,
+    group: Group,
+    tasks: tuple[str, ...],
+    engine: str,
+    **fields: Any,
+) -> ToolDef:
+    """Return the row of an engine's tool: its ``when`` is made from *tasks*."""
+    return ToolDef(name, kind, group, when=_tasks_on(tasks), tasks=tasks, engine=engine, **fields)
 
 
 def _str_names(value: object) -> frozenset[str]:
@@ -100,6 +129,8 @@ class ToolDef:
     default_off: bool = False
     atlases: tuple[str, ...] = ()
     planes: tuple[str, ...] = ()
+    tasks: tuple[str, ...] = ()
+    limits: Mapping[str, int] = field(default_factory=dict[str, int])
 
     def fits(self, spec: _AtlasAndPlane) -> bool:
         """Tell whether the tool is offered on a job's atlas and plane.
@@ -236,57 +267,74 @@ TOOLS: dict[str, ToolDef] = {
         ),
         ToolDef("submit", "write", "Common", essential=True),
         ToolDef("export_maps", "read", "Common", scripting=True, long=True),
-        ToolDef(
+        _engine_tool(
             "deepslice_place",
             "write",
             "Positioning",
-            when=positions_on,
+            (ANGLES,),
+            DEEPSLICE,
             writes=("position", "angles", "affine"),
-            engine=DEEPSLICE,
             default_off=True,
             atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
             planes=("coronal",),
         ),
-        ToolDef(
+        _engine_tool(
             "brainways_ap",
             "write",
             "Positioning",
-            when=_task_on("position"),
+            ("position",),
+            BRAINWAYS,
             writes=("position",),
-            engine=BRAINWAYS,
             default_off=True,
             atlases=("whs_sd_rat_39um",),
             planes=("coronal",),
         ),
-        ToolDef(
+        _engine_tool(
             "stalign_lddmm",
             "write",
             "Nonlinear",
+            ("nonlinear",),
+            STALIGN,
             long=True,
-            when=_task_on("nonlinear"),
             writes=("affine", "deformation"),
-            engine=STALIGN,
+            limits={"sections": 20},
         ),
-        ToolDef("stalign_plane_search", "read", "Positioning", when=positions_on, engine=STALIGN),
-        ToolDef(
+        _engine_tool(
+            "stalign_plane_search",
+            "read",
+            "Positioning",
+            (ANGLES,),
+            STALIGN,
+            limits={"sections": 8},
+        ),
+        _engine_tool(
             "spomialign",
             "write",
             "Nonlinear",
+            ("transform", "nonlinear"),
+            SPOMIALIGN,
             long=True,
-            when=_task_on("transform", "nonlinear"),
             writes=("affine", "deformation"),
-            engine=SPOMIALIGN,
+            limits={"sections": 20},
         ),
-        ToolDef(
+        _engine_tool(
             "emlddmm_stack",
             "write",
             "Nonlinear",
+            ("nonlinear",),
+            EMLDDMM,
             long=True,
-            when=_task_on("nonlinear"),
             writes=("affine", "deformation"),
-            engine=EMLDDMM,
+            limits={"pictures": 4},
         ),
-        ToolDef("emlddmm_plane", "read", "Positioning", when=positions_on, engine=EMLDDMM),
+        _engine_tool(
+            "emlddmm_plane",
+            "read",
+            "Positioning",
+            (ANGLES,),
+            EMLDDMM,
+            limits={"pictures": 4},
+        ),
     )
 }
 

@@ -9,7 +9,7 @@ and a :class:`RefusalCode` (or a code of its own). Only the names here are
 the API; ``PLUGIN_API_VERSION`` changes when they do incompatibly.
 """
 
-from langslice.doors.plugins import (
+from langslice.plugins import (
     ENGINE_FAILURES,
     PLUGIN_API_VERSION,
     AffineView,

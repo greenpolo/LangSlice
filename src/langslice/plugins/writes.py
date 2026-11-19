@@ -20,11 +20,11 @@ from langslice.core.plugins import Layer, ToolError
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.affine import StoredAffine
 from langslice.core.stack.part import Written
-from langslice.doors.plugins.proposals import (
+from langslice.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
 )
-from langslice.doors.plugins.reads import (
+from langslice.plugins.reads import (
     LayerRef,
     unorient_raster,
 )

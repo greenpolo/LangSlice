@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.jsonable import to_jsonable
 from langslice.core.plugins import SCRIPT_CALLER, ToolError
 from langslice.core.refusal import RefusalCode
-from langslice.doors.plugins.caller import Caller
-from langslice.doors.plugins.context import ToolContext
-from langslice.doors.plugins.proposals import DeformationProposal
-from langslice.doors.plugins.writes import WriteResult
+from langslice.plugins.caller import Caller
+from langslice.plugins.context import ToolContext
+from langslice.plugins.proposals import DeformationProposal
+from langslice.plugins.writes import WriteResult
 
 if TYPE_CHECKING:
     from PIL import Image

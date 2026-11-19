@@ -6,7 +6,7 @@
 # this header. Its optional C++ engine (STalign/_cpp, the compiled module _stalign_cpp) is
 # not: without it STalign runs its pure-torch engine, which computes the same iterations
 # (``backend_info()`` says which engine runs). LangSlice imports this package as
-# ``langslice_vendor.stalign`` (``langslice/engines/stalign/engine.py``); its style and type
+# ``langslice._vendor.stalign`` (``langslice/engines/stalign/engine.py``); its style and type
 # checks do not read this folder.
 
 __version__ = '2.0.0'

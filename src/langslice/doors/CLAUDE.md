@@ -18,13 +18,13 @@ every door is generated from them and from the registry (`tools/catalog.py`:
 The in-tree engines' tools a run has (`ToolDef.engine`; `deepslice_place`
 and `brainways_ap` only where `JobSpec.enabled` names them) follow the others
 on every door, bound from their engine's adapter when the toolbox is built
-(`plugins/runtime.py`), and a job whose spec names tool plugins
+(`langslice/plugins/runtime.py`), and a job whose spec names tool plugins
 (`JobSpec.plugins`) has their tools after those: the toolbox (agent and MCP), `ops` / `schema`
 (for the job in the folder), the card and the library's `verbs` read the
 per-spec view (`catalog.verbs_for(spec)`, `langslice/tools/catalog.py`).
 `catalog.VERBS` holds the tools whose operation is in `tools/`; a verb
 outside it (an engine's, a plugin's) is declared from its stub.
-`plugins/provenance.py` records the job's own plugins only.
+`langslice/plugins/provenance.py` records the job's own plugins only.
 
 The text snapshot (`tests/snapshots/agent_text/`) pins what the doors
 declare.
@@ -68,7 +68,7 @@ bodies, and turned into an answer once per door:
   with background notices, so a refusal's reply passes through them as any
   reply does; a per-section answer carries a refused section as its
   row (`tools.refusal.refused_row`, converted once in the tool's body); a plugin tool's `ToolError` is a `Refused` and is answered
-  the same way (`plugins/runtime.py` re-raises it; any other exception of a
+  the same way (`langslice/plugins/runtime.py` re-raises it; any other exception of a
   handler is `INTERNAL`);
 - the agent CLI: a verb's reply whose `status` is in
   `core.refusal.FAILED_STATUSES` becomes `Envelope.failure(code, message,
@@ -97,8 +97,10 @@ bodies, and turned into an answer once per door:
   (`tools/CLAUDE.md`): its description, the tool's only description (the
   job statement names the tools and describes none), and its signature,
   for the run's `DescriptionFacts`.
-- `plugins/` — tool plugins (`docs/developers/plugins.md`); `langslice/plugin_api.py`
-  re-exports its names. `loader.py`: `load(ref, config)` imports
+- `langslice/plugins/` (a layer of its own, below the engines and the doors; the
+  files named below are in it) — tool plugins (`docs/developers/plugins.md`);
+  `langslice/plugin_api.py` re-exports its names. `declared.py`: `engine_tool`
+  builds an engine tool's `ToolSpec` from its row of the tool table. `loader.py`: `load(ref, config)` imports
   `module:factory`, calls it, checks every tool (`job.plugins.check_tool`),
   builds the provenance (module, factory, versions, source
   SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs

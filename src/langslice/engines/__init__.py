@@ -1,11 +1,14 @@
 """In-tree engines: DeepSlice, Brainways, STalign, SPOmiAlign, emlddmm.
 
-Each engine is a package whose ``plugin.py`` is the adapter: it declares
-the engine's tools and runs them in LangSlice's process, importing only
-:mod:`langslice.plugin_api` and the engines' own modules. Their tools are
-tools of every job, rows of the tool table
-(:data:`langslice.job.settings.tool_table.ENGINES`), which names each
-engine by its reference; no job names them::
+Each engine is a package whose ``plugin.py`` is the adapter: it binds the
+engine's tools to their handlers and runs them in LangSlice's process. The
+engines are first-party code, one layer above the plugin machinery
+(:mod:`langslice.plugins`), whose tool-plugin API they use. Their tools are
+tools of every job and are declared once, as rows of the tool table
+(:data:`langslice.job.settings.tool_table.TOOLS`; the engines' own
+:class:`~langslice.core.plugins.ToolSpec` is built from the row), which
+names each engine by its reference
+(:data:`langslice.job.settings.tool_table.ENGINES`); no job names them::
 
     langslice.engines.deepslice.plugin:tools
     langslice.engines.brainways.plugin:tools
@@ -23,7 +26,7 @@ beside its adapter with its ``LICENSE`` (DeepSlice 1.2.8 under the MIT
 licence, on TensorFlow from the ``langslice[engines]`` extra; Brainways
 0.1.16.3 under the GPL-3.0, on torch); SPOmiAlign on RoMa (``romatch``, the
 same extra); STalign (GPL-3.0) and emlddmm (Apache-2.0) vendored whole as
-``langslice_vendor.stalign`` and ``langslice_vendor.emlddmm``, on torch. A
+``langslice._vendor.stalign`` and ``langslice._vendor.emlddmm``, on torch. A
 call whose engine is not installed (DeepSlice or SPOmiAlign without the
 extra) is refused at tool-call time with ``ENGINE_UNAVAILABLE``, never at load
 time.

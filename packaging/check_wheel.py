@@ -11,7 +11,7 @@ def check(path: str) -> None:
         for name in names:
             parts = PurePosixPath(name).parts
             if (not parts or ".." in parts or name.startswith("/")
-                    or not (parts[0] in {"langslice", "langslice_vendor"}
+                    or not (parts[0] == "langslice"
                             or parts[0].endswith(".dist-info"))):
                 raise ValueError(f"Unexpected wheel path: {name}")
             if any(part.startswith(".env") or part in {"__pycache__", "openai_auth.json"}
@@ -23,8 +23,8 @@ def check(path: str) -> None:
             "langslice/hosts/gui/static/ui.css", "langslice/hosts/gui/static/ui.js",
             # the vendored engines' licences ship with their code
             "langslice/engines/deepslice/LICENSE", "langslice/engines/brainways/LICENSE",
-            "langslice_vendor/stalign/LICENSE", "langslice_vendor/emlddmm/LICENSE",
-            "langslice_vendor/emlddmm/NOTICE",
+            "langslice/_vendor/stalign/LICENSE", "langslice/_vendor/emlddmm/LICENSE",
+            "langslice/_vendor/emlddmm/NOTICE", "langslice/_vendor/emlddmm/emlddmm.py",
         }
         if not required.issubset(names):
             raise ValueError(f"Missing runtime files: {sorted(required - names)}")

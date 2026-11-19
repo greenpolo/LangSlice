@@ -151,8 +151,8 @@ include = ["langslice*"]
 langslice = [
     "core/atlas/*.json", "hosts/gui/static/*", "engines/brainways/LICENSE",
     "engines/deepslice/LICENSE", "skills/*/SKILL.md", "skills/*/examples/*",
+    "_vendor/emlddmm/LICENSE", "_vendor/emlddmm/NOTICE", "_vendor/stalign/LICENSE",
 ]
-langslice_vendor = ["emlddmm/LICENSE", "emlddmm/NOTICE", "stalign/LICENSE"]
 
 # The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs
@@ -166,16 +166,19 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "layers"
-name = "Layers: hosts, engines > doors > tools > job > core"
+name = "Layers: hosts > doors > engines > plugins > tools > job > core"
 type = "layers"
 containers = ["langslice"]
-layers = ["hosts : engines", "doors", "tools", "job", "core"]
+layers = ["hosts", "doors", "engines", "plugins", "tools", "job", "core"]
 
 [[tool.importlinter.contracts]]
 id = "no-models-below-doors"
-name = "core, job and tools import no provider, agent framework or model client"
+name = "core, job, tools, plugins and engines import no provider, agent framework or model client"
 type = "forbidden"
-source_modules = ["langslice.core", "langslice.job", "langslice.tools"]
+source_modules = [
+    "langslice.core", "langslice.job", "langslice.tools", "langslice.plugins",
+    "langslice.engines",
+]
 forbidden_modules = ["langslice.providers", "google", "litellm", "openai", "mcp"]
 
 [[tool.importlinter.contracts]]
@@ -184,21 +187,8 @@ name = "providers import no job, tool, door, host or engine"
 type = "forbidden"
 source_modules = ["langslice.providers"]
 forbidden_modules = [
-    "langslice.job", "langslice.tools", "langslice.doors", "langslice.hosts",
-    "langslice.engines",
-]
-
-[[tool.importlinter.contracts]]
-id = "engines-import-plugin-api-only"
-name = "engines import the plugin API only, no layer and no provider"
-type = "forbidden"
-# The plugin API itself reaches the layers; an engine may not reach them
-# past it.
-allow_indirect_imports = true
-source_modules = ["langslice.engines"]
-forbidden_modules = [
-    "langslice.core", "langslice.job", "langslice.tools", "langslice.doors",
-    "langslice.hosts", "langslice.providers",
+    "langslice.job", "langslice.tools", "langslice.plugins", "langslice.engines",
+    "langslice.doors", "langslice.hosts",
 ]
 
 [tool.pytest.ini_options]
@@ -211,6 +201,7 @@ pythonpath = ["src", "."]
 target-version = "py311"
 line-length = 100
 include = ["src/langslice/**/*.py", "tests/**/*.py"]
+extend-exclude = ["src/langslice/_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "BLE001", "ERA001", "SLF001", "T201", "PLW0603", "RUF100"]
@@ -230,6 +221,7 @@ extend-ignore-names = ["sitk"]
 
 [tool.basedpyright]
 include = ["src/langslice"]
+exclude = ["src/langslice/_vendor", "**/__pycache__"]
 extraPaths = ["src"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"

@@ -1,7 +1,7 @@
 """Call STalign 2.0 in LangSlice's process, for the plugin (``plugin.py``).
 
 STalign 2.0.0 (JEFworks-Lab main 8a84bf1f, GPL-3.0) is vendored as
-``langslice_vendor.stalign`` (its pure-torch engine; the optional C++ engine
+``langslice._vendor.stalign`` (its pure-torch engine; the optional C++ engine
 is not included) and imported when a tool runs, never when the plugin
 loads. The plugin prepares every image and frame; this module only calls
 STalign and samples its result.
@@ -46,7 +46,7 @@ from langslice.plugin_api import gpu_turn
 if TYPE_CHECKING:
     import torch
 
-PACKAGE = "langslice_vendor.stalign"
+PACKAGE = "langslice._vendor.stalign"
 FIGURES_HOOK = "_Figures"
 PLANE = "plane"
 QUERY_CHUNK = 1 << 20

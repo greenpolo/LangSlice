@@ -5,13 +5,13 @@ A LangSlice engine (`docs/developers/plugins.md` in LangSlice) that offers STali
 registration agent as three tools. Design: Fable's proposal, adopted by Nash on
 2026-10-18.
 
-- `plugin.py`: the adapter (imports only `langslice.plugin_api` and the engines' own modules).
+- `plugin.py`: the adapter (binds the tools its rows of the tool table declare).
 - `engine.py`: the STalign calls, in LangSlice's process; STalign is imported when a tool runs,
   never when the plugin loads.
 
 ## STalign itself
 
-STalign is vendored: `src/langslice_vendor/stalign/` holds the Python files of its `STalign/`
+STalign is vendored: `src/langslice/_vendor/stalign/` holds the Python files of its `STalign/`
 package at JEFworks-Lab/STalign commit 8a84bf1facc5173f7155400867a09c302125904e, unchanged,
 with its GPL-3.0 `LICENSE` and a header in `__init__.py` naming the commit. Its optional C++
 engine (`STalign/_cpp`, the compiled `_stalign_cpp`) is not included, so STalign runs its

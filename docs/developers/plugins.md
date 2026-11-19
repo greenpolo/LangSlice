@@ -13,10 +13,10 @@ same operations. LangSlice supplies the seam; the code of the tool lives in the
 plugin.
 
 A plugin has two parts. The **adapter** is a small Python module that runs in
-LangSlice's process and imports `langslice.plugin_api` only. The **engine** is
+LangSlice's process and imports `langslice.plugin_api` (the in-tree engines also use `langslice.plugins.declared`). The **engine** is
 the method itself, imported into LangSlice's process when a tool runs: a
 package from LangSlice's dependencies or an extra, or code vendored beside its
-adapter or in `langslice_vendor`, as the five in-tree engines are (below). An
+adapter or in `langslice._vendor`, as the five in-tree engines are (below). An
 engine whose dependencies cannot install beside LangSlice's can instead run in
 its own environment as a subprocess that exchanges files or JSON with the
 adapter and never imports LangSlice.
@@ -58,7 +58,7 @@ records, it holds `flag_words` (below), the GPU queue, `gpu_turn` and
 `out_of_memory` (below), and `map_sections` (below). A module may set its own
 `PLUGIN_API_VERSION`, and a `ToolSpec` has `api_version`; a plugin written for
 another version is refused. The same names are importable from
-`langslice.doors.plugins`.
+`langslice.plugins`.
 
 ### `ToolSpec`
 
@@ -371,10 +371,12 @@ Each tool is a row of the tool table (`job/settings/tool_table.py`,
 `ToolDef.engine`, with the atlases and planes it is offered on), listed
 after the other tools, switched off by the job's
 [`disabled`](../reference/settings.md#disabled) like any tool, and declared
-and run by its engine's adapter (`langslice/engines/<engine>/plugin.py`,
-written against `langslice.plugin_api`), which is imported only for a run
-that has one of its tools (`tests/test_engines_native.py` keeps the rows and
-the adapters' declarations the same). `stalign_lddmm`, `stalign_plane_search`,
+once, by that row (kind, group, task, writes, long, limits, needs, atlases,
+planes); the engine's adapter (`langslice/engines/<engine>/plugin.py`) builds
+its `ToolSpec` from the row (`langslice.plugins.declared.engine_tool`) and
+binds the stub and the handler, and is imported only for a run that has one
+of its tools. The engines are first-party code in `langslice.engines`, a layer
+above `langslice.plugins`. `stalign_lddmm`, `stalign_plane_search`,
 `spomialign`, `emlddmm_stack` and `emlddmm_plane` are on;
 `deepslice_place` and `brainways_ap` start off, as `trace_borders` does,
 and are switched on by the job's
@@ -405,7 +407,7 @@ cannot be fetched, is refused `ENGINE_UNAVAILABLE`. Options (`plugin_config`):
 when the plugin loads. Its README (`src/langslice/engines/deepslice/README.md`)
 gives the reply, the files of each call and its parity with DeepSlice.
 
-STalign, SPOmiAlign and emlddmm are `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools` and `langslice.engines.emlddmm.plugin:tools`. All three run in LangSlice's process, their method imported when a tool runs, never when the plugin loads. SPOmiAlign runs on RoMa (`romatch`), which the `engines` extra installs (`pip install "langslice[engines]"`); its one option is `device`, and a call without the extra is refused `ENGINE_UNAVAILABLE` naming it. STalign and emlddmm need nothing beyond LangSlice's own dependencies: both are vendored, STalign (GPL-3.0) as `langslice_vendor.stalign` (its pure-torch engine, without its optional C++ engine) and emlddmm (Apache-2.0) as `langslice_vendor.emlddmm`. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `BAD_ARGUMENT`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
+STalign, SPOmiAlign and emlddmm are `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools` and `langslice.engines.emlddmm.plugin:tools`. All three run in LangSlice's process, their method imported when a tool runs, never when the plugin loads. SPOmiAlign runs on RoMa (`romatch`), which the `engines` extra installs (`pip install "langslice[engines]"`); its one option is `device`, and a call without the extra is refused `ENGINE_UNAVAILABLE` naming it. STalign and emlddmm need nothing beyond LangSlice's own dependencies: both are vendored, STalign (GPL-3.0) as `langslice._vendor.stalign` (its pure-torch engine, without its optional C++ engine) and emlddmm (Apache-2.0) as `langslice._vendor.emlddmm`. Their 3-D fits read the atlas image from BrainGlobe at 50 um (`langslice/engines/_atlas_images.py`, kept under `~/.cache/langslice-engines`). Each engine's README lists its `plugin_config` options. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `BAD_ARGUMENT`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains

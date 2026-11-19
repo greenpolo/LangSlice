@@ -49,6 +49,7 @@ from langslice.plugin_api import (
     ToolSpec,
     WriteResult,
 )
+from langslice.plugins.declared import engine_tool
 
 PARTS = ("positions",)
 ATLAS = "whs_sd_rat_39um"
@@ -642,17 +643,11 @@ def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:
     }
     handler = functools.partial(run_brainways_ap, options=options)
     return [
-        ToolSpec(
+        engine_tool(
             "brainways_ap",
             brainways_ap,
             handler,
             description=_brainways_description,
-            kind="write",
-            group="Positioning",
-            task="position",
-            writes=("position",),
-            atlases=(ATLAS,),
-            planes=("coronal",),
             version="2",
             meta=meta,
         )

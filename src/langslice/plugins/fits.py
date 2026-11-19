@@ -19,7 +19,7 @@ from PIL import Image
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.stack.section import Section
-from langslice.doors.plugins.proposals import (
+from langslice.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
     TransformProposal,

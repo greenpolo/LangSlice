@@ -23,23 +23,23 @@ from langslice.core.plugins import (
     ToolSpec,
 )
 from langslice.core.refusal import RefusalCode
-from langslice.doors.plugins import loader as _loader
-from langslice.doors.plugins.context import ToolContext
-from langslice.doors.plugins.frames import AtlasPlane, FitFrame
-from langslice.doors.plugins.loader import as_refs, load
-from langslice.doors.plugins.proposals import (
+from langslice.job.settings.tools_on import ToolsOn
+from langslice.plugins import loader as _loader
+from langslice.plugins.context import ToolContext
+from langslice.plugins.frames import AtlasPlane, FitFrame
+from langslice.plugins.loader import as_refs, load
+from langslice.plugins.proposals import (
     DeformationProposal,
     TransformProposal,
 )
-from langslice.doors.plugins.reads import (
+from langslice.plugins.reads import (
     AffineView,
     AtlasView,
     LayerRef,
     SectionRaster,
     SectionView,
 )
-from langslice.doors.plugins.writes import WriteResult
-from langslice.job.settings.tools_on import ToolsOn
+from langslice.plugins.writes import WriteResult
 
 _loader.install()
 

@@ -31,7 +31,7 @@ REGISTRATION_CLASHES = {
     "transform_angles": "--transform-angles",
 }
 
-importlib.import_module("langslice.doors.plugins")
+importlib.import_module("langslice.plugins")
 
 
 def add_run_parser(

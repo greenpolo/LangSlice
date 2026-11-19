@@ -6,9 +6,9 @@ it is imported from this package (no ``PYTHONPATH``). Options
 (``plugin_config``): ``device`` (``auto``: the GPU when there is one, else
 the CPU), ``dtype`` (``float64``), ``section_um`` (58.88), ``section_weight``
 (``gap`` or a thickness in um), ``memory_limit_gb`` (24). emlddmm
-(Apache-2.0, vendored as ``langslice_vendor.emlddmm``) runs in LangSlice's
-process: ``engine.py`` imports it when a tool runs. This module imports only
-``langslice.plugin_api`` and the engines' own modules.
+(Apache-2.0, vendored as ``langslice._vendor.emlddmm``) runs in LangSlice's
+process: ``engine.py`` imports it when a tool runs. Its declaration is its rows of
+the tool table (``langslice.plugins.declared``).
 
 Two tools:
 
@@ -56,6 +56,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from langslice.engines import _blocks
 from langslice.engines.emlddmm import engine
+from langslice.job.settings.tool_table import TOOLS
 from langslice.plugin_api import (
     RefusalCode,
     ToolContext,
@@ -65,6 +66,7 @@ from langslice.plugin_api import (
     ToolSpec,
     flag_words,
 )
+from langslice.plugins.declared import engine_tool
 
 DEFAULTS = {
     "device": "auto",
@@ -94,7 +96,7 @@ def scale_iterations(iterations: int) -> list[int]:
 ANGLE_TOLERANCE_DEG = 1.0
 LATTICE_PX = 8
 NO_WARP = 10**6
-OVERLAYS = 4
+OVERLAYS = TOOLS["emlddmm_stack"].limits["pictures"]
 
 
 PUBLISHED_SORTING: dict[str, Any] = {}
@@ -1470,29 +1472,19 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
         )
 
     return [
-        ToolSpec(
+        engine_tool(
             "emlddmm_stack",
             emlddmm_stack,
             stack,
             description=_stack_description,
-            kind="write",
-            group="Nonlinear",
-            task="nonlinear",
-            writes=("affine", "deformation"),
-            long=True,
-            limits={"pictures": OVERLAYS},
             version="1",
             meta=meta,
         ),
-        ToolSpec(
+        engine_tool(
             "emlddmm_plane",
             emlddmm_plane,
             plane,
             description=_plane_description,
-            kind="read",
-            group="Positioning",
-            task="angles",
-            limits={"pictures": OVERLAYS},
             version="1",
             meta=meta,
         ),

@@ -7,8 +7,8 @@ it is imported from this package (no ``PYTHONPATH``). Option
 when torch sees one, else the CPU). The method itself runs in this process,
 in ``engine.py`` and ``matching.py``, on RoMa (``romatch``, LangSlice's
 ``engines`` extra), imported only when a call runs; a call without it is
-refused ``ENGINE_UNAVAILABLE``. This module imports only
-``langslice.plugin_api`` and the engine.
+refused ``ENGINE_UNAVAILABLE``. Its declaration is its row of
+the tool table (``langslice.plugins.declared``).
 
 Each call puts the section on SPOmiAlign's canvas, runs the engine on (atlas
 image, section), and maps the answer back: the linear part through
@@ -46,6 +46,7 @@ from langslice.plugin_api import (
     ToolsOn,
     ToolSpec,
 )
+from langslice.plugins.declared import engine_tool
 
 DEFAULTS = {"device": ""}
 MISSING = (
@@ -727,16 +728,11 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
         )
 
     return [
-        ToolSpec(
+        engine_tool(
             "spomialign",
             spomialign,
             handler,
             description=_spomialign_description,
-            kind="write",
-            group="Nonlinear",
-            writes=("affine", "deformation"),
-            limits={"sections": 20},
-            long=True,
             version="2",
             meta={
                 "method": "SPOmiAlign",

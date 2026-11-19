@@ -3,8 +3,8 @@ given, and the ``inputs`` / ``estimated`` blocks every fit reply carries
 (``docs/developers/plugins.md``).
 
 The blocks are plain dicts of the shape ``langslice.core.fits.inputs`` gives
-the native fits; this module imports only :mod:`langslice.plugin_api`, as every
-engine does. A reply names what the fit used and nothing about how well it did.
+the native fits; this module reaches the job through
+:mod:`langslice.plugin_api`. A reply names what the fit used and nothing about how well it did.
 """
 
 from __future__ import annotations
