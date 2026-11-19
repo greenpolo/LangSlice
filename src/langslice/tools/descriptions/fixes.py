@@ -95,10 +95,6 @@ FIXES: dict[str, str] = {
         "Make every spacing within 10% of the nominal interval and report "
         "no break (the user asked for a strict interval)."
     ),
-    RefusalCode.OPTION_OFF: (
-        "That option is switched off for this job: leave it out, or use one "
-        "of the others the message lists."
-    ),
     RefusalCode.INVALID_LINEAR_PLACEMENT: (
         "Give the section a usable transform"
         "[[?elastix_affine|interactive_transform  ([[%elastix_affine="

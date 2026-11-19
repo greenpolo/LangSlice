@@ -17,7 +17,7 @@ Rules for an agent setting up a registration: never register sections yourself; 
 - [The agent CLI](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/cli.md): jobs, launch prompts, verbs, replies, background runs, the job's Python environment
 - [The MCP server](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/mcp.md): `langslice mcp`, `start_job`
 - [The built-in agent](https://github.com/greenpolo/LangSlice/blob/main/docs/agents/builtin.md): `langslice linear run`, its own flags, spend, logs
-- [Tools and options](https://github.com/greenpolo/LangSlice/blob/main/docs/reference/tools.md): every tool's arguments, what a job can switch off
+- [Tools](https://github.com/greenpolo/LangSlice/blob/main/docs/reference/tools.md): every tool's arguments, what a job can switch off
 - [Job settings](https://github.com/greenpolo/LangSlice/blob/main/docs/reference/settings.md): every `init` setting with its flag and default
 - [Job folder and file formats](https://github.com/greenpolo/LangSlice/blob/main/docs/reference/file_formats.md): the job folder, coordinate conventions, maps, exports, importing a registration
 - [Python library](https://github.com/greenpolo/LangSlice/blob/main/docs/developers/library.md)

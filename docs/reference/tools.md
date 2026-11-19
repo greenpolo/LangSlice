@@ -1,8 +1,8 @@
-# Tools and options
+# Tools
 
 The registration agent works only through LangSlice's tools.
-This page lists every tool, what it does, its arguments, the parts of it a
-job can switch off, and what it needs while it is on. You do not call these
+This page lists every tool, what it does, its arguments, whether a
+job can switch it off, and what it needs while it is on. You do not call these
 tools yourself; your agent does. Read this page to know what the agent could
 do in a run, and to choose what to switch off in the
 [job settings](settings.md#disabled).
@@ -20,17 +20,16 @@ folder's `TOOLS.md` lists them all.
 The code groups the tools under the task that brings them. Common
 tools are in every run.
 
-One table per group. "Off" says whether the tool can be switched off; an
-option is switched off as `tool:option` (for example `look:atlas`).
+One table per group. "Off" says whether the tool can be switched off.
 
 **Common**
 
-| Tool | Writes | In a run when | Off | Options |
+| Tool | Writes | In a run when | Off | Notes |
 |---|---|---|---|---|
-| [`look`](#look) | no | always | no | `section`, `atlas`, `overlay`, `positioning` |
+| [`look`](#look) | no | always | no |  |
 | [`zoom`](#zoom) | no | always | yes | |
 | [`make_image`](#make_image) | yes | always | yes | |
-| [`grep_atlas`](#grep_atlas) | no | always | yes | `points` |
+| [`grep_atlas`](#grep_atlas) | no | always | yes |  |
 | [`grep_atlas_view`](#grep_atlas_view) | no | always | yes | |
 | [`status`](#status) | no | always | no | |
 | [`list_files`, `search_files`, `read_file`](#list_files-search_files-read_file) | no | always | yes | |
@@ -46,12 +45,12 @@ option is switched off as `tool:option` (for example `look:atlas`).
 
 **Positioning, Linear and Nonlinear**
 
-| Tool | Group | In a run when | Off | Options |
+| Tool | Group | In a run when | Off | Notes |
 |---|---|---|---|---|
 | [`position_sections`](#position_sections) | Positioning | Positioning on, or Linear on with `transform.angles` | yes | |
-| [`interactive_transform`](#interactive_transform) | Linear | Linear on | yes | `flip`, `rotate` |
+| [`interactive_transform`](#interactive_transform) | Linear | Linear on | yes |  |
 | [`elastix_affine`](#elastix_affine) | Linear | Linear on | yes | |
-| [`fireants_syn`](#fireants_syn) | Nonlinear | Nonlinear on | yes | `metric`, `edges`, `detail` |
+| [`fireants_syn`](#fireants_syn) | Nonlinear | Nonlinear on | yes |  |
 | [`set_landmarks`](#set_landmarks) | Nonlinear | Nonlinear on | with `landmark_triangulation` | |
 | [`landmark_triangulation`](#landmark_triangulation) | Nonlinear | Nonlinear on | with `set_landmarks` | |
 | [`trace_borders`](#trace_borders) | Nonlinear | Nonlinear on, [`enabled`](settings.md#enabled) naming it or an image model named, and that model connected | yes | starts off |
@@ -83,12 +82,10 @@ Four things decide which tools the agent gets.
    section is not offered: `position_sections`, `interactive_transform`,
    `elastix_affine`, `fireants_syn`, `landmark_triangulation`,
    `trace_borders` and `restore_registration`, by what they write.
-   `set_landmarks` goes with `landmark_triangulation`. A frozen orientation
-   on every section takes off `interactive_transform`'s flip and quarter
-   turn. See [`frozen`](settings.md#frozen).
-3. **The `disabled` list.** It switches off single tools and options on top
+   `set_landmarks` goes with `landmark_triangulation`. See [`frozen`](settings.md#frozen).
+3. **The `disabled` list.** It switches off single tools on top
    of what the tasks give. See [`disabled`](settings.md#disabled) and the
-   rules [below](#switching-tools-and-options-off).
+   rules [below](#switching-tools-off).
 4. **The image model and the door.** `trace_borders` needs the Nonlinear
    task, an image model in the job (`nonlinear.provider` not `none`) and,
    on MCP and the agent CLI, that model's key or login on this computer.
@@ -99,10 +96,9 @@ Four things decide which tools the agent gets.
 `look`, `status`, `undo` and `submit` are in every run and cannot be
 switched off.
 
-## Switching tools and options off
+## Switching tools off
 
-A name in a job's `disabled` list is a tool (`zoom`) or a tool and one of its
-options (`look:positioning`). The valid names are:
+A name in a job's `disabled` list is a tool (`zoom`). The valid names are:
 
 | Name | What it removes |
 |---|---|
@@ -110,11 +106,6 @@ options (`look:positioning`). The valid names are:
 | `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `make_mask`, `restore_registration` | the tool, as its task or switch would; with `make_mask` off, the `mask` argument of `elastix_affine` and `fireants_syn` and `look`'s `masks` go too |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair; each needs the other, so both must be switched off together |
 | `export_maps` | the scripting verb |
-| `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that mode of `look` |
-| `grep_atlas:points` | the `points` argument of `grep_atlas` |
-| `interactive_transform:flip` | mirroring: the `flip` key of its sections |
-| `interactive_transform:rotate` | the quarter turn: the `rotate_quarter` key of its sections |
-| `fireants_syn:metric`, `fireants_syn:edges`, `fireants_syn:detail` | that argument of `fireants_syn`, which then keeps its default |
 
 The engines' tools (`deepslice_place`, `brainways_ap`, `stalign_lddmm`,
 `stalign_plane_search`, `spomialign`, `emlddmm_stack`, `emlddmm_plane`) are
@@ -125,23 +116,18 @@ job's [`enabled`](settings.md#enabled) switches them on.
 A list that cannot work is refused when the job is made, with one line
 saying why. The checks, in order:
 
-- every name is a tool or option above (or a plugin tool), and none is
+- every name is a tool above (or a plugin tool), and none is
   `look`, `status`, `undo` or `submit`;
-- `look` keeps at least one mode;
 - a task that is on keeps at least one tool that writes its answer:
   `position_sections` for Positioning; `interactive_transform` or
   `elastix_affine` for Linear; `fireants_syn`, `landmark_triangulation` or
   `trace_borders` for Nonlinear;
-- a tool that is on keeps the pictures it needs (the "Needs" line of each
+- a tool that is on keeps the tools it needs (the "Needs" line of each
   tool below).
 
 What a job switches off is absent everywhere the agent looks: the tool is not
-built, an option is not in the tool's arguments, and no sentence of the job
-statement, a tool description, the `status` reply or a refusal names it. A
-call that names a switched-off `look` mode, quarter turn or flip anyway is
-refused with `OPTION_OFF`. A reply that would use a
-disabled option uses another: with `look:positioning` off,
-`position_sections` returns an overlay of each written section.
+built, and no sentence of the job statement, a tool description, the
+`status` reply or a refusal names it.
 
 Switching a tool off saves the agent's context; it is not a guard. A script's
 own writes through the library's `job.context` are not checked against
@@ -252,11 +238,7 @@ Atlas borders are drawn as cased lines: a black core with a white edge on
 light tissue, a white core with a black edge on dark tissue; the caption
 says which.
 
-**Switch off:** cannot be switched off. Options: `look:section`,
-`look:atlas`, `look:overlay`, `look:positioning` (one mode each; one must
-stay). Without `overlay`, `atlas_opacity` and `warp` go; without `atlas` and
-`positioning`, `positions_mm` goes; without `section` and `overlay`,
-`layers` and `registrations` go.
+**Switch off:** cannot be switched off.
 
 **Details.** Every section has a position from the moment the job is made, as
 ABBA places a new stack: the first section at `position.start_mm` and each
@@ -328,7 +310,7 @@ coordinates of a further zoom and of a landmark endpoint.
 A zoom of a picture whose sections have changed since draws them as they
 were and says `stale`.
 
-**Switch off:** `zoom`. Without `look:overlay`, `region` goes.
+**Switch off:** `zoom`.
 
 **Details.** Without `picture`, the newest picture that is not a zoom is used.
 A zoom of a tall or narrow box is padded with black beside its picture and
@@ -382,7 +364,6 @@ weighted blend, brightened to a mid-gray tissue mean; then `contrast`,
 pixels gets a new file (`<name>.2.png`), so undo finds the old one.
 
 **Switch off:** `make_image`. The raw channels and `preprocessed` stay.
-Without `look:section`, `view` goes.
 
 **Details.** For a job whose host sends preprocessing settings,
 `preprocessed` is the host's channel blend. It is made once on the working
@@ -429,11 +410,11 @@ Looks regions up in the atlas hierarchy by acronym, name or id. Text only.
 |---|---|---|
 | `query` | empty | Text matched against acronyms and names, or an exact acronym or id. |
 | `section` | none | A placed section: each row then says whether the region appears in that section's atlas plane. |
-| `points` | none | Up to 40 `{picture, x, y}` points of saved pictures: the region drawn at each, and the regions containing it. A picture of the section alone draws no atlas and is refused (`NO_ATLAS_IN_PICTURE`). |
+|  | none | Up to 40 `{picture, x, y}` points of saved pictures: the region drawn at each, and the regions containing it. A picture of the section alone draws no atlas and is refused (`NO_ATLAS_IN_PICTURE`). |
 
 Returns at most 40 rows: acronym, id, name, ancestry and descendant count.
 
-**Switch off:** `grep_atlas`. Option: `grep_atlas:points`.
+**Switch off:** `grep_atlas`.
 
 **Details.** With `points` (`query` may be left empty), each point's answer is
 the region's acronym, name and id, and `within`, the regions containing it,
@@ -591,7 +572,6 @@ refuses it (`STALE_MASK`) until it is made again.
 
 **In a run when** Linear or Nonlinear is on. **Switch off:** `make_mask`,
 which also removes the `mask` argument of the fits and `look`'s `masks`.
-**Needs:** `look:section`.
 
 **Details.** A mask has one of two kinds. `em` is made at each section's
 current registration: the atlas image placed through its transform and
@@ -646,7 +626,7 @@ A deformation fitted with the section at another position or cutting angles
 is refused (`REGISTRATION_ELSEWHERE`) until the section is back there.
 
 **In a run when** Linear or Nonlinear is on. **Switch off:**
-`restore_registration`. **Needs:** `look:overlay`.
+`restore_registration`.
 
 **Details.** Each registration is numbered per section
 ([`history.jsonl`](file_formats.md#section-history-sectionsnamehistoryjsonl)).
@@ -736,8 +716,7 @@ there. `cutting_angles` is refused while any section has its angles frozen.
 
 **In a run when** Positioning is on, or Linear is on with
 [`transform.angles`](settings.md#transform-settings) (then only
-`cutting_angles`). **Switch off:** `position_sections`. **Needs:**
-`look:positioning` or `look:overlay`.
+`cutting_angles`). **Switch off:** `position_sections`.
 
 ## Linear tools
 
@@ -763,8 +742,6 @@ rebuilt on the new orientation. Changing the orientation or transform clears
 the section's deformation.
 
 **In a run when** Linear is on. **Switch off:** `interactive_transform`.
-Options: `interactive_transform:flip`, `interactive_transform:rotate`.
-**Needs:** `look:overlay`.
 
 ### `elastix_affine`
 
@@ -793,7 +770,6 @@ to 1.25 is flagged `SCALE_CHANGED`, one that changes the shear by more than
 region too small for Elastix is refused (`REGION_TOO_SMALL`).
 
 **In a run when** Linear is on. **Switch off:** `elastix_affine`.
-**Needs:** `look:overlay`.
 
 **Details.** Each ok row carries the `inputs` it read and `estimated: null`.
 Each flag is also worded in the row's `warning`; a section that holds only
@@ -838,9 +814,7 @@ The reply gives displacement, fold fraction and plausibility flags (tissue
 folded, regions vanished or folded over themselves; outsized displacement), which report concerns and reject nothing. Changing a section's
 position, orientation, cutting angles or transform clears its deformation.
 
-**In a run when** Nonlinear is on. **Switch off:** `fireants_syn`. Options:
-`fireants_syn:metric`, `fireants_syn:edges`, `fireants_syn:detail` (the
-argument goes and keeps its default). **Needs:** `look:overlay`.
+**In a run when** Nonlinear is on. **Switch off:** `fireants_syn`.
 
 **Details.** The engine is FireANTs' SyN with ANTs' step rule: mutual
 information (or local correlation) plus an edge channel, four pyramid levels
@@ -916,8 +890,7 @@ section's position or cutting angles keeps the pairs and marks their atlas
 endpoints stale.
 
 **In a run when** Nonlinear is on. **Switch off:** only together with
-`landmark_triangulation`. **Needs:** `look:atlas` or `look:overlay`;
-`look:section` or `look:overlay`; `landmark_triangulation`.
+`landmark_triangulation`. **Needs:** `landmark_triangulation`.
 
 **Details.** Endpoints are x,y pixels of a numbered picture, from the top-left
 of the whole image, panel offsets included. On a zoom, x,y are the numbers its
@@ -988,7 +961,7 @@ Arguments: `section` (required), `view` (default true), and `resolution` when
 the job's `image_resolution` is `auto`.
 
 **In a run when** Nonlinear is on. **Switch off:** only together with
-`set_landmarks`. **Needs:** `look:overlay`; `set_landmarks`.
+`set_landmarks`. **Needs:** `set_landmarks`.
 
 **Details.** The triangulation is of the pairs' section points in their pixel
 aspect ratio, with the four corners 10% outside the frame, and a piecewise
@@ -1048,7 +1021,7 @@ the prompts, the raw reply, the extracted lines and the fit.
 **In a run when** Nonlinear is on, the job's `nonlinear.provider` is not
 `none`, and (on MCP and the agent CLI) the image model's key or login is on
 this computer. **Switch off:** `trace_borders`, or set
-`nonlinear.provider` to `none`. **Needs:** `look:overlay`.
+`nonlinear.provider` to `none`.
 
 
 **Details.** The section is turned upright on the model's frame from its

@@ -253,12 +253,11 @@ def position_sections_tool(
     positions = distinct_positions(
         [section.position_mm for section in in_stack if section is not None]
     )
-    mode = "overlay" if run.spec.off("look:positioning") else "positioning"
     looked = show_result(
         job,
         run.workspace,
         "position_sections",
-        mode,
+        "positioning",
         in_picture,
         positions_mm=positions,
     )

@@ -70,8 +70,8 @@ returns sections to any earlier registrations, such as fits made before
 another method's, and leaves the other sections as they are. One
 undoable write for the call. A deformation fitted with the section at
 another position or other cutting angles is refused until the section is
-back there.[[?look:section|look:overlay  look draws an earlier registration
-without writing it.]]""",
+back there. look draws an earlier registration
+without writing it.""",
     ),
     arguments={
         "section": Argument(

@@ -5,7 +5,7 @@ it to :func:`langslice.doors.agent.engine.run`. Every checkbox a user sees maps
 to a field here; nothing else is user-facing. ``tasks`` switches whole
 capabilities on and off — a task that is OFF takes its answer from ``inputs``
 instead of from the agent, and its tools are not built at all. ``disabled``
-takes single tools and tool options off on top of what the tasks give.
+takes single tools off on top of what the tasks give.
 
 See ``docs/reference/settings.md`` for the design this mirrors.
 """
@@ -359,7 +359,7 @@ class JobSpec:
         if not isinstance(self.disabled, (list, tuple)) or not all(
             isinstance(name, str) for name in self.disabled
         ):
-            raise ValueError("disabled must be a list of tool and option names")
+            raise ValueError("disabled must be a list of tool names")
         self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
         if not isinstance(self.plugins, (list, tuple)) or not all(
             isinstance(ref, str) and ref.strip() for ref in self.plugins
@@ -461,14 +461,14 @@ class JobSpec:
         return freeze.for_section(self.frozen, section_id) | self.frozen_everywhere
 
     def off(self, name: str) -> bool:
-        """Whether the tool or ``tool:option`` *name* is off: disabled, or
-        taken off by what is frozen (a tool's options are off with it)."""
+        """Whether the tool *name* is off: disabled, or taken off by what is
+        frozen."""
         return tool_table.is_off(self.switched_off, name)
 
     @property
     def switched_off(self) -> list[str]:
         """Every name that is off for this run: ``disabled`` and, after it,
-        the tools and options that can change nothing because everything
+        the tools that can change nothing because everything
         they write is frozen on every section
         (:func:`langslice.job.settings.tool_table.off_names`). What every door
         and every text renders by."""

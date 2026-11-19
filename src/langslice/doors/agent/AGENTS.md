@@ -62,9 +62,8 @@ the sign of the in-plane affine, so flipping is Linear, never Positioning),
 each switchable alone; `fireants_syn` and `trace_borders` with
 `nonlinear` (`trace_borders` only with an image model); everything else,
 `mark_damage` included, in every run. `JobSpec.disabled` takes single tools
-and tool options (`look:positioning`, `interactive_transform:flip`) off on
-top of that (`job/settings/tool_table.py` lists the names and refuses a list that cannot
-work); every line of the job statement that names a tool or an option is
+off on top of that (`job/settings/tool_table.py` lists the names and refuses a
+list that cannot work); every line of the job statement that names a tool is
 written with what it needs (`job/settings/needs.py`) and rendered for the job.
 
 ## Files
@@ -219,7 +218,7 @@ A host's controls, all plain `JobSpec` fields:
   `interactive_transform` and `elastix_affine` (each takes one to four
   sections) refuse a call naming more sections (`tools.refusal.check_section_count`)
   and the statement states the cap.
-- **`disabled`** (default empty): tools and tool options the job does
+- **`disabled`** (default empty): tools the job does
   without, `--disabled NAME[,NAME...]`. A host's `inputs["damaged"]` note is
   the section's `damage_note` (shown in status and the statement) whether or
   not `mark_damage` is disabled; it does not make the section damaged, and it
@@ -257,9 +256,7 @@ A host's controls, all plain `JobSpec` fields:
   model-facing text.
 - **A host may remove `interactive_transform` or `elastix_affine`** with
   `disabled`; a task that is on keeps at least one tool that writes its
-  answer. Mirroring is `interactive_transform:flip` (with it off the tool's
-  sections have no `flip` key); `transform.hemisphere_cue` is shown only
-  where the agent can mirror.
+  answer.
 
 ## Pictures and context
 

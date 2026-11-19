@@ -73,12 +73,11 @@ and `environment.yml` hold the source installation.
   written against; it loads only where the user chose it (library, `linear run
   --plugins`), writes job state only through the context's operations and
   files only under `plugins/<tool>/`.
-- Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`
-  (`tool` or `tool:option`; `job/settings/tool_table.py` lists the valid names, the
-  spec refuses an unknown name or a list that cannot work). Every sentence
-  that names a tool or an option is written with what it needs
-  (`job/settings/needs.py`), so no model-facing text names what the job disables.
-  A new tool or option is a row in
+- Any tool is switched off per job by `JobSpec.disabled` (a tool name;
+  `job/settings/tool_table.py` lists the valid names, the spec refuses an
+  unknown name or a list that cannot work). Every sentence that names a tool
+  is written with what it needs (`job/settings/needs.py`), so no
+  model-facing text names what the job disables. A new tool is a row in
   `job/settings/tool_table.py`, and its text carries its marks.
 - ABBA, QuickNII, VisuAlign and DMC-BrainMap are file exports: LangSlice
   writes the file and the program opens it. Nothing drives another program

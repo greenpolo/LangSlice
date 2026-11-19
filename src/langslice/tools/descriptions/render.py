@@ -33,22 +33,15 @@ from __future__ import annotations
 
 import functools
 import inspect
-import typing
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from string import Template
-from typing import Any, Literal
+from typing import Any
 
 from langslice.core.fits.trace.prompts import border_correction_tool_prompt
 from langslice.job import plugins
 from langslice.job.settings.needs import is_met, render
-from langslice.job.settings.tool_table import OPTION_SEPARATOR, TOOLS, is_off
-from langslice.tools.arguments import (
-    SectionTransform,
-    SectionTransformNoFlip,
-    SectionTransformNoOrientation,
-    SectionTransformNoRotate,
-)
+from langslice.job.settings.tool_table import TOOLS
 from langslice.tools.descriptions import (
     bookkeeping,
     changing,
@@ -154,8 +147,7 @@ def _native(name: str, description: ToolDescription, facts: DescriptionFacts) ->
     doc = f"{summary}\n\n{_indented(below, DOC_INDENT)}\n{' ' * DOC_INDENT}"
 
     annotations: dict[str, object] = {
-        argument: narrowed(name, argument, entry.annotation, facts.switched_off)
-        for argument, entry in offered.items()
+        argument: entry.annotation for argument, entry in offered.items()
     }
     parameters = [
         inspect.Parameter(
@@ -305,51 +297,6 @@ def argument_texts(doc: str) -> dict[str, str]:
             name = key
             texts[name] = text.strip()
     return texts
-
-
-def narrowed(name: str, argument: str, annotation: object, off: Collection[str]) -> object:
-    """Return an argument's type without the options the job switches off.
-
-    The options of ``look``'s ``mode`` are values of its enumeration; the
-    ``flip`` and ``rotate`` options of ``interactive_transform`` are keys of
-    each section it takes.
-
-    Parameters
-    ----------
-    name
-        The tool the argument belongs to.
-    argument
-        One of the tool's arguments.
-    annotation
-        The argument's declared type.
-    off
-        What the job switches off.
-
-    Returns
-    -------
-    object
-        The type with the switched-off values or keys left out.
-    """
-    options = TOOLS[name].options if name in TOOLS else {}
-    if argument in options.values():
-        values: tuple[object, ...] = typing.get_args(annotation)
-        kept = tuple(
-            value for value in values if not is_off(off, f"{name}{OPTION_SEPARATOR}{value}")
-        )
-        return Literal[kept]
-    if (name, argument) != ("interactive_transform", "sections"):
-        return annotation
-    no_flip = is_off(off, "interactive_transform:flip")
-    no_rotate = is_off(off, "interactive_transform:rotate")
-    return _SECTION_TRANSFORMS[no_flip, no_rotate]
-
-
-_SECTION_TRANSFORMS: dict[tuple[bool, bool], object] = {
-    (False, False): list[SectionTransform],
-    (True, False): list[SectionTransformNoFlip],
-    (False, True): list[SectionTransformNoRotate],
-    (True, True): list[SectionTransformNoOrientation],
-}
 
 
 def plugin_stub(name: str, facts: DescriptionFacts) -> Callable[..., object]:

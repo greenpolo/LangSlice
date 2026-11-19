@@ -78,34 +78,33 @@ whole stack; empty leaves the angles as they are.""",
     },
     returns="""\
 What was written and what was clamped, the stack's order after the
-call, the rows that changed, and [[?look:positioning a positioning picture of \
+call, the rows that changed, and a positioning picture of \
 the
 written sections: the atlas at their new positions above a
 millimetre ruler, the sections below it, each joined by a line to
-its position.||a picture of each written section with the atlas
-borders of its new position on it.]]""",
+its position.""",
 )
 
 INTERACTIVE_TRANSFORM = ToolDescription(
     summary="""\
-Set sections' [[?interactive_transform:flip|interactive_transform:rotate \
-orientation and ]]in-plane transform by hand, and show the result.""",
+Set sections' \
+orientation and in-plane transform by hand, and show the result.""",
     body=(
         """\
 For a few sections at a time, in a look-and-adjust loop. Values are
 absolute: a value given replaces the section's current one, and a value
 left out keeps it (a section without a transform starts from the
-identity). [[?interactive_transform:rotate The quarter turn is applied first\
-[[?interactive_transform:flip , then the flip]]. ]]\
-[[?interactive_transform:flip|interactive_transform:rotate A changed
+identity). The quarter turn is applied first\
+, then the flip. \
+A changed
 orientation keeps the other values: the transform is rebuilt on the new
-orientation, and the reply says so. ]]One undoable write; the image files
+orientation, and the reply says so. One undoable write; the image files
 are never modified.""",
         """\
-[[?interactive_transform:flip \
+\
 Whether a section is mirrored can only be decided from a visible notch,
 or from a cutting angle oblique enough that the two hemispheres'
-anatomy differs.]]""",
+anatomy differs.""",
     ),
     arguments={
         "sections": Argument(
@@ -113,11 +112,11 @@ anatomy differs.]]""",
             REQUIRED,
             """\
 ${count} objects: "id" (filename; the extension may be
-left off) and any of [[?interactive_transform:flip "flip" (true mirrors the \
+left off) and any of "flip" (true mirrors the \
 section
-left-right), ]]\
-[[?interactive_transform:rotate "rotate_quarter" (0, 90, 180 or 270 degrees
-counter-clockwise), ]]"rotation_deg" (degrees counter-clockwise
+left-right), \
+"rotate_quarter" (0, 90, 180 or 270 degrees
+counter-clockwise), "rotation_deg" (degrees counter-clockwise
 about the pivot, the canvas centre),
 "scale_x" and "scale_y" (multipliers about the pivot; 1.0 keeps
 the size), "shear" (a slant applied before the rotation: each
@@ -133,8 +132,8 @@ in units of scale_x), "translate_x_mm" (right) and
         ),
     },
     returns="""\
-Per section [[?interactive_transform:flip|interactive_transform:rotate \
-its orientation, ]]its transform as the values above,
+Per section \
+its orientation, its transform as the values above,
 and whether anything was written; and a picture of each section
 under its new transform with the atlas borders on it.""",
     slots={"count": PerCap(capped="One to four", uncapped="One or more")},
@@ -158,8 +157,7 @@ intact outline are not damage and are not marked. A section is damaged
 exactly when it has marked regions. \
 [[?elastix_affine|fireants_syn|trace_borders The marked
 regions are left out of \
-[[#elastix_affine=elastix_affine||fireants_syn=fireants_syn||\
-trace_borders=the image model's
+[[#elastix_affine=elastix_affine||fireants_syn=fireants_syn||trace_borders=the image model's
 trace]] automatically, and they||The marked regions]] move with the \
 registration because they
 are named by atlas region. One undoable write.""",

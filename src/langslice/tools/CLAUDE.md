@@ -62,7 +62,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   CLI's own wording; `Distance`: a distance at the job's brain scale).
   Texts are prose at no indentation with the model's line breaks; a
   trailing backslash joins a line too long for the source. A passage that
-  names a tool or an option carries needs marks (`job/settings/needs.py`).
+  names a tool carries needs marks (`job/settings/needs.py`).
   `DescriptionFacts` is what of a run changes the text: `door` (`agent`, `mcp` or `cli`),
   `auto` (the caller sizes pictures), `forced_view`, `positions`,
   `uncapped`, `prompt` (the base image prompt; empty without an image
@@ -71,8 +71,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   prompt=, uncapped=, brain_scale=)`.
 - `render.py` — `declaration(name, facts)` (cached): a native tool's
   description rendered for the run (slots filled, marks rendered, the
-  arguments it does not offer left out, `narrowed` dropping the enum values
-  and section keys the job switches off) as `doc` (the docstring layout ADK
+  arguments it does not offer left out) as `doc` (the docstring layout ADK
   and FastMCP read), `text` (below the summary, unindented: `TOOLS.md`),
   `arguments` (each argument's text on one line: the agent CLI's fix of an
   unknown argument) and the signature; a plugin tool from its stub's
@@ -214,8 +213,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   named section holds), `RENDER_FAILED`. Returns `ImagesMade` (`name`,
   `sections`, `deleted`, `in_force`: the image as `status` lists it,
   `images`: every name of the stack). The tool `make_image` adds a
-  `section` picture of a spread of the sections (`look.show_result`; none
-  where `look:section` is off, which also drops its `view`).
+  `section` picture of a spread of the sections (`look.show_result`).
   `add_image(job, workspace, record,
   name, array, note)`: a script's image (`(H, W)` on the working grid in the
   file's orientation, `uint8` or 0-1 floats), source `{"script": note}`, one
@@ -411,7 +409,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   orientation); a frozen orientation refuses a changed flip or quarter turn
   and a transform that would mirror the section. Per entry `FROZEN`
   (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
-  `BAD_ROTATION`, `OPTION_OFF`, the stager's codes
+  `BAD_ROTATION`, the stager's codes
   (`core.pictures.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
   `refusal`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
@@ -665,7 +663,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
   "Nonlinear", tool, limits)`, in the order every door lists them; `tool` is
   the verb's `job.settings.tool_table.ToolDef` (`when`, `long`, `scripting`,
-  `image_model`, `options`, `essential`, `needs`: the core's list of
+  `image_model`, `essential`, `needs`: the core's list of
   what a spec can switch, which the registry binds to the operations);
   `enabled(spec, scripting=, image_model=)`: the verbs a run of the
   spec has, less the ones its `disabled` list names. `verbs_for(spec)` is the
@@ -686,11 +684,7 @@ text snapshot (`LANGSLICE_UPDATE_SNAPSHOT=1`).
   task whose properties are all frozen on every section is not on,
   `JobSpec.has`; a tool that writes only properties frozen on every section,
   `ToolDef.writes`, is off: `JobSpec.switched_off`). A
-  tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
-  `interactive_transform:flip` and `:rotate` are the options) is off in every
-  run: the operations refuse a disabled `look` mode, a changed quarter turn
-  and a changed flip (`OPTION_OFF`; `look`'s names the mode in `option`,
-  `interactive_transform`'s row names the argument in its `message`).
+  tool the job disables (`JobSpec.disabled`) is off in every run.
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the

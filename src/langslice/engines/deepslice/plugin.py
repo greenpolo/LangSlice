@@ -195,10 +195,9 @@ def deepslice_place(
         and yaw before the vote, whether it is a bad section[[?elastix_affine ~
         , the proposed in-plane change in words (turn, scale, and shift as a
         share of the width and height)]], and what was written (or FROZEN
-        and the like). With view true, [[?look:positioning the
+        and the like). With view true, the
         positioning picture of the written sections, or, with nothing
-        written, of the proposal, captioned as not written||a picture
-        of the written sections]].
+        written, of the proposal, captioned as not written.
     """
     ...
 
@@ -236,7 +235,6 @@ def tools(*config: Mapping[str, ConfigValue]) -> list[ToolSpec]:
             group="Positioning",
             task="angles",
             writes=("position", "angles", "affine"),
-            needs=(("look:positioning",),),
             atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"),
             planes=("coronal",),
             version="1",
@@ -380,9 +378,7 @@ def place(context: ToolContext, options: Options, arguments: Arguments) -> ToolR
     )
     reply.save_record(answer, settings, folder)
     pictures = _pictures(context, answer, view=arguments.view)
-    off = _disabled(context)
-    sentence = not arguments.view and not {"look", "look:positioning"} & off
-    return reply.answered(answer, pictures, view_sentence=sentence)
+    return reply.answered(answer, pictures, view_sentence=not arguments.view)
 
 
 def _proposed_order(row: ProposalRow) -> tuple[bool, float, str]:
@@ -500,7 +496,7 @@ def is_transform_available(context: ToolContext) -> bool:
 
 
 def _disabled(context: ToolContext) -> set[str]:
-    """Return the tools and options the job switches off."""
+    """Return the tools the job switches off."""
     names = cast("list[str] | None", context.spec.get("disabled"))
     return {str(name) for name in names or []}
 

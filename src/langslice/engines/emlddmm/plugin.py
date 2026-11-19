@@ -271,8 +271,8 @@ def emlddmm_plane(
         spacing scale and shift_mm; per section what the fit used (inputs), its
         proposed position_mm, the
         change, and the residual turn (deg) and shift (mm) it needed at the
-        found plane beyond what the stack as a whole needed[[?look:overlay ; and the overlays ~
-        of up to four sections drawn at the found plane, not written]].
+        found plane beyond what the stack as a whole needed; and the overlays ~
+        of up to four sections drawn at the found plane, not written.
     """
     ...
 

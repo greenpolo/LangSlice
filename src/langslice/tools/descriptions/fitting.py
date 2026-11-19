@@ -208,7 +208,6 @@ smoothed, the whole field a quarter of that. Larger bends less.""",
             """\
 "mutual_information" or "local_correlation": how the two
 images are compared.""",
-            needs="fireants_syn:metric",
         ),
         "edges": Argument(
             bool,
@@ -216,7 +215,6 @@ images are compared.""",
             """\
 True also matches the edges (the gradient magnitude) of both
 images, as a second term of equal weight.""",
-            needs="fireants_syn:edges",
         ),
         "detail": Argument(
             FitDetail,
@@ -225,7 +223,6 @@ images, as a second term of equal weight.""",
 "coarse", "standard" or "fine": the resolution the fit works
 at (fine: 10 um for an adult mouse brain) and the iterations it
 takes; finer is slower.""",
-            needs="fireants_syn:detail",
         ),
         "view": Argument(
             bool,

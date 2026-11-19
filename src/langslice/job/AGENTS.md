@@ -59,15 +59,14 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_m
 - `tool_table.py` and `needs.py`: what a job can switch off (and, through
   `ToolDef.writes`, what its frozen properties switch off: `off_names`).
   `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
-  group, `when`, scripting / image-model / hidden, `options`, `essential`,
+  group, `when`, scripting / image-model / hidden, `essential`,
   `needs`; `tools/catalog.py` binds each to its operation), the names a
-  `JobSpec.disabled` takes (`valid_names`: a tool, or `tool:option`;
-  `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
-  cannot work (an unknown or essential name, every `look` mode off, a task
-  with every tool that writes its answer off, a tool without the pictures
-  it needs), which the spec raises as a `ValueError` when it is made. The
-  kinds and groups and the `look` modes are the core's plain names
-  (`core/tool_kinds.py`, `core/pictures/modes.py`). `needs.py`:
+  `JobSpec.disabled` takes (`valid_names`: a tool; `is_off`) and
+  `refusal(spec)`, the one-line reason a list
+  cannot work (an unknown or essential name, a task
+  with every tool that writes its answer off, a tool without the tools it
+  needs), which the spec raises as a `ValueError` when it is made. The
+  kinds and groups are the core's plain names (`core/tool_kinds.py`). `needs.py`:
   `render(text, off)`, text written with what it needs (`[[?NAMES
   text||other]]`, `[[#NAMES=item||...]]` lists), dropped or swapped for the
   disabled list; with nothing off a text renders to itself without its
@@ -101,15 +100,14 @@ itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_m
   whose properties are all frozen on every section, `JobSpec.frozen_for(id)`
   includes what a task that is off supplies, and `JobSpec.switched_off` is
   `disabled` plus the tools that write (`ToolDef.writes`) only properties
-  frozen on every section and the mirror under a frozen orientation
-  (`tool_table.off_names`): every door and text renders by it.
-- `labels.py`: a short label for people per tool and `tool:option`
+  frozen on every section (`tool_table.off_names`): every door and text renders by it.
+- `labels.py`: a short label for people per tool
   (`TOOL_LABELS`, `label`), per task (`TASK_LABELS`, `TASK_ABOUT`) and per
   tool group (`GROUP_LABELS`, with the group's task), for the LangSlice
   window's prompt generator (`hosts/gui/generator.py`, its only importer).
   Never model-facing; `tests/test_gui_generator.py` checks that every tool
-  and option has one and no other name does, and that none appears in the
-  pinned model-facing text. A new tool or option is a row here too.
+  has one and no other name does, and that none appears in the
+  pinned model-facing text. A new tool is a row here too.
 
 `plugins.py`: the job's part of the in-tree engines and of tool plugins
 (`docs/developers/plugins.md`; the types are `core/plugins.py`'s): `engines(spec)`

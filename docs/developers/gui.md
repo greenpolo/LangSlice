@@ -222,8 +222,8 @@ blank, the agent decides or asks you about.
   A job prepared in ABBA has no such card.
 - **Advanced** (closed to start with): every tool the registration agent can
   use, grouped by task, each with a short description and its own name, all
-  on. Turning a tool or one of its options off takes it away from the agent.
-  The tools of a task you did not choose are greyed; so are the options that
+  on. Turning a tool off takes it away from the agent.
+  The tools of a task you did not choose are greyed; so are the tools that
   something you said in *What you already know* leaves nothing to do. Some
   tools cannot be turned off. Below the warp's tools, **Image model**: the
   provider and model that draw a section's borders when the agent traces
@@ -261,8 +261,8 @@ langslice-job /data/brain1 init \
 ````
 
 Each line of the command is one of `init`'s settings (`langslice-job schema
-init` lists them all): `--tasks` what to do, `--disabled` the tools and
-options turned off, `--frozen` what stays as it is on every section,
+init` lists them all): `--tasks` what to do, `--disabled` the tools
+turned off, `--frozen` what stays as it is on every section,
 `--damaged` the damage notes, `--facts` the cutting order and `--notes` your
 notes; `--nonlinear-provider` and `--nonlinear-image-model` appear only when
 you choose an image model. A choice of tools the job would refuse (a task

@@ -302,8 +302,7 @@ def look_pictures(
     are ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
     ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``,
-    ``BAD_WARP``, ``OPTION_OFF`` (the job disables the mode:
-    ``look:<mode>`` in its ``disabled`` list).
+    ``BAD_WARP``.
 
     ``layers`` names the layers tool plugins and scripts left on the sections
     (``"all"``: every one) to draw on the pictures of mode ``section`` or
@@ -337,15 +336,6 @@ def look_pictures(
     warp, resolution, depth = request.warp, request.long_edge, request.depth
     plugin_layers, masks = request.layers, request.masks
     state = job.state
-    if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
-        on = [name for name in looks.MODES if not job.spec.off(f"look:{name}")]
-        raise Refused(
-            RefusalCode.OPTION_OFF,
-            option=f"look:{mode}",
-            modes=on,
-            message=f"look mode {mode} is switched off for this job; the modes "
-            f"are {', '.join(on)}.",
-        )
     refs = _strings(sections, "sections")
     ids: list[str] = []
     unknown: list[Any] = []

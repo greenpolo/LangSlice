@@ -127,15 +127,10 @@ class ContextPictures(ContextProposals):
         *part* (0-based) only that one. Sections without a position are left
         out of the atlas column as in ``look``. *resolution* is the long edge
         of each section's tile (None: the job's level). Nothing is saved or
-        written here; the pictures are the handler's to return. Refused
-        (``POSITIONING_OFF``) where the job disables ``look:positioning``."""
+        written here; the pictures are the handler's to return."""
         from langslice.core.pictures import look as looks
         from langslice.tools.changing.positions import distinct_positions
 
-        if self._run.spec.off("look:positioning"):
-            raise ToolError(
-                RefusalCode.POSITIONING_OFF, "the positioning picture is switched off for this job"
-            )
         names = [self._record(ref).id for ref in ids]
         state = self._run.state
         if proposal:

@@ -42,7 +42,7 @@ and discards its work.
 | [`tasks`](#tasks) | `position`, `transform` | What the agent does |
 | [`inputs`](#inputs) | none | What is already known per section |
 | [`frozen`](#frozen) | none | What the agent may not change |
-| [`disabled`](#disabled) | none | Tools and options switched off |
+| [`disabled`](#disabled) | none | Tools switched off |
 | [`enabled`](#enabled) | none | Tools that start off, switched on |
 | [`plugins`](#plugins), `plugin_config` | none | Tools of your own, and the engines' options |
 | [`position.*`](#position-settings) | | Section thickness and interval, spacing rule, guidance, notes |
@@ -213,15 +213,13 @@ an injection site, a known problem with the slides.
 
 Default none. Flag `--disabled NAME[,NAME...]`; library `disabled=[...]`.
 
-Tools and tool options switched off on top of what the tasks give: a tool
-(`zoom`) or `tool:option` (`look:positioning`,
-`interactive_transform:flip`). The valid names, what each removes and the
-lists that are refused are in [Tools and options](tools.md#switching-tools-and-options-off).
+Tools switched off on top of what the tasks give, by name (`zoom`). The
+valid names, what each removes and the lists that are refused are in
+[Tools](tools.md#switching-tools-off).
 
 Switch a tool off to keep the agent from spending its context on it, or to
-take away a choice that does not apply: `interactive_transform:flip` when no
-section can be mirrored, `trace_borders` when you want fits to the stain
-alone. `disabled` is not a guard against a script; [`frozen`](#frozen) is.
+take away a choice that does not apply: `trace_borders` when you want fits to
+the stain alone. `disabled` is not a guard against a script; [`frozen`](#frozen) is.
 
 ### `enabled`
 

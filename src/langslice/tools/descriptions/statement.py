@@ -141,7 +141,6 @@ JOB_TRANSFORM_AND_ORIENTATION = (
     "give every section one in-plane transform onto its atlas section, "
     "correcting the orientation of any section that is {turned}"
 )
-TURNED = "turned"
 MIRRORED_OR_TURNED = "mirrored or turned"
 JOB_EVERY_DEFORMATION = (
     "give every section a deformation onto the atlas, on top of its linear "
@@ -209,18 +208,18 @@ PLAYBOOK = (
     "- Start from the opening stack and identify anatomical progression, "
     "possible interleaved series, missing sections and uncertain "
     "orientations. Form initial position hypotheses from the anatomy.",
-    "- [[?look:positioning Use `look` in mode positioning to compare sections "
-    "with candidate atlas positions and their neighbours. ]]"
+    "- Use `look` in mode positioning to compare sections "
+    "with candidate atlas positions and their neighbours. "
     "[[?grep_atlas|grep_atlas_view Use [[#grep_atlas=`grep_atlas`||"
     "grep_atlas_view=`grep_atlas_view`]] to locate distinguishing anatomy; ]]"
-    "[[?look:section|look:atlas|zoom [[?grep_atlas|grep_atlas_view u||U]]se "
-    "[[#look:section|look:atlas=section or atlas views||zoom=`zoom`]] when "
-    "you need more detail.]]",
+    "[[?grep_atlas|grep_atlas_view u||U]]se "
+    "[[#look=section or atlas views||zoom=`zoom`]] when "
+    "you need more detail.",
     "- Write supported placements with `position_sections`, in groups that "
     "you can assess together. Revisit uncertain sections as their neighbours "
     "become clearer; the nominal interval informs the search but does not "
     "replace anatomical evidence.",
-    "- Review the whole stack[[?look:positioning  in positioning mode]] after "
+    "- Review the whole stack in positioning mode after "
     "changes. Check both sides of an apparent gap before reporting an "
     "interval break. Complete the enabled alignment and deformation tasks "
     "before submitting.",
@@ -491,14 +490,11 @@ def _job(spec: JobSpec, names: Collection[str]) -> list[str]:
 
 def _transform_job(spec: JobSpec) -> str:
     frozen_everywhere = freeze.everywhere(spec.frozen)
-    turned = MIRRORED_OR_TURNED
-    if spec.off("interactive_transform:flip"):
-        turned = TURNED
     if "orientation" in frozen_everywhere:
         return JOB_TRANSFORM
     if "affine" in frozen_everywhere:
-        return JOB_ORIENTATION.format(turned=turned)
-    return JOB_TRANSFORM_AND_ORIENTATION.format(turned=turned)
+        return JOB_ORIENTATION.format(turned=MIRRORED_OR_TURNED)
+    return JOB_TRANSFORM_AND_ORIENTATION.format(turned=MIRRORED_OR_TURNED)
 
 
 def _position_constraints(spec: JobSpec, state: Stack) -> list[str]:

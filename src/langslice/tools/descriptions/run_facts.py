@@ -91,7 +91,6 @@ TRANSFORMS_GIVEN = (
     "- Existing linear transforms are supplied and fixed for this run, orientation included."
 )
 ORIENTATION_GIVEN = "- The orientation shown is fixed; transforms are not part of this run."
-NO_FLIP = "- Flipping sections is switched off for this run."
 CANVAS = (
     "- Alignment canvas: each section is drawn at its TRUE physical size "
     "from its pixel size (read from the file, or given by the host; without "
@@ -243,18 +242,14 @@ def _change_facts(spec: JobSpec) -> list[str]:
 
 def _transform_facts(spec: JobSpec) -> list[str]:
     frozen_everywhere = freeze.everywhere(spec.frozen)
-    flips = not spec.off("interactive_transform:flip")
-    by_hand = not spec.off("interactive_transform")
-    facts: list[str] = []
-    if not flips and by_hand and "orientation" not in frozen_everywhere:
-        facts.append(NO_FLIP)
-    facts += [CANVAS, FRAME]
+    mirrors = not spec.off("interactive_transform") and "orientation" not in frozen_everywhere
+    facts: list[str] = [CANVAS, FRAME]
     cap = spec.transform.max_parallel
     if cap < MAX_PARALLEL_TRANSFORMS:
         sections = "section" if cap == 1 else "sections"
         facts.append(TRANSFORM_CAP.format(cap=cap, sections=sections))
     cue = spec.transform.hemisphere_cue.strip()
-    if cue and flips:
+    if cue and mirrors:
         facts.append(HEMISPHERE_CUE.format(cue=cue))
     return facts
 

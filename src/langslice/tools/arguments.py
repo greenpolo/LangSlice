@@ -75,47 +75,6 @@ class SectionTransform(TypedDict, total=False):
 
 
 @with_config(ConfigDict(extra="forbid"))
-class SectionTransformNoRotate(TypedDict, total=False):
-    """One ``interactive_transform`` section: absolute values, each optional."""
-
-    id: str
-    flip: bool
-    rotation_deg: float
-    scale_x: float
-    scale_y: float
-    shear: float
-    translate_x_mm: float
-    translate_y_mm: float
-
-
-@with_config(ConfigDict(extra="forbid"))
-class SectionTransformNoOrientation(TypedDict, total=False):
-    """One ``interactive_transform`` section: absolute values, each optional."""
-
-    id: str
-    rotation_deg: float
-    scale_x: float
-    scale_y: float
-    shear: float
-    translate_x_mm: float
-    translate_y_mm: float
-
-
-@with_config(ConfigDict(extra="forbid"))
-class SectionTransformNoFlip(TypedDict, total=False):
-    """One ``interactive_transform`` section: absolute values, each optional."""
-
-    id: str
-    rotate_quarter: int
-    rotation_deg: float
-    scale_x: float
-    scale_y: float
-    shear: float
-    translate_x_mm: float
-    translate_y_mm: float
-
-
-@with_config(ConfigDict(extra="forbid"))
 class LandmarkPoint(TypedDict):
     """Pixel centre of a returned saved picture (whole image's top-left)."""
 

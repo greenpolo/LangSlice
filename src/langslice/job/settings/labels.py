@@ -1,10 +1,10 @@
-"""Short plain-language names of the tools, their options and the tasks, for people.
+"""Short plain-language names of the tools and the tasks, for people.
 
 The LangSlice window's prompt generator (``hosts/gui/generator.py``) shows
 these beside each tool's own name. They are never model-facing: nothing a
 model reads is made from this table (``tests/test_gui_generator.py`` checks
 that no label appears in the pinned model-facing text and that only the
-window imports it). A tool or option added to
+window imports it). A tool added to
 :data:`langslice.job.settings.tool_table.TOOLS` needs a row here; the same
 test refuses a table that names one the tool table does not have, so a
 renamed or removed tool cannot linger.
@@ -14,14 +14,9 @@ from __future__ import annotations
 
 TOOL_LABELS: dict[str, str] = {
     "look": "See sections and the atlas",
-    "look:section": "pictures of a section alone",
-    "look:atlas": "pictures of the atlas alone",
-    "look:overlay": "atlas outlines drawn over a section",
-    "look:positioning": "the whole series laid out along the atlas",
     "zoom": "Enlarge part of a picture",
     "make_image": "Make clearer versions of a section (contrast, channel mixes)",
     "grep_atlas": "Look up brain region names",
-    "grep_atlas:points": "name the region under a point of a picture",
     "grep_atlas_view": "Show chosen regions' outlines in the atlas",
     "status": "Read the progress table",
     "list_files": "List the job folder's files",
@@ -30,15 +25,10 @@ TOOL_LABELS: dict[str, str] = {
     "review_comments": "Read the comments you left in the LangSlice window",
     "position_sections": "Place sections along the atlas, and tilt the cutting plane",
     "interactive_transform": "Move, turn and stretch a section by hand",
-    "interactive_transform:flip": "mirror a section",
-    "interactive_transform:rotate": "turn a section by quarter turns",
     "mark_damage": "Mark brain regions a section has lost",
     "make_mask": "Leave dirt, bubbles and folds out of the automatic fits",
     "elastix_affine": "Automatic alignment without bending (Elastix)",
     "fireants_syn": "Automatic warp (FireANTs SyN)",
-    "fireants_syn:metric": "choose how the images are compared",
-    "fireants_syn:edges": "also match the images' edges",
-    "fireants_syn:detail": "choose how fine the warp is",
     "set_landmarks": "Pin matching points on a section and the atlas",
     "landmark_triangulation": "Warp a section by its pinned points",
     "trace_borders": "Image model draws the borders, then a warp to them",
@@ -78,6 +68,6 @@ GROUP_LABELS: dict[str, tuple[str, str | None]] = {
 
 
 def label(name: str) -> str:
-    """The label of a tool or ``tool:option`` name; the name itself for one
-    the table does not have (a plugin's tool)."""
+    """The label of a tool name; the name itself for one the table does not
+    have (a plugin's tool)."""
     return TOOL_LABELS.get(name, name)

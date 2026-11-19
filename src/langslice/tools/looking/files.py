@@ -278,9 +278,9 @@ def _see_again(record: PictureRecord, off: Collection[str]) -> str:
         ""
         if redraw is None
         else (
-            f"[[?look:{redraw['mode']} To draw its view again, call look with {{call}} "
+            f"To draw its view again, call look with {{call}} "
             f"(it draws the stack as it is now{unzoomed}"
-            ").]]"
+            ")."
         )
     )
     text = render(

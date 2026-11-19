@@ -43,16 +43,16 @@ name the zoom's picture or the whole picture. ]]Saved geometry resolves the
 exact referenced view, including old zooms, orientation and an applied warp.
 Caption/gutter/out-of-image points are refused, and so is an atlas endpoint
 outside the atlas (the refusal gives the nearest point inside it).
-[[?look:atlas A picture of the
+A picture of the
 atlas alone supplies atlas points only when drawn with
 look(mode="atlas", sections=[section]); generic atlas browsing has no
-section context. ]]Plane changes retain pairs but flag their atlas
+section context. Plane changes retain pairs but flag their atlas
 correspondences stale; update those atlas endpoints.
-[[?look:overlay Prefer both endpoints on the same overlay[[?zoom , or a zoom \
+Prefer both endpoints on the same overlay[[?zoom , or a zoom \
 of it]]: the
 atlas point where an atlas border is drawn, the section point where that
 border belongs in the tissue. You point at what you see; a point on a warped
-overlay is mapped back to the section itself. ]][[?zoom Read endpoints off a \
+overlay is mapped back to the section itself. [[?zoom Read endpoints off a \
 close
 zoom, its grid lines 10 to 20 pixels apart: read off a coarse grid, a point \
 can
@@ -62,8 +62,8 @@ the internal anatomy: a pair on the outline moves the outline, and a pair
 on an internal landmark (the midline, a ventricle, a fibre tract) moves the
 anatomy inside. A pair moves the tissue around it, out to the neighbouring
 pairs and the image corners, so tissue that is already right takes pairs
-too: a pair with both endpoints on the same point[[?look:overlay  (one pixel
-of an overlay)]] keeps that spot where it is. [[?mark_damage  An atlas region
+too: a pair with both endpoints on the same point (one pixel
+of an overlay) keeps that spot where it is. [[?mark_damage  An atlas region
 with no tissue on the section (torn or missing) takes no pair: mark it with
 mark_damage; a region
 only partly missing keeps its pairs on the part that is present. ]]Tissue \

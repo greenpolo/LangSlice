@@ -4,10 +4,9 @@
 
 export type Task = { name: string; label: string; about: string; default: boolean };
 export type Group = { name: string; label: string; task: string | null };
-export type ToolOption = { name: string; label: string };
 export type Tool = {
   name: string; group: string; label: string; disableable: boolean; needs: string[][];
-  image_model: boolean; default_off: boolean; options: ToolOption[]; runs_in: string[];
+  image_model: boolean; default_off: boolean; runs_in: string[];
 };
 export type Atlas = { name: string; about: string; species: string };
 export type ImageProvider = {

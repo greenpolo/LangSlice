@@ -31,30 +31,30 @@ run: no default depends on the stack's state. Each picture gets a number
 and a caption stating the positions, cutting angles, scale and section
 image it was drawn with[[?zoom ; zoom takes the number]].""",
         """\
-[[?look:positioning Use positioning mode to compare sections with candidate \
+Use positioning mode to compare sections with candidate \
 atlas planes
-along the slicing axis. ]][[?look:overlay Use overlays to assess in-plane \
+along the slicing axis. Use overlays to assess in-plane \
 alignment[[?fireants_syn|landmark_triangulation|trace_borders  and
-deformation]] against internal anatomy.]]""",
+deformation]] against internal anatomy.""",
     ),
     arguments={
         "mode": Argument(
             LookMode,
             REQUIRED,
             """\
-[[?look:section "section": each section alone, as oriented, the whole
-image. ]][[?look:atlas "atlas": the atlas plane alone at each of positions_mm,
+"section": each section alone, as oriented, the whole
+image. "atlas": the atlas plane alone at each of positions_mm,
 at the stack's cutting angles; or, for each section named, at that
 section's own position and cutting angles (positions_mm then
-empty). ]]\
-[[?look:overlay "overlay": each section under its
+empty). \
+"overlay": each section under its
 current registration, with the atlas borders and any other
-atlas_layers on it. ]][[?look:positioning "positioning": the sections and the \
+atlas_layers on it. "positioning": the sections and the \
 atlas
 along the slicing axis as ABBA lays them out: the atlas at
 positions_mm above a millimetre ruler, the sections below it in
 order of position, each joined by a line to its position. A long
-stack is split into several pictures, none shrunk.]]""",
+stack is split into several pictures, none shrunk.""",
         ),
         "sections": Argument(
             list[str],
@@ -68,11 +68,10 @@ section.""",
             [],
             """\
 Atlas positions in millimetres along the slicing axis:
-[[?look:atlas the planes "atlas" draws (at least one)\
-[[?look:positioning , and ]]]]\
-[[?look:positioning the atlas pictures
-above the ruler in "positioning" (none when empty)]].""",
-            needs="look:atlas|look:positioning",
+the planes "atlas" draws (at least one)\
+, and \
+the atlas pictures
+above the ruler in "positioning" (none when empty).""",
         ),
         "images": Argument(
             list[str],
@@ -89,14 +88,11 @@ colour with automatic contrast. Empty draws `preprocessed`.""",
 Any of the atlas's images (the job statement lists
 them: "template" and any other reference images the atlas ships,
 by their names) and "borders". Empty is the mode's default: \
-[[?look:overlay borders in "overlay"]]\
-[[?look:overlay,look:atlas|look:positioning ,
-]]\
-[[?look:atlas,look:positioning template in "atlas" and "positioning"||\
-[[?look:atlas template in "atlas"]]\
-[[?look:positioning template in "positioning"]]]].\
-[[?look:section  "section" draws no atlas.]]""",
-            needs="look:overlay|look:atlas|look:positioning",
+borders in "overlay"\
+,
+\
+template in "atlas" and "positioning".\
+ "section" draws no atlas.""",
         ),
         "atlas_opacity": Argument(
             float,
@@ -104,7 +100,6 @@ by their names) and "borders". Empty is the mode's default: \
             """\
 0 to 1: how strongly an atlas image shows under the
 section in "overlay".""",
-            needs="look:overlay",
         ),
         "warp": Argument(
             Warp,
@@ -112,7 +107,6 @@ section in "overlay".""",
             """\
 "applied" draws each section with its deformation, "none" with
 its linear placement only.""",
-            needs="look:overlay",
         ),
         "resolution": Argument(
             int,
@@ -128,10 +122,9 @@ source, an atlas plane at most four times larger.""",
             [],
             """\
 Names of the layers left on the sections (status lists them),
-or ["all"], drawn as marks and outlines on the [[#look:section="section"||\
-look:overlay="overlay"]] pictures. The reply says which layers
+or ["all"], drawn as marks and outlines on the "section" and "overlay" pictures. \
+The reply says which layers
 were drawn. Empty draws none.""",
-            needs="look:section|look:overlay",
         ),
         "depth": Argument(
             int,
@@ -145,23 +138,21 @@ draws (0 = root, as in BrainGlobe; larger is finer).""",
             [],
             """\
 [[?make_mask Names of masks made with make_mask, outlined where
-their weight is 0.5 on the sections drawn, on the [[#look:section="section"||\
-look:overlay="overlay"]] pictures. Empty draws none.]]""",
+their weight is 0.5 on the sections drawn, on the "section" and "overlay" \
+pictures. Empty draws none.]]""",
             needs="make_mask",
         ),
         "registrations": Argument(
             dict[str, int],
             {},
             """\
-{filename: number}: on the [[#look:section="section"||\
-look:overlay="overlay"]] pictures, each section named is drawn
+{filename: number}: on the "section" and "overlay" pictures, each section named is drawn
 under that earlier registration of its own, by the number its status
 row gives[[?restore_registration  (restore_registration lists them)]].
 Nothing is written; the caption says which registration it is and
 whether the section holds it. With sections empty, only these
 sections are drawn. Empty draws the registration each section
 holds.""",
-            needs="look:section|look:overlay",
         ),
         "sheet": Argument(
             bool,
@@ -201,10 +192,10 @@ section or of a section with the atlas on it, the section is read again
 from its original image file at the file's own resolution, only inside
 the box, and drawn with the same section image and atlas
 borders; the caption says when the file holds fewer pixels than the
-picture. [[?look:positioning A positioning picture's sections are drawn again \
+picture. A positioning picture's sections are drawn again \
 from their
 working copies (the file reduced to at most 3072 pixels), and the atlas
-from its voxels. ]]The box is drawn as the picture was, even if the stack
+from its voxels. The box is drawn as the picture was, even if the stack
 has changed since (the reply then says `stale`). The new picture has its
 own number, so it can be zoomed again. A dashed green grid on it is
 labelled with the pixel numbers of the whole picture the zoom was cut
@@ -212,7 +203,7 @@ from, and those numbers are the coordinates of a further zoom's \
 box[[?set_landmarks  and
 of a set_landmarks endpoint, on the zoom or on the whole picture alike]].""",
         """\
-[[?look:overlay After a linear[[?fireants_syn|landmark_triangulation|~
+After a linear[[?fireants_syn|landmark_triangulation|~
 trace_borders  or nonlinear]] fit, use region on its overlay to inspect
 a particular structure closely, with only that region's border shown.
 This can reveal internal mismatches hidden at whole-section scale and
@@ -220,12 +211,12 @@ help you decide whether to adjust the linear alignment[[?fireants_syn|~
 landmark_triangulation|trace_borders [[?position_sections , refine that
 region nonlinearly, or revisit the section's position|| or refine that ~
 region nonlinearly]]||[[?position_sections  or revisit the section's ~
-position]]]].]]""",
+position]]]].""",
         """\
-Earlier pictures remain available by number. [[?look:overlay Reopen or zoom \
+Earlier pictures remain available by number. Reopen or zoom \
 a saved
 overlay to compare an intermediate registration with the current result;
-its saved placement is preserved. ]]Use undo when the latest change makes
+its saved placement is preserved. Use undo when the latest change makes
 the alignment worse.""",
     ),
     arguments={
@@ -235,7 +226,7 @@ the alignment worse.""",
             """\
 [x0, y0, x1, y1] in pixels of that picture as it was shown,
 from its top-left corner (on a zoom, the numbers its grid prints).\
-[[?look:overlay  Give either box or region, not both.]]""",
+ Give either box or region, not both.""",
         ),
         "picture": Argument(
             int,
@@ -254,7 +245,6 @@ pictures only. Crops to the entire region with a small margin
 and draws only its border, preserving the saved registration
 and section image. An absent region is reported. Leave box
 empty when using region.""",
-            needs="look:overlay",
         ),
     },
     returns="""\
@@ -357,15 +347,14 @@ everywhere); the other arguments are then ignored.""",
             bool,
             True,
             "True returns the pictures described below; false returns none.",
-            needs="look:section",
             offered=Offered.VIEW_CHOSEN,
         ),
     },
     returns="""\
-The recipe now in force and the section images there are[[?look:section , and \
+The recipe now in force and the section images there are, and \
 with
 view ${sections_shown}, each drawn as look's "section" mode draws the \
-image]].""",
+image.""",
     slots={
         "sections_shown": PerCap(
             capped="""\
@@ -386,14 +375,14 @@ then use grep_atlas_view to check its shape and location at candidate
 positions. Confirm the region visually before using it to guide a fit
 [[?mark_damage or mark damage]]]].""",
         """\
-[[?grep_atlas:points With points, it also says which atlas region is drawn at \
+With points, it also says which atlas region is drawn at \
 given points of
 saved pictures: the region (acronym, name, id) and the regions containing it,
 or that the point is outside the atlas. A picture that draws the atlas gives a
-region[[?look:overlay : an overlay of a section[[?zoom  or a zoom of one]], \
+region: an overlay of a section[[?zoom  or a zoom of one]], \
 or an
-atlas picture drawn for a section]]; a picture of the section alone does \
-not.]]""",
+atlas picture drawn for a section; a picture of the section alone does \
+not.""",
     ),
     arguments={
         "query": Argument(
@@ -401,8 +390,8 @@ not.]]""",
             "",
             """\
 Text matched case-insensitively against region acronyms and
-names (substring), or an exact acronym or numeric id[[?grep_atlas:points ;
-empty when only points are given]].""",
+names (substring), or an exact acronym or numeric id;
+empty when only points are given.""",
         ),
         "section": Argument(
             str,
@@ -417,17 +406,16 @@ placement.""",
             list[PicturePoint],
             [],
             """\
-[[?grep_atlas:points Points to look the region up at: {picture, x, y}, at
+Points to look the region up at: {picture, x, y}, at
 most 40, x and y in pixels from the top-left of the whole picture\
-[[?zoom  (on a zoom, the numbers its grid prints)]].]]""",
-            needs="grep_atlas:points",
+[[?zoom  (on a zoom, the numbers its grid prints)]].""",
         ),
     },
     returns="""\
 Rows of acronym, id, name, ancestry (root to parent, as acronyms)
 and descendant count, at most 40, with the number left \
-over[[?grep_atlas:points ; and,
-per point, its region and containing regions]].""",
+over; and,
+per point, its region and containing regions.""",
 )
 
 GREP_ATLAS_VIEW = ToolDescription(

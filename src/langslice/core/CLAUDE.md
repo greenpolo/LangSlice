@@ -39,7 +39,7 @@ workspace carries. Every module's imports are core-only:
   `JobContext`, the agent's `EngineContext`) carry the `JobSpec` beside it;
 - `tool_kinds.py` (`Kind`, `Group`, `GROUPS`: what a tool is listed under)
   and `pictures/modes.py` (`LOOK_MODES`): plain names with no imports, which
-  the plugin types and the job's tool table share;
+  the plugin types and the doors share;
 - `plugins.py` and `pictures/plugin_layers.py`: tool plugins (`docs/developers/plugins.md`), the
   core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
   `ToolError`, the plugin's name for `refusal.Refused`, `PluginError`, `PLUGIN_API_VERSION`, `NAME_PATTERN`;

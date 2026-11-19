@@ -65,7 +65,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is. The description may use [needs marks](../reference/tools.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, laid out as the native tools' descriptions read: a summary line, paragraphs, then `Args:` and `Returns:`. The arguments may be keyword-only (after `*`). Whatever its return annotation, the tool is declared to return its reply (`dict[str, Any]`), as every native tool is. The description may use [needs marks](../reference/tools.md#switching-tools-off) (`[[?zoom text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -73,16 +73,16 @@ another version is refused. The same names are importable from
 | `writes` | The section properties it may write (`position`, `angles`, `orientation`, `affine`, `deformation`, `damage`). A write outside this set is refused; a tool that writes only properties frozen on every section is not offered |
 | `long` | Computes outside the job's write lock and applies under it (see [long tools](#long-tools-and-stale_input)) |
 | `limits` | The most one call takes: `{"sections": 4}` refuses a longer `sections` argument (`TOO_MANY_SECTIONS`); `{"pictures": 2}` sends at most two pictures |
-| `needs` | What the tool needs while it is on: groups of names, one of each on (`(("look:overlay",),)`), as for native tools |
+| `needs` | What the tool needs while it is on: groups of tool names, one of each on (`(("fireants_syn",),)`), as for native tools |
 | `version` | The plugin's own version, kept in the provenance |
 | `meta` | JSON values kept with the tool in the provenance |
 | `atlases` | Shell-style patterns for the job's atlas name (`("allen_mouse_*um", "ccfv3augmented_mouse_25um")`); the tool is offered on a job whose atlas matches one. Empty: every atlas |
 | `planes` | The section planes it is offered on (`("coronal",)`); empty: every plane |
 
 A tool whose `atlases` or `planes` do not fit the job is absent, as a disabled
-tool is: it is not declared or listed, its options are gone, and every sentence
+tool is: it is not declared or listed, and every sentence
 that names it in the other tools' descriptions (written with [needs
-marks](../reference/tools.md#switching-tools-and-options-off), `[[?other_tool ...]]`)
+marks](../reference/tools.md#switching-tools-off), `[[?other_tool ...]]`)
 is dropped. The provenance records the two fields.
 
 A plugin's description is also rendered by the tools the job's tasks leave out: a
@@ -260,9 +260,7 @@ PIL images, one per part of a long stack (`part=` picks one, 0-based; the
 caption says which part). With `proposal={id: {"position_mm": mm, "angles":
 (pitch, yaw)}}` (either key, any of the sections) it is drawn at the proposed
 positions and angles, ordered by them, and carries one more caption band, `proposal: ...
-NOT written`; the job is not touched. Where the job disables `look:positioning`
-it is refused (`POSITIONING_OFF`): give the tool `needs=(("look:positioning",),)`
-to be absent there. `ctx.caption(image, text)`.
+NOT written`; the job is not touched. `ctx.caption(image, text)`.
 
 ### What a raster shows
 

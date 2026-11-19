@@ -560,7 +560,7 @@ where `look` does: both are `Offered.SIZE_CHOSEN`; `TOO_MANY_LANDMARK_VIEWS`
 says how many pairs were sent and what to resend; the landmark codes' `FIXES`
 are specific, written with needs marks; `ATLAS_ENDPOINT_OUTSIDE`, an argument
 code (exit 2), resends the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is
-the option `grep_atlas:points`. `status`' `can_change` names the
+an argument of `grep_atlas`. `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /
 `redone` (sections, fields), the rows of those sections and the depth, not the

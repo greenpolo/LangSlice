@@ -387,7 +387,7 @@ The page is a React app (`web/`, below), built into `static/`.
   `UnknownSection`.
 - `generator.py` — the prompt generator's choices, `payload()` (`GET
   generator`): `tools()` (`tool_table.catalog()` without the scripting verbs,
-  each with its `tool_labels` label, its options' names and labels, and
+  each with its `tool_labels` label and
   `runs_in`: the task choices, comma-joined, whose `JobSpec` has it by
   `ToolDef.when`), the tasks (label, sentence, default), the groups (label,
   task), `TASK_WRITERS`, `KEEP` (the properties the form can keep on every
@@ -479,12 +479,12 @@ The page is a React app (`web/`, below), built into `static/`.
   `langslice-job FOLDER init` command, one flag per line, only the fields
   set (spelled from the payload's `flags`: `--tasks`, `--atlas`, `--plane`, `--position-thickness-um`, `--position-interval-um`,
   `--pixel-size-um`, `--disabled` in table order: the tools of this run off
-  whole, then the options off of tools still on, a name a kept property
-  already switches off left out; `--frozen {"*": [...]}`, `--damaged`
+  whole (a name a kept property
+  already switches off left out); `--frozen {"*": [...]}`, `--damaged`
   `{file: note}` from `file: note` lines, `--facts` for the cutting order,
   `--notes`). `problems` (no message while one stands) mirror
-  `tool_table.refusal` on the form: the folder, whole micrometres, `look`
-  keeps a mode, each chosen task keeps a writer, each tool on keeps what it
+  `tool_table.refusal` on the form: the folder, whole micrometres,
+  each chosen task keeps a writer, each tool on keeps what it
   needs (one sentence per needed group). The form (`web/src/prompt/`: the
   From ABBA block: fixed facts, the keep-registrations box, the
   file -> slice table; the Image model fieldset after the warp's tools)

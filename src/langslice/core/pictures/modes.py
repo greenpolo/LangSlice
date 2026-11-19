@@ -1,7 +1,7 @@
 """The names of ``look``'s pictures, with no imports.
 
 The renderers live in :mod:`langslice.core.pictures.look`; the names are
-here alone so the tool table and the doors can list the modes without
+here alone so the doors can list the modes without
 loading the renderers.
 """
 

@@ -219,7 +219,7 @@ def make_image_tool(
     else:
         reply["recipe"] = done.in_force
     reply["section_images"] = done.images
-    if done.deleted or run.spec.off("look:section") or not run.shows(view):
+    if done.deleted or not run.shows(view):
         return reply
     made = [job.state.by_id(section) for section in done.sections]
     existing = [section for section in made if section is not None]

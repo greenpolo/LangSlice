@@ -242,8 +242,7 @@ def brainways_ap(
     in-plane placement, and each section is placed independently of the
     others. It works on whole coronal sections[[?interactive_transform ~
     ; turn and flip a section the right way first]]. It can miss by millimetres ~
-    on a single section, so check the result[[?look:positioning  ~
-    with the positioning view of look]].
+    on a single section, so check the result with the positioning view of look.
 
     Writes the positions as one undo step when write holds "positions"; a
     changed position clears the deformation of each section it moves. A
@@ -263,10 +262,9 @@ def brainways_ap(
     Returns:
         Per section, in the proposed order: filename, proposed position in
         millimetres, the change from its current position, and what was
-        written (or FROZEN and the like). With view true, [[?look:positioning the
+        written (or FROZEN and the like). With view true, the
         positioning picture of the written sections, or, with nothing
-        written, of the proposal, captioned as not written||a picture
-        of the written sections]].
+        written, of the proposal, captioned as not written.
     """
     ...
 
@@ -343,7 +341,7 @@ def run_brainways_ap(
         reply["clamped"] = [
             {"id": row.id, "asked_mm": row.proposed_mm, "used_mm": row.used_mm} for row in clamped
         ]
-    if not view and _positioning_on(context):
+    if not view:
         reply["view"] = _view_note(written)
 
     record = CallRecord(
@@ -561,12 +559,6 @@ def _millimetres(value: object) -> float:
     return float(value)
 
 
-def _positioning_on(context: ToolContext) -> bool:
-    listed = cast("list[object]", context.spec.get("disabled") or [])
-    disabled = [str(name) for name in listed]
-    return "look:positioning" not in disabled and "look" not in disabled
-
-
 def _view_note(written: set[str]) -> str:
     if written:
         return "The positioning view of look shows the sections at these positions."
@@ -653,7 +645,6 @@ def tools(*config: Mapping[str, str | int]) -> list[ToolSpec]:
             group="Positioning",
             task="position",
             writes=("position",),
-            needs=(("look:positioning",),),
             atlases=(ATLAS,),
             planes=("coronal",),
             version="2",
