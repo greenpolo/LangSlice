@@ -1,168 +1,65 @@
 """The job flags: how the commands that open a stack take each setting.
 
-The settings, their flags' spellings and order and the job's defaults are
-the settings table's (:data:`langslice.job.settings.schema.SETTINGS`); this
-module holds what only the commands have: each flag's ``--help`` text, how
-argparse reads it and which commands add it (:data:`FLAGS`).
-:func:`add_flags` adds one group of them to a command's parser, in the
-table's order.
+The settings, their flags' spellings, help text and defaults are the job
+spec's (:class:`langslice.job.settings.spec.JobSpec`, walked by
+:func:`langslice.job.settings.walk.leaves`: a flag is derived from a field's
+path, its help is the field's description, its default the field's); this
+module holds what only the commands have: the flags that are no field of the
+spec (:data:`COMMAND_ONLY`), the small converters that read a flag's text
+(:func:`load_json_arg`, :func:`names`) and the arguments' way back into a
+spec (:func:`values_from_args`). :func:`add_flags` adds one group of the
+flags to a command's parser.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator, Mapping, Sequence
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any
 
-from langslice.job.settings.schema import (
-    CLI_TASKS,
-    REGISTRATION_TASKS,
-    SETTINGS,
-    Setting,
-)
-from langslice.job.settings.tool_table import default_off_names, valid_names
-
-FlagGroup = Literal["job", "plugins", "session", "resume", "init"]
+from langslice.job.settings.spec import JobSpec
+from langslice.job.settings.walk import Cli, FlagGroup, Kind, Leaf, leaves
 
 SWITCHES = ("store_true", "store_false")
 
-PLANE_HELP = (
-    "Slicing plane (normal axis). Position is interpreted along this axis "
-    "(AP for coronal, ML for sagittal, DV for horizontal)."
-)
+APPENDS: tuple[Kind, ...] = ("repeat", "repeat_csv", "pairs")
 
 
 @dataclass(frozen=True, kw_only=True)
 class Flag:
-    """How the commands take one flag of a setting."""
+    """One flag as the commands add it."""
 
+    flag: str
+    aliases: tuple[str, ...] = ()
+    dest: str
     help: str
     group: FlagGroup = "job"
-    dest: str | None = None
-    action: str | None = None
-    type: Callable[[str], object] = str
     metavar: str | None = None
-    table_default: bool = True
-    checked: bool = False
+    kind: Kind = "value"
+    number: type | None = None
+    switch: bool = False
+    default: Any = None
+    choices: tuple[str, ...] | None = None
+    path: str | None = None
+    deferred: bool = False
+
+    @property
+    def action(self) -> str:
+        """argparse's action: a switch, a repeated flag, or the plain value."""
+        if self.switch:
+            return "store_false" if self.default is True else "store_true"
+        if self.kind in APPENDS:
+            return "append"
+        return "store"
 
 
-FLAGS: dict[str, Flag] = {
-    "--tasks": Flag(
-        table_default=False,
-        help="Comma-separated subset of position,transform,nonlinear: "
-        "position places and orders the sections, transform aligns them "
-        "in-plane, nonlinear deforms each linearly aligned section "
-        "(fireants_syn, and trace_borders with an image model). A task left "
-        "out takes its answer from the flags that supply it (--positions, "
-        f"--transforms ...). Default: {CLI_TASKS}; with --registration, "
-        f"{REGISTRATION_TASKS} (the imported linear registration kept as it "
-        "is)",
-    ),
-    "--atlas": Flag(help="BrainGlobe atlas name"),
-    "--plane": Flag(checked=True, help=PLANE_HELP),
-    "--nonlinear-provider": Flag(
-        metavar="PROVIDER",
-        table_default=False,
-        help="Image provider for the nonlinear task's trace_borders "
-        "(openai-oauth, openai-api, gemini-api): naming one gives the agent "
-        "trace_borders. Not given: with --enabled trace_borders, the "
-        "OpenAI sign-in or key saved in the LangSlice window's Settings; "
-        "otherwise none (the nonlinear task fits deformations to the stain "
-        "alone, with no image model)",
-    ),
-    "--nonlinear-image-model": Flag(
-        metavar="MODEL",
-        help="Image model for the nonlinear tool; default is the provider's image model",
-    ),
-    "--nonlinear-image-prompt": Flag(
-        metavar="FILE",
-        help="A UTF-8 text file holding the base prompt trace_borders sends "
-        "the image model, in place of LangSlice's own "
-        "(NonlinearSpec.image_prompt); {plane} in it becomes the section "
-        "plane. It must describe the provider's attachment order, and its "
-        "traces are recorded as an untested profile. The agent's "
-        "per-section edit starts from it. Default: LangSlice's prompt for "
-        "the provider",
-    ),
-    "--pixel-size-um": Flag(
-        metavar="UM|JSON",
-        help="Micrometres per pixel of the section images: one number for "
-        "every file, or a JSON file or inline mapping of filenames to "
-        "micrometres per pixel. Default (and for a file the mapping does not "
-        "name): read from each file's TIFF/OME tags",
-    ),
-    "--preprocess": Flag(
-        checked=True,
-        help="How each section's preprocessed image is made: auto blends the "
-        "channels with local contrast enhancement, none takes the file as "
-        "read, in gray. It is the image the agent sees first, the one the "
-        "image model is shown, and the one every fit reads unless the agent "
-        "names another section image. The image files are never modified",
-    ),
-    "--image-resolution": Flag(
-        checked=True,
-        help="Size of the pictures the agent is shown; auto lets it choose per call",
-    ),
-    "--disabled": Flag(
-        action="append",
-        metavar="NAME[,NAME...]",
-        help="Tools the agent does not get, on top of what the tasks give "
-        "(repeatable), for example zoom. "
-        "Valid names: " + ", ".join(valid_names()),
-    ),
-    "--enabled": Flag(
-        action="append",
-        metavar="NAME[,NAME...]",
-        help="Tools that start off and the agent gets in this job "
-        "(repeatable): " + ", ".join(default_off_names()) + ". "
-        "trace_borders uses the saved OpenAI sign-in or key unless "
-        "--nonlinear-provider names another image model",
-    ),
-    "--transform-hemisphere-cue": Flag(
-        metavar="TEXT",
-        help="What marks a hemisphere in these sections (a notch, an injection...)",
-    ),
-    "--position-thickness-um": Flag(
-        type=int,
-        metavar="UM",
-        help="Known section thickness in microns; omit if unknown",
-    ),
-    "--position-interval-um": Flag(
-        type=int,
-        metavar="UM",
-        help="Known section interval in microns: the spacing of the "
-        "sections' initial positions; omit to spread them over the atlas",
-    ),
-    "--position-start-mm": Flag(
-        type=float,
-        metavar="MM",
-        help="The first section's initial atlas position in mm; omit to "
-        "centre the stack in the atlas",
-    ),
-    "--position-strict-interval": Flag(
-        action="store_true",
-        help="Sections must sit exactly one interval apart",
-    ),
-    "--transform-angles": Flag(action="store_true", help="Let the agent set the cutting angles"),
-    "--pitch": Flag(type=float, help="Host-given cutting pitch, degrees"),
-    "--yaw": Flag(type=float, help="Host-given cutting yaw, degrees"),
-    "--section-angles": Flag(
-        metavar="JSON",
-        help="Host-given cutting angles per section (a registration made "
-        "elsewhere): JSON file or inline mapping of filenames to "
-        '{"pitch": deg, "yaw": deg}; not with --pitch/--yaw',
-    ),
-    "--facts": Flag(
-        action="append",
-        metavar="TEXT",
-        help="A fact about this stack, passed to the agent verbatim (repeatable)",
-    ),
-    "--positions": Flag(
-        metavar="JSON",
-        help="Host-supplied positions: a JSON file path or inline JSON mapping filename -> mm",
-    ),
-    "--registration": Flag(
+COMMAND_ONLY: tuple[Flag, ...] = (
+    Flag(
+        flag="--registration",
+        dest="registration",
         metavar="FILE",
         help="A linear registration made elsewhere, imported as every "
         "section's position, cutting angles, orientation and in-plane "
@@ -171,152 +68,128 @@ FLAGS: dict[str, Flag] = {
         "--transforms, --orientation, --pitch/--yaw, --section-angles or "
         "--transform-angles. VisuAlign markers are not imported",
     ),
-    "--order": Flag(
+    Flag(
+        flag="--pitch",
+        dest="pitch",
+        number=float,
+        help="Host-given cutting pitch, degrees",
+    ),
+    Flag(
+        flag="--yaw",
+        dest="yaw",
+        number=float,
+        help="Host-given cutting yaw, degrees",
+    ),
+    Flag(
+        flag="--section-angles",
+        dest="section_angles",
         metavar="JSON",
-        help="Host-supplied order: a JSON file path or inline JSON list of filenames",
+        kind="json",
+        help="Host-given cutting angles per section (a registration made "
+        "elsewhere): JSON file or inline mapping of filenames to "
+        '{"pitch": deg, "yaw": deg}; not with --pitch/--yaw',
     ),
-    "--transforms": Flag(
-        metavar="JSON",
-        help="Host-supplied calibrated linear transforms: JSON file or "
-        "inline mapping of filenames to saved transform records",
-    ),
-    "--orientation": Flag(
-        metavar="JSON",
-        help="Host-supplied orientation: JSON file or inline mapping of "
-        'filenames to {"flip": true|false, "rotation_deg": 0|90|180|270}',
-    ),
-    "--frozen": Flag(
-        metavar="JSON",
-        table_default=False,
-        help="What the agent may not change: JSON file or inline mapping of a "
-        'filename (or "*" for every section) to a list of properties, any of '
-        "position, angles, orientation, affine, deformation, damage; a frozen "
-        "property keeps the value the supplied inputs give it",
-    ),
-    "--damaged": Flag(
-        metavar="JSON",
-        help="Notes on damaged tissue: JSON file or inline mapping of "
-        "filenames to notes; notes alone do not exclude atlas regions from "
-        "fits",
-    ),
-    "--damaged-regions": Flag(
-        metavar="JSON",
-        help="Damage marks: JSON file or inline mapping of filenames to "
-        'atlas region entries ("CTX", "root:right": a side of the section as '
-        "it is shown), which every fit leaves out, as mark_damage takes them",
-    ),
-    "--out": Flag(
-        help="Results JSON path. Default: <job folder>/exports/linear_results.json",
-    ),
-    "--job-dir": Flag(
-        metavar="PATH",
-        help="Put the job folder (checkpoint, undo history, pictures, "
-        "results) here instead of <image_folder>/langslice. A folder holding "
-        "the job of another image folder is refused",
-    ),
-    "--position-playbook": Flag(
-        action="store_true",
-        help="Add optional positioning guidance: compare candidate planes "
-        "and regions, write supported placements, revisit uncertainty and "
-        "review the stack",
-    ),
-    "--position-notes": Flag(
-        metavar="TEXT",
-        help="The user's notes for the position task, shown to the agent "
-        "with the task (one line each; PositionSpec.notes)",
-    ),
-    "--transform-notes": Flag(
-        metavar="TEXT",
-        help="The user's notes for the transform task, shown to the agent "
-        "with the task (one line each; TransformSpec.notes)",
-    ),
-    "--nonlinear-notes": Flag(
-        metavar="TEXT",
-        help="The user's notes for the nonlinear task, shown to the agent "
-        "with the task (one line each; NonlinearSpec.notes)",
-    ),
-    "--plugins": Flag(
-        group="plugins",
-        action="append",
-        metavar="MODULE:FACTORY",
-        help="Add the tools of a tool plugin to the agent's toolbox "
-        "(repeatable): a Python module and the function in it that returns "
-        "the tools. Importing it runs its code; the job records which plugin "
-        "ran (docs/developers/plugins.md)",
-    ),
-    "--plugin-config": Flag(
-        group="plugins",
-        action="append",
-        metavar="MODULE:FACTORY=JSON",
-        help="Options for a plugin's factory (repeatable): the plugin's "
-        "reference, '=', then a JSON object or the path of a JSON file",
-    ),
-    "--model": Flag(group="session", help="Model name for the agent session"),
-    "--reasoning": Flag(
-        group="session",
-        checked=True,
-        help="Reasoning effort for models that expose one. Default: the provider's own",
-    ),
-    "--no-debrief": Flag(
-        group="session",
-        dest="debrief",
-        action="store_false",
-        help="Skip the post-submit debrief question (what tools the agent missed)",
-    ),
-    "--force-view": Flag(
-        group="session",
-        action="store_true",
-        help="The change and fitting tools always return their picture: "
-        "their view argument is not offered (JobSpec.force_view)",
-    ),
-    "--nonlinear-require-deformation": Flag(
-        group="session",
-        action="store_true",
-        help="Nonlinear task: submit is refused until every section carries "
-        "a deformation (NonlinearSpec.require_deformation); otherwise a "
-        "deformation is the agent's choice",
-    ),
-    "--no-resume": Flag(
-        group="resume",
-        dest="resume",
-        action="store_false",
-        help="Ignore any existing checkpoint and start over",
-    ),
-    "--notes": Flag(
+    Flag(
+        flag="--notes",
+        dest="notes",
         group="init",
         metavar="TEXT",
         help="The user's notes for this job (job.json), which every door "
         "gives the registration agent",
     ),
-    "--viewer": Flag(
+    Flag(
+        flag="--viewer",
+        dest="viewer",
         group="init",
         help="Which model reads the pictures (job.json; default claude): it "
         "sets their largest size",
     ),
-}
+)
 
 
-def group_flags(group: FlagGroup) -> Iterator[tuple[str, Flag, Setting]]:
-    """Yield one group's flags in the table's order.
+def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | None:
+    """A JSON argument, given inline or as a path to a JSON file.
 
-    Parameters
-    ----------
-    group
-        Which commands' flags (:data:`FlagGroup`).
-
-    Yields
-    ------
-    spelling : str
-        The flag as it is typed.
-    flag : Flag
-        How the commands take it.
-    row : Setting
-        The setting it gives.
+    An inline object or list (``{...}``, ``[...]``) is parsed as JSON whatever
+    its length (never tried as a file name: a real ``--transforms`` map is
+    longer than any). Anything else is a path when that file exists, else
+    inline JSON. Neither is a ``ValueError`` naming *flag*.
     """
-    for row in SETTINGS:
-        for spelling in row.flags:
-            if FLAGS[spelling].group == group:
-                yield spelling, FLAGS[spelling], row
+    if not value:
+        return None
+    path: Path | None = None
+    if not value.lstrip().startswith(("{", "[")):
+        try:
+            candidate = Path(value).expanduser()
+            path = candidate if candidate.is_file() else None
+        except OSError:
+            path = None
+    if path is not None:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"{flag}: could not read JSON from {path}: {exc}") from exc
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{flag}: neither an existing JSON file nor inline JSON ({exc})") from exc
+
+
+def read_text_arg(value: str | None, flag: str) -> str | None:
+    """The text of the UTF-8 file *value* names (None without one); a file that
+    cannot be read is a ``ValueError`` naming *flag*."""
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"{flag}: could not read {path}: {exc}") from exc
+
+
+def names(items: Sequence[str]) -> list[str]:
+    """Split a repeatable ``NAME[,NAME...]`` flag into its names, in the order
+    given, without blanks."""
+    return [name.strip() for item in items for name in item.split(",") if name.strip()]
+
+
+def _flag_of(leaf: Leaf, cli: Cli) -> Flag:
+    switch = leaf.is_switch
+    return Flag(
+        flag=leaf.flag,
+        aliases=cli.aliases,
+        dest=leaf.dest,
+        help=leaf.description,
+        group=cli.group,
+        metavar=cli.metavar,
+        kind=cli.kind,
+        number=leaf.number,
+        switch=switch,
+        default=leaf.default,
+        choices=leaf.choices,
+        path=leaf.path,
+        deferred=cli.deferred,
+    )
+
+
+def all_flags(group: FlagGroup) -> list[Flag]:
+    """The flags of one group: the spec's settings in declaration order, then
+    the flags that are no setting."""
+    own = [
+        _flag_of(leaf, leaf.cli)
+        for leaf in leaves(JobSpec)
+        if leaf.cli is not None and leaf.cli.group == group
+    ]
+    return [*own, *(flag for flag in COMMAND_ONLY if flag.group == group)]
+
+
+def flag_names() -> dict[str, str]:
+    """Each setting's flag by its path (``position.thickness_um``,
+    ``inputs.pixel_size_um``), and each command-only flag by its destination
+    (``notes``), for the window's prompt generator."""
+    spelled = {leaf.path: leaf.flag for leaf in leaves(JobSpec) if leaf.cli is not None}
+    spelled.update({flag.dest: flag.flag for flag in COMMAND_ONLY})
+    return spelled
 
 
 def add_flags(
@@ -325,7 +198,7 @@ def add_flags(
     *,
     choices: Mapping[str, Sequence[str]] | None = None,
 ) -> None:
-    """Add one group's flags to a command's parser, in the table's order.
+    """Add one group's flags to a command's parser.
 
     Parameters
     ----------
@@ -334,18 +207,15 @@ def add_flags(
     group
         Which commands' flags (:data:`FlagGroup`).
     choices
-        The values of a flag that the command knows and the table does not,
+        The values of a flag that the command knows and the spec does not,
         by spelling (``--viewer``'s viewers belong to the pictures).
     """
     known = choices or {}
-    for spelling, flag, row in group_flags(group):
-        values = _values(known.get(spelling), flag, row)
-        dest = flag.dest or spelling.removeprefix("--").replace("-", "_")
-        default = row.default if flag.table_default else None
-        _add(parser, spelling, flag, dest, default, values)
-        if spelling == row.flags[0]:
-            for alias in row.aliases:
-                _add(parser, alias, flag, dest, argparse.SUPPRESS, values)
+    for flag in all_flags(group):
+        values = _values(known.get(flag.flag), flag)
+        _add(parser, flag.flag, flag, values, hidden=False)
+        for alias in flag.aliases:
+            _add(parser, alias, flag, values, hidden=True)
 
 
 def flag_rows(
@@ -353,7 +223,7 @@ def flag_rows(
     *,
     choices: Mapping[str, Sequence[str]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return the flags of some groups as data, from the table :func:`add_flags` reads.
+    """Return the flags of some groups as data, from the walk :func:`add_flags` reads.
 
     Parameters
     ----------
@@ -371,20 +241,17 @@ def flag_rows(
     known = choices or {}
     rows: list[dict[str, Any]] = []
     for group in groups:
-        for spelling, flag, row in group_flags(group):
-            switch = flag.action in SWITCHES
+        for flag in all_flags(group):
+            switch = flag.switch
             values = (
-                None
-                if switch or flag.action == "append"
-                else _values(known.get(spelling), flag, row)
+                None if switch or flag.action == "append" else _values(known.get(flag.flag), flag)
             )
-            default = row.default if flag.table_default else None
             rows.append(
                 {
-                    "flag": spelling,
+                    "flag": flag.flag,
                     "aliases": [],
-                    "help": " ".join(flag.help.split()),
-                    "default": [] if flag.action == "append" else default,
+                    "help": flag.help,
+                    "default": [] if flag.action == "append" else _default(flag),
                     "choices": values,
                     "takes_value": not switch,
                     "metavar": None if switch else flag.metavar,
@@ -393,53 +260,145 @@ def flag_rows(
     return rows
 
 
-def _values(listed: Sequence[str] | None, flag: Flag, row: Setting) -> list[str] | None:
+def values_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    """The settings the parsed flags give, as :class:`JobSpec` takes them.
+
+    A setting whose flag was not parsed, or not given and with no value of its
+    own, is left out, so the spec's default stands. The plugin flags are the
+    plugins' (:func:`langslice.doors.commands.linear.with_tool_plugins`), and
+    ``--pitch``, ``--yaw`` and ``--section-angles`` make ``inputs.angles``.
+
+    Parameters
+    ----------
+    args
+        The parsed job flags.
+
+    Returns
+    -------
+    dict
+        Top-level settings, a task's section as its own dict, the answers
+        under ``inputs``.
+
+    Raises
+    ------
+    ValueError
+        For a JSON or file argument that cannot be read, or angle flags that
+        cannot be combined.
+    """
+    values: dict[str, Any] = {}
+    for group in ("job", "session", "resume"):
+        for flag in all_flags(group):
+            if flag.path is None or not hasattr(args, flag.dest):
+                continue
+            value = _read(flag, getattr(args, flag.dest))
+            if value is not None:
+                _put(values, flag.path, value)
+    angles = _angles(args)
+    if angles is not None:
+        _put(values, "inputs.angles", angles)
+    return values
+
+
+def _read(flag: Flag, given: Any) -> Any:
+    """One flag's value in the form the spec takes, None when there is none."""
+    if given is None or flag.kind == "pairs":
+        return None
+    if flag.kind == "json":
+        return load_json_arg(given, flag.flag)
+    if flag.kind == "file":
+        return read_text_arg(given, flag.flag)
+    if flag.kind == "csv":
+        return names([given])
+    if flag.kind == "repeat_csv":
+        return names(given) or None
+    if flag.kind == "repeat":
+        return list(given) or None
+    return given
+
+
+def _put(values: dict[str, Any], path: str, value: Any) -> None:
+    """Set *value* at the dotted *path* of *values*, a section made as needed."""
+    section, _dot, key = path.rpartition(".")
+    held = values
+    for part in section.split(".") if section else ():
+        held = held.setdefault(part, {})
+    held[key] = value
+
+
+def _angles(args: argparse.Namespace) -> dict[str, Any] | None:
+    """``inputs.angles`` from ``--pitch`` / ``--yaw``, or ``--section-angles``."""
+    pitch = getattr(args, "pitch", None)
+    yaw = getattr(args, "yaw", None)
+    angles: dict[str, Any] | None = None
+    if pitch is not None or yaw is not None:
+        angles = {"pitch": pitch or 0.0, "yaw": yaw or 0.0}
+    per_section = load_json_arg(getattr(args, "section_angles", None), "--section-angles")
+    if per_section is None:
+        return angles
+    if angles is not None:
+        raise ValueError(
+            "--section-angles gives each section its own plane; it cannot "
+            "be combined with the stack-wide --pitch/--yaw"
+        )
+    if not isinstance(per_section, dict) or not all(
+        isinstance(value, dict) for value in per_section.values()
+    ):
+        raise ValueError('--section-angles must map filenames to {"pitch": deg, "yaw": deg}')
+    return per_section
+
+
+def _default(flag: Flag) -> Any:
+    """The default argparse is given: the setting's own, none for a flag the
+    command works the default out of (``tasks``, the provider), a JSON or file
+    flag, or a flag that is no setting."""
+    if flag.path is None or flag.deferred or flag.kind in ("json", "file", "csv"):
+        return None
+    return flag.default
+
+
+def _values(listed: Sequence[str] | None, flag: Flag) -> list[str] | None:
     """Return the values argparse accepts for a flag; None: any.
 
-    *listed* is what the command knows; else a checked flag takes its
-    setting's choices.
+    *listed* is what the command knows; else the setting's own fixed list.
     """
-    if listed is None and flag.checked:
-        listed = row.choices
-    if listed is None:
-        return None
-    return list(listed)
+    chosen = listed if listed is not None else flag.choices
+    return None if chosen is None else list(chosen)
 
 
 def _add(
     parser: argparse.ArgumentParser,
     spelling: str,
     flag: Flag,
-    dest: str,
-    default: object,
     values: list[str] | None,
+    *,
+    hidden: bool,
 ) -> argparse.Action:
     """Add one spelling of a flag to *parser*, as :func:`add_flags` does.
 
-    A spelling without a default (``argparse.SUPPRESS``) has no help either.
+    A hidden spelling (an old name of the flag) has no default and no help.
     Returns the parser's action for it.
     """
-    hidden = default is argparse.SUPPRESS
     text = argparse.SUPPRESS if hidden else flag.help
-    if flag.action in SWITCHES:
+    default = argparse.SUPPRESS if hidden else _default(flag)
+    if flag.switch:
         return parser.add_argument(
-            spelling, dest=dest, action=flag.action, default=default, help=text
+            spelling, dest=flag.dest, action=flag.action, default=default, help=text
         )
     if flag.action == "append":
-        empty: object = default if hidden else []
         return parser.add_argument(
             spelling,
-            dest=dest,
-            action=flag.action,
-            default=empty,
+            dest=flag.dest,
+            action="append",
+            default=default if hidden else [],
             metavar=flag.metavar,
             help=text,
         )
     return parser.add_argument(
         spelling,
-        dest=dest,
+        dest=flag.dest,
+        action="store",
         default=default,
-        type=flag.type,
+        type=flag.number or str,
         choices=values,
         metavar=flag.metavar,
         help=text,

@@ -75,7 +75,7 @@ from langslice.core.fits.frame import digest, params_after_grid_step
 from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
-from langslice.core.stack.codec import affine_fields
+from langslice.core.stack.affine import affine_fields
 from langslice.core.stack.deformation import DeformationRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
@@ -529,8 +529,6 @@ class RecordStore:
         held = section.deformation
         if held is None or held.linear_key != linear_key(state, section):
             return None
-        if held.key is None:
-            return None
         return self.get(section.id, held.key)
 
 
@@ -620,7 +618,7 @@ def reference(
     """
     earlier: tuple[JsonObject, ...] = ()
     if previous is not None and step.get("start") == "current":
-        earlier = previous.steps or ()
+        earlier = previous.steps
     return DeformationRef(
         key=key,
         linear_key=linear,

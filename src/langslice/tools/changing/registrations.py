@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, cast
 from langslice.core.fits.deformation import linear_key
 from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.codec import Written
+from langslice.core.stack.part import Written
 from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.status import deformation_entry, transform_entry

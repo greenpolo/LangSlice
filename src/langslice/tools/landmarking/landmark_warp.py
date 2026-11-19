@@ -38,7 +38,6 @@ from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.deformation import DeformationRef, LandmarkWarp
 from langslice.core.stack.landmarks import Pair
-from langslice.core.stack.landmarks_json import pair_to_json
 from langslice.tools.landmarking.landmarks import landmark_section
 from langslice.tools.looking.look import requested_edge, show_result
 from langslice.tools.run import Run, pictured
@@ -273,7 +272,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
     """Apply the complete set, replacing the preceding landmark application."""
     record = landmark_section(job, section)
     pairs = _require_applicable(job, record)
-    pair_forms = [pair_to_json(pair) for pair in pairs]
+    pair_forms = [pair.to_json() for pair in pairs]
     revision = digest({"pairs": pair_forms, "mesh": "pairs and corners"})
     held = record.deformation
     applied_warp = geometry.landmark_warp(record)
@@ -304,7 +303,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> Land
             baseline_key = applied_warp.baseline_key
             baseline_steps = applied_warp.baseline_steps
         elif held is not None:
-            baseline_key, baseline_steps = held.key, held.steps or ()
+            baseline_key, baseline_steps = held.key, held.steps
         size = grid.image.size
         source = (
             geometry.transform(

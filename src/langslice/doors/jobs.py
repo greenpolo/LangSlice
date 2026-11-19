@@ -32,7 +32,6 @@ from langslice.job.folder.layout import (
     read_job_file,
 )
 from langslice.job.job import Job
-from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.spec import JobSpec
 
 if TYPE_CHECKING:
@@ -180,13 +179,11 @@ def read_spec(job_folder: Path) -> JobSpec:
             "<images>/langslice)."
         )
     data["image_folder"] = str(images)
-    kept, _removed = without_removed_settings(data)
     try:
-        spec = JobSpec.from_dict(kept)
+        spec = JobSpec.from_dict(data)
     except ValueError as exc:
         raise ValueError(f"{job_folder / 'job.json'}: {exc}") from exc
-    spec.resume = True
-    return spec
+    return spec.model_copy(update={"resume": True})
 
 
 @dataclass
@@ -355,7 +352,5 @@ def with_registration(
     say = emit or logger.info
     for warning in imported.report["warnings"]:
         say(f"[registration] {warning}")
-    import dataclasses
-
     supplied = {**spec.inputs, **imported.inputs}
-    return dataclasses.replace(spec, inputs=supplied), imported.report
+    return spec.with_changes(inputs=supplied), imported.report

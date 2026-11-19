@@ -9,13 +9,13 @@ form is a :class:`PhysicalAffine`: the knobs the alignment tools take.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from typing import Any
 
-from langslice.core.jsonable import JsonObject, empty_object
+from langslice.core.stack.part import Flag, Number, Object, Part, Point, omitted
 
 
-@dataclass(frozen=True)
-class PhysicalAffine:
+class PhysicalAffine(Part):
     """Hold an affine as rotation, two scales, shear and shift about a pivot.
 
     The five knobs the alignment tools take, plus the shear an affine can
@@ -39,18 +39,17 @@ class PhysicalAffine:
         Shear factor the knobs cannot set, 0 for none.
     pivot
         The rotation and scale centre as ``(x, y)`` canvas fractions.
-    extra
-        Other keys a host's knobs carried, kept as they came.
+
+    Other keys a host's knobs carried are kept as they came.
     """
 
-    rotation_deg: float | None = None
-    scale_x: float | None = None
-    scale_y: float | None = None
-    translate_x_mm: float | None = None
-    translate_y_mm: float | None = None
-    shear: float | None = None
-    pivot: tuple[float, float] | None = None
-    extra: JsonObject = field(default_factory=empty_object)
+    rotation_deg: Number | None = omitted()
+    scale_x: Number | None = omitted()
+    scale_y: Number | None = omitted()
+    translate_x_mm: Number | None = omitted()
+    translate_y_mm: Number | None = omitted()
+    shear: Number | None = omitted()
+    pivot: Point | None = omitted()
 
 
 IDENTITY_PHYSICAL = PhysicalAffine(
@@ -64,8 +63,7 @@ IDENTITY_PHYSICAL = PhysicalAffine(
 )
 
 
-@dataclass(frozen=True)
-class Calibration:
+class Calibration(Part):
     """Hold the section's scale an affine's millimetres are measured at.
 
     Parameters
@@ -77,12 +75,11 @@ class Calibration:
         Where that scale came from (the supplied pixel size, an estimate).
     """
 
-    section_um_per_px: float | None
+    section_um_per_px: Number | None = None
     source: str
 
 
-@dataclass(frozen=True)
-class FitRegions:
+class FitRegions(Part):
     """Hold the atlas regions an affine fit was restricted to.
 
     Parameters
@@ -97,8 +94,7 @@ class FitRegions:
     exclude: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
-class StoredAffine:
+class StoredAffine(Part):
     """Hold a section's in-plane affine, whatever made it.
 
     Parameters
@@ -133,21 +129,34 @@ class StoredAffine:
         must match the section's (``flip``, ``rotation_deg``).
     stale
         A host's mark that the affine no longer holds.
-    extra
-        Other keys the stored affine carried (a host's, an earlier
-        LangSlice's), kept as they came so the state file reads back the
-        same.
     """
 
-    kind: str | None
-    params: tuple[float, ...]
-    physical: PhysicalAffine | None = None
-    calibration: Calibration | None = None
-    mirrored: bool | None = None
-    note: str | None = None
-    in_plane: JsonObject | None = None
-    regions: FitRegions | None = None
-    fit_atlas: str | None = None
-    orientation: JsonObject | None = None
-    stale: bool | None = None
-    extra: JsonObject = field(default_factory=empty_object)
+    kind: str | None = omitted()
+    params: tuple[Number, ...]
+    physical: PhysicalAffine | None = omitted()
+    calibration: Calibration | None = omitted()
+    mirrored: Flag | None = omitted()
+    note: str | None = omitted()
+    in_plane: Object | None = omitted()
+    regions: FitRegions | None = omitted()
+    fit_atlas: str | None = omitted()
+    orientation: Object | None = omitted()
+    stale: Flag | None = omitted()
+
+    def arranged(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Write an imported affine's reading on the render and ``mirrored``
+        before its calibration; every other one writes the calibration first."""
+        if self.in_plane is None:
+            return data
+        first = ("kind", "params", "physical", "in_plane", "mirrored", "calibration")
+        placed = {key: data[key] for key in first if key in data}
+        return {**placed, **{key: value for key, value in data.items() if key not in placed}}
+
+
+def affine_fields(affine: StoredAffine | None, keys: Sequence[str]) -> dict[str, Any]:
+    """Return some keys of a stored affine's JSON form, null where unset.
+
+    What a digest of a placement hashes (its six numbers, its calibration).
+    """
+    form = {} if affine is None else affine.to_json()
+    return {key: form.get(key) for key in keys}

@@ -88,7 +88,6 @@ from langslice.core.sections.channels import colour_words
 from langslice.core.sections.images import PREPROCESSED
 from langslice.core.sections.native import framed_window
 from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
-from langslice.core.stack.rows import fields_to_json, with_fields
 from langslice.core.stack.section import Angles, Section
 from langslice.core.stack.stack import Stack, unknown_sections
 from langslice.core.workspace import Workspace
@@ -247,7 +246,7 @@ def snapshot(state: Stack, ids: Sequence[str], *, view_angles: bool = False) -> 
         section = state.by_id(section_id)
         if section is not None:
             names = (*SECTION_FIELDS, "layers") if section.layers else SECTION_FIELDS
-            sections[section_id] = fields_to_json(section, names)
+            sections[section_id] = section.fields_json(names)
     data: dict[str, Any] = {"sections": sections}
     if view_angles:
         data["view_angles"] = list(state.view_angles)
@@ -311,7 +310,7 @@ def restored(state: Stack, held: dict[str, Any]) -> Stack:
     for index, section in enumerate(out.slices):
         fields = snapshots.get(section.id)
         if fields is not None:
-            out.slices[index] = with_fields(section, {"layers": [], **fields})
+            out.slices[index] = section.with_fields({"layers": [], **fields})
     return out
 
 

@@ -25,7 +25,6 @@ from langslice.core.stack.affine import (
     PhysicalAffine,
     StoredAffine,
 )
-from langslice.core.stack.codec import affine_to_json
 from langslice.core.stack.deformation import DeformationRef
 from langslice.doors.plugins.frames import ContextFrames
 
@@ -187,7 +186,7 @@ class ContextProposals(ContextFrames):
             pivot=pivot,
             mirrored=mirrored,
             calibration=calibration,
-            record=affine_to_json(affine),
+            record=affine.to_json(),
             affine=affine,
         )
 

@@ -29,15 +29,11 @@ is listed as made by what its content says made it (:func:`guessed_maker`).
 
 Undo, redo and ``restore_registration`` put lines back on sections
 (:func:`set_head`), each appending a line of its own; the undo steps that
-name the lines are ``history/undo.json`` (``undo_steps.py``). A section's
-``registrations.jsonl`` of an older LangSlice is read as its lines until
-the section's next write, which writes ``history.jsonl`` from it.
+name the lines are ``history/undo.json`` (``undo_steps.py``).
 
 **Record folders.** After each write, a folder under a changed section's
 ``deformable/`` that neither the section nor a line of its history names,
-directly or as a parent, is deleted: a fit saved and never applied. While
-an older LangSlice's undo steps are in ``history/`` nothing is deleted:
-those steps may name records no line does.
+directly or as a parent, is deleted: a fit saved and never applied.
 
 A line cut short (a write that died mid-line) is skipped when read, and the
 next line written starts on a line of its own.
@@ -45,49 +41,32 @@ next line written starts on a line of its own.
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 import shutil
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from pydantic import ConfigDict, ValidationError
 
 from langslice.core.fits.deformation import folder_name, linear_key
 from langslice.core.fits.frame import digest as content_digest
-from langslice.core.jsonable import JsonObject, JsonValue, to_jsonable
+from langslice.core.jsonable import JsonObject, JsonValue
 from langslice.core.stack.affine import StoredAffine
-from langslice.core.stack.codec import (
-    affine_from_json,
-    affine_to_json,
-    angles_from_json,
-    deformation_from_json,
-    deformation_to_json,
-)
 from langslice.core.stack.deformation import DeformationRef
-from langslice.core.stack.json_reads import as_object, integer_at, text_at
-from langslice.core.stack.rows import section_to_json, with_fields
+from langslice.core.stack.part import Shape, Whole
 from langslice.core.stack.section import FLAT, Angles, Section
 from langslice.core.stack.stack import Stack
 from langslice.job.folder.layout import JobLayout
-from langslice.job.migrations import (
-    OLD_REGISTRATION_LIST,
-    lines_from_registration_list,
-)
-from langslice.job.state_file import (
-    FORMAT_KEY,
-    STATE_FORMAT_VERSION,
-    json_object,
-)
-from langslice.job.steps.undo_steps import older_undo_steps
+from langslice.job.state_file import STATE_FORMAT_VERSION, json_object
 
 logger = logging.getLogger(__name__)
 
 HOST = "host"
 SCRIPT = "script"
 REGISTRATION_KEYS = ("flip", "rotation_deg", "transform", "deformation")
-_LINE_KEYS = ("seq", "step", "by", "at", "registration", "digest")
 
 
 def now() -> str:
@@ -101,33 +80,31 @@ def now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-@dataclass(frozen=True)
-class Row:
+class Row(Shape):
     """Hold one line of a section's history (see the module text).
+
+    The section's row of ``state.json`` is the line's other keys.
 
     Parameters
     ----------
     seq, step, by, at, registration, digest
         The line's own fields.
-    section
-        The section's row of ``state.json``; a line read from an older
-        ``registrations.jsonl`` holds only its registration, position and
-        cutting angles.
     format_version
-        The state format of *section*.
+        The state format of the section's row.
     """
 
-    seq: int
-    step: int
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    seq: Whole
+    step: Whole
     by: str
-    at: str | None
-    registration: int | None
-    digest: str | None
-    section: JsonObject
-    format_version: int = STATE_FORMAT_VERSION
+    at: str | None = None
+    registration: Whole | None = None
+    digest: str | None = None
+    format_version: Whole = STATE_FORMAT_VERSION
 
     @classmethod
-    def from_json(cls, data: JsonObject) -> Row | None:
+    def read(cls, data: JsonObject) -> Row | None:
         """Return the line a JSON object holds; None when it holds none.
 
         Parameters
@@ -140,41 +117,15 @@ class Row:
         Row or None
             None for an object that is not a line.
         """
-        ignored = (*_LINE_KEYS, FORMAT_KEY)
         try:
-            return cls(
-                seq=integer_at(data, "seq"),
-                step=integer_at(data, "step"),
-                by=text_at(data, "by"),
-                at=_text(data, "at"),
-                registration=_number(data, "registration"),
-                digest=_text(data, "digest"),
-                section={key: data[key] for key in data if key not in ignored},
-                format_version=integer_at(data, FORMAT_KEY),
-            )
-        except ValueError:
+            return cls.from_json(data)
+        except ValidationError:
             return None
 
-    def to_json(self) -> dict[str, JsonValue]:
-        """Return the line as the file holds it.
-
-        Returns
-        -------
-        dict
-            The line's own fields, then the section's row.
-        """
-        line: dict[str, JsonValue] = {
-            "seq": self.seq,
-            "step": self.step,
-            "by": self.by,
-            "at": self.at,
-            "registration": self.registration,
-            "digest": self.digest,
-            FORMAT_KEY: self.format_version,
-        }
-        for key, value in self.section.items():
-            line[key] = to_jsonable(value)
-        return line
+    @property
+    def section(self) -> dict[str, Any]:
+        """Return the section's row of ``state.json`` the line holds."""
+        return dict(self.model_extra or {})
 
     @property
     def flip(self) -> bool:
@@ -191,17 +142,13 @@ class Row:
     def transform(self) -> StoredAffine | None:
         """Return the transform the line holds; None without one."""
         transform = self.section.get("transform")
-        if not transform:
-            return None
-        return affine_from_json(as_object("transform", transform))
+        return StoredAffine.from_json(transform) if transform else None
 
     @property
     def deformation(self) -> DeformationRef | None:
         """Return the deformation the line holds; None without one."""
         deformation = self.section.get("deformation")
-        if not deformation:
-            return None
-        return deformation_from_json(as_object("deformation", deformation))
+        return DeformationRef.from_json(deformation) if deformation else None
 
     @property
     def position_mm(self) -> float | None:
@@ -215,18 +162,7 @@ class Row:
         angles = self.section.get("cutting_angles_deg")
         if not isinstance(angles, Mapping):
             return FLAT
-        return angles_from_json(angles)
-
-
-def _text(data: JsonObject, key: str) -> str | None:
-    value = data.get(key)
-    return value if isinstance(value, str) else None
-
-
-def _number(data: JsonObject, key: str) -> int | None:
-    if data.get(key) is None:
-        return None
-    return integer_at(data, key)
+        return (angles.get("pitch", 0.0), angles.get("yaw", 0.0))
 
 
 def registration_value(state: Stack, section: Section) -> dict[str, JsonValue] | None:
@@ -251,8 +187,8 @@ def registration_value(state: Stack, section: Section) -> dict[str, JsonValue] |
         deformation = None
     if section.transform is None and deformation is None:
         return None
-    transform = None if section.transform is None else affine_to_json(section.transform)
-    applied = None if deformation is None else deformation_to_json(deformation)
+    transform = None if section.transform is None else section.transform.to_json()
+    applied = None if deformation is None else deformation.to_json()
     return {
         "flip": bool(section.flip),
         "rotation_deg": int(section.rotation_deg),
@@ -345,9 +281,9 @@ def set_head(section: Section, fields: JsonObject) -> None:
     fields
         Row keys and their values, as a line holds them.
     """
-    restored = with_fields(section, fields)
-    for name in dataclasses.fields(Section):
-        setattr(section, name.name, getattr(restored, name.name))
+    restored = section.with_fields(fields)
+    for name in Section.model_fields:
+        setattr(section, name, getattr(restored, name))
 
 
 def section_row(section: Section) -> JsonObject:
@@ -363,7 +299,7 @@ def section_row(section: Section) -> JsonObject:
     JsonObject
         Its row of ``state.json`` with its own cutting angles.
     """
-    return as_object("section", to_jsonable(section_to_json(section)))
+    return section.to_json()
 
 
 class SectionHistories:
@@ -394,8 +330,6 @@ class SectionHistories:
             read (a write cut short) is left out.
         """
         path = self.layout.section_history(section_id)
-        if not path.exists():
-            path = path.with_name(OLD_REGISTRATION_LIST)
         try:
             info = path.stat()
         except OSError:
@@ -405,11 +339,7 @@ class SectionHistories:
         if cached is not None and cached[0] == stamp:
             return cached[1]
         text = path.read_text(encoding="utf-8")
-        if path.name == OLD_REGISTRATION_LIST:
-            lines: list[JsonObject] = list(lines_from_registration_list(text))
-        else:
-            lines = _parsed_lines(text)
-        rows = tuple(row for row in map(Row.from_json, lines) if row is not None)
+        rows = tuple(row for row in map(Row.read, _parsed_lines(text)) if row is not None)
         self._cache[path] = (stamp, rows)
         return rows
 
@@ -521,27 +451,24 @@ class SectionHistories:
         if number is None and numbered and digest is not None:
             number = max((row.registration or 0 for row in rows), default=0) + 1
         seq = rows[-1].seq + 1 if rows else 1
-        row = Row(
-            seq=seq,
-            step=step,
-            by=by,
-            at=now(),
-            registration=number,
-            digest=digest,
-            section=section_row(section),
+        row = Row.from_json(
+            {
+                "seq": seq,
+                "step": step,
+                "by": by,
+                "at": now(),
+                "registration": number,
+                "digest": digest,
+                **section_row(section),
+            }
         )
         path = self.layout.section_history(section.id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        old = path.with_name(OLD_REGISTRATION_LIST)
-        carried = rows if not path.exists() and old.exists() else ()
         torn = _ends_mid_line(path)
         with path.open("a", encoding="utf-8", newline="\n") as stream:
             if torn:
                 stream.write("\n")
-            for line in (*carried, row):
-                stream.write(json.dumps(line.to_json()) + "\n")
-        if carried:
-            old.unlink(missing_ok=True)
+            stream.write(json.dumps(row.to_json()) + "\n")
         return row
 
     def collect_records(self, section: Section) -> list[str]:
@@ -550,8 +477,7 @@ class SectionHistories:
         A folder of the section's ``deformable/`` stays while the section
         or a line of its history names it, directly or as the parent of
         one named. Nothing is deleted while the section has no
-        ``history.jsonl``, nor while an older LangSlice's undo steps are in
-        ``history/`` (they may name records no line does).
+        ``history.jsonl``.
 
         Parameters
         ----------
@@ -564,11 +490,7 @@ class SectionHistories:
             The folders deleted.
         """
         folder = self.layout.deformable_dir(section.id)
-        if (
-            not folder.is_dir()
-            or not self.layout.section_history(section.id).is_file()
-            or older_undo_steps(self.layout)
-        ):
+        if not folder.is_dir() or not self.layout.section_history(section.id).is_file():
             return []
         named = {_record_folder(row.section) for row in self.rows(section.id)}
         named.add(_record_folder(section_row(section)))

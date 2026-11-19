@@ -224,15 +224,19 @@ bodies, and turned into an answer once per door:
   pictures. Every handle's job is tracked (`_track`) and closed at
   interpreter exit by `_close_open`, registered with `job.pictures.at_exit`
   (before `concurrent.futures` stops taking work), so a script that never
-  calls `close` keeps its `trace_borders` results and pictures. `create_job(images | JobSpec, atlas=, plane=, tasks=,
+  calls `close` keeps its `trace_borders` results and pictures. `create_job(images | JobSpec, tasks=,
   image_model=, job_dir=, positions=, transforms=, angles=,
   orientation=, pixel_size_um=, inputs=, registration=, resume=, **JobSpec
   fields)`: six-number transforms become `{"kind": "interactive", "params",
   "mirrored"}` (`_transform`); `angles` in either `inputs.angles` form
   (`_angles`); `registration=` a file made elsewhere (`tasks` None is then
-  `["nonlinear"]`); otherwise `tasks` None is `default_tasks`
-  (`nonlinear`, plus `transform` unless every section has a transform).
-  `image_model` None is provider `none`; else the model's provider (`custom`
+  `["nonlinear"]`); otherwise `tasks` None is
+  `job.settings.defaults.default_tasks` (every task, minus `position` and
+  `transform` where `positions` / `transforms` name every section; the rule of
+  every door). Any other keyword is a `JobSpec` field, checked by the model
+  (`atlas`, `plane`, `position={...}`).
+  `image_model` None is the provider `choose_provider` gives (`none`, or with
+  `enabled` naming `trace_borders` the saved connection); else the model's provider (`custom`
   for a model of the caller's own) and `job.json` records the profile
   (`profile_record`). `open_job` of a job whose record says untested,
   without `image_model=`, sets `Opened.traces_off`. `langslice/__init__.py`
@@ -379,19 +383,24 @@ bodies, and turned into an answer once per door:
   `langslice.cli:main`, `agent_cli/main.py` is `langslice-job`'s.
   `commands/parser.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
   commands, `session-end`, `login`, `version`), `flags.py` (the job flags
-  every stack-opening command shares, added from the settings table
-  `job/settings/schema.py` in its order by `add_flags(parser, group)`: the
-  table gives each setting's spellings, default and choices, `FLAGS` each
-  flag's help text, argparse handling and group: `job` for every command,
-  `plugins` and `session` for `linear run`, `fresh` for `linear run` and
-  `init`, `init` for `init`), `linear.py` (`linear run`: `build_linear_spec`,
-  `spec_from_args` (`--disabled NAME[,NAME...]`: the job's `disabled` list;
-  `--enabled NAME[,NAME...]`: its `enabled` list, the tools that start off;
-  `_image_provider`: `--nonlinear-provider`, else with `--enabled
+  every stack-opening command shares, derived from the fields of `JobSpec`
+  (`job/settings/walk.py`'s `leaves`): the flag is the field's path, its help
+  the field's description, its default the field's, its choices a `Literal`'s,
+  and a `Cli` in its metadata adds the group (`job` for every command,
+  `plugins` and `session` for `linear run`, `resume` for `linear run` and
+  `init`), aliases, metavar and how the text is read (`csv`, `repeat`,
+  `repeat_csv`, `pairs`, `json`, `file`); `COMMAND_ONLY` holds the flags that
+  are no setting (`--registration`, `--pitch`, `--yaw`, `--section-angles`,
+  `--notes`, `--viewer`); `add_flags(parser, group)` adds a group,
+  `flag_rows` lists them as data, `flag_names` gives the window each
+  setting's flag, `values_from_args` turns the parsed flags back into the
+  settings, `load_json_arg`, `read_text_arg` and `names` read a flag's text),
+  `linear.py` (`linear run`: `build_linear_spec`, `spec_from_args` (the
+  values of the flags, `--tasks` from `job.settings.defaults.default_tasks`
+  and the provider from `choose_provider` when not given, then
+  `JobSpec.from_dict`: `--nonlinear-provider`, else with `--enabled
   trace_borders` the saved connection, `credentials.saved_image_provider`,
-  refused with `NO_SAVED_IMAGE_MODEL` when there is none, else `none`;
-  `--frozen JSON`: the job's `frozen`); `--tasks` defaults to the table's
-  `CLI_TASKS`, or with `--registration FILE` to `REGISTRATION_TASKS`;
+  refused when there is none, else `none`);
   `--registration` with any of `REGISTRATION_CLASHES` is refused; a bad flag
   value ends the command with a message; `linear run` alone also takes
   `--plugins MODULE:FACTORY` and `--plugin-config REF=JSON`,

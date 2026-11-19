@@ -14,8 +14,8 @@ from typing import Any
 
 from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import Refused
-from langslice.core.stack.codec import trace_from_json
 from langslice.core.stack.stack import Stack
+from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import BackgroundWork, in_worker
 from langslice.job.steps.undo import JobUndo
 
@@ -47,7 +47,7 @@ def _land(state: Stack, section_id: str, fingerprint: str, result: JsonObject) -
         and held.status == "running"
         and held.geometry_fingerprint == fingerprint
     ):
-        section.border_trace = trace_from_json(result)
+        section.border_trace = BorderTrace.from_json(result)
         return True
     return False
 

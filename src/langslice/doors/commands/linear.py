@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.stack.section import INITIAL
 from langslice.doors import credentials
 from langslice.doors.agent_cli.background import DETACHED
-from langslice.doors.commands.flags import add_flags
-from langslice.job.settings.schema import CLI_TASKS, REGISTRATION_TASKS
+from langslice.doors.commands.flags import add_flags, load_json_arg, values_from_args
+from langslice.job.settings.defaults import choose_provider, default_tasks
 
 if TYPE_CHECKING:
     from langslice.job.settings.spec import JobSpec
@@ -66,49 +66,6 @@ def add_trace_argument(p: argparse.ArgumentParser) -> None:
         "(linear run also writes it to <job folder>/trace, and only there without "
         "either)",
     )
-
-
-def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | None:
-    """A JSON argument, given inline or as a path to a JSON file.
-
-    An inline object or list (``{...}``, ``[...]``) is parsed as JSON whatever
-    its length (never tried as a file name: a real ``--transforms`` map is
-    longer than any). Anything else is a path when that file exists, else
-    inline JSON. Neither is a ``ValueError`` naming *flag*.
-    """
-    import json
-    from pathlib import Path
-
-    if not value:
-        return None
-    path: Path | None = None
-    if not value.lstrip().startswith(("{", "[")):
-        try:
-            candidate = Path(value).expanduser()
-            path = candidate if candidate.is_file() else None
-        except OSError:
-            path = None
-    if path is not None:
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"{flag}: could not read JSON from {path}: {exc}") from exc
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{flag}: neither an existing JSON file nor inline JSON ({exc})") from exc
-
-
-def read_text_arg(value: str | None, flag: str) -> str | None:
-    """The text of the UTF-8 file *value* names (None without one); a file that
-    cannot be read is a ``ValueError`` naming *flag*."""
-    if not value:
-        return None
-    path = Path(value).expanduser()
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise ValueError(f"{flag}: could not read {path}: {exc}") from exc
 
 
 def apply_trace_dir(args: argparse.Namespace) -> None:
@@ -162,13 +119,10 @@ def build_job_spec(
 
 def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     """The spec the flags give, ``--registration`` not yet imported (its
-    clashes with other flags refused, its default tasks applied)."""
-    from langslice.job.settings.spec import (
-        JobSpec,
-        NonlinearSpec,
-        PositionSpec,
-        TransformSpec,
-    )
+    clashes with other flags refused). A setting no flag gives is the spec's
+    default; the tasks and the image provider are those of
+    :mod:`langslice.job.settings.defaults`."""
+    from langslice.job.settings.spec import JobSpec
 
     registration = getattr(args, "registration", None)
     if registration:
@@ -183,152 +137,18 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
                 f"angles, orientation and transform; it cannot be combined "
                 f"with {', '.join(given)}"
             )
-    tasks = (
-        args.tasks
-        if args.tasks is not None
-        else (REGISTRATION_TASKS if registration else CLI_TASKS)
+    values = values_from_args(args)
+    values["image_folder"] = image_folder
+    inputs: dict[str, Any] = values.get("inputs", {})
+    if "tasks" not in values:
+        values["tasks"] = default_tasks(image_folder, inputs, registration=bool(registration))
+    nonlinear: dict[str, Any] = values.setdefault("nonlinear", {})
+    nonlinear["provider"] = choose_provider(
+        getattr(args, "nonlinear_provider", None),
+        enabled=values.get("enabled", []),
+        saved=credentials.saved_image_provider,
     )
-
-    inputs: dict[str, object] = {}
-    positions = load_json_arg(args.positions, "--positions")
-    if positions is not None:
-        inputs["positions"] = positions
-    order = load_json_arg(args.order, "--order")
-    if order is not None:
-        inputs["order"] = order
-    transforms = load_json_arg(args.transforms, "--transforms")
-    if transforms is not None:
-        inputs["transforms"] = transforms
-    for key, flag in (
-        ("orientation", "--orientation"),
-        ("damaged", "--damaged"),
-        ("damaged_regions", "--damaged-regions"),
-    ):
-        value = load_json_arg(getattr(args, key, None), flag)
-        if value is not None:
-            inputs[key] = value
-    if args.pixel_size_um:
-        inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
-    if args.pitch is not None or args.yaw is not None:
-        inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
-    section_angles = load_json_arg(getattr(args, "section_angles", None), "--section-angles")
-    if section_angles is not None:
-        if "angles" in inputs:
-            raise ValueError(
-                "--section-angles gives each section its own plane; it cannot "
-                "be combined with the stack-wide --pitch/--yaw"
-            )
-        if not isinstance(section_angles, dict) or not all(
-            isinstance(value, dict) for value in section_angles.values()
-        ):
-            raise ValueError('--section-angles must map filenames to {"pitch": deg, "yaw": deg}')
-        inputs["angles"] = section_angles
-
-    frozen: Any = load_json_arg(getattr(args, "frozen", None), "--frozen")
-    return JobSpec(
-        image_folder=image_folder,
-        atlas=args.atlas,
-        plane=args.plane,
-        model=getattr(args, "model", None),
-        reasoning=getattr(args, "reasoning", None),
-        out=args.out,
-        job_dir=getattr(args, "job_dir", None),
-        preprocess=args.preprocess,
-        tasks=[task.strip() for task in tasks.split(",") if task.strip()],
-        position=PositionSpec(
-            thickness_um=getattr(args, "position_thickness_um", None),
-            interval_um=getattr(args, "position_interval_um", None),
-            start_mm=getattr(args, "position_start_mm", None),
-            strict_interval=bool(getattr(args, "position_strict_interval", False)),
-            playbook=bool(getattr(args, "position_playbook", False)),
-            notes=getattr(args, "position_notes", ""),
-        ),
-        transform=TransformSpec(
-            angles=bool(getattr(args, "transform_angles", False)),
-            hemisphere_cue=getattr(args, "transform_hemisphere_cue", ""),
-            notes=getattr(args, "transform_notes", ""),
-        ),
-        disabled=[
-            name.strip()
-            for item in getattr(args, "disabled", [])
-            for name in item.split(",")
-            if name.strip()
-        ],
-        enabled=_names(getattr(args, "enabled", [])),
-        nonlinear=NonlinearSpec(
-            provider=_image_provider(args),
-            image_model=getattr(args, "nonlinear_image_model", None),
-            require_deformation=bool(getattr(args, "nonlinear_require_deformation", False)),
-            notes=getattr(args, "nonlinear_notes", ""),
-            image_prompt=read_text_arg(
-                getattr(args, "nonlinear_image_prompt", None), "--nonlinear-image-prompt"
-            ),
-        ),
-        image_resolution=getattr(args, "image_resolution", "low"),
-        facts=list(args.facts),
-        inputs=inputs,
-        frozen=frozen or {},
-        resume=args.resume,
-        debrief=getattr(args, "debrief", True),
-        force_view=bool(getattr(args, "force_view", False)),
-    )
-
-
-NO_SAVED_IMAGE_MODEL = (
-    "--enabled trace_borders needs an image model, and this computer has no "
-    "saved OpenAI sign-in or key: sign in or save a key in the LangSlice "
-    "window's Settings (langslice gui), or name one with "
-    "--nonlinear-provider"
-)
-
-
-def _image_provider(args: argparse.Namespace) -> str:
-    """Name the image provider the flags ask for.
-
-    Parameters
-    ----------
-    args
-        The parsed job flags.
-
-    Returns
-    -------
-    str
-        ``--nonlinear-provider`` when given; else, with ``--enabled
-        trace_borders``, the connection saved on this computer
-        (:func:`langslice.doors.credentials.saved_image_provider`); else
-        ``none``.
-
-    Raises
-    ------
-    ValueError
-        When ``trace_borders`` is switched on and no connection is saved.
-    """
-    given: object = getattr(args, "nonlinear_provider", None)
-    if given is not None:
-        return str(given)
-    if "trace_borders" not in _names(getattr(args, "enabled", [])):
-        return "none"
-    saved = credentials.saved_image_provider()
-    if saved is None:
-        raise ValueError(NO_SAVED_IMAGE_MODEL)
-    return saved
-
-
-def _names(items: list[str]) -> list[str]:
-    """Split a repeatable ``NAME[,NAME...]`` flag into its names.
-
-    Parameters
-    ----------
-    items
-        The flag's values, one per time it was given.
-
-    Returns
-    -------
-    list of str
-        The names, in the order given, without blanks.
-    """
-    names = ",".join(items).split(",")
-    return [name.strip() for name in names if name.strip()]
+    return JobSpec.from_dict(values)
 
 
 def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
@@ -341,8 +161,6 @@ def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
         if getattr(args, "plugin_config", []):
             raise ValueError("--plugin-config needs the --plugins it configures")
         return spec
-    import dataclasses
-
     configs: dict[str, Any] = {}
     for item in getattr(args, "plugin_config", []):
         ref, equals, value = item.partition("=")
@@ -354,8 +172,8 @@ def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
         if not isinstance(loaded, dict):
             raise ValueError("--plugin-config options are a JSON object")
         configs[ref.strip()] = loaded
-    return dataclasses.replace(
-        spec, plugins=[*spec.plugins, *refs], plugin_config={**spec.plugin_config, **configs}
+    return spec.with_changes(
+        plugins=[*spec.plugins, *refs], plugin_config={**spec.plugin_config, **configs}
     )
 
 

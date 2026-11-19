@@ -37,7 +37,7 @@ from langslice.core.sections.renders import (
     render_slice,
 )
 from langslice.core.space import Plane
-from langslice.core.stack.codec import affine_fields, angles_to_json
+from langslice.core.stack.affine import affine_fields
 from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
@@ -300,7 +300,7 @@ def correction_fingerprint(state: Stack, ctx: Workspace, section_id: str) -> str
             "atlas": state.atlas,
             "plane": state.plane,
             "position_mm": section.position_mm,
-            "angles": angles_to_json(section.angles),
+            "angles": {"pitch": section.pitch_deg, "yaw": section.yaw_deg},
             "flip": section.flip,
             "rotation_deg": section.rotation_deg,
             "transform": affine_fields(

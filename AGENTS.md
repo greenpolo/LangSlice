@@ -22,7 +22,7 @@ exceptions: a violation is fixed by moving code.
 | Package | Role | Guide |
 |---|---|---|
 | `core/` | the science and the stack's shapes: `stack/` (sections and stack state), `geometry/`, `atlas/`, `sections/` (files, renders, images, masks), `pictures/`, `fits/` (affine, deformable engine, landmarks, the image-model border trace), `maps/`; `refusal.py` (the one `Refused` and its `RefusalCode`s); of a job's settings only the `ImageSettings` the workspace carries | `core/CLAUDE.md`, `core/atlas/`, `core/fits/deformable/`, `core/fits/trace/` |
-| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`), old formats (`migrations.py`), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the form `JobSpec`, the table of every setting `schema.py`, `frozen.py`, the tool table `tool_table.py`, the tools a job has on `tools_on.py`, the tool labels); the plugin registry (`plugins.py`) | `job/CLAUDE.md` |
+| `job/` | the `Job`: state, undo, checkpoint (`state_file.py`, format 5 read as 6), inputs, submit gates; the job folder `<images>/langslice/` and its public files; `settings/` (the form `JobSpec`, a frozen Pydantic model that defines every setting once; `walk.py` and `defaults.py` that every door's flags and defaults come from, `frozen.py`, the tool table `tool_table.py`, the tools a job has on `tools_on.py`, the tool labels); the plugin registry (`plugins.py`) | `job/CLAUDE.md` |
 | `tools/` | the operations, as functions on a job; `catalog.py` lists them for every door; `run.py`, `arguments.py`, `reply.py`; `descriptions/` (the declarations, the job statement) | `tools/CLAUDE.md` |
 | `doors/` | the ways in: the native agent tools (`tools/`), the built-in agent (`agent/`), MCP (`mcp/`), the agent CLI (`agent_cli/`), the `langslice` command (`commands/`), the library (`library/`), plugins (`plugins/`) | `doors/CLAUDE.md`, `doors/agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth` (`oauth/`), `none`; no task logic | |
@@ -63,8 +63,9 @@ and `environment.yml` hold the source installation.
   (`ToolDef.default_off`: `trace_borders`, `deepslice_place`, `brainways_ap`)
   and are switched on by `JobSpec.enabled` (`--enabled`). `trace_borders`
   needs an image model (`nonlinear.provider`, default `none`): a job that
-  names one has it enabled, and a command given `--enabled trace_borders`
-  without `--nonlinear-provider` takes the connection saved on the computer
+  names one has it enabled, and a job given `--enabled trace_borders` (or
+  `enabled=` in the library) without a provider takes the connection saved
+  on the computer (`job.settings.defaults.choose_provider`, every door)
   (`doors.credentials.saved_image_provider`: the one chosen in the window's
   Settings, else the ChatGPT sign-in, the OpenAI key, the Gemini key). A tool
   is offered only on the atlases and planes its row names.

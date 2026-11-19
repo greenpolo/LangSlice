@@ -7,6 +7,14 @@ capabilities on and off — a task that is OFF takes its answer from ``inputs``
 instead of from the agent, and its tools are not built at all. ``disabled``
 takes single tools off on top of what the tasks give.
 
+Every setting is defined once, here, as a field of a frozen Pydantic model:
+its type, its default, its validation, a one-line description (the help of its
+flag) and, in ``Annotated`` metadata, what the commands add
+(:class:`~langslice.job.settings.walk.Cli`). The doors derive from it
+(:func:`~langslice.job.settings.walk.leaves`): the same default on every door.
+A spec is never changed in place; ``model_copy(update=...)`` makes the one
+that differs.
+
 See ``docs/reference/settings.md`` for the design this mirrors.
 """
 
@@ -14,37 +22,37 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
-from typing import Any, cast
+from typing import Annotated, Any, Literal, cast, get_args
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from langslice.core.atlas.sides import UNSIDED_PLANE, split_side
-from langslice.core.space import as_plane
+from langslice.core.space import Plane, as_plane
 from langslice.core.workspace import ImageSettings
 from langslice.job.settings import frozen as freeze
 from langslice.job.settings import tool_table
-from langslice.job.settings.schema import (
-    ALL_TASKS,
-    DEFAULT_ATLAS,
-    DEFAULT_TASKS,
-    IMAGE_RESOLUTIONS,
-    MAX_PARALLEL_TRANSFORMS,
-    PLANES,
-    spec_keys,
-)
 from langslice.job.settings.tools_on import ToolsOn
+from langslice.job.settings.walk import Cli, Holds
 
-INPUT_KEYS: tuple[str, ...] = (
-    "order",
-    "positions",
-    "angles",
-    "orientation",
-    "transforms",
-    "damaged",
-    "damaged_regions",
-    "pixel_size_um",
-    "channel_names",
-)
+Task = Literal["position", "transform", "nonlinear"]
+Preprocess = Literal["auto", "none"]
+ImageResolution = Literal["low", "medium", "high", "auto"]
+Reasoning = Literal["low", "medium", "high", "xhigh", "max"]
+
+ALL_TASKS: tuple[Task, ...] = get_args(Task)
+
+MAX_PARALLEL_TRANSFORMS = 4
+
+DEFAULT_ATLAS = "allen_mouse_25um"
 
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
 
@@ -151,115 +159,6 @@ def supplied_pixel_sizes(value: Any) -> tuple[float | None, dict[str, float]]:
     return _micrometres(value, "inputs.pixel_size_um"), {}
 
 
-def _filled(kind: Callable[..., object], value: object) -> object:
-    """Return a task section of the form filled from its saved keys."""
-    return kind(**cast("dict[str, object]", value or {}))
-
-
-def _finite_number(value: object) -> bool:
-    """Return whether *value* is a finite int or float (not a bool)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(value)
-
-
-@dataclass
-class PositionSpec:
-    """Knobs of the ``position`` task; the cutting protocol rides along."""
-
-    thickness_um: int | None = None
-    interval_um: int | None = None
-    start_mm: float | None = None
-    strict_interval: bool = False
-    playbook: bool = False
-    notes: str = ""
-
-    def __post_init__(self) -> None:
-        for name in ("thickness_um", "interval_um"):
-            value = getattr(self, name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value <= 0
-            ):
-                raise ValueError(f"{name} must be a positive integer in micrometres or null")
-        if self.start_mm is not None and not _finite_number(self.start_mm):
-            raise ValueError("start_mm must be a number of atlas millimetres or null")
-        if self.strict_interval and self.interval_um is None:
-            raise ValueError("strict_interval requires a supplied interval_um")
-
-
-@dataclass
-class TransformSpec:
-    """Knobs of the ``transform`` task."""
-
-    hemisphere_cue: str = ""
-    angles: bool = False
-    max_parallel: int = MAX_PARALLEL_TRANSFORMS
-    notes: str = ""
-
-    def __post_init__(self) -> None:
-        value = self.max_parallel
-        if (
-            not isinstance(value, int)
-            or isinstance(value, bool)
-            or not 1 <= value <= MAX_PARALLEL_TRANSFORMS
-        ):
-            raise ValueError(
-                f"transform.max_parallel must be an integer from 1 to "
-                f"{MAX_PARALLEL_TRANSFORMS}; got {value!r}"
-            )
-
-
-@dataclass
-class NonlinearSpec:
-    """Knobs of the ``nonlinear`` task: a deformation per section on top of
-    its linear placement, fitted to the stain or, for a section the agent
-    chooses to trace, to the borders the image model draws.
-
-    ``provider`` is the image model's access method (``providers/registry``);
-    ``"none"``, the default, runs the task without an image model: no
-    ``trace_borders``, no traced section images; naming a provider switches
-    ``trace_borders`` on (``JobSpec.enabled``). A command that switches
-    ``trace_borders`` on without naming one takes the connection saved on
-    this computer. No section ever needs a trace. ``"custom"``
-    (:data:`langslice.core.connections.CUSTOM_PROVIDER`): an image model the
-    caller hands the library itself (``langslice.open_job(...,
-    image_model=...)``); a door that is handed none offers no
-    ``trace_borders``.
-    """
-
-    provider: str = "none"
-    image_model: str | None = None
-    notes: str = ""
-    require_deformation: bool = False
-    image_prompt: str | None = None
-
-    def __post_init__(self) -> None:
-        from langslice.core.connections import (
-            CANONICAL_PROVIDERS,
-            CUSTOM_PROVIDER,
-            canonical_provider,
-        )
-
-        accepted = (*CANONICAL_PROVIDERS, CUSTOM_PROVIDER)
-        if canonical_provider(str(self.provider or "")) not in accepted:
-            raise ValueError(f"nonlinear.provider must be one of {accepted}; got {self.provider!r}")
-        if self.image_prompt is not None:
-            if not isinstance(self.image_prompt, str) or not self.image_prompt.strip():
-                raise ValueError("nonlinear.image_prompt must be non-empty text or null")
-            if not self.uses_image_model:
-                raise ValueError(
-                    "nonlinear.image_prompt needs an image model; the nonlinear provider is 'none'"
-                )
-            self.image_prompt = self.image_prompt.strip()
-
-    @property
-    def uses_image_model(self) -> bool:
-        """Whether the image model is part of this run (provider is not ``none``)."""
-        from langslice.core.connections import canonical_provider
-
-        return canonical_provider(str(self.provider or "")) != "none"
-
-
 def supplied_damaged_regions(value: object, plane: str) -> dict[str, list[str]]:
     """Read ``inputs.damaged_regions``: ``{filename: [region entry, ...]}``.
 
@@ -308,77 +207,522 @@ def supplied_damaged_regions(value: object, plane: str) -> dict[str, list[str]]:
     return marks
 
 
-@dataclass
-class JobSpec:
+class Strict(BaseModel):
+    """What every model of the settings shares: no unknown key, no change
+    after it is made, and a value of the type it is declared as."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class PositionSpec(Strict):
+    """Knobs of the ``position`` task; the cutting protocol rides along."""
+
+    thickness_um: Annotated[
+        int | None,
+        Field(gt=0, description="Known section thickness in microns; omit if unknown"),
+        Cli(aliases=("--thickness",), metavar="UM"),
+    ] = None
+    interval_um: Annotated[
+        int | None,
+        Field(
+            gt=0,
+            description="Known section interval in microns: the spacing of the "
+            "sections' initial positions; omit to spread them over the atlas",
+        ),
+        Cli(aliases=("--interval",), metavar="UM"),
+    ] = None
+    start_mm: Annotated[
+        int | float | None,
+        Field(
+            description="The first section's initial atlas position in mm; omit to "
+            "centre the stack in the atlas"
+        ),
+        Cli(aliases=("--start-mm",), metavar="MM"),
+    ] = None
+    strict_interval: Annotated[
+        bool,
+        Field(description="Sections must sit exactly one interval apart"),
+        Cli(aliases=("--strict-interval",)),
+    ] = False
+    playbook: Annotated[
+        bool,
+        Field(
+            description="Add optional positioning guidance: compare candidate planes "
+            "and regions, write supported placements, revisit uncertainty and "
+            "review the stack"
+        ),
+        Cli(aliases=("--playbook",)),
+    ] = False
+    notes: Annotated[
+        str,
+        Field(
+            description="The user's notes for the position task, shown to the agent "
+            "with the task (one line each; PositionSpec.notes)"
+        ),
+        Cli(metavar="TEXT"),
+    ] = ""
+
+    @field_validator("start_mm")
+    @classmethod
+    def _finite(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("start_mm must be a number of atlas millimetres or null")
+        return value
+
+    @model_validator(mode="after")
+    def _interval_for_strict(self) -> PositionSpec:
+        if self.strict_interval and self.interval_um is None:
+            raise ValueError("strict_interval requires a supplied interval_um")
+        return self
+
+
+class TransformSpec(Strict):
+    """Knobs of the ``transform`` task."""
+
+    hemisphere_cue: Annotated[
+        str,
+        Field(description="What marks a hemisphere in these sections (a notch, an injection...)"),
+        Cli(aliases=("--hemisphere-cue",), metavar="TEXT"),
+    ] = ""
+    angles: Annotated[
+        bool,
+        Field(description="Let the agent set the cutting angles"),
+        Cli(aliases=("--angles",)),
+    ] = False
+    max_parallel: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=MAX_PARALLEL_TRANSFORMS,
+            description="How many sections one transform call fits at once (a host's cap)",
+        ),
+    ] = MAX_PARALLEL_TRANSFORMS
+    notes: Annotated[
+        str,
+        Field(
+            description="The user's notes for the transform task, shown to the agent "
+            "with the task (one line each; TransformSpec.notes)"
+        ),
+        Cli(metavar="TEXT"),
+    ] = ""
+
+
+class NonlinearSpec(Strict):
+    """Knobs of the ``nonlinear`` task: a deformation per section on top of
+    its linear placement, fitted to the stain or, for a section the agent
+    chooses to trace, to the borders the image model draws.
+
+    ``provider`` is the image model's access method (``providers/registry``);
+    ``"none"``, the default, runs the task without an image model: no
+    ``trace_borders``, no traced section images; naming a provider switches
+    ``trace_borders`` on (``JobSpec.enabled``). A door that switches
+    ``trace_borders`` on without naming one takes the connection saved on
+    this computer
+    (:func:`langslice.job.settings.defaults.choose_provider`). No section
+    ever needs a trace. ``"custom"``
+    (:data:`langslice.core.connections.CUSTOM_PROVIDER`): an image model the
+    caller hands the library itself (``langslice.open_job(...,
+    image_model=...)``); a door that is handed none offers no
+    ``trace_borders``.
+    """
+
+    provider: Annotated[
+        str,
+        Field(
+            description="Image provider for the nonlinear task's trace_borders "
+            "(openai-oauth, openai-api, gemini-api): naming one gives the agent "
+            "trace_borders. Not given: with --enabled trace_borders, the "
+            "OpenAI sign-in or key saved in the LangSlice window's Settings; "
+            "otherwise none (the nonlinear task fits deformations to the stain "
+            "alone, with no image model)"
+        ),
+        Cli(aliases=("--image-provider",), metavar="PROVIDER", deferred=True),
+    ] = "none"
+    image_model: Annotated[
+        str | None,
+        Field(
+            description="Image model for the nonlinear tool; default is the provider's image model"
+        ),
+        Cli(aliases=("--image-model",), metavar="MODEL"),
+    ] = None
+    notes: Annotated[
+        str,
+        Field(
+            description="The user's notes for the nonlinear task, shown to the agent "
+            "with the task (one line each; NonlinearSpec.notes)"
+        ),
+        Cli(metavar="TEXT"),
+    ] = ""
+    require_deformation: Annotated[
+        bool,
+        Field(
+            description="Nonlinear task: submit is refused until every section carries "
+            "a deformation (NonlinearSpec.require_deformation); otherwise a "
+            "deformation is the agent's choice"
+        ),
+        Cli(group="session", aliases=("--require-deformation",)),
+    ] = False
+    image_prompt: Annotated[
+        str | None,
+        Field(
+            description="A UTF-8 text file holding the base prompt trace_borders sends "
+            "the image model, in place of LangSlice's own "
+            "(NonlinearSpec.image_prompt); {plane} in it becomes the section "
+            "plane. It must describe the provider's attachment order, and its "
+            "traces are recorded as an untested profile. The agent's "
+            "per-section edit starts from it. Default: LangSlice's prompt for "
+            "the provider"
+        ),
+        Cli(kind="file", aliases=("--image-prompt",), metavar="FILE"),
+    ] = None
+
+    @field_validator("provider")
+    @classmethod
+    def _known_provider(cls, value: str) -> str:
+        from langslice.core.connections import (
+            CANONICAL_PROVIDERS,
+            CUSTOM_PROVIDER,
+            canonical_provider,
+        )
+
+        accepted = (*CANONICAL_PROVIDERS, CUSTOM_PROVIDER)
+        if canonical_provider(value) not in accepted:
+            raise ValueError(f"nonlinear.provider must be one of {accepted}; got {value!r}")
+        return value
+
+    @field_validator("image_prompt")
+    @classmethod
+    def _prompt_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("nonlinear.image_prompt must be non-empty text or null")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _prompt_needs_a_model(self) -> NonlinearSpec:
+        if self.image_prompt is not None and not self.uses_image_model:
+            raise ValueError(
+                "nonlinear.image_prompt needs an image model; the nonlinear provider is 'none'"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _compact(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = cast("dict[str, Any]", handler(self))
+        if not data.get("require_deformation"):
+            data.pop("require_deformation", None)
+        if data.get("image_prompt") is None:
+            data.pop("image_prompt", None)
+        return data
+
+    @property
+    def uses_image_model(self) -> bool:
+        """Whether the image model is part of this run (provider is not ``none``)."""
+        from langslice.core.connections import canonical_provider
+
+        return canonical_provider(str(self.provider or "")) != "none"
+
+
+class Inputs(Strict):
+    """What a host already knows per section, the keys of ``JobSpec.inputs``.
+
+    The spec keeps the mapping as given; this model says which keys exist,
+    what each is and how the commands take it.
+    """
+
+    order: Annotated[
+        Any,
+        Field(description="Host-supplied order: a JSON file path or inline JSON list of filenames"),
+        Cli(kind="json", metavar="JSON"),
+    ] = None
+    positions: Annotated[
+        Any,
+        Field(
+            description="Host-supplied positions: a JSON file path or inline JSON mapping "
+            "filename -> mm"
+        ),
+        Cli(kind="json", metavar="JSON"),
+    ] = None
+    angles: Annotated[
+        Any,
+        Field(
+            description="Host-given cutting angles: {pitch, yaw} degrees for the whole stack "
+            "(--pitch, --yaw), or {filename: {pitch, yaw}} per section (--section-angles)"
+        ),
+    ] = None
+    orientation: Annotated[
+        Any,
+        Field(
+            description="Host-supplied orientation: JSON file or inline mapping of "
+            'filenames to {"flip": true|false, "rotation_deg": 0|90|180|270}'
+        ),
+        Cli(kind="json", metavar="JSON"),
+    ] = None
+    transforms: Annotated[
+        Any,
+        Field(
+            description="Host-supplied calibrated linear transforms: JSON file or "
+            "inline mapping of filenames to saved transform records"
+        ),
+        Cli(kind="json", metavar="JSON"),
+    ] = None
+    damaged: Annotated[
+        Any,
+        Field(
+            description="Notes on damaged tissue: JSON file or inline mapping of "
+            "filenames to notes; notes alone do not exclude atlas regions from "
+            "fits"
+        ),
+        Cli(kind="json", metavar="JSON"),
+    ] = None
+    damaged_regions: Annotated[
+        Any,
+        Field(
+            description="Damage marks: JSON file or inline mapping of filenames to "
+            'atlas region entries ("CTX", "root:right": a side of the section as '
+            "it is shown), which every fit leaves out, as mark_damage takes them"
+        ),
+        Cli(kind="json", metavar="JSON"),
+    ] = None
+    pixel_size_um: Annotated[
+        Any,
+        Field(
+            description="Micrometres per pixel of the section images: one number for "
+            "every file, or a JSON file or inline mapping of filenames to "
+            "micrometres per pixel. Default (and for a file the mapping does not "
+            "name): read from each file's TIFF/OME tags"
+        ),
+        Cli(kind="json", metavar="UM|JSON"),
+    ] = None
+    channel_names: Annotated[
+        Any,
+        Field(description="The names of the image files' channels, in order (a host's)"),
+    ] = None
+
+
+INPUT_KEYS: tuple[str, ...] = tuple(Inputs.model_fields)
+
+_TOOL_LISTS = (
+    "Tools the agent does not get, on top of what the tasks give "
+    "(repeatable), for example zoom. Valid names: " + ", ".join(tool_table.valid_names())
+)
+_START_OFF = (
+    "Tools that start off and the agent gets in this job (repeatable): "
+    + ", ".join(tool_table.default_off_names())
+    + ". trace_borders uses the saved OpenAI sign-in or key unless "
+    "--nonlinear-provider names another image model"
+)
+
+
+class JobSpec(Strict):
     """One whole ``langslice linear`` run, host-agnostic."""
 
-    image_folder: str
-    atlas: str = DEFAULT_ATLAS
-    plane: str = "coronal"
-    model: str | None = None
-    reasoning: str | None = None
-    out: str | None = None
-    job_dir: str | None = None
-    preprocess: str = "auto"
-    host_preprocessing: dict[str, Any] | None = None
-    image_resolution: str = "low"
-    force_view: bool = False
-    tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
-    disabled: list[str] = field(default_factory=list)
-    enabled: list[str] = field(default_factory=list)
-    frozen: dict[str, list[str]] = field(default_factory=dict)
-    position: PositionSpec = field(default_factory=PositionSpec)
-    transform: TransformSpec = field(default_factory=TransformSpec)
-    nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
-    facts: list[str] = field(default_factory=list)
-    inputs: dict[str, Any] = field(default_factory=dict)
-    resume: bool = True
-    debrief: bool = True
-    plugins: list[str] = field(default_factory=list)
-    plugin_config: dict[str, Any] = field(default_factory=dict)
+    image_folder: Annotated[
+        str, Field(description="The folder of section images (the commands' positional argument)")
+    ]
+    tasks: Annotated[
+        list[Task],
+        Field(
+            description="Comma-separated subset of position,transform,nonlinear: "
+            "position places and orders the sections, transform aligns them "
+            "in-plane, nonlinear deforms each linearly aligned section "
+            "(fireants_syn, and trace_borders with an image model). A task left "
+            "out takes its answer from the flags that supply it (--positions, "
+            "--transforms ...). Default: all three, except a task the supplied "
+            "answers already settle: position when --positions names every "
+            "section, transform when --transforms does, and with --registration "
+            "only nonlinear (the imported linear registration kept as it is)"
+        ),
+        Cli(kind="csv", deferred=True),
+    ] = Field(default_factory=lambda: list(ALL_TASKS))
+    atlas: Annotated[str, Field(description="BrainGlobe atlas name"), Cli()] = DEFAULT_ATLAS
+    plane: Annotated[
+        Plane,
+        Field(
+            description="Slicing plane (normal axis). Position is interpreted along this axis "
+            "(AP for coronal, ML for sagittal, DV for horizontal)."
+        ),
+        Cli(),
+    ] = "coronal"
+    preprocess: Annotated[
+        Preprocess,
+        Field(
+            description="How each section's preprocessed image is made: auto blends the "
+            "channels with local contrast enhancement, none takes the file as "
+            "read, in gray. It is the image the agent sees first, the one the "
+            "image model is shown, and the one every fit reads unless the agent "
+            "names another section image. The image files are never modified"
+        ),
+        Cli(),
+    ] = "auto"
+    image_resolution: Annotated[
+        ImageResolution,
+        Field(description="Size of the pictures the agent is shown; auto lets it choose per call"),
+        Cli(),
+    ] = "low"
+    disabled: Annotated[
+        list[str],
+        Field(description=_TOOL_LISTS),
+        Cli(kind="repeat_csv", aliases=("--disable",), metavar="NAME[,NAME...]"),
+    ] = Field(default_factory=list)
+    enabled: Annotated[
+        list[str],
+        Field(description=_START_OFF),
+        Cli(kind="repeat_csv", aliases=("--enable",), metavar="NAME[,NAME...]"),
+    ] = Field(default_factory=list)
+    facts: Annotated[
+        list[str],
+        Field(description="A fact about this stack, passed to the agent verbatim (repeatable)"),
+        Cli(kind="repeat", aliases=("--fact",), metavar="TEXT"),
+    ] = Field(default_factory=list)
+    inputs: Annotated[
+        dict[str, Any],
+        Field(description="What the host already knows per section (the keys of Inputs)"),
+        Holds(Inputs),
+    ] = Field(default_factory=dict)
+    frozen: Annotated[
+        dict[str, list[str]],
+        Field(
+            description="What the agent may not change: JSON file or inline mapping of a "
+            'filename (or "*" for every section) to a list of properties, any of '
+            "position, angles, orientation, affine, deformation, damage; a frozen "
+            "property keeps the value the supplied inputs give it"
+        ),
+        Cli(kind="json", metavar="JSON", deferred=True),
+    ] = Field(default_factory=dict)
+    out: Annotated[
+        str | None,
+        Field(description="Results JSON path. Default: <job folder>/exports/linear_results.json"),
+        Cli(),
+    ] = None
+    job_dir: Annotated[
+        str | None,
+        Field(
+            description="Put the job folder (checkpoint, undo history, pictures, "
+            "results) here instead of <image_folder>/langslice. A folder holding "
+            "the job of another image folder is refused"
+        ),
+        Cli(metavar="PATH"),
+    ] = None
+    host_preprocessing: Annotated[
+        dict[str, Any] | None,
+        Field(description="A host's own preprocessing settings (the library's)"),
+    ] = None
+    position: PositionSpec = Field(default_factory=PositionSpec)
+    transform: TransformSpec = Field(default_factory=TransformSpec)
+    nonlinear: NonlinearSpec = Field(default_factory=NonlinearSpec)
+    plugins: Annotated[
+        list[str],
+        Field(
+            description="Add the tools of a tool plugin to the agent's toolbox "
+            "(repeatable): a Python module and the function in it that returns "
+            "the tools. Importing it runs its code; the job records which plugin "
+            "ran (docs/developers/plugins.md)"
+        ),
+        Cli(
+            group="plugins",
+            kind="repeat_csv",
+            aliases=("--tool-plugin",),
+            metavar="MODULE:FACTORY",
+        ),
+    ] = Field(default_factory=list)
+    plugin_config: Annotated[
+        dict[str, Any],
+        Field(
+            description="Options for a plugin's factory (repeatable): the plugin's "
+            "reference, '=', then a JSON object or the path of a JSON file"
+        ),
+        Cli(
+            group="plugins",
+            kind="pairs",
+            aliases=("--tool-plugin-config",),
+            metavar="MODULE:FACTORY=JSON",
+        ),
+    ] = Field(default_factory=dict)
+    model: Annotated[
+        str | None,
+        Field(description="Model name for the agent session"),
+        Cli(group="session"),
+    ] = None
+    reasoning: Annotated[
+        Reasoning | None,
+        Field(
+            description="Reasoning effort for models that expose one. Default: the provider's own"
+        ),
+        Cli(group="session"),
+    ] = None
+    debrief: Annotated[
+        bool,
+        Field(description="Skip the post-submit debrief question (what tools the agent missed)"),
+        Cli(group="session"),
+    ] = True
+    force_view: Annotated[
+        bool,
+        Field(
+            description="The change and fitting tools always return their picture: "
+            "their view argument is not offered (JobSpec.force_view)"
+        ),
+        Cli(group="session"),
+    ] = False
+    resume: Annotated[
+        bool,
+        Field(description="Ignore any existing checkpoint and start over"),
+        Cli(group="resume", aliases=("--fresh",)),
+    ] = True
 
-    def __post_init__(self) -> None:
+    @field_validator("inputs", mode="before")
+    @classmethod
+    def _inputs_checked(cls, value: Any) -> dict[str, Any]:
         try:
-            self.inputs = dict(self.inputs or {})
+            held = dict(value or {})
         except (TypeError, ValueError):
             raise ValueError(f"inputs must be a mapping of {list(INPUT_KEYS)}") from None
-        if self.image_resolution not in IMAGE_RESOLUTIONS:
-            raise ValueError(
-                f"Unsupported image_resolution {self.image_resolution!r}; "
-                f"expected one of {IMAGE_RESOLUTIONS}"
-            )
-        if self.host_preprocessing is not None and not isinstance(self.host_preprocessing, dict):
-            raise ValueError("host_preprocessing must be a settings object or null")
-        if self.plane not in PLANES:
-            raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
-        unknown = [task for task in self.tasks if task not in ALL_TASKS]
-        if unknown:
-            raise ValueError(f"Unknown task(s) {unknown}; expected any of {list(ALL_TASKS)}")
-        strange = sorted(str(key) for key in self.inputs if key not in INPUT_KEYS)
+        strange = sorted(str(key) for key in held if key not in INPUT_KEYS)
         if strange:
             raise ValueError(
                 f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
             )
-        supplied_angles(self.inputs.get("angles"))
-        supplied_pixel_sizes(self.inputs.get("pixel_size_um"))
-        supplied_damaged_regions(self.inputs.get("damaged_regions"), self.plane)
-        if not isinstance(self.disabled, (list, tuple)) or not all(
-            isinstance(name, str) for name in self.disabled
-        ):
-            raise ValueError("disabled must be a list of tool names")
-        self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
-        if not isinstance(self.plugins, (list, tuple)) or not all(
-            isinstance(ref, str) and ref.strip() for ref in self.plugins
-        ):
+        supplied_angles(held.get("angles"))
+        supplied_pixel_sizes(held.get("pixel_size_um"))
+        return held
+
+    @field_validator("disabled", "enabled", mode="after")
+    @classmethod
+    def _tool_names(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(name.strip() for name in value))
+
+    @field_validator("plugins", mode="after")
+    @classmethod
+    def _plugin_refs(cls, value: list[str]) -> list[str]:
+        if not all(ref.strip() for ref in value):
             raise ValueError("plugins must be a list of module:factory references")
-        self.plugins = list(dict.fromkeys(ref.strip() for ref in self.plugins))
-        named = [ref for ref in self.plugins if ref in tool_table.ENGINES]
+        return list(dict.fromkeys(ref.strip() for ref in value))
+
+    @field_validator("plugin_config", mode="after")
+    @classmethod
+    def _plugin_options(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not all(isinstance(item, dict) for item in value.values()):
+            raise ValueError("plugin_config must map a plugin reference to an options object")
+        return value
+
+    @field_validator("frozen", mode="before")
+    @classmethod
+    def _frozen_clean(cls, value: Any) -> dict[str, list[str]]:
+        return freeze.clean(value)
+
+    @model_validator(mode="after")
+    def _settled(self) -> JobSpec:
+        supplied_damaged_regions(self.inputs.get("damaged_regions"), self.plane)
+        plugins = list(self.plugins)
+        enabled = list(self.enabled)
+        named = [ref for ref in plugins if ref in tool_table.ENGINES]
         if named:
-            self.plugins = [ref for ref in self.plugins if ref not in named]
-            self.enabled = list(
+            plugins = [ref for ref in plugins if ref not in named]
+            enabled = list(
                 dict.fromkeys(
                     [
-                        *self.enabled,
+                        *enabled,
                         *(
                             tool.name
                             for tool in tool_table.TOOLS.values()
@@ -389,30 +733,19 @@ class JobSpec:
                     ]
                 )
             )
-        given = cast("object", self.enabled)
-        if not isinstance(given, (list, tuple)) or not all(
-            isinstance(name, str) for name in cast("list[object]", given)
-        ):
-            raise ValueError("enabled must be a list of tool names")
-        self.enabled = list(dict.fromkeys(name.strip() for name in self.enabled))
         if (
             self.nonlinear.uses_image_model
             and "trace_borders" not in self.disabled
-            and "trace_borders" not in self.enabled
+            and "trace_borders" not in enabled
         ):
-            self.enabled.append("trace_borders")
-        reason = tool_table.check_enabled(self.enabled)
+            enabled.append("trace_borders")
+        reason = tool_table.check_enabled(enabled)
         if reason is not None:
             raise ValueError(reason)
-        both = [name for name in self.enabled if name in self.disabled]
+        both = [name for name in enabled if name in self.disabled]
         if both:
             raise ValueError(f"{both} are in both enabled and disabled")
-        if not isinstance(self.plugin_config, dict) or not all(
-            isinstance(ref, str) and isinstance(item, dict)
-            for ref, item in self.plugin_config.items()
-        ):
-            raise ValueError("plugin_config must map a plugin reference to an options object")
-        known = {*self.plugins, *tool_table.ENGINES}
+        known = {*plugins, *tool_table.ENGINES}
         stray = sorted(set(self.plugin_config) - known)
         if stray:
             raise ValueError(
@@ -420,13 +753,13 @@ class JobSpec:
                 "job and no engine of LangSlice "
                 f"({', '.join(tool_table.ENGINES)})"
             )
-        if self.plugins:
-            tool_table.tools_for(self)
-        self.frozen = freeze.clean(self.frozen)
-        supplied = self.inputs.get("positions") or {}
+        settled = self.model_copy(update={"plugins": plugins, "enabled": enabled})
+        if plugins:
+            tool_table.tools_for(settled)
+        supplied = settled.inputs.get("positions") or {}
         unsupplied = sorted(
             name
-            for name, held in self.frozen.items()
+            for name, held in settled.frozen.items()
             if name != freeze.EVERY and "position" in held and name not in supplied
         )
         if unsupplied:
@@ -434,9 +767,20 @@ class JobSpec:
                 f"frozen: the position of {unsupplied} is frozen, and a position has no "
                 "default: supply it in inputs.positions"
             )
-        reason = tool_table.refusal(self)
+        reason = tool_table.refusal(settled)
         if reason is not None:
             raise ValueError(reason)
+        return settled
+
+    @model_serializer(mode="wrap")
+    def _compact(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = cast("dict[str, Any]", handler(self))
+        if data.get("job_dir") is None:
+            data.pop("job_dir", None)
+        for key in ("force_view", "disabled", "enabled", "frozen", "plugins", "plugin_config"):
+            if not data.get(key):
+                data.pop(key, None)
+        return data
 
     def has(self, task: str) -> bool:
         """Whether *task* is on for this run: in ``tasks``, and not every one
@@ -552,50 +896,39 @@ class JobSpec:
         return float(value) if value is not None else None
 
     def to_dict(self) -> dict[str, Any]:
-        data = asdict(self)
-        if data.get("job_dir") is None:
-            data.pop("job_dir", None)
-        if not data["nonlinear"].get("require_deformation"):
-            data["nonlinear"].pop("require_deformation", None)
-        if data["nonlinear"].get("image_prompt") is None:
-            data["nonlinear"].pop("image_prompt", None)
-        if not data.get("force_view"):
-            data.pop("force_view", None)
-        if not data.get("disabled"):
-            data.pop("disabled", None)
-        if not data.get("enabled"):
-            data.pop("enabled", None)
-        if not data.get("frozen"):
-            data.pop("frozen", None)
-        if not data.get("plugins"):
-            data.pop("plugins", None)
-        if not data.get("plugin_config"):
-            data.pop("plugin_config", None)
-        return data
+        """The spec as ``job.json`` holds it: JSON values, a setting at its
+        empty value left out where the file never listed it."""
+        return self.model_dump(mode="json")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
-        """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any
-        unknown key (a nested one as ``section.key``), as the settings table
-        knows them (:func:`~langslice.job.settings.schema.spec_keys`)."""
-        nested = {
-            "position": PositionSpec,
-            "transform": TransformSpec,
-            "nonlinear": NonlinearSpec,
-        }
-        top, sections = spec_keys()
-        unknown = [name for name in data if name not in top]
-        unknown += [
-            f"{name}.{key}"
-            for name in nested
-            for key in (data.get(name) or {})
-            if key not in sections[name]
-        ]
-        if unknown:
-            raise ValueError(f"Unknown job setting(s) {sorted(unknown)}")
-        kwargs: dict[str, Any] = {
-            name: _filled(nested[name], cast("object", value)) if name in nested else value
-            for name, value in data.items()
-        }
-        enabled = cast("list[str]", kwargs.pop("enabled", []))
-        return cls(**kwargs, enabled=enabled)
+        """Rebuild from :meth:`to_dict` output.
+
+        ``ValueError`` naming each problem in a sentence: an unknown key as
+        ``Unknown job setting(s) [...]`` (a nested one as ``section.key``), a
+        refused value by its own message, a wrong type by its place.
+        """
+        try:
+            return cls.model_validate(data)
+        except ValidationError as exc:
+            problems = exc.errors()
+            unknown = sorted(
+                ".".join(str(part) for part in problem["loc"])
+                for problem in problems
+                if problem["type"] == "extra_forbidden"
+            )
+            said = [f"Unknown job setting(s) {unknown}"] if unknown else []
+            for problem in problems:
+                if problem["type"] == "extra_forbidden":
+                    continue
+                place = ".".join(str(part) for part in problem["loc"])
+                text = problem["msg"].removeprefix("Value error, ")
+                said.append(
+                    f"{place}: {text}" if place and problem["type"] != "value_error" else text
+                )
+            raise ValueError("; ".join(said)) from None
+
+    def with_changes(self, **updates: Any) -> JobSpec:
+        """A spec like this one with *updates* (``plugins=...``, ``inputs=...``),
+        checked as a new spec is."""
+        return self.from_dict({**self.to_dict(), **updates})

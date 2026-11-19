@@ -7,13 +7,10 @@ its reference.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-from langslice.core.jsonable import JsonObject, empty_object
+from langslice.core.stack.part import Number, Object, Part, omitted
 
 
-@dataclass(frozen=True)
-class ImageRef:
+class ImageRef(Part):
     """Hold a made section image (:mod:`langslice.core.sections.images`).
 
     Parameters
@@ -27,19 +24,15 @@ class ImageRef:
         The digest of its pixels.
     made
         When it was made, as ISO 8601 text.
-    extra
-        Other facts its maker recorded (the weights a recipe used).
     """
 
-    source: JsonObject
+    source: Object
     file: str
     digest: str
     made: str
-    extra: JsonObject = field(default_factory=empty_object)
 
 
-@dataclass(frozen=True)
-class MaskRef:
+class MaskRef(Part):
     """Hold a section mask (:mod:`langslice.core.sections.masks`).
 
     Parameters
@@ -61,23 +54,21 @@ class MaskRef:
     registration
         The digest of the registration it was made at; None for a mask
         made before it was recorded.
-    extra
-        Other keys the entry carried, kept as they came.
+
+    Other keys an entry carried are kept as they came.
     """
 
     kind: str
     section_image: str
     atlas_image: str
-    params: JsonObject
+    params: Object
     inputs: str
+    registration: str | None = omitted()
     file: str
-    left_out: float
-    registration: str | None = None
-    extra: JsonObject = field(default_factory=empty_object)
+    left_out: Number
 
 
-@dataclass(frozen=True)
-class LayerRef:
+class LayerRef(Part):
     """Hold a layer a tool plugin left on a section.
 
     Parameters
@@ -98,8 +89,6 @@ class LayerRef:
         The call that made it.
     created
         When it was made, as ISO 8601 text.
-    extra
-        Other keys the reference carried, kept as they came.
     """
 
     id: str
@@ -110,4 +99,3 @@ class LayerRef:
     tool: str
     call: str
     created: str
-    extra: JsonObject = field(default_factory=empty_object)

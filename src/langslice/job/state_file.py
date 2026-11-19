@@ -1,55 +1,40 @@
 """The state checkpoint, ``state.json``: the job's record of truth.
 
 This module is the one place a :class:`~langslice.core.stack.stack.Stack`
-and its sections become JSON and come back (:func:`stack_to_json`,
-:func:`stack_from_json`); each section is one row, its parts in their JSON
-form (:mod:`langslice.core.stack.rows`). Every write saves the full stack
-there, atomically (temp file + rename) so a crash mid-write cannot leave a
-truncated file. Resume = load
-the checkpoint and re-seed the agent with the state it had. Several writers
-may share one job folder; they take turns under its write lock
-(:meth:`langslice.job.job.Job.writing`).
+becomes JSON and comes back (:func:`stack_to_json`,
+:func:`stack_from_json`); the stack and its sections declare their own
+JSON form (:mod:`langslice.core.stack.part`). Every write saves the full
+stack there, atomically (temp file + rename) so a crash mid-write cannot
+leave a truncated file. Resume = load the checkpoint and re-seed the agent
+with the state it had. Several writers may share one job folder; they take
+turns under its write lock (:meth:`langslice.job.job.Job.writing`).
 
-The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next to
-the state's own fields. A checkpoint of an older format is read through the
-job's upgrade, the table of migrations
-(:class:`langslice.job.migrations.FolderMigration`); any other format is
-refused, never guessed at: a newer one asks for a newer LangSlice, an older
-one the table does not read (a pre-release LangSlice's) for a new job.
+The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next
+to the state's own fields. A checkpoint of format 5 is read as format 6
+(:func:`state_5_to_6`: every section gets its position's source); an older
+one was made by a pre-release LangSlice and is refused, as is a newer one,
+which asks for a newer LangSlice.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast
+from collections.abc import Callable, Mapping
+from typing import Any, NamedTuple, cast
 
-from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
+from langslice.core.jsonable import JsonObject, JsonValue, to_jsonable
 from langslice.core.shared_files import write_json_atomic
-from langslice.core.space import as_plane
-from langslice.core.stack.json_reads import (
-    flag_at,
-    integer_at,
-    list_at,
-    object_at,
-    objects_at,
-    text_at,
-    texts_at,
-)
-from langslice.core.stack.rows import (
-    ANGLES_KEY,
-    ROW_KEYS,
-    section_from_json,
-    section_to_json,
-)
-from langslice.core.stack.section import FLAT, Section
+from langslice.core.stack.section import FLAT, INPUT, WRITTEN
 from langslice.core.stack.stack import Stack
-
-Upgrade = Callable[[int, dict[str, Any]], JsonObject]
 
 FORMAT_KEY = "format_version"
 STATE_FORMAT_VERSION = 6
+OLDEST_FORMAT = 5
+ANGLES_KEY = "cutting_angles_deg"
+OPTIONAL_ROW_KEYS = ("layers", "masks", "images")
+
+__all__ = ["write_json_atomic"]
 
 
 def json_object(text: str) -> JsonObject | None:
@@ -76,30 +61,14 @@ def json_object(text: str) -> JsonObject | None:
     return cast("JsonObject", data)
 
 
-STACK_KEYS = (
-    "image_folder",
-    "atlas",
-    "plane",
-    "interval_mm",
-    "thickness_mm",
-    "spec",
-    "interval_breaks",
-    "notes",
-    "slices",
-    "submitted",
-    "debrief",
-)
-OPTIONAL_ROW_KEYS = ("layers", "masks", "images")
-
-
 def stack_to_json(state: Stack) -> dict[str, JsonValue]:
     """Return a stack in its JSON form: the checkpoint's and the result's.
 
     The cutting angles are written once, on the stack
     (``"cutting_angles_deg": {"pitch", "yaw"}``), when every section shares
-    them, so a single-angle state reads as it always has; when they differ
-    (state format 3), the stack's is null and each section row carries its
-    own.
+    them; when they differ the stack's is null and each section row carries
+    its own. A section row leaves out its empty ``layers``, ``masks`` and
+    ``images``.
 
     Parameters
     ----------
@@ -109,9 +78,10 @@ def stack_to_json(state: Stack) -> dict[str, JsonValue]:
     Returns
     -------
     dict
-        :data:`STACK_KEYS` in order, then ``cutting_angles_deg``.
+        The stack's fields in declared order, then ``cutting_angles_deg``.
     """
-    rows = [section_to_json(section) for section in state.slices]
+    data = state.to_json()
+    rows = cast("list[dict[str, JsonValue]]", data["slices"])
     angles: JsonValue = None
     if not state.mixed_angles:
         angles = {"pitch": FLAT[0], "yaw": FLAT[1]}
@@ -123,9 +93,6 @@ def stack_to_json(state: Stack) -> dict[str, JsonValue]:
         for key in OPTIONAL_ROW_KEYS:
             if not row[key]:
                 del row[key]
-    fields = stack_fields(state)
-    data = {key: fields.get(key) for key in STACK_KEYS}
-    data["slices"] = list[JsonValue](rows)
     data[ANGLES_KEY] = angles
     return data
 
@@ -141,20 +108,9 @@ def stack_fields(state: Stack) -> dict[str, JsonValue]:
     Returns
     -------
     dict
-        :data:`STACK_KEYS` but ``slices``.
+        The stack's fields but ``slices``.
     """
-    return {
-        "image_folder": state.image_folder,
-        "atlas": state.atlas,
-        "plane": state.plane,
-        "interval_mm": state.interval_mm,
-        "thickness_mm": state.thickness_mm,
-        "spec": to_jsonable(state.spec),
-        "interval_breaks": list[JsonValue](state.interval_breaks),
-        "notes": list[JsonValue](state.notes),
-        "submitted": state.submitted,
-        "debrief": state.debrief,
-    }
+    return state.model_dump(mode="json", exclude={"slices"}, fallback=to_jsonable)
 
 
 def set_stack_fields(state: Stack, fields: JsonObject) -> None:
@@ -165,36 +121,12 @@ def set_stack_fields(state: Stack, fields: JsonObject) -> None:
     state
         The stack written, in place.
     fields
-        Keys of :data:`STACK_KEYS` but ``slices``, as
-        :func:`stack_fields` gives them.
+        Keys of the stack's fields but ``slices``, as :func:`stack_fields`
+        gives them.
     """
     read = stack_from_json(fields)
     for key in fields:
         setattr(state, key, getattr(read, key))
-
-
-def _rows(data: JsonObject) -> tuple[JsonObject, ...]:
-    """Return a state's section rows; an absent or null list is none."""
-    if data.get("slices") is None:
-        return ()
-    return objects_at(data, "slices")
-
-
-def _unknown_keys(data: JsonObject) -> list[str]:
-    """Return the keys of a state, and of its rows, that it cannot hold."""
-    unknown = {key for key in data if key not in (*STACK_KEYS, ANGLES_KEY)}
-    for row in _rows(data):
-        unknown |= {f"slices.{key}" for key in row if key not in ROW_KEYS}
-    return sorted(unknown)
-
-
-def _optional_number(data: JsonObject, key: str) -> float | None:
-    value = data.get(key)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{key} must be a number or null, not {value!r}")
-    return value
 
 
 def stack_from_json(data: JsonObject) -> Stack:
@@ -216,52 +148,20 @@ def stack_from_json(data: JsonObject) -> Stack:
     Raises
     ------
     ValueError
-        Naming any unknown key (a section row's as ``slices.key``), or a
-        key that holds a value of the wrong type.
+        Naming any unknown key, or a key that holds a value of the wrong
+        type.
     """
-    unknown = _unknown_keys(data)
-    if unknown:
-        raise ValueError(f"Unknown stack state key(s) {unknown}")
     shared = data.get(ANGLES_KEY)
-    sections: list[Section] = []
-    for row in _rows(data):
-        if not isinstance(row.get(ANGLES_KEY), Mapping) and isinstance(shared, Mapping):
-            row = {**row, ANGLES_KEY: shared}
-        sections.append(section_from_json(row))
-    defaults = Stack()
-    spec: JsonObject = object_at(data, "spec") if "spec" in data else {}
-    notes = list(texts_at(data, "notes")) if "notes" in data else []
-    submitted = flag_at(data, "submitted") if "submitted" in data else False
-    return Stack(
-        image_folder=_text_or(data, "image_folder", defaults.image_folder),
-        atlas=_text_or(data, "atlas", defaults.atlas),
-        plane=as_plane(_text_or(data, "plane", defaults.plane)),
-        interval_mm=_optional_number(data, "interval_mm"),
-        thickness_mm=_optional_number(data, "thickness_mm"),
-        spec=spec,
-        interval_breaks=[
-            integer_at({"interval_breaks": value}, "interval_breaks")
-            for value in _items(data, "interval_breaks")
-        ],
-        notes=notes,
-        slices=sections,
-        submitted=submitted,
-        debrief=_text_or(data, "debrief", defaults.debrief),
-    )
-
-
-def _text_or(data: JsonObject, key: str, default: str) -> str:
-    """Return a state's text under *key*, or *default* without it."""
-    if key not in data:
-        return default
-    return text_at(data, key)
-
-
-def _items(data: JsonObject, key: str) -> Sequence[Json]:
-    """Return a state's list under *key*; an absent one is empty."""
-    if key not in data:
-        return ()
-    return list_at(data, key)
+    fields: dict[str, object] = {key: value for key, value in data.items() if key != ANGLES_KEY}
+    rows = fields.get("slices")
+    if isinstance(shared, Mapping) and isinstance(rows, list):
+        fields["slices"] = [
+            {**row, ANGLES_KEY: shared}
+            if isinstance(row, Mapping) and not isinstance(row.get(ANGLES_KEY), Mapping)
+            else row
+            for row in cast("list[object]", rows)
+        ]
+    return Stack.from_json(fields)
 
 
 def write_checkpoint(state: Stack, path: str) -> None:
@@ -326,7 +226,7 @@ def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
 
 
 def older_format(version: int) -> ValueError:
-    """Return the refusal of an older checkpoint no migration reads.
+    """Return the refusal of a checkpoint older than the oldest format read.
 
     Parameters
     ----------
@@ -336,21 +236,113 @@ def older_format(version: int) -> ValueError:
     Returns
     -------
     ValueError
-        Its message asks for a new job.
+        Its message says a pre-release LangSlice made it and it cannot be
+        opened.
     """
     return ValueError(
-        "This checkpoint was made by an older pre-release LangSlice "
-        f"(format {version}; this version reads format "
-        f"{STATE_FORMAT_VERSION}). Start a new job: open it fresh "
-        "(`--no-resume`, resume=False) or remove the job folder."
+        "This job folder was made by a pre-release LangSlice (state format "
+        f"{version}; this version reads formats {OLDEST_FORMAT} and "
+        f"{STATE_FORMAT_VERSION}) and cannot be opened. Start a new job in "
+        "another folder."
     )
 
 
-def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[str, Any]:
-    """A checkpoint's state fields, without the version key, read through
-    *upgrade* (the job's migrations, which refuse an older format they do
-    not read); ``ValueError`` without it for any format but
-    :data:`STATE_FORMAT_VERSION`, and for a newer one."""
+def state_5_to_6(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a format-5 state's fields (or a history line's ``slices``) as format 6.
+
+    Every section gets who set its position (``position_source``): the host
+    when the job's ``inputs.positions`` names it, else a write. A history
+    line's section without a position keeps none.
+
+    Parameters
+    ----------
+    data
+        The fields at format 5; not changed.
+
+    Returns
+    -------
+    dict
+
+    Raises
+    ------
+    ValueError
+        For a whole state with a section that has no position.
+    """
+    fields = dict(data)
+    rows = fields.get("slices")
+    if not rows:
+        return fields
+    spec = fields.get("spec")
+    inputs = spec.get("inputs") if isinstance(spec, Mapping) else None
+    positions = inputs.get("positions") if isinstance(inputs, Mapping) else None
+    supplied = {str(name) for name in positions} if isinstance(positions, Mapping) else set()
+    migrated: list[dict[str, Any]] = []
+    for row in rows:
+        section = {key: value for key, value in row.items() if key != "position_source"}
+        if section.get("position_mm") is None:
+            if spec is not None:
+                raise ValueError(f"section {section.get('id')} has no position (state format 5)")
+            section.pop("position_mm", None)
+        else:
+            section["position_source"] = INPUT if str(section.get("id")) in supplied else WRITTEN
+        migrated.append(section)
+    fields["slices"] = migrated
+    return fields
+
+
+def upgraded_row(version: int, row: JsonObject) -> JsonObject:
+    """Return a history line's section row at the current state format.
+
+    Parameters
+    ----------
+    version
+        The line's ``format_version``.
+    row
+        The line's section row.
+
+    Returns
+    -------
+    JsonObject
+        *row* itself when it is at the current format.
+    """
+    if version == STATE_FORMAT_VERSION:
+        return row
+    return state_5_to_6({"slices": [row]})["slices"][0]
+
+
+class Checkpoint(NamedTuple):
+    """Hold a checkpoint's state fields at the current format.
+
+    Parameters
+    ----------
+    fields
+        The state's fields, without the format version.
+    upgraded
+        Whether the file was of an older format.
+    """
+
+    fields: dict[str, Any]
+    upgraded: bool
+
+
+def checkpoint_of(data: Mapping[str, Any]) -> Checkpoint:
+    """Return a state file's JSON as the current format.
+
+    Parameters
+    ----------
+    data
+        The file's JSON, with its format version.
+
+    Returns
+    -------
+    Checkpoint
+
+    Raises
+    ------
+    ValueError
+        For a format older than :data:`OLDEST_FORMAT` (a pre-release
+        LangSlice's), a newer one, or an unreadable version.
+    """
     version = data.get(FORMAT_KEY, 0)
     if not isinstance(version, int) or isinstance(version, bool) or version < 0:
         raise ValueError(f"Unreadable checkpoint format_version {version!r}")
@@ -359,21 +351,42 @@ def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[
             f"This checkpoint was written by a newer LangSlice (format {version}; this "
             f"version reads format {STATE_FORMAT_VERSION}). Update LangSlice to open it."
         )
-    fields = {key: data[key] for key in data if key != FORMAT_KEY}
-    if upgrade is not None:
-        return dict(upgrade(version, fields))
-    if version != STATE_FORMAT_VERSION:
+    if version < OLDEST_FORMAT:
         raise older_format(version)
-    return fields
+    fields = {key: data[key] for key in data if key != FORMAT_KEY}
+    if version < STATE_FORMAT_VERSION:
+        return Checkpoint(state_5_to_6(fields), True)
+    return Checkpoint(fields, False)
 
 
-def read_checkpoint(path: str, upgrade: Upgrade | None = None) -> dict[str, Any] | None:
-    """A checkpoint's state fields (:func:`current_state`, an older one
-    through *upgrade*); ``None`` if there is no file."""
+def viewer_stack(data: Mapping[str, Any]) -> Stack:
+    """Return the stack a ``state.json`` holds, read as a viewer reads it.
+
+    A format-5 file is read as format 6 in memory; nothing is written.
+
+    Parameters
+    ----------
+    data
+        The file's JSON, with its format version.
+
+    Returns
+    -------
+    Stack
+
+    Raises
+    ------
+    ValueError
+        For a format that is not read, or a state that does not load.
+    """
+    return stack_from_json(checkpoint_of(data).fields)
+
+
+def read_checkpoint(path: str) -> Checkpoint | None:
+    """Return a checkpoint's state fields (:func:`checkpoint_of`); None if there is no file."""
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not hold a stack state")
-    return current_state(data, upgrade)
+    return checkpoint_of(cast("dict[str, Any]", data))

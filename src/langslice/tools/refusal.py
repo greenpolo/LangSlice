@@ -13,7 +13,7 @@ from collections.abc import Collection
 from typing import TYPE_CHECKING, cast
 
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.codec import Written
+from langslice.core.stack.part import Written
 from langslice.core.stack.stack import Stack
 from langslice.core.stack.stack import (
     unknown_sections as state_unknown_sections,

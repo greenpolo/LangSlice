@@ -44,8 +44,8 @@ from langslice.job.folder.layout import (
     JobLayout,
     held_image_folder,
 )
-from langslice.job.migrations import viewer_stack
 from langslice.job.settings.labels import label as tool_title
+from langslice.job.state_file import viewer_stack
 from langslice.job.steps.history import SectionHistories
 
 POLL_S = 0.25
@@ -473,7 +473,7 @@ class JobWatcher:
             return
         try:
             fields = cast("dict[str, Any]", data)
-            state = viewer_stack(fields, JobLayout(self.folder))
+            state = viewer_stack(fields)
             if self._histories is None:
                 self._histories = SectionHistories(JobLayout(self.folder))
             records = {r.id: r for r in state.slices}

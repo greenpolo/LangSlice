@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -26,8 +26,7 @@ from langslice.core.geometry.affine import normalized_physical_affine
 from langslice.core.jsonable import JsonObject
 from langslice.core.pictures.placement import stage
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack import codec
-from langslice.core.stack.affine import PhysicalAffine, StoredAffine
+from langslice.core.stack.affine import Calibration, PhysicalAffine, StoredAffine
 from langslice.core.stack.json_reads import flag_at
 from langslice.core.stack.section import ROTATIONS
 from langslice.tools.looking.look import show_result
@@ -71,8 +70,8 @@ def transform_record(
     knobs = {**knobs, "shear": knobs.get("shear", 0.0)}
     six = normalized_physical_affine(size=size, um_per_px=um_per_px, pivot=pivot, **knobs)
     pivot_at = (pivot_frac[0], pivot_frac[1])
-    physical = PhysicalAffine(**knobs, pivot=pivot_at, extra={})
-    scale = codec.calibration_from_json(cast("JsonObject", calibration))
+    physical = PhysicalAffine(**knobs, pivot=pivot_at)
+    scale = Calibration.from_json(cast("JsonObject", calibration))
     decomposed = cast("JsonObject", physical_decomposition(six, size))
     mirrored = flag_at(decomposed, "mirrored")
     return StoredAffine(
@@ -90,7 +89,9 @@ def same_transform(held: StoredAffine | None, new: StoredAffine) -> bool:
 
     The same numbers again are a look, not a write: no undo step for it.
     """
-    return held is not None and replace(held, note="") == replace(new, note="")
+    return held is not None and held.model_copy(update={"note": ""}) == new.model_copy(
+        update={"note": ""}
+    )
 
 
 def physical_knobs(transform: StoredAffine | None) -> PhysicalAffine:
@@ -365,7 +366,7 @@ def interactive_transform(
             continue
         stored_pivot = physical_knobs(held).pivot
         pivot = None if stored_pivot is None else list(stored_pivot)
-        twin = replace(record, flip=flip, rotation_deg=rotation)
+        twin = record.model_copy(update={"flip": flip, "rotation_deg": rotation})
         try:
             staged = stage(workspace, state, twin, knobs, pivot if pivot else "canvas")
         except Refused as failure:
@@ -527,7 +528,7 @@ def _entry_row(entry: Adjustment) -> dict[str, Any]:
         physical = entry.transform.physical
         row["transform"] = None
         if physical is not None:
-            row["transform"] = codec.physical_to_json(physical)
+            row["transform"] = physical.to_json()
     if entry.message:
         row["message"] = entry.message
     return row

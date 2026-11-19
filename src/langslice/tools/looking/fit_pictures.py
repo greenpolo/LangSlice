@@ -30,7 +30,7 @@ from langslice.core.pictures.canvas import (
     validate_border_thickness,
 )
 from langslice.core.sections import images as images_
-from langslice.core.stack.codec import Written
+from langslice.core.stack.part import Written
 from langslice.core.stack.section import Section
 from langslice.tools.fitting.deformable import (
     DeformableFit,

@@ -21,7 +21,6 @@ from langslice.core.pictures.sizes import PICTURE_EDGES
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.space import Plane
-from langslice.core.stack.codec import deformation_to_json, physical_to_json
 from langslice.core.stack.section import Section
 from langslice.doors.plugins.caller import Caller
 from langslice.job.settings import frozen as freeze
@@ -204,7 +203,7 @@ class ContextReads:
             params = transform.params
             knobs = None
             if transform.physical is not None:
-                knobs = physical_to_json(transform.physical)
+                knobs = transform.physical.to_json()
             affine = AffineView(
                 kind=transform.kind,
                 matrix=tuple(float(v) for v in params) if params else None,
@@ -213,7 +212,7 @@ class ContextReads:
             )
         size = render_sizes(workspace, record.id).file_size
         pixel_size, source = workspace.calibration(record.id)
-        held = None if record.deformation is None else deformation_to_json(record.deformation)
+        held = None if record.deformation is None else record.deformation.to_json()
         return SectionView(
             id=record.id,
             index=int(record.index_corrected),

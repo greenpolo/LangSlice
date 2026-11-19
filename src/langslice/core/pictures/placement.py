@@ -60,7 +60,6 @@ from langslice.core.sections.renders import (
     shown_section,
 )
 from langslice.core.space import Plane
-from langslice.core.stack.codec import physical_to_json
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
@@ -335,7 +334,7 @@ def transform_words(section: Section, kind: str, *, warp: bool = False, index: b
     transform = section.transform
     knobs = {}
     if kind != "identity" and transform is not None and transform.physical is not None:
-        knobs = physical_to_json(transform.physical)
+        knobs = transform.physical.to_json()
     if knobs and all(key in knobs for key in IDENTITY_KNOBS):
         words += f" ({knob_words(knobs, ', ')})" if index else f" {knob_words(knobs)}"
     return words + (" + deformation" if warp else "")

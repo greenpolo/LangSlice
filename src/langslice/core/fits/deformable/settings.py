@@ -18,7 +18,7 @@ margins and capture range relative to its anatomy.
 
 from __future__ import annotations
 
-from dataclasses import InitVar, asdict, dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
 Engine = Literal["fireants", "elastix"]
@@ -84,13 +84,8 @@ class FitSettings:
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
     stain_metric: StainMetric = "mutual_information"
     stain_edges: bool = True
-    stiffness: InitVar[Any] = None
 
-    def __post_init__(self, stiffness: Any = None) -> None:
-        if stiffness is not None:
-            raise ValueError(
-                "stiffness is gone: give smoothness_um, the warp's smoothness in micrometres"
-            )
+    def __post_init__(self) -> None:
         if not (
             isinstance(self.smoothness_um, (int, float))
             and SMOOTHNESS_BOUNDS_UM[0] <= self.smoothness_um <= SMOOTHNESS_BOUNDS_UM[1]
@@ -139,11 +134,6 @@ class FitSettings:
     def from_dict(cls, value: dict[str, Any]) -> FitSettings:
         """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any unknown key."""
         data = dict(value)
-        legacy = data.pop("stiffness", None)
-        if legacy is not None and "smoothness_um" not in data:
-            data["smoothness_um"] = {"soft": 50.0, "medium": 80.0, "firm": 120.0}.get(
-                legacy, DEFAULT_SMOOTHNESS_UM
-            )
         unknown = sorted(set(data) - set(cls.__dataclass_fields__))
         if unknown:
             raise ValueError(f"Unknown fit setting key(s) {unknown}")

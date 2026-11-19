@@ -35,14 +35,14 @@ imports the core (`core.stack.stack`, `core.stack.status`, `core.atlas.details`,
 `core.sections.renders.render_slice`, `core.fits.deformation.RecordStore`,
 `core.pictures.jpeg.encode_jpeg`, `core.pictures.captions.view_angles_label`)
 and the job layer (`job.settings.tool_table`, `job.settings.spec`,
-`job.settings.schema`, `job.settings.labels`, `job.layout` names and
-`read_job_file`, `job.migrations.viewer_stack` and `without_removed_settings`,
+`job.settings.walk`, `job.settings.labels`, `job.layout` names and
+`read_job_file` and `job.state_file.viewer_stack`,
 `job.history`, `job.review` for the review comments), the providers' image-model lists (`providers.connections`,
 `providers.openai_api`), the doors' job reading for the viewer's pictures
 (`doors.jobs.read_spec`, `context`: the job read as the agent CLI reads it,
 never opened), and for the Settings tab the doors' setup
 (`doors.credentials`: key presence, `save_api_key`, `login_oauth`;
-`image_model_connected` for the generator) and the
+`image_model_connected` for the generator; `doors.commands.flags.flag_names`, each setting's flag) and the
 user's settings file (`doors.user_settings`). Nothing imports it but
 `hosts/cli.py` (`langslice gui`); `doors/commands/linear.py`'s `--gui` starts that
 command as a process (`open_gui`). The viewer and the prompt generator change
@@ -209,7 +209,7 @@ The page is a React app (`web/`, below), built into `static/`.
   trace, the same records from Claude Code's transcript, `transcripts.py`),
   `note` (open, plugins, script writes, session start and end, a trace
   error). The sections table:
-  `core.stack.status.status_rows` of `job.migrations.viewer_stack` (an older
+  `core.stack.status.status_rows` of `job.state_file.viewer_stack` (an older
   format migrated in memory as every door opens it, nothing written) with
   each section's registration number (`job.history.SectionHistories`); a state this
   version does not read (a newer or a pre-release format) shows its raw
@@ -389,14 +389,14 @@ The page is a React app (`web/`, below), built into `static/`.
   generator`): `tools()` (`tool_table.catalog()` without the scripting verbs,
   each with its `tool_labels` label and
   `runs_in`: the task choices, comma-joined, whose `JobSpec` has it by
-  `ToolDef.when`), the tasks (label, sentence, default), the groups (label,
+  `ToolDef.when`), the tasks (label, sentence, default: the spec's, all three), the groups (label,
   task), `TASK_WRITERS`, `KEEP` (the properties the form can keep on every
   section, `angles` / `orientation`, with their tasks) and `frozen_off` (what
   a freeze of each switches off, `JobSpec.switched_off`), the atlases
   (`core.atlas.details.descriptions()`, each with BrainGlobe's paragraph and
   `species`: Mouse, Rat or Other by name) and the default atlas, the
-  planes, `flags`: each setting's flag as the settings table spells it
-  (`job.settings.schema.flag_spellings`, setting name -> flag), which the
+  planes, `flags`: each setting's flag as the job spec's fields spell it
+  (`doors.commands.flags.flag_names`, setting path -> flag, `notes` too), which the
   page writes the command with, and `image_models` (`ImageModelChoice` per
   provider name `core.connections.CANONICAL_PROVIDERS` holds, the one
   `NonlinearSpec` checks `--nonlinear-provider` against: the ChatGPT sign-in
@@ -415,7 +415,7 @@ The page is a React app (`web/`, below), built into `static/`.
   `name`, its box's `label` and the `words` the request names it with.
   `prefill(job_folder)` -> `Prefill` (None without a readable `job.json`):
   the form as `job.json` holds it, read through `read_job_file`,
-  `without_removed_settings` and `JobSpec.from_dict` (the image folder
+  and `JobSpec.from_dict` (the image folder
   resolved from the job folder), `notes`, and for a `host.kind == "abba"`
   job `AbbaBlock` (`host.abba`: ABBA's atlas name, file -> slice name,
   registered, existing warp, pixel size, thickness and interval, read with

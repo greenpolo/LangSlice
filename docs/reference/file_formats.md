@@ -57,45 +57,17 @@ paths are relative to the job folder. The default image folder reference is
 
 ### Old job folders
 
-A job folder an earlier LangSlice wrote opens as the current format
-(`state.json` format 6): one table of migrations (`job/migrations.py`)
-reads it. `state.json` of format 3 is read as format 4 (its section images,
-[below](#section-images-sectionsstemimagesnamepng)), and format 4 as format
-5: a section's image-model border trace, under `image_correction` in format
-4, is under `border_trace`; an old trace stays in
-`sections/<name>/image_correction/` with the paths stored to it, and new
-traces go under `sections/<name>/border_trace/`. Format 5 is read as format 6
-(`job/position_migration.py`): every section gets a number in `position_mm`
-and a `position_source`; a section without a position gets its initial
-position (the job's start and spacing) and `initial`, a placed one `input`
-when the job's `inputs.positions` names it, else `written`. A section history
-line without a position leaves the section's current one.
-What a file still holds of what LangSlice no longer has is dropped as it is
-read, with one logged warning per name (the `langslice.job.migrations`
-logger: on the agent CLI's standard error, in a script's logging):
+A job folder of `state.json` format 5 opens as the current format (6): every
+section gets a `position_source` (`input` when the job's `inputs.positions`
+names it, else `written`); a section history line without a position leaves
+the section's current one. A job folder with a section that has no position
+at format 5 is refused. An open that writes (the agent CLI, the library, MCP,
+`Job.open`) writes `state.json` again at format 6 once, and logs a `migrated`
+event; a dry run (`--dry-run`) changes nothing on disk.
 
-- in `job.json`'s settings: `max_input_tokens`, `max_quota_percent`,
-  `agent_preprocessing`, `agent_damage`, `enabled`, `position.gated`,
-  `position.bayesian`, `transform.flip`, `transform.interactive`,
-  `transform.automatic`, `nonlinear.engine`, and the task `reorder`;
-- in `state.json` and the section histories: the stack's `appearance` and a
-  section's `damaged` (a whole-section damage flag; damage is marked by
-  region, `damaged_regions`).
-
-An open that writes (the agent CLI, the library, MCP, `Job.open`) writes
-`job.json` and `state.json` again at the current format without them, once,
-and logs a `migrated` event; a dry run (`--dry-run`) changes nothing on
-disk. A setting no LangSlice wrote is still refused, naming it. A checkpoint
-older than format 3 (a pre-release LangSlice's) is refused: start a new job.
-
-The undo steps of a LangSlice before the section histories
-(`history/index.json` and `history/step-*.json`) are not read: the job opens
-with one warning (said once per process), undo starts with the session, and
-the files stay on disk. While they are there no deformation record folder is
-deleted, since those steps may name records no line of a history does.
-A section's `registrations.jsonl` of that LangSlice is read as its history,
-so the registration numbers stay as they were; the section's next write
-writes `history.jsonl` from it and removes it.
+A job folder of an older format was made by a pre-release LangSlice and
+cannot be opened: start a new job in another folder. A key `state.json` does
+not declare, or a setting no LangSlice wrote, is refused, naming it.
 
 ## Conventions
 
@@ -166,11 +138,7 @@ Affine `params` are `[a,b,tx,c,d,ty]` on the oriented section render:
 and y by height. `physical` records rotation, scales, shear, translations
 in millimetres and pivot. A residual's `record` is its folder relative to
 the job folder ([deformation records](#deformation-records-sectionsnamedeformablekey));
-coordinate maps include that deformation as well as the affine. A section
-a job of state format 3 left on its linear placement may hold a kept-linear
-marker in `state.json` instead of a reference (`keep_linear`, its note, and
-`linear_key`); it names no record, so its `record` and `key` here are null and
-its `steps` empty.
+coordinate maps include that deformation as well as the affine.
 Each of its `steps` says how a step was made: a native fit's `method`
 (`fireants_syn`, or `trace_borders` for the fit of a trace; a step a job saved
 before steps named their method has none and is read as one of these),
@@ -379,7 +347,7 @@ follow the job through it.
 | `kind` | When | Other fields |
 |---|---|---|
 | `open` | the job is opened (`Job.open`: created or resumed) | `resumed` |
-| `migrated` | a job folder of an older LangSlice was written again at the current format ([old job folders](#old-job-folders)) | `migrations` (the table's rows that ran), `dropped` (each removed state key, a section's as `slices.<key>`, with the number of sections that held it), `settings` (the removed settings left out of `job.json`) |
+| `migrated` | a job folder of state format 5 was written again at format 6 ([old job folders](#old-job-folders)) | `migrations` (the step that ran: `state_5_to_6`) |
 | `plugins` | the tool plugins' record in `job.json` changed | `plugins` |
 | `script_write` | a script's `job.context` write landed | `property`, `sections`, `notes`, `argv0`, `call` |
 | `tool_start` | a tool call begins, on any door | `name`, `execution_id`, `door`, `target_ids`, `args` |
@@ -778,19 +746,6 @@ pixels and their shape), `made` (ISO time) and, for a recipe with automatic
 weights, `weights_used` (the weights it resolved to, by raw channel). The
 opening `preprocessed` file is the automatic path run on the working copy;
 like every made image, each reader reads the file, resized to its own size.
-
-State formats 4 and 5 hold these entries; a job of format 3 (the stack's
-`appearance`: recipes and raw channels' display properties) is read through
-the migration when it opens (`state_3_to_4`, `job/migrations.py`): each recipe is
-made into a file and an entry per section (a section's own override
-honoured), `preprocessed` without a recipe becomes the opening image, the
-display properties are dropped, a mask's `channel` is named `section_image`,
-and the state is written again at the current format.
-Deformation records are not rewritten. A recipe image is made once on the
-working copy, so a fit on a migrated job reads that file: it is not the image
-the older LangSlice ran the recipe on at the fit's size, and a refit does not
-reproduce the job's earlier fit. The first open of a large job takes a while
-(minutes for a few dozen sections whose recipe runs N4); later opens do not.
 
 ## Masks (`sections/<stem>/masks/<name>.npz`)
 

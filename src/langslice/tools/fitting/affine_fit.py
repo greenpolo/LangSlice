@@ -42,9 +42,8 @@ from langslice.core.hardware import cpu_cores, map_sections
 from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
-from langslice.core.stack import codec
 from langslice.core.stack.affine import FitRegions, StoredAffine
-from langslice.core.stack.codec import Written
+from langslice.core.stack.part import Written
 from langslice.tools.changing import masks as ops_masks
 from langslice.tools.changing.images import check_image
 from langslice.tools.changing.transforms import (
@@ -715,7 +714,7 @@ def affine_row_to_json(row: AffineRow) -> Written:
         out["flags"] = to_jsonable(list(row.flags))
     if row.restrict_box is not None:
         out["restrict_box"] = list(row.restrict_box)
-    out["transform"] = codec.physical_to_json(fitted.physical)
+    out["transform"] = fitted.physical.to_json()
     words = [affine_flag_text(flag) for flag in row.flags]
     if row.turn_deg is not None:
         words.insert(
