@@ -99,8 +99,10 @@ the registration look like, and how did it get here.
   registration changes, and the sections one call changes come in one after
   another. Each section is cut to its tissue: the slide's flat ground and
   any smooth glare or grey smear touching it are left out, dim tissue is
-  kept. The sections the agent is looking at lift a little and brighten a
-  little (they are shown in 2D on the left), and the others grey a little;
+  kept, and dirt on the slide apart from the tissue is dropped. The sections
+  the agent is looking at lift a little, brighten a little and carry the
+  accent colour along their edge (they are shown in 2D on the left), and the
+  others grey a little; farther sections are a little darker;
   sections are never see-through. Between closely stacked sections the
   inside of the brain shows in the sections' own tissue colour. The brain
   keeps a thin outline so it reads around the sections. Drag to turn the brain, scroll to zoom; pointing at a section
@@ -114,7 +116,8 @@ the registration look like, and how did it get here.
   words under it; `Enter` keeps the comment in the job (`review.json`),
   `Esc` drops it. Each section shows its comments, a box with the words
   above it; once the section has changed since you wrote one, it is faded
-  and says *revised*. The `×` beside a comment removes it. The button counts
+  and says *revised*, and the section's new picture fades in over the old
+  one while you watch. The `×` beside a comment removes it. The button counts
   the comments still open. Then tell your agent to look at the comments: it
   reads them with `langslice-job FOLDER review_comments`, which saves a
   picture of each commented section with its boxes, and briefs a

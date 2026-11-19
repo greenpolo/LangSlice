@@ -186,6 +186,7 @@ a { color: inherit; text-decoration: none; }
 .review-frame { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: var(--radius); cursor: crosshair; touch-action: none; }
 .review-layer { position: absolute; inset: 0; transform-origin: 0 0; }
 .review-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.review-ghost { opacity: 0; pointer-events: none; }
 .mark { position: absolute; border: 2px solid var(--lavender); border-radius: 2px; pointer-events: none; }
 .mark.draft { border-style: dashed; }
 .mark.revised { border-color: var(--green); border-style: dashed; }

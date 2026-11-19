@@ -4,7 +4,8 @@
 // (`review.json`), where the agent's `review_comments` tool reads it. A comment's box is
 // a fraction of the picture as drawn (its content, contained in the frame), so it lands
 // on the same tissue at any size or zoom. A comment whose section the agent has changed
-// since shows as revised.
+// since shows as revised, and the section's new picture fades in over the old one
+// (`REDRAW_MS`), so what the agent changed is seen.
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DUR, EASE_OUT } from '../motion';
@@ -15,6 +16,7 @@ import { short } from '../simple/Stage';
 type View = { s: number; x: number; y: number };
 type Rect = { left: number; top: number; width: number; height: number };
 const MAX_ZOOM = 24;
+const REDRAW_MS = 1100;
 
 export function Review({ start, onClose, onShow }: { start: string | null; onClose: () => void; onShow?: (id: string) => void }) {
   const rows = useRun(s => s.rows);
@@ -55,7 +57,9 @@ export function Review({ start, onClose, onShow }: { start: string | null; onClo
 function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: string; renderKey?: string | null; comments: Comment[] }) {
   const frame = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const ghost = useRef<HTMLCanvasElement>(null);
+  const shown = useRef<HTMLImageElement | null>(null);
+  const shownKey = useRef<string | null | undefined>(undefined);
   const [rect, setRect] = useState<Rect | null>(null);
   const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 });
   const [draft, setDraft] = useState<number[] | null>(null);
@@ -72,6 +76,14 @@ function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: stri
       const box = el.getBoundingClientRect();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const c = canvas.current!;
+      const before = ghost.current;
+      if (before && shown.current && shownKey.current !== renderKey && c.width > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        before.width = c.width; before.height = c.height;
+        before.getContext('2d')!.drawImage(c, 0, 0);
+        before.animate([{ opacity: 1 }, { opacity: 0 }], { duration: REDRAW_MS, easing: 'cubic-bezier(0.45, 0, 0.55, 1)' });
+      }
+      shown.current = image;
+      shownKey.current = renderKey;
       c.width = Math.round(box.width * dpr); c.height = Math.round(box.height * dpr);
       const s = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
       const r = { width: image.naturalWidth * s, height: image.naturalHeight * s, left: 0, top: 0 };
@@ -86,12 +98,11 @@ function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: stri
       const box = el.getBoundingClientRect();
       picture(overlayUrl(job, id, snapEdge(Math.max(box.width, box.height)), renderKey), 0).then(image => {
         if (!alive || !image) return;
-        setImg(image);
         draw(image);
       });
     };
     load();
-    const o = new ResizeObserver(() => { if (img) draw(img); load(); });
+    const o = new ResizeObserver(() => { if (shown.current) draw(shown.current); load(); });
     o.observe(el);
     return () => { alive = false; o.disconnect(); };
   }, [job, id, renderKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -157,6 +168,7 @@ function ReviewPicture({ job, id, renderKey, comments }: { job: number; id: stri
     >
       <div className="review-layer" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}>
         <canvas ref={canvas} className="review-canvas" />
+        <canvas ref={ghost} className="review-canvas review-ghost" aria-hidden="true" />
         <AnimatePresence>
           {comments.map(c => (
             <motion.div

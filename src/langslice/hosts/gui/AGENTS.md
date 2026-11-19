@@ -131,33 +131,52 @@ The page is a React app (`web/`, below), built into `static/`.
   brain's edge do not hide it) and each placed section as an opaque slab
   whose basis is its thumbnail's corners (`TR-TL`, `BL-TL`, the normal times
   the thickness; the shear the decomposition leaves is kept), only its
-  picture's ground left out by a mask made once per picture (`tissueImage`:
+  picture's ground left out by a mask made once per picture (`tissueImage`,
+  on a copy `MASK_W` pixels wide so it costs the page little:
   brighter than the corners' luminance over a 5x5 mean; smooth patches
   touching the ground outside, glare or grey smears, cut; specks dropped,
-  the dark outer edge peeled, pinholes filled; uploaded as a `DataTexture`,
+  the dark outer edge peeled, pinholes filled, a piece apart from the tissue
+  dropped when it is under `DEBRIS` of the largest piece or cut by the
+  picture's border, dirt on the slide; then
+  spread to the picture's size and softened over `SOFT_PER_PX` of its width
+  into the alpha; uploaded as a `DataTexture`,
   never through a canvas, whose premultiplied alpha would blacken the cut
-  ground into a rim), a hard edge, no mipmaps (they blur the tissue into
+  ground into a rim), a smooth edge one screen pixel wide (the alpha's
+  half-way contour, through the samples' coverage, never blended), no
+  mipmaps (they blur the tissue into
   the ground at a slant); picking follows the same mask. A section
   without a written transform sits where the core's identity puts it: its
   picture as the job keeps it (no turn or flip beyond the job's), centred
   on the atlas plane at its position, at its true pixel size. A section
   still at the job's initial spacing (`position_source` `initial`) is not drawn; a newly placed one appears where it is,
   whole (never part see-through); a changed placement is glided to on critically damped springs
-  (position, size, rotation); the sections a call changed come in stack
-  order over `BATCH_S`; nothing else moves. The sections in focus lift by
-  `LIFT` of the brain's height (an ease-out over `FOCUS_S`) and brighten a
-  little, and the others grey a little; sections are never see-through.
+  (position, size, rotation); the sections a call moved go in stack
+  order over `BATCH_S`, and the sections a call placed for the first time
+  arrive one after another over `ARRIVE_S`; nothing else moves. The sections in focus lift by
+  `LIFT` of the brain's height (an ease-out over `FOCUS_S`), brighten a
+  little and carry the accent along their cut edge, and the others grey a
+  little (none is marked while every section is shown); a section farther
+  from the viewer is a little darker (`FAR_SHADE`), so the stack reads in
+  depth; nothing of a section is drawn outside the atlas's own cross-section
+  box at that place along the brain (`crossSections`: `ROOM_BINS` steps,
+  `ROOM_MM` wider), so a section not yet aligned, drawn at its true size,
+  does not hang out of the atlas; sections are never see-through. The scene's motion runs on the
+  page's clock (`performance.now()`), the same as the window's.
   The brain's nearest surface only is drawn (a depth pass first), and
   inside it, behind everything, its far wall in the sections' mean tissue
-  colour where sections stand close (`WALL_REACH_MM`), so the gaps of a
-  thin-section stack do not read as black ribs. OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
+  colour darkened to `WALL_SHADE` where pictured sections stand close
+  (`WALL_REACH_MM`), so the gaps of a thin-section stack do not read as
+  black ribs and no flat patch reads as a section. An axis word that would
+  show through the brain from behind is hidden. OrbitControls with damping, a lateral three-quarter view (`VIEW`) fitted
   to the mesh; reduced motion moves everything at once; a click on a slab
   picks its section. `Volume.tsx` fetches the shell once per job, the space
   again when a row's `render_key` changes (at most every `SPACE_MS`), the
   calm thumbnails through `pictures.ts` (`THUMB_RANK`, after the stage's),
   and shows the placed count, the thickness, a hint and the hovered
   section's name; in 3D the journal's column is narrower. `src/review/Review`:
-  one section, arrow keys, wheel zoom, a dragged box and its comment.
+  one section, arrow keys, wheel zoom, a dragged box and its comment; when
+  the agent changes the section shown, its new picture fades in over the
+  old one (`REDRAW_MS`).
   `src/prompt/`, `src/settings/`, `src/export/` (with `controls.tsx`): the
   Prompt generator (its message from `static/generator-logic.js`, the same
   file the tests run under node), Settings and the Export menu, as the
@@ -285,7 +304,11 @@ The page is a React app (`web/`, below), built into `static/`.
   `blue`, else the first), `draw_calm_overlay` (two `look` calls on that
   channel, with and without the borders; their difference is the border
   layer, so `look`'s scale bar goes), `draw_calm_thumb`, `calm` (the tissue
-  `tissue_mask`ed off the tile floor, `scale_bar` cleared, a soft knee, a
+  `tissue_mask`ed off the tile floor, with what lies beside the
+  tissue on the slide left out (`without_debris`: out-of-focus dirt, glare
+  that stands out of the tissue, marks at the picture's border, the
+  scanner's bright line and smears along the edge of what it scanned
+  (`scan_edge`, `without_edge_glow`, `without_threads`)), `scale_bar` cleared, a soft knee, a
   cool tint on `STAGE`, the borders at `LINE_STRENGTH`, fainter when small).
 - `export.py` — the Export menu: `FORMATS` (`abba`, `quicknii`,
   `visualign`); `run_export(folder, kind)` -> `Written` writes one through
