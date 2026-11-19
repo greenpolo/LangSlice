@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -362,15 +362,16 @@ def _edited_pair(
         stale=False,
     )
     if previous is not None:
-        item = replace(
-            previous,
-            atlas=item.atlas,
-            atlas_native_xy=item.atlas_native_xy,
-            section=item.section,
-            section_fraction_xy=item.section_fraction_xy,
-            plane=plane,
+        item = previous.model_copy(
+            update={
+                "atlas": item.atlas,
+                "atlas_native_xy": item.atlas_native_xy,
+                "section": item.section,
+                "section_fraction_xy": item.section_fraction_xy,
+                "plane": plane,
+            }
         )
-    return replace(item, stale=geometry.stale(job.state, section, item))
+    return item.model_copy(update={"stale": geometry.stale(job.state, section, item)})
 
 
 @dataclass(frozen=True)

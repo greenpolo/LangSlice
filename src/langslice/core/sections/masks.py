@@ -30,7 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -298,7 +298,7 @@ def write_mask(
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
-    entry = replace(facts, file=layout.relative(path))
+    entry = facts.model_copy(update={"file": layout.relative(path)})
     section.masks[name] = entry
     return entry
 

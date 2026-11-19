@@ -15,8 +15,9 @@ One session handles the whole stack and ends at `submit`. Its system prompt
 is one short text, the same for every job (the coding-agent connectors use the
 same text); the job statement, the user's notes, the opening pictures and the
 status table are its first message.
-The default tasks are `position,transform`; `--registration` imports a linear
-placement and defaults to `nonlinear`. The agent chooses its sequence of
+All three tasks are on by default, except those the supplied inputs settle
+(`--positions`, `--transforms`); `--registration` imports a linear
+placement and leaves `nonlinear` alone. The agent chooses its sequence of
 tools, regions and fit settings. Nonlinear registration can fit to the stain
 alone or use optional image-model border traces.
 

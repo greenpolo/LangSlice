@@ -333,7 +333,7 @@ def write_file(
         file=layout.relative(path),
         digest=digest,
         made=_now(),
-        extra=dict(extra or {}),
+        **(extra or {}),
     )
 
 

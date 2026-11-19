@@ -21,7 +21,6 @@ from langslice.core.sections.damage import (
     side_pair_refusal,
 )
 from langslice.core.stack.affine import IDENTITY_PHYSICAL, StoredAffine
-from langslice.core.stack.codec import affine_from_json
 from langslice.core.stack.section import INPUT, ROTATIONS, Section
 from langslice.core.stack.stack import Stack
 from langslice.core.workspace import Workspace
@@ -67,7 +66,7 @@ def _section(state: Stack, key: str, name: object) -> Section:
 
 def _host_affine(given: object) -> StoredAffine:
     """Return a copy of a host's transform dictionary as the stored affine."""
-    return affine_from_json(copy.deepcopy(cast("JsonObject", given)))
+    return StoredAffine.from_json(copy.deepcopy(cast("JsonObject", given)))
 
 
 def apply_host_inputs(state: Stack, spec: JobSpec) -> None:

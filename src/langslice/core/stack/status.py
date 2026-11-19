@@ -11,7 +11,6 @@ from typing import Any
 
 from langslice.core.jsonable import JsonObject
 from langslice.core.stack.affine import StoredAffine
-from langslice.core.stack.codec import physical_to_json
 from langslice.core.stack.deformation import DeformationRef
 from langslice.core.stack.section import INITIAL, Section
 from langslice.core.stack.stack import Stack
@@ -82,7 +81,7 @@ def transform_entry(transform: StoredAffine | None) -> dict[str, Any] | None:
         return None
     entry: dict[str, Any] = {"kind": transform.kind}
     if transform.physical is not None:
-        entry.update(physical_to_json(transform.physical))
+        entry.update(transform.physical.to_json())
     if transform.mirrored is not None:
         entry["mirrored"] = transform.mirrored
     return entry

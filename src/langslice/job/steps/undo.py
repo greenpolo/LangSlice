@@ -20,24 +20,22 @@ steps are read back instead.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any
 
 from langslice.core.jsonable import Json, JsonObject
-from langslice.core.stack.json_reads import objects_at
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.job.checkpoint import JobCheckpoint, file_stamp, state_from_file
 from langslice.job.state_file import (
-    STATE_FORMAT_VERSION,
     read_checkpoint,
     set_stack_fields,
     stack_fields,
     stack_from_json,
     stack_to_json,
+    upgraded_row,
 )
 from langslice.job.steps.history import (
     HOST,
@@ -113,13 +111,13 @@ class JobUndo(JobCheckpoint):
         if stamp in (self._state_stamp, self._peek_stamp):
             return
         try:
-            data = read_checkpoint(self.checkpoint_path, self.upgrade)
+            read = read_checkpoint(self.checkpoint_path)
         except (OSError, ValueError):
             return
-        if data is None:
+        if read is None:
             return
         held = stack_to_json(self.state)
-        loaded = stack_to_json(state_from_file(data, self.checkpoint_path))
+        loaded = stack_to_json(state_from_file(read.fields, self.checkpoint_path))
         self._peek_stamp = stamp
         if loaded == held:
             return
@@ -232,14 +230,11 @@ class JobUndo(JobCheckpoint):
         if step.notes_before is not None:
             self.state.notes = step.notes_before.put_back(self.state.notes)
         back = self._record(before, self.actor, also=step)
-        return dataclasses.replace(back, step=step.step, by=step.by, at=step.at)
+        return back.model_copy(update={"step": step.step, "by": step.by, "at": step.at})
 
     def _current_row(self, row: Row) -> JsonObject:
         """Return a line's section row at the current state format."""
-        if row.format_version == STATE_FORMAT_VERSION or self.upgrade is None:
-            return row.section
-        upgraded = self.upgrade(row.format_version, {"slices": [row.section]})
-        return objects_at(upgraded, "slices")[0]
+        return upgraded_row(row.format_version, row.section)
 
     def _record(
         self,
@@ -439,7 +434,7 @@ class JobUndo(JobCheckpoint):
         if state_stamp == self._state_stamp:
             return None
         try:
-            data = read_checkpoint(self.checkpoint_path, self.upgrade)
+            read = read_checkpoint(self.checkpoint_path)
         except (OSError, ValueError):
             logger.warning(
                 "State file %s changed but does not read; keeping the job's state",
@@ -448,10 +443,10 @@ class JobUndo(JobCheckpoint):
             )
             return None
         self._state_stamp = state_stamp
-        if data is None:
+        if read is None:
             return None
         held = stack_to_json(self.state)
-        loaded = stack_to_json(state_from_file(data, self.checkpoint_path))
+        loaded = stack_to_json(state_from_file(read.fields, self.checkpoint_path))
         if loaded == held:
             return None
         self.state.replace_with(stack_from_json(loaded))

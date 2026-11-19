@@ -11,15 +11,15 @@ page what the choices are, so nothing in the form is written by hand twice:
   out: a script's, never the agent's to lose), each with its people's label
   (:mod:`langslice.job.settings.labels`), so a renamed or removed tool can
   never linger in the form;
-- the tasks, the default ones and the tools that write each task's answer
+- the tasks, the default ones (the spec's) and the tools that write each task's answer
   (``TASK_WRITERS``), so the page can say when a choice of tools cannot
   work, as the spec would;
 - the atlases BrainGlobe describes
   (:func:`langslice.core.atlas.details.descriptions`), the planes and the
   default atlas;
-- the flag each setting the form fills is spelled with, from the settings
-  table (:mod:`langslice.job.settings.schema`), so the command it writes is
-  the one ``init`` reads;
+- the flag each setting the form fills is spelled with, from the job spec's
+  fields (:func:`langslice.doors.commands.flags.flag_names`), so the command
+  it writes is the one ``init`` reads;
 - the image models: every provider name a job spec accepts (the names the
   job spec checks ``--nonlinear-provider`` against), each with the models
   LangSlice's providers list for it;
@@ -42,6 +42,7 @@ from typing import Any
 from langslice.core.atlas.details import descriptions
 from langslice.core.connections import CANONICAL_PROVIDERS
 from langslice.core.jsonable import JsonObject
+from langslice.core.space import PLANES
 from langslice.core.stack.json_reads import (
     integer_at,
     number_at,
@@ -51,6 +52,7 @@ from langslice.core.stack.json_reads import (
     text_map_at,
     texts_at,
 )
+from langslice.doors.commands.flags import flag_names
 from langslice.doors.credentials import (
     image_model_connected,
     saved_image_provider,
@@ -61,18 +63,9 @@ from langslice.job.folder.layout import (
     held_image_folder,
     read_job_file,
 )
-from langslice.job.migrations import without_removed_settings
 from langslice.job.settings import labels as tool_labels
 from langslice.job.settings import tool_table
-from langslice.job.settings.schema import (
-    ALL_TASKS,
-    DEFAULT_ATLAS,
-    DEFAULT_TASKS,
-    PLANES,
-    flag_spellings,
-    setting,
-)
-from langslice.job.settings.spec import JobSpec, NonlinearSpec
+from langslice.job.settings.spec import ALL_TASKS, DEFAULT_ATLAS, JobSpec, NonlinearSpec, Task
 from langslice.providers import connections as image_registry
 from langslice.providers.openai_api import OPENAI_IMAGE_MODELS
 
@@ -126,7 +119,7 @@ def species(name: str) -> str:
 TRACED_PROVIDER = "openai-oauth"
 
 
-def task_sets() -> list[list[str]]:
+def task_sets() -> list[list[Task]]:
     """Every non-empty choice of tasks, each in :data:`ALL_TASKS` order."""
     return [
         list(chosen)
@@ -213,7 +206,7 @@ def image_models() -> list[ImageModelChoice]:
     list of ImageModelChoice
         The providers, in the form's order.
     """
-    default = saved_image_provider() or setting("nonlinear.provider").default
+    default = saved_image_provider() or NonlinearSpec().provider
     rows: list[ImageModelChoice] = []
     for name in sorted(CANONICAL_PROVIDERS, key=_provider_order):
         no_model = _calls_no_model(name)
@@ -243,13 +236,14 @@ def payload() -> dict[str, Any]:
         atlases.insert(0, {"name": DEFAULT_ATLAS, "about": "", "species": species(DEFAULT_ATLAS)})
     groups = tool_table.GROUPS
     writers = tool_table.TASK_WRITERS
+    default_tasks = JobSpec(image_folder=".").tasks
     return {
         "tasks": [
             {
                 "name": task,
                 "label": tool_labels.TASK_LABELS[task],
                 "about": tool_labels.TASK_ABOUT[task],
-                "default": task in DEFAULT_TASKS,
+                "default": task in default_tasks,
             }
             for task in ALL_TASKS
         ],
@@ -269,7 +263,7 @@ def payload() -> dict[str, Any]:
         "species": [group for group, _ in SPECIES] + ["Other"],
         "default_atlas": DEFAULT_ATLAS,
         "planes": list(PLANES),
-        "flags": flag_spellings(),
+        "flags": flag_names(),
         "image_models": [asdict(choice) for choice in image_models()],
         "integrations": [asdict(program) for program in INTEGRATIONS],
     }
@@ -392,13 +386,12 @@ def _read_saved(folder: Path) -> _SavedJob | None:
     settings = dict(object_at(record, "spec"))
     images = held_image_folder(folder, record)
     settings["image_folder"] = str(images or "")
-    kept, _removed = without_removed_settings(settings)
     host = optional_at(record, "host", object_at)
     abba = None
     if host is not None:
         abba = abba_block(host)
     return _SavedJob(
-        spec=JobSpec.from_dict(dict(kept)),
+        spec=JobSpec.from_dict(settings),
         notes=optional_at(record, "notes", text_at) or "",
         abba=abba,
     )

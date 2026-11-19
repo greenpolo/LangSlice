@@ -25,7 +25,6 @@ from langslice.core.pictures.options import default_options
 from langslice.core.pictures.sizes import picture_edge
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
-from langslice.core.stack.codec import trace_from_json, trace_to_json
 from langslice.core.stack.trace import BorderTrace
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.tools.fitting.deformable import (
@@ -69,11 +68,11 @@ def _trace_json(section: Section) -> dict[str, JsonValue]:
     """Return the section's border trace in its JSON form (empty: none)."""
     if section.border_trace is None:
         return {}
-    return trace_to_json(section.border_trace)
+    return section.border_trace.to_json()
 
 
 def _without_cached(trace: BorderTrace | None) -> BorderTrace | None:
-    return None if trace is None else replace(trace, cached=None)
+    return None if trace is None else trace.model_copy(update={"cached": None})
 
 
 def _start_trace(
@@ -132,7 +131,7 @@ def _start_trace(
         if call is not None:
             job.start_image_job(section_id, fingerprint, call, workers=workers)
         portable = job.portable(result)
-        trace = trace_from_json(portable)
+        trace = BorderTrace.from_json(portable)
         if _without_cached(trace) != _without_cached(now.border_trace):
             now.border_trace = trace
             job.commit(before)

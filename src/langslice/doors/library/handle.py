@@ -449,21 +449,9 @@ def _angles(value: Mapping[str, Any]) -> dict[str, Any]:
     return {name: {"pitch": pitch, "yaw": yaw} for name, (pitch, yaw) in sections.items()}
 
 
-def default_tasks(images: str | os.PathLike[str], transforms: Mapping[str, Any]) -> list[str]:
-    """:func:`create_job`'s tasks when none are given: ``nonlinear``, plus
-    ``transform`` unless every section in *images* has a supplied
-    transform."""
-    from langslice.core.sections.discovery import discover_slices
-
-    names = {os.path.basename(path) for path in discover_slices(os.fspath(images))}
-    return ["nonlinear"] if names and names <= set(transforms) else ["transform", "nonlinear"]
-
-
 def create_job(
     images: str | os.PathLike[str] | JobSpec,
     *,
-    atlas: str = "allen_mouse_25um",
-    plane: str = "coronal",
     tasks: Sequence[str] | None = None,
     image_model: Any = None,
     job_dir: str | os.PathLike[str] | None = None,
@@ -497,9 +485,11 @@ def create_job(
     section the per-section form does not name is flat:
     :func:`langslice.job.settings.spec.supplied_angles`) and *pixel_size_um*
     (one number, or ``{filename: um}``); *inputs*
-    takes any other key of ``JobSpec.inputs``. *tasks* None: ``nonlinear``,
-    plus ``transform`` (``elastix_affine``) unless every section has a supplied
-    transform.
+    takes any other key of ``JobSpec.inputs``. *tasks* None: every task, except
+    ``position`` when *positions* names every section and ``transform`` when
+    *transforms* does
+    (:func:`langslice.job.settings.defaults.default_tasks`, the rule of every
+    door).
 
     Or *registration*: a linear registration made elsewhere (a QuickNII or
     VisuAlign JSON/XML, a DeepSlice CSV/JSON/XML, a LangSlice
@@ -516,24 +506,22 @@ def create_job(
     records the references (``plugin_config`` in *settings* gives a factory its
     options), so reopening it loads the same plugins. Loading runs their code.
 
-    *image_model* as in :func:`open_job`; None makes a job
-    without one (nonlinear provider ``none``). *resume* False starts over
-    instead of continuing the folder's job. *settings* are further
-    :class:`JobSpec` fields (``preprocess``, ``interval_um`` lives in
-    ``position``...).
+    *image_model* as in :func:`open_job`; its provider is the job's
+    ``nonlinear.provider``, else the provider every door takes
+    (:func:`langslice.job.settings.defaults.choose_provider`). *resume*
+    False starts over instead of continuing the folder's job. *settings* are
+    any :class:`JobSpec` fields (``atlas``, ``plane``, ``preprocess``,
+    ``position={"interval_um": 40}``...), checked by it.
     """
-    from langslice.doors.credentials import load_credentials
+    from langslice.doors.credentials import load_credentials, saved_image_provider
     from langslice.doors.jobs import (
         REGISTRATION_EXCLUDES,
         create,
         with_registration,
     )
     from langslice.job.folder.layout import write_job_file
+    from langslice.job.settings.defaults import choose_provider, default_tasks
 
-    if "fresh" in settings:
-        if resume is not None:
-            raise TypeError("create_job takes resume= or its old spelling fresh=, not both")
-        resume = not settings.pop("fresh")
     resume = True if resume is None else resume
     load_credentials()
     model = as_image_model(image_model)
@@ -596,19 +584,18 @@ def create_job(
         if model is not None:
             nonlinear.update(provider=model.provider, image_model=model.model)
         else:
-            nonlinear.setdefault("provider", "none")
+            nonlinear["provider"] = choose_provider(
+                nonlinear.get("provider"),
+                enabled=settings.get("enabled", []),
+                saved=saved_image_provider,
+            )
         spec = JobSpec.from_dict(
             {
-                "atlas": atlas,
-                "plane": plane,
-                "debrief": False,
                 **settings,
                 "image_folder": str(folder),
                 "tasks": list(tasks)
                 if tasks is not None
-                else ["nonlinear"]
-                if registration is not None
-                else default_tasks(folder, supplied.get("transforms") or {}),
+                else default_tasks(folder, supplied, registration=registration is not None),
                 "nonlinear": nonlinear,
                 "inputs": supplied,
                 "job_dir": None

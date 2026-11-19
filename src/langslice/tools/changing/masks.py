@@ -36,8 +36,8 @@ from langslice.core.sections.masks import (
     RESERVED_NAMES,
     write_mask,
 )
-from langslice.core.stack.codec import Written
 from langslice.core.stack.images import MaskRef
+from langslice.core.stack.part import Written
 from langslice.tools.changing.images import check_image
 from langslice.tools.looking.look import show_result
 from langslice.tools.refusal import check_frozen, unknown_sections

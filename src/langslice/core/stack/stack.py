@@ -16,11 +16,12 @@ descending stack, and the emitted corrected order always runs the atlas way
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.jsonable import JsonObject, empty_object
+from pydantic import ConfigDict, Field
+
 from langslice.core.space import Plane
+from langslice.core.stack.part import Flag, Number, Object, Shape, Whole
 from langslice.core.stack.section import (
     FLAT,
     Angles,
@@ -79,8 +80,7 @@ def initial_positions(
     return [min(max(start + index * spacing, low), high) for index in range(count)]
 
 
-@dataclass
-class Stack:
+class Stack(Shape):
     """Hold the whole stack: its inputs, its sections and run bookkeeping.
 
     Mutable: it is the job's live state, written under the job folder's
@@ -115,16 +115,18 @@ class Stack:
         there), verbatim: data for the environment's builders.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     image_folder: str = ""
     atlas: str = ""
     plane: Plane = "coronal"
-    interval_mm: float | None = None
-    thickness_mm: float | None = None
-    spec: JsonObject = field(default_factory=empty_object)
-    interval_breaks: list[int] = field(default_factory=list[int])
-    notes: list[str] = field(default_factory=list[str])
-    slices: list[Section] = field(default_factory=list[Section])
-    submitted: bool = False
+    interval_mm: Number | None = None
+    thickness_mm: Number | None = None
+    spec: Object = Field(default_factory=dict[str, Any])
+    interval_breaks: list[Whole] = Field(default_factory=list[int])
+    notes: list[str] = Field(default_factory=list[str])
+    slices: list[Section] = Field(default_factory=list[Section])
+    submitted: Flag = False
     debrief: str = ""
 
     def in_order(self) -> list[Section]:
@@ -258,7 +260,7 @@ class Stack:
         new_state
             The stack whose fields this one takes; not copied.
         """
-        for name in self.__dataclass_fields__:
+        for name in type(self).model_fields:
             setattr(self, name, getattr(new_state, name))
 
 

@@ -36,13 +36,13 @@ program: the Claude Desktop, Claude Code, Antigravity and Codex setups.
 ## One job through every interface
 
 An interface creates a `JobSpec` or opens saved settings, then calls
-operations on a `Job`. Every setting is one row of
-`job/settings/schema.py`: its name, type, default, command-line flags,
-library keyword, `job.json` key and the doors that may set it. The commands'
-flags are added from it (`doors/commands/flags.py` holds their help text),
-the agent CLI's `schema init` lists those flags, the `job.json` reader
-checks keys against it and the LangSlice window's prompt generator spells
-its flags from it. The job hands the core only the settings it reads, as
+operations on a `Job`. Every setting is one field of
+`JobSpec` (`job/settings/spec.py`, a frozen Pydantic model): its
+name, type, default, checks, description and the commands' metadata. The
+commands' flags are derived from the fields (`job/settings/walk.py`,
+`doors/commands/flags.py`), the agent CLI's `schema init` lists those flags,
+the `job.json` reader is the model's validation and the LangSlice window's
+prompt generator spells its flags from the same walk. The job hands the core only the settings it reads, as
 an `ImageSettings` value on the workspace (atlas, plane, preprocessing, the
 host's pixel sizes and channel names, the picture level).
 

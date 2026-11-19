@@ -22,7 +22,7 @@ from typing import Any
 
 from langslice.core.pictures.plugin_layers import save_layer
 from langslice.core.plugins import Layer
-from langslice.core.stack.codec import layer_from_json, layer_to_json
+from langslice.core.stack.images import LayerRef
 from langslice.core.stack.section import Section
 from langslice.core.stack.stack import Stack
 from langslice.job.folder.layout import JobLayout
@@ -97,7 +97,7 @@ def register_layer(
         layout.plugin_dir(tool).mkdir(parents=True, exist_ok=True)
         write_json_atomic(str(manifest_path(layout, tool)), manifest)
     kept = [item for item in record.layers if item.name != name]
-    record.layers = [*kept, layer_from_json(ref)]
+    record.layers = [*kept, LayerRef.from_json(ref)]
     return ref
 
 
@@ -105,7 +105,7 @@ def layer_rows(state: Stack) -> list[dict[str, Any]]:
     """Every layer the sections show, one row each (``section``, then the
     reference's fields), in stack order."""
     return [
-        {"section": section.id, **layer_to_json(ref)}
+        {"section": section.id, **ref.to_json()}
         for section in state.in_order()
         for ref in section.layers
     ]

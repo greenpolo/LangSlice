@@ -11,61 +11,29 @@ the file grows with what each write changed, not with the notes held; undo
 puts those back. There is no cap on the number of steps.
 
 A file that does not read, or a newer LangSlice's, is left as it is and
-undo covers the session; an older LangSlice's step files (``index.json``,
-``step-*.json``) are ignored, with one warning per process, and left on
-disk.
+undo covers the session.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Any
 
-from langslice.core.jsonable import Json, JsonObject, JsonValue, to_jsonable
-from langslice.core.stack.json_reads import (
-    as_object,
-    integer_at,
-    list_at,
-    text_at,
-)
+from pydantic import ConfigDict, ValidationError
+
+from langslice.core.jsonable import Json
+from langslice.core.stack.part import Shape, Whole
 from langslice.job.folder.layout import JobLayout
-from langslice.job.state_file import (
-    FORMAT_KEY,
-    json_object,
-    write_json_atomic,
-)
+from langslice.job.state_file import FORMAT_KEY, json_object, write_json_atomic
 
 logger = logging.getLogger(__name__)
 
 UNDO_FORMAT_VERSION = 1
-_OLD_INDEX, _OLD_STEP_PREFIX = "index.json", "step-"
-_TOLD_OLDER: set[Path] = set()
 
 
-def older_undo_steps(layout: JobLayout) -> bool:
-    """Return whether an older LangSlice's undo steps are in the job folder.
-
-    Parameters
-    ----------
-    layout
-        The job folder.
-
-    Returns
-    -------
-    bool
-        True while ``history/`` holds ``index.json`` or a ``step-*.json``.
-    """
-    folder = layout.undo_file.parent
-    return folder.is_dir() and any(
-        path.name == _OLD_INDEX or path.name.startswith(_OLD_STEP_PREFIX)
-        for path in folder.iterdir()
-    )
-
-
-@dataclass(frozen=True)
-class NotesBefore:
+class NotesBefore(Shape):
     """Hold what puts the run's notes back: the first *keep*, then *then*.
 
     Parameters
@@ -76,7 +44,9 @@ class NotesBefore:
         The notes that followed those before the step.
     """
 
-    keep: int
+    model_config = ConfigDict(frozen=True)
+
+    keep: Whole
     then: tuple[str, ...] = ()
 
     @classmethod
@@ -101,7 +71,7 @@ class NotesBefore:
             if old != new:
                 break
             keep += 1
-        return cls(keep, tuple(before[keep:]))
+        return cls(keep=keep, then=tuple(before[keep:]))
 
     def put_back(self, notes: Sequence[str]) -> list[str]:
         """Return *notes* as they were before the step.
@@ -134,11 +104,10 @@ class NotesBefore:
         if self.keep <= later.keep:
             return self
         shared = later.then[: self.keep - later.keep]
-        return NotesBefore(later.keep, (*shared, *self.then))
+        return NotesBefore(keep=later.keep, then=(*shared, *self.then))
 
 
-@dataclass(frozen=True)
-class UndoStep:
+class UndoStep(Shape):
     """Hold one undo (or redo) step: what puts the state back before it.
 
     Parameters
@@ -153,75 +122,14 @@ class UndoStep:
         What puts the run's notes back; None when it left them as they were.
     """
 
-    step: int
+    model_config = ConfigDict(frozen=True)
+
+    step: Whole
     by: str
-    at: str | None
-    sections: Mapping[str, int]
-    stack_before: JsonObject
+    at: str | None = None
+    sections: dict[str, Whole]
+    stack_before: dict[str, Any]
     notes_before: NotesBefore | None = None
-
-    @classmethod
-    def from_json(cls, data: Json) -> UndoStep:
-        """Return the step a JSON object holds.
-
-        Parameters
-        ----------
-        data
-            One step of ``undo.json``.
-
-        Returns
-        -------
-        UndoStep
-            The step.
-
-        Raises
-        ------
-        ValueError
-            When it is not a step.
-        """
-        fields = as_object("step", data)
-        sections = as_object("sections", fields.get("sections"))
-        at = fields.get("at")
-        if not isinstance(at, str):
-            at = None
-        notes: NotesBefore | None = None
-        if fields.get("notes_before") is not None:
-            change = as_object("notes_before", fields.get("notes_before"))
-            then = list_at(change, "then")
-            notes = NotesBefore(integer_at(change, "keep"), tuple(str(note) for note in then))
-        return cls(
-            step=integer_at(fields, "step"),
-            by=text_at(fields, "by"),
-            at=at,
-            sections={key: integer_at(sections, key) for key in sections},
-            stack_before=as_object("stack_before", fields.get("stack_before")),
-            notes_before=notes,
-        )
-
-    def to_json(self) -> dict[str, JsonValue]:
-        """Return the step as ``undo.json`` holds it.
-
-        Returns
-        -------
-        dict
-            ``step``, ``by``, ``at``, ``sections``, ``stack_before`` and
-            ``notes_before`` (``keep`` and ``then``, or null).
-        """
-        notes: dict[str, JsonValue] | None = None
-        if self.notes_before is not None:
-            notes = {
-                "keep": self.notes_before.keep,
-                "then": list[JsonValue](self.notes_before.then),
-            }
-        line: dict[str, JsonValue] = {
-            "step": self.step,
-            "by": self.by,
-            "at": self.at,
-            "sections": dict[str, JsonValue](self.sections),
-            "stack_before": to_jsonable(self.stack_before),
-            "notes_before": notes,
-        }
-        return line
 
 
 def combined_steps(steps: Sequence[UndoStep]) -> UndoStep:
@@ -272,6 +180,15 @@ class UndoLists:
     notice: str | None = None
 
 
+class UndoDocument(Shape):
+    """Hold ``history/undo.json`` as it is written."""
+
+    format_version: Whole = UNDO_FORMAT_VERSION
+    next_step: Whole
+    undo: list[UndoStep]
+    redo: list[UndoStep]
+
+
 class UndoFile:
     """Read and write ``history/undo.json`` (see the module text).
 
@@ -293,33 +210,23 @@ class UndoFile:
         -------
         UndoLists
             The steps, oldest first, the next write's number and the
-            notice of a file that cannot be used or of an older
-            LangSlice's steps (once per process).
+            notice of a file that cannot be used.
         """
         self.writable = True
         try:
             data = json_object(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            if self.path in _TOLD_OLDER or not older_undo_steps(self.layout):
-                return UndoLists([], [])
-            _TOLD_OLDER.add(self.path)
-            notice = _told(
-                "The undo history of an older LangSlice in "
-                f"{self.path.parent} is ignored; undo covers this session."
-            )
-            return UndoLists([], [], notice=notice)
+            return UndoLists([], [])
         except (OSError, ValueError) as exc:
             return self._unreadable(f"it does not read ({exc})")
         version = None if data is None else data.get(FORMAT_KEY)
         if data is None or version != UNDO_FORMAT_VERSION:
             return self._unreadable(f"its format is {version!r}, not {UNDO_FORMAT_VERSION}")
         try:
-            undo = [UndoStep.from_json(item) for item in list_at(data, "undo")]
-            redo = [UndoStep.from_json(item) for item in list_at(data, "redo")]
-            next_step = integer_at(data, "next_step")
-        except ValueError as exc:
+            file = UndoDocument.from_json(data)
+        except ValidationError as exc:
             return self._unreadable(f"a step does not read ({exc})")
-        return UndoLists(undo, redo, next_step)
+        return UndoLists(file.undo, file.redo, file.next_step)
 
     def save(self, lists: UndoLists) -> None:
         """Write the steps; nothing while the file on disk cannot be read.
@@ -331,16 +238,8 @@ class UndoFile:
         """
         if not self.writable:
             return
-        write_json_atomic(
-            str(self.path),
-            {
-                FORMAT_KEY: UNDO_FORMAT_VERSION,
-                "next_step": lists.next_step,
-                "undo": [step.to_json() for step in lists.undo],
-                "redo": [step.to_json() for step in lists.redo],
-            },
-            indent=None,
-        )
+        document = UndoDocument(next_step=lists.next_step, undo=lists.undo, redo=lists.redo)
+        write_json_atomic(str(self.path), document.to_json(), indent=None)
 
     def _unreadable(self, why: str) -> UndoLists:
         self.writable = False

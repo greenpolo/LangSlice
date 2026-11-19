@@ -25,8 +25,14 @@ can be given spells it from that name:
   (`position={"thickness_um": 40}`).
 
 The flags of earlier versions (such as `--thickness`, `--image-provider`,
-`--disable`, `--fresh`) and `create_job`'s `fresh=` are still read;
-`create_job` refuses `fresh=` together with `resume=`.
+`--disable`, `--fresh`) are still read.
+
+Every setting is defined once, as a field of `JobSpec`
+(`job/settings/spec.py`): its type, default, checks and one-line
+description. The flags, their help, `langslice-job schema init`, the
+library's keywords and the LangSlice window's form are all read from those
+fields, so a setting has the same default on every door: the commands, MCP,
+the agent CLI's `init` and the library.
 
 A job already in the folder is continued with its saved settings. `init` with
 other settings is refused with `STALE_INPUT`, and other supplied
@@ -39,7 +45,7 @@ and discards its work.
 |---|---|---|
 | [`atlas`](#atlas) | `allen_mouse_25um` | BrainGlobe atlas |
 | [`plane`](#plane) | `coronal` | Cutting plane |
-| [`tasks`](#tasks) | `position`, `transform` | What the agent does |
+| [`tasks`](#tasks) | all three, minus what `inputs` settles | What the agent does |
 | [`inputs`](#inputs) | none | What is already known per section |
 | [`frozen`](#frozen) | none | What the agent may not change |
 | [`disabled`](#disabled) | none | Tools switched off |
@@ -81,8 +87,9 @@ coronal.
 
 ### `tasks`
 
-Default `position`, `transform` (Positioning and Linear). Flag
-`--tasks position,transform,nonlinear`; library `tasks=`.
+Default: every task is on unless the job's [`inputs`](#inputs) already
+supply its answer for every section. Flag `--tasks position,transform,nonlinear`;
+library `tasks=`.
 
 | Task | The agent writes | Its tools |
 |---|---|---|
@@ -94,10 +101,14 @@ A task left out brings none of its tools and takes its answer from
 [`inputs`](#inputs); its properties are frozen on every section. Nonlinear
 needs a linear placement: with Positioning and Linear off, `inputs` must
 supply positions and transforms, and a nonlinear fit refuses a section
-without a transform (`no_transform_linear_off`). Two other defaults apply: with `--registration` (an imported
-registration) the default is `nonlinear` alone, and in the library with no
-`tasks` it is `nonlinear`, plus `transform` unless every section has a
-supplied transform.
+without a transform (`no_transform_linear_off`).
+
+One rule gives the default on every door: `position` is off when
+`inputs.positions` names every section, `transform` is off when
+`inputs.transforms` names every section, and with `--registration` (an
+imported registration, which supplies every section's position and
+transform) only `nonlinear` is on. `nonlinear` is never settled by what a
+host supplies. Naming `tasks` yourself overrides the rule.
 
 Add `nonlinear` when you want each section bent onto the atlas after the
 linear placement. Leave out `position` when the positions are known, and
@@ -239,7 +250,8 @@ when it has an image model, else the ChatGPT sign-in, else a saved OpenAI
 key, else a saved Gemini key. With none saved the command says so and makes
 no job. [`--nonlinear-provider`](#nonlinear-settings) names another one, and
 naming one switches `trace_borders` on by itself. In Python, `image_model=`
-does the same.
+does the same, and `enabled=["trace_borders"]` without it takes the saved
+connection as the commands do.
 
 ### `plugins`
 
@@ -305,7 +317,7 @@ mark, a mirrored section can be told only from an oblique cutting angle.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `nonlinear.provider` | `none` | `--nonlinear-provider` | The image model's access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). Naming one gives the agent `trace_borders`; not given, `--enabled trace_borders` takes the connection saved on this computer ([`enabled`](#enabled)); the library's `image_model=` names it. |
+| `nonlinear.provider` | `none` | `--nonlinear-provider` | The image model's access: `openai-oauth` (ChatGPT sign-in), `openai-api`, `gemini-api`, or `none` (no image model; no `trace_borders`). Naming one gives the agent `trace_borders`; not given, `--enabled trace_borders` takes the connection saved on this computer ([`enabled`](#enabled)), else `none`; the library's `image_model=` names it. The same rule on every door. |
 | `nonlinear.image_model` | the provider's | `--nonlinear-image-model` | Which image model of that provider. |
 | `nonlinear.image_prompt` | LangSlice's | `--nonlinear-image-prompt FILE` | The base prompt `trace_borders` sends, in place of LangSlice's own; `{plane}` in it becomes the section plane. Its traces are recorded as an untested profile. |
 | `nonlinear.require_deformation` | off | `--nonlinear-require-deformation` | `submit` is refused until every section has a deformation at its current placement. |
@@ -346,7 +358,7 @@ chooses the model.
 |---|---|---|---|
 | `model` | `openai-oauth/gpt-6.1-sol`, or the model chosen in the LangSlice window's Settings | `--model` | The model that drives the run. Without `--model`, the model saved in `~/.langslice/settings.json` ([format](file_formats.md#settings-langslicesettingsjson)) is used when one is saved. |
 | `reasoning` | the provider's, or the effort saved with that model | `--reasoning low|medium|high|xhigh|max` | Reasoning effort, for models that expose one. |
-| `debrief` | on | `--no-debrief` | After `submit`, one more model call asks what tools the agent missed. |
+| `debrief` | on, on every door | `--no-debrief` | After `submit`, one more model call asks what tools the agent missed. |
 
 ## Folders
 

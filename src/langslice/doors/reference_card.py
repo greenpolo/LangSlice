@@ -23,7 +23,6 @@ from typing import Any, cast
 import langslice
 from langslice.core.jsonable import JsonObject
 from langslice.job.folder.layout import JobLayout, read_job_file
-from langslice.job.migrations import without_removed_settings
 from langslice.job.settings.spec import JobSpec
 from langslice.job.settings.tools_on import ToolsOn
 from langslice.tools.catalog import VERBS, enabled, verbs_for
@@ -54,8 +53,7 @@ def job_spec(layout: JobLayout) -> JobSpec:
     names loaded)."""
     record = read_job_file(layout) or {}
     saved = cast("JsonObject", record.get("spec") or {})
-    kept, _removed = without_removed_settings(saved)
-    return JobSpec.from_dict(kept)
+    return JobSpec.from_dict(dict(saved))
 
 
 def off_tools(spec: Any) -> ToolsOn:

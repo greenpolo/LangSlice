@@ -25,9 +25,9 @@ from langslice.core.plugins import (
     PluginError,
     ToolSpec,
 )
+from langslice.core.space import PLANES
 from langslice.core.tool_kinds import GROUPS
 from langslice.job.settings import frozen as freeze
-from langslice.job.settings.schema import PLANES
 from langslice.job.settings.tool_table import (
     ENGINES,
     TOOLS,

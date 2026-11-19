@@ -576,7 +576,7 @@ def _apply(
             numbers=numbers,
         )
         written.append(record.id)
-        row = replace(row, steps=len(record.deformation.steps or ()))
+        row = replace(row, steps=len(record.deformation.steps))
         rows[at] = row
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome, folder=job.layout.relative(folder)))
     return DeformableFit(rows=rows, fitted=fitted, written=written)

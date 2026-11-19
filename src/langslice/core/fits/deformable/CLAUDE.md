@@ -196,9 +196,7 @@ and the tests' fake atlases are all scale 1 (`tests/synthetic_stack.py`
 
 Physical units: `smoothness_um` (the update Gaussian sigma of SyN in µm, adult
 mouse, times the brain scale; the whole warp's sigma is
-`TOTAL_SIGMA_FRACTION` = 0.25 of it; default 80, bounds 5-2000; the former
-`stiffness` is a `ValueError`, and a saved record's `stiffness` reads as
-soft 50 / medium 80 / firm 120); `detail` coarse/standard/fine (working µm and
+`TOTAL_SIGMA_FRACTION` = 0.25 of it; default 80, bounds 5-2000); `detail` coarse/standard/fine (working µm and
 pyramid depth/iterations — the extra levels are SyN's capture range; `fine`
 is 10 µm with five levels, 4-5x slower than `standard`);
 `atlas_image` (default `nissl`, resolved against the atlas where the fit

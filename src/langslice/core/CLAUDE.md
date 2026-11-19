@@ -239,9 +239,7 @@ the angles in a caption (empty for the flat plane).
   is the working copy itself; `preprocess="none"` the copy in gray), written
   once as the file every reader reads, like any made image; `opening_entry`, `ensure_opening` (every section without one,
   on threads, outside undo: `Job.open` and `Job.load`). `summary(state, settings)`:
-  `status`'s `section_images`. `Look` is the render's look type. A format-3
-  state's `appearance` recipes are made into files by the job's migration
-  (`job/migrations.py`, `state_3_to_4`) through `make` and `write_file`.
+  `status`'s `section_images`. `Look` is the render's look type.
 - `sections/channels.py` — raw channels drawn together: `composite` (each channel
   stretched between its automatic limits, `auto_limits`, per section: on a
   dark background black at its background median and full colour at its
@@ -312,20 +310,26 @@ the angles in a caption (empty for the flat plane).
   `StoredAffine` (`affine.py`: `params`, the knobs `PhysicalAffine`,
   `Calibration`, `FitRegions`), `deformation` a `DeformationRef`
   (`deformation.py`: the saved fit's folder and key, its `linear_key`,
-  steps, summary; `LandmarkWarp` for a landmark warp; `kept_linear` and no
-  key or steps for a format-3 folder's `keep_linear` marker, which names no
-  saved fit), `border_trace` a
+  steps, summary; `LandmarkWarp` for a landmark warp; `key`, `linear_key` and
+  `steps` are required), `border_trace` a
   `BorderTrace` (`trace.py`), `landmarks` (`landmarks.py`: `Landmarks`,
   `Pair`, `Endpoint`; None before the first pair), and `images` / `masks` /
   `layers` (`images.py`: `ImageRef`, `MaskRef`, `LayerRef`). Section and
   Stack are mutable (the job's live state, refilled in place by undo,
-  `Stack.replace_with`); their parts are frozen and replaced whole. The
-  JSON form of each part is `codec.py` and `landmarks_json.py`, read
-  strictly through `json_reads.py` (a key of the wrong type is a
-  `ValueError` naming it; keys a shape does not declare are kept in its
-  `extra` and written back after the declared ones), and a section's row
-  is `rows.py` (`section_to_json`, `section_from_json`, `fields_to_json`,
-  `with_fields`). The core shares that form with the state file
+  `Stack.replace_with`); their parts are frozen and replaced whole
+  (`model_copy(update=)`). Every shape is a Pydantic model
+  (`part.py`: `Shape`, `Part`) that declares its fields once, in the order
+  they are written, and reads and writes its own JSON (`from_json`,
+  `to_json`): a value of the wrong type is a `ValueError` naming its key,
+  numbers are strict and come back as stored (an int stays an int), a
+  field made with `omitted()` is left out of the JSON while None, keys a
+  part does not declare are kept (`extra="allow"`) and written back after
+  the declared ones, and a part whose variants store keys in another order
+  overrides `Part.arranged` (`StoredAffine`, `DeformationRef`, which stores
+  a landmark warp flat as `landmark_*`). A section's row is `Section.to_json`
+  (`cutting_angles_deg` under the attribute `angles`; `fields_json`,
+  `with_fields`). `json_reads.py` reads the files that are not the stack's
+  (a record's metadata, a picture's frame). The core shares that form with the state file
   (`job/state_file.py`) because a picture's recipe records the section
   fields it was drawn from (`pictures/look.snapshot`, `restored`) and a
   placement's digests hash them (`fits.deformation.linear_key`,

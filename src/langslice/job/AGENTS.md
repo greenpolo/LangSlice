@@ -20,42 +20,54 @@ its folders: `folder/` (where the job's files live: `layout.py`, `lock.py`,
 `undo_steps.py`), `exports/` (the files written for others:
 `public_files.py`, `quint.py`, `quint_images.py`, `abba_project.py`,
 `dmc_brainmap.py`), `imports/` and `settings/`. The top holds the job
-itself: `job.py`, `checkpoint.py`, `state_file.py`, `migrations.py`, `position_migration.py`,
+itself: `job.py`, `checkpoint.py`, `state_file.py`,
 `gates.py`, `host_inputs.py`, `background.py`, `border_traces.py`,
 `pictures.py`, `review.py`, `plugins.py`, `plugin_store.py`.
 
 ## The job's settings (`settings/`)
 
-- `schema.py`: one row per setting (`SETTINGS`, 47 rows of `Setting`): its
-  name (`atlas`, a section's `position.thickness_um`, a supplied answer's
-  `inputs.positions`), its type and the job's default, the doors that may
-  set it (`run`, `init`, `mcp`, `library`), its `job.json` key, the
-  library's keyword, its command-line flags in the commands' order, the
-  values it takes when they are a fixed list, and a door's own default where
-  it is not the job's (`door_defaults`, in that door's terms). It also holds
-  the form's lists (`ALL_TASKS`, `DEFAULT_TASKS`, `PLANES`,
-  `IMAGE_RESOLUTIONS`, `MAX_PARALLEL_TRANSFORMS`, the commands' default
-  tasks `CLI_TASKS` and `REGISTRATION_TASKS`) and imports nothing of
-  LangSlice. Read by the commands' flags (`doors/commands/flags.py` adds
-  them in table order with their help text), and so by `langslice-job
-  schema init`; by `JobSpec.from_dict` (the keys `job.json` takes,
-  `spec_keys`); by the LangSlice window's prompt generator (each flag's
-  spelling, `flag_spellings`). `create_job`'s keywords are checked against
-  it by `tests/test_settings_schema.py`, which also pins the table to
-  `JobSpec`'s fields, types and defaults.
 - `spec.py`: `JobSpec`, the filled form, and its task sections
-  (`PositionSpec`, `TransformSpec`, `NonlinearSpec`), validated when made
-  (`supplied_angles`, `supplied_pixel_sizes`, the disabled list through
-  `tool_table.refusal`, the plugins by loading them). `image_settings()`
-  makes the core's `ImageSettings` (`core/workspace.py`) from it;
-  `missing_transform()` words what a fit says of a section with no written
-  transform (`NO_TRANSFORM`, or `no_transform_linear_off(on)` worded for the
-  disabled list when Linear is off). Protocol metadata:
+  (`PositionSpec`, `TransformSpec`, `NonlinearSpec`): frozen Pydantic v2
+  models (`Strict`: `extra="forbid"`, `frozen`, `strict`), the one place
+  every setting is defined. A field carries its type (a `Literal` for a
+  closed list: `Task`, `Plane`, `Preprocess`, `ImageResolution`,
+  `Reasoning`), its default (the same on every door), its checks (`Field`
+  constraints, `field_validator`, a `model_validator` for the rules across
+  fields: the disabled list through `tool_table.refusal`, the plugins by
+  loading them, `supplied_angles`, `supplied_pixel_sizes`,
+  `supplied_damaged_regions`), a one-line `description` (the help of its
+  flag) and, in its `Annotated` metadata, a `walk.Cli` for what a command
+  adds (group, aliases, metavar, how the value is read). `inputs` stays a
+  mapping; `Inputs` names its keys (`INPUT_KEYS`) and `Holds(Inputs)` lets
+  the walk read them. A spec is never changed in place: `model_copy(update=)`
+  makes the one that differs, `with_changes(**updates)` one checked again.
+  `to_dict()` is `model_dump(mode="json")` with the empty optional keys left
+  out as `job.json` always had them, `from_dict()` is `model_validate` (a
+  `ValueError` naming the unknown keys, a nested one as `section.key`).
+  `image_settings()` makes the core's `ImageSettings` (`core/workspace.py`)
+  from it; `missing_transform()` words what a fit says of a section with no
+  written transform (`NO_TRANSFORM`, or `no_transform_linear_off(on)` worded
+  for the disabled list when Linear is off). Protocol metadata:
   `PositionSpec.thickness_um` and `interval_um`, and the state's millimetre
   equivalents, are optional (`None` when not supplied); known values are
   positive integers in micrometres, and strict spacing requires an
   interval. `PositionSpec.start_mm` (`JobSpec.start_mm`) and the interval
   are the start and spacing of the sections' initial positions (`ingest`).
+- `walk.py`: `leaves(JobSpec)` yields every setting (`Leaf`: the dotted
+  path `position.thickness_um` / `inputs.positions`, the field, its `Cli`),
+  a task's section and the answers in `inputs` included, in declaration
+  order. The spellings follow the path: the flag is the path with `inputs.`
+  dropped and `.` and `_` written `-` (`--no-` and the name for an on switch
+  turned off), the job's own key `spec.` and the path. Read by the
+  commands' flags (`doors/commands/flags.py`, so by `langslice-job schema
+  init`) and the LangSlice window's prompt generator (`flag_names`).
+- `defaults.py`: the two defaults that depend on the rest of the job, one
+  rule for every door. `default_tasks(image_folder, inputs, registration=)`:
+  every task on unless `inputs.positions` / `inputs.transforms` name every
+  section (a registration file: `nonlinear` alone). `choose_provider(given,
+  enabled=, saved=)`: the named provider (a command's flag, the library's
+  `image_model=`), else with `trace_borders` enabled the saved connection,
+  else `none`.
 - `tool_table.py` and `tools_on.py`: what a job can switch off (and, through
   `ToolDef.writes`, what its frozen properties switch off: `off_names`).
   `tool_table.py` lists every tool (`TOOLS`: `ToolDef` name, kind, task
@@ -389,16 +401,13 @@ longer exist be taken over by the images it is opened with.
   (`Job.histories`): each section's `history.jsonl`, one `Row` per write that
   changed it (`seq`, `step`, `by`, `at`, `registration`, `digest`,
   `format_version`, then the section's row of `state.json`); `rows` (cached
-  by the file's stamp; a line cut short skipped; an older
-  `registrations.jsonl` read in its place), `row(seq)`, `number(id,
+  by the file's stamp; a line cut short skipped), `row(seq)`, `number(id,
   digest)`, `registrations` (the first line of each number),
   `registration_number(state, section)`, `append` (under the job's lock; the
-  number the registration has, or the next one when `numbered`; writes an
-  older list's lines first and removes it; after a line cut short it starts
-  a new line), `collect_records` (deletes the section's record folders no
-  line or the section names, parents kept; nothing while an older
-  LangSlice's undo steps are in `history/`, which may name records no line
-  does). `registration_value` (orientation, transform and the deformation
+  number the registration has, or the next one when `numbered`; after a
+  line cut short it starts a new line), `collect_records` (deletes the section's record folders no
+  line or the section names, parents kept; nothing while the section has
+  no `history.jsonl`). `registration_value` (orientation, transform and the deformation
   while its `linear_key` holds; None with neither), `registration_digest`,
   `guessed_maker` (what a `host` line's registration says made it), `HOST`,
   `SCRIPT`, `set_head(section, fields)` (puts row fields back in place: undo,
@@ -410,9 +419,7 @@ longer exist be taken over by the images it is opened with.
   (`NotesBefore`: `keep` the first notes, then `then`; the change only, so
   the file grows with what each write changed)); `load` returns `UndoLists`
   (an unreadable or newer file: no steps, its `notice` says why and
-  `writable` False, so `save` leaves it; an older LangSlice's `index.json` /
-  `step-*.json` (`older_undo_steps`): no steps, the notice once per
-  process, the files left on disk), `save`; `combined_steps` (the earliest
+  `writable` False, so `save` leaves it), `save`; `combined_steps` (the earliest
   line per section and field wins, the notes' changes composed:
   `merge_steps`, `amend`). No cap on the steps.
 - `review.py` — the review comments a person draws in the LangSlice window
@@ -440,58 +447,24 @@ longer exist be taken over by the images it is opened with.
   the cutting angles once on the stack while every section shares them,
   `layers` / `masks` / `images` left out of a row while empty),
   `stack_from_json` (unknown keys refused, a row without its own angles
-  given the stack's), `serialized_mixed_angles`; `write_checkpoint` (atomic, versioned,
-  `STATE_FORMAT_VERSION` 5), `read_checkpoint(path, upgrade=)`,
-  `current_state(data, upgrade=)` (every format through *upgrade*, the
-  job's `migrations.FolderMigration`; a newer LangSlice's format is refused
-  and asks for an update, an older one no migration reads (`older_format`)
-  for a new job, `--no-resume` or `resume=False`; without *upgrade* only the
-  current format reads), `stack_fields` / `set_stack_fields` (the stack's
-  own fields without its sections; an undo step's `stack_before` is them
-  but the notes),
-  `json_object` (a JSON text's object, or None), `write_json_atomic` (every
-  job file's writer: LF line ends on every system, the rename retried
+  given the stack's; the shapes read themselves,
+  `core/stack/part.py`); `write_checkpoint` (atomic, versioned,
+  `STATE_FORMAT_VERSION` 6), `read_checkpoint(path)` -> `Checkpoint`
+  (`fields`, `upgraded`), `checkpoint_of(data)` (format 6 as it is, format 5
+  through `state_5_to_6`: every section gets its `position_source`, `input`
+  when `inputs.positions` names it, else `written`; a state with an unplaced
+  section is refused; a newer LangSlice's format is refused and asks for an
+  update, an older one was made by a pre-release LangSlice and cannot be
+  opened, `older_format`), `upgraded_row` (a history line's section row at the
+  current format), `viewer_stack` (the GUI's read of `state.json`, in
+  memory), `stack_fields` / `set_stack_fields` (the stack's own fields
+  without its sections; an undo step's `stack_before` is them but the
+  notes), `json_object` (a JSON text's object, or None), `write_json_atomic`
+  (every job file's writer: LF line ends on every system, the rename retried
   while a reader holds the target, `core.shared_files.replace_file`; the
   JSONL appends of `history.py`, `pictures.py` and `recent.py` write LF too),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
-- `migrations.py` — old job folders read as the current format: the table
-  `STATE_MIGRATIONS` (rows of `Migration`: a name, the format it reads, the
-  step to the next format; `state_3_to_4` makes a format-3 state's
-  `appearance` recipes into section image files and entries, drops the raw
-  channels' display properties, names a mask's `channel` `section_image`).
-  `state_5_to_6` (`position_migration.py`) gives every section a position
-  and its `position_source` (an unplaced one its initial position, kept on
-  the migration's `initial` for the history lines; `position_range` loads
-  the atlas when there is no workspace). `state_4_to_5` names a section's
-  `image_correction` `border_trace`; an
-  old trace stays in `sections/<name>/image_correction/` with the paths
-  stored to it, new traces go under `border_trace/`.
-  `FolderMigration(workspace, layout)` is a job's `upgrade`, which every
-  read of the state file and of a history line of an older format goes
-  through: it applies the
-  rows in order from a file's format, refuses one no row reads
-  (`state_file.older_format`), then drops at every format the keys no
-  reader uses (`drop_removed_keys`: `REMOVED_STACK_KEYS` `appearance`,
-  `REMOVED_SECTION_KEYS` `damaged`), logging one
-  warning per key the first time (`dropped`, with the sections that held
-  it). It keeps one memo of the images it made across the checkpoint and
-  the history lines (`seed` takes a current state's entries); `used` says
-  it changed what it read, `applied` the rows it ran. Without a workspace
-  (`viewer_stack`, the GUI's read of `state.json`) it makes no image and
-  writes nothing: a format-3 section is read without its images.
-  `lines_from_registration_list` reads an older LangSlice's
-  `sections/<stem>/registrations.jsonl` (`OLD_REGISTRATION_LIST`) as the
-  section's history lines, numbers kept; an older `history/index.json` and
-  step files are not read (`undo_steps.UndoFile` warns once per process).
-  `without_removed_settings(spec)` leaves out of saved settings what
-  LangSlice no longer has (`REMOVED_SETTINGS`, the `REMOVED_TASKS` task
-  `reorder`; a saved `enabled` that is not a list is an earlier setting of
-  that name, `REUSED_SETTINGS`) and names them; the doors read `job.json` through it
-  (`doors.jobs.read_spec`, the reference card) and the job logs them
-  (`warn_removed_settings`). The module text names the two old shapes the
-  core reads itself (a deformation record's format, its fit settings'
-  `stiffness`) and why.
 - `job.py` — `Job`, assembled from one class per seam, each built on the
   one below: `checkpoint.py` `JobCheckpoint` (the state and its files,
   `checkpoint`, the observers, `histories` and `undo_file`,
@@ -503,17 +476,13 @@ longer exist be taken over by the images it is opened with.
   `load`, the rules and the results. Its methods: `open` (resume or ingest, the opening `preprocessed`
   image of every section without one, `core.sections.images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records
-  `resumed`; a folder the migrations changed adds a `migrated` event; the
+  `resumed`; a folder read as an older format adds a `migrated` event; the
   job added to the recent jobs list, `recent.remember`), `load` (as it stands, writing nothing, except once for a job
-  the migrations change (an older state format, a removed key or setting)
-  or without its opening images: then the migrated state is
-  written at the current format, and `job.json` without its removed
-  settings, under the lock, after reading the state file again there
+  of state format 5 or without its opening images: then the state is
+  written at the current format under the lock, after reading the state file again there
   (`_write_upgrade`: another process may have migrated and written
   meanwhile; its state is kept), with a `migrated` event; a dry run, or a
-  folder this process cannot write, keeps them in memory, though the image files the migration makes are written; the
-  removed settings are logged either way), `upgrade` (the job's `FolderMigration`, which every read of the state
-  file goes through), `workspace` (setting it gives a workspace without a
+  folder this process cannot write, keeps them in memory), `workspace` (setting it gives a workspace without a
   `job_folder` this job's folder, where its made images are read), `writing` / `reading` / `sync` (above), `snapshot` / `commit`
   (a history line per section the write changed, by the tool `acting(tool)`
   names for the thread, else `script` (`actor`); one undo step; the record

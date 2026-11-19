@@ -43,8 +43,6 @@ import numpy as np
 import langslice
 from langslice.core.jsonable import to_jsonable
 from langslice.core.shared_files import replace_file
-from langslice.core.stack.codec import physical_to_json
-from langslice.core.stack.landmarks_json import landmarks_to_json, pair_to_json
 from langslice.job.folder.layout import (
     IMAGES_ARE_PARENT,
     REGISTRATION_FILE,
@@ -163,7 +161,7 @@ def parameters(
             "kind": "residual",
             "record": held.record,
             "key": held.key,
-            "steps": to_jsonable(held.steps or ()),
+            "steps": to_jsonable(held.steps),
             "inverse_source": held.inverse_source,
         }
     position = record.position_mm
@@ -171,7 +169,7 @@ def parameters(
     if transform is not None:
         physical = None
         if transform.physical is not None:
-            physical = physical_to_json(transform.physical)
+            physical = transform.physical.to_json()
         affine = {
             "kind": transform.kind,
             "params": list(transform.params),
@@ -611,7 +609,7 @@ def write_landmarks(layout: JobLayout, state: Stack) -> None:
         if section.landmarks is None and not path.exists():
             continue
         pairs = [
-            {**pair_to_json(pair), "stale": stale(state, section, pair)}
+            {**pair.to_json(), "stale": stale(state, section, pair)}
             for pair in section_pairs(section)
         ]
         write_json_atomic(
@@ -620,7 +618,7 @@ def write_landmarks(layout: JobLayout, state: Stack) -> None:
                 "format_version": 1,
                 "section": section.id,
                 "next_id": 1,
-                **landmarks_to_json(section.landmarks),
+                **(section.landmarks.to_json() if section.landmarks is not None else {}),
                 "pairs": pairs,
             },
         )

@@ -27,7 +27,6 @@ from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
 from langslice.core.sections.images import NAME_PATTERN, PREPROCESSED
 from langslice.core.sections.reading import ITK_THREADS
-from langslice.core.stack.codec import image_to_json
 from langslice.core.stack.images import ImageRef
 from langslice.tools.looking.look import show_result
 from langslice.tools.refusal import unknown_sections
@@ -445,4 +444,4 @@ def add_image(
     assert live is not None
     live.images[label] = entry
     job.commit(before)
-    return image_to_json(entry)
+    return entry.to_json()

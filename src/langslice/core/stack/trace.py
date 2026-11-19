@@ -9,14 +9,10 @@ The trace does not replace the section's affine or deformation.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
-
-from langslice.core.jsonable import JsonObject, empty_object
+from langslice.core.stack.part import Flag, Part, Whole, omitted
 
 
-@dataclass(frozen=True)
-class BorderTrace:
+class BorderTrace(Part):
     """Hold one section's image-model border trace.
 
     Which fields a record has follows its ``status``; a field it does not
@@ -77,30 +73,29 @@ class BorderTrace:
         How many line pixels were read off the returned image.
     error, message
         A failed call's error code and message.
-    extra
-        Other keys the record carried, kept as they came.
+
+    Other keys the record carried are kept as they came.
     """
 
     id: str
     geometry_fingerprint: str
+    prompt_edited: Flag | None = omitted()
+    provider: str | None = omitted()
+    model: str | None = omitted()
+    profile: str | None = omitted()
+    untested: Flag | None = omitted()
+    include: tuple[str, ...] | None = omitted()
+    exclude: tuple[str, ...] | None = omitted()
+    output_kind: str | None = omitted()
+    fit_performed: Flag | None = omitted()
+    artifact_dir: str | None = omitted()
+    artifact_paths: dict[str, str] | None = omitted()
+    cached: Flag | None = omitted()
+    attempt: Whole | None = omitted()
+    raw_received: Flag | None = omitted()
     status: str
-    prompt_edited: bool | None = None
-    provider: str | None = None
-    model: str | None = None
-    profile: str | None = None
-    untested: bool | None = None
-    include: tuple[str, ...] | None = None
-    exclude: tuple[str, ...] | None = None
-    output_kind: str | None = None
-    fit_performed: bool | None = None
-    artifact_dir: str | None = None
-    artifact_paths: Mapping[str, str] | None = None
-    cached: bool | None = None
-    attempt: int | None = None
-    raw_received: bool | None = None
-    route: str | None = None
-    raw_size: tuple[int, int] | None = None
-    model_border_pixels: int | None = None
-    error: str | None = None
-    message: str | None = None
-    extra: JsonObject = field(default_factory=empty_object)
+    route: str | None = omitted()
+    raw_size: tuple[Whole, Whole] | None = omitted()
+    model_border_pixels: Whole | None = omitted()
+    error: str | None = omitted()
+    message: str | None = omitted()

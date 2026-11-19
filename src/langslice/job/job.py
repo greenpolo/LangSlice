@@ -33,12 +33,11 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from langslice.core.fits import deformation
-from langslice.core.jsonable import JsonObject
 from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
@@ -52,7 +51,6 @@ from langslice.job.folder.layout import (
     JobLayout,
     check_owner,
     locate_job_folder,
-    read_job_file,
     write_job_file,
 )
 from langslice.job.folder.lock import FolderLock
@@ -62,11 +60,6 @@ from langslice.job.host_inputs import (
     changed_inputs,
     check_damaged_regions,
     inputs_changed,
-)
-from langslice.job.migrations import (
-    FolderMigration,
-    warn_removed_settings,
-    without_removed_settings,
 )
 from langslice.job.pictures import DiscardedViews
 from langslice.job.settings import frozen as freeze
@@ -124,49 +117,10 @@ def ingest(spec: JobSpec, workspace: Workspace) -> Stack:
     return state
 
 
-def _removed_settings(layout: JobLayout) -> tuple[str, ...]:
-    """Return the removed settings ``job.json`` holds, each logged."""
-    saved = _saved_settings(layout)
-    if saved is None:
-        return ()
-    _kept, removed = without_removed_settings(saved)
-    warn_removed_settings(removed)
-    return removed
-
-
-def _write_settings_without_removed(layout: JobLayout) -> tuple[str, ...]:
-    """Write ``job.json`` without its removed settings; return their names."""
-    saved = _saved_settings(layout)
-    if saved is None:
-        return ()
-    kept, removed = without_removed_settings(saved)
-    if removed:
-        write_job_file(layout, spec=kept)
-    return removed
-
-
-def _saved_settings(layout: JobLayout) -> JsonObject | None:
-    """Return the settings ``job.json`` holds; None without any."""
-    record = read_job_file(layout)
-    saved = None if record is None else record.get("spec")
-    if not isinstance(saved, dict):
-        return None
-    return cast("JsonObject", saved)
-
-
-def _log_migrated(
-    layout: JobLayout,
-    migration: FolderMigration,
-    removed: Sequence[str],
-) -> None:
-    """Log a ``migrated`` event when a migration changed the job's files."""
-    if migration.applied or migration.dropped or removed:
-        layout.log_event(
-            "migrated",
-            migrations=list(migration.applied),
-            dropped=dict(migration.dropped),
-            settings=list(removed),
-        )
+def _log_migrated(layout: JobLayout, upgraded: bool) -> None:
+    """Log a ``migrated`` event when the job's files were read from an older format."""
+    if upgraded:
+        layout.log_event("migrated", migrations=["state_5_to_6"])
 
 
 def emit_results(
@@ -236,19 +190,18 @@ class Job(JobBorderTraces):
         lock = FolderLock(layout.folder)
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
-        migration = FolderMigration(workspace, layout)
         with lock.held():
             state = None
             resumed = False
+            upgraded = False
             if spec.resume:
-                data = read_checkpoint(str(layout.state_file), migration)
-                if data is not None:
-                    migration.seed(data)
-                state = None if data is None else state_from_file(data, layout.state_file)
+                read = read_checkpoint(str(layout.state_file))
+                if read is not None:
+                    upgraded = read.upgraded
+                state = None if read is None else state_from_file(read.fields, layout.state_file)
                 changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
                     raise inputs_changed(layout.folder, changed)
-            removed = _removed_settings(layout)
             write_job_file(layout, spec=spec.to_dict())
             undo_file = UndoFile(layout)
             lists = undo_file.load()
@@ -274,7 +227,6 @@ class Job(JobBorderTraces):
             )
             job.lock = lock
             job.workspace = workspace
-            job.upgrade = migration
             job.undo_file = undo_file
             job.undo_stack, job.redo_stack = lists.undo, lists.redo
             job.next_step = lists.next_step
@@ -283,7 +235,7 @@ class Job(JobBorderTraces):
                 if undo_file.path.exists():
                     job._save_undo()
             job.checkpoint()
-        _log_migrated(layout, migration, removed)
+        _log_migrated(layout, upgraded)
         layout.log_event("open", resumed=resumed)
         recent.remember(layout.folder, images, spec.atlas)
         return job
@@ -313,18 +265,15 @@ class Job(JobBorderTraces):
         check_owner(layout)
         if getattr(workspace, "job_folder", None) is None:
             workspace.job_folder = str(layout.folder)
-        migration = FolderMigration(workspace, layout)
         undo_file = UndoFile(layout)
         seen = (
             file_stamp(str(layout.state_file)),
             file_stamp(str(undo_file.path)),
         )
-        data = read_checkpoint(str(layout.state_file), migration)
-        if data is None:
+        read = read_checkpoint(str(layout.state_file))
+        if read is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
-        removed = _removed_settings(layout)
-        migration.seed(data)
-        state = state_from_file(data, layout.state_file)
+        state = state_from_file(read.fields, layout.state_file)
         job = cls(
             state,
             spec,
@@ -334,26 +283,24 @@ class Job(JobBorderTraces):
         )
         job.persist = persist
         job.workspace = workspace
-        job.upgrade = migration
         job.undo_file = undo_file
         job.load_undo()
         if not persist:
             job.views = DiscardedViews(layout)
             job.wire_views()
-        upgraded = migration.used or bool(removed)
-        if section_images.ensure_opening(workspace, layout, job.state) or upgraded:
+        if section_images.ensure_opening(workspace, layout, job.state) or read.upgraded:
             if persist and os.access(layout.folder, os.W_OK):
-                job._write_upgrade_if_writable(migration)
+                job._write_upgrade_if_writable()
         return job
 
-    def _write_upgrade_if_writable(self, migration: FolderMigration) -> None:
+    def _write_upgrade_if_writable(self) -> None:
         """:meth:`_write_upgrade`, kept in memory where the folder refuses it.
 
         Windows' ``os.access`` reads neither a folder's permissions nor a
         file's read-only flag, so the refusal comes from the write itself.
         """
         try:
-            self._write_upgrade(migration)
+            self._write_upgrade()
         except PermissionError as exc:
             logger.warning(
                 "%s cannot be written (%s); the job is upgraded in memory",
@@ -361,29 +308,25 @@ class Job(JobBorderTraces):
                 exc.strerror,
             )
 
-    def _write_upgrade(self, migration: FolderMigration) -> None:
+    def _write_upgrade(self) -> None:
         """Write the state at the current format, read again under
         the job's lock first: another process may have migrated (and written
-        to) the job since it was read, and its state is the one kept; and
-        ``job.json`` without the settings LangSlice no longer has. Nothing
+        to) the job since it was read, and its state is the one kept. Nothing
         is written when that read needs no upgrade and every section has its
         opening image."""
         assert self.workspace is not None
         with self.lock.held():
-            removed = _write_settings_without_removed(self.layout)
-            migration.used = False
-            data = read_checkpoint(self.checkpoint_path, migration)
-            if data is not None:
-                migration.seed(data)
-                self.state.replace_with(state_from_file(data, self.checkpoint_path))
+            read = read_checkpoint(self.checkpoint_path)
+            if read is not None:
+                self.state.replace_with(state_from_file(read.fields, self.checkpoint_path))
             self.load_undo()
             made = section_images.ensure_opening(self.workspace, self.layout, self.state)
-            if data is None or migration.used or made:
+            if read is None or read.upgraded or made:
                 self.checkpoint()
             else:
                 self._state_stamp = file_stamp(self.checkpoint_path)
                 self._undo_stamp = file_stamp(self.undo_path)
-        _log_migrated(self.layout, migration, removed)
+        _log_migrated(self.layout, read is not None and read.upgraded)
 
     @property
     def transform_cap(self) -> int | None:

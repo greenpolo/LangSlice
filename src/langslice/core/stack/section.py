@@ -9,13 +9,24 @@ plugin layers may refine or annotate that placement.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Any, Literal
 
+from pydantic import (
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    SerializerFunctionWrapHandler,
+    WrapSerializer,
+)
+
+from langslice.core.jsonable import JsonValue
 from langslice.core.stack.affine import StoredAffine
 from langslice.core.stack.deformation import DeformationRef
 from langslice.core.stack.images import ImageRef, LayerRef, MaskRef
 from langslice.core.stack.landmarks import Landmarks
+from langslice.core.stack.part import Flag, Number, Shape, Whole
 from langslice.core.stack.trace import BorderTrace
 
 ROTATIONS = (0, 90, 180, 270)
@@ -23,6 +34,34 @@ ROTATIONS = (0, 90, 180, 270)
 Angles = tuple[float, float]
 
 FLAT: Angles = (0.0, 0.0)
+
+
+def _angles_in(value: object) -> object:
+    if value is None:
+        return FLAT
+    if isinstance(value, Mapping):
+        return (value.get("pitch", 0.0), value.get("yaw", 0.0))
+    return value
+
+
+def _angles_out(angles: Angles) -> dict[str, float]:
+    return {"pitch": angles[0], "yaw": angles[1]}
+
+
+def _landmarks_in(value: object) -> object:
+    return value or None
+
+
+def _landmarks_out(value: Landmarks | None, handler: SerializerFunctionWrapHandler) -> Any:
+    return {} if value is None else handler(value)
+
+
+CuttingAngles = Annotated[
+    tuple[Number, Number], BeforeValidator(_angles_in), PlainSerializer(_angles_out)
+]
+SectionLandmarks = Annotated[
+    Landmarks | None, BeforeValidator(_landmarks_in), WrapSerializer(_landmarks_out)
+]
 
 
 class MixedAngles(ValueError):
@@ -41,8 +80,7 @@ WRITTEN: PositionSource = "written"
 POSITION_SOURCES: tuple[PositionSource, ...] = (INITIAL, INPUT, WRITTEN)
 
 
-@dataclass
-class Section:
+class Section(Shape):
     """Hold everything the run knows or proposes about one section image.
 
     Mutable: it is the job's live state, written under the job folder's
@@ -101,24 +139,58 @@ class Section:
         supplied per section keeps each its own.
     """
 
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     id: str
-    index_original: int
-    index_corrected: int
-    flip: bool = False
-    rotation_deg: int = 0
-    damaged_regions: list[str] = field(default_factory=list[str])
+    index_original: Whole
+    index_corrected: Whole
+    flip: Flag = False
+    rotation_deg: Whole = 0
+    damaged_regions: list[str] = Field(default_factory=list[str])
     damage_note: str = ""
-    position_mm: float = 0.0
+    position_mm: Number = 0.0
     position_source: PositionSource = INITIAL
     transform: StoredAffine | None = None
     border_trace: BorderTrace | None = None
     deformation: DeformationRef | None = None
-    landmarks: Landmarks | None = None
-    layers: list[LayerRef] = field(default_factory=list[LayerRef])
-    masks: dict[str, MaskRef] = field(default_factory=dict[str, MaskRef])
-    images: dict[str, ImageRef] = field(default_factory=dict[str, ImageRef])
-    caveats: list[str] = field(default_factory=list[str])
-    angles: Angles = FLAT
+    landmarks: SectionLandmarks = None
+    layers: list[LayerRef] = Field(default_factory=list[LayerRef])
+    masks: dict[str, MaskRef] = Field(default_factory=dict[str, MaskRef])
+    images: dict[str, ImageRef] = Field(default_factory=dict[str, ImageRef])
+    caveats: list[str] = Field(default_factory=list[str])
+    angles: CuttingAngles = Field(default=FLAT, alias="cutting_angles_deg")
+
+    def fields_json(self, keys: Sequence[str]) -> dict[str, JsonValue]:
+        """Return some of the section's row fields, as the row holds them.
+
+        Parameters
+        ----------
+        keys
+            Row keys (``tuple(Section.model_fields)`` names them, the
+            cutting angles as ``cutting_angles_deg``), in the order wanted.
+
+        Returns
+        -------
+        dict
+            Each key and its value in the row.
+        """
+        row = self.to_json()
+        return {key: row[key] for key in keys}
+
+    def with_fields(self, fields: Mapping[str, Any]) -> Section:
+        """Return a copy of the section with some row fields put back.
+
+        Parameters
+        ----------
+        fields
+            Row keys and their values in a row; the other fields are kept.
+
+        Returns
+        -------
+        Section
+            This section is not changed.
+        """
+        return Section.from_json({**self.to_json(), **fields})
 
     def set_position(self, position_mm: float, *, source: PositionSource = WRITTEN) -> None:
         """Set the section's position and who set it.

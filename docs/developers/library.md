@@ -75,8 +75,8 @@ untouched.
 
 | Argument | Meaning |
 |---|---|
-| `atlas`, `plane` | BrainGlobe atlas and `coronal`, `sagittal` or `horizontal` plane |
-| `tasks` | Enabled tasks: `position`, `transform`, `nonlinear` |
+| `atlas`, `plane` | `JobSpec` fields: BrainGlobe atlas and `coronal`, `sagittal` or `horizontal` plane |
+| `tasks` | Enabled tasks: `position`, `transform`, `nonlinear`; omitted: all, minus what the supplied answers settle |
 | `positions` | `{filename: position_mm}` along the atlas slicing axis |
 | `transforms` | `{filename: [a,b,tx,c,d,ty]}` or saved transform dictionaries; normalized in-plane affine on the oriented section |
 | `angles` | `{"pitch": degrees, "yaw": degrees}`, or `{filename: {"pitch": ..., "yaw": ...}}` |
@@ -85,14 +85,17 @@ untouched.
 | `inputs` | Other `JobSpec.inputs`, including `order`, `damaged`, `damaged_regions`, `channel_names` |
 | `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`, `damage`; see [freezing](../reference/settings.md#frozen) |
 | `disabled` | Tool names the job does without, for example `["zoom", "trace_borders"]`; see [switching tools off](../reference/tools.md#switching-tools-off) |
-| `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one |
+| `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one unless `enabled` has `trace_borders` |
 | `enabled` | The tools that start off and this job gets: `deepslice_place`, `brainways_ap` ([settings](../reference/settings.md#enabled)); `image_model=` switches `trace_borders` on |
 | `plugins`, `plugin_config` | [Tool plugins](plugins.md) to add to the job's toolbox (LangSlice's own engines are in every job; `plugin_config` holds their options too): `module:factory` references, factory functions defined at module level, or `ToolSpec` objects; options for a factory by reference. Loading runs their code. The references are saved with the job, so reopening it loads the same plugins |
 
-Set `tasks` explicitly for a job that must determine positions. The library
-default is `transform,nonlinear`, or `nonlinear` alone when every section has
-a supplied transform. Other `JobSpec` fields can be passed as keywords,
-such as `position={"interval_um": 100}`. Passing a `JobSpec` as the first
+The defaults are those of every door. `tasks` None turns every task on
+except `position` when `positions` names every section and `transform` when
+`transforms` does; set `tasks` to override. Any other `JobSpec` field is a
+keyword (`atlas`, `plane`, `preprocess`, `position={"interval_um": 100}`...),
+checked by the model. `image_model=` sets `nonlinear.provider`; without it,
+`enabled=["trace_borders"]` takes the connection saved on this computer, else
+the provider is `none`. Passing a `JobSpec` as the first
 argument uses it directly; only `image_model`, `atlas_loader` and `emit`
 may accompany it.
 
@@ -108,7 +111,7 @@ with langslice.create_job(
 
 Supported files are QuickNII/VisuAlign JSON or XML, DeepSlice CSV/JSON/XML,
 and LangSlice `registration.json`. Positions, cutting angles, orientation
-and affine transforms become supplied inputs; tasks default to `nonlinear`.
+and affine transforms become supplied inputs; tasks default to `nonlinear` alone.
 VisuAlign's nonlinear markers are not imported. `registration=` cannot be
 combined with the placement arguments above. Check `job.imported` for
 unmatched, missing or refused sections and warnings. See

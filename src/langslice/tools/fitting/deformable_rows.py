@@ -15,7 +15,7 @@ from typing import cast
 from langslice.core.fits.inputs import EstimatedBlock, InputsBlock
 from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.refusal import Refused, ReplyStatus
-from langslice.core.stack.codec import Written
+from langslice.core.stack.part import Written
 from langslice.tools.refusal import refused_row
 
 

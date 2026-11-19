@@ -9,13 +9,10 @@ never reused (``L1``, ``L2``, ...).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-from langslice.core.jsonable import JsonObject, empty_object
+from langslice.core.stack.part import Flag, Object, Part, Point, Whole
 
 
-@dataclass(frozen=True)
-class Endpoint:
+class Endpoint(Part):
     """Hold one end of a landmark pair as it was placed.
 
     Parameters
@@ -32,20 +29,16 @@ class Endpoint:
         The placement that picture was drawn under (its atlas plane).
     geometry
         The picture panel the point was read on (its pixel maps).
-    extra
-        Other keys the endpoint carried, kept as they came.
     """
 
-    canonical_xy: tuple[float, float]
-    picture: int
-    pixel_xy: tuple[float, float]
-    registration_context: JsonObject
-    geometry: JsonObject
-    extra: JsonObject = field(default_factory=empty_object)
+    canonical_xy: Point
+    picture: Whole
+    pixel_xy: Point
+    registration_context: Object
+    geometry: Object
 
 
-@dataclass(frozen=True)
-class Pair:
+class Pair(Part):
     """Hold one landmark pair.
 
     Parameters
@@ -65,22 +58,18 @@ class Pair:
         position, angles).
     stale
         Whether that plane is not the section's now.
-    extra
-        Other keys the pair carried, kept as they came.
     """
 
     id: str
     atlas: Endpoint
-    atlas_native_xy: tuple[float, float]
+    atlas_native_xy: Point
     section: Endpoint
-    section_fraction_xy: tuple[float, float]
-    plane: JsonObject
-    stale: bool
-    extra: JsonObject = field(default_factory=empty_object)
+    section_fraction_xy: Point
+    plane: Object
+    stale: Flag
 
 
-@dataclass(frozen=True)
-class Landmarks:
+class Landmarks(Part):
     """Hold a section's landmark pairs and the next pair number.
 
     Parameters
@@ -91,5 +80,5 @@ class Landmarks:
         The pairs, in the order they were made.
     """
 
-    next_id: int = 1
+    next_id: Whole = 1
     pairs: tuple[Pair, ...] = ()

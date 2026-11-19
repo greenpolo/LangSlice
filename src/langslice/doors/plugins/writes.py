@@ -18,7 +18,8 @@ import numpy as np
 from langslice.core.jsonable import JsonObject, to_jsonable
 from langslice.core.plugins import Layer, ToolError
 from langslice.core.refusal import RefusalCode, Refused
-from langslice.core.stack.codec import Written, affine_from_json
+from langslice.core.stack.affine import StoredAffine
+from langslice.core.stack.part import Written
 from langslice.doors.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
@@ -284,7 +285,7 @@ class ContextWrites(ContextProposals):
                         note = str(row.get("note") or "")
                         stored = self.transform_from_params(name, row["params"], note=note).affine
                     else:
-                        stored = affine_from_json(cast("JsonObject", record))
+                        stored = StoredAffine.from_json(cast("JsonObject", record))
                     assert stored is not None
                     done = transforms.set_transforms(job, {name: stored})
                 except Refused as refusal:

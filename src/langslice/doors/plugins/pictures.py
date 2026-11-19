@@ -17,7 +17,6 @@ from langslice.core.jsonable import JsonObject
 from langslice.core.plugins import ToolError
 from langslice.core.refusal import RefusalCode
 from langslice.core.stack.affine import StoredAffine
-from langslice.core.stack.codec import affine_from_json
 from langslice.doors.plugins.proposals import (
     ContextProposals,
     DeformationProposal,
@@ -92,7 +91,7 @@ class ContextPictures(ContextProposals):
                 held.transform = transform
                 held.deformation = None
             elif transform is not None:
-                held.transform = affine_from_json(cast("JsonObject", transform))
+                held.transform = StoredAffine.from_json(cast("JsonObject", transform))
                 held.deformation = None
             if proposal.get("position_mm") is not None:
                 held.position_mm = float(proposal["position_mm"])

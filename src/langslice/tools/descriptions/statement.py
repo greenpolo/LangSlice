@@ -38,7 +38,6 @@ never changed.
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import cast
@@ -401,8 +400,9 @@ def job_statement(
         The whole text.
     """
     if image_model_off:
-        spec = copy.copy(facts.spec)
-        spec.nonlinear = replace(spec.nonlinear, provider="none")
+        spec = facts.spec.model_copy(
+            update={"nonlinear": facts.spec.nonlinear.model_copy(update={"provider": "none"})}
+        )
         facts = replace(facts, spec=spec)
     lines = [build_job_statement(facts)]
     if door == AGENT_DOOR:

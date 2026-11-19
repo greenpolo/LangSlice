@@ -18,7 +18,6 @@ import os
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +31,6 @@ from langslice.job.host_inputs import host_damaged_ids
 from langslice.job.pictures import ViewStore
 from langslice.job.settings.spec import JobSpec
 from langslice.job.state_file import (
-    Upgrade,
     relative_to,
     stack_from_json,
     state_paths,
@@ -144,7 +142,6 @@ class JobCheckpoint:
         self._deformations: deformation.RecordStore | None = None
         self.persist = True
         self._workspace: Workspace | None = None
-        self.upgrade: Upgrade | None = None
         self._state_stamp, self._undo_stamp = seen or (
             file_stamp(self.checkpoint_path),
             file_stamp(self.undo_path),
@@ -234,10 +231,10 @@ class JobCheckpoint:
         for section in self.state.slices:
             if section.landmarks is not None:
                 pairs = tuple(
-                    replace(pair, stale=stale(self.state, section, pair))
+                    pair.model_copy(update={"stale": stale(self.state, section, pair)})
                     for pair in section.landmarks.pairs
                 )
-                section.landmarks = replace(section.landmarks, pairs=pairs)
+                section.landmarks = section.landmarks.model_copy(update={"pairs": pairs})
         if not self.persist:
             return
         with self.lock.held():
