@@ -52,7 +52,7 @@ def _landmarks_pairs(on: ToolsOn) -> str:
     )
     damage = on.say(
         "mark_damage",
-        " An atlas region\n"
+        "An atlas region\n"
         "with no tissue on the section (torn or missing) takes no pair: mark it with\n"
         "mark_damage; a region\n"
         "only partly missing keeps its pairs on the part that is present. ",
